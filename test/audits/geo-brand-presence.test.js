@@ -19,6 +19,7 @@ import sinonChai from 'sinon-chai';
 import { parquetWriteBuffer } from 'hyparquet-writer';
 import { keywordPromptsImportStep, sendToMystique, WEB_SEARCH_PROVIDERS } from '../../src/geo-brand-presence/handler.js';
 import { llmoConfig } from '@adobe/spacecat-shared-utils';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 
 use(sinonChai);
 
@@ -32,6 +33,7 @@ describe('Geo Brand Presence Handler', () => {
   let env;
   let s3Client;
   let getPresignedUrl;
+  let configuration;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -39,6 +41,7 @@ describe('Geo Brand Presence Handler', () => {
       getBaseURL: () => 'https://adobe.com',
       getId: () => 'site-id-123',
       getDeliveryType: () => 'geo_edge',
+      getConfig: () => ({}),
     };
     audit = {
       getId: () => 'audit-id-456',
@@ -63,6 +66,17 @@ describe('Geo Brand Presence Handler', () => {
           }),
     };
     getPresignedUrl = sandbox.stub();
+
+    // Mock Configuration for isAuditEnabledForSite
+    configuration = {
+      isHandlerEnabledForSite: sandbox.stub().returns(false),
+      getHandlers: sandbox.stub().returns({
+        'geo-brand-presence-daily': {
+          productCodes: ['LLMO'],
+        },
+      }),
+    };
+
     context = {
       log,
       sqs,
@@ -70,7 +84,18 @@ describe('Geo Brand Presence Handler', () => {
       site,
       audit,
       s3Client,
+      dataAccess: {
+        Configuration: {
+          findLatest: sandbox.stub().resolves(configuration),
+        },
+      },
     };
+
+    // Mock TierClient for entitlement checks
+    const mockTierClient = {
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: false }),
+    };
+    sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
     fakeConfigS3Response();
 
@@ -91,7 +116,7 @@ describe('Geo Brand Presence Handler', () => {
       type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: undefined,
-      auditResult: { keywordQuestions: [], aiPlatform: undefined },
+      auditResult: { keywordQuestions: [], aiPlatform: undefined, cadence: 'weekly' },
       fullAuditRef: finalUrl,
     });
   });
@@ -104,7 +129,7 @@ describe('Geo Brand Presence Handler', () => {
       type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: '2025-08-13',
-      auditResult: { keywordQuestions: [], aiPlatform: undefined },
+      auditResult: { keywordQuestions: [], aiPlatform: undefined, cadence: 'weekly' },
       fullAuditRef: finalUrl,
     });
   });
@@ -117,7 +142,7 @@ describe('Geo Brand Presence Handler', () => {
       type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: undefined,
-      auditResult: { keywordQuestions: [], aiPlatform: undefined },
+      auditResult: { keywordQuestions: [], aiPlatform: undefined, cadence: 'weekly' },
       fullAuditRef: finalUrl,
     });
   });
@@ -134,7 +159,7 @@ describe('Geo Brand Presence Handler', () => {
       type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: '2025-09-15',
-      auditResult: { keywordQuestions: [], aiPlatform: 'gemini' },
+      auditResult: { keywordQuestions: [], aiPlatform: 'gemini', cadence: 'weekly' },
       fullAuditRef: finalUrl,
     });
     expect(log.debug).to.have.been.calledWith(
@@ -155,7 +180,7 @@ describe('Geo Brand Presence Handler', () => {
       type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: undefined,
-      auditResult: { keywordQuestions: [], aiPlatform: undefined },
+      auditResult: { keywordQuestions: [], aiPlatform: undefined, cadence: 'weekly' },
       fullAuditRef: finalUrl,
     });
     expect(log.warn).to.have.been.calledWith(
@@ -786,6 +811,213 @@ describe('Geo Brand Presence Handler', () => {
               const data = JSON.parse(json);
               expect(data).to.have.lengthOf(1); // Only valid prompt kept
               expect(data[0].prompt).to.equal('valid prompt');
+              return true;
+            })
+          })
+      );
+    });
+  });
+
+  // NEW TESTS: Prompt Handling Logic (No Limit)
+  describe('Prompt Handling Logic', () => {
+    it('should include all AI and customer prompts without limit', async () => {
+      // Create 150 AI prompts
+      const aiPrompts = Array.from({ length: 150 }, (_, i) => ({
+        prompt: `ai prompt ${i + 1}`,
+        region: 'us',
+        topic: 'general',
+        category: 'adobe',
+        url: `https://adobe.com/page${i + 1}`,
+        keyword: 'adobe',
+        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+        volume: 1000 + i,
+        volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+        source: 'ahrefs',
+      }));
+
+      const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+
+      fakeParquetS3Response(aiPrompts);
+      fakeConfigS3Response({
+        ...llmoConfig.defaultConfig(),
+        categories: {
+          [cat1]: { name: 'Category 1', region: ['us'] },
+        },
+        topics: {
+          'f1a9605a-5a05-49e7-8760-b40ca2426380': {
+            name: 'Topic 1',
+            category: cat1,
+            prompts: Array.from({ length: 75 }, (_, i) => ({
+              prompt: `customer prompt ${i + 1}`,
+              regions: ['us'],
+              origin: 'human',
+              source: 'config'
+            })),
+          },
+        }
+      });
+
+      getPresignedUrl.resolves('https://example.com/presigned-url');
+
+      await sendToMystique({
+        ...context,
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      // Total: 150 AI + 75 Customer = 225 (no limit applied)
+      expect(s3Client.send).calledWith(
+          matchS3Cmd('PutObjectCommand', {
+            Body: sinon.match((json) => {
+              const data = JSON.parse(json);
+              expect(data).to.have.lengthOf(225); // All prompts included
+
+              // Should have all 75 customer prompts
+              const customerPrompts = data.filter(p => p.source === 'human');
+              expect(customerPrompts).to.have.lengthOf(75);
+
+              // Should have all 150 AI prompts
+              const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
+              expect(aiPromptsInResult).to.have.lengthOf(150);
+
+              return true;
+            })
+          })
+      );
+    });
+
+    it('should include all prompts regardless of count', async () => {
+      // Create 50 AI prompts
+      const aiPrompts = Array.from({ length: 50 }, (_, i) => ({
+        prompt: `ai prompt ${i + 1}`,
+        region: 'us',
+        topic: 'general',
+        category: 'adobe',
+        url: `https://adobe.com/page${i + 1}`,
+        keyword: 'adobe',
+        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+        volume: 1000 + i,
+        volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+        source: 'ahrefs',
+      }));
+
+      const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+
+      fakeParquetS3Response(aiPrompts);
+      fakeConfigS3Response({
+        ...llmoConfig.defaultConfig(),
+        categories: {
+          [cat1]: { name: 'Category 1', region: ['us'] },
+        },
+        topics: {
+          'f1a9605a-5a05-49e7-8760-b40ca2426380': {
+            name: 'Topic 1',
+            category: cat1,
+            prompts: Array.from({ length: 250 }, (_, i) => ({
+              prompt: `customer prompt ${i + 1}`,
+              regions: ['us'],
+              origin: 'human',
+              source: 'config'
+            })),
+          },
+        }
+      });
+
+      getPresignedUrl.resolves('https://example.com/presigned-url');
+
+      await sendToMystique({
+        ...context,
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      // Total: 50 AI + 250 Customer = 300 (no limit applied)
+      expect(s3Client.send).calledWith(
+          matchS3Cmd('PutObjectCommand', {
+            Body: sinon.match((json) => {
+              const data = JSON.parse(json);
+              expect(data).to.have.lengthOf(300); // All prompts included
+
+              // Should have all 50 AI prompts
+              const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
+              expect(aiPromptsInResult).to.have.lengthOf(50);
+
+              // Should have all 250 customer prompts
+              const customerPrompts = data.filter(p => p.source === 'human');
+              expect(customerPrompts).to.have.lengthOf(250);
+
+              return true;
+            })
+          })
+      );
+    });
+
+    it('should use all prompts when total <= 200', async () => {
+      // Create 50 AI prompts
+      const aiPrompts = Array.from({ length: 50 }, (_, i) => ({
+        prompt: `ai prompt ${i + 1}`,
+        region: 'us',
+        topic: 'general',
+        category: 'adobe',
+        url: `https://adobe.com/page${i + 1}`,
+        keyword: 'adobe',
+        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+        volume: 1000 + i,
+        volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+        source: 'ahrefs',
+      }));
+
+      const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+
+      fakeParquetS3Response(aiPrompts);
+      fakeConfigS3Response({
+        ...llmoConfig.defaultConfig(),
+        categories: {
+          [cat1]: { name: 'Category 1', region: ['us'] },
+        },
+        topics: {
+          'f1a9605a-5a05-49e7-8760-b40ca2426380': {
+            name: 'Topic 1',
+            category: cat1,
+            prompts: Array.from({ length: 25 }, (_, i) => ({
+              prompt: `customer prompt ${i + 1}`,
+              regions: ['us'],
+              origin: 'human',
+              source: 'config'
+            })),
+          },
+        }
+      });
+
+      getPresignedUrl.resolves('https://example.com/presigned-url');
+
+      await sendToMystique({
+        ...context,
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      // Total: 50 AI + 25 Customer = 75 < 200, should keep all
+      expect(s3Client.send).calledWith(
+          matchS3Cmd('PutObjectCommand', {
+            Body: sinon.match((json) => {
+              const data = JSON.parse(json);
+              expect(data).to.have.lengthOf(75); // All prompts kept
+
+              // Should have all 50 AI prompts
+              const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
+              expect(aiPromptsInResult).to.have.lengthOf(50);
+
+              // Should have all 25 customer prompts
+              const customerPrompts = data.filter(p => p.source === 'human');
+              expect(customerPrompts).to.have.lengthOf(25);
+
               return true;
             })
           })
