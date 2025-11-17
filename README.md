@@ -149,7 +149,15 @@ Always verify the timestamp of the returned audit result. If the audit failed to
 
 
 
-### 2. Using AWS SAM and Docker.
+### 2. Using AWS SAM and Docker (strongly recomended).
+
+#### Intro
+
+With this approach you will be running the code locally with the official AWS lambda functions simulator aka SAM.
+<br>
+To access every other AWS resource (ie: S3 and Dynamo DB) the code will connect to that resource in the AWS development environment using the credentials configured in the setup phase described below. 
+
+#### Setup
 
 1. Ensure you have [Docker](https://docs.docker.com/desktop/setup/install/mac-install/), [AWS SAM](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) and [jq](https://jqlang.org/) installed.
 2. Login to AWS using [KLAM](https://klam.corp.adobe.com/) and login with your [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
@@ -163,6 +171,99 @@ Always verify the timestamp of the returned audit result. If the audit failed to
     ```
 5. Starting point of the execution is `src/index-local.js`. Output of the audit can be found in `output.txt`.
 6. To hot reload any changes in the `/src` folder, you can use `npm run local-watch`. Note: This will require to run `npm run local-build` at least once beforehand.
+
+#### Debug
+1) If you are using [this monorepo](https://git.corp.adobe.com/aurelio/spacecat-monorepo) go to the workspace folder and run:
+```bash
+mkdir -p .vscode && cat > .vscode/launch.json << 'EOF'
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "node",
+            "request": "attach",
+            "name": "Attach to SAM Local",
+            "address": "localhost",
+            "port": 5858,
+            "localRoot": "${workspaceFolder}/spacecat-audit-worker/src",
+            "remoteRoot": "/var/task/src",
+            "skipFiles": [
+                "<node_internals>/**",
+                "**/node_modules/**",
+                "/var/runtime/**",
+                "/var/lang/**",
+                "/opt/**"
+            ],
+            "sourceMaps": true,
+            "outFiles": [
+                "${workspaceFolder}/spacecat-audit-worker/.aws-sam/**/*.js"
+            ],
+            "resolveSourceMapLocations": [
+                "${workspaceFolder}/spacecat-audit-worker/src/**",
+                "!**/node_modules/**"
+            ],
+            "restart": true,
+            "trace": false,
+            "sourceMapPathOverrides": {
+                "/var/task/src/*": "${workspaceFolder}/spacecat-audit-worker/src/*",
+                "/var/task/*": "${workspaceFolder}/spacecat-audit-worker/*"
+            }
+        }
+    ]
+}
+EOF
+```
+otherwise run:
+```bash
+mkdir -p .vscode && cat > .vscode/launch.json << 'EOF'
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "node",
+            "request": "attach",
+            "name": "Attach to SAM Local",
+            "address": "localhost",
+            "port": 5858,
+            "localRoot": "${workspaceFolder}/src",
+            "remoteRoot": "/var/task/src",
+            "skipFiles": [
+                "<node_internals>/**",
+                "**/node_modules/**",
+                "/var/runtime/**",
+                "/var/lang/**",
+                "/opt/**"
+            ],
+            "sourceMaps": true,
+            "outFiles": [
+                "${workspaceFolder}/.aws-sam/**/*.js"
+            ],
+            "resolveSourceMapLocations": [
+                "${workspaceFolder}/src/**",
+                "!**/node_modules/**"
+            ],
+            "restart": true,
+            "trace": false,
+            "sourceMapPathOverrides": {
+                "/var/task/src/*": "${workspaceFolder}/src/*",
+                "/var/task/*": "${workspaceFolder}/*"
+            }
+        }
+    ]
+}
+EOF
+```
+2) Set your breakpoints.
+3) Run:
+```bash
+npm run local-build
+```
+4) Press Cmd+Shift+D on mac (Ctrl+Shift+D on windows) and run the config: Attach to SAM local.
+5) Run:
+```bash
+npm run local-debug
+```
+6) Enjoy your breakpoints being hit!
 
 If you need to add additional secrets, make sure to adjust the Lambda `template.yml` accordingly.
 
