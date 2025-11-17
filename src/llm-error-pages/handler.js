@@ -24,13 +24,11 @@ import {
   consolidateErrorsByUrl,
   sortErrorsByTrafficVolume,
   categorizeErrorsByStatusCode,
-  downloadExistingCdnSheet,
-  matchErrorsWithCdnData,
   SPREADSHEET_COLUMNS,
   toPathOnly,
 } from './utils.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { createLLMOSharepointClient, saveExcelReport, readFromSharePoint } from '../utils/report-uploader.js';
+import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -146,6 +144,7 @@ export async function runAuditAndSendToMystique(context) {
       endDate,
       llmProviders: getAllLlmProviders(),
       siteFilters,
+      site,
     });
 
     log.info('[LLM-ERROR-PAGES] Executing query...');
@@ -165,29 +164,12 @@ export async function runAuditAndSendToMystique(context) {
     const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
     const outputLocation = `${llmoFolder}/agentic-traffic`;
 
-    const baseUrl = site.getBaseURL?.() || 'https://example.com';
     const buildFilename = (code) => `agentictraffic-errors-${code}-${periodIdentifier}.xlsx`;
 
     const writeCategoryExcel = async (code, errors) => {
       if (!errors || errors.length === 0) return;
 
-      const existingCdnData = await downloadExistingCdnSheet(
-        periodIdentifier,
-        outputLocation,
-        sharepointClient,
-        log,
-        readFromSharePoint,
-        ExcelJS,
-      );
-
-      if (!existingCdnData || existingCdnData.length === 0) {
-        log.warn(`[LLM-ERROR-PAGES] No existing CDN data found for ${periodIdentifier}, skipping ${code} error report`);
-        return;
-      }
-
-      log.info(`[LLM-ERROR-PAGES] Found existing CDN data with ${existingCdnData.length} rows, enriching error data`);
-      const enrichedErrors = matchErrorsWithCdnData(errors, existingCdnData, baseUrl);
-      const sorted = enrichedErrors.sort((a, b) => b.number_of_hits - a.number_of_hits);
+      const sorted = [...errors].sort((a, b) => (b.total_requests || 0) - (a.total_requests || 0));
 
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('data');
@@ -195,14 +177,14 @@ export async function runAuditAndSendToMystique(context) {
 
       sorted.forEach((e) => {
         sheet.addRow([
-          e.agent_type,
-          e.user_agent_display,
-          e.number_of_hits,
-          e.avg_ttfb_ms,
-          e.country_code,
-          e.url,
-          e.product,
-          e.category,
+          e.agent_type || '',
+          e.user_agent || '',
+          e.total_requests || 0,
+          e.avg_ttfb_ms ?? '',
+          e.country_code ?? '',
+          e.url || '',
+          e.product || '',
+          e.category || '',
           '',
           '',
           '',
