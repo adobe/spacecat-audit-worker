@@ -114,6 +114,7 @@ describe('CDN Analysis Handler', () => {
         },
         athenaClient: {
           execute: sandbox.stub().resolves(),
+          query: sandbox.stub().rejects(new Error('Table does not exist')),
         },
         dataAccess: {
           Organization: {

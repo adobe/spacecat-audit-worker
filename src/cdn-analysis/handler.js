@@ -23,6 +23,7 @@ import {
   CDN_TYPES,
   resolveConsolidatedBucketName,
   pathHasData,
+  shouldRecreateRawTable,
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
@@ -180,15 +181,25 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
         tablesCreated = true;
       }
 
-      // Create raw table for this provider
       // eslint-disable-next-line no-await-in-loop
-      const sqlRaw = await loadSql(cdnType, 'create-raw-table', {
+      const needsCreation = await shouldRecreateRawTable(
+        athenaClient,
         database,
         rawTable,
-        rawLocation: paths.rawLocation,
-      });
-      // eslint-disable-next-line no-await-in-loop
-      await athenaClient.execute(sqlRaw, database, `[Athena Query] Create raw logs table ${database}.${rawTable}`);
+        paths.rawLocation,
+        log,
+      );
+
+      if (needsCreation) {
+        // eslint-disable-next-line no-await-in-loop
+        const sqlRaw = await loadSql(cdnType, 'create-raw-table', {
+          database,
+          rawTable,
+          rawLocation: paths.rawLocation,
+        });
+        // eslint-disable-next-line no-await-in-loop
+        await athenaClient.execute(sqlRaw, database, `[Athena Query] Create raw logs table ${database}.${rawTable}`);
+      }
 
       // Check if raw logs exist for this hour/day
       // For CloudFlare, check daily file; for others, check hourly directory
