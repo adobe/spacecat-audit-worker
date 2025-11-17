@@ -1,3 +1,17 @@
+# [1.240.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.239.3...v1.240.0) (2025-11-17)
+
+
+### Features
+
+* improve log messages and do not process if no data exist ([#1571](https://github.com/adobe/spacecat-audit-worker/issues/1571)) ([c85870f](https://github.com/adobe/spacecat-audit-worker/commit/c85870f3397bf9e57e48022f56a598b48eb930d9))
+
+## [1.239.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.239.2...v1.239.3) (2025-11-17)
+
+
+### Bug Fixes
+
+* retry with backoff ([#1585](https://github.com/adobe/spacecat-audit-worker/issues/1585)) ([a44df57](https://github.com/adobe/spacecat-audit-worker/commit/a44df57048245466ce236d37f32e87addbe65ee4))
+
 ## [1.239.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.239.1...v1.239.2) (2025-11-17)
 
 
