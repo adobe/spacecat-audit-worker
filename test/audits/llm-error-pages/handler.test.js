@@ -182,6 +182,9 @@ describe('LLM Error Pages Handler', function () {
       '@adobe/spacecat-shared-data-access': {
         Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import', SCRAPE_CLIENT: 'scrape' } },
       },
+      '@adobe/spacecat-shared-tier-client': {
+        default: {},
+      },
       '@adobe/spacecat-shared-athena-client': {
         AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) },
       },
@@ -195,6 +198,9 @@ describe('LLM Error Pages Handler', function () {
           withRunner() { return this; }
           build() { return {}; }
         },
+      },
+      '../../../src/common/audit-utils.js': {
+        default: {},
       },
       '../../../src/llm-error-pages/utils.js': {
         getS3Config: mockGetS3Config,
@@ -686,6 +692,9 @@ describe('LLM Error Pages Handler (isolated)', function () {
       '@adobe/spacecat-shared-data-access': {
         Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import', SCRAPE_CLIENT: 'scrape' } },
       },
+      '@adobe/spacecat-shared-tier-client': {
+        default: {},
+      },
       '@adobe/spacecat-shared-athena-client': {
         AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) },
       },
@@ -697,6 +706,9 @@ describe('LLM Error Pages Handler (isolated)', function () {
           withRunner() { return this; }
           build() { return {}; }
         },
+      },
+      '../../../src/common/audit-utils.js': {
+        default: {},
       },
       '../../../src/llm-error-pages/utils.js': {
         getS3Config: mockGetS3Config,

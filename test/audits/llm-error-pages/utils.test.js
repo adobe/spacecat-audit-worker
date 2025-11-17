@@ -374,6 +374,49 @@ describe('LLM Error Pages Utils', () => {
   });
 
   describe('classification fallbacks and variants', () => {
+    it('uses fallback classification when dataFolder is missing', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => undefined }) };
+      mockGetStaticContent = sinon.stub().returns('SELECT ...');
+      const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+        '@adobe/spacecat-shared-utils': {
+          getStaticContent: mockGetStaticContent,
+        },
+      });
+      await mocked.buildLlmErrorPagesQuery({
+        databaseName: 'db',
+        tableName: 'tbl',
+        site,
+      });
+      const callArg = mockGetStaticContent.firstCall.args[0];
+      expect(callArg.pageCategoryClassification).to.equal("'Other'");
+      expect(callArg.topicExtraction).to.include("CASE WHEN url IS NOT NULL THEN 'Other' END");
+    });
+
+    it('uses fallback classification when fetch throws', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      mockGetStaticContent = sinon.stub().returns('SELECT ...');
+      const fetchStub = sinon.stub().rejects(new Error('network error'));
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchStub;
+      try {
+        const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+          '@adobe/spacecat-shared-utils': {
+            getStaticContent: mockGetStaticContent,
+          },
+        });
+        await mocked.buildLlmErrorPagesQuery({
+          databaseName: 'db',
+          tableName: 'tbl',
+          site,
+        });
+        const callArg = mockGetStaticContent.firstCall.args[0];
+        expect(callArg.pageCategoryClassification).to.equal("'Other'");
+        expect(callArg.topicExtraction).to.include("CASE WHEN url IS NOT NULL THEN 'Other' END");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
     it('uses fallback classification when fetch fails', async () => {
       const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
       mockGetStaticContent = sinon.stub().returns('SELECT ...');
@@ -456,6 +499,79 @@ describe('LLM Error Pages Utils', () => {
         const callArg = mockGetStaticContent.firstCall.args[0];
         expect(callArg.topicExtraction.trim().startsWith('COALESCE(')).to.be.true;
         expect(callArg.topicExtraction).to.include("'Other'");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('topicExtraction handles mixed named and extract patterns', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      mockGetStaticContent = sinon.stub().returns('SELECT ...');
+      const fetchStub = sinon.stub().resolves({
+        ok: true,
+        json: async () => ({
+          pagetype: { data: [] },
+          products: { data: [{ name: 'Adobe', regex: '/adobe' }, { regex: '/product/([^/]+)' }] },
+        }),
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchStub;
+      try {
+        const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+          '@adobe/spacecat-shared-utils': {
+            getStaticContent: mockGetStaticContent,
+          },
+        });
+        await mocked.buildLlmErrorPagesQuery({
+          databaseName: 'db',
+          tableName: 'tbl',
+          site,
+        });
+        const callArg = mockGetStaticContent.firstCall.args[0];
+        expect(callArg.topicExtraction).to.include('COALESCE(');
+        expect(callArg.topicExtraction).to.include('CASE');
+        expect(callArg.topicExtraction).to.include('NULLIF(');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  describe('fetchRemotePatterns direct', () => {
+    it('returns mapped pagePatterns/topicPatterns from JSON', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      const fetchStub = sinon.stub().resolves({
+        ok: true,
+        json: async () => ({
+          pagetype: { data: [{ name: 'Help', regex: '/help' }] },
+          products: { data: [{ name: 'Adobe', regex: '/adobe' }] },
+        }),
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchStub;
+      try {
+        const mocked = await esmock('../../../src/llm-error-pages/utils.js');
+        const patterns = await mocked.fetchRemotePatterns(site);
+        expect(patterns.pagePatterns).to.deep.equal([{ name: 'Help', regex: '/help' }]);
+        expect(patterns.topicPatterns).to.deep.equal([{ name: 'Adobe', regex: '/adobe' }]);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('falls back to [] when JSON omits keys', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      const fetchStub = sinon.stub().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchStub;
+      try {
+        const mocked = await esmock('../../../src/llm-error-pages/utils.js');
+        const patterns = await mocked.fetchRemotePatterns(site);
+        expect(patterns.pagePatterns).to.deep.equal([]);
+        expect(patterns.topicPatterns).to.deep.equal([]);
       } finally {
         globalThis.fetch = originalFetch;
       }
