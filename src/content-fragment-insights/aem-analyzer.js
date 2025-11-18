@@ -60,7 +60,7 @@ export class AemAnalyzer {
     return {
       totalFragments: this.fragments.length,
       totalUnused: unusedFragments.length,
-      unusedFragments,
+      data: unusedFragments,
     };
   }
 
