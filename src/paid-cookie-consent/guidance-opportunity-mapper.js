@@ -38,8 +38,8 @@ async function addScreenshots(context, siteId, markdown, jobId) {
   const fileVariants = [
     { key: 'DESKTOP_BANNER_ON_URL', variant: 'screenshot-desktop-viewport-withBanner' },
     { key: 'DESKTOP_BANNER_OFF_URL', variant: 'screenshot-desktop-viewport-withoutBanner' },
-    { key: 'MOBILE_BANNER_ON_URL', variant: 'screenshot-iphone-6-viewport-withBanner' },
-    { key: 'MOBILE_BANNER_OFF_URL', variant: 'screenshot-iphone-6-viewport-withoutBanner' },
+    { key: 'MOBILE_BANNER_ON_URL', variant: 'screenshot-iphone-13-viewport-withBanner' },
+    { key: 'MOBILE_BANNER_OFF_URL', variant: 'screenshot-iphone-13-viewport-withoutBanner' },
   ];
 
   const scrapeClient = ScrapeClient.createFrom(context);
