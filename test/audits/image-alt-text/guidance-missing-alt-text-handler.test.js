@@ -498,6 +498,71 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(syncSuggestionsStub).to.not.have.been.called;
     expect(getProjectedMetricsStub).to.not.have.been.called;
   });
+
+  it('should exercise buildKey branches and mapNewSuggestion with real syncSuggestions', async () => {
+    // Re-import handler without stubbing syncSuggestions to execute real logic
+    const guidanceHandlerRealSync = await esmock('../../../src/image-alt-text/guidance-missing-alt-text-handler.js', {
+      '../../../src/image-alt-text/opportunityHandler.js': {
+        getProjectedMetrics: getProjectedMetricsStub,
+      },
+      // Do not mock ../utils/data-access.js so buildKey/mapNewSuggestion are exercised
+    });
+
+    const existingSuggestionModel = {
+      getData: () => ({
+        recommendations: [{
+          id: 'https://example.com/page1/image1.jpg',
+          pageUrl: 'https://example.com/page1',
+          imageUrl: 'https://example.com/image1.jpg',
+        }],
+      }),
+      getStatus: () => 'NEW',
+      setData: sinon.stub(),
+      setStatus: sinon.stub(),
+      setUpdatedBy: sinon.stub(),
+      save: sinon.stub().resolves(),
+    };
+    mockOpportunity.getSuggestions.returns([existingSuggestionModel]);
+
+    const message = {
+      ...mockMessage,
+      data: {
+        // Include one matching (triggers buildKey rec.id path for existing)
+        // and one new (triggers mapNewSuggestion and fallback key path)
+        suggestions: [
+          {
+            pageUrl: 'https://example.com/page1',
+            imageId: 'image1.jpg',
+            altText: 'Alt 1',
+            imageUrl: 'https://example.com/image1.jpg',
+            isAppropriate: true,
+            isDecorative: false,
+            language: 'en',
+          },
+          {
+            pageUrl: 'https://example.com/page1',
+            imageId: 'image2.jpg',
+            altText: 'Alt 2',
+            imageUrl: 'https://example.com/image2.jpg',
+            isAppropriate: true,
+            isDecorative: true,
+            language: 'en',
+          },
+        ],
+        pageUrls: ['https://example.com/page1'],
+      },
+    };
+
+    const result = await guidanceHandlerRealSync(message, context);
+    expect(result.status).to.equal(200);
+    // MapNewSuggestion path should add the new suggestion
+    expect(mockOpportunity.addSuggestions).to.have.been.calledOnce;
+    // Existing suggestion should be updated/saved
+    expect(existingSuggestionModel.setData).to.have.been.called;
+    expect(existingSuggestionModel.save).to.have.been.called;
+    // Final log indicates sync occurred
+    expect(context.log.debug).to.have.been.calledWithMatch('[alt-text]: Synced 2 suggestions for 1 processed pages');
+  });
   it('should handle case when no existing suggestions need to be removed', async () => {
     // Set up existing suggestions that are all SKIPPED or FIXED
     const existingSuggestions = [
