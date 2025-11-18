@@ -83,15 +83,16 @@ export default async function links(context, auditContext) {
         if (!brokenInternalLinksByPage.has(href)) {
           brokenInternalLinksByPage.set(href, []);
         }
-        const aiUrls = urlsSuggested?.map((url) => stripTrailingSlash(
-          url.replace(new URL(url).origin, baseURLOrigin),
-        ));
+        const aiUrls = (urlsSuggested && urlsSuggested.length > 0)
+          ? urlsSuggested.map((url) => stripTrailingSlash(
+            url.replace(new URL(url).origin, baseURLOrigin),
+          )) : [];
         brokenInternalLinksByPage.get(href).push({
           url: stripTrailingSlash(urlTo.replace(new URL(urlTo).origin, baseURLOrigin)),
           issue: `Status ${status}`,
           seoImpact: 'High',
           seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-          aiSuggestion: aiUrls[0],
+          aiSuggestion: aiUrls.length > 0 ? aiUrls[0] : undefined,
           aiRationale,
         });
       });

@@ -901,6 +901,112 @@ describe('Preflight Audit', () => {
       expect(finalJobEntity.setResult).to.have.been.called;
     });
 
+    it('handles empty aiSuggestion when urlsSuggested is empty', async () => {
+      context.promiseToken = 'mock-promise-token';
+      const head = '<head><a href="https://example.com/header-url"/></head>';
+      const body = `<body><a href="https://example.com/broken"></a><h1>Home H1</h1><p>This is additional content to ensure the body length exceeds 300 characters. ${'A'.repeat(100)} </p></body>`;
+      const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        } else {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify({
+                scrapeResult: {
+                  rawBody: html.replaceAll('https://example.com', 'https://main--example--page.aem.page'),
+                  tags: {
+                    title: 'Home Title',
+                    description: 'Home Description',
+                    h1: ['Home H1'],
+                  },
+                },
+                finalUrl: 'https://main--example--page.aem.page',
+              })),
+            },
+          });
+        }
+      });
+
+      nock('https://main--example--page.aem.page')
+        .head('/header-url')
+        .reply(200);
+      nock('https://main--example--page.aem.page')
+        .head('/broken')
+        .reply(404);
+
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_SUGGEST,
+          urls: ['https://main--example--page.aem.page'],
+        },
+      });
+
+      azureOpenAIClient.fetchChatCompletion.resolves({
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: [], aiRationale: 'No alternatives available' }),
+            aiRationale: 'No alternatives available',
+          },
+          finish_reason: 'stop',
+        }],
+      });
+
+      // Mock metatags-preflight audit as enabled
+      configuration.isHandlerEnabledForSite.withArgs('metatags-preflight', site).returns(true);
+      // Mock readability-preflight audit as disabled
+      configuration.isHandlerEnabledForSite.withArgs('readability-preflight', site).returns(false);
+      // All other audits should be enabled by default
+      configuration.isHandlerEnabledForSite.returns(true);
+      genvarClient.generateSuggestions.resolves({
+        '/': {
+          h1: {
+            aiRationale: 'The H1 tag is clear...',
+            aiSuggestion: 'Welcome to Our Homepage',
+          },
+          title: {
+            aiRationale: 'The title is descriptive...',
+            aiSuggestion: 'Home - Our Company',
+          },
+          description: {
+            aiRationale: 'The description is concise...',
+            aiSuggestion: 'Welcome to the homepage of Our Company.',
+          },
+        },
+      });
+
+      await preflightAuditFunction(context);
+
+      expect(genvarClient.generateSuggestions).to.have.been.called;
+
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(finalJobEntity.setResultType).to.have.been.called;
+      expect(finalJobEntity.setEndedAt).to.have.been.called;
+      expect(finalJobEntity.save).to.have.been.called;
+      expect(finalJobEntity.setResult).to.have.been.called;
+      
+      // Verify that aiSuggestion contains fallback URL when no suitable suggestions found
+      const actualResult = finalJobEntity.setResult.getCall(0).args[0];
+      const linksAudit = actualResult[0].audits.find(a => a.name === 'links');
+      if (linksAudit && linksAudit.opportunities.length > 0) {
+        const brokenLinks = linksAudit.opportunities[0].issue;
+        // When AI returns empty suggestions, fallback to base URL is added
+        expect(brokenLinks[0].aiSuggestion).to.equal('https://main--example--page.aem.page');
+        expect(brokenLinks[0].aiRationale).to.equal('No alternatives available');
+      }
+    });
+
     it('handles genvar errors gracefully', async () => {
       genvarClient.generateSuggestions.throws(new Error('Genvar failure'));
       job.getMetadata = () => ({
