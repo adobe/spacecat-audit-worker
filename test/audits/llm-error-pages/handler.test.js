@@ -367,8 +367,6 @@ describe('LLM Error Pages Handler', function () {
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
 
-    // Removed: skipping Excel when CDN data is missing (handler no longer reads CDN sheet)
-
     it('should skip Mystique when SQS not configured', async () => {
       context.sqs = null;
 

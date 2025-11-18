@@ -28,6 +28,8 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%chatgpt-user%', displayName: 'ChatGPT-User' },
   { pattern: '%gptbot%', displayName: 'GPTBot' },
   { pattern: '%oai-searchbot%', displayName: 'OAI-SearchBot' },
+  { pattern: '%chatgpt%20atlas%', displayName: 'ChatGPT Atlas' },
+  { pattern: '%chatgpt%', displayName: 'ChatGPT Clients' },
 
   // Perplexity
   { pattern: '%perplexitybot%', displayName: 'PerplexityBot' },
@@ -46,7 +48,6 @@ export function buildUserAgentDisplaySQL() {
   const cases = USER_AGENT_DISPLAY_PATTERNS
     .map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.displayName}'`)
     .join('\n    ');
-
   return `CASE 
     ${cases}
     ELSE SUBSTR(user_agent, 1, 100)
@@ -59,7 +60,7 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%gptbot%', result: 'Training bots' },
     { pattern: '%oai-searchbot%', result: 'Web search crawlers' },
     { pattern: '%chatgpt-user%', result: 'Chatbots' },
-    { pattern: '%chatgpt%', result: 'Chatbots' },
+    { pattern: '%chatgpt%', result: 'Media fetchers' },
     // Perplexity
     { pattern: '%perplexitybot%', result: 'Web search crawlers' },
     { pattern: '%perplexity-user%', result: 'Chatbots' },

@@ -13,6 +13,7 @@
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { resolveConsolidatedBucketName, extractCustomerDomain } from '../utils/cdn-utils.js';
 import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL } from '../common/user-agent-classification.js';
+import { ELMO_LIVE_HOST } from '../common/constants.js';
 
 // ============================================================================
 // CONSTANTS
@@ -133,7 +134,7 @@ export async function fetchRemotePatterns(site) {
   }
 
   try {
-    const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/agentic-traffic/patterns/patterns.json`;
+    const url = `${ELMO_LIVE_HOST}/${dataFolder}/agentic-traffic/patterns/patterns.json`;
     const res = await fetch(url, {
       headers: {
         'User-Agent': 'spacecat-audit-worker',
