@@ -13,6 +13,9 @@
 export function getJsonSummarySuggestion(suggestions) {
   const suggestionValues = [];
   suggestions.forEach((suggestion) => {
+    // Get scrapedAt once for all suggestion values from this suggestion
+    const scrapedAt = suggestion.scrapedAt || new Date().toISOString();
+
     // handle page level summary
     suggestionValues.push({
       summarizationText: suggestion.pageSummary?.formatted_summary,
@@ -23,6 +26,7 @@ export function getJsonSummarySuggestion(suggestions) {
         selector: suggestion.pageSummary?.heading_selector || 'body',
         action: suggestion.pageSummary?.insertion_method || 'appendChild',
       },
+      scrapedAt,
     });
 
     // handle paragraph level summary
@@ -36,6 +40,7 @@ export function getJsonSummarySuggestion(suggestions) {
           selector: section.heading_selector,
           action: section.insertion_method || 'insertAfter',
         },
+        scrapedAt,
       });
     });
   });

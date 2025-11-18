@@ -1,3 +1,10 @@
+# [1.244.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.243.1...v1.244.0) (2025-11-18)
+
+
+### Features
+
+* add scraped at time to summarization suggestions ([#1593](https://github.com/adobe/spacecat-audit-worker/issues/1593)) ([fa13189](https://github.com/adobe/spacecat-audit-worker/commit/fa1318910bcac6689724d3256a910beed7af4fe6))
+
 ## [1.243.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.243.0...v1.243.1) (2025-11-18)
 
 
