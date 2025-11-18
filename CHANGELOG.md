@@ -1,3 +1,11 @@
+## [1.244.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.244.0...v1.244.1) (2025-11-18)
+
+
+### Bug Fixes
+
+* removing duplicate headings ([#1599](https://github.com/adobe/spacecat-audit-worker/issues/1599)) ([1b01445](https://github.com/adobe/spacecat-audit-worker/commit/1b01445f312df4a733b7bae52885360f7e2ab162))
+* switch to iphone 13 ([#1597](https://github.com/adobe/spacecat-audit-worker/issues/1597)) ([18f3655](https://github.com/adobe/spacecat-audit-worker/commit/18f3655ffb8d86d519ebacdc207f766df31cae67))
+
 # [1.244.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.243.1...v1.244.0) (2025-11-18)
 
 
