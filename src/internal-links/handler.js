@@ -231,6 +231,11 @@ export const opportunityAndSuggestionsStep = async (context) => {
   );
 
   // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
+  // This determines what alternatives Mystique will see:
+  // - If baseURL is "site.com/en-ca" → only /en-ca alternatives
+  // - If baseURL is "site.com" → ALL locales alternatives
+  // Mystique will then filter by domain (not locale), so cross-locale suggestions
+  // are possible if audit scope includes multiple locales
   const baseURL = site.getBaseURL();
   const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
 
@@ -244,75 +249,56 @@ export const opportunityAndSuggestionsStep = async (context) => {
       SuggestionDataAccess.STATUSES.NEW,
     );
 
-    // Filter alternatives per broken link by its locale/subpath
-    const brokenLinksWithFilteredAlternatives = suggestions.map((suggestion) => {
-      const urlFrom = suggestion?.getData()?.urlFrom;
-      const urlTo = suggestion?.getData()?.urlTo;
+    // Build broken links array without per-link alternatives
+    // Mystique expects: brokenLinks with only urlFrom, urlTo, suggestionId
+    const brokenLinks = suggestions.map((suggestion) => ({
+      urlFrom: suggestion?.getData()?.urlFrom,
+      urlTo: suggestion?.getData()?.urlTo,
+      suggestionId: suggestion?.getId(),
+    }));
 
-      // Extract path prefix from broken link to filter alternatives
-      const brokenLinkPathPrefix = extractPathPrefix(urlTo) || extractPathPrefix(urlFrom);
+    // Filter alternatives by locales/subpaths present in broken links
+    // This limits suggestions to relevant locales only
+    const allTopPageUrls = filteredTopPages.map((page) => page.getUrl());
 
-      // Filter alternatives to same locale/subpath as broken link
-      let filteredAlternatives = filteredTopPages.map((page) => page.getUrl());
-      const totalAlternativesBeforeLocaleFilter = filteredAlternatives.length;
-      if (brokenLinkPathPrefix) {
-        filteredAlternatives = filteredAlternatives.filter((url) => {
-          const urlPathPrefix = extractPathPrefix(url);
-          return urlPathPrefix === brokenLinkPathPrefix;
-        });
-
-        log.info(
-          `[${AUDIT_TYPE}] [Site: ${site.getId()}] Broken link ${urlTo} (prefix: ${brokenLinkPathPrefix}): `
-          + `${totalAlternativesBeforeLocaleFilter} alternatives before locale filter, `
-          + `${filteredAlternatives.length} after locale filter`,
-        );
-
-        // Log warning if no alternatives found for this locale
-        if (filteredAlternatives.length === 0) {
-          log.warn(
-            `[${AUDIT_TYPE}] [Site: ${site.getId()}] No alternatives found for broken link `
-            + `with prefix ${brokenLinkPathPrefix}. urlTo: ${urlTo}, urlFrom: ${urlFrom}`,
-          );
-        }
-      } else {
-        log.info(
-          `[${AUDIT_TYPE}] [Site: ${site.getId()}] Broken link ${urlTo} (no prefix): `
-          + `${filteredAlternatives.length} alternatives available`,
-        );
+    // Extract unique locales/subpaths from broken links
+    const brokenLinkLocales = new Set();
+    brokenLinks.forEach((link) => {
+      const locale = extractPathPrefix(link.urlTo) || extractPathPrefix(link.urlFrom);
+      if (locale) {
+        brokenLinkLocales.add(locale);
       }
-
-      return {
-        urlFrom,
-        urlTo,
-        suggestionId: suggestion?.getId(),
-        alternativeUrls: filteredAlternatives,
-      };
     });
 
-    const brokenLinksWithEmptyAlternatives = brokenLinksWithFilteredAlternatives.filter(
-      (link) => link.alternativeUrls.length === 0,
-    ).length;
+    // Filter alternatives to only include URLs matching broken links' locales
+    // If no locales found (no subpath), include all alternatives
+    let alternativeUrls;
+    if (brokenLinkLocales.size > 0) {
+      alternativeUrls = allTopPageUrls.filter((url) => {
+        const urlLocale = extractPathPrefix(url);
+        // Include if URL matches one of the broken links' locales, or has no locale
+        return !urlLocale || brokenLinkLocales.has(urlLocale);
+      });
 
-    const alternativeUrls = filteredTopPages.map((page) => page.getUrl());
+      log.info(
+        `[${AUDIT_TYPE}] [Site: ${site.getId()}] Filtered alternatives by locales: ${Array.from(brokenLinkLocales).join(', ')}. `
+        + `${allTopPageUrls.length} → ${alternativeUrls.length} alternatives`,
+      );
+    } else {
+      // No locale prefixes found, include all alternatives
+      alternativeUrls = allTopPageUrls;
+      log.info(
+        `[${AUDIT_TYPE}] [Site: ${site.getId()}] No locale prefixes in broken links, including all ${alternativeUrls.length} alternatives`,
+      );
+    }
 
     log.info(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Sending ${brokenLinksWithFilteredAlternatives.length} broken links to Mystique. `
-      + `${brokenLinksWithEmptyAlternatives} have no alternative URLs available.`,
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Sending ${brokenLinks.length} broken links to Mystique.`,
     );
 
     log.info(
       `[${AUDIT_TYPE}] [Site: ${site.getId()}] Alternative URLs that Mystique will see (${alternativeUrls.length} total): ${JSON.stringify(alternativeUrls)}`,
     );
-
-    // Log what each broken link will see (its filtered alternatives)
-    brokenLinksWithFilteredAlternatives.forEach((link, index) => {
-      if (link.alternativeUrls.length > 0) {
-        log.info(
-          `[${AUDIT_TYPE}] [Site: ${site.getId()}] Broken link ${index + 1}/${brokenLinksWithFilteredAlternatives.length} `
-          + `(${link.urlTo}) will see ${link.alternativeUrls.length} alternatives: ${JSON.stringify(link.alternativeUrls)}`,
-        );
-      }
-    });
 
     const message = {
       type: 'guidance:broken-links',
@@ -323,7 +309,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
       data: {
         alternativeUrls,
         opportunityId: opportunity?.getId(),
-        brokenLinks: brokenLinksWithFilteredAlternatives,
+        brokenLinks,
       },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
