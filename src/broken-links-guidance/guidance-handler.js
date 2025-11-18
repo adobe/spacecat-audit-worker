@@ -48,6 +48,17 @@ export default async function handler(message, context) {
     return badRequest('Site ID mismatch');
   }
 
+  // Validate brokenLinks array
+  if (!brokenLinks || !Array.isArray(brokenLinks)) {
+    log.error(`[${opportunity.getType()} Guidance] Invalid brokenLinks format. Expected array, got: ${typeof brokenLinks}. Message: ${JSON.stringify(message)}`);
+    return badRequest('Invalid brokenLinks format');
+  }
+
+  if (brokenLinks.length === 0) {
+    log.info(`[${opportunity.getType()} Guidance] No broken links provided in Mystique response`);
+    return ok();
+  }
+
   await Promise.all(brokenLinks.map(async (brokenLink) => {
     const suggestion = await Suggestion.findById(brokenLink.suggestionId);
     if (!suggestion) {

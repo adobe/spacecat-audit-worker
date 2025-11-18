@@ -251,11 +251,13 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
     // Build broken links array without per-link alternatives
     // Mystique expects: brokenLinks with only urlFrom, urlTo, suggestionId
-    const brokenLinks = suggestions.map((suggestion) => ({
-      urlFrom: suggestion?.getData()?.urlFrom,
-      urlTo: suggestion?.getData()?.urlTo,
-      suggestionId: suggestion?.getId(),
-    }));
+    const brokenLinks = suggestions
+      .map((suggestion) => ({
+        urlFrom: suggestion?.getData()?.urlFrom,
+        urlTo: suggestion?.getData()?.urlTo,
+        suggestionId: suggestion?.getId(),
+      }))
+      .filter((link) => link.urlFrom && link.urlTo && link.suggestionId); // Filter invalid entries
 
     // Filter alternatives by locales/subpaths present in broken links
     // This limits suggestions to relevant locales only
@@ -293,6 +295,25 @@ export const opportunityAndSuggestionsStep = async (context) => {
       );
     }
 
+    // Validate before sending to Mystique
+    if (brokenLinks.length === 0) {
+      log.warn(
+        `[${AUDIT_TYPE}] [Site: ${site.getId()}] No valid broken links to send to Mystique. Skipping message.`,
+      );
+      return {
+        status: 'complete',
+      };
+    }
+
+    if (!opportunity?.getId()) {
+      log.error(
+        `[${AUDIT_TYPE}] [Site: ${site.getId()}] Opportunity ID is missing. Cannot send to Mystique.`,
+      );
+      return {
+        status: 'complete',
+      };
+    }
+
     log.info(
       `[${AUDIT_TYPE}] [Site: ${site.getId()}] Sending ${brokenLinks.length} broken links to Mystique.`,
     );
@@ -309,7 +330,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
       time: new Date().toISOString(),
       data: {
         alternativeUrls,
-        opportunityId: opportunity?.getId(),
+        opportunityId: opportunity.getId(),
         brokenLinks,
       },
     };
