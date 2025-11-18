@@ -82,17 +82,11 @@ export default async function handler(message, context) {
     let aiRationale = brokenLink.aiRationale || brokenLink.ai_rationale || '';
     if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length > 0) {
       // All URLs were filtered out (likely invalid/broken), clear rationale
-      log.info(
-        `[${opportunity.getType()}] All ${validSuggestedUrls.length} suggested URLs were filtered out `
-        + `for suggestion ${brokenLink.suggestionId}. Clearing AI rationale.`,
-      );
+      log.info('All suggested URLs were filtered out. Clearing AI rationale.');
       aiRationale = '';
     } else if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length === 0) {
       // No URLs were provided by Mystique, clear rationale
-      log.info(
-        `[${opportunity.getType()}] No suggested URLs provided by Mystique `
-        + `for suggestion ${brokenLink.suggestionId}. Clearing AI rationale.`,
-      );
+      log.info('No suggested URLs provided by Mystique. Clearing AI rationale.');
       aiRationale = '';
     }
 
