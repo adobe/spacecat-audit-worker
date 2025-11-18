@@ -775,7 +775,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
           urlFrom: 'https://bulk.com/from',
           urlTo: 'https://bulk.com/broken',
         }),
-        // Missing getId()
+        getId: () => undefined, // Missing ID - will be filtered out
       },
     ];
 
@@ -835,6 +835,54 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(context.sqs.sendMessage).to.not.have.been.called;
     expect(context.log.error).to.have.been.calledWith(
       sinon.match(/Opportunity ID is missing/),
+    );
+  }).timeout(5000);
+
+  it('should include all alternatives when no locale prefixes found in broken links', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+    context.site.getBaseURL = () => 'https://bulk.com'; // Root domain, no subpath
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    // Create suggestions with URLs that have pathname '/' (extractPathPrefix returns '')
+    // This triggers the else branch where brokenLinkLocales.size === 0
+    const suggestionsWithoutLocales = [
+      {
+        getData: () => ({
+          urlTo: 'https://bulk.com/', // Pathname is '/' - extractPathPrefix returns ''
+          urlFrom: 'https://bulk.com/', // Pathname is '/' - extractPathPrefix returns ''
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .resolves(suggestionsWithoutLocales);
+
+    // Mock top pages with mixed locales
+    const topPagesWithMixedLocales = [
+      { getUrl: () => 'https://bulk.com/home' },
+      { getUrl: () => 'https://bulk.com/uk/home' },
+      { getUrl: () => 'https://bulk.com/de/home' },
+      { getUrl: () => 'https://bulk.com/about' },
+    ];
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves(topPagesWithMixedLocales);
+
+    await handler.opportunityAndSuggestionsStep(context);
+
+    // Verify SQS message was sent
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const messageArg = context.sqs.sendMessage.getCall(0).args[1];
+
+    // Verify that all alternatives are included (no locale filtering)
+    expect(messageArg.data.alternativeUrls).to.be.an('array').with.lengthOf(4);
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/No locale prefixes in broken links, including all 4 alternatives/),
     );
   }).timeout(5000);
 });
