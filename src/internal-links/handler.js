@@ -272,7 +272,8 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
     // Filter alternatives to only include URLs matching broken links' locales
     // If no locales found (no subpath), include all alternatives
-    let alternativeUrls;
+    // Always ensure alternativeUrls is an array (even if empty)
+    let alternativeUrls = [];
     if (brokenLinkLocales.size > 0) {
       alternativeUrls = allTopPageUrls.filter((url) => {
         const urlLocale = extractPathPrefix(url);

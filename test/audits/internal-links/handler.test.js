@@ -628,6 +628,11 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
   it('should use urlTo prefix when urlTo has prefix', async () => {
     // Test case where urlTo has path prefix, so extractPathPrefix(urlTo) returns '/uk'
     // This covers the case where the || operator uses the first operand (urlTo)
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
     context.site.getBaseURL = () => 'https://bulk.com/uk'; // Site with subpath
     context.site.getDeliveryType = () => 'aem_edge';
@@ -661,13 +666,18 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     const messageArg = context.sqs.sendMessage.getCall(0).args[1];
 
-    // Verify that brokenLinks array contains filtered alternatives
+    // Verify that brokenLinks array does NOT contain per-link alternatives
     expect(messageArg.data.brokenLinks).to.be.an('array').with.lengthOf(1);
     const brokenLink = messageArg.data.brokenLinks[0];
+    expect(brokenLink).to.have.property('urlFrom');
+    expect(brokenLink).to.have.property('urlTo');
+    expect(brokenLink).to.have.property('suggestionId');
+    expect(brokenLink).to.not.have.property('alternativeUrls'); // Per-link alternatives removed
 
+    // Verify that main alternativeUrls array is filtered by broken links' locales
     // Since urlTo has /uk prefix, alternatives should be filtered to only /uk URLs
-    expect(brokenLink.alternativeUrls).to.be.an('array');
-    brokenLink.alternativeUrls.forEach((url) => {
+    expect(messageArg.data.alternativeUrls).to.be.an('array');
+    messageArg.data.alternativeUrls.forEach((url) => {
       expect(url).to.include('/uk/');
     });
   }).timeout(5000);
@@ -677,6 +687,11 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // This triggers the fallback to extractPathPrefix(urlFrom) when urlTo has no prefix
     // NOTE: extractPathPrefix returns empty string only for root URLs (no path segments)
     // URLs like 'https://bulk.com/page1' return '/page1', not empty string!
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
     context.site.getBaseURL = () => 'https://bulk.com/uk'; // Site with subpath
     context.site.getDeliveryType = () => 'aem_edge';
@@ -711,15 +726,20 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     const messageArg = context.sqs.sendMessage.getCall(0).args[1];
 
-    // Verify that brokenLinks array contains filtered alternatives
+    // Verify that brokenLinks array does NOT contain per-link alternatives
     expect(messageArg.data.brokenLinks).to.be.an('array').with.lengthOf(1);
     const brokenLink = messageArg.data.brokenLinks[0];
+    expect(brokenLink).to.have.property('urlFrom');
+    expect(brokenLink).to.have.property('urlTo');
+    expect(brokenLink).to.have.property('suggestionId');
+    expect(brokenLink).to.not.have.property('alternativeUrls'); // Per-link alternatives removed
 
+    // Verify that main alternativeUrls array is filtered by broken links' locales
     // Since urlTo has no prefix, it should fall back to urlFrom's prefix (/uk)
-    // So alternatives should be filtered to only /uk URLs (from the already filtered top pages)
-    expect(brokenLink.alternativeUrls).to.be.an('array');
+    // So alternatives should be filtered to only /uk URLs
+    expect(messageArg.data.alternativeUrls).to.be.an('array');
     // All alternatives should have /uk prefix since we're filtering by urlFrom's prefix
-    brokenLink.alternativeUrls.forEach((url) => {
+    messageArg.data.alternativeUrls.forEach((url) => {
       expect(url).to.include('/uk/');
     });
   }).timeout(5000);
