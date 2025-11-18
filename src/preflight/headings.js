@@ -23,6 +23,21 @@ import SeoChecks from '../metatags/seo-checks.js';
 export const PREFLIGHT_HEADINGS = 'headings';
 
 /**
+ * Get SEO impact level for a given check type
+ * @param {string} checkType - The check type identifier
+ * @returns {string} SEO impact level
+ */
+function getSeoImpact(checkType) {
+  const highImpactChecks = [
+    HEADINGS_CHECKS.HEADING_MISSING_H1.check,
+    HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
+    HEADINGS_CHECKS.HEADING_H1_LENGTH.check,
+  ];
+
+  return highImpactChecks.includes(checkType) ? 'High' : 'Moderate';
+}
+
+/**
  * Enhance heading results with AI suggestions for specific check types
  * @param {Array} headingsResults - Array of heading validation results
  * @param {Object} brandGuidelines - Brand guidelines for AI suggestions
@@ -151,19 +166,22 @@ export default async function headings(context, auditContext) {
       // Add each check as an opportunity
       checks.forEach((check) => {
         if (!check.success) {
-          audit.opportunities.push({
+          const opportunity = {
             check: check.check,
-            checkTitle: check.checkTitle,
-            issue: check.explanation,
-            seoImpact: 'Moderate',
-            seoRecommendation: check.suggestion,
-            ...(check.isAISuggested && { isAISuggested: true }),
-            ...(check.tagName && { tagName: check.tagName }),
-            ...(check.count && { count: check.count }),
-            ...(check.previous && { previous: check.previous }),
-            ...(check.current && { current: check.current }),
-            ...(check.transformRules && { transformRules: check.transformRules }),
-          });
+            issue: check.checkTitle,
+            issueDetails: check.description,
+            seoImpact: getSeoImpact(check.check),
+            seoRecommendation: check.explanation,
+          };
+
+          // Add AI suggestion if available
+          if (check.isAISuggested) {
+            opportunity.aiSuggestion = check.suggestion;
+          } else {
+            opportunity.suggestion = check.suggestion;
+          }
+
+          audit.opportunities.push(opportunity);
         }
       });
     });

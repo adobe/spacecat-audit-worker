@@ -31,42 +31,49 @@ export const HEADINGS_CHECKS = Object.freeze({
   HEADING_EMPTY: {
     check: 'heading-empty',
     title: 'Empty Heading',
+    description: '{tagName} heading is empty.',
     explanation: 'Heading elements (H2–H6) should not be empty.',
     suggestion: 'Add descriptive text or remove the empty heading.',
   },
   HEADING_MISSING_H1: {
     check: 'heading-missing-h1',
     title: 'Missing H1 Heading',
+    description: 'Page does not have an H1 element',
     explanation: 'Pages should have exactly one H1 element for SEO and accessibility.',
     suggestion: 'Add an H1 element describing the main content.',
   },
   HEADING_H1_LENGTH: {
     check: 'heading-h1-length',
     title: 'H1 Length',
+    description: `H1 element is either empty or exceeds ${H1_LENGTH_CHARS} characters.`,
     explanation: `H1 elements should be less than ${H1_LENGTH_CHARS} characters.`,
     suggestion: `Update the H1 to be less than ${H1_LENGTH_CHARS} characters`,
   },
   HEADING_MULTIPLE_H1: {
     check: 'heading-multiple-h1',
     title: 'Multiple H1 Headings',
+    description: 'Page has more than one H1 element.',
     explanation: 'Pages should have only one H1 element.',
     suggestion: 'Change additional H1 elements to H2 or appropriate levels.',
   },
   HEADING_DUPLICATE_TEXT: {
     check: 'heading-duplicate-text',
     title: 'Duplicate Heading Text',
+    description: 'Multiple headings contain identical text.',
     explanation: 'Headings should have unique text content (WCAG 2.2 2.4.6).',
     suggestion: 'Ensure each heading has unique, descriptive text.',
   },
   HEADING_ORDER_INVALID: {
     check: 'heading-order-invalid',
     title: 'Invalid Heading Order',
+    description: 'Heading hierarchy skips levels.',
     explanation: 'Heading levels should increase by one (example: H1→H2), not jump levels (example: H1→H3).',
     suggestion: 'Adjust heading levels to maintain proper hierarchy.',
   },
   TOPPAGES: {
     check: 'top-pages',
     title: 'Top Pages',
+    description: 'No top pages available for audit',
     explanation: 'No top pages found',
   },
 });
@@ -270,6 +277,7 @@ export async function validatePageHeadingFromScrapeJson(
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
         checkTitle: HEADINGS_CHECKS.HEADING_MISSING_H1.title,
+        description: HEADINGS_CHECKS.HEADING_MISSING_H1.description,
         success: false,
         explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
         suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
@@ -286,6 +294,7 @@ export async function validatePageHeadingFromScrapeJson(
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
         checkTitle: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.title,
+        description: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.description,
         success: false,
         explanation: `Found ${h1Elements.length} h1 elements: ${HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation}`,
         suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
@@ -300,6 +309,7 @@ export async function validatePageHeadingFromScrapeJson(
       checks.push({
         check: HEADINGS_CHECKS.HEADING_H1_LENGTH.check,
         checkTitle: HEADINGS_CHECKS.HEADING_H1_LENGTH.title,
+        description: HEADINGS_CHECKS.HEADING_H1_LENGTH.description,
         success: false,
         explanation: HEADINGS_CHECKS.HEADING_H1_LENGTH.explanation,
         suggestion: HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion,
@@ -324,6 +334,7 @@ export async function validatePageHeadingFromScrapeJson(
           return {
             check: HEADINGS_CHECKS.HEADING_EMPTY.check,
             checkTitle: HEADINGS_CHECKS.HEADING_EMPTY.title,
+            description: HEADINGS_CHECKS.HEADING_EMPTY.description.replace('{tagName}', heading.tagName),
             success: false,
             explanation: `Found empty text for ${heading.tagName}: ${HEADINGS_CHECKS.HEADING_EMPTY.explanation}`,
             suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
@@ -366,6 +377,7 @@ export async function validatePageHeadingFromScrapeJson(
         checks.push({
           check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
           checkTitle: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.title,
+          description: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.description,
           success: false,
           explanation: detailedExplanation,
           suggestion: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.suggestion,
@@ -387,6 +399,7 @@ export async function validatePageHeadingFromScrapeJson(
           checks.push({
             check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
             checkTitle: HEADINGS_CHECKS.HEADING_ORDER_INVALID.title,
+            description: HEADINGS_CHECKS.HEADING_ORDER_INVALID.description,
             success: false,
             explanation: HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation,
             suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
