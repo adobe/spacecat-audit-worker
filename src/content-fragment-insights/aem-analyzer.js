@@ -89,7 +89,11 @@ export class AemAnalyzer {
       pageCount += 1;
 
       if (cursor) {
-        // TODO: Add rate limiting
+        // Be respectful to the API
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => {
+          setTimeout(resolve, 100);
+        });
       }
     } while (cursor && pageCount < AemAnalyzer.MAX_PAGES);
 
