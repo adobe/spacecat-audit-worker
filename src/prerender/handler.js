@@ -45,20 +45,70 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = 200) {
     const periods = generateReportingPeriods();
     const latestWeek = periods.weeks[0];
     const weekId = `w${String(latestWeek.weekNumber).padStart(2, '0')}-${latestWeek.year}`;
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery({
-      periods,
-      databaseName: s3Config.databaseName,
-      tableName: s3Config.tableName,
-      site,
-    });
-
-    const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
-    log.info('[PRERENDER] Executing Athena query for top agentic URLs...');
-    const results = await athenaClient.query(
-      query,
-      s3Config.databaseName,
-      '[Athena Query] Prerender - Top Agentic URLs',
+    const athenaClient = AWSAthenaClient.fromContext(
+      context,
+      s3Config.getAthenaTempLocation(),
     );
+
+    // Debug: List tables available in the target database to help diagnose TABLE_NOT_FOUND
+    try {
+      const showTables = `SHOW TABLES IN ${s3Config.databaseName}`;
+      const tableRows = await athenaClient.query(
+        showTables,
+        s3Config.databaseName,
+        '[Athena Debug] List tables',
+      );
+      // Try to extract table names safely; fall back to raw rows
+      let tableNames = [];
+      try {
+        tableNames = (tableRows || []).map((row) => {
+          const vals = Object.values(row || {});
+          return vals.length > 0 ? String(vals[0]) : JSON.stringify(row);
+        });
+      } catch {
+        tableNames = tableRows;
+      }
+      log.info(
+        `[PRERENDER] Athena tables in ${s3Config.databaseName}: `
+        + `${JSON.stringify(tableNames)}`,
+      );
+    } catch (listErr) {
+      log.warn(
+        `[PRERENDER] Failed to list Athena tables for ${s3Config.databaseName}: `
+        + `${listErr?.message || listErr}`,
+      );
+    }
+
+    // Helper to execute query for a given table name
+    const runQueryForTable = async (tableName) => {
+      const q = await weeklyBreakdownQueries.createAgenticReportQuery({
+        periods,
+        databaseName: s3Config.databaseName,
+        tableName,
+        site,
+      });
+      log.info(`[PRERENDER] Executing Athena query for top agentic URLs on table=${tableName} ...`);
+      return athenaClient.query(
+        q,
+        s3Config.databaseName,
+        `[Athena Query] Prerender - Top Agentic URLs (${tableName})`,
+      );
+    };
+
+    // Try consolidated first, then fallback to non-consolidated if table is missing (common in dev)
+    let results = null;
+    try {
+      results = await runQueryForTable(s3Config.tableName);
+    } catch (err) {
+      const msg = err?.message || '';
+      const fallbackTable = s3Config.tableName?.replace(/_consolidated$/, '');
+      if (msg.includes('TABLE_NOT_FOUND') && fallbackTable && fallbackTable !== s3Config.tableName) {
+        log.warn(`[PRERENDER] ${s3Config.tableName} not found. Retrying with fallback table: ${fallbackTable}`);
+        results = await runQueryForTable(fallbackTable);
+      } else {
+        throw err;
+      }
+    }
 
     if (!Array.isArray(results) || results.length === 0) {
       log.warn('[PRERENDER] Athena returned no agentic rows.');
