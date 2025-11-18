@@ -1,3 +1,36 @@
+# [1.244.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.243.1...v1.244.0) (2025-11-18)
+
+
+### Features
+
+* add scraped at time to summarization suggestions ([#1593](https://github.com/adobe/spacecat-audit-worker/issues/1593)) ([fa13189](https://github.com/adobe/spacecat-audit-worker/commit/fa1318910bcac6689724d3256a910beed7af4fe6))
+
+## [1.243.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.243.0...v1.243.1) (2025-11-18)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-tier-client to v1.2.5 ([#1596](https://github.com/adobe/spacecat-audit-worker/issues/1596)) ([dcaeffc](https://github.com/adobe/spacecat-audit-worker/commit/dcaeffc86a78a5f4763ccc6c51a35e227f545e65))
+
+# [1.243.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.242.0...v1.243.0) (2025-11-18)
+
+
+### Features
+
+* add scraped at time to faq suggestions ([#1592](https://github.com/adobe/spacecat-audit-worker/issues/1592)) ([f9d9d30](https://github.com/adobe/spacecat-audit-worker/commit/f9d9d3091b5fcddab197248afc387622c152d439))
+
+# [1.242.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.241.0...v1.242.0) (2025-11-17)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.74.0 ([#1586](https://github.com/adobe/spacecat-audit-worker/issues/1586)) ([28e0bad](https://github.com/adobe/spacecat-audit-worker/commit/28e0badbed15e4dd4ba185c6383b9f01bed9843c))
+
+
+### Features
+
+* added await for tier-client ([#1587](https://github.com/adobe/spacecat-audit-worker/issues/1587)) ([a4f87cb](https://github.com/adobe/spacecat-audit-worker/commit/a4f87cb075d44ef07c64e1cc9bbeaa596c7a9921))
+
 # [1.241.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.240.3...v1.241.0) (2025-11-17)
 
 
