@@ -108,6 +108,7 @@
     "franc-min": "6.2.0",
     "get-xpath": "3.3.0",
     "hyparquet": "1.20.2",
+    "hyparquet-writer": "0.9.0",
     "hyphen": "1.10.6",
     "is-language-code": "5.1.0",
     "js-beautify": "^1.15.4",
