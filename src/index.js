@@ -15,6 +15,7 @@ import secrets from '@adobe/helix-shared-secrets';
 import dataAccess from '@adobe/spacecat-shared-data-access';
 import { resolveSecretsName, sqsEventAdapter } from '@adobe/spacecat-shared-utils';
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { checkSiteRequiresValidation } from './utils/site-validation.js';
 
 import sqs from './support/sqs.js';
 import s3Client from './support/s3-client.js';
@@ -63,7 +64,7 @@ import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/g
 import detectFormDetails from './forms-opportunities/form-details-handler/detect-form-details.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
 import accessibilityRemediationGuidance from './accessibility/guidance-handlers/guidance-accessibility-remediation.js';
-import cdnAnalysis, { cdnLogsAnalysis } from './cdn-analysis/handler.js';
+import cdnLogsAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
 import analyticsReport from './analytics-report/handler.js';
 import pageIntent from './page-intent/handler.js';
@@ -145,7 +146,6 @@ const HANDLERS = {
   'guidance:readability': readabilityGuidance,
   'guidance:structured-data-remediation': structuredDataGuidance,
   preflight,
-  'cdn-analysis': cdnAnalysis,
   'cdn-logs-analysis': cdnLogsAnalysis,
   'cdn-logs-report': cdnLogsReport,
   'analytics-report': analyticsReport,
@@ -194,6 +194,22 @@ async function run(message, context) {
     const msg = `no such audit type: ${type}`;
     log.error(msg);
     return notFound();
+  }
+
+  // If siteId, fetch the site and check if it requires validation
+  if (siteId) {
+    try {
+      const { Site } = context.dataAccess;
+      const site = await Site.findById(siteId);
+      if (site) {
+        // Set the requiresValidation flag on the site object
+        const requiresValidation = await checkSiteRequiresValidation(site, context);
+        site.requiresValidation = requiresValidation;
+        context.site = site;
+      }
+    } catch (e) {
+      log.warn(`Failed to fetch site ${siteId}: ${e.message}`);
+    }
   }
 
   const startTime = process.hrtime();

@@ -64,12 +64,6 @@ export const HEADINGS_CHECKS = Object.freeze({
     explanation: 'Heading levels should increase by one (example: H1→H2), not jump levels (example: H1→H3).',
     suggestion: 'Adjust heading levels to maintain proper hierarchy.',
   },
-  HEADING_NO_CONTENT: {
-    check: 'heading-no-content',
-    title: 'Heading Without Content',
-    explanation: 'Headings should be followed by content before the next heading.',
-    suggestion: 'Add meaningful content after each heading.',
-  },
   TOPPAGES: {
     check: 'top-pages',
     title: 'Top Pages',
@@ -88,60 +82,6 @@ function getHeadingLevel(tagName) {
  */
 function getTextContent(element) {
   return (element.textContent || '').trim();
-}
-
-/**
- * Check if there is meaningful content between two DOM elements
- * @param {Element} startElement - The starting element (heading)
- * @param {Element} endElement - The ending element (next heading)
- * @returns {boolean} - True if meaningful content exists between the elements
- */
-function hasContentBetweenElements(startElement, endElement) {
-  const contentTags = new Set([
-    'P', 'DIV', 'SPAN', 'UL', 'OL', 'DL', 'LI', 'IMG', 'FIGURE', 'VIDEO', 'AUDIO',
-    'TABLE', 'FORM', 'FIELDSET', 'SECTION', 'ARTICLE', 'ASIDE', 'NAV', 'MAIN',
-    'BLOCKQUOTE', 'PRE', 'CODE', 'HR', 'BR', 'CANVAS', 'SVG', 'IFRAME',
-  ]);
-
-  let currentElement = startElement.nextSibling;
-
-  while (currentElement && currentElement !== endElement) {
-    // Check if it's an element node
-    if (currentElement.nodeType === 1) { // Element node
-      const tagName = currentElement.tagName.toUpperCase();
-
-      // If it's a content tag, check if it has meaningful content
-      if (contentTags.has(tagName)) {
-        const textContent = (currentElement.textContent || '').trim();
-        // Consider it meaningful if it has text content or is a self-closing content element
-        if (textContent.length > 0 || ['IMG', 'HR', 'BR', 'CANVAS', 'SVG', 'IFRAME'].includes(tagName)) {
-          return true;
-        }
-      }
-
-      // Recursively check child elements for content
-      if (currentElement.children && currentElement.children.length > 0) {
-        const hasChildContent = Array.from(currentElement.children).some((child) => {
-          const childTextContent = getTextContent(child);
-          const childTagName = child.tagName.toUpperCase();
-          return childTextContent.length > 0
-                 || ['IMG', 'HR', 'BR', 'CANVAS', 'SVG', 'IFRAME'].includes(childTagName);
-        });
-        if (hasChildContent) {
-          return true;
-        }
-      }
-    } else if (currentElement.nodeType === 3) { // Text node
-      const textContent = getTextContent(currentElement);
-      if (textContent.length > 0) {
-        return true;
-      }
-    }
-
-    currentElement = currentElement.nextSibling;
-  }
-
-  return false;
 }
 
 function getScrapeJsonPath(url, siteId) {
@@ -454,23 +394,6 @@ export async function validatePageHeadings(
         log.debug(`Duplicate heading text detected at ${url}: "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`);
       }
     }
-    for (let i = 0; i < headings.length - 1; i += 1) {
-      const currentHeading = headings[i];
-      const nextHeading = headings[i + 1];
-
-      if (!hasContentBetweenElements(currentHeading, nextHeading)) {
-        checks.push({
-          check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
-          checkTitle: HEADINGS_CHECKS.HEADING_NO_CONTENT.title,
-          success: false,
-          explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
-          suggestion: HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion,
-          heading: currentHeading.tagName,
-          nextHeading: nextHeading.tagName,
-        });
-        log.debug(`Heading without content detected at ${url}: ${currentHeading.tagName} has no content before ${nextHeading.tagName}`);
-      }
-    }
 
     if (headings.length > 1) {
       for (let i = 1; i < headings.length; i += 1) {
@@ -655,8 +578,6 @@ function generateRecommendedAction(checkType) {
       return 'Provide meaningful text content for the empty heading or remove the element.';
     case HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check:
       return 'Ensure each heading has unique, descriptive text content that clearly identifies its section.';
-    case HEADINGS_CHECKS.HEADING_NO_CONTENT.check:
-      return 'Add meaningful content (paragraphs, lists, images, etc.) after the heading before the next heading.';
     default:
       return 'Review heading structure and content to follow heading best practices.';
   }
@@ -751,6 +672,18 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     auditType,
   );
 
+  const mergeDataFunction = (existingSuggestion, newSuggestion) => {
+    const mergedSuggestion = {
+      ...existingSuggestion,
+      ...newSuggestion,
+    };
+    // Preserve recommendedAction from existingSuggestion if isEdited is true
+    if (existingSuggestion.isEdited && existingSuggestion.recommendedAction !== undefined) {
+      mergedSuggestion.recommendedAction = existingSuggestion.recommendedAction;
+    }
+    return mergedSuggestion;
+  };
+
   const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
 
   await syncSuggestions({
@@ -775,6 +708,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         }),
       },
     }),
+    mergeDataFunction,
     log,
   });
 
@@ -841,6 +775,5 @@ export default new AuditBuilder()
   .withPostProcessors([
     generateSuggestions,
     opportunityAndSuggestions,
-    opportunityAndSuggestionsForElmo,
   ])
   .build();

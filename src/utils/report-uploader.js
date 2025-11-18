@@ -83,7 +83,7 @@ export async function readFromSharePoint(filename, outputLocation, sharepointCli
   }
 }
 
-async function fetchWithRetry(url, options, endpointName, log, maxRetries = 5) {
+async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {
   async function attemptFetch(attemptNumber) {
     try {
       const response = await fetch(url, options);
@@ -94,24 +94,30 @@ async function fetchWithRetry(url, options, endpointName, log, maxRetries = 5) {
       error.response = response;
       throw error;
     } catch (error) {
-      const isRetryable = !error.status || error.status >= 500 || error.status === 429;
-      const shouldRetry = isRetryable && attemptNumber <= maxRetries;
-
-      // Log x-error header for 503 server errors
-      const xError = error.status === 503 && error.response?.headers?.get
+      // Check x-error header for throttling issues
+      const xError = error.response?.headers?.get
         ? error.response.headers.get('x-error')
         : null;
-      if (xError) {
-        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed with server error - x-error: ${xError}, URL: ${url}`);
-      }
+      const xErrorInfo = xError ? `, x-error: ${xError}` : '';
+
+      // Only retry on 503 and x-error contains "429"
+      const isRetryable = error.status === 503 && (xError && xError.includes('429'));
+      const shouldRetry = isRetryable && attemptNumber <= maxRetries;
 
       if (!shouldRetry) {
-        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed after retries, error: ${error.message}, status: ${error.status}, statusText: ${error.response?.statusText}, URL: ${url}`);
+        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed after retries, error: ${error.message}, status: ${error.status}, statusText: ${error.response?.statusText}${xErrorInfo}, URL: ${url}`);
         throw error;
       }
 
-      log.warn(`${AUDIT_NAME}: ${endpointName} Helix API failed with error ${error.message}, retrying in 4000ms (attempt ${attemptNumber}/${maxRetries}), URL: ${url}`);
-      await sleep(4000);
+      // Use exponential backoff with jitter for retries
+      const baseDelay = 4000;
+      const exponentialDelay = baseDelay * (2 ** (attemptNumber - 1));
+      const jitter = Math.floor(Math.random() * (exponentialDelay / 2));
+      const retryDelay = exponentialDelay + jitter;
+
+      log.warn(`${AUDIT_NAME}: ${endpointName} Helix API failed with error ${error.message}${xErrorInfo}, retrying in ${retryDelay}ms (attempt ${attemptNumber}/${maxRetries}), URL: ${url}`);
+
+      await sleep(retryDelay);
       return attemptFetch(attemptNumber + 1);
     }
   }

@@ -23,6 +23,7 @@ import {
 } from './helpers.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import { filterByAuditScope, isWithinAuditScope, extractPathPrefix } from './subpath-filter.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
@@ -64,8 +65,16 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     );
 
     // 5. Filter only inaccessible links and transform for further processing
+    // Also filter by audit scope (subpath/locale) if baseURL has a subpath
+    const baseURL = site.getBaseURL();
     const inaccessibleLinks = accessibilityResults
       .filter((result) => result.inaccessible)
+      .filter((result) => (
+        // Filter broken links to only include those within audit scope
+        // Both url_from and url_to should be within scope
+        isWithinAuditScope(result.link.url_from, baseURL)
+          && isWithinAuditScope(result.link.url_to, baseURL)
+      ))
       .map((result) => ({
         urlFrom: result.link.url_from,
         urlTo: result.link.url_to,
@@ -126,9 +135,13 @@ export async function prepareScrapingStep(context) {
   }
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages`);
+  // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
+  const baseURL = site.getBaseURL();
+  const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
 
-  const urls = topPages.map((page) => ({ url: page.getUrl() }));
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope`);
+
+  const urls = filteredTopPages.map((page) => ({ url: page.getUrl() }));
   return {
     urls,
     siteId: site.getId(),
@@ -178,9 +191,9 @@ export const opportunityAndSuggestionsStep = async (context) => {
       // Get all suggestions for this opportunity
       const suggestions = await opportunity.getSuggestions();
 
-      // If there are suggestions, update their status to outdated
+      // If there are suggestions, update their status to fixed
       if (isNonEmptyArray(suggestions)) {
-        await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
+        await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.FIXED);
       }
       opportunity.setUpdatedBy('system');
       await opportunity.save();
@@ -212,11 +225,50 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   const configuration = await Configuration.findLatest();
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+  // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
+  const baseURL = site.getBaseURL();
+  const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
+
   if (configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
     const suggestions = await Suggestion.allByOpportunityIdAndStatus(
       opportunity.getId(),
       SuggestionDataAccess.STATUSES.NEW,
     );
+
+    // Filter alternatives per broken link by its locale/subpath
+    const brokenLinksWithFilteredAlternatives = suggestions.map((suggestion) => {
+      const urlFrom = suggestion?.getData()?.urlFrom;
+      const urlTo = suggestion?.getData()?.urlTo;
+
+      // Extract path prefix from broken link to filter alternatives
+      const brokenLinkPathPrefix = extractPathPrefix(urlTo) || extractPathPrefix(urlFrom);
+
+      // Filter alternatives to same locale/subpath as broken link
+      let filteredAlternatives = filteredTopPages.map((page) => page.getUrl());
+      if (brokenLinkPathPrefix) {
+        filteredAlternatives = filteredAlternatives.filter((url) => {
+          const urlPathPrefix = extractPathPrefix(url);
+          return urlPathPrefix === brokenLinkPathPrefix;
+        });
+
+        // Log warning if no alternatives found for this locale
+        if (filteredAlternatives.length === 0) {
+          log.warn(
+            `[${AUDIT_TYPE}] [Site: ${site.getId()}] No alternatives found for broken link `
+            + `with prefix ${brokenLinkPathPrefix}. urlTo: ${urlTo}, urlFrom: ${urlFrom}`,
+          );
+        }
+      }
+
+      return {
+        urlFrom,
+        urlTo,
+        suggestionId: suggestion?.getId(),
+        alternativeUrls: filteredAlternatives,
+      };
+    });
+
     const message = {
       type: 'guidance:broken-links',
       siteId: site.getId(),
@@ -224,13 +276,9 @@ export const opportunityAndSuggestionsStep = async (context) => {
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
-        alternativeUrls: topPages.map((page) => page.getUrl()),
+        alternativeUrls: filteredTopPages.map((page) => page.getUrl()),
         opportunityId: opportunity?.getId(),
-        brokenLinks: suggestions.map((suggestion) => ({
-          urlFrom: suggestion?.getData()?.urlFrom,
-          urlTo: suggestion?.getData()?.urlTo,
-          suggestionId: suggestion?.getId(),
-        })),
+        brokenLinks: brokenLinksWithFilteredAlternatives,
       },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);

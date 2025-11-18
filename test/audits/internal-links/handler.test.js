@@ -483,7 +483,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     // Mock statuses
     sandbox.stub(Oppty, 'STATUSES').value({ RESOLVED: 'RESOLVED', NEW: 'NEW' });
-    sandbox.stub(SuggestionDataAccess, 'STATUSES').value({ OUTDATED: 'OUTDATED', NEW: 'NEW' });
+    sandbox.stub(SuggestionDataAccess, 'STATUSES').value({ OUTDATED: 'OUTDATED', NEW: 'NEW', FIXED: 'FIXED' });
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
     context.site.getLatestAuditByAuditType = () => auditData;
 
@@ -516,7 +516,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // Verify suggestions statuses were updated
     expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
       mockSuggestions,
-      'OUTDATED',
+      'FIXED',
     );
     expect(existingOpportunity.save).to.have.been.calledOnce;
 
@@ -624,4 +624,103 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(result.status).to.equal('complete');
     expect(context.sqs.sendMessage).not.to.have.been.called;
   });
+
+  it('should use urlTo prefix when urlTo has prefix', async () => {
+    // Test case where urlTo has path prefix, so extractPathPrefix(urlTo) returns '/uk'
+    // This covers the case where the || operator uses the first operand (urlTo)
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+    context.site.getBaseURL = () => 'https://bulk.com/uk'; // Site with subpath
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    // Create suggestions where urlTo has prefix
+    const suggestionsWithUrlToPrefix = [
+      {
+        getData: () => ({
+          urlTo: 'https://bulk.com/uk/page1', // Has /uk prefix - extractPathPrefix returns '/uk'
+          urlFrom: 'https://bulk.com/de/page2', // Has /de prefix but won't be used
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .resolves(suggestionsWithUrlToPrefix);
+
+    // Mock top pages with different prefixes
+    const topPagesWithPrefixes = [
+      { getUrl: () => 'https://bulk.com/uk/home' }, // /uk prefix
+      { getUrl: () => 'https://bulk.com/uk/about' }, // /uk prefix
+      { getUrl: () => 'https://bulk.com/de/home' }, // /de prefix
+    ];
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves(topPagesWithPrefixes);
+
+    await handler.opportunityAndSuggestionsStep(context);
+
+    // Verify SQS message was sent
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const messageArg = context.sqs.sendMessage.getCall(0).args[1];
+
+    // Verify that brokenLinks array contains filtered alternatives
+    expect(messageArg.data.brokenLinks).to.be.an('array').with.lengthOf(1);
+    const brokenLink = messageArg.data.brokenLinks[0];
+
+    // Since urlTo has /uk prefix, alternatives should be filtered to only /uk URLs
+    expect(brokenLink.alternativeUrls).to.be.an('array');
+    brokenLink.alternativeUrls.forEach((url) => {
+      expect(url).to.include('/uk/');
+    });
+  }).timeout(5000);
+
+  it('should use urlFrom prefix when urlTo has no prefix', async () => {
+    // Test case where urlTo has no path prefix, so extractPathPrefix(urlTo) returns empty string
+    // This triggers the fallback to extractPathPrefix(urlFrom) when urlTo has no prefix
+    // NOTE: extractPathPrefix returns empty string only for root URLs (no path segments)
+    // URLs like 'https://bulk.com/page1' return '/page1', not empty string!
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+    context.site.getBaseURL = () => 'https://bulk.com/uk'; // Site with subpath
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    // Create suggestions where urlTo has no prefix (root URL) but urlFrom has prefix
+    const suggestionsWithPrefixFallback = [
+      {
+        getData: () => ({
+          urlTo: 'https://bulk.com/', // Root URL - extractPathPrefix returns '' (falsy)
+          urlFrom: 'https://bulk.com/uk/page2', // Has /uk prefix - extractPathPrefix returns '/uk'
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .resolves(suggestionsWithPrefixFallback);
+
+    // Mock top pages with different prefixes - filteredTopPages will only include /uk pages
+    const topPagesWithPrefixes = [
+      { getUrl: () => 'https://bulk.com/uk/home' }, // /uk prefix - will be included
+      { getUrl: () => 'https://bulk.com/uk/about' }, // /uk prefix - will be included
+      { getUrl: () => 'https://bulk.com/de/home' }, // /de prefix - will be filtered out
+      { getUrl: () => 'https://bulk.com/page1' }, // No prefix - will be filtered out
+    ];
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves(topPagesWithPrefixes);
+
+    await handler.opportunityAndSuggestionsStep(context);
+
+    // Verify SQS message was sent
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const messageArg = context.sqs.sendMessage.getCall(0).args[1];
+
+    // Verify that brokenLinks array contains filtered alternatives
+    expect(messageArg.data.brokenLinks).to.be.an('array').with.lengthOf(1);
+    const brokenLink = messageArg.data.brokenLinks[0];
+
+    // Since urlTo has no prefix, it should fall back to urlFrom's prefix (/uk)
+    // So alternatives should be filtered to only /uk URLs (from the already filtered top pages)
+    expect(brokenLink.alternativeUrls).to.be.an('array');
+    // All alternatives should have /uk prefix since we're filtering by urlFrom's prefix
+    brokenLink.alternativeUrls.forEach((url) => {
+      expect(url).to.include('/uk/');
+    });
+  }).timeout(5000);
 });

@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import {
   retrieveSiteBySiteId, syncSuggestions, getImsOrgId, retrieveAuditById, keepSameDataFunction,
 } from '../../src/utils/data-access.js';
@@ -125,8 +126,9 @@ describe('data-access', () => {
         .build();
     });
 
-    it('should return early if context is empty', async () => {
+    it('should return early if context is null', async () => {
       await syncSuggestions({
+        context: null,
         opportunity: mockOpportunity,
         newData: [],
         buildKey,
@@ -159,6 +161,8 @@ describe('data-access', () => {
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
       mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+      // mark site as requiring validation
+      context.site = { requiresValidation: true };
 
       await syncSuggestions({
         opportunity: mockOpportunity,
@@ -169,21 +173,25 @@ describe('data-access', () => {
       });
 
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
-      expect(mockOpportunity.addSuggestions).to.have.been.calledOnceWith([{
-        opportunityId: '123',
-        type: 'TYPE',
-        rank: 123,
-        data: {
-          key: '3',
-        },
-      }, {
-        opportunityId: '123',
-        type: 'TYPE',
-        rank: 123,
-        data: {
-          key: '4',
-        },
-      }]);
+      const addSuggestionsCall = mockOpportunity.addSuggestions.getCall(0);
+      expect(addSuggestionsCall).to.exist;
+
+      const actualArgs = addSuggestionsCall.args[0];
+      expect(actualArgs.length).to.equal(2);
+
+      // Check first suggestion
+      expect(actualArgs[0].opportunityId).to.equal('123');
+      expect(actualArgs[0].type).to.equal('TYPE');
+      expect(actualArgs[0].rank).to.equal(123);
+      expect(actualArgs[0].status).to.equal('PENDING_VALIDATION');
+      expect(actualArgs[0].data).to.deep.equal({ key: '3' });
+
+      // Check second suggestion
+      expect(actualArgs[1].opportunityId).to.equal('123');
+      expect(actualArgs[1].type).to.equal('TYPE');
+      expect(actualArgs[1].rank).to.equal(123);
+      expect(actualArgs[1].status).to.equal('PENDING_VALIDATION');
+      expect(actualArgs[1].data).to.deep.equal({ key: '4' });
       expect(mockLogger.error).to.not.have.been.called;
     });
 
@@ -211,6 +219,10 @@ describe('data-access', () => {
       mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
 
       await syncSuggestions({
+        context: {
+          log: { debug: () => {} },
+          dataAccess: { Suggestion: { bulkUpdateStatus: () => {} } },
+        },
         opportunity: mockOpportunity,
         newData,
         buildKey,
@@ -218,6 +230,78 @@ describe('data-access', () => {
       });
 
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    });
+
+    it('should update OUTDATED suggestions to PENDING_VALIDATION when site requires validation', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title' },
+        { key: '2', title: 'same title' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.OUTDATED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'updated title' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      context.site = { requiresValidation: true };
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setStatus).to.have.been
+        .calledWith(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
+      expect(existingSuggestions[0].save).to.have.been.called;
+    });
+
+    it('should update OUTDATED suggestions to NEW when site does not require validation', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title' },
+        { key: '2', title: 'same title' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.OUTDATED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'updated title' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      context.site = { requiresValidation: false };
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setStatus).to.have
+        .been.calledWith(SuggestionDataAccess.STATUSES.NEW);
+      expect(existingSuggestions[0].save).to.have.been.called;
     });
 
     it('should update suggestions when they are detected again', async () => {
@@ -290,7 +374,8 @@ describe('data-access', () => {
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
       expect(mockOpportunity.addSuggestions).to.not.have.been.called;
       expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
-      expect(existingSuggestions[0].setStatus).to.have.been.calledOnceWith('NEW');
+      expect(existingSuggestions[0].setStatus).to.have.been
+        .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
       expect(mockLogger.warn).to.have.been.calledOnceWith('Resolved suggestion found in audit. Possible regression.');
       expect(existingSuggestions[0].save).to.have.been.calledOnce;
     });
