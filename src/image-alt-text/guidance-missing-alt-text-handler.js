@@ -150,6 +150,7 @@ export default async function handler(message, context) {
           const imageId = rec.id.split('/').pop();
           return { pageUrl: rec.pageUrl, imageId };
         });
+      log.info(`[${AUDIT_TYPE}]: Syncing ${suggestions.length} suggestions and ${preserveData.length} preserved suggestions`);
       await syncSuggestions({
         context,
         opportunity: altTextOppty,
