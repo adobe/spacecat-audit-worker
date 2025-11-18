@@ -743,4 +743,98 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       expect(url).to.include('/uk/');
     });
   }).timeout(5000);
+
+  it('should skip sending to Mystique when all broken links are filtered out', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+    context.site.getBaseURL = () => 'https://bulk.com';
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    // Create suggestions that will all be filtered out (missing required fields)
+    const invalidSuggestions = [
+      {
+        getData: () => ({
+          // Missing urlFrom
+          urlTo: 'https://bulk.com/broken',
+        }),
+        getId: () => 'suggestion-1',
+      },
+      {
+        getData: () => ({
+          urlFrom: 'https://bulk.com/from',
+          // Missing urlTo
+        }),
+        getId: () => 'suggestion-2',
+      },
+      {
+        getData: () => ({
+          urlFrom: 'https://bulk.com/from',
+          urlTo: 'https://bulk.com/broken',
+        }),
+        // Missing getId()
+      },
+    ];
+
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .resolves(invalidSuggestions);
+
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves([{ getUrl: () => 'https://bulk.com/page1' }]);
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    // Should return complete without sending message
+    expect(result.status).to.equal('complete');
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/No valid broken links to send to Mystique/),
+    );
+  }).timeout(5000);
+
+  it('should skip sending to Mystique when opportunity ID is missing', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    
+    // Create opportunity with missing getId()
+    const opportunityWithoutId = {
+      ...opportunity,
+      getId: () => undefined, // Missing ID
+    };
+    
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunityWithoutId]);
+    context.site.getBaseURL = () => 'https://bulk.com';
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const validSuggestions = [
+      {
+        getData: () => ({
+          urlFrom: 'https://bulk.com/from',
+          urlTo: 'https://bulk.com/broken',
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .resolves(validSuggestions);
+
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves([{ getUrl: () => 'https://bulk.com/page1' }]);
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    // Should return complete without sending message
+    expect(result.status).to.equal('complete');
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+    expect(context.log.error).to.have.been.calledWith(
+      sinon.match(/Opportunity ID is missing/),
+    );
+  }).timeout(5000);
 });
