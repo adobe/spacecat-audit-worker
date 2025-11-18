@@ -1,3 +1,10 @@
+# [1.245.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.244.2...v1.245.0) (2025-11-18)
+
+
+### Features
+
+* **geo-brand-presence:** ai prompt categorization ([#1554](https://github.com/adobe/spacecat-audit-worker/issues/1554)) ([54e7e4a](https://github.com/adobe/spacecat-audit-worker/commit/54e7e4a49342406f27bc966b1c4e00fea980f9f7))
+
 ## [1.244.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.244.1...v1.244.2) (2025-11-18)
 
 
