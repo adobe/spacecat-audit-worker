@@ -1,3 +1,10 @@
+# [1.243.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.242.0...v1.243.0) (2025-11-18)
+
+
+### Features
+
+* add scraped at time to faq suggestions ([#1592](https://github.com/adobe/spacecat-audit-worker/issues/1592)) ([f9d9d30](https://github.com/adobe/spacecat-audit-worker/commit/f9d9d3091b5fcddab197248afc387622c152d439))
+
 # [1.242.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.241.0...v1.242.0) (2025-11-17)
 
 
