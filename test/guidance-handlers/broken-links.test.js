@@ -431,6 +431,7 @@ describe('guidance-broken-links-remediation handler', () => {
       getSiteId: () => mockMessage.siteId,
       getType: () => 'broken-backlinks',
     });
+    mockContext.dataAccess.Suggestion.findById = sandbox.stub();
 
     const response = await brokenLinksGuidanceHandler(messageWithEmptyBrokenLinks, mockContext);
     expect(response.status).to.equal(200);
@@ -486,7 +487,104 @@ describe('guidance-broken-links-remediation handler', () => {
       url_to: 'https://foo.com/redirects-throws-error',
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: [],
-      aiRationale: 'Test rationale',
+      aiRationale: '', // Rationale cleared because no valid URLs provided
+    });
+  });
+
+  it('should handle missing suggestedUrls field (all variations missing)', async () => {
+    const messageWithNoSuggestedUrls = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          brokenUrl: 'https://foo.com/redirects-throws-error',
+          // No suggestedUrls, urls_suggested, or suggested_urls fields
+          aiRationale: 'Test rationale',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    const mockSave = sandbox.stub().resolves();
+    mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({
+      setData: mockSetData,
+      getData: sandbox.stub().returns({
+        url_to: 'https://foo.com/redirects-throws-error',
+        url_from: 'https://foo.com/redirects-throws-error',
+      }),
+      save: mockSave,
+    });
+
+    const response = await brokenLinksGuidanceHandler(messageWithNoSuggestedUrls, mockContext);
+    expect(response.status).to.equal(200);
+    expect(mockSetData).to.have.been.calledWith({
+      url_to: 'https://foo.com/redirects-throws-error',
+      url_from: 'https://foo.com/redirects-throws-error',
+      urlsSuggested: [],
+      aiRationale: '', // Rationale cleared because no URLs provided
+    });
+  });
+
+  it('should handle missing aiRationale field (both variations missing)', async () => {
+    const messageWithNoRationale = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          brokenUrl: 'https://foo.com/redirects-throws-error',
+          suggestedUrls: ['https://foo.com/redirects-throws-error-1'],
+          // No aiRationale or ai_rationale fields
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    const mockSave = sandbox.stub().resolves();
+    mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({
+      setData: mockSetData,
+      getData: sandbox.stub().returns({
+        url_to: 'https://foo.com/redirects-throws-error',
+        url_from: 'https://foo.com/redirects-throws-error',
+      }),
+      save: mockSave,
+    });
+    nock('https://foo.com')
+      .get('/redirects-throws-error-1')
+      .reply(200);
+
+    const response = await brokenLinksGuidanceHandler(messageWithNoRationale, mockContext);
+    expect(response.status).to.equal(200);
+    expect(mockSetData).to.have.been.calledWith({
+      url_to: 'https://foo.com/redirects-throws-error',
+      url_from: 'https://foo.com/redirects-throws-error',
+      urlsSuggested: ['https://foo.com/redirects-throws-error-1'],
+      aiRationale: '', // Empty string when neither field exists
     });
   });
 });
