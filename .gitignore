@@ -9,6 +9,8 @@ logs
 test-results.xml
 .env
 .idea/
+*.iml
+notes.loca.md
 .vscode/
 .aws-sam/
 env.sh
