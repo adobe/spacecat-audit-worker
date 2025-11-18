@@ -1,3 +1,10 @@
+## [1.244.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.244.1...v1.244.2) (2025-11-18)
+
+
+### Bug Fixes
+
+* update bucket config on delete of cdn provider ([#1601](https://github.com/adobe/spacecat-audit-worker/issues/1601)) ([85cd55b](https://github.com/adobe/spacecat-audit-worker/commit/85cd55be3697d84a0967a5056628e5a505adab4e))
+
 ## [1.244.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.244.0...v1.244.1) (2025-11-18)
 
 
