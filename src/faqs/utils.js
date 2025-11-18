@@ -100,6 +100,7 @@ export function getJsonFaqSuggestion(faqs) {
           sources: normalizeSources(suggestion.sources),
           questionRelevanceReason: suggestion.questionRelevanceReason,
           answerSuitabilityReason: suggestion.answerSuitabilityReason,
+          scrapedAt: suggestion.scrapedAt || new Date().toISOString(),
         },
       });
     });
