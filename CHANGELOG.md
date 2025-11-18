@@ -1,3 +1,10 @@
+## [1.243.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.243.0...v1.243.1) (2025-11-18)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-tier-client to v1.2.5 ([#1596](https://github.com/adobe/spacecat-audit-worker/issues/1596)) ([dcaeffc](https://github.com/adobe/spacecat-audit-worker/commit/dcaeffc86a78a5f4763ccc6c51a35e227f545e65))
+
 # [1.243.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.242.0...v1.243.0) (2025-11-18)
 
 
