@@ -19,7 +19,6 @@ export const PREFLIGHT_LINKS = 'links';
 
 /**
  * Create an issue object for a broken internal link with AI suggestions
- * Covers lines 86-96 of links.js
  * @param {string} urlTo - The URL that is broken
  * @param {number} status - HTTP status code
  * @param {string} baseURLOrigin - Base URL origin to replace preview origin
