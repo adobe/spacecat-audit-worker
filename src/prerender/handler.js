@@ -281,12 +281,12 @@ export async function submitForScraping(context) {
   const siteId = site.getId();
 
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-  const topPagesUrls = topPages.map((page) => page.getUrl());
+  const topPagesUrls = topPages.map((page) => page.getUrl()).slice(0, 5);
 
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
   // Fetch Top Agentic URLs from weekly sheet (best-effort)
-  const agenticStats = await getTopAgenticUrls(site, context, 200);
+  const agenticStats = await getTopAgenticUrls(site, context, 5);
   const agenticUrls = agenticStats.map((s) => s.url);
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs, ...agenticUrls])];
@@ -550,7 +550,9 @@ export async function processContentAndGenerateOpportunities(context) {
       log.info(`Prerender - Found ${urlsToCheck.length} URLs from scrape results`);
     } else {
       // Fallback: get top pages and included URLs
-      urlsToCheck = topPages.map((page) => page.getUrl());
+      urlsToCheck = topPages.map((page) => page.getUrl()).slice(0, 5);
+      const agenticStats = await getTopAgenticUrls(site, context, 5);
+      urlsToCheck = [...new Set([...urlsToCheck, ...agenticStats.map((s) => s.url)])];
       /* c8 ignore start */
       const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
       urlsToCheck = [...new Set([...urlsToCheck, ...includedURLs])];
