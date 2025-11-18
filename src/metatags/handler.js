@@ -348,8 +348,15 @@ export async function submitForScraping(context) {
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
+  log.info(`[metatags] Found ${topPagesUrls.length} top pages from Ahrefs`);
+  log.debug(`[metatags] Top pages URLs: ${JSON.stringify(topPagesUrls)}`);
+
   // Combine includedURLs and topPages URLs to scrape
   const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
+  log.info(`[metatags] Found ${includedURLs.length} included URLs from config`);
+  if (includedURLs.length > 0) {
+    log.debug(`[metatags] Included URLs: ${JSON.stringify(includedURLs)}`);
+  }
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
   log.debug(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
