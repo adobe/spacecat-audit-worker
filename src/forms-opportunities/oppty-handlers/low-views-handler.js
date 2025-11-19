@@ -35,6 +35,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
     dataAccess, log, auditContext,
   } = context;
   const opptyOptions = auditContext?.data;
+  log.debug(`[Form Opportunity] opptyOptions value: ${JSON.stringify(opptyOptions)}`);
   const { Opportunity } = dataAccess;
 
   const auditData = JSON.parse(JSON.stringify(auditDataObject));

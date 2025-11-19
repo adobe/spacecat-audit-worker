@@ -148,7 +148,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     siteId: site.getId(),
     auditResult: formsAuditRunnerResult.auditResult,
     fullAuditRef: formsAuditRunnerResult.fullAuditRef,
-    auditContext: { data },
+    ...(data && { auditContext: { data } }),
   };
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping: ${JSON.stringify(urlsData)}`);
@@ -202,9 +202,7 @@ export async function sendA11yUrlsForScrapingStep(context) {
     jobId: site.getId(),
     urls: urlsData,
     siteId: site.getId(),
-    auditContext: {
-      data: auditContext?.data,
-    },
+    ...(auditContext?.data && { auditContext: { data: auditContext.data } }),
   };
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] sending urls for form-accessibility audit: ${JSON.stringify(urlsData)}`);
@@ -221,9 +219,7 @@ export async function codeImportStep(context) {
   return {
     type: 'code',
     siteId: site.getId(),
-    auditContext: {
-      data: auditContext?.data,
-    },
+    ...(auditContext?.data && { auditContext: { data: auditContext.data } }),
   };
 }
 

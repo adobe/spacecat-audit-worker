@@ -101,6 +101,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
     dataAccess, log, auditContext,
   } = context;
   const opptyOptions = auditContext?.data;
+  log.debug(`[Form Opportunity] opptyOptions value: ${JSON.stringify(opptyOptions)}`);
   const { Opportunity } = dataAccess;
 
   // eslint-disable-next-line no-param-reassign

@@ -245,4 +245,17 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(dataAccessStub.Opportunity.create).to.be.callCount(2);
     formsOppty.getOrigin = sinon.stub().returns('');
   });
+
+  it('should handle when auditContext has data', async () => {
+    const contextWithAuditData = {
+      ...context,
+      auditContext: { data: 'test-123' },
+    };
+    formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+    await createLowConversionOpportunities(auditUrl, auditData, undefined, contextWithAuditData);
+    // Should work normally with auditContext.data defined
+    expect(dataAccessStub.Opportunity.create).to.be.callCount(2);
+    expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] Successfully synced opportunity for high-form-views-low-conversions audit type.');
+  });
 });
