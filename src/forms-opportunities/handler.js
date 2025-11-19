@@ -149,6 +149,10 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     siteId: site.getId(),
     auditResult: formsAuditRunnerResult.auditResult,
     fullAuditRef: formsAuditRunnerResult.fullAuditRef,
+    // Pass original message data to subsequent steps
+    auditContext: {
+      originalData: data,
+    },
   };
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping: ${JSON.stringify(urlsData)}`);
@@ -157,12 +161,13 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
 
 export async function sendA11yUrlsForScrapingStep(context) {
   const {
-    log, site, dataAccess,
+    log, site, dataAccess, auditContext,
   } = context;
   const { SiteTopForm } = dataAccess;
   const topForms = await SiteTopForm.allBySiteId(site.getId());
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] getting scraped data for a11y audit`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] data received in a11y step: ${JSON.stringify(auditContext?.originalData)}`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
   const { formVitals } = latestAudit.getAuditResult();
@@ -202,6 +207,10 @@ export async function sendA11yUrlsForScrapingStep(context) {
     jobId: site.getId(),
     urls: urlsData,
     siteId: site.getId(),
+    // Pass data forward to next step
+    auditContext: {
+      originalData: auditContext?.originalData,
+    },
   };
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] sending urls for form-accessibility audit: ${JSON.stringify(urlsData)}`);
@@ -210,24 +219,32 @@ export async function sendA11yUrlsForScrapingStep(context) {
 
 export async function codeImportStep(context) {
   const {
-    log, site,
+    log, site, auditContext,
   } = context;
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting code import step`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] data received in code import step: ${JSON.stringify(auditContext?.originalData)}`);
 
   return {
     type: 'code',
     siteId: site.getId(),
+    // Pass data forward to next step
+    auditContext: {
+      originalData: auditContext?.originalData,
+    },
   };
 }
 
 export async function processOpportunityStep(context) {
   const {
-    log, site, finalUrl, data,
+    log, site, finalUrl, auditContext,
   } = context;
 
+  // Access original message data from auditContext
+  const originalData = auditContext?.originalData;
+
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] data received for processing opportunity: ${JSON.stringify(data)}`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] data received for processing opportunity: ${JSON.stringify(originalData)}`);
 
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
