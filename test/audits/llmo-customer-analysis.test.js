@@ -770,7 +770,7 @@ describe('LLMO Customer Analysis Handler', () => {
       // Should still complete successfully despite the error
       expect(result.auditResult.status).to.equal('completed');
       // Should log the error but continue processing
-      expect(log.error).to.have.been.calledWith('Error processing CDN bucket configuration changes');
+      expect(log.error).to.have.been.calledWith('Error processing CDN bucket configuration changes for siteId: site-123');
     });
 
     it('should trigger both referral imports and config-based audits on first-time onboarding with config changes', async () => {

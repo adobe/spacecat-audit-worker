@@ -57,6 +57,7 @@ import preflight from './preflight/handler.js';
 import llmBlocked from './llm-blocked/handler.js';
 import geoBrandPresence from './geo-brand-presence/handler.js';
 import detectGeoBrandPresence from './geo-brand-presence/detect-geo-brand-presence-handler.js';
+import { handleCategorizationResponseHandler } from './geo-brand-presence/categorization-response-handler.js';
 import geoBrandPresenceDaily from './geo-brand-presence-daily/handler.js';
 import detectGeoBrandPresenceDaily from './geo-brand-presence-daily/detect-geo-brand-presence-handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
@@ -128,6 +129,7 @@ const HANDLERS = {
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'geo-brand-presence': geoBrandPresence,
+  'category:geo-brand-presence': handleCategorizationResponseHandler,
   'detect:geo-brand-presence': detectGeoBrandPresence,
   'refresh:geo-brand-presence': detectGeoBrandPresence,
   'geo-brand-presence-daily': geoBrandPresenceDaily,

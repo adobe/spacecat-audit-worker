@@ -170,6 +170,83 @@ describe('summarization utils', () => {
       expect(result[2].transformRules.selector).to.equal('h3');
       expect(result[2].transformRules.action).to.equal('insertAfter');
     });
+
+    it('should use provided scrapedAt timestamp when available', () => {
+      const testTimestamp = '2025-11-17T18:53:21.143931';
+      const suggestions = [
+        {
+          pageUrl: 'https://example.com/page1',
+          scrapedAt: testTimestamp,
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          sectionSummaries: [
+            {
+              title: 'Section 1',
+              formatted_summary: 'Section summary',
+              heading_selector: 'h2',
+              insertion_method: 'insertAfter',
+            },
+          ],
+        },
+      ];
+
+      const result = getJsonSummarySuggestion(suggestions);
+
+      expect(result).to.have.length(2);
+      // Both page-level and section-level should have the same scrapedAt
+      expect(result[0].scrapedAt).to.equal(testTimestamp);
+      expect(result[1].scrapedAt).to.equal(testTimestamp);
+    });
+
+    it('should generate current timestamp when scrapedAt is missing', () => {
+      const suggestions = [
+        {
+          pageUrl: 'https://example.com/page1',
+          // No scrapedAt property
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          sectionSummaries: [
+            {
+              title: 'Section 1',
+              formatted_summary: 'Section summary',
+              heading_selector: 'h2',
+              insertion_method: 'insertAfter',
+            },
+          ],
+        },
+      ];
+
+      const beforeTime = new Date().toISOString();
+      const result = getJsonSummarySuggestion(suggestions);
+      const afterTime = new Date().toISOString();
+
+      expect(result).to.have.length(2);
+
+      // Both should have scrapedAt timestamps
+      expect(result[0].scrapedAt).to.be.a('string');
+      expect(result[0].scrapedAt).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+      expect(result[1].scrapedAt).to.be.a('string');
+      expect(result[1].scrapedAt).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+
+      // Both should have the same timestamp (captured once)
+      expect(result[0].scrapedAt).to.equal(result[1].scrapedAt);
+
+      // Timestamp should be within expected time range for page-level suggestion
+      expect(result[0].scrapedAt >= beforeTime).to.be.true;
+      expect(result[0].scrapedAt <= afterTime).to.be.true;
+
+      // Timestamp should be within expected time range for section-level suggestion
+      expect(result[1].scrapedAt >= beforeTime).to.be.true;
+      expect(result[1].scrapedAt <= afterTime).to.be.true;
+    });
   });
 });
 
