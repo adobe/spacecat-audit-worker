@@ -344,6 +344,21 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     context.dataAccess.Opportunity.create.resolves(opportunity);
     context.site.getLatestAuditByAuditType = () => auditData;
     context.site.getDeliveryType = () => 'aem_edge';
+    // Stub Configuration to prevent errors when checking feature flag
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => false, // Feature flag disabled for this test
+      }),
+    };
+
+    // Re-esmock handler without stubbing syncBrokenInternalLinksSuggestions
+    // so the real function runs and calls opportunity.addSuggestions
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
+        // Don't stub syncBrokenInternalLinksSuggestions - let it run for this test
+      },
+    });
 
     const result = await handler.opportunityAndSuggestionsStep(context);
 
