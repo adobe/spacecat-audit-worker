@@ -1,3 +1,10 @@
+## [1.246.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.2...v1.246.3) (2025-11-19)
+
+
+### Bug Fixes
+
+* add base delay to be 10s ([#1608](https://github.com/adobe/spacecat-audit-worker/issues/1608)) ([137a93b](https://github.com/adobe/spacecat-audit-worker/commit/137a93bf29c06eb0acf4059cbef98d5dc1cdcf67))
+
 ## [1.246.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.1...v1.246.2) (2025-11-19)
 
 
