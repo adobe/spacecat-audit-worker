@@ -239,7 +239,7 @@ export async function syncSuggestions({
   const toBeUpdatedData = existingSuggestionsToUpdate.map((s) => ({
     key: buildKey(s.getData()), status: s.getStatus(),
   }));
-  log.debug('[TRACKING2.1] ToBeUpdated suggestions:', JSON.stringify(toBeUpdatedData, null, 2));
+  log.debug('[TRACKING2.1] ToBeUpdated suggestionss:', JSON.stringify(toBeUpdatedData, null, 2));
 
   await Promise.all(
     existingSuggestionsToUpdate
