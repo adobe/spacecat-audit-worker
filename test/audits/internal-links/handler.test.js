@@ -284,6 +284,11 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
     };
 
+    // Initialize Suggestion in dataAccess for Mystique integration tests
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+
     opportunity = {
       getType: () => 'broken-internal-links',
       getId: () => 'oppty-id-1',
@@ -321,11 +326,10 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
         generateSuggestionData: () => AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
       },
     });
-    if (!context.dataAccess.Suggestion) {
-      context.dataAccess.Suggestion = {};
-    }
+    // Stub is already initialized in beforeEach, just update the method
     context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
       .resolves(AUDIT_RESULT_DATA_WITH_SUGGESTIONS.map((data) => (
         { getData: () => data, getId: () => '1111', save: () => {} })));
@@ -400,20 +404,29 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     context.site.getLatestAuditByAuditType = () => auditData;
     context.site.getDeliveryType = () => 'aem_edge';
+    // Ensure getBaseURL returns the same domain as the top pages for filterByAuditScope to work
+    context.site.getBaseURL = () => 'https://example.com';
+
+    // Ensure opportunity.getSuggestions() returns empty so syncSuggestions creates new ones
+    opportunity.getSuggestions = sandbox.stub().resolves([]);
+    opportunity.addSuggestions = sandbox.stub().resolves({ createdItems: [], errorItems: [] });
 
     handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
         generateSuggestionData: () => AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
       },
     });
 
     // Ensure we have suggestions and alternativeUrls for SQS to be called
     // Stub must be set up AFTER handler is created to ensure it uses the correct context
+    // Use root URLs (pathname === '/') so extractPathPrefix returns empty string
+    // This ensures brokenLinkLocales.size === 0, so all alternatives are included
     const validSuggestions = [
       {
         getData: () => ({
-          urlFrom: 'https://www.petplace.com/a02nf',
-          urlTo: 'https://www.petplace.com/a01',
+          urlFrom: 'https://example.com/',
+          urlTo: 'https://example.com/', // Root URL - extractPathPrefix returns '' (empty string)
         }),
         getId: () => 'suggestion-1',
       },
@@ -451,20 +464,29 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     context.site.getLatestAuditByAuditType = () => auditData;
     context.site.getDeliveryType = () => 'aem_edge';
+    // Ensure getBaseURL returns the same domain as the top pages for filterByAuditScope to work
+    context.site.getBaseURL = () => 'https://example.com';
+
+    // Ensure opportunity.getSuggestions() returns empty so syncSuggestions creates new ones
+    opportunity.getSuggestions = sandbox.stub().resolves([]);
+    opportunity.addSuggestions = sandbox.stub().resolves({ createdItems: [], errorItems: [] });
 
     handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
         generateSuggestionData: () => AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
       },
     });
 
     // Ensure we have suggestions and alternativeUrls for SQS to be called
     // Stub must be set up AFTER handler is created to ensure it uses the correct context
+    // Use root URLs (pathname === '/') so extractPathPrefix returns empty string
+    // This ensures brokenLinkLocales.size === 0, so all alternatives are included
     const validSuggestions = [
       {
         getData: () => ({
-          urlFrom: 'https://www.petplace.com/a02nf',
-          urlTo: 'https://www.petplace.com/a01',
+          urlFrom: 'https://example.com/',
+          urlTo: 'https://example.com/', // Root URL - extractPathPrefix returns '' (empty string)
         }),
         getId: () => 'suggestion-1',
       },
