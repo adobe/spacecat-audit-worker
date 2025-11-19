@@ -11,7 +11,9 @@
  */
 
 import { isNonEmptyObject } from '@adobe/spacecat-shared-utils';
-import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../constants.js';
+import {
+  FORM_OPPORTUNITY_TYPES, OPPTY_OPTIONS_ALL, OPPORTUNITY_LIMIT, ORIGINS,
+} from '../constants.js';
 import {
   applyOpportunityFilters,
   calculateProjectedConversionValue,
@@ -30,8 +32,9 @@ import { DATA_SOURCES } from '../../common/constants.js';
 // eslint-disable-next-line max-len
 export default async function createLowViewsOpportunities(auditUrl, auditDataObject, scrapedData, context, excludeForms = new Set()) {
   const {
-    dataAccess, log,
+    dataAccess, log, auditContext,
   } = context;
+  const opptyOptions = auditContext?.data;
   const { Opportunity } = dataAccess;
 
   const auditData = JSON.parse(JSON.stringify(auditDataObject));
@@ -49,15 +52,15 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
   const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]);
   let filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeForms);
   filteredOpportunities.forEach((oppty) => excludeForms.add(oppty.form + oppty.formsource));
-  // Apply filtering logic: deduplicate, filter INVALIDATED, and limit to top opportunities
-  filteredOpportunities = applyOpportunityFilters(
-    filteredOpportunities,
-    opportunities,
-    FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
-    log,
-    2, // Limit to top 2 opportunities by pageviews
-  );
+
+  // Skip filtering if opptyOptions is 'all'
+  if (opptyOptions !== OPPTY_OPTIONS_ALL) {
+    // Apply filtering logic: deduplicate, filter INVALIDATED, and limit to top opportunities
+    // eslint-disable-next-line max-len
+    filteredOpportunities = applyOpportunityFilters(filteredOpportunities, opportunities, FORM_OPPORTUNITY_TYPES.LOW_VIEWS, log, OPPORTUNITY_LIMIT);
+  }
   log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] filtered opportunities: high-page-views-low-form-views:  ${JSON.stringify(filteredOpportunities, null, 2)}`);
+
   try {
     for (const opptyData of filteredOpportunities) {
       let highPageViewsLowFormViewsOptty = opportunities.find(

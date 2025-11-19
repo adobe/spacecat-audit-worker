@@ -236,14 +236,10 @@ export async function codeImportStep(context) {
 
 export async function processOpportunityStep(context) {
   const {
-    log, site, finalUrl, auditContext,
+    log, site, finalUrl,
   } = context;
 
-  // Access original message data from auditContext
-  const data = auditContext?.data;
-
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] data received for processing opportunity: ${JSON.stringify(data)}`);
 
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
