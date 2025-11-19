@@ -16,9 +16,9 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
+import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
@@ -55,13 +55,6 @@ export const HEADINGS_CHECKS = Object.freeze({
     description: 'Page has more than one H1 element.',
     explanation: 'Pages should have only one H1 element.',
     suggestion: 'Change additional H1 elements to H2 or appropriate levels.',
-  },
-  HEADING_DUPLICATE_TEXT: {
-    check: 'heading-duplicate-text',
-    title: 'Duplicate Heading Text',
-    description: 'Multiple headings contain identical text.',
-    explanation: 'Headings should have unique text content (WCAG 2.2 2.4.6).',
-    suggestion: 'Ensure each heading has unique, descriptive text.',
   },
   HEADING_ORDER_INVALID: {
     check: 'heading-order-invalid',
@@ -323,8 +316,6 @@ export async function validatePageHeadingFromScrapeJson(
       });
     }
 
-    // Check for empty headings and collect text content for duplicate detection
-    const headingTexts = new Map();
     const headingChecks = headings.map(async (heading) => {
       if (heading.tagName !== 'H1') {
         const text = getTextContent(heading);
@@ -347,67 +338,37 @@ export async function validatePageHeadingFromScrapeJson(
             tagName: heading.tagName,
             pageTags,
           };
-        } else {
-          // For tracking purposes
-          const lowerText = text.toLowerCase();
-          if (!headingTexts.has(lowerText)) {
-            headingTexts.set(lowerText, []);
-          }
-          headingTexts.get(lowerText).push({
-            text,
-            tagName: heading.tagName,
-            element: heading,
-          });
-          return null;
         }
-      } else {
-        return null;
       }
+      return null;
     });
 
     const headingChecksResults = await Promise.all(headingChecks);
     // Filter out nulls and add to checks array
     checks.push(...headingChecksResults.filter(Boolean));
 
-    // Check for duplicate heading text content
-    // eslint-disable-next-line no-unused-vars
-    for (const [lowerText, headingsWithSameText] of headingTexts) {
-      if (headingsWithSameText.length > 1) {
-        const detailedExplanation = `${HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation} \n Text "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`;
-        checks.push({
-          check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
-          checkTitle: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.title,
-          description: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.description,
-          success: false,
-          explanation: detailedExplanation,
-          suggestion: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.suggestion,
-          text: headingsWithSameText[0].text,
-          duplicates: headingsWithSameText.map((h) => h.tagName),
-          count: headingsWithSameText.length,
-        });
-        log.debug(`Duplicate heading text detected at ${url}: "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`);
-      }
-    }
-
     if (headings.length > 1) {
+      const invalidJumps = [];
       for (let i = 1; i < headings.length; i += 1) {
         const prev = headings[i - 1];
         const cur = headings[i];
         const prevLevel = getHeadingLevel(prev.tagName);
         const curLevel = getHeadingLevel(cur.tagName);
         if (curLevel - prevLevel > 1) {
-          checks.push({
-            check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
-            checkTitle: HEADINGS_CHECKS.HEADING_ORDER_INVALID.title,
-            description: HEADINGS_CHECKS.HEADING_ORDER_INVALID.description,
-            success: false,
-            explanation: HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation,
-            suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
-            previous: `h${prevLevel}`,
-            current: `h${curLevel}`,
-          });
+          invalidJumps.push({ previous: `h${prevLevel}`, current: `h${curLevel}` });
           log.debug(`Heading level jump detected at ${url}: h${prevLevel} → h${curLevel}`);
         }
+      }
+      // Create a single check with all invalid jumps in the explanation
+      if (invalidJumps.length > 0) {
+        const jumpDetails = invalidJumps.map((jump) => `${jump.previous} → ${jump.current}`).join(', ');
+        checks.push({
+          check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
+          checkTitle: HEADINGS_CHECKS.HEADING_ORDER_INVALID.title,
+          success: false,
+          explanation: `${HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation} Invalid jumps found: ${jumpDetails}`,
+          suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
+        });
       }
     }
 
@@ -618,8 +579,6 @@ function generateRecommendedAction(checkType) {
       return 'Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).';
     case HEADINGS_CHECKS.HEADING_EMPTY.check:
       return 'Provide meaningful text content for the empty heading or remove the element.';
-    case HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check:
-      return 'Ensure each heading has unique, descriptive text content that clearly identifies its section.';
     default:
       return 'Review heading structure and content to follow heading best practices.';
   }
@@ -633,12 +592,6 @@ export function generateSuggestions(auditUrl, auditData, context) {
     log.info(`Headings audit for ${auditUrl} has no issues or failed, skipping suggestions generation`);
     return { ...auditData };
   }
-
-  // Get the order from HEADINGS_CHECKS object
-  const auditTypeOrder = [
-    ...Object.keys(HEADINGS_CHECKS),
-  ];
-
   // Group suggestions by audit type
   const suggestionsByType = {};
   const allSuggestions = [];
@@ -667,36 +620,10 @@ export function generateSuggestions(auditUrl, auditData, context) {
     }
   });
 
-  let mdTable = '';
-  auditTypeOrder.forEach((currentAuditType) => {
-    const checkType = HEADINGS_CHECKS[currentAuditType].check;
-    if (suggestionsByType[checkType] && suggestionsByType[checkType].length > 0) {
-      mdTable += `## ${HEADINGS_CHECKS[currentAuditType].title}\n\n`;
-      mdTable += '| Page Url | Explanation | Suggestion |\n';
-      mdTable += '|-------|-------|-------|\n';
-      suggestionsByType[checkType].forEach((suggestion) => {
-        let suggestionExplanation = suggestion.explanation;
-        if (suggestion.tagName) {
-          suggestionExplanation += `for tag name: ${suggestion.tagName.toUpperCase()}`;
-        }
-        mdTable += `| ${suggestion.url} | ${suggestionExplanation} | ${suggestion.recommendedAction} |\n`;
-      });
-      mdTable += '\n';
-    }
-  });
-
-  const elmoSuggestions = [];
-  if (mdTable) {
-    elmoSuggestions.push({
-      type: 'CODE_CHANGE',
-      recommendedAction: mdTable,
-    });
-  }
-
   const suggestions = [...allSuggestions];
 
   log.debug(`Generated ${suggestions.length} headings suggestions for ${auditUrl}`);
-  return { ...auditData, suggestions, elmoSuggestions };
+  return { ...auditData, suggestions };
 }
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
@@ -713,6 +640,18 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     createOpportunityData,
     auditType,
   );
+
+  const mergeDataFunction = (existingSuggestion, newSuggestion) => {
+    const mergedSuggestion = {
+      ...existingSuggestion,
+      ...newSuggestion,
+    };
+    // Preserve recommendedAction from existingSuggestion if isEdited is true
+    if (existingSuggestion.isEdited && existingSuggestion.recommendedAction !== undefined) {
+      mergedSuggestion.recommendedAction = existingSuggestion.recommendedAction;
+    }
+    return mergedSuggestion;
+  };
 
   const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
 
@@ -738,63 +677,11 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         }),
       },
     }),
+    mergeDataFunction,
     log,
   });
 
   log.info(`Headings opportunity created for Site Optimizer and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
-  return { ...auditData };
-}
-
-export async function opportunityAndSuggestionsForElmo(auditUrl, auditData, context) {
-  const { log } = context;
-  if (!auditData.elmoSuggestions?.length) {
-    log.info('Headings audit has no issues, skipping opportunity creation');
-    return { ...auditData };
-  }
-  const elmoOpportunityType = 'generic-opportunity';
-  const comparisonFn = (oppty) => {
-    const opptyData = oppty.getData();
-    const opptyAdditionalMetrics = opptyData?.additionalMetrics;
-    if (!opptyAdditionalMetrics || !Array.isArray(opptyAdditionalMetrics)) {
-      return false;
-    }
-    const hasHeadingsSubtype = opptyAdditionalMetrics.some(
-      (metric) => metric.key === 'subtype' && metric.value === 'headings',
-    );
-    return hasHeadingsSubtype;
-  };
-
-  const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
-    context,
-    createOpportunityDataForElmo,
-    elmoOpportunityType,
-    {},
-    comparisonFn,
-  );
-
-  log.info(`Headings opportunity created for Elmo with oppty id ${opportunity.getId()}`);
-
-  const buildKey = (suggestion) => `${suggestion.type}`;
-  await syncSuggestions({
-    opportunity,
-    newData: auditData.elmoSuggestions,
-    context,
-    buildKey,
-    mapNewSuggestion: (suggestion) => ({
-      opportunityId: opportunity.getId(),
-      type: suggestion.type,
-      rank: 0,
-      data: {
-        suggestionValue: suggestion.recommendedAction,
-      },
-    }),
-    keepLatestMergeDataFunction,
-    log,
-  });
-
-  log.info(`Headings opportunity created for Elmo and ${auditData.elmoSuggestions.length} suggestions synced for ${auditUrl}`);
   return { ...auditData };
 }
 
@@ -804,6 +691,5 @@ export default new AuditBuilder()
   .withPostProcessors([
     generateSuggestions,
     opportunityAndSuggestions,
-    opportunityAndSuggestionsForElmo,
   ])
   .build();
