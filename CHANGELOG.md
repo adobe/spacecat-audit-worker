@@ -1,3 +1,52 @@
+## [1.246.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.4...v1.246.5) (2025-11-19)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.87.0 ([#1611](https://github.com/adobe/spacecat-audit-worker/issues/1611)) ([1b81756](https://github.com/adobe/spacecat-audit-worker/commit/1b81756e9a0888a3ce374f4775ff802f716e67c1))
+
+## [1.246.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.3...v1.246.4) (2025-11-19)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.75.0 ([#1609](https://github.com/adobe/spacecat-audit-worker/issues/1609)) ([557fb39](https://github.com/adobe/spacecat-audit-worker/commit/557fb39bde820c002a5879304c8da178dea68b60))
+
+## [1.246.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.2...v1.246.3) (2025-11-19)
+
+
+### Bug Fixes
+
+* add base delay to be 10s ([#1608](https://github.com/adobe/spacecat-audit-worker/issues/1608)) ([137a93b](https://github.com/adobe/spacecat-audit-worker/commit/137a93bf29c06eb0acf4059cbef98d5dc1cdcf67))
+
+## [1.246.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.1...v1.246.2) (2025-11-19)
+
+
+### Bug Fixes
+
+* Update data source for LLM error pages ([#1582](https://github.com/adobe/spacecat-audit-worker/issues/1582)) ([38e1752](https://github.com/adobe/spacecat-audit-worker/commit/38e1752fae52323f25a984c0654b66f620b2fc33))
+
+## [1.246.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.0...v1.246.1) (2025-11-19)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.86.0 ([#1605](https://github.com/adobe/spacecat-audit-worker/issues/1605)) ([b158db2](https://github.com/adobe/spacecat-audit-worker/commit/b158db2debe55704975e8cb4f3d368dd20e99b54))
+
+# [1.246.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.245.1...v1.246.0) (2025-11-19)
+
+
+### Features
+
+* add Claude support for agentic traffic ([#1606](https://github.com/adobe/spacecat-audit-worker/issues/1606)) ([d5aac5f](https://github.com/adobe/spacecat-audit-worker/commit/d5aac5f201cb9ce6faa2bedb134da257734d39f7))
+
+## [1.245.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.245.0...v1.245.1) (2025-11-18)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.85.1 ([#1602](https://github.com/adobe/spacecat-audit-worker/issues/1602)) ([5bd6a8b](https://github.com/adobe/spacecat-audit-worker/commit/5bd6a8b4993a6d27744a8e08dd0189d2d3d2d0d6))
+
 # [1.245.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.244.2...v1.245.0) (2025-11-18)
 
 
