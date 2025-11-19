@@ -186,8 +186,40 @@ async function createTopUrlsQuery(options) {
   });
 }
 
+/**
+ * Build an Athena query to fetch agentic hits for a specific set of URL paths.
+ * The passed urlPaths should be path-only (e.g., "/foo/bar"), matching the "url" field in logs.
+ */
+export async function createAgenticHitsForUrlsQuery(options) {
+  const {
+    periods, databaseName, tableName, site, urlPaths,
+  } = options;
+
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
+  const siteFilters = buildSiteFilters(filters, site);
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClause(
+    [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
+    siteFilters,
+  );
+
+  // Escape single quotes inside paths for SQL safety
+  const escapeSql = (s) => String(s).replace(/'/g, "''");
+  const urlList = urlPaths && urlPaths.length > 0
+    ? urlPaths.map((p) => `'${escapeSql(p)}'`).join(', ')
+    : ''; // will produce empty IN() which returns no results
+
+  return loadSql('agentic-hits-for-urls', {
+    databaseName,
+    tableName,
+    whereClause,
+    urlList,
+  });
+}
+
 export const weeklyBreakdownQueries = {
   createAgenticReportQuery,
   createReferralReportQuery,
   createTopUrlsQuery,
+  createAgenticHitsForUrlsQuery,
 };
