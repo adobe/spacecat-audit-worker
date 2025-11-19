@@ -227,7 +227,7 @@ export async function syncSuggestions({
   const beforeUpdateFilterData = existingSuggestions.map((s) => ({
     key: buildKey(s.getData()), status: s.getStatus(),
   }));
-  log.debug('[TRACKING2] BeforeUpdateFilter suggestions:', JSON.stringify(beforeUpdateFilterData, null, 2));
+  log.debug('[TRACKING2] BeforeUpdateFilter suggestionss:', JSON.stringify(beforeUpdateFilterData, null, 2));
 
   const existingSuggestionsToUpdate = existingSuggestions
     .filter((existing) => {
