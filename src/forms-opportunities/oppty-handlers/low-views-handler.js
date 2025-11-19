@@ -35,7 +35,6 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
     dataAccess, log, auditContext,
   } = context;
   const opptyOptions = auditContext?.data;
-  log.debug(`[Form Opportunity] opptyOptions value: ${JSON.stringify(opptyOptions)}`);
   const { Opportunity } = dataAccess;
 
   const auditData = JSON.parse(JSON.stringify(auditDataObject));
@@ -53,6 +52,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
   const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]);
   let filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeForms);
   filteredOpportunities.forEach((oppty) => excludeForms.add(oppty.form + oppty.formsource));
+  log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] opptyOptions value: ${JSON.stringify(opptyOptions)}`);
 
   // Skip filtering if opptyOptions is 'all'
   if (opptyOptions !== OPPTY_OPTIONS_ALL) {

@@ -101,7 +101,6 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
     dataAccess, log, auditContext,
   } = context;
   const opptyOptions = auditContext?.data;
-  log.debug(`[Form Opportunity] opptyOptions value: ${JSON.stringify(opptyOptions)}`);
   const { Opportunity } = dataAccess;
 
   // eslint-disable-next-line no-param-reassign
@@ -122,6 +121,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
   log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
   let filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeForms);
   filteredOpportunities.forEach((oppty) => excludeForms.add(oppty.form + oppty.formsource));
+  log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] opptyOptions value: ${JSON.stringify(opptyOptions)}`);
 
   // Skip filtering if opptyOptions is 'all'
   if (opptyOptions !== OPPTY_OPTIONS_ALL) {
