@@ -26,6 +26,7 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
       pageUrl: suggestion.pageUrl,
       originalText: suggestion.original_paragraph,
       improvedText: suggestion.improved_paragraph,
+      selector: suggestion.selector,
       originalFleschScore: suggestion.current_flesch_score,
       improvedFleschScore: suggestion.improved_flesch_score,
       seoRecommendation: suggestion.seo_recommendation,

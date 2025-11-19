@@ -11,6 +11,7 @@
  */
 
 import rs from 'text-readability';
+import getCssSelector from 'css-selector-generator';
 import { JSDOM } from 'jsdom';
 import { franc } from 'franc-min';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../../utils/s3-utils.js';
@@ -65,6 +66,7 @@ function extractTrafficFromKey() {
  */
 async function analyzeTextReadability(
   text,
+  selector,
   pageUrl,
   traffic,
   detectedLanguages,
@@ -105,6 +107,7 @@ async function analyzeTextReadability(
 
       return {
         pageUrl,
+        selector,
         textContent: text,
         displayText,
         fleschReadingEase: Math.round(readabilityScore * 100) / 100,
@@ -174,6 +177,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
 
     elementsToProcess.forEach(({ element }) => {
       const textContent = element.textContent?.trim();
+      const selector = getCssSelector(element);
 
       // Handle elements with <br> tags (multiple paragraphs)
       if (element.innerHTML.includes('<br')) {
@@ -190,6 +194,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
         paragraphs.forEach((paragraph) => {
           const analysisPromise = analyzeTextReadability(
             paragraph,
+            selector,
             pageUrl,
             traffic,
             detectedLanguages,
@@ -201,6 +206,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
       } else {
         const analysisPromise = analyzeTextReadability(
           textContent,
+          selector,
           pageUrl,
           traffic,
           detectedLanguages,
