@@ -1,3 +1,10 @@
+## [1.246.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.1...v1.246.2) (2025-11-19)
+
+
+### Bug Fixes
+
+* Update data source for LLM error pages ([#1582](https://github.com/adobe/spacecat-audit-worker/issues/1582)) ([38e1752](https://github.com/adobe/spacecat-audit-worker/commit/38e1752fae52323f25a984c0654b66f620b2fc33))
+
 ## [1.246.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.0...v1.246.1) (2025-11-19)
 
 
