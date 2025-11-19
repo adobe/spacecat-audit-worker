@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+
 export const PROVIDER_USER_AGENT_PATTERNS = {
   chatgpt: '(?i)ChatGPT|GPTBot|OAI-SearchBot',
   perplexity: '(?i)Perplexity',
@@ -37,7 +38,6 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   // Google
   { pattern: '%gemini-deep-research%', displayName: 'Gemini-Deep-Research' },
   { pattern: 'google', displayName: 'Google-ai-mode' },
-
   // Claude
   { pattern: '%claude-user%', displayName: 'Claude-User' },
   { pattern: '%claudebot%', displayName: 'ClaudeBot' },
@@ -52,7 +52,6 @@ export function buildUserAgentDisplaySQL() {
   const cases = USER_AGENT_DISPLAY_PATTERNS
     .map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.displayName}'`)
     .join('\n    ');
-
   return `CASE 
     ${cases}
     ELSE SUBSTR(user_agent, 1, 100)
@@ -81,5 +80,8 @@ export function buildAgentTypeClassificationSQL() {
 
   const cases = patterns.map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.result}'`).join('\n          ');
 
-  return `CASE\n          ${cases}\n          ELSE 'Other'\n        END`;
+  return `CASE
+          ${cases}
+          ELSE 'Other'
+        END`;
 }
