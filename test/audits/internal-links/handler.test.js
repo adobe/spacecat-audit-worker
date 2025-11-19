@@ -881,8 +881,47 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     // Verify that all alternatives are included (no locale filtering)
     expect(messageArg.data.alternativeUrls).to.be.an('array').with.lengthOf(4);
-    expect(context.log.info).to.have.been.calledWith(
-      sinon.match(/No locale prefixes in broken links, including all 4 alternatives/),
+    // All alternatives should be included since no locale filtering was applied
+    expect(messageArg.data.alternativeUrls).to.include('https://bulk.com/home');
+    expect(messageArg.data.alternativeUrls).to.include('https://bulk.com/uk/home');
+    expect(messageArg.data.alternativeUrls).to.include('https://bulk.com/de/home');
+    expect(messageArg.data.alternativeUrls).to.include('https://bulk.com/about');
+  }).timeout(5000);
+
+  it('should skip sending to Mystique when alternativeUrls is empty', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+    context.site.getBaseURL = () => 'https://bulk.com';
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const validSuggestions = [
+      {
+        getData: () => ({
+          urlFrom: 'https://bulk.com/from',
+          urlTo: 'https://bulk.com/broken',
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .resolves(validSuggestions);
+
+    // Mock empty top pages - no alternatives available
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves([]);
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    // Should return complete without sending message
+    expect(result.status).to.equal('complete');
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/No alternative URLs available/),
     );
   }).timeout(5000);
 });

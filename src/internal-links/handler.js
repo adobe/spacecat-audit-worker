@@ -282,17 +282,9 @@ export const opportunityAndSuggestionsStep = async (context) => {
         // Include if URL matches one of the broken links' locales, or has no locale
         return !urlLocale || brokenLinkLocales.has(urlLocale);
       });
-
-      log.info(
-        `[${AUDIT_TYPE}] [Site: ${site.getId()}] Filtered alternatives by locales: ${Array.from(brokenLinkLocales).join(', ')}. `
-        + `${allTopPageUrls.length} → ${alternativeUrls.length} alternatives`,
-      );
     } else {
       // No locale prefixes found, include all alternatives
       alternativeUrls = allTopPageUrls;
-      log.info(
-        `[${AUDIT_TYPE}] [Site: ${site.getId()}] No locale prefixes in broken links, including all ${alternativeUrls.length} alternatives`,
-      );
     }
 
     // Validate before sending to Mystique
@@ -314,13 +306,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
       };
     }
 
-    log.info(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Sending ${brokenLinks.length} broken links to Mystique.`,
-    );
-
-    log.info(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Alternative URLs that Mystique will see (${alternativeUrls.length} total): ${JSON.stringify(alternativeUrls)}`,
-    );
+    if (alternativeUrls.length === 0) {
+      log.warn(
+        `[${AUDIT_TYPE}] [Site: ${site.getId()}] No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.`,
+      );
+      return {
+        status: 'complete',
+      };
+    }
 
     const message = {
       type: 'guidance:broken-links',
