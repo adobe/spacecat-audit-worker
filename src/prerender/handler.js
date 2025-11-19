@@ -13,7 +13,6 @@
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
-// import ExcelJS from 'exceljs';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -23,9 +22,7 @@ import { analyzeHtmlForPrerender } from './html-comparator-utils.js';
 import {
   generateReportingPeriods,
   getS3Config,
-  // downloadExistingCdnSheet,
 } from '../llm-error-pages/utils.js';
-// import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
@@ -336,6 +333,7 @@ export async function submitForScraping(context) {
   const {
     site,
     log,
+    finalUrl,
   } = context;
 
   const siteId = site.getId();
@@ -363,6 +361,13 @@ export async function submitForScraping(context) {
     type: AUDIT_TYPE,
     processingType: AUDIT_TYPE,
     allowCache: false,
+    // Ensure initial audit record has a valid auditResult payload
+    auditResult: {
+      status: 'preparing',
+      finalUrl: finalUrl || site.getBaseURL(),
+    },
+    // Provide a stable fullAuditRef for downstream steps to reference
+    fullAuditRef: `scrapes/${siteId}/`,
     options: {
       pageLoadTimeout: 20000,
       storagePrefix: AUDIT_TYPE,
