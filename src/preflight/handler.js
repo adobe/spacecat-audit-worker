@@ -65,9 +65,9 @@ export const PREFLIGHT_HANDLERS = {
   canonical,
   metatags,
   links,
+  headings,
   readability,
   accessibility,
-  headings,
 };
 
 export async function scrapePages(context) {
