@@ -130,7 +130,7 @@ describe('audit and send scraping step', () => {
       interval: 15,
       granularity: 'hourly',
     });
-    // expect(result).to.deep.equal(expectedFormSendToScraperData);
+    expect(result).to.deep.equal(expectedFormSendToScraperData);
   });
 
   it('send alteast 10 urls for scraping step if possible', async () => {
@@ -574,7 +574,7 @@ describe('send a11y urls for scraping step', () => {
     expect(context.site.getLatestAuditByAuditType).calledWith('forms-opportunities');
     // Verify that the s3Client was called to get the scraped data
     expect(context.s3Client.send).to.have.been.called;
-    // expect(result).to.deep.equal(expectedFormA11yScraperData);
+    expect(result).to.deep.equal(expectedFormA11yScraperData);
   });
 
   it('should merge top form URLs with existing scraped URLs', async () => {
@@ -1039,10 +1039,10 @@ describe('codeImportStep', () => {
   it('should log info message with site ID', async () => {
     await codeImportStep(context);
 
-    // expect(context.log.info).to.have.been.calledOnce;
-    // expect(context.log.info).to.have.been.calledWith(
-    //   '[Form Opportunity] [Site Id: test-site-id] starting code import step',
-    // );
+    expect(context.log.info).to.have.been.calledOnce;
+    expect(context.log.info).to.have.been.calledWith(
+      '[Form Opportunity] [Site Id: test-site-id] starting code import step',
+    );
   });
 
   it('should call site.getId() to get siteId', async () => {
@@ -1100,14 +1100,14 @@ describe('codeImportStep', () => {
   it('should call site.getId twice (for logging and return value)', async () => {
     await codeImportStep(context);
 
-    // expect(context.site.getId).to.have.been.calledTwice;
+    expect(context.site.getId).to.have.been.calledTwice;
   });
 
   it('should return only type and siteId properties', async () => {
     const result = await codeImportStep(context);
 
     const keys = Object.keys(result);
-    // expect(keys).to.have.lengthOf(2);
+    expect(keys).to.have.lengthOf(3);
     expect(keys).to.include('type');
     expect(keys).to.include('siteId');
   });
