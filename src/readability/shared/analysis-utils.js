@@ -11,7 +11,7 @@
  */
 
 import rs from 'text-readability';
-import getCssSelector from 'css-selector-generator';
+import CssSelectorGenerator from 'css-selector-generator';
 import { JSDOM } from 'jsdom';
 import { franc } from 'franc-min';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../../utils/s3-utils.js';
@@ -169,7 +169,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
       })
       .filter(({ element }) => {
         const textContent = element.textContent?.trim();
-        return textContent && textContent.length >= MIN_TEXT_LENGTH && textContent.includes(' ');
+        return textContent && textContent.length >= MIN_TEXT_LENGTH && /\s/.test(textContent);
       });
 
     // Process each element and collect analysis promises
@@ -177,7 +177,8 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
 
     elementsToProcess.forEach(({ element }) => {
       const textContent = element.textContent?.trim();
-      const selector = getCssSelector(element);
+      const generator = new CssSelectorGenerator();
+      const selector = generator.getSelector(element);
 
       // Handle elements with <br> tags (multiple paragraphs)
       if (element.innerHTML.includes('<br')) {
@@ -189,7 +190,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
             return tempDiv.textContent;
           })
           .map((p) => p.trim())
-          .filter((p) => p.length >= MIN_TEXT_LENGTH);
+          .filter((p) => p.length >= MIN_TEXT_LENGTH && /\s/.test(p));
 
         paragraphs.forEach((paragraph) => {
           const analysisPromise = analyzeTextReadability(
