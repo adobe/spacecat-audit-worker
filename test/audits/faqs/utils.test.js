@@ -378,7 +378,7 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/test',
           topic: 'test',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -393,6 +393,7 @@ describe('FAQ Utils', () => {
 
       const suggestions = getJsonFaqSuggestion(faqs);
 
+      expect(suggestions).to.have.length(1);
       expect(suggestions[0].item.scrapedAt).to.equal(testTimestamp);
     });
 
@@ -401,7 +402,7 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/test',
           topic: 'test',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -418,13 +419,13 @@ describe('FAQ Utils', () => {
       const suggestions = getJsonFaqSuggestion(faqs);
       const afterTime = new Date().toISOString();
 
+      expect(suggestions).to.have.length(1);
       expect(suggestions[0].item.scrapedAt).to.be.a('string');
       expect(suggestions[0].item.scrapedAt).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
       // Timestamp should be between before and after
       expect(suggestions[0].item.scrapedAt >= beforeTime).to.be.true;
       expect(suggestions[0].item.scrapedAt <= afterTime).to.be.true;
     });
-
   });
 });
 
