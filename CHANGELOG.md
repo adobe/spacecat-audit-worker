@@ -1,3 +1,10 @@
+# [1.246.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.245.1...v1.246.0) (2025-11-19)
+
+
+### Features
+
+* add Claude support for agentic traffic ([#1606](https://github.com/adobe/spacecat-audit-worker/issues/1606)) ([d5aac5f](https://github.com/adobe/spacecat-audit-worker/commit/d5aac5f201cb9ce6faa2bedb134da257734d39f7))
+
 ## [1.245.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.245.0...v1.245.1) (2025-11-18)
 
 

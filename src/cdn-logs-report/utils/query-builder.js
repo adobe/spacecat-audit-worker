@@ -35,14 +35,16 @@ function buildDateFilter(startDate, endDate) {
 function buildWhereClause(conditions = [], siteFilters = []) {
   const allConditions = [...conditions];
 
-  // Filter for ChatGPT and Perplexity
+  // Filter for ChatGPT, Perplexity, Google, and Claude
   const chatgptPattern = PROVIDER_USER_AGENT_PATTERNS.chatgpt;
   const perplexityPattern = PROVIDER_USER_AGENT_PATTERNS.perplexity;
   const googlePattern = PROVIDER_USER_AGENT_PATTERNS.google;
+  const claudePattern = PROVIDER_USER_AGENT_PATTERNS.claude;
   allConditions.push(`(
     REGEXP_LIKE(user_agent, '${chatgptPattern}') OR 
     REGEXP_LIKE(user_agent, '${perplexityPattern}') OR 
-    REGEXP_LIKE(user_agent, '${googlePattern}')
+    REGEXP_LIKE(user_agent, '${googlePattern}') OR
+    REGEXP_LIKE(user_agent, '${claudePattern}')
   )`);
 
   if (siteFilters && siteFilters.length > 0) {
