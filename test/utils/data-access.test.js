@@ -18,7 +18,12 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import {
-  retrieveSiteBySiteId, syncSuggestions, getImsOrgId, retrieveAuditById, keepSameDataFunction,
+  retrieveSiteBySiteId,
+  syncSuggestions,
+  getImsOrgId,
+  retrieveAuditById,
+  keepSameDataFunction,
+  keepLatestMergeDataFunction,
 } from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -848,6 +853,29 @@ describe('data-access', () => {
       expect(result).to.deep.equal(inputData);
       expect(result).to.not.equal(inputData);
       expect(result.nested).to.equal(inputData.nested);
+    });
+  });
+
+  describe('keepLatestMergeDataFunction', () => {
+    it('completely replaces existing data structure with new one', () => {
+      const existingData = {
+        type: 'OLD_TYPE',
+        url: 'https://old.com',
+        oldProperty: 'oldValue',
+        sharedProperty: 'oldValue',
+      };
+      const newData = {
+        type: 'NEW_TYPE',
+        url: 'https://new.com',
+        newProperty: 'newValue',
+        sharedProperty: 'newValue',
+      };
+      const result = keepLatestMergeDataFunction(existingData, newData);
+
+      expect(result).to.deep.equal(newData);
+      expect(result).to.not.have.property('oldProperty');
+      expect(result).to.have.property('newProperty', 'newValue');
+      expect(result).to.have.property('sharedProperty', 'newValue');
     });
   });
 });
