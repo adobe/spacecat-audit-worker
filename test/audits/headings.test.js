@@ -3477,6 +3477,331 @@ describe('Headings Audit', () => {
       const key2 = buildKeyFn(suggestion2);
       expect(key2).to.equal('heading-order-invalid|https://example.com/page2');
     });
+
+    it('tests mergeDataFunction execution - basic merge without isEdited', async () => {
+      const convertToOpportunityStub4 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub4 = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub4,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub4,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            url: 'https://example.com/page1',
+            recommendedAction: 'New action'
+          }
+        ]
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const syncCall = syncSuggestionsStub4.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+      expect(mergeDataFn).to.be.a('function');
+
+      // Test basic merge without isEdited
+      const existingSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'Old action',
+        someField: 'existing value'
+      };
+      const newSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'New action',
+        someField: 'new value',
+        newField: 'new field value'
+      };
+
+      const result = mergeDataFn(existingSuggestion, newSuggestion);
+
+      // Should merge normally, newSuggestion overwrites existingSuggestion
+      expect(result.recommendedAction).to.equal('New action');
+      expect(result.someField).to.equal('new value');
+      expect(result.newField).to.equal('new field value');
+    });
+
+    it('tests mergeDataFunction execution - preserves recommendedAction when isEdited is true', async () => {
+      const convertToOpportunityStub5 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub5 = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub5,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub5,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            url: 'https://example.com/page1',
+            recommendedAction: 'New action'
+          }
+        ]
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const syncCall = syncSuggestionsStub5.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test merge with isEdited: true
+      const existingSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'User edited action',
+        isEdited: true,
+        someField: 'existing value'
+      };
+      const newSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'AI generated action',
+        someField: 'new value'
+      };
+
+      const result = mergeDataFn(existingSuggestion, newSuggestion);
+
+      // Should preserve the user-edited recommendedAction
+      expect(result.recommendedAction).to.equal('User edited action');
+      expect(result.someField).to.equal('new value');
+      expect(result.isEdited).to.equal(true);
+    });
+
+    it('tests mergeDataFunction execution - does not preserve when isEdited is false', async () => {
+      const convertToOpportunityStub6 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub6 = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub6,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub6,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            url: 'https://example.com/page1',
+            recommendedAction: 'New action'
+          }
+        ]
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const syncCall = syncSuggestionsStub6.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test merge with isEdited: false
+      const existingSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'Old action',
+        isEdited: false,
+        someField: 'existing value'
+      };
+      const newSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'New action',
+        someField: 'new value'
+      };
+
+      const result = mergeDataFn(existingSuggestion, newSuggestion);
+
+      // Should NOT preserve, should use new recommendedAction
+      expect(result.recommendedAction).to.equal('New action');
+      expect(result.someField).to.equal('new value');
+    });
+
+    it('tests mergeDataFunction execution - does not preserve when recommendedAction is undefined', async () => {
+      const convertToOpportunityStub7 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub7 = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub7,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub7,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            url: 'https://example.com/page1',
+            recommendedAction: 'New action'
+          }
+        ]
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const syncCall = syncSuggestionsStub7.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test merge with isEdited: true but recommendedAction is undefined
+      const existingSuggestion = {
+        type: 'CODE_CHANGE',
+        isEdited: true,
+        someField: 'existing value'
+        // recommendedAction is undefined
+      };
+      const newSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'New action',
+        someField: 'new value'
+      };
+
+      const result = mergeDataFn(existingSuggestion, newSuggestion);
+
+      // Should NOT preserve since recommendedAction is undefined
+      expect(result.recommendedAction).to.equal('New action');
+      expect(result.someField).to.equal('new value');
+      expect(result.isEdited).to.equal(true);
+    });
+
+    it('tests mergeDataFunction execution - handles null recommendedAction', async () => {
+      const convertToOpportunityStub8 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub8 = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub8,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub8,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            url: 'https://example.com/page1',
+            recommendedAction: 'New action'
+          }
+        ]
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const syncCall = syncSuggestionsStub8.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test merge with isEdited: true but recommendedAction is null
+      const existingSuggestion = {
+        type: 'CODE_CHANGE',
+        isEdited: true,
+        recommendedAction: null,
+        someField: 'existing value'
+      };
+      const newSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'New action',
+        someField: 'new value'
+      };
+
+      const result = mergeDataFn(existingSuggestion, newSuggestion);
+
+      // Should NOT preserve since recommendedAction is null (which is not !== undefined)
+      // Note: null !== undefined is true, so the condition will pass
+      expect(result.recommendedAction).to.equal(null);
+      expect(result.someField).to.equal('new value');
+      expect(result.isEdited).to.equal(true);
+    });
+
+    it('tests mergeDataFunction execution - preserves empty string recommendedAction when isEdited', async () => {
+      const convertToOpportunityStub9 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub9 = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub9,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub9,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            url: 'https://example.com/page1',
+            recommendedAction: 'New action'
+          }
+        ]
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const syncCall = syncSuggestionsStub9.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test merge with isEdited: true and empty string recommendedAction
+      const existingSuggestion = {
+        type: 'CODE_CHANGE',
+        isEdited: true,
+        recommendedAction: '',
+        someField: 'existing value'
+      };
+      const newSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'New action',
+        someField: 'new value'
+      };
+
+      const result = mergeDataFn(existingSuggestion, newSuggestion);
+
+      // Should preserve the empty string since it's !== undefined
+      expect(result.recommendedAction).to.equal('');
+      expect(result.someField).to.equal('new value');
+      expect(result.isEdited).to.equal(true);
+    });
   });
 
   describe('Opportunity Data Mapper', () => {

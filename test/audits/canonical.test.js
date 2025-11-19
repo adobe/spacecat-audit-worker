@@ -879,6 +879,152 @@ describe('Canonical URL Tests', () => {
       expect(log.info).to.have.been.calledWith('No pages returned 200 status, ending audit without creating opportunities.');
     });
 
+    it('should skip pages that redirect to auth/login pages', async () => {
+      const baseURL = 'https://example.com';
+      const pageURL = 'https://example.com/billing/manage-payment';
+      const signinURL = 'https://example.com/auth/signin';
+      const signinHtml = '<html><head><title>Sign In</title></head><body>Please login</body></html>';
+
+      // Mock redirect: billing page → signin page
+      nock('https://example.com')
+        .get('/billing/manage-payment')
+        .reply(302, '', { Location: signinURL });
+
+      nock('https://example.com')
+        .get('/auth/signin')
+        .reply(200, signinHtml);
+
+      const getTopPagesForSiteStub = sinon.stub().resolves([
+        { getUrl: () => pageURL },
+      ]);
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      expect(result).to.be.an('object');
+      expect(result).to.have.property('fullAuditRef', baseURL);
+      expect(result).to.have.property('auditResult');
+      expect(result.auditResult).to.deep.equal({
+        status: 'success',
+        message: 'No pages with 200 status found to analyze for canonical tags',
+      });
+
+      // Verify the redirect was detected and logged
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/redirected to auth page.*signin/),
+      );
+    });
+
+    it('should skip pages that redirect to various auth patterns', async () => {
+      const baseURL = 'https://example.com';
+      const loginHtml = '<html><head><title>Login</title></head><body>Login page</body></html>';
+
+      // Test multiple auth URL patterns
+      const testCases = [
+        { page: '/account/settings', redirect: '/login' },
+        { page: '/billing', redirect: '/signin' },
+        { page: '/dashboard', redirect: '/authenticate' },
+        { page: '/profile', redirect: '/oauth/authorize' },
+        { page: '/admin', redirect: '/sso' },
+        { page: '/settings', redirect: '/auth' },
+        { page: '/private', redirect: '/auth/login' },
+      ];
+
+      testCases.forEach(({ page, redirect }) => {
+        nock('https://example.com')
+          .get(page)
+          .reply(302, '', { Location: redirect });
+
+        nock('https://example.com')
+          .get(redirect)
+          .reply(200, loginHtml);
+      });
+
+      const getTopPagesForSiteStub = sinon.stub().resolves(
+        testCases.map(({ page }) => ({ getUrl: () => `https://example.com${page}` })),
+      );
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      expect(result).to.be.an('object');
+      expect(result.auditResult).to.deep.equal({
+        status: 'success',
+        message: 'No pages with 200 status found to analyze for canonical tags',
+      });
+
+      // Verify all redirects were detected
+      testCases.forEach(({ redirect }) => {
+        expect(log.info).to.have.been.calledWith(
+          sinon.match(new RegExp(`redirected to auth page.*${redirect}`)),
+        );
+      });
+    });
+
+    it('should skip pages that redirect to auth patterns anywhere in URL path', async () => {
+      const baseURL = 'https://example.com';
+      const loginHtml = '<html><head><title>Login</title></head><body>Login page</body></html>';
+
+      // Test auth patterns that appear in the middle or end of URL path
+      const testCases = [
+        { page: '/myaccount', redirect: '/user/login/redirect' },
+        { page: '/dashboard', redirect: '/company/signin/page' },
+        { page: '/api/data', redirect: '/services/authenticate/form' },
+        { page: '/checkout', redirect: '/payment/oauth/callback' },
+      ];
+
+      testCases.forEach(({ page, redirect }) => {
+        nock('https://example.com')
+          .get(page)
+          .reply(302, '', { Location: redirect });
+
+        nock('https://example.com')
+          .get(redirect)
+          .reply(200, loginHtml);
+      });
+
+      const getTopPagesForSiteStub = sinon.stub().resolves(
+        testCases.map(({ page }) => ({ getUrl: () => `https://example.com${page}` })),
+      );
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      expect(result).to.be.an('object');
+      expect(result.auditResult).to.deep.equal({
+        status: 'success',
+        message: 'No pages with 200 status found to analyze for canonical tags',
+      });
+
+      // Verify all redirects were detected (includes() should catch patterns anywhere)
+      testCases.forEach(({ page }) => {
+        expect(log.info).to.have.been.calledWith(
+          sinon.match(new RegExp(`Page.*${page}.*redirected to auth page`)),
+        );
+      });
+    });
+
     it('should skip redundant fetch for self-referenced canonical URLs', async () => {
       const baseURL = 'https://example.com';
       const pageURL = 'https://example.com/page1';
@@ -1098,7 +1244,7 @@ describe('Canonical URL Tests', () => {
       const result = createOpportunityData();
 
       expect(result).to.be.an('object');
-      expect(result).to.have.property('runbook', '');
+      expect(result).to.have.property('runbook').that.is.a('string').and.is.not.empty;
       expect(result).to.have.property('origin', 'AUTOMATION');
       expect(result).to.have.property('title', 'Canonical URL issues affecting SEO');
       expect(result).to.have.property('description').that.is.a('string');
@@ -1118,7 +1264,7 @@ describe('Canonical URL Tests', () => {
       const result = createOpportunityDataForElmo();
 
       expect(result).to.be.an('object');
-      expect(result).to.have.property('runbook', '');
+      expect(result).to.have.property('runbook').that.is.a('string').and.is.not.empty;
       expect(result).to.have.property('origin', 'AUTOMATION');
       expect(result).to.have.property('title', 'Canonical URL issues affecting SEO');
       expect(result).to.have.property('description').that.is.a('string');

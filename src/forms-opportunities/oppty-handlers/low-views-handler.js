@@ -40,7 +40,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
   try {
     opportunities = await Opportunity.allBySiteId(auditData.siteId);
   } catch (e) {
-    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
+    log.error(`[Form Opportunity] [Site Id: ${auditData.siteId}] fetching opportunities failed with error: ${e.message}`);
     throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
 
@@ -57,7 +57,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
     log,
     2, // Limit to top 2 opportunities by pageviews
   );
-  log.debug(`filtered opportunities: high-page-views-low-form-views:  ${JSON.stringify(filteredOpportunities, null, 2)}`);
+  log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] filtered opportunities: high-page-views-low-form-views:  ${JSON.stringify(filteredOpportunities, null, 2)}`);
   try {
     for (const opptyData of filteredOpportunities) {
       let highPageViewsLowFormViewsOptty = opportunities.find(
@@ -93,7 +93,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         },
       };
 
-      log.debug(`Forms Opportunity created high page views low form views ${JSON.stringify(opportunityData, null, 2)}`);
+      log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] forms opportunity created high page views low form views ${JSON.stringify(opportunityData, null, 2)}`);
       let formsList = [];
 
       if (!highPageViewsLowFormViewsOptty) {
@@ -114,7 +114,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
       } else {
         const data = highPageViewsLowFormViewsOptty.getData();
         const { formDetails } = data;
-        log.debug(`Form details available for data  ${JSON.stringify(data, null, 2)}`);
+        log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] form details available for data  ${JSON.stringify(data, null, 2)}`);
         formsList = (formDetails !== undefined && isNonEmptyObject(formDetails))
           ? (log.debug('Form details available for opportunity, not sending it to mystique'), [])
           : [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
@@ -139,7 +139,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         : sendMessageToFormsQualityAgent(context, highPageViewsLowFormViewsOptty, formsList));
     }
   } catch (e) {
-    log.error(`Creating Forms opportunity for high page views low form views for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
+    log.error(`[Form Opportunity] [Site Id: ${auditData.siteId}] creating forms opportunity for high page views low form views failed with error: ${e.message}`, e);
   }
-  log.debug(`Successfully synced Opportunity for site: ${auditData.siteId} and high page views low form views audit type.`);
+  log.info(`[Form Opportunity] [Site Id: ${auditData.siteId}] successfully synced opportunity for site: ${auditData.siteId} and high page views low form views audit type.`);
 }

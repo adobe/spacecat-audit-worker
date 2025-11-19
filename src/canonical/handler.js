@@ -516,6 +516,16 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       try {
         const response = await fetch(url, options);
         const { status } = response;
+        const finalUrl = response.url;
+
+        // Check if page redirected to an auth/login page
+        if (finalUrl !== url && shouldSkipAuthPage(finalUrl)) {
+          log.info(`Page ${url} redirected to auth page ${finalUrl}, skipping`);
+          return {
+            url, status, isOk: false,
+          };
+        }
+
         log.info(`Page ${url} returned status: ${status}`);
         return { url, status, isOk: status === 200 };
       } catch (error) {
