@@ -323,6 +323,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         generateSuggestionData: () => AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
       },
     });
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
     context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
       .resolves(AUDIT_RESULT_DATA_WITH_SUGGESTIONS.map((data) => (
         { getData: () => data, getId: () => '1111', save: () => {} })));
@@ -385,6 +388,11 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
   }).timeout(5000);
 
   it('handles SQS message sending errors', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
     context.sqs.sendMessage.rejects(new Error('SQS error'));
@@ -393,9 +401,38 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     context.site.getLatestAuditByAuditType = () => auditData;
     context.site.getDeliveryType = () => 'aem_edge';
 
-    await expect(
-      handler.opportunityAndSuggestionsStep(context),
-    ).to.be.rejectedWith('SQS error');
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
+      },
+    });
+
+    // Ensure we have suggestions and alternativeUrls for SQS to be called
+    // Stub must be set up AFTER handler is created to ensure it uses the correct context
+    const validSuggestions = [
+      {
+        getData: () => ({
+          urlFrom: 'https://www.petplace.com/a02nf',
+          urlTo: 'https://www.petplace.com/a01',
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+    // Stub must accept any opportunity ID (the code calls it with opportunity.getId())
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves([{ getUrl: () => 'https://example.com/page1' }]);
+
+    try {
+      await handler.opportunityAndSuggestionsStep(context);
+      expect.fail('Expected promise to be rejected');
+    } catch (error) {
+      expect(error.message).to.include('SQS error');
+    }
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
       expectedOpportunity,
@@ -403,12 +440,43 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
   }).timeout(5000);
 
   it('creating a new opportunity object succeeds and sends SQS messages', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
 
     context.site.getLatestAuditByAuditType = () => auditData;
     context.site.getDeliveryType = () => 'aem_edge';
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
+      },
+    });
+
+    // Ensure we have suggestions and alternativeUrls for SQS to be called
+    // Stub must be set up AFTER handler is created to ensure it uses the correct context
+    const validSuggestions = [
+      {
+        getData: () => ({
+          urlFrom: 'https://www.petplace.com/a02nf',
+          urlTo: 'https://www.petplace.com/a01',
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+    // Stub must accept any opportunity ID (the code calls it with opportunity.getId())
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves([{ getUrl: () => 'https://example.com/page1' }]);
 
     const result = await handler.opportunityAndSuggestionsStep(context);
 
