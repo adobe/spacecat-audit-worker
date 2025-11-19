@@ -18,7 +18,6 @@ import esmock from 'esmock';
 
 use(sinonChai);
 import prerenderHandler, {
-  importTopPages,
   submitForScraping,
   processContentAndGenerateOpportunities,
   processOpportunityAndSuggestions,
@@ -46,7 +45,6 @@ describe('Prerender Audit', () => {
     });
 
     it('should export step functions', () => {
-      expect(importTopPages).to.be.a('function');
       expect(submitForScraping).to.be.a('function');
       expect(processContentAndGenerateOpportunities).to.be.a('function');
     });
@@ -215,23 +213,6 @@ describe('Prerender Audit', () => {
   });
 
   describe('Step Functions', () => {
-    describe('importTopPages', () => {
-      it('should return import configuration', async () => {
-        const context = {
-          site: { getId: () => 'test-site-id' },
-          finalUrl: 'https://example.com',
-        };
-
-        const result = await importTopPages(context);
-
-        expect(result).to.deep.equal({
-          type: 'top-pages',
-          siteId: 'test-site-id',
-          auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
-          fullAuditRef: 'scrapes/test-site-id/',
-        });
-      });
-    });
 
     describe('submitForScraping', () => {
       it('should return URLs for scraping', async () => {
