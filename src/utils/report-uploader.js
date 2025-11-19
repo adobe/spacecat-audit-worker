@@ -110,7 +110,7 @@ async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {
       }
 
       // Use exponential backoff with jitter for retries
-      const baseDelay = 4000;
+      const baseDelay = 10000;
       const exponentialDelay = baseDelay * (2 ** (attemptNumber - 1));
       const jitter = Math.floor(Math.random() * (exponentialDelay / 2));
       const retryDelay = exponentialDelay + jitter;
