@@ -13,7 +13,7 @@
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
-import ExcelJS from 'exceljs';
+// import ExcelJS from 'exceljs';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -23,9 +23,9 @@ import { analyzeHtmlForPrerender } from './html-comparator-utils.js';
 import {
   generateReportingPeriods,
   getS3Config,
-  downloadExistingCdnSheet,
+  // downloadExistingCdnSheet,
 } from '../llm-error-pages/utils.js';
-import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
+// import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
@@ -48,126 +48,20 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = 200) {
     const periods = generateReportingPeriods();
     const latestWeek = periods.weeks[0];
     const weekId = `w${String(latestWeek.weekNumber).padStart(2, '0')}-${latestWeek.year}`;
-    const athenaClient = AWSAthenaClient.fromContext(
-      context,
-      s3Config.getAthenaTempLocation(),
+    const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+    // Build query using agentic report query builder (date-range + LLM UA + site filters)
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery({
+      periods,
+      databaseName: s3Config.databaseName,
+      tableName: s3Config.tableName,
+      site,
+    });
+    log.info('[PRERENDER] Executing Athena query for top agentic URLs...');
+    const results = await athenaClient.query(
+      query,
+      s3Config.databaseName,
+      '[Athena Query] Prerender - Top Agentic URLs',
     );
-
-    // Debug: List tables available in the target database to help diagnose TABLE_NOT_FOUND
-    try {
-      const showTables = `SHOW TABLES IN ${s3Config.databaseName}`;
-      const tableRows = await athenaClient.query(
-        showTables,
-        s3Config.databaseName,
-        '[Athena Debug] List tables',
-      );
-      // Try to extract table names safely; fall back to raw rows
-      let tableNames = [];
-      try {
-        tableNames = (tableRows || []).map((row) => {
-          const vals = Object.values(row || {});
-          return vals.length > 0 ? String(vals[0]) : JSON.stringify(row);
-        });
-      } catch {
-        tableNames = tableRows;
-      }
-      log.info(
-        `[PRERENDER] Athena tables in ${s3Config.databaseName}: `
-        + `${JSON.stringify(tableNames)}`,
-      );
-    } catch (listErr) {
-      log.warn(
-        `[PRERENDER] Failed to list Athena tables for ${s3Config.databaseName}: `
-        + `${listErr?.message || listErr}`,
-      );
-    }
-
-    // Helper to execute query for a given table name
-    const runQueryForTable = async (tableName) => {
-      const q = await weeklyBreakdownQueries.createAgenticReportQuery({
-        periods,
-        databaseName: s3Config.databaseName,
-        tableName,
-        site,
-      });
-      log.info(`[PRERENDER] Executing Athena query for top agentic URLs on table=${tableName} ...`);
-      return athenaClient.query(
-        q,
-        s3Config.databaseName,
-        `[Athena Query] Prerender - Top Agentic URLs (${tableName})`,
-      );
-    };
-
-    // Try consolidated first, then fallback to non-consolidated if table is missing.
-    // If both fail (e.g., dev only has raw table), aggregate from raw table as a last resort.
-    let results = null;
-    try {
-      results = await runQueryForTable(s3Config.tableName);
-    } catch (err) {
-      const msg = err?.message || '';
-      const fallbackTable = s3Config.tableName?.replace(/_consolidated$/, '');
-      if (msg.includes('TABLE_NOT_FOUND') && fallbackTable && fallbackTable !== s3Config.tableName) {
-        log.warn(`[PRERENDER] ${s3Config.tableName} not found. Retrying with fallback table: ${fallbackTable}`);
-        try {
-          results = await runQueryForTable(fallbackTable);
-        } catch (err2) {
-          // Keep results as null to try raw fallback below
-          log.warn(`[PRERENDER] Fallback table ${fallbackTable} also failed: ${err2?.message || err2}`);
-        }
-      } else {
-        throw err;
-      }
-    }
-
-    // Raw-table fallback
-    if (!results) {
-      try {
-        const baseUrl = site.getBaseURL?.() || '';
-        const { host } = baseUrl ? new URL(baseUrl) : { host: '' };
-
-        const start = latestWeek.startDate.toISOString().slice(0, 10);
-        const end = latestWeek.endDate.toISOString().slice(0, 10);
-
-        const rawTableName = `raw_logs_${s3Config.customerDomain}_fastly`;
-
-        // Basic LLM user-agent filter (keep in sync with classification where possible)
-        const llmUaRegex = '(?i)(chatgpt|gptbot|oai|perplexity|gemini|google|bard|claude|anthropic|ai-search|ai\\ssearch)';
-
-        const rawQuery = `
-          WITH filtered AS (
-            SELECT
-              lower(regexp_replace(url, '/+$', '')) AS url_norm,
-              request_user_agent,
-              response_status,
-              CAST(time_to_first_byte AS DOUBLE) AS ttfb,
-              host
-            FROM ${s3Config.databaseName}.${rawTableName}
-            WHERE
-              cast(from_iso8601_timestamp(timestamp) as date) BETWEEN date '${start}' AND date '${end}'
-              ${host ? `AND REGEXP_LIKE(host, '(?i)(${host.replaceAll('.', '\\.')})')` : ''}
-              AND REGEXP_LIKE(request_user_agent, '${llmUaRegex}')
-          )
-          SELECT
-            url_norm AS url,
-            COUNT(*) AS number_of_hits,
-            ROUND(AVG(ttfb), 2) AS avg_ttfb_ms
-          FROM filtered
-          WHERE url_norm IS NOT NULL AND url_norm <> ''
-          GROUP BY 1
-          ORDER BY number_of_hits DESC
-          LIMIT ${Math.max(5, limit)};
-        `;
-
-        log.warn('[PRERENDER] Aggregated tables missing; using raw table fallback for top agentic URLs.');
-        results = await athenaClient.query(
-          rawQuery,
-          s3Config.databaseName,
-          '[Athena Query] Prerender - Top Agentic URLs (raw fallback)',
-        );
-      } catch (rawErr) {
-        log.warn(`[PRERENDER] Raw table fallback failed: ${rawErr?.message || rawErr}`);
-      }
-    }
 
     if (!Array.isArray(results) || results.length === 0) {
       log.warn('[PRERENDER] Athena returned no agentic rows.');
@@ -220,6 +114,7 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = 200) {
  * @param {number} limit
  * @returns {Promise<Array<{url:string, agenticTraffic:number, agenticTrafficDuration:string}>>}
  */
+/*
 async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
   const { log } = context;
   try {
@@ -244,7 +139,10 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
     );
 
     if (!rows || rows.length === 0) {
-      log.warn(`[PRERENDER] No agentic traffic rows found in sheet for ${weekId} at ${outputLocation}`);
+      log.warn(
+        `[PRERENDER] No agentic traffic rows found in sheet for ${weekId} `
+        + `at ${outputLocation}`,
+      );
       return [];
     }
 
@@ -284,7 +182,7 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
     return [];
   }
 }
-
+*/
 /**
  * Wrapper: Try Athena first, then fall back to sheet if needed.
  * @param {any} site
@@ -293,12 +191,13 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
  * @returns {Promise<string[]>}
  */
 async function getTopAgenticUrls(site, context, limit = 200) {
-  // Prefer Sheet (works in dev/prod when generated), then fallback to Athena
-  const fromSheet = await getTopAgenticUrlsFromSheet(site, context, limit);
-  if (fromSheet.length > 0) {
-    return fromSheet;
-  }
-  return getTopAgenticUrlsFromAthena(site, context, limit);
+  // Prefer Athena (primary), then fallback to Sheet if Athena returns no data
+  const fromAthena = await getTopAgenticUrlsFromAthena(site, context, limit);
+  return fromAthena;
+  // if (fromAthena.length > 0) {
+  //   return fromAthena;
+  // }
+  // return getTopAgenticUrlsFromSheet(site, context, limit);
 }
 
 /**
