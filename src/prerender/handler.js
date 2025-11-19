@@ -370,7 +370,7 @@ export async function submitForScraping(context) {
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
   // Fetch Top Agentic URLs from weekly sheet (best-effort)
-  const agenticStats = await getTopAgenticUrls(site, context, 5);
+  const agenticStats = await getTopAgenticUrls(site, context, 50);
   const agenticUrls = agenticStats.map((s) => s.url);
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs, ...agenticUrls])];
@@ -615,8 +615,9 @@ export async function processContentAndGenerateOpportunities(context) {
     });
 
     // Build agentic traffic map (best-effort)
+    let agenticStats = [];
     try {
-      const agenticStats = await getTopAgenticUrls(site, context, 200);
+      agenticStats = await getTopAgenticUrls(site, context, 50);
       agenticStats.forEach(({ url, agenticTraffic, agenticTrafficDuration }) => {
         agenticTrafficMap.set(url, Number(agenticTraffic || 0) || 0);
         if (agenticTrafficDuration) {
@@ -635,7 +636,6 @@ export async function processContentAndGenerateOpportunities(context) {
     } else {
       // Fallback: get top pages and included URLs
       urlsToCheck = topPages.map((page) => page.getUrl()).slice(0, 5);
-      const agenticStats = await getTopAgenticUrls(site, context, 5);
       urlsToCheck = [...new Set([...urlsToCheck, ...agenticStats.map((s) => s.url)])];
       /* c8 ignore start */
       const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
