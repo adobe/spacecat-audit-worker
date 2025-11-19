@@ -54,12 +54,13 @@ export async function formsAuditRunner(auditUrl, context) {
 
 export async function runAuditAndSendUrlsForScrapingStep(context) {
   const {
-    site, log, finalUrl, dataAccess,
+    site, log, finalUrl, dataAccess, data,
   } = context;
 
   const { SiteTopForm } = dataAccess;
   const topForms = await SiteTopForm.allBySiteId(site.getId());
 
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] data received for audit: ${JSON.stringify(data)}`);
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting audit`);
   const formsAuditRunnerResult = await formsAuditRunner(finalUrl, context);
   const { formVitals } = formsAuditRunnerResult.auditResult;
@@ -222,10 +223,12 @@ export async function codeImportStep(context) {
 
 export async function processOpportunityStep(context) {
   const {
-    log, site, finalUrl,
+    log, site, finalUrl, data,
   } = context;
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] data received for processing opportunity: ${JSON.stringify(data)}`);
+
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
   const excludeForms = new Set();
