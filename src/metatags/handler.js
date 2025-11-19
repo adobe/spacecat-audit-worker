@@ -349,7 +349,7 @@ export async function submitForScraping(context) {
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
   log.info(`[metatags] Found ${topPagesUrls.length} top pages from Ahrefs`);
-  log.debug(`[metatags] Top pages URLs: ${JSON.stringify(topPagesUrls)}`);
+  log.info(`[metatags] Top pages URLs: ${JSON.stringify(topPagesUrls)}`);
 
   // Combine includedURLs and topPages URLs to scrape
   const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
@@ -359,7 +359,8 @@ export async function submitForScraping(context) {
   }
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-  log.debug(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
+  const duplicatesRemoved = topPagesUrls.length + includedURLs.length - finalUrls.length;
+  log.info(`[metatags] Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape: ${finalUrls.length} (removed ${duplicatesRemoved} duplicates)`);
 
   if (finalUrls.length === 0) {
     throw new Error(`No URLs found for site neither top pages nor included URLs for ${site.getId()}`);
