@@ -14,6 +14,7 @@ import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { resolveConsolidatedBucketName, extractCustomerDomain } from '../utils/cdn-utils.js';
 import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL } from '../common/user-agent-classification.js';
 import { ELMO_LIVE_HOST } from '../common/constants.js';
+import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 
 // ============================================================================
 // CONSTANTS
@@ -127,6 +128,14 @@ function buildWhereClause(conditions = [], llmProviders = null, siteFilters = []
   return `WHERE ${allConditions.join(' AND ')}`;
 }
 
+function buildCountryExtractionSQL() {
+  const extracts = DEFAULT_COUNTRY_PATTERNS
+    .map(({ regex }) => `NULLIF(UPPER(REGEXP_EXTRACT(url, '${regex}', 1)), '')`)
+    .join(',\n    ');
+
+  return `COALESCE(\n    ${extracts},\n    'GLOBAL'\n  )`;
+}
+
 export async function fetchRemotePatterns(site) {
   const dataFolder = site.getConfig()?.getLlmoDataFolder?.();
   if (!dataFolder) {
@@ -222,6 +231,8 @@ export async function buildLlmErrorPagesQuery(options) {
     // product/category classification via patterns
     topicExtraction: buildTopicExtractionSQL(remotePatterns),
     pageCategoryClassification: generatePageTypeClassification(remotePatterns),
+    // country extraction
+    countryExtraction: buildCountryExtractionSQL(),
   }, './src/llm-error-pages/sql/llm-error-pages.sql');
 }
 

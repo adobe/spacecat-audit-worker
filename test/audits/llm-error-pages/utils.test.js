@@ -221,6 +221,11 @@ describe('LLM Error Pages Utils', () => {
         }),
         './src/llm-error-pages/sql/llm-error-pages.sql',
       );
+      const callArg = mockGetStaticContent.firstCall.args[0];
+      expect(callArg).to.have.property('countryExtraction');
+      expect(callArg.countryExtraction).to.include('COALESCE(');
+      expect(callArg.countryExtraction).to.include('REGEXP_EXTRACT(url');
+      expect(callArg.countryExtraction).to.include('GLOBAL');
     });
 
     it('should build query without date range', async () => {
@@ -367,6 +372,8 @@ describe('LLM Error Pages Utils', () => {
         expect(callArg).to.have.property('agentTypeClassification');
         expect(callArg).to.have.property('topicExtraction');
         expect(callArg).to.have.property('pageCategoryClassification');
+        expect(callArg).to.have.property('countryExtraction');
+        expect(callArg.countryExtraction).to.include('COALESCE(');
       } finally {
         globalThis.fetch = originalFetch;
       }
