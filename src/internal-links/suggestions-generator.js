@@ -13,7 +13,7 @@
 import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
-import { getScrapedDataForSiteId } from '../support/utils.js';
+import { getScrapedDataForSiteId, limitConcurrency } from '../support/utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from './subpath-filter.js';
 
@@ -25,6 +25,7 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
   const azureOpenAIOptions = { responseFormat: 'json_object' };
   const BATCH_SIZE = 300;
+  const MAX_CONCURRENT_AI_CALLS = 5;
 
   // Ensure brokenInternalLinks is an array
   if (!Array.isArray(brokenInternalLinks)) {
@@ -205,19 +206,20 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     }
   }
 
-  const updatedInternalLinks = [];
-  for (let index = 0; index < brokenLinksWithFilteredData.length; index += 1) {
-    const link = brokenLinksWithFilteredData[index];
-    const headerSuggestions = headerSuggestionsResults[index];
-    // eslint-disable-next-line no-await-in-loop
-    const updatedLink = await processLink(link, headerSuggestions);
-    // Remove filtered data before returning (not needed in final result)
-    const cleanLink = { ...updatedLink };
-    delete cleanLink.filteredSiteData;
-    delete cleanLink.filteredHeaderLinks;
-    updatedInternalLinks.push(cleanLink);
-  }
-  return updatedInternalLinks;
+  return limitConcurrency(
+    brokenLinksWithFilteredData.map(
+      (link, index) => async () => {
+        const headerSuggestions = headerSuggestionsResults[index];
+        const updatedLink = await processLink(link, headerSuggestions);
+        // Remove filtered data before returning (not needed in final result)
+        const cleanLink = { ...updatedLink };
+        delete cleanLink.filteredSiteData;
+        delete cleanLink.filteredHeaderLinks;
+        return cleanLink;
+      },
+    ),
+    MAX_CONCURRENT_AI_CALLS,
+  );
 };
 
 export async function syncBrokenInternalLinksSuggestions({

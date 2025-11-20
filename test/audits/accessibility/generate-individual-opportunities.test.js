@@ -20,7 +20,7 @@ import esmock from 'esmock';
 import {
   formatWcagRule,
   formatIssue,
-  aggregateAccessibilityIssues,
+  aggregateA11yIssuesByOppType,
   createIndividualOpportunity,
   calculateAccessibilityMetrics,
 } from '../../../src/accessibility/utils/generate-individual-opportunities.js';
@@ -804,12 +804,12 @@ describe('aggregateAccessibilityIssues', () => {
   });
 
   it('should return empty data array for null input', () => {
-    const result = aggregateAccessibilityIssues(null);
+    const result = aggregateA11yIssuesByOppType(null);
     expect(result).to.deep.equal({ data: [] });
   });
 
   it('should return empty data array for undefined input', () => {
-    const result = aggregateAccessibilityIssues(undefined);
+    const result = aggregateA11yIssuesByOppType(undefined);
     expect(result).to.deep.equal({ data: [] });
   });
 
@@ -822,7 +822,7 @@ describe('aggregateAccessibilityIssues', () => {
         },
       },
     };
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.be.empty;
   });
 
@@ -845,7 +845,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive']).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com');
@@ -876,7 +876,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive']).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com');
@@ -918,7 +918,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     const opportunity = result.data[0];
     expect(opportunity['a11y-assistive']).to.have.lengthOf(2); // Now creates separate URL objects
@@ -968,7 +968,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     const opportunity = result.data[0];
     expect(opportunity['a11y-assistive']).to.have.lengthOf(2);
@@ -1002,7 +1002,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive']).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com/page2');
@@ -1013,7 +1013,7 @@ describe('aggregateAccessibilityIssues', () => {
       'https://example.com': {},
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.be.empty;
   });
 
@@ -1027,7 +1027,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.be.empty;
   });
 
@@ -1049,7 +1049,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.be.empty;
   });
 
@@ -1073,7 +1073,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
 
     expect(result.data).to.have.lengthOf(1);
     const opportunity = result.data[0];
@@ -1114,10 +1114,10 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     const opportunity = result.data[0];
-    expect(opportunity['a11y-assistive']).to.have.lengthOf(3); // Creates 3 separate URL objects
+    expect(opportunity['a11y-assistive']).to.have.lengthOf(3); // Creates 3 separate URL objects (one per HTML element)
 
     // Verify each URL object has one issue with one HTML element
     opportunity['a11y-assistive'].forEach((urlObject) => {
@@ -1127,21 +1127,17 @@ describe('aggregateAccessibilityIssues', () => {
       expect(urlObject.issues[0].htmlWithIssues).to.have.lengthOf(1);
     });
 
-    // Verify specific HTML content
-    expect(opportunity['a11y-assistive'][0].issues[0].htmlWithIssues[0].update_from)
-      .to.equal('<div aria-fake="true">Content 1</div>');
-    expect(opportunity['a11y-assistive'][1].issues[0].htmlWithIssues[0].update_from)
-      .to.equal('<span aria-invalid-attr="value">Content 2</span>');
-    expect(opportunity['a11y-assistive'][2].issues[0].htmlWithIssues[0].update_from)
-      .to.equal('<p aria-made-up="test">Content 3</p>');
+    // Verify all HTML elements are present across the URL objects (order may vary)
+    const allUpdateFromValues = opportunity['a11y-assistive'].map((obj) => obj.issues[0].htmlWithIssues[0].update_from);
+    const allTargetSelectors = opportunity['a11y-assistive'].map((obj) => obj.issues[0].htmlWithIssues[0].target_selector);
 
-    // Verify specific target
-    expect(opportunity['a11y-assistive'][0].issues[0].htmlWithIssues[0].target_selector)
-      .to.equal('div[aria-fake]');
-    expect(opportunity['a11y-assistive'][1].issues[0].htmlWithIssues[0].target_selector)
-      .to.equal('span[aria-invalid-attr]');
-    expect(opportunity['a11y-assistive'][2].issues[0].htmlWithIssues[0].target_selector)
-      .to.equal('p[aria-made-up]');
+    expect(allUpdateFromValues).to.include('<div aria-fake="true">Content 1</div>');
+    expect(allUpdateFromValues).to.include('<span aria-invalid-attr="value">Content 2</span>');
+    expect(allUpdateFromValues).to.include('<p aria-made-up="test">Content 3</p>');
+
+    expect(allTargetSelectors).to.include('div[aria-fake]');
+    expect(allTargetSelectors).to.include('span[aria-invalid-attr]');
+    expect(allTargetSelectors).to.include('p[aria-made-up]');
   });
 
   it('should return original url if URL parsing fails', () => {
@@ -1163,7 +1159,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com:port');
   });
@@ -1330,6 +1326,7 @@ describe('createIndividualOpportunitySuggestions', () => {
         sendMessage: sandbox.stub().resolves(),
       },
       env: {
+        IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
@@ -1628,6 +1625,8 @@ describe('createIndividualOpportunitySuggestions', () => {
     // Test the buildKey function with missing target_selector
     const result = buildKey(aggregatedData.data[0]);
 
+    // buildKey always uses INDIVIDUAL granularity for database uniqueness: url|type|selector
+    // Empty selector results in trailing pipe for backwards compatibility
     expect(result).to.equal('https://example.com/page3|image-alt|');
   });
 
@@ -1664,6 +1663,8 @@ describe('createIndividualOpportunitySuggestions', () => {
     // Test the buildKey function with null target_selector
     const result = buildKey(aggregatedData.data[0]);
 
+    // buildKey always uses INDIVIDUAL granularity: url|type|selector
+    // Null selector results in trailing pipe
     expect(result).to.equal('https://example.com/page4|button-name|');
   });
 
@@ -1695,6 +1696,8 @@ describe('createIndividualOpportunitySuggestions', () => {
     // Test the buildKey function with empty htmlWithIssues
     const result = buildKey(aggregatedData.data[0]);
 
+    // buildKey always uses INDIVIDUAL granularity: url|type|selector
+    // Empty htmlWithIssues results in empty selector and trailing pipe
     expect(result).to.equal('https://example.com/page5|label|');
   });
 
@@ -1915,6 +1918,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
         sendMessage: sandbox.stub().resolves(),
       },
       env: {
+        IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
@@ -2676,14 +2680,14 @@ describe('createAccessibilityIndividualOpportunities', () => {
   });
 });
 
-describe('createMystiqueMessage', () => {
+describe('createDirectMystiqueMessage', () => {
   it('should create a message object with all required fields', () => {
     const fakeOpportunity = { getId: () => 'oppty-123' };
     const issuesList = [{ type: 'color-contrast', description: 'desc' }];
     const siteId = 'site-789';
     const auditId = 'audit-101';
     const deliveryType = 'aem_edge';
-    const result = generateIndividualOpportunitiesModule.createMystiqueMessage({
+    const result = generateIndividualOpportunitiesModule.createDirectMystiqueMessage({
       url: 'https://example.com',
       issuesList,
       opportunity: fakeOpportunity,
@@ -2708,7 +2712,7 @@ describe('createMystiqueMessage', () => {
   it('should default siteId and auditId to empty string if not provided', () => {
     const fakeOpportunity = { getId: () => 'oppty-123' };
     const issuesList = [];
-    const result = generateIndividualOpportunitiesModule.createMystiqueMessage({
+    const result = generateIndividualOpportunitiesModule.createDirectMystiqueMessage({
       url: 'https://example.com',
       issuesList,
       opportunity: fakeOpportunity,
@@ -2727,13 +2731,39 @@ describe('sendMystiqueMessage', () => {
   let fakeEnv;
   let fakeLog;
   let fakeOpportunity;
+  let fakeContext;
+  let mockIsAuditEnabledForSite;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     fakeSqs = { sendMessage: sandbox.stub().resolves() };
-    fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
+    fakeEnv = {
+      QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+      IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
+    };
     fakeLog = { info: sandbox.stub(), error: sandbox.stub() };
     fakeOpportunity = { getId: () => 'oppty-1' };
+    mockIsAuditEnabledForSite = sandbox.stub().resolves(true);
+    fakeContext = {
+      site: {
+        getId: sandbox.stub().returns('site-1'),
+      },
+      dataAccess: {
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            getHandlers: sandbox.stub().returns({
+              'a11y-mystique-auto-fix': {
+                productCodes: ['test-product-code'],
+              },
+            }),
+            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
+          }),
+        },
+      },
+      log: {
+        error: sandbox.stub(),
+      },
+    };
   });
 
   afterEach(() => {
@@ -2743,7 +2773,7 @@ describe('sendMystiqueMessage', () => {
   it('should send a message and log info on success', async () => {
     const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
       url: 'https://example.com',
-      issuesList: [{ type: 'color-contrast' }],
+      issuesList: [{ issueName: 'color-contrast' }],
       opportunity: fakeOpportunity,
       siteId: 'site-1',
       auditId: 'audit-1',
@@ -2751,9 +2781,9 @@ describe('sendMystiqueMessage', () => {
       sqs: fakeSqs,
       env: fakeEnv,
       log: fakeLog,
+      context: fakeContext,
     });
     expect(fakeSqs.sendMessage).to.have.been.calledOnce;
-    expect(fakeLog.info).to.have.been.calledWithMatch('[A11yIndividual] Sent message to Mystique');
     expect(result).to.deep.include({ success: true, url: 'https://example.com' });
   });
 
@@ -2761,7 +2791,7 @@ describe('sendMystiqueMessage', () => {
     fakeSqs.sendMessage.rejects(new Error('SQS error'));
     const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
       url: 'https://example.com',
-      issuesList: [{ type: 'color-contrast' }],
+      issuesList: [{ issueName: 'color-contrast' }],
       opportunity: fakeOpportunity,
       siteId: 'site-1',
       auditId: 'audit-1',
@@ -2769,23 +2799,107 @@ describe('sendMystiqueMessage', () => {
       sqs: fakeSqs,
       env: fakeEnv,
       log: fakeLog,
+      context: fakeContext,
     });
     expect(fakeSqs.sendMessage).to.have.been.calledOnce;
-    expect(fakeLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Failed to send message to Mystique');
+    expect(fakeLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Failed to send message');
     expect(result).to.deep.include({ success: false, url: 'https://example.com' });
     expect(result.error).to.equal('SQS error');
+  });
+
+  it('should use codefix flow when isAuditEnabledForSite returns true for a11y-mystique-auto-fix', async () => {
+    // Mock isAuditEnabledForSite to return true
+    const moduleWithMock = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: sandbox.stub().resolves(true),
+      },
+    });
+
+    const result = await moduleWithMock.sendMystiqueMessage({
+      url: 'https://example.com',
+      issuesList: [{ issueName: 'button-name' }], // button-name is in issueTypesForCodeFix
+      opportunity: fakeOpportunity,
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      deliveryType: 'aem_edge',
+      aggregationKey: 'button-name',
+      sqs: fakeSqs,
+      env: fakeEnv,
+      log: fakeLog,
+      context: fakeContext,
+    });
+
+    // Should send to import worker (codefix flow)
+    expect(fakeSqs.sendMessage).to.have.been.calledOnce;
+    const callArgs = fakeSqs.sendMessage.getCall(0).args;
+    expect(callArgs[0]).to.equal('import-worker-queue');
+    expect(callArgs[1]).to.have.property('type', 'code');
+    expect(callArgs[1]).to.have.property('forward');
+    expect(result.success).to.be.true;
+  });
+
+  it('should skip codefix flow when isAuditEnabledForSite returns false for a11y-mystique-auto-fix', async () => {
+    // Mock isAuditEnabledForSite to return false (entitlement not present)
+    const moduleWithMock = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: sandbox.stub().resolves(false),
+      },
+    });
+
+    const result = await moduleWithMock.sendMystiqueMessage({
+      url: 'https://example.com',
+      issuesList: [{ issueName: 'button-name' }], // button-name is in issueTypesForCodeFix
+      opportunity: fakeOpportunity,
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      deliveryType: 'aem_edge',
+      aggregationKey: 'button-name',
+      sqs: fakeSqs,
+      env: fakeEnv,
+      log: fakeLog,
+      context: fakeContext,
+    });
+
+    // Should send directly to Mystique (legacy flow), not to import worker
+    expect(fakeSqs.sendMessage).to.have.been.calledOnce;
+    const callArgs = fakeSqs.sendMessage.getCall(0).args;
+    expect(callArgs[0]).to.equal('test-queue'); // Direct to Mystique queue
+    expect(callArgs[1]).to.have.property('type', 'guidance:accessibility-remediation');
+    expect(callArgs[1]).to.not.have.property('forward'); // No forward in legacy flow
+    expect(result.success).to.be.true;
   });
 });
 
 describe('sendMystiqueMessage error path (coverage)', () => {
   it('should return failure object and log error if sqs.sendMessage rejects', async () => {
     const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('Simulated SQS failure')) };
-    const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
+    const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue', IMPORT_WORKER_QUEUE_URL: 'import-queue' };
     const fakeLog = { info: sinon.stub(), error: sinon.stub() };
     const fakeOpportunity = { getId: () => 'oppty-456' };
+    const mockIsAuditEnabledForSite = sinon.stub().resolves(true);
+    const fakeContext = {
+      site: {
+        getId: sinon.stub().returns('site-123'),
+      },
+      dataAccess: {
+        Configuration: {
+          findLatest: sinon.stub().resolves({
+            getHandlers: sinon.stub().returns({
+              'a11y-mystique-auto-fix': {
+                productCodes: ['test-product-code'],
+              },
+            }),
+            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
+          }),
+        },
+      },
+      log: {
+        error: sinon.stub(),
+      },
+    };
     const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
       url: 'https://example.com',
-      issuesList: [{ issue_name: 'aria-allowed-attr' }],
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
       opportunity: fakeOpportunity,
       siteId: 'site-123',
       auditId: 'audit-456',
@@ -2793,12 +2907,13 @@ describe('sendMystiqueMessage error path (coverage)', () => {
       sqs: fakeSqs,
       env: fakeEnv,
       log: fakeLog,
+      context: fakeContext,
     });
     expect(result.success).to.be.false;
     expect(result.url).to.equal('https://example.com');
     expect(result.error).to.equal('Simulated SQS failure');
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://example.com',
+      '[A11yIndividual][A11yProcessingError] Failed to send message',
     );
   });
 });
@@ -2846,6 +2961,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
         sendMessage: sandbox.stub().resolves(),
       },
       env: {
+        IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
@@ -2973,6 +3089,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
         sendMessage: sandbox.stub().resolves(),
       },
       env: {
+        IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
@@ -3098,12 +3215,158 @@ describe('sendMessageToMystiqueForRemediation', () => {
       mockLog,
     );
 
-    expect(mockLog.debug).to.have.been.calledWithMatch(
-      '[A11yIndividual] Sending 1 messages to Mystique queue: test-queue',
+    expect(mockLog.info).to.have.been.calledWithMatch(
+      '[A11yIndividual] Sending 1 messages to Mystique (via appropriate flow based on issue types)',
     );
     expect(mockLog.debug).to.have.been.calledWithMatch(
       '[A11yIndividual] Message sending completed: 1 successful, 0 failed, 0 rejected',
     );
+  });
+
+  it('should send messages to import worker with correct structure for code fix issues', async () => {
+    const sendMessageSpy = sandbox.spy();
+    mockContext.sqs.sendMessage = sendMessageSpy;
+    mockOpportunity.getSuggestions = sandbox.stub().resolves([
+      {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [
+            {
+              type: 'aria-allowed-attr',
+              occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-fake]',
+                },
+              ],
+            },
+          ],
+        }),
+        getStatus: () => 'NEW',
+        getId: () => 'suggestion-1',
+      },
+    ]);
+
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com',
+            issuesList: [{ issueName: 'aria-allowed-attr' }], // This is in issueTypesForCodeFix
+          },
+        ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    await module.sendMessageToMystiqueForRemediation(
+      mockOpportunity,
+      mockContext,
+      mockLog,
+    );
+
+    // Verify message sent to import worker (new flow)
+    expect(sendMessageSpy).to.have.been.calledOnce;
+    const [queueUrl, message] = sendMessageSpy.firstCall.args;
+    
+    // Verify correct queue URL (import worker for code fix)
+    expect(queueUrl).to.equal('import-worker-queue');
+    
+    // Verify message structure
+    expect(message).to.have.property('type', 'code');
+    expect(message).to.have.property('siteId', 'site-1');
+    expect(message).to.have.property('allowCache', true);
+    expect(message).to.have.property('data').that.is.an('object');
+    expect(message).to.have.property('forward');
+    
+    // Verify forward configuration
+    expect(message.forward).to.have.property('queue', 'test-queue');
+    expect(message.forward).to.have.property('payload');
+    
+    // Verify forward payload structure
+    const { payload } = message.forward;
+    expect(payload).to.have.property('type', 'guidance:accessibility-remediation');
+    expect(payload).to.have.property('siteId', 'site-1');
+    expect(payload).to.have.property('auditId', 'audit-1');
+    expect(payload).to.have.property('deliveryType', 'aem_edge');
+    expect(payload).to.have.property('data');
+    expect(payload.data).to.have.property('url', 'https://example.com');
+    expect(payload.data).to.have.property('opportunityId', 'oppty-1');
+    expect(payload.data).to.have.property('issuesList').that.is.an('array');
+    
+    // Note: codeBucket and codePath should NOT be in the payload
+    // They will be added by the import worker
+    expect(payload.data).to.not.have.property('codeBucket');
+    expect(payload.data).to.not.have.property('codePath');
+  });
+
+  it('should send messages directly to Mystique for non-code-fix issues', async () => {
+    const sendMessageSpy = sandbox.spy();
+    mockContext.sqs.sendMessage = sendMessageSpy;
+    mockOpportunity.getSuggestions = sandbox.stub().resolves([
+      {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [
+            {
+              type: 'color-contrast',
+              occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div',
+                },
+              ],
+            },
+          ],
+        }),
+        getStatus: () => 'NEW',
+        getId: () => 'suggestion-1',
+      },
+    ]);
+
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com',
+            issuesList: [{ issueName: 'color-contrast' }], // This is NOT in issueTypesForCodeFix
+          },
+        ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    await module.sendMessageToMystiqueForRemediation(
+      mockOpportunity,
+      mockContext,
+      mockLog,
+    );
+
+    // Verify message sent directly to Mystique (legacy flow)
+    expect(sendMessageSpy).to.have.been.calledOnce;
+    const [queueUrl, message] = sendMessageSpy.firstCall.args;
+    
+    // Verify correct queue URL (directly to Mystique for legacy flow)
+    expect(queueUrl).to.equal('test-queue');
+    
+    // Verify message structure (direct Mystique message)
+    expect(message).to.have.property('type', 'guidance:accessibility-remediation');
+    expect(message).to.have.property('siteId', 'site-1');
+    expect(message).to.have.property('auditId', 'audit-1');
+    expect(message).to.have.property('deliveryType', 'aem_edge');
+    expect(message).to.have.property('data');
+    expect(message.data).to.have.property('url', 'https://example.com');
+    expect(message.data).to.have.property('opportunityId', 'oppty-1');
+    expect(message.data).to.have.property('issuesList').that.is.an('array');
+    
+    // In legacy flow, there's no forward configuration
+    expect(message).to.not.have.property('forward');
   });
 
   it('should handle errors in main try block and throw with proper logging', async () => {
@@ -3145,13 +3408,37 @@ describe('sendMystiqueMessage error handling', () => {
 
   it('should handle sendMessage errors and return failure object', async () => {
     const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('SQS connection failed')) };
-    const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
+    const fakeEnv = { 
+      IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
+      QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+    };
     const fakeLog = { info: sinon.stub(), error: sinon.stub() };
     const fakeOpportunity = { getId: () => 'oppty-456' };
+    const mockIsAuditEnabledForSite = sinon.stub().resolves(false);
+    const fakeContext = {
+      site: {
+        getId: sinon.stub().returns('site-123'),
+      },
+      dataAccess: {
+        Configuration: {
+          findLatest: sinon.stub().resolves({
+            getHandlers: sinon.stub().returns({
+              'a11y-mystique-auto-fix': {
+                productCodes: ['test-product-code'],
+              },
+            }),
+            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
+          }),
+        },
+      },
+      log: {
+        error: sinon.stub(),
+      },
+    };
 
     const result = await testModule.sendMystiqueMessage({
       url: 'https://example.com',
-      issuesList: [{ issue_name: 'aria-allowed-attr' }],
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
       opportunity: fakeOpportunity,
       siteId: 'site-123',
       auditId: 'audit-456',
@@ -3159,6 +3446,7 @@ describe('sendMystiqueMessage error handling', () => {
       sqs: fakeSqs,
       env: fakeEnv,
       log: fakeLog,
+      context: fakeContext,
     });
 
     // Should return failure object
@@ -3170,19 +3458,43 @@ describe('sendMystiqueMessage error handling', () => {
 
     // Should log the error
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://example.com',
+      '[A11yIndividual][A11yProcessingError] Failed to send message',
     );
   });
 
   it('should handle sendMessage errors with different URL', async () => {
     const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('Network error')) };
-    const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
+    const fakeEnv = { 
+      IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
+      QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+    };
     const fakeLog = { info: sinon.stub(), error: sinon.stub() };
     const fakeOpportunity = { getId: () => 'oppty-456' };
+    const mockIsAuditEnabledForSite = sinon.stub().resolves(false);
+    const fakeContext = {
+      site: {
+        getId: sinon.stub().returns('site-123'),
+      },
+      dataAccess: {
+        Configuration: {
+          findLatest: sinon.stub().resolves({
+            getHandlers: sinon.stub().returns({
+              'a11y-mystique-auto-fix': {
+                productCodes: ['test-product-code'],
+              },
+            }),
+            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
+          }),
+        },
+      },
+      log: {
+        error: sinon.stub(),
+      },
+    };
 
     const result = await testModule.sendMystiqueMessage({
       url: 'https://test.com',
-      issuesList: [{ issue_name: 'color-contrast' }],
+      issuesList: [{ issueName: 'color-contrast' }],
       opportunity: fakeOpportunity,
       siteId: 'site-123',
       auditId: 'audit-456',
@@ -3190,6 +3502,7 @@ describe('sendMystiqueMessage error handling', () => {
       sqs: fakeSqs,
       env: fakeEnv,
       log: fakeLog,
+      context: fakeContext,
     });
 
     // Should return failure object
@@ -3201,7 +3514,7 @@ describe('sendMystiqueMessage error handling', () => {
 
     // Should log the error
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://test.com',
+      '[A11yIndividual][A11yProcessingError] Failed to send message',
     );
   });
 });

@@ -1,3 +1,17 @@
+## [1.246.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.5...v1.246.6) (2025-11-19)
+
+
+### Bug Fixes
+
+* [broken-internal-links] Prompt completed but no output was found ([#1603](https://github.com/adobe/spacecat-audit-worker/issues/1603)) ([711ad69](https://github.com/adobe/spacecat-audit-worker/commit/711ad69ee3d53a2d5a7e8ae090123918f90b9bc7))
+
+## [1.246.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.4...v1.246.5) (2025-11-19)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.87.0 ([#1611](https://github.com/adobe/spacecat-audit-worker/issues/1611)) ([1b81756](https://github.com/adobe/spacecat-audit-worker/commit/1b81756e9a0888a3ce374f4775ff802f716e67c1))
+
 ## [1.246.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.3...v1.246.4) (2025-11-19)
 
 

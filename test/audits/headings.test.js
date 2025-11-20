@@ -651,6 +651,28 @@ describe('Headings Audit', () => {
     expect(result).to.be.null;
   });
 
+  it('handles error in validatePageHeadings when url is invalid', async () => {
+    const invalidUrl = 'not a valid url';
+    const logSpy = sinon.spy(log);
+
+    const result = await validatePageHeadings(
+      invalidUrl,
+      logSpy,
+      site,
+      allKeys,
+      s3Client,
+      context.env.S3_SCRAPER_BUCKET_NAME,
+      context,
+      seoChecks,
+    );
+
+    expect(result.url).to.equal(invalidUrl);
+    expect(result.checks).to.deep.equal([]);
+    expect(logSpy.error).to.have.been.calledWith(
+      sinon.match(/Error validating headings for/)
+    );
+  });
+
   it('detects headings with content having child elements', async () => {
     const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
@@ -1094,7 +1116,7 @@ describe('Headings Audit', () => {
 
       // Find the missing H1 check
       const missingH1Check = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_MISSING_H1.check);
-      
+
       expect(missingH1Check).to.exist;
       expect(missingH1Check.transformRules).to.exist;
       expect(missingH1Check.transformRules.action).to.equal('insertBefore');
@@ -1129,7 +1151,7 @@ describe('Headings Audit', () => {
 
       // Find the missing H1 check
       const missingH1Check = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_MISSING_H1.check);
-      
+
       expect(missingH1Check).to.exist;
       expect(missingH1Check.transformRules).to.exist;
       expect(missingH1Check.transformRules.action).to.equal('insertBefore');
@@ -1164,7 +1186,7 @@ describe('Headings Audit', () => {
 
       // Find the H1 length check
       const h1LengthCheck = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
-      
+
       expect(h1LengthCheck).to.exist;
       expect(h1LengthCheck.transformRules).to.exist;
       expect(h1LengthCheck.transformRules.action).to.equal('replace');
@@ -1200,7 +1222,7 @@ describe('Headings Audit', () => {
 
       // Find the H1 length check
       const h1LengthCheck = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
-      
+
       expect(h1LengthCheck).to.exist;
       expect(h1LengthCheck.transformRules).to.exist;
       expect(h1LengthCheck.transformRules.action).to.equal('replace');
@@ -1235,7 +1257,7 @@ describe('Headings Audit', () => {
 
       // Find the heading order invalid check
       const orderInvalidCheck = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_ORDER_INVALID.check);
-      
+
       expect(orderInvalidCheck).to.exist;
       expect(orderInvalidCheck.transformRules).to.be.undefined;
     });
@@ -1399,7 +1421,7 @@ describe('Headings Audit', () => {
       const result = generateSuggestions(auditUrl, auditData, context);
 
       expect(result.suggestions).to.have.lengthOf(2);
-      
+
       // Check first suggestion has transformRules
       const missingH1Suggestion = result.suggestions.find(s => s.checkType === 'heading-missing-h1');
       expect(missingH1Suggestion).to.exist;
@@ -1554,7 +1576,7 @@ describe('Headings Audit', () => {
 
       const result1 = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
       const h1LengthCheck1 = result1.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
-      
+
       // Selector is dynamically generated based on DOM structure
       expect(h1LengthCheck1.transformRules.selector).to.exist;
       expect(h1LengthCheck1.transformRules.selector).to.include('h1');
@@ -1580,7 +1602,7 @@ describe('Headings Audit', () => {
 
       const result2 = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
       const h1LengthCheck2 = result2.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
-      
+
       // Selector should be different for different DOM structures
       expect(h1LengthCheck2.transformRules.selector).to.exist;
       expect(h1LengthCheck2.transformRules.selector).to.include('h1');
@@ -3686,7 +3708,6 @@ describe('Headings Audit', () => {
     });
   });
 
-
   describe('convertToOpportunity real function coverage', () => {
     it('covers comparisonFn execution in real convertToOpportunity function', async () => {
       const auditUrl = 'https://example.com';
@@ -3764,9 +3785,6 @@ describe('Headings Audit', () => {
     });
   });
 
-
-
-
   describe('getHeadingSelector function', () => {
     describe('Unit tests - direct function calls', () => {
       it('returns null when heading is null', () => {
@@ -3814,7 +3832,7 @@ describe('Headings Audit', () => {
 
     it('generates selector with ID when heading has an ID attribute', async () => {
       const url = 'https://example.com/page';
-      
+
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
@@ -3834,7 +3852,7 @@ describe('Headings Audit', () => {
       });
 
       const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-      
+
       // Empty H2 should generate a selector
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
@@ -3845,7 +3863,7 @@ describe('Headings Audit', () => {
 
     it('generates selector with single class', async () => {
       const url = 'https://example.com/page';
-      
+
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
@@ -3865,7 +3883,7 @@ describe('Headings Audit', () => {
       });
 
       const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-      
+
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
       expect(emptyCheck.transformRules.selector).to.include('h2');
@@ -3874,7 +3892,7 @@ describe('Headings Audit', () => {
 
     it('generates selector with multiple classes (limits to 2)', async () => {
       const url = 'https://example.com/page';
-      
+
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
@@ -3894,7 +3912,7 @@ describe('Headings Audit', () => {
       });
 
       const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-      
+
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
       const selector = emptyCheck.transformRules.selector;
@@ -3908,7 +3926,7 @@ describe('Headings Audit', () => {
 
     it('generates selector with nth-of-type for multiple siblings', async () => {
       const url = 'https://example.com/page';
-      
+
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
@@ -3928,7 +3946,7 @@ describe('Headings Audit', () => {
       });
 
       const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-      
+
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
       expect(emptyCheck.transformRules.selector).to.include('h2');
@@ -3937,7 +3955,7 @@ describe('Headings Audit', () => {
 
     it('generates selector with parent context', async () => {
       const url = 'https://example.com/page';
-      
+
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
@@ -3957,7 +3975,7 @@ describe('Headings Audit', () => {
       });
 
       const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-      
+
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
       const selector = emptyCheck.transformRules.selector;
@@ -3969,7 +3987,7 @@ describe('Headings Audit', () => {
 
     it('generates selector with parent classes', async () => {
       const url = 'https://example.com/page';
-      
+
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
@@ -3989,7 +4007,7 @@ describe('Headings Audit', () => {
       });
 
       const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-      
+
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
       const selector = emptyCheck.transformRules.selector;
@@ -4001,7 +4019,7 @@ describe('Headings Audit', () => {
 
     it('stops at parent with ID (early termination)', async () => {
       const url = 'https://example.com/page';
-      
+
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
@@ -4021,7 +4039,7 @@ describe('Headings Audit', () => {
       });
 
       const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-      
+
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
       const selector = emptyCheck.transformRules.selector;
@@ -4033,7 +4051,7 @@ describe('Headings Audit', () => {
 
     it('limits parent context to 3 levels', async () => {
       const url = 'https://example.com/page';
-      
+
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
@@ -4053,11 +4071,11 @@ describe('Headings Audit', () => {
       });
 
       const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-      
+
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
       const selector = emptyCheck.transformRules.selector;
-      
+
       // Count the number of '>' separators (should be max 3 for 3 levels of parents)
       const separatorCount = (selector.match(/>/g) || []).length;
       expect(separatorCount).to.be.at.most(3);
@@ -4065,7 +4083,7 @@ describe('Headings Audit', () => {
 
     it('handles heading with ID and classes (ID takes priority)', async () => {
       const url = 'https://example.com/page';
-      
+
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
@@ -4085,7 +4103,7 @@ describe('Headings Audit', () => {
       });
 
       const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-      
+
       // Empty H2 should still generate a selector
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
@@ -4094,7 +4112,7 @@ describe('Headings Audit', () => {
 
     it('handles complex selector: classes + nth-of-type + parent context', async () => {
       const url = 'https://example.com/page';
-      
+
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
@@ -4114,11 +4132,11 @@ describe('Headings Audit', () => {
       });
 
       const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-      
+
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
       const selector = emptyCheck.transformRules.selector;
-      
+
       // Should include all parts
       expect(selector).to.include('h2');
       expect(selector).to.include('title'); // heading class
@@ -4130,7 +4148,7 @@ describe('Headings Audit', () => {
 
     it('handles empty heading at different document positions', async () => {
       const url = 'https://example.com/page';
-      
+
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
@@ -4150,15 +4168,15 @@ describe('Headings Audit', () => {
       });
 
       const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-      
+
       const emptyChecks = result.checks.filter(c => c.check === 'heading-empty');
       expect(emptyChecks).to.have.lengthOf(3);
-      
+
       // Each should have unique selectors
       const selectors = emptyChecks.map(c => c.transformRules.selector);
       const uniqueSelectors = new Set(selectors);
       expect(uniqueSelectors.size).to.equal(3);
-      
+
       // Verify each includes its parent context
       expect(selectors.some(s => s.includes('header'))).to.be.true;
       expect(selectors.some(s => s.includes('main'))).to.be.true;
@@ -4167,7 +4185,7 @@ describe('Headings Audit', () => {
 
     it('handles parent with excessive classes (limits to 2)', async () => {
       const url = 'https://example.com/page';
-      
+
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
@@ -4187,11 +4205,11 @@ describe('Headings Audit', () => {
       });
 
       const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-      
+
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
       const selector = emptyCheck.transformRules.selector;
-      
+
       // Should include first 2 parent classes only
       expect(selector).to.include('container');
       expect(selector).to.include('wrapper');
