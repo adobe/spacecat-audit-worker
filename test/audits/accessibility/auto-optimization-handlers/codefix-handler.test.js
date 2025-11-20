@@ -306,6 +306,39 @@ describe('AccessibilityCodeFixHandler', () => {
       );
     });
 
+    it('should handle missing S3 reports gracefully for old format', async () => {
+      getObjectFromKeyStub.resolves(null);
+
+      const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
+        '../../../../src/common/codefix-handler.js': await esmock('../../../../src/common/codefix-handler.js', {
+          '../../../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        }),
+      });
+
+      const messageOldFormat = {
+        siteId: 'site-123',
+        data: {
+          opportunityId: 'opportunity-123',
+          updates: [
+            {
+              url: 'https://example.com/contact',
+              source: 'form',
+              type: ['color-contrast'],
+            },
+          ],
+        },
+      };
+
+      const result = await handler.default(messageOldFormat, context);
+
+      expect(result.status).to.equal(200);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/No code change report found for URL.*type: color-contrast/),
+      );
+    });
+
     it('should not update suggestions without matching criteria', async () => {
       const mockReportData = JSON.stringify({
         diff: 'mock diff content',
@@ -692,6 +725,53 @@ describe('AccessibilityCodeFixHandler', () => {
 
       expect(result.status).to.equal(200);
       expect(mockSuggestion.setData).to.have.been.called;
+    });
+
+    it('should work without source parameter for old format', async () => {
+      const mockReportData = {
+        diff: 'mock diff content',
+      };
+
+      const suggestionData = {
+        url: 'https://example.com/contact',
+        issues: [{ type: 'color-contrast' }],
+      };
+
+      mockSuggestion.getData.returns(suggestionData);
+      getObjectFromKeyStub.resolves(mockReportData);
+
+      const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
+        '../../../../src/common/codefix-handler.js': await esmock('../../../../src/common/codefix-handler.js', {
+          '../../../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        }),
+      });
+
+      const messageOldFormatNoSource = {
+        siteId: 'site-123',
+        data: {
+          opportunityId: 'opportunity-123',
+          updates: [
+            {
+              url: 'https://example.com/contact',
+              // No source
+              type: ['color-contrast'],
+            },
+          ],
+        },
+      };
+
+      const result = await handler.default(messageOldFormatNoSource, context);
+
+      expect(result.status).to.equal(200);
+      expect(mockSuggestion.setData).to.have.been.called;
+      
+      // Verify S3 call arguments
+      const callArgs = getObjectFromKeyStub.firstCall.args;
+      expect(callArgs[1]).to.equal('test-mystique-bucket');
+      expect(callArgs[2]).to.include('fixes/site-123');
+      expect(callArgs[2]).to.include('/color-contrast/report.json');
     });
 
     it('should process multiple types in old format', async () => {

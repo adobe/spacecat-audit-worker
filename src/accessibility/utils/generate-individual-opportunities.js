@@ -1107,4 +1107,8 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
 }
 
 // Export these for testing
-export { createDirectMystiqueMessage, sendMystiqueMessage };
+export {
+  createDirectMystiqueMessage,
+  sendMystiqueMessage,
+  createMystiqueForwardPayload,
+};

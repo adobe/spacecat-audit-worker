@@ -1,3 +1,24 @@
+## [1.247.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.247.0...v1.247.1) (2025-11-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-ims-client to v1.11.3 ([#1612](https://github.com/adobe/spacecat-audit-worker/issues/1612)) ([cd9c96d](https://github.com/adobe/spacecat-audit-worker/commit/cd9c96d11cc304c10a173d79357f48c509867ae2))
+
+# [1.247.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.6...v1.247.0) (2025-11-20)
+
+
+### Bug Fixes
+
+* optionally processing all forms opportunity ([#1607](https://github.com/adobe/spacecat-audit-worker/issues/1607)) ([008f5f5](https://github.com/adobe/spacecat-audit-worker/commit/008f5f552b9f79feafd8f91dc02e8fbb3bb558a3))
+* test failures ([#1615](https://github.com/adobe/spacecat-audit-worker/issues/1615)) ([d898d82](https://github.com/adobe/spacecat-audit-worker/commit/d898d82d294248a7eba82c7b14900551ad1db69d))
+
+
+### Features
+
+* [SITES-36639] Spacecat A11y Autofix suggestion grouping ([#1449](https://github.com/adobe/spacecat-audit-worker/issues/1449)) ([11359ac](https://github.com/adobe/spacecat-audit-worker/commit/11359ac5c962ae4ae06f733d68f66bc2411aa386))
+* introduce headings audit in preflight ([#1562](https://github.com/adobe/spacecat-audit-worker/issues/1562)) ([0733a90](https://github.com/adobe/spacecat-audit-worker/commit/0733a90386f01091be5d9f954e64be811c8c1d78))
+
 ## [1.246.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.5...v1.246.6) (2025-11-19)
 
 
