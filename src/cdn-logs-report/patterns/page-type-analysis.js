@@ -38,7 +38,7 @@ For each URL path, break it down:
 
 ### STEP 3: PAGE TYPE IDENTIFICATION LOGIC
 Ask yourself systematically (GROUP BY SECTION, not by function):
-1. "Is this the homepage?" → Check for /, /home, /index
+1. "Is this the homepage?" → Check for /, /home, /index - **ALWAYS CHECK THIS FIRST!**
 2. "What section does this belong to?" → Look for keywords in the URL
    - Contains "product", "shop", "store", "item" → product
    - Contains "blog", "article", "news", "post" → blog
@@ -93,6 +93,7 @@ Example G: "/user/dashboard/settings"
 
 ### STEP 5: VALIDATION & OUTPUT RULES
 Ask yourself:
+- "Is this the homepage (/, /home, /index)?" → Classify as "homepage" FIRST, don't apply keyword matching
 - "Does this path have multiple possible classifications?" → Choose most specific
 - "Is this path ambiguous?" → Look for keywords in URL, not just first segment
 - "Could this be misclassified?" → Check against common patterns  
@@ -242,7 +243,8 @@ CRITICAL: Do NOT use the page type name in the pattern unless it actually appear
 - Focus on KEYWORD MATCHING, not strict slash positioning
 - DON'T require slashes before/after keywords: use (?i)(keyword) not (?i)/keyword/ or (?i)/(keyword)/
 - The pattern should match keywords wherever they appear in the path
-- Exception: homepage patterns need specific structure like (?i)^(/(home|index)?)?$
+- CRITICAL EXCEPTION: Root paths like "/" or "/home" or "/index" MUST be classified as "homepage" FIRST, before any keyword matching
+- Homepage patterns need specific structure like (?i)^(/(home|index)?)?$ to match root URLs only
 
 ## POSIX REGEX REQUIREMENTS (for Amazon Athena)
 - Start with (?i) for case-insensitive matching
