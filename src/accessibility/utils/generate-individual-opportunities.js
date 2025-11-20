@@ -116,8 +116,8 @@ function createMystiqueForwardPayload({
 }) {
   return {
     type: 'guidance:accessibility-remediation',
-    siteId,
-    auditId,
+    siteId: siteId || '',
+    auditId: auditId || '',
     deliveryType,
     time: new Date().toISOString(),
     aggregationKey,
@@ -1107,4 +1107,8 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
 }
 
 // Export these for testing
-export { createDirectMystiqueMessage, sendMystiqueMessage };
+export {
+  createDirectMystiqueMessage,
+  sendMystiqueMessage,
+  createMystiqueForwardPayload,
+};

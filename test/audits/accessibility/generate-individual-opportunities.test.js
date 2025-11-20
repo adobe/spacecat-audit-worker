@@ -23,6 +23,7 @@ import {
   aggregateA11yIssuesByOppType,
   createIndividualOpportunity,
   calculateAccessibilityMetrics,
+  createMystiqueForwardPayload,
 } from '../../../src/accessibility/utils/generate-individual-opportunities.js';
 import * as constants from '../../../src/accessibility/utils/constants.js';
 import * as generateIndividualOpportunitiesModule from '../../../src/accessibility/utils/generate-individual-opportunities.js';
@@ -4557,5 +4558,228 @@ describe('handleAccessibilityRemediationGuidance', () => {
     expect(mockLog.debug).to.have.been.calledWith(
       '[A11yRemediationGuidance] Saved complete Mystique validation metrics for opportunity oppty-123, page https://example.com/page1: sent=1, received=1',
     );
+  });
+});
+
+describe('createMystiqueForwardPayload', () => {
+  it('should create payload with valid siteId and auditId', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: 'site-456',
+      auditId: 'audit-789',
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result).to.deep.include({
+      type: 'guidance:accessibility-remediation',
+      siteId: 'site-456',
+      auditId: 'audit-789',
+      deliveryType: 'aem-sites',
+      aggregationKey: 'aggregation-key-123',
+    });
+    expect(result.data).to.deep.equal({
+      url: 'https://example.com/page',
+      opportunityId: 'opportunity-123',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+    });
+    expect(result.time).to.be.a('string');
+  });
+
+  it('should default siteId to empty string when undefined', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: undefined,
+      auditId: 'audit-789',
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('audit-789');
+  });
+
+  it('should default siteId to empty string when null', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: null,
+      auditId: 'audit-789',
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('audit-789');
+  });
+
+  it('should default siteId to empty string when empty string', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: '',
+      auditId: 'audit-789',
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('audit-789');
+  });
+
+  it('should default auditId to empty string when undefined', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: 'site-456',
+      auditId: undefined,
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('site-456');
+    expect(result.auditId).to.equal('');
+  });
+
+  it('should default auditId to empty string when null', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: 'site-456',
+      auditId: null,
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('site-456');
+    expect(result.auditId).to.equal('');
+  });
+
+  it('should default auditId to empty string when empty string', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: 'site-456',
+      auditId: '',
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('site-456');
+    expect(result.auditId).to.equal('');
+  });
+
+  it('should default both siteId and auditId to empty string when undefined', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: undefined,
+      auditId: undefined,
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('');
+  });
+
+  it('should default both siteId and auditId to empty string when null', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: null,
+      auditId: null,
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('');
+  });
+
+  it('should default both siteId and auditId to empty string when empty strings', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: '',
+      auditId: '',
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('');
   });
 });
