@@ -100,7 +100,7 @@ export async function extractUrls(context) {
       .map((score) => score.getUrl()),
   );
 
-  const urlsToAnalyze = urls.filter(({ url }) => !recentUrls.has(url));
+  const urlsToAnalyze = urls.filter(({ url }) => !recentUrls.has(joinBaseAndPath(baseURL, url)));
 
   if (urlsToAnalyze.length === 0) {
     log.info(`${LOG_PREFIX} No URLs to analyze for site ${baseURL} with site id ${siteId}`);
