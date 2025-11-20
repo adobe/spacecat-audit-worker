@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import * as cheerio from 'cheerio';
+
 // Cache for organization types to avoid fetching schema.org data repeatedly
 let organizationTypesCache = null;
 
@@ -76,4 +78,73 @@ export function removeLanguageFromPath(pathname) {
     }
   }
   return pathname;
+}
+
+export function getClickableElements(rawBody) {
+  const $ = cheerio.load(rawBody);
+
+  // Remove header and footer tags
+  $('header, footer').remove();
+
+  // Clickable elements
+  const clickableElements = $('a, button, input[type="submit"], input[type="button"], input[type="image"]');
+
+  // Get href of clickable elements
+  const clickableElementsHref = new Set(clickableElements
+    .map((i, el) => $(el).attr('href'))
+    .get()
+    .map((href) => {
+      // Try normalize links
+      try {
+        const url = new URL(href);
+        return url.pathname;
+      } catch (error) {
+        return null;
+      }
+    })
+    .filter((href) => href));
+
+  // Get text of clickable elements
+  const clickableElementsText = new Set(clickableElements
+    .map((i, el) => $(el).text().trim())
+    .get()
+    // Remove special characters
+    .map((text) => text.replace(/[^a-zA-Z0-9\s]/g, ''))
+    // Remove multiple spaces
+    .map((text) => text.replace(/\s+/g, ' '))
+    // Remove empty strings
+    .filter((text) => text.length > 2));
+
+  return {
+    href: Array.from(clickableElementsHref),
+    text: Array.from(clickableElementsText),
+  };
+}
+
+export function getCssClasses(rawBody) {
+  const $ = cheerio.load(rawBody);
+
+  // Remove header and footer tags
+  $('header, footer').remove();
+
+  const allClasses = new Set();
+  const allBlocks = new Set();
+
+  $('[class]').each((i, el) => {
+    const classAttr = $(el).attr('class');
+    if (classAttr) {
+      const classes = classAttr.trim().split(/\s+/);
+
+      // If one of the classes is block, add to the allBlocks list
+      if (classes.some((cls) => cls === 'block')) {
+        allBlocks.add(classAttr);
+      }
+
+      classes.forEach((cls) => {
+        allClasses.add(cls);
+      });
+    }
+  });
+
+  return [Array.from(allClasses).sort(), Array.from(allBlocks).sort()];
 }

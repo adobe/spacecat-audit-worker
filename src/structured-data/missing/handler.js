@@ -14,9 +14,13 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 
-import { AuditBuilder } from '../common/audit-builder.js';
-import missingRules from './missing-rules.js';
-import { getScrapeForPath } from '../support/utils.js';
+import { AuditBuilder } from '../../common/audit-builder.js';
+import missingRules from './rules/index.js';
+import { getScrapeForPath } from '../../support/utils.js';
+import { getClickableElements, getCssClasses } from './lib.js';
+import { convertToOpportunity } from '../../common/opportunity.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
+import { syncSuggestions } from '../../utils/data-access.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -53,7 +57,7 @@ export async function submitForScraping(context) {
   return {
     urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
     siteId: site.getId(),
-    type: 'structured-data',
+    type: 'missing-structured-data',
   };
 }
 
@@ -71,7 +75,7 @@ function classifyUrl(pathname, pageTypes = []) {
 
 export async function detectMissingStructuredDataCandidates(context) {
   const {
-    site, finalUrl, log, dataAccess,
+    site, finalUrl, log, dataAccess, audit, sqs, env,
   } = context;
   const { SiteTopPage } = dataAccess;
 
@@ -85,7 +89,7 @@ export async function detectMissingStructuredDataCandidates(context) {
       throw new Error(`No top pages for site ID ${siteId} found.`);
     }
     // TODO: For development, only use 10 pages
-    topPages = topPages.slice(0, 10);
+    // topPages = topPages.slice(0, 10);
 
     const dataTypesToIgnore = ['pdf', 'ps', 'dwf', 'kml', 'kmz', 'xls', 'xlsx', 'ppt', 'pptx', 'doc', 'docx', 'rtf', 'swf'];
     topPages = topPages
@@ -123,6 +127,7 @@ export async function detectMissingStructuredDataCandidates(context) {
     log.info(`[MSDA] Top pages with page types: ${JSON.stringify(topPages)}`);
 
     const results = {};
+    let resultsCount = 0;
     for (const page of topPages) {
       // Fetch scrape data from S3
       let { pathname } = page;
@@ -139,43 +144,146 @@ export async function detectMissingStructuredDataCandidates(context) {
 
       log.info(`[MSDA] Page ${page.url} has existing structured data entities: ${JSON.stringify(page.structuredDataEntities)}`);
 
+      // Extract clickable elements
+      const { href, text } = getClickableElements(scrapeResult.scrapeResult.rawBody);
+      page.clickableElementsHref = href;
+      page.clickableElements = text;
+
+      log.info(`[MSDA] Page ${page.url} has clickable elements: ${JSON.stringify(page.clickableElementsHref)}`);
+      log.info(`[MSDA] Page ${page.url} has clickable elements text: ${JSON.stringify(page.clickableElements)}`);
+
+      // Extract all CSS classes and blocks
+      const [cssClasses, cssBlocks] = getCssClasses(scrapeResult.scrapeResult.rawBody);
+      page.cssClasses = cssClasses;
+      page.cssBlocks = cssBlocks;
+
+      log.info(`[MSDA] Page ${page.url} has CSS classes: ${JSON.stringify(page.cssClasses)}`);
+      log.info(`[MSDA] Page ${page.url} has CSS blocks: ${JSON.stringify(page.cssBlocks)}`);
+
       // Apply rules
       log.info(`[MSDA] Applying rules to page ${page.url}`);
-      results[page.url] = {
-        candidate: [],
-        accepted: [],
-      };
       for (const rule of missingRules) {
         const result = await rule(page);
-        if (result.candidate.length > 0) {
-          results[page.url].candidate.push(...result.candidate);
-        }
-        if (result.accepted.length > 0) {
-          results[page.url].accepted.push(...result.accepted);
+        if (isNonEmptyArray(result)) {
+          if (!results[page.url]) {
+            results[page.url] = [];
+          }
+          results[page.url].push(...result);
+          resultsCount += result.length;
         }
       }
     }
-    log.info(`[MSDA] Results: ${JSON.stringify(results)}`);
+    log.info(`[MSDA] Results by page: ${JSON.stringify(results)}`);
+    log.info(`[MSDA] Results count: ${resultsCount}`);
 
-    // TODO: Now send the results over to mystique to validate candidates
+    // Abort early if no results
+    if (resultsCount === 0) {
+      // TODO: Ensure that we still call syncSuggestions to remove outdated suggestions
+      // TODO: Maybe remove opportunity as well?
+      log.info(`[MSDA] No missing structured data found for site ${finalUrl} (${siteId})`);
+      return {
+        fullAuditRef: finalUrl,
+        auditResult: {
+          success: true,
+          results: [],
+        },
+      };
+    }
 
+    // If more than one result, create opportunity use convertToOpportunity
+    const opportunity = await convertToOpportunity(
+      finalUrl,
+      { siteId, id: audit.id },
+      context,
+      createOpportunityData,
+      'missing-structured-data',
+    );
+
+    const acceptedResults = [];
+    Object.keys(results).forEach((page) => {
+      // TODO: Temporary remove non-accepted results,
+      //       candidates need to go through Mystique first to confirm detection
+      results[page].forEach((result) => {
+        if (result.confidence !== 'accepted') {
+          return;
+        }
+        acceptedResults.push({
+          ...result,
+          pageUrl: page,
+        });
+      });
+    });
+
+    log.info(`[MSDA] Accepted results by page: ${JSON.stringify(acceptedResults)}`);
+
+    const buildKey = (data) => `${data.pageUrl}|${data.entity}`;
+    await syncSuggestions({
+      opportunity,
+      context,
+      newData: acceptedResults,
+      buildKey,
+      mapNewSuggestion: (data) => ({
+        opportunityId: opportunity.getId(),
+        type: 'CODE_CHANGE',
+        rank: 1,
+        data,
+      }),
+    });
+
+    log.info(`[MSDA] Synced ${acceptedResults.length} accepted results for site into opportunity ${opportunity.getId()}`);
+
+    // TODO: Send all candidates and detections to mystique
+    // Limit results and send out events to mystique
+    /* const pagesWithResults = Object.keys(results)
+      .filter((page) => isNonEmptyArray(results[page]));
+    log.info(`[MSDA] Pages with results: ${JSON.stringify(pagesWithResults)}`);
+
+    // Group messages to mystique by page
+    const resultByIssue = Object.keys(results).reduce((acc, pageUrl) => {
+      for (const result of results[pageUrl]) {
+        acc[result.type] = acc[result.type] || { type: result.type, pages: [] };
+        acc[result.type].pages.push({
+          url: pageUrl,
+          rationale: result.rationale,
+          confidence: result.confidence,
+        });
+      }
+      return acc;
+    }, {});
+
+    log.info(`[MSDA] Result by issue: ${JSON.stringify(resultByIssue)}`); */
+
+    // TODO: Save suggestions with page url + entity identifier as key
+    /*
+
+    const message = {
+      type: 'guidance:missing-structured-data',
+      siteId,
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {},
+    };
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    */
+
+    return {
+      fullAuditRef: finalUrl,
+      auditResult: {
+        success: true,
+        results: acceptedResults,
+      },
+    };
   } catch (error) {
     log.error(`[MSDA] Missing structured data audit failed for site ${finalUrl} (${siteId})`, error);
-    throw error;
+    return {
+      fullAuditRef: finalUrl,
+      auditResult: {
+        success: false,
+        error: error.message,
+      },
+    };
   }
-
-  // Data collection phase
-
-    // Get all rum bundle data
-
-    // Extract keywords
-
-    // Extract clickable elements
-
-    // Extract CSS classes and blocks
-
-    // Send data to Mystique
-
 }
 
 export default new AuditBuilder()

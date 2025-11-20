@@ -45,7 +45,7 @@ import metaTags from './metatags/handler.js';
 import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
 import structuredDataGuidance from './structured-data/guidance-handler.js';
-import missingStructuredData from './structured-data/missing-handler.js'; // TODO: Add detection and guidance handlers as well
+import missingStructuredData from './structured-data/missing/handler.js'; // TODO: Add detection and guidance handlers as well
 import siteDetection from './site-detection/handler.js';
 import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-handlers/guidance-high-form-views-low-conversions.js';
 import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
