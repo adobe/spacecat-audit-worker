@@ -66,12 +66,7 @@ export default async function handler(message, context) {
       return {};
     }
 
-    // Handle multiple field name variations from Mystique
-    // Mystique might return: suggestedUrls, urls_suggested, or suggested_urls
-    const suggestedUrls = brokenLink.suggestedUrls
-      || brokenLink.urls_suggested
-      || brokenLink.suggested_urls
-      || [];
+    const suggestedUrls = brokenLink.suggestedUrls || [];
 
     // Validate that suggestedUrls is an array
     if (!Array.isArray(suggestedUrls)) {
@@ -90,7 +85,7 @@ export default async function handler(message, context) {
 
     // Handle AI rationale - clear it if all URLs were filtered out
     // This prevents showing rationale for URLs that don't exist
-    let aiRationale = brokenLink.aiRationale || brokenLink.ai_rationale || '';
+    let aiRationale = brokenLink.aiRationale || '';
     if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length > 0) {
       // All URLs were filtered out (likely invalid/broken), clear rationale
       log.info('All the suggested URLs were filtered out');
