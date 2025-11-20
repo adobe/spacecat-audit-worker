@@ -13,6 +13,7 @@
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { subDays } from 'date-fns';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
@@ -88,18 +89,25 @@ export async function extractUrls(context) {
     return createEmptyResult(baseURL, siteId);
   }
 
-  // Filter out URLs that already have recent citability scores
+  // Filter out URLs that already have recent citability scores (within 7 days)
   const { PageCitability } = context.dataAccess;
   const existingScores = await PageCitability.allBySiteId(siteId);
-  const existingUrls = new Set(existingScores.map((score) => score.getUrl()));
-  const urlsToAnalyze = urls.filter(({ url }) => !existingUrls.has(url));
+  const sevenDaysAgo = subDays(new Date(), 7);
+
+  const recentUrls = new Set(
+    existingScores
+      .filter((score) => new Date(score.getUpdatedAt()) > sevenDaysAgo)
+      .map((score) => score.getUrl()),
+  );
+
+  const urlsToAnalyze = urls.filter(({ url }) => !recentUrls.has(url));
 
   if (urlsToAnalyze.length === 0) {
-    log.info(`${LOG_PREFIX} No missing URLs found for site ${baseURL} with site id ${siteId}`);
+    log.info(`${LOG_PREFIX} No URLs to analyze for site ${baseURL} with site id ${siteId}`);
     return createEmptyResult(baseURL, siteId);
   }
 
-  log.info(`${LOG_PREFIX} Found ${urlsToAnalyze.length} URLs (${existingScores.length} already analyzed)`);
+  log.info(`${LOG_PREFIX} Found ${urlsToAnalyze.length} URLs (${existingScores.length - recentUrls.size} stale/new)`);
 
   const urlsForScraping = urlsToAnalyze.map(({ url }) => ({ url: joinBaseAndPath(baseURL, url) }));
 
