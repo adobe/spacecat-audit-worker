@@ -1,3 +1,10 @@
+# [1.248.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.247.2...v1.248.0) (2025-11-20)
+
+
+### Features
+
+* presigned url for summarization ([#1591](https://github.com/adobe/spacecat-audit-worker/issues/1591)) ([e7c9281](https://github.com/adobe/spacecat-audit-worker/commit/e7c9281debeac8146b59faf1b6c4a166a8233410))
+
 ## [1.247.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.247.1...v1.247.2) (2025-11-20)
 
 
