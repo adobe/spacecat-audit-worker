@@ -1,3 +1,10 @@
+## [1.247.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.247.1...v1.247.2) (2025-11-20)
+
+
+### Bug Fixes
+
+* added provision for country code ([#1618](https://github.com/adobe/spacecat-audit-worker/issues/1618)) ([3351624](https://github.com/adobe/spacecat-audit-worker/commit/3351624bdaac92f2cfbd524d5e6f22cf9845da95))
+
 ## [1.247.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.247.0...v1.247.1) (2025-11-20)
 
 
