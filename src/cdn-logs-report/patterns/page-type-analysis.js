@@ -38,7 +38,7 @@ For each URL path, break it down:
 
 ### STEP 3: PAGE TYPE IDENTIFICATION LOGIC
 Ask yourself systematically (GROUP BY SECTION, not by function):
-1. "Is this the homepage?" → Check for /, /home, /index
+1. "Is this the homepage?" → Check for /, /home, /index - **ALWAYS CHECK THIS FIRST!**
 2. "What section does this belong to?" → Look for keywords in the URL
    - Contains "product", "shop", "store", "item" → product
    - Contains "blog", "article", "news", "post" → blog
@@ -93,6 +93,7 @@ Example G: "/user/dashboard/settings"
 
 ### STEP 5: VALIDATION & OUTPUT RULES
 Ask yourself:
+- "Is this the homepage (/, /home, /index)?" → Classify as "homepage" FIRST, don't apply keyword matching
 - "Does this path have multiple possible classifications?" → Choose most specific
 - "Is this path ambiguous?" → Look for keywords in URL, not just first segment
 - "Could this be misclassified?" → Check against common patterns  
@@ -224,18 +225,26 @@ Pattern: (?i)^(/(home|index)?)?$
 Explanation: These are root-level URLs, so match empty or home/index
 
 Example 2 - Page type "product" with URLs: ["/products/item-123", "/shop/widget", "/store/catalog"]
-Pattern: (?i)/(products?|shop|store)/
+Pattern: (?i)(products?|shop|store)
 Explanation: These URLs contain shopping keywords, so match those
 
 Example 3 - Page type "blog" with URLs: ["/articles/post", "/news/update", "/stories"]
-Pattern: (?i)/(articles?|news|stories)/
+Pattern: (?i)(articles?|news|stories)
 Explanation: Look for keywords that actually appear in the URLs
 
 Example 4 - Page type "help" with URLs: ["/help", "/support", "/faq"]
-Pattern: (?i)/(help|support|faq)/
+Pattern: (?i)(help|support|faq)
 Explanation: Match the actual keywords found in these URLs
 
 CRITICAL: Do NOT use the page type name in the pattern unless it actually appears in the URLs!
+
+## SLASH HANDLING
+- URLs may or may not start with a forward slash
+- Focus on KEYWORD MATCHING, not strict slash positioning
+- DON'T require slashes before/after keywords: use (?i)(keyword) not (?i)/keyword/ or (?i)/(keyword)/
+- The pattern should match keywords wherever they appear in the path
+- CRITICAL EXCEPTION: Root paths like "/" or "/home" or "/index" MUST be classified as "homepage" FIRST, before any keyword matching
+- Homepage patterns need specific structure like (?i)^(/(home|index)?)?$ to match root URLs only
 
 ## POSIX REGEX REQUIREMENTS (for Amazon Athena)
 - Start with (?i) for case-insensitive matching
@@ -243,6 +252,7 @@ CRITICAL: Do NOT use the page type name in the pattern unless it actually appear
 - NO non-capturing groups (?:)
 - Use alternation (|), ? for optional, * for zero-or-more
 - Escape special chars: \\., \\-, \\+, \\?, \\*, etc.
+- Keep patterns SIMPLE: Focus on keyword matching without requiring specific slash positions
 
 ## OUTPUT FORMAT
 Return ONLY valid JSON. No markdown, no code blocks, no explanations:
@@ -275,7 +285,7 @@ Generate simple regex patterns for each page type that can match these URLs and 
 
   const createFallbackPatterns = () => Object.keys(groupedPaths).reduce((acc, type) => {
     const keyword = type.toLowerCase().replace(/[^a-z0-9]/g, '-');
-    acc[type] = `(?i)/${keyword}/`;
+    acc[type] = `(?i)(${keyword})`;
     return acc;
   }, {});
 
