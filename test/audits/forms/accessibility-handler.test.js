@@ -94,6 +94,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             },
             Site: {
               findById: sandbox.stub().resolves({
+                getId: sinon.stub().returns('test-site-id'),
                 getDeliveryType: sinon.stub().returns('aem'),
                 getBaseURL: sinon.stub().returns('https://example.com'),
               }),
@@ -1878,6 +1879,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             },
             Site: {
               findById: sandbox.stub().resolves({
+                getId: sinon.stub().returns(siteId),
                 getDeliveryType: sinon.stub().returns('aem'),
                 getBaseURL: sinon.stub().returns('https://example.com'),
               }),
@@ -2049,6 +2051,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             },
             Site: {
               findById: sandbox.stub().resolves({
+                getId: sinon.stub().returns(siteId),
                 getDeliveryType: sinon.stub().returns('aem'),
                 getBaseURL: sinon.stub().returns('https://example.com'),
               }),
@@ -2092,7 +2095,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       };
 
-      // Mock sendCodeFixMessagesToImporter to track if it was called
+      // Mock sendCodeFixMessagesToMystique to track if it was called
       const sendCodeFixStub = sandbox.stub().resolves();
       
       // Use esmock to mock isAuditEnabledForSite
@@ -2102,7 +2105,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           isAuditEnabledForSite: isAuditEnabledForSiteStub,
         },
         '../../../src/accessibility/utils/data-processing.js': {
-          sendCodeFixMessagesToImporter: sendCodeFixStub,
+          sendCodeFixMessagesToMystique: sendCodeFixStub,
         },
       });
 
@@ -2110,9 +2113,9 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
-      // Verify isAuditEnabledForSite was called
-      expect(isAuditEnabledForSiteStub).to.have.been.calledWith('form-accessibility-auto-fix', context.site, context);
-      // Verify sendCodeFixMessagesToImporter was called
+      // Verify isAuditEnabledForSite was called with the site fetched from database
+      expect(isAuditEnabledForSiteStub).to.have.been.calledWith('form-accessibility-auto-fix', sinon.match.has('getId'), context);
+      // Verify sendCodeFixMessagesToMystique was called
       expect(sendCodeFixStub).to.have.been.called;
       // Verify SQS messages were sent for mystique guidance
       expect(context.sqs.sendMessage).to.have.been.called;
