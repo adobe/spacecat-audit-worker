@@ -119,11 +119,6 @@ export default async function headings(context, auditContext) {
         const scrapeJsonObject = data;
         const url = stripTrailingSlash(scrapeJsonObject.finalUrl);
 
-        if (!scrapeJsonObject) {
-          log.error(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. No scraped data found for ${url}`);
-          return { url, checks: [] };
-        }
-
         const result = await validatePageHeadingFromScrapeJson(
           url,
           scrapeJsonObject,
