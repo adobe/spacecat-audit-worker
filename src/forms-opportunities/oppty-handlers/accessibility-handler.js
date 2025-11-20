@@ -16,7 +16,7 @@ import { FORM_OPPORTUNITY_TYPES, formOpportunitiesMap } from '../constants.js';
 import { getSuccessCriteriaDetails } from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
 import {
-  aggregateAccessibilityIssues,
+  aggregateA11yIssuesByOppType,
   createIndividualOpportunitySuggestions,
 } from '../../accessibility/utils/generate-individual-opportunities.js';
 import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToMystique } from '../../accessibility/utils/data-processing.js';
@@ -188,7 +188,7 @@ async function createFormAccessibilityIndividualSuggestions(aggregatedData, oppo
       }
     });
 
-    const aggregatedIssues = aggregateAccessibilityIssues(
+    const aggregatedIssues = aggregateA11yIssuesByOppType(
       transformedAccessibilityData,
       formOpportunitiesMap,
     );

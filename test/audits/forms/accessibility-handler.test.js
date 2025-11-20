@@ -94,6 +94,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             },
             Site: {
               findById: sandbox.stub().resolves({
+                getId: sinon.stub().returns('test-site-id'),
                 getDeliveryType: sinon.stub().returns('aem'),
                 getBaseURL: sinon.stub().returns('https://example.com'),
               }),
@@ -829,8 +830,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       });
 
-      // Mock aggregateAccessibilityIssues to return individual issues
-      const aggregateAccessibilityIssuesStub = sandbox.stub().returns({
+      // Mock aggregateA11yIssuesByOppType to return individual issues
+      const aggregateA11yIssuesByOppTypeStub = sandbox.stub().returns({
         data: [{
           'form-accessibility': [
             {
@@ -864,7 +865,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
         },
         '../../../src/accessibility/utils/generate-individual-opportunities.js': {
-          aggregateAccessibilityIssues: aggregateAccessibilityIssuesStub,
+          aggregateA11yIssuesByOppType: aggregateA11yIssuesByOppTypeStub,
           createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
         },
       });
@@ -872,6 +873,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
       // Verify individual suggestions were created
+      expect(aggregateA11yIssuesByOppTypeStub).to.have.been.calledOnce;
+      expect(aggregateA11yIssuesByOppTypeStub).to.have.been.calledWith(
+        sinon.match.object,
+        sinon.match.object,
+      );
       expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
     });
 
@@ -921,6 +927,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       // Mock aggregateAccessibilityIssues to throw an error
       const aggregateAccessibilityIssuesStub = sandbox.stub().throws(new Error('Aggregation failed'));
       const createIndividualOpportunitySuggestionsStub = sandbox.stub().resolves();
+      const aggregateA11yIssuesByOppTypeStub = sandbox.stub().throws(new Error('Individual suggestions failed'));
 
       const createdOpportunity = {
         getId: () => 'opportunity-123',
@@ -935,6 +942,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         '../../../src/accessibility/utils/generate-individual-opportunities.js': {
           aggregateAccessibilityIssues: aggregateAccessibilityIssuesStub,
           createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+          aggregateA11yIssuesByOppType: aggregateA11yIssuesByOppTypeStub,
         },
       });
 
@@ -942,6 +950,10 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       // Verify that the error in individual suggestions doesn't break the main flow
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+
+      // Verify the stub was called even though it threw an error
+      expect(aggregateA11yIssuesByOppTypeStub).to.have.been.calledOnce;
 
       // Verify error was logged for individual suggestions but main success was still logged
       expect(context.log.error).to.have.been.calledWith(
@@ -969,7 +981,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       });
 
-      const aggregateAccessibilityIssuesStub = sandbox.stub();
+      const aggregateA11yIssuesByOppTypeStub = sandbox.stub();
       const createIndividualOpportunitySuggestionsStub = sandbox.stub();
 
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
@@ -977,7 +989,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
         },
         '../../../src/accessibility/utils/generate-individual-opportunities.js': {
-          aggregateAccessibilityIssues: aggregateAccessibilityIssuesStub,
+          aggregateA11yIssuesByOppType: aggregateA11yIssuesByOppTypeStub,
           createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
         },
       });
@@ -985,7 +997,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
       // Verify individual suggestions functions were not called when no opportunity was created
-      expect(aggregateAccessibilityIssuesStub).to.not.have.been.called;
+      expect(aggregateA11yIssuesByOppTypeStub).to.not.have.been.called;
       expect(createIndividualOpportunitySuggestionsStub).to.not.have.been.called;
     });
 
@@ -1838,12 +1850,18 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             },
             Site: {
               findById: sandbox.stub().resolves({
+                getId: sinon.stub().returns(siteId),
                 getDeliveryType: sinon.stub().returns('aem'),
                 getBaseURL: sinon.stub().returns('https://example.com'),
               }),
             },
             Configuration: {
               findLatest: sandbox.stub().resolves({
+                getHandlers: () => ({
+                  'form-accessibility-auto-fix': {
+                    productCodes: [],
+                  },
+                }),
                 isHandlerEnabledForSite: sandbox.stub().resolves(false),
               }),
             },
@@ -2089,12 +2107,18 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             },
             Site: {
               findById: sandbox.stub().resolves({
+                getId: sinon.stub().returns(siteId),
                 getDeliveryType: sinon.stub().returns('aem'),
                 getBaseURL: sinon.stub().returns('https://example.com'),
               }),
             },
             Configuration: {
               findLatest: sandbox.stub().resolves({
+                getHandlers: () => ({
+                  'form-accessibility-auto-fix': {
+                    productCodes: [],
+                  },
+                }),
                 isHandlerEnabledForSite: sandbox.stub().resolves(false),
               }),
             },
@@ -2132,13 +2156,15 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       };
 
-      // Override stub to return true for auto-fix enabled scenario
+      // Override isAuditEnabledForSiteStub to return true for this test
       isAuditEnabledForSiteStub.resolves(true);
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
-      // Verify code-fix messages were sent
-      expect(sendCodeFixMessagesToMystiqueStub).to.have.been.calledOnce;
+      // Verify isAuditEnabledForSite was called with the site fetched from database
+      expect(isAuditEnabledForSiteStub).to.have.been.calledWith('form-accessibility-auto-fix', sinon.match.has('getId'), context);
+      // Verify sendCodeFixMessagesToMystique was called
+      expect(sendCodeFixMessagesToMystiqueStub).to.have.been.called;
     });
 
     it('should handle empty a11y data gracefully', async () => {
