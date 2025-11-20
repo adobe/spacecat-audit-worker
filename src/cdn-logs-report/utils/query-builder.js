@@ -10,9 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { DEFAULT_COUNTRY_PATTERNS } from '../constants/country-patterns.js';
 import { loadSql, fetchRemotePatterns, buildSiteFilters } from './report-utils.js';
 import { PROVIDER_USER_AGENT_PATTERNS, buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL } from '../../common/user-agent-classification.js';
+import { buildCountryExtractionSQL } from '../../common/country-extraction.js';
 
 function buildDateFilter(startDate, endDate) {
   const formatPart = (date) => ({
@@ -71,14 +71,6 @@ function generatePageTypeClassification(remotePatterns = null) {
 }
 
 // Country Classification
-function buildCountryExtractionSQL() {
-  const extracts = DEFAULT_COUNTRY_PATTERNS
-    .map(({ regex }) => `NULLIF(UPPER(REGEXP_EXTRACT(url, '${regex}', 1)), '')`)
-    .join(',\n    ');
-
-  return `COALESCE(\n    ${extracts},\n    'GLOBAL'\n  )`;
-}
-
 // Topic Classification
 function buildTopicExtractionSQL(remotePatterns = null) {
   const patterns = remotePatterns?.topicPatterns || [];

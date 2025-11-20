@@ -367,6 +367,10 @@ describe('LLM Error Pages Utils', () => {
         expect(callArg).to.have.property('agentTypeClassification');
         expect(callArg).to.have.property('topicExtraction');
         expect(callArg).to.have.property('pageCategoryClassification');
+        expect(callArg).to.have.property('countryExtraction');
+        expect(callArg.countryExtraction).to.include('COALESCE(');
+        expect(callArg.countryExtraction).to.include('REGEXP_EXTRACT(');
+        expect(callArg.countryExtraction).to.include("'GLOBAL'");
       } finally {
         globalThis.fetch = originalFetch;
       }

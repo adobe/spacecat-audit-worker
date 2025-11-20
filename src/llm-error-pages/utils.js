@@ -14,6 +14,7 @@ import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { resolveConsolidatedBucketName, extractCustomerDomain } from '../utils/cdn-utils.js';
 import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL } from '../common/user-agent-classification.js';
 import { ELMO_LIVE_HOST } from '../common/constants.js';
+import { buildCountryExtractionSQL } from '../common/country-extraction.js';
 
 // ============================================================================
 // CONSTANTS
@@ -222,6 +223,7 @@ export async function buildLlmErrorPagesQuery(options) {
     // product/category classification via patterns
     topicExtraction: buildTopicExtractionSQL(remotePatterns),
     pageCategoryClassification: generatePageTypeClassification(remotePatterns),
+    countryExtraction: buildCountryExtractionSQL(),
   }, './src/llm-error-pages/sql/llm-error-pages.sql');
 }
 
