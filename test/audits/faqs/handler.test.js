@@ -739,7 +739,7 @@ describe('FAQs Handler', () => {
       expect(message.data.faqs).to.deep.equal(auditData.auditResult.promptsByUrl);
 
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/Queued 2 FAQ topics to Mystique/),
+        sinon.match(/Queued 2 FAQ groups to Mystique/),
       );
     });
 
