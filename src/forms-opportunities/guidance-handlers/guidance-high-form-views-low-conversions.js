@@ -39,7 +39,7 @@ async function addSuggestions(
         opportunityId: opportunity.opportunityId,
         type: 'CONTENT_UPDATE',
         rank: 1,
-        status: 'NEW',
+        status: 'PENDING_VALIDATION',
         data: {
           variations: [
             {

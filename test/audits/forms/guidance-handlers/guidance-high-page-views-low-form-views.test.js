@@ -52,6 +52,7 @@ describe('Guidance High Page Views Low Form Views Handler', () => {
         form_source: '.form',
         url: 'https://example.com',
         guidance: 'Some guidance',
+        suggestions: ['Suggestion 1', 'Suggestion 2'],
       },
     };
   });
