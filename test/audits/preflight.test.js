@@ -666,6 +666,7 @@ describe('Preflight Audit', () => {
           'metatags-preflight': { productCodes: ['aem-sites'] },
           'canonical-preflight': { productCodes: ['aem-sites'] },
           'links-preflight': { productCodes: ['aem-sites'] },
+          'headings-preflight': { productCodes: ['aem-sites'] },
           'body-size-preflight': { productCodes: ['aem-sites'] },
           'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
           'h1-count-preflight': { productCodes: ['aem-sites'] },
@@ -865,6 +866,8 @@ describe('Preflight Audit', () => {
 
       // Mock metatags-preflight audit as enabled
       configuration.isHandlerEnabledForSite.withArgs('metatags-preflight', site).returns(true);
+      // Mock headings-preflight audit as enabled
+      configuration.isHandlerEnabledForSite.withArgs('headings-preflight', site).returns(true);
       // Mock readability-preflight audit as disabled
       configuration.isHandlerEnabledForSite.withArgs('readability-preflight', site).returns(false);
       // All other audits should be enabled by default
@@ -1018,6 +1021,7 @@ describe('Preflight Audit', () => {
 
       configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(true);
       configuration.isHandlerEnabledForSite.withArgs('metatags-preflight', site).returns(true);
+      configuration.isHandlerEnabledForSite.withArgs('headings-preflight', site).returns(true);
       configuration.isHandlerEnabledForSite.returns(false);
       await preflightAuditFunction(context);
       expect(genvarClient.generateSuggestions).to.have.been.called;
@@ -1315,7 +1319,7 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'readability'];
+        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'headings', 'readability'];
 
         expect(breakdown).to.be.an('array');
         expect(breakdown).to.have.lengthOf(expectedChecks.length);
@@ -1334,9 +1338,9 @@ describe('Preflight Audit', () => {
       await preflightAuditFunction(context);
 
       // Verify that AsyncJob.findById was called for job metadata update, each intermediate save and final save
-      // (total of 7 times: 1 metadata update + 5 intermediate + 1 final)
+      // (total of 7 times: 1 metadata update + 6 intermediate + 1 final)
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(7);
+      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(8);
     });
 
     it('handles errors during intermediate saves gracefully', async () => {
@@ -1672,6 +1676,7 @@ describe('Preflight Audit', () => {
         '../../src/preflight/canonical.js': { default: async () => undefined },
         '../../src/preflight/metatags.js': { default: async () => undefined },
         '../../src/preflight/links.js': { default: async () => undefined },
+        '../../src/preflight/headings.js': { default: async () => undefined },
         '../../src/readability/handler.js': { default: async () => undefined },
         '../../src/preflight/accessibility.js': { default: async () => undefined },
         '@adobe/spacecat-shared-ims-client': {
@@ -3904,6 +3909,428 @@ describe('Preflight Audit', () => {
     });
   });
 
+  describe('headings audit', () => {
+    let context;
+    let auditContext;
+    let sandbox;
+    let headings;
+    let getH1HeadingASuggestionStub;
+    let getBrandGuidelinesStub;
+
+    beforeEach(async () => {
+      sandbox = sinon.createSandbox();
+
+      const log = {
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        error: sinon.stub(),
+        debug: sinon.stub(),
+      };
+
+      context = {
+        site: {
+          getId: sinon.stub().returns('site-123'),
+          getBaseURL: sinon.stub().returns('https://example.com'),
+        },
+        job: {
+          getId: sinon.stub().returns('job-123'),
+          getMetadata: sinon.stub().returns({
+            payload: { enableAuthentication: false },
+          }),
+        },
+        log,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        },
+        dataAccess: {
+          AsyncJob: {
+            update: sinon.stub().resolves(),
+          },
+        },
+      };
+
+      auditContext = {
+        previewUrls: ['https://example.com/page1', 'https://example.com/page2'],
+        step: 'suggest',
+        audits: new Map([
+          ['https://example.com/page1', {
+            audits: [{
+              name: 'headings',
+              type: 'seo',
+              opportunities: [],
+            }],
+          }],
+          ['https://example.com/page2', {
+            audits: [{
+              name: 'headings',
+              type: 'seo',
+              opportunities: [],
+            }],
+          }],
+        ]),
+        auditsResult: {},
+        scrapedObjects: [
+          {
+            data: {
+              finalUrl: 'https://example.com/page1',
+              scrapeResult: {
+                rawBody: '<html><body><h1>Test H1</h1><h1>Another H1</h1></body></html>',
+                tags: {
+                  title: 'Page 1 Title',
+                  description: 'Page 1 Description',
+                  h1: ['Test H1', 'Another H1'],
+                },
+              },
+            },
+          },
+          {
+            data: {
+              finalUrl: 'https://example.com/page2',
+              scrapeResult: {
+                rawBody: '<html><body></body></html>',
+                tags: {
+                  title: 'Page 2 Title',
+                  description: 'Page 2 Description',
+                  h1: [],
+                },
+              },
+            },
+          },
+        ],
+        timeExecutionBreakdown: [],
+      };
+
+      // Create stubs for the functions we want to mock
+      getH1HeadingASuggestionStub = sinon.stub();
+      getBrandGuidelinesStub = sinon.stub();
+
+      // Mock the headings handler with stubbed functions
+      const headingsModule = await esmock('../../src/preflight/headings.js', {
+        '../../src/headings/handler.js': {
+          validatePageHeadingFromScrapeJson: async (url, scrapeJsonObject, log, seoChecks) => {
+            // Return validation results based on the scraped data
+            if (url === 'https://example.com/page1') {
+              return {
+                url,
+                checks: [
+                  {
+                    check: 'heading-multiple-h1',
+                    checkTitle: 'Multiple H1 Tags',
+                    description: 'Page has multiple H1 tags',
+                    explanation: 'A page should have only one H1 tag',
+                    success: false,
+                    pageTags: { h1: ['Test H1', 'Another H1'] },
+                  },
+                ],
+              };
+            }
+            if (url === 'https://example.com/page2') {
+              return {
+                url,
+                checks: [
+                  {
+                    check: 'heading-missing-h1',
+                    checkTitle: 'Missing H1 Tag',
+                    description: 'Page is missing an H1 tag',
+                    explanation: 'Every page should have an H1 tag',
+                    success: false,
+                    pageTags: { h1: [] },
+                  },
+                ],
+              };
+            }
+            return { url, checks: [] };
+          },
+          getBrandGuidelines: getBrandGuidelinesStub,
+          getH1HeadingASuggestion: getH1HeadingASuggestionStub,
+          HEADINGS_CHECKS: {
+            HEADING_MISSING_H1: { check: 'heading-missing-h1' },
+            HEADING_MULTIPLE_H1: { check: 'heading-multiple-h1' },
+            HEADING_H1_LENGTH: { check: 'heading-h1-length' },
+            HEADING_EMPTY: { check: 'heading-empty' },
+          },
+        },
+        '../../src/preflight/utils.js': {
+          saveIntermediateResults: sinon.stub().resolves(),
+        },
+      });
+
+      headings = headingsModule.default;
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('should handle missing scraped data for a URL', async () => {
+      auditContext.scrapedObjects = [
+        {
+          data: null,
+        },
+        {
+          data: {
+            finalUrl: 'https://example.com/page2',
+            scrapeResult: {
+              rawBody: '<html><body></body></html>',
+              tags: {
+                title: 'Page 2 Title',
+                description: 'Page 2 Description',
+                h1: [],
+              },
+            },
+          },
+        },
+      ];
+
+      await headings(context, auditContext);
+      expect(context.log.error).to.have.been.calledWithMatch(
+        sinon.match(/Headings audit failed/),
+      );
+    });
+
+    it('should handle missing audit entry for a URL', async () => {
+      const modifiedAuditContext = {
+        previewUrls: ['https://example.com/page1'],
+        step: 'identify',
+        audits: new Map([
+          ['https://example.com/page1', {
+            audits: [],
+          }],
+          // page2 is NOT in the audits map since it's not in previewUrls
+        ]),
+        auditsResult: {},
+        scrapedObjects: [
+          {
+            data: {
+              finalUrl: 'https://example.com/page1',
+              scrapeResult: {
+                rawBody: '<html><body><h1>Test</h1></body></html>',
+                tags: { title: 'Title', description: 'Desc', h1: ['Test'] },
+              },
+            },
+          },
+          {
+            data: {
+              finalUrl: 'https://example.com/page2',
+              scrapeResult: {
+                rawBody: '<html><body></body></html>',
+                tags: { title: 'Title 2', description: 'Desc 2', h1: [] },
+              },
+            },
+          },
+        ],
+        timeExecutionBreakdown: [],
+      };
+
+      it('should skip AI enhancement during identify step', async () => {
+        // Change step to 'identify'
+        auditContext.step = 'identify';
+  
+        await headings(context, auditContext);
+  
+        // Verify that getBrandGuidelines was never called (no AI enhancement)
+        expect(getBrandGuidelinesStub).to.not.have.been.called;
+        expect(getH1HeadingASuggestionStub).to.not.have.been.called;
+      });
+  
+
+      await headings(context, modifiedAuditContext);
+      expect(context.log.warn).to.have.been.called;
+      const warnCalls = context.log.warn.getCalls();
+      const relevantCall = warnCalls.find(call =>
+        call.args[0] && call.args[0].includes('No audit entry found for https://example.com/page2')
+      );
+      expect(relevantCall).to.exist;
+    });
+
+    it('should add aiSuggestion when AI suggestion is available', async () => {
+      getBrandGuidelinesStub.resolves({ brandName: 'Test Brand' });
+      getH1HeadingASuggestionStub.resolves('AI-generated H1 suggestion');
+
+      await headings(context, auditContext);
+      const page2Audit = auditContext.audits.get('https://example.com/page2')
+        .audits.find((a) => a.name === 'headings');
+
+      const opportunityWithAI = page2Audit.opportunities.find((opp) => opp.aiSuggestion);
+      expect(opportunityWithAI).to.exist;
+      expect(opportunityWithAI.aiSuggestion).to.equal('AI-generated H1 suggestion');
+    });
+
+    it('should handle AI suggestion error gracefully during suggest step', async () => {
+      getBrandGuidelinesStub.resolves({ brandName: 'Test Brand' });
+      getH1HeadingASuggestionStub.rejects(new Error('Service unavailable'));
+
+      await headings(context, auditContext);
+      expect(context.log.error).to.have.been.calledWithMatch(
+        sinon.match(/Error generating AI suggestion for https:\/\/example\.com\/page2/),
+      );
+
+      // Verify that opportunities were still added despite AI error
+      const page2Audit = auditContext.audits.get('https://example.com/page2')
+        .audits.find((a) => a.name === 'headings');
+      expect(page2Audit.opportunities).to.have.length.greaterThan(0);
+    });
+
+    it('should add suggestion when AI suggestion is not available', async () => {
+      getBrandGuidelinesStub.resolves({ brandName: 'Test Brand' });
+      getH1HeadingASuggestionStub.resolves(null);
+
+      await headings(context, auditContext);
+      const page2Audit = auditContext.audits.get('https://example.com/page2')
+        .audits.find((a) => a.name === 'headings');
+
+      page2Audit.opportunities.forEach((opp) => {
+        expect(opp).to.not.have.property('aiSuggestion');
+        expect(opp).to.have.property('suggestion');
+      });
+    });
+
+    it('should handle getBrandGuidelines error gracefully', async () => {
+      getBrandGuidelinesStub.rejects(new Error('Brand guidelines fetch failed'));
+
+      await headings(context, auditContext);
+      expect(context.log.error).to.have.been.calledWithMatch(
+        sinon.match(/Failed to generate AI suggestions/),
+      );
+
+      // Verify that opportunities were still added despite the error
+      const page1Audit = auditContext.audits.get('https://example.com/page1')
+        .audits.find((a) => a.name === 'headings');
+      const page2Audit = auditContext.audits.get('https://example.com/page2')
+        .audits.find((a) => a.name === 'headings');
+      
+      expect(page1Audit.opportunities).to.have.length.greaterThan(0);
+      expect(page2Audit.opportunities).to.have.length.greaterThan(0);
+    });
+
+    it('should return Moderate seoImpact for non-high-impact check types', async () => {
+      const headingsModuleWithModerateCheck = await esmock('../../src/preflight/headings.js', {
+        '../../src/headings/handler.js': {
+          validatePageHeadingFromScrapeJson: async (url) => {
+            return {
+              url,
+              checks: [
+                {
+                  check: 'heading-order-invalid',
+                  checkTitle: 'Invalid Heading Order',
+                  description: 'Headings are not in proper order',
+                  explanation: 'Headings should be in sequential order',
+                  success: false,
+                  pageTags: { h1: ['Test'] },
+                },
+              ],
+            };
+          },
+          getBrandGuidelines: getBrandGuidelinesStub,
+          getH1HeadingASuggestion: getH1HeadingASuggestionStub,
+          HEADINGS_CHECKS: {
+            HEADING_MISSING_H1: { check: 'heading-missing-h1' },
+            HEADING_MULTIPLE_H1: { check: 'heading-multiple-h1' },
+            HEADING_H1_LENGTH: { check: 'heading-h1-length' },
+            HEADING_EMPTY: { check: 'heading-empty' },
+          },
+        },
+        '../../src/preflight/utils.js': {
+          saveIntermediateResults: sinon.stub().resolves(),
+        },
+      });
+
+      const testAuditContext = {
+        previewUrls: ['https://example.com/test'],
+        step: 'identify',
+        audits: new Map([
+          ['https://example.com/test', {
+            audits: [{
+              name: 'headings',
+              type: 'seo',
+              opportunities: [],
+            }],
+          }],
+        ]),
+        auditsResult: {},
+        scrapedObjects: [
+          {
+            data: {
+              finalUrl: 'https://example.com/test',
+              scrapeResult: {
+                rawBody: '<html><body><h1>Test</h1><h3>Skipped H2</h3></body></html>',
+                tags: { title: 'Test', description: 'Test', h1: ['Test'] },
+              },
+            },
+          },
+        ],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModuleWithModerateCheck.default(context, testAuditContext);
+
+      // Verify the opportunity was added with 'Moderate' seoImpact
+      const testAudit = testAuditContext.audits.get('https://example.com/test')
+        .audits.find((a) => a.name === 'headings');
+      
+      expect(testAudit.opportunities).to.have.lengthOf(1);
+      expect(testAudit.opportunities[0].seoImpact).to.equal('Moderate');
+    });
+
+    it('should handle validatePageHeadingFromScrapeJson returning falsy value', async () => {      
+      const headingsModuleWithNullReturn = await esmock('../../src/preflight/headings.js', {
+        '../../src/headings/handler.js': {
+          validatePageHeadingFromScrapeJson: async (url) => {
+            return null;
+          },
+          getBrandGuidelines: getBrandGuidelinesStub,
+          getH1HeadingASuggestion: getH1HeadingASuggestionStub,
+          HEADINGS_CHECKS: {
+            HEADING_MISSING_H1: { check: 'heading-missing-h1' },
+            HEADING_MULTIPLE_H1: { check: 'heading-multiple-h1' },
+            HEADING_H1_LENGTH: { check: 'heading-h1-length' },
+            HEADING_EMPTY: { check: 'heading-empty' },
+          },
+        },
+        '../../src/preflight/utils.js': {
+          saveIntermediateResults: sinon.stub().resolves(),
+        },
+      });
+
+      const testAuditContext = {
+        previewUrls: ['https://example.com/test'],
+        step: 'identify',
+        audits: new Map([
+          ['https://example.com/test', {
+            audits: [{
+              name: 'headings',
+              type: 'seo',
+              opportunities: [],
+            }],
+          }],
+        ]),
+        auditsResult: {},
+        scrapedObjects: [
+          {
+            data: {
+              finalUrl: 'https://example.com/test',
+              scrapeResult: {
+                rawBody: '<html><body><h1>Test</h1></body></html>',
+                tags: { title: 'Test', description: 'Test', h1: ['Test'] },
+              },
+            },
+          },
+        ],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModuleWithNullReturn.default(context, testAuditContext);
+
+      // The function should complete successfully even when validation returns null
+      // The fallback { url, checks: [] } is used, so no opportunities are added
+      const testAudit = testAuditContext.audits.get('https://example.com/test')
+        .audits.find((a) => a.name === 'headings');
+      
+      expect(testAudit.opportunities).to.have.lengthOf(0);
+      expect(context.log.debug).to.have.been.called;
+    });
+  });
+
   describe('saving enabled checks in job metadata payload', () => {
     let site;
     let job;
@@ -3965,6 +4392,7 @@ describe('Preflight Audit', () => {
           'metatags-preflight': { productCodes: ['aem-sites'] },
           'canonical-preflight': { productCodes: ['aem-sites'] },
           'links-preflight': { productCodes: ['aem-sites'] },
+          'headings-preflight': { productCodes: ['aem-sites'] },
           'body-size-preflight': { productCodes: ['aem-sites'] },
           'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
           'h1-count-preflight': { productCodes: ['aem-sites'] },

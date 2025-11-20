@@ -31,36 +31,42 @@ export const HEADINGS_CHECKS = Object.freeze({
   HEADING_EMPTY: {
     check: 'heading-empty',
     title: 'Empty Heading',
+    description: '{tagName} heading is empty.',
     explanation: 'Heading elements (H2–H6) should not be empty.',
     suggestion: 'Add descriptive text or remove the empty heading.',
   },
   HEADING_MISSING_H1: {
     check: 'heading-missing-h1',
     title: 'Missing H1 Heading',
+    description: 'Page does not have an H1 element',
     explanation: 'Pages should have exactly one H1 element for SEO and accessibility.',
     suggestion: 'Add an H1 element describing the main content.',
   },
   HEADING_H1_LENGTH: {
     check: 'heading-h1-length',
     title: 'H1 Length',
+    description: `H1 element is either empty or exceeds ${H1_LENGTH_CHARS} characters.`,
     explanation: `H1 elements should be less than ${H1_LENGTH_CHARS} characters.`,
     suggestion: `Update the H1 to be less than ${H1_LENGTH_CHARS} characters`,
   },
   HEADING_MULTIPLE_H1: {
     check: 'heading-multiple-h1',
     title: 'Multiple H1 Headings',
+    description: 'Page has more than one H1 element.',
     explanation: 'Pages should have only one H1 element.',
     suggestion: 'Change additional H1 elements to H2 or appropriate levels.',
   },
   HEADING_ORDER_INVALID: {
     check: 'heading-order-invalid',
     title: 'Invalid Heading Order',
+    description: 'Heading hierarchy skips levels.',
     explanation: 'Heading levels should increase by one (example: H1→H2), not jump levels (example: H1→H3).',
     suggestion: 'Adjust heading levels to maintain proper hierarchy.',
   },
   TOPPAGES: {
     check: 'top-pages',
     title: 'Top Pages',
+    description: 'No top pages available for audit',
     explanation: 'No top pages found',
   },
 });
@@ -199,7 +205,7 @@ export async function getH1HeadingASuggestion(url, log, pageTags, context, brand
   }
 }
 
-async function getBrandGuidelines(healthyTagsObject, log, context) {
+export async function getBrandGuidelines(healthyTagsObject, log, context) {
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
   const prompt = await getPrompt(
     {
@@ -218,48 +224,30 @@ async function getBrandGuidelines(healthyTagsObject, log, context) {
 }
 
 /**
- * Validate heading semantics for a single page.
+ * Validate heading semantics for a single page from a scrapeJsonObject.
  * - Ensure heading level increases by at most 1 when going deeper (no jumps, e.g., h1 → h3)
  * - Ensure headings are not empty
  *
- * @param {string} url
- * @param {Object} log
+ * @param {string} url - The URL being validated
+ * @param {Object} scrapeJsonObject - The scraped page data from S3
+ * @param {Object} log - Logger instance
+ * @param {Object} context - Audit context
+ * @param {Object} seoChecks - SeoChecks instance for tracking healthy tags
  * @returns {Promise<{url: string, checks: Array}>}
  */
-export async function validatePageHeadings(
+export async function validatePageHeadingFromScrapeJson(
   url,
+  scrapeJsonObject,
   log,
-  site,
-  allKeys,
-  s3Client,
-  S3_SCRAPER_BUCKET_NAME,
-  context,
   seoChecks,
 ) {
-  if (!url) {
-    log.error('URL is undefined or null, cannot validate headings');
-    return {
-      url,
-      checks: [],
-    };
-  }
-
   try {
-    const scrapeJsonPath = getScrapeJsonPath(url, site.getId());
-    const s3Key = allKeys.find((key) => key.includes(scrapeJsonPath));
     let document = null;
-    let scrapeJsonObject = null;
-    if (!s3Key) {
-      log.error(`Scrape JSON path not found for ${url}, skipping headings audit`);
+    if (!scrapeJsonObject) {
+      log.error(`Scrape JSON object not found for ${url}, skipping headings audit`);
       return null;
     } else {
-      scrapeJsonObject = await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, s3Key, log);
-      if (!scrapeJsonObject) {
-        log.error(`Scrape JSON object not found for ${url}, skipping headings audit`);
-        return null;
-      } else {
-        document = new JSDOM(scrapeJsonObject.scrapeResult.rawBody).window.document;
-      }
+      document = new JSDOM(scrapeJsonObject.scrapeResult.rawBody).window.document;
     }
 
     const pageTags = {
@@ -282,6 +270,7 @@ export async function validatePageHeadings(
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
         checkTitle: HEADINGS_CHECKS.HEADING_MISSING_H1.title,
+        description: HEADINGS_CHECKS.HEADING_MISSING_H1.description,
         success: false,
         explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
         suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
@@ -298,6 +287,7 @@ export async function validatePageHeadings(
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
         checkTitle: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.title,
+        description: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.description,
         success: false,
         explanation: `Found ${h1Elements.length} h1 elements: ${HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation}`,
         suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
@@ -312,6 +302,7 @@ export async function validatePageHeadings(
       checks.push({
         check: HEADINGS_CHECKS.HEADING_H1_LENGTH.check,
         checkTitle: HEADINGS_CHECKS.HEADING_H1_LENGTH.title,
+        description: HEADINGS_CHECKS.HEADING_H1_LENGTH.description,
         success: false,
         explanation: HEADINGS_CHECKS.HEADING_H1_LENGTH.explanation,
         suggestion: HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion,
@@ -334,6 +325,7 @@ export async function validatePageHeadings(
           return {
             check: HEADINGS_CHECKS.HEADING_EMPTY.check,
             checkTitle: HEADINGS_CHECKS.HEADING_EMPTY.title,
+            description: HEADINGS_CHECKS.HEADING_EMPTY.description.replace('{tagName}', heading.tagName),
             success: false,
             explanation: `Found empty text for ${heading.tagName}: ${HEADINGS_CHECKS.HEADING_EMPTY.explanation}`,
             suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
@@ -381,6 +373,53 @@ export async function validatePageHeadings(
     }
 
     return { url, checks };
+  } catch (error) {
+    log.error(`Error validating headings for ${url}: ${error.message}`);
+    return {
+      url,
+      checks: [],
+    };
+  }
+}
+
+/**
+ * Validate heading semantics for a single page.
+ * - Ensure heading level increases by at most 1 when going deeper (no jumps, e.g., h1 → h3)
+ * - Ensure headings are not empty
+ *
+ * @param {string} url
+ * @param {Object} log
+ * @returns {Promise<{url: string, checks: Array}>}
+ */
+export async function validatePageHeadings(
+  url,
+  log,
+  site,
+  allKeys,
+  s3Client,
+  S3_SCRAPER_BUCKET_NAME,
+  context,
+  seoChecks,
+) {
+  if (!url) {
+    log.error('URL is undefined or null, cannot validate headings');
+    return {
+      url,
+      checks: [],
+    };
+  }
+
+  try {
+    const scrapeJsonPath = getScrapeJsonPath(url, site.getId());
+    const s3Key = allKeys.find((key) => key.includes(scrapeJsonPath));
+    let scrapeJsonObject = null;
+    if (!s3Key) {
+      log.error(`Scrape JSON path not found for ${url}, skipping headings audit`);
+      return null;
+    } else {
+      scrapeJsonObject = await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, s3Key, log);
+      return validatePageHeadingFromScrapeJson(url, scrapeJsonObject, log, seoChecks);
+    }
   } catch (error) {
     log.error(`Error validating headings for ${url}: ${error.message}`);
     return {

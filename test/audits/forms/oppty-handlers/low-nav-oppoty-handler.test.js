@@ -340,4 +340,16 @@ describe('createLowNavigationOpportunities handler method', () => {
     await createLowNavigationOpportunities(auditUrl, auditData, undefined, context, excludeUrls);
     expect(dataAccessStub.Opportunity.create).to.not.be.called;
   });
+
+  it('should handle when auditContext has data', async () => {
+    const contextWithAuditData = {
+      ...context,
+      auditContext: { data: 'test-123' },
+    };
+    formsCTAOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION;
+    dataAccessStub.Opportunity.create = sinon.stub().returns(formsCTAOppty);
+    await createLowNavigationOpportunities(auditUrl, auditData, undefined, contextWithAuditData);
+    // Should work normally with auditContext.data defined
+    expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] successfully synced opportunity for high page views low form nav audit type.');
+  });
 });
