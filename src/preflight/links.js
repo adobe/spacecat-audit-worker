@@ -17,6 +17,31 @@ import { generateSuggestionData } from '../internal-links/suggestions-generator.
 
 export const PREFLIGHT_LINKS = 'links';
 
+/**
+ * Create an issue object for a broken internal link with AI suggestions
+ * @param {string} urlTo - The URL that is broken
+ * @param {number} status - HTTP status code
+ * @param {string} baseURLOrigin - Base URL origin to replace preview origin
+ * @param {Array} urlsSuggested - Optional array of suggested alternative URLs from AI
+ * @param {string} aiRationale - Optional AI rationale for suggestions
+ * @returns {Object} Issue object with all fields including aiSuggestion
+ */
+export function createBrokenLinkIssue(urlTo, status, baseURLOrigin, urlsSuggested, aiRationale) {
+  const aiUrls = (urlsSuggested && urlsSuggested.length > 0)
+    ? urlsSuggested.map((url) => stripTrailingSlash(
+      url.replace(new URL(url).origin, baseURLOrigin),
+    )) : [];
+
+  return {
+    url: stripTrailingSlash(urlTo.replace(new URL(urlTo).origin, baseURLOrigin)),
+    issue: `Status ${status}`,
+    seoImpact: 'High',
+    seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+    aiSuggestion: aiUrls.length > 0 ? aiUrls[0] : undefined,
+    aiRationale,
+  };
+}
+
 export default async function links(context, auditContext) {
   const {
     site, job, log,
@@ -83,17 +108,14 @@ export default async function links(context, auditContext) {
         if (!brokenInternalLinksByPage.has(href)) {
           brokenInternalLinksByPage.set(href, []);
         }
-        const aiUrls = urlsSuggested?.map((url) => stripTrailingSlash(
-          url.replace(new URL(url).origin, baseURLOrigin),
-        ));
-        brokenInternalLinksByPage.get(href).push({
-          url: stripTrailingSlash(urlTo.replace(new URL(urlTo).origin, baseURLOrigin)),
-          issue: `Status ${status}`,
-          seoImpact: 'High',
-          seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-          aiSuggestion: aiUrls[0],
+        const issue = createBrokenLinkIssue(
+          urlTo,
+          status,
+          baseURLOrigin,
+          urlsSuggested,
           aiRationale,
-        });
+        );
+        brokenInternalLinksByPage.get(href).push(issue);
       });
     } else {
       auditResult.brokenInternalLinks.forEach(({ urlTo, href, status }) => {

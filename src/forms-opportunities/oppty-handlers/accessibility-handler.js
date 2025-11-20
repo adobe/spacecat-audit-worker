@@ -20,10 +20,10 @@ import {
 } from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
 import {
-  aggregateAccessibilityIssues,
+  aggregateA11yIssuesByOppType,
   createIndividualOpportunitySuggestions,
 } from '../../accessibility/utils/generate-individual-opportunities.js';
-import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToImporter } from '../../accessibility/utils/data-processing.js';
+import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToMystique } from '../../accessibility/utils/data-processing.js';
 import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from '../../accessibility/utils/constants.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 
@@ -310,7 +310,7 @@ async function createFormAccessibilityIndividualSuggestions(aggregatedData, oppo
       }
     });
 
-    const aggregatedIssues = aggregateAccessibilityIssues(
+    const aggregatedIssues = aggregateA11yIssuesByOppType(
       transformedAccessibilityData,
       formOpportunitiesMap,
     );
@@ -479,7 +479,7 @@ export default async function handler(message, context) {
     // send message to importer for code-fix generation
     const isAutoFixEnabled = await isAuditEnabledForSite(`${opportunity.getType()}-auto-fix`, site, context);
     if (isAutoFixEnabled) {
-      await sendCodeFixMessagesToImporter(
+      await sendCodeFixMessagesToMystique(
         opportunity,
         auditId,
         site,

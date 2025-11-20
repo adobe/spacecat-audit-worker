@@ -273,6 +273,14 @@ export async function runAuditAndGenerateSuggestions(context) {
     log,
   );
 
+  // Check if there are any detected tags BEFORE proceeding
+  if (!validatedDetectedTags || Object.keys(validatedDetectedTags).length === 0) {
+    log.info(`[metatags] No valid metatag issues detected for ${site.getId()}, skipping opportunity creation`);
+    return {
+      status: 'complete',
+    };
+  }
+
   // Calculate projected traffic lost
   const {
     projectedTrafficLost,

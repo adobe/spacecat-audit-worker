@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 use(sinonChai);
 
@@ -78,6 +79,8 @@ describe('summarization guidance handler', () => {
     };
     Suggestion = {
       create: sinon.stub().resolves(),
+      STATUSES: SuggestionDataAccess.STATUSES,
+      TYPES: SuggestionDataAccess.TYPES,
     };
     log = {
       info: sinon.stub(),
@@ -368,6 +371,62 @@ describe('summarization guidance handler', () => {
     expect(mappedSuggestion.type).to.equal('CODE_CHANGE');
     expect(mappedSuggestion.rank).to.equal(10);
     expect(mappedSuggestion.data).to.deep.equal(testData);
+  });
+
+  it('should create suggestion with NEW status when site does not require validation', async () => {
+    // Set requiresValidation to false in context
+    context.site = { requiresValidation: false };
+    
+    const message = {
+      siteId: dummySite.getId(),
+      auditId: dummyAudit.auditId,
+      data: {
+        guidance: [
+          {
+            insight: 'Test insight',
+            rationale: 'Test rationale',
+            recommendation: 'Test recommendation',
+          },
+        ],
+        suggestions: [
+          {
+            pageUrl: 'https://example.com/page1',
+            pageSummary: {
+              title: 'Page Title 1',
+              summary: 'This is a page summary',
+              key_points: ['Key point 1', 'Key point 2'],
+            },
+            sections: [
+              {
+                title: 'Section 1',
+                summary: 'Section summary 1',
+                readability_score: 65.2,
+                word_count: 15,
+                brand_consistency_score: 88,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    
+    await handler(message, context);
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+    
+    // Get the arguments passed to syncSuggestions
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const syncArgs = syncCall.args[0];
+    
+    // Test the mapNewSuggestion function
+    const testData = {
+      suggestionValue: '## 1. https://adobe.com/page1\n\n### Page Title\n\nPage Title 1\n\n### Page Summary (AI generated)\n\n> This is a page summary\n\n### Key Points (AI generated)\n\n> - Key point 1\n> - Key point 2\n\n### Section Summaries (AI generated)\n\n#### Section 1\n\n> Section summary 1\n\n---\n\n',
+      bKey: 'summarization:https://adobe.com'
+    };
+    
+    const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
+    expect(mappedSuggestion).to.have.property('opportunityId');
+    expect(mappedSuggestion).to.have.property('type');
+    expect(mappedSuggestion).to.have.property('rank');
   });
 
   it('should handle error when saving opportunity fails', async () => {
