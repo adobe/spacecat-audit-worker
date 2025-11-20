@@ -85,8 +85,8 @@ describe('createLowNavigationOpportunities handler method', () => {
       runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
       type: FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
       origin: 'AUTOMATION',
-      title: 'Form has low views',
-      description: 'The form has low views due to low navigations in the page containing its CTA',
+      title: 'Visitors aren\'t scrolling or navigating to your form — placement and visibility optimizations ready for review',
+      description: 'If users don\'t reach your form, they can\'t convert — optimizing layout increases reach and interactions.',
       tags: [
         'Form Navigation',
       ],
@@ -175,8 +175,8 @@ describe('createLowNavigationOpportunities handler method', () => {
       runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/ETCwSsZJzRJIuPqnC_jZFhgBsW29GijIgk9C6-GpkQ16xg?e=dNYZhD',
       type: FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
       origin: 'AUTOMATION',
-      title: 'Form has low views',
-      description: 'The form has low views due to low navigations in the page containing its CTA',
+      title: 'Visitors aren\'t scrolling or navigating to your form — placement and visibility optimizations ready for review',
+      description: 'If users don\'t reach your form, they can\'t convert — optimizing layout increases reach and interactions.',
       tags: [
         'Form Navigation',
       ],

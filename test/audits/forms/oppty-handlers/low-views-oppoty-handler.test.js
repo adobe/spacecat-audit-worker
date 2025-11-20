@@ -110,8 +110,8 @@ describe('createLowFormViewsOpportunities handler method', () => {
       runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EeYKNa4HQkRAleWXjC5YZbMBMhveB08F1yTTUQSrP97Eow?e=cZdsnA',
       type: FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
       origin: 'AUTOMATION',
-      title: 'Form has low views',
-      description: 'The form has low views but the page containing the form has higher traffic',
+      title: 'Your form isn\'t getting enough views — optimizations to drive visibility prepared',
+      description: 'Poorly placed or hidden forms reduce leads — increasing visibility improves submission rates.',
       tags: [
         'Form Placement',
       ],

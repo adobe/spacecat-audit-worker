@@ -1246,7 +1246,7 @@ describe('Canonical URL Tests', () => {
       expect(result).to.be.an('object');
       expect(result).to.have.property('runbook').that.is.a('string').and.is.not.empty;
       expect(result).to.have.property('origin', 'AUTOMATION');
-      expect(result).to.have.property('title', 'Canonical URL issues affecting SEO');
+      expect(result).to.have.property('title', 'Canonical URLs to clarify your SEO strategy to search engines are ready');
       expect(result).to.have.property('description').that.is.a('string');
       expect(result).to.have.property('guidance').that.is.an('object');
       expect(result.guidance).to.have.property('steps').that.is.an('array');
@@ -1266,7 +1266,7 @@ describe('Canonical URL Tests', () => {
       expect(result).to.be.an('object');
       expect(result).to.have.property('runbook').that.is.a('string').and.is.not.empty;
       expect(result).to.have.property('origin', 'AUTOMATION');
-      expect(result).to.have.property('title', 'Canonical URL issues affecting SEO');
+      expect(result).to.have.property('title', 'Canonical URLs to clarify your SEO strategy to search engines are ready');
       expect(result).to.have.property('description').that.is.a('string');
       expect(result).to.have.property('guidance').that.is.an('object');
       expect(result.guidance).to.have.property('recommendations').that.is.an('array');

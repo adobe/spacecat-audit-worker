@@ -639,54 +639,54 @@ describe('sendMessageToMystiqueForGuidance', () => {
 });
 
 describe('getFormTitle', () => {
-  it('should return an empty string if formDetails is null', () => {
+  it('should return user-friendly title for LOW_CONVERSION', () => {
     const result = getFormTitle(null, { getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION });
-    expect(result).to.equal('Form has low conversions');
+    expect(result).to.equal('Turn more visitors into leads and customers — optimizations for form conversion rate are ready');
   });
 
-  it('should return an empty string if formDetails is not an object', () => {
+  it('should return user-friendly title for LOW_CONVERSION regardless of form details', () => {
     const result = getFormTitle('not-an-object', { getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION });
-    expect(result).to.equal('Form has low conversions');
+    expect(result).to.equal('Turn more visitors into leads and customers — optimizations for form conversion rate are ready');
   });
 
-  it('should return the form type with suffix for LOW_CONVERSION', () => {
+  it('should return user-friendly title for LOW_CONVERSION with form type', () => {
     const result = getFormTitle({ form_type: 'Contact Form' }, { getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION });
-    expect(result).to.equal('Contact Form has low conversions');
+    expect(result).to.equal('Turn more visitors into leads and customers — optimizations for form conversion rate are ready');
   });
 
-  it('should return the form type with suffix for LOW_NAVIGATION', () => {
+  it('should return user-friendly title for LOW_NAVIGATION', () => {
     const result = getFormTitle({ form_type: 'Contact Form' }, { getType: () => FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION });
-    expect(result).to.equal('Contact Form has low views');
+    expect(result).to.equal('Visitors aren\'t scrolling or navigating to your form — placement and visibility optimizations ready for review');
   });
 
-  it('should return the form type with suffix for LOW_VIEWS', () => {
+  it('should return user-friendly title for LOW_VIEWS', () => {
     const result = getFormTitle({ form_type: 'Contact Form' }, { getType: () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS });
-    expect(result).to.equal('Contact Form has low views');
+    expect(result).to.equal('Your form isn\'t getting enough views — optimizations to drive visibility prepared');
   });
 
-  it('should return the form type without suffix for FORM_A11Y', () => {
+  it('should return user-friendly title for FORM_A11Y', () => {
     const result = getFormTitle({ form_type: 'Contact Form' }, { getType: () => FORM_OPPORTUNITY_TYPES.FORM_A11Y });
-    expect(result).to.equal('Contact Form');
+    expect(result).to.equal('Forms missing key accessibility attributes — enhancements prepared to support all users');
   });
 
-  it('should return the default form type in case form type is not available', () => {
+  it('should return user-friendly title regardless of form type availability', () => {
     const result = getFormTitle({ form_type: '' }, { getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION });
-    expect(result).to.equal('Form has low conversions');
+    expect(result).to.equal('Turn more visitors into leads and customers — optimizations for form conversion rate are ready');
   });
 
-  it('should return the default form type in case form type is not from the mentioned list', () => {
+  it('should return user-friendly title regardless of form type format', () => {
     const result = getFormTitle({ form_type: 'Other (abc Form)' }, { getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION });
-    expect(result).to.equal('Form has low conversions');
+    expect(result).to.equal('Turn more visitors into leads and customers — optimizations for form conversion rate are ready');
   });
 
-  it('should return the default form type in case form type is NA', () => {
+  it('should return user-friendly title when form type is NA', () => {
     const result = getFormTitle({ form_type: 'NA' }, { getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION });
-    expect(result).to.equal('Form has low conversions');
+    expect(result).to.equal('Turn more visitors into leads and customers — optimizations for form conversion rate are ready');
   });
 
-  it('should return the default form type in case form type does not exist', () => {
+  it('should return user-friendly title when form type does not exist', () => {
     const result = getFormTitle({}, { getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION });
-    expect(result).to.equal('Form has low conversions');
+    expect(result).to.equal('Turn more visitors into leads and customers — optimizations for form conversion rate are ready');
   });
 });
 

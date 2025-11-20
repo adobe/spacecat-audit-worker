@@ -3617,11 +3617,11 @@ describe('Headings Audit', () => {
       expect(opportunityData).to.be.an('object');
       expect(opportunityData).to.have.property('runbook', '');
       expect(opportunityData).to.have.property('origin', 'AUTOMATION');
-      expect(opportunityData).to.have.property('title', 'Heading structure issues affecting accessibility and SEO');
+      expect(opportunityData).to.have.property('title', 'Optimize headings to clarify content intent - suggestions prepared for review');
       expect(opportunityData).to.have.property('description');
-      expect(opportunityData.description).to.include('heading elements');
-      expect(opportunityData.description).to.include('hierarchical order');
-      expect(opportunityData.description).to.include('AI-powered suggestions');
+      expect(opportunityData.description).to.include('headings');
+      expect(opportunityData.description).to.include('hierarchy');
+      expect(opportunityData.description).to.include('search engines');
     });
 
     it('includes proper guidance steps', () => {

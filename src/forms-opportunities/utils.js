@@ -12,7 +12,7 @@
 
 import {
   FORMS_AUDIT_INTERVAL,
-  isNonEmptyArray, isNonEmptyObject,
+  isNonEmptyArray,
 } from '@adobe/spacecat-shared-utils';
 import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
@@ -563,24 +563,15 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
  * @param {Object} opportunity - Object with setTitle method.
  */
 export function getFormTitle(formDetails, opportunity) {
-  let formType = (formDetails && isNonEmptyObject(formDetails) && formDetails.form_type?.trim())
-    ? formDetails.form_type.trim()
-    : 'Form';
-
-  const normalizedType = formType.toLowerCase();
-  if (normalizedType === 'na' || normalizedType.includes('other')) {
-    formType = 'Form';
-  }
-
-  const suffixMap = {
-    [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]: 'has low conversions',
-    [FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION]: 'has low views',
-    [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]: 'has low views',
-    [FORM_OPPORTUNITY_TYPES.FORM_A11Y]: '',
+  // Return user-friendly titles that match frontend UI
+  const titleMap = {
+    [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]: 'Turn more visitors into leads and customers — optimizations for form conversion rate are ready',
+    [FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION]: 'Visitors aren\'t scrolling or navigating to your form — placement and visibility optimizations ready for review',
+    [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]: 'Your form isn\'t getting enough views — optimizations to drive visibility prepared',
+    [FORM_OPPORTUNITY_TYPES.FORM_A11Y]: 'Forms missing key accessibility attributes — enhancements prepared to support all users',
   };
 
-  const suffix = suffixMap[opportunity.getType()] || '';
-  return suffix ? `${formType.trim()} ${suffix}` : formType.trim();
+  return titleMap[opportunity.getType()] || 'Form opportunity detected';
 }
 
 /**
