@@ -76,7 +76,11 @@ describe('FAQs guidance handler', () => {
     this.timeout(10000); // Increase timeout for esmock loading
     syncSuggestionsStub = sinon.stub().resolves();
     convertToOpportunityStub = sinon.stub();
-    fetchStub = sinon.stub(global, 'fetch');
+    fetchStub = sinon.stub().resolves({
+      ok: true,
+      status: 200,
+      json: sinon.stub().resolves(mockFaqData),
+    });
     getObjectKeysUsingPrefixStub = sinon.stub();
     getObjectFromKeyStub = sinon.stub();
 
@@ -91,6 +95,9 @@ describe('FAQs guidance handler', () => {
       '../../../src/utils/s3-utils.js': {
         getObjectKeysUsingPrefix: getObjectKeysUsingPrefixStub,
         getObjectFromKey: getObjectFromKeyStub,
+      },
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: fetchStub,
       },
     });
 
@@ -135,13 +142,6 @@ describe('FAQs guidance handler', () => {
         S3_SCRAPER_BUCKET_NAME: 'scraper-bucket',
       },
     };
-
-    // Setup default fetch response
-    fetchStub.resolves({
-      ok: true,
-      status: 200,
-      json: sinon.stub().resolves(mockFaqData),
-    });
 
     // Default S3 stubs
     getObjectKeysUsingPrefixStub.resolves([]);
@@ -499,9 +499,9 @@ describe('FAQs guidance handler', () => {
       ],
     };
 
-    global.fetch = sinon.stub().resolves({
+    fetchStub.resolves({
       ok: true,
-      json: async () => faqData,
+      json: sinon.stub().resolves(faqData),
     });
 
     const message = {

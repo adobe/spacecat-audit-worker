@@ -13,6 +13,7 @@
 import {
   badRequest, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getJsonSummarySuggestion } from './utils.js';
 import { syncSuggestions } from '../utils/data-access.js';

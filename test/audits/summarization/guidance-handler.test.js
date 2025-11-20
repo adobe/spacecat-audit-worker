@@ -67,23 +67,23 @@ describe('summarization guidance handler', () => {
   beforeEach(async function () {
     this.timeout(10000);
     syncSuggestionsStub = sinon.stub().resolves();
-    fetchStub = sinon.stub(global, 'fetch');
+    fetchStub = sinon.stub().resolves({
+      ok: true,
+      status: 200,
+      json: sinon.stub().resolves(mockSummarizationData),
+    });
 
     // Mock the handler with stubbed dependencies
     const mockedHandler = await esmock('../../../src/summarization/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
         syncSuggestions: syncSuggestionsStub,
       },
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: fetchStub,
+      },
     });
 
     handler = mockedHandler.default;
-
-    // Setup default fetch response
-    fetchStub.resolves({
-      ok: true,
-      status: 200,
-      json: sinon.stub().resolves(mockSummarizationData),
-    });
     Site = {
       findById: sinon.stub(),
     };

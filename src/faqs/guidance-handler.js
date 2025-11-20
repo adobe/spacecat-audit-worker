@@ -14,6 +14,7 @@ import { JSDOM } from 'jsdom';
 import {
   badRequest, notFound, ok, noContent,
 } from '@adobe/spacecat-shared-http-utils';
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getJsonFaqSuggestion } from './utils.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
