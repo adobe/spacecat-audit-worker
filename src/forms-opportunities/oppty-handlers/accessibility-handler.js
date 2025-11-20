@@ -153,9 +153,9 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
     const a11yOpptyData = filteredA11yData.map((a11yOpty) => {
       const a11yIssues = a11yOpty.a11yIssues.map((issue) => ({
         ...issue,
-        successCriterias: issue.successCriterias.map(
-          (criteria) => getSuccessCriteriaDetails(criteria),
-        ),
+        successCriterias: Array.isArray(issue.successCriterias) && issue.successCriterias.length > 0
+          ? issue.successCriterias.map((criteria) => getSuccessCriteriaDetails(criteria))
+          : [],
       }));
       return {
         form: a11yOpty.form,
