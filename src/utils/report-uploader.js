@@ -143,7 +143,12 @@ export async function publishToAdminHlx(filename, outputLocation, log) {
       { name: 'live', url: `${baseUrl}/live/${org}/${site}/${ref}/${path}` },
     ];
 
-    for (const [index, endpoint] of endpoints.entries()) {
+    for (const [_, endpoint] of endpoints.entries()) {
+      const jitter = Math.floor(Math.random() * (15000 / 2));
+      const delay = 10000 + jitter;
+      log.info(`%s: Waiting ${delay}ms before publishing to ${endpoint.name}`, AUDIT_NAME);
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(delay);
       log.info(`%s: Publishing to ${endpoint.name}: ${endpoint.url}`, AUDIT_NAME);
       const endpointStartTime = Date.now();
 
@@ -152,12 +157,6 @@ export async function publishToAdminHlx(filename, outputLocation, log) {
 
       const endpointDuration = Date.now() - endpointStartTime;
       log.info(`%s: Successfully published to ${endpoint.name} in ${endpointDuration}ms`, AUDIT_NAME);
-
-      if (index === 0) {
-        log.debug('%s: Waiting 2 seconds before publishing to live...', AUDIT_NAME);
-        // eslint-disable-next-line no-await-in-loop
-        await sleep(2000);
-      }
     }
 
     const totalDuration = Date.now() - startTime;

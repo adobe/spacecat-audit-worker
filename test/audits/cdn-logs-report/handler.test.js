@@ -16,8 +16,8 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
-import handler from '../../../src/cdn-logs-report/handler.js';
 
 use(sinonChai);
 
@@ -142,6 +142,7 @@ describe('CDN Logs Report Handler', function test() {
   let sandbox;
   let context;
   let site;
+  let handler;
 
   this.timeout(5000);
 
@@ -190,9 +191,21 @@ describe('CDN Logs Report Handler', function test() {
     }),
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sandbox = sinon.createSandbox();
     nock.cleanAll();
+    
+    // Mock report-uploader globally with sleep mocked inside it
+    const mockedReportUploader = await esmock('../../../src/utils/report-uploader.js', {
+      '../../../src/support/utils.js': {
+        sleep: sandbox.stub().resolves(),
+      },
+    });
+    
+    // Now mock the handler with the mocked report-uploader
+    handler = await esmock('../../../src/cdn-logs-report/handler.js', {}, {
+      '../../../src/utils/report-uploader.js': mockedReportUploader,
+    });
 
     site = {
       getSiteId: () => 'test-site',

@@ -117,10 +117,11 @@ describe('Page Citability Handler', () => {
 
       const result = await handler.steps['extract-urls'].handler(context);
 
-      expect(result.urls).to.have.lengthOf(2);
-      expect(result.urls[0].url).to.equal(`${baseURL}/page2`);
-      expect(result.urls[1].url).to.equal(`${baseURL}/page3`);
-      expect(result.auditResult.urlCount).to.equal(2);
+      expect(result.urls).to.have.lengthOf(3);
+      expect(result.urls[0].url).to.equal(`${baseURL}/page1`);
+      expect(result.urls[1].url).to.equal(`${baseURL}/page2`);
+      expect(result.urls[2].url).to.equal(`${baseURL}/page3`);
+      expect(result.auditResult.urlCount).to.equal(3);
       expect(result.processingType).to.equal('page-citability');
       expect(result.siteId).to.equal(siteId);
       expect(result.fullAuditRef).to.equal(baseURL);
@@ -155,11 +156,11 @@ describe('Page Citability Handler', () => {
       ]);
       mockPageCitability.allBySiteId.resolves([
         { 
-          getUrl: () => '/page1',
+          getUrl: () => `${baseURL}/page1`,
           getUpdatedAt: () => '2025-01-14T10:00:00Z' // Recent (1 day ago)
         },
         { 
-          getUrl: () => '/page2',
+          getUrl: () => `${baseURL}/page2`,
           getUpdatedAt: () => '2025-01-14T10:00:00Z' // Recent (1 day ago)
         },
       ]);
@@ -178,11 +179,11 @@ describe('Page Citability Handler', () => {
       ]);
       mockPageCitability.allBySiteId.resolves([
         { 
-          getUrl: () => '/page1',
+          getUrl: () => `${baseURL}/page1`,
           getUpdatedAt: () => '2025-01-07T10:00:00Z'
         },
         { 
-          getUrl: () => '/page2',
+          getUrl: () => `${baseURL}/page2`,
           getUpdatedAt: () => '2025-01-14T10:00:00Z'
         },
       ]);
@@ -192,8 +193,8 @@ describe('Page Citability Handler', () => {
       // Should include page1 (stale) and page3 (new), but not page2 (recent)
       expect(result.urls).to.have.lengthOf(2);
       expect(result.urls.map(u => u.url)).to.include(`${baseURL}/page1`);
-      expect(result.urls.map(u => u.url)).to.include(`${baseURL}/page3`);
       expect(result.urls.map(u => u.url)).to.not.include(`${baseURL}/page2`);
+      expect(result.urls.map(u => u.url)).to.include(`${baseURL}/page3`);
       expect(result.auditResult.urlCount).to.equal(2);
     });
   });
