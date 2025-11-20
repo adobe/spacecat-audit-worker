@@ -1,3 +1,10 @@
+## [1.248.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.248.2...v1.248.3) (2025-11-20)
+
+
+### Bug Fixes
+
+* message format of code fix ([#1624](https://github.com/adobe/spacecat-audit-worker/issues/1624)) ([8f29e70](https://github.com/adobe/spacecat-audit-worker/commit/8f29e70b81c98de5c0d56a18856bcca1c6271934))
+
 ## [1.248.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.248.1...v1.248.2) (2025-11-20)
 
 
