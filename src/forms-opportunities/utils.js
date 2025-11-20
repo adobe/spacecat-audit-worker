@@ -520,17 +520,15 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
   if (opportunity) {
     log.debug(`Received forms opportunity for guidance: ${JSON.stringify(opportunity)}`);
     const opptyData = JSON.parse(JSON.stringify(opportunity));
-    // Normalize type: convert forms-accessibility → forms-a11y
-    const normalizedType = opptyData.type === 'form-accessibility' ? 'forms-a11y' : opptyData.type;
     const mystiqueMessage = {
-      type: `guidance:${normalizedType}`,
+      type: `guidance:${opptyData.type}`,
       siteId: opptyData.siteId,
       auditId: opptyData.auditId,
       deliveryType: site ? site.getDeliveryType() : 'aem_cs',
       time: new Date().toISOString(),
       // keys inside data should follow snake case and outside should follow camel case
       data: {
-        url: opptyData.type === 'form-accessibility' ? opptyData.data?.accessibility?.[0]?.form || '' : opptyData.data?.form || '',
+        url: opptyData.data?.form,
         cr: opptyData.data?.trackedFormKPIValue || 0,
         metrics: opptyData.data?.metrics || [],
         cta_source: opptyData.data?.formNavigation?.source || '',

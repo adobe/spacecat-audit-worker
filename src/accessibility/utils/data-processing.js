@@ -1112,6 +1112,7 @@ export async function sendCodeFixMessagesToMystique(opportunity, auditId, site, 
         deliveryType: site.getDeliveryType(),
         source: 'spacecat',
         observation: 'Auto optimize form accessibility',
+        time: new Date().toISOString(),
         data: {
           opportunityId: opportunity.getId(),
           suggestionIds: group.suggestionIds,

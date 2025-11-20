@@ -18,7 +18,7 @@ import nock from 'nock';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
-import mystiqueDetectedFormAccessibilityHandler, { transformAxeViolationsToA11yData } from '../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js';
+import mystiqueDetectedFormAccessibilityHandler from '../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -262,8 +262,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.debug).to.have.been.calledWith(
-        '[Form Opportunity] [Site Id: test-site-id] No a11y data found to create or update opportunity ',
+      expect(context.log.info).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] No accessibility violations found, skipping opportunity creation',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     });
@@ -311,8 +311,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.debug).to.have.been.calledWith(
-        '[Form Opportunity] [Site Id: test-site-id] No a11y issues found to create or update opportunity',
+      expect(context.log.info).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] No accessibility violations found, skipping opportunity creation',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     });
@@ -390,10 +390,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(createArgs.auditId).to.equal('test-audit-id');
       expect(createArgs.type).to.equal(FORM_OPPORTUNITY_TYPES.FORM_A11Y);
       expect(createArgs.origin).to.equal('AUTOMATION');
-      expect(createArgs.data.accessibility).to.have.lengthOf(1);
-      expect(createArgs.data.accessibility[0].form).to.equal('https://example.com/form1');
-      expect(createArgs.data.accessibility[0].formSource).to.equal('contact-form');
-      expect(createArgs.data.accessibility[0].a11yIssues).to.have.lengthOf(2);
+      expect(createArgs.data.dataSources).to.deep.equal(['axe-core']);
 
       // Verify SQS messages were sent - both to importer-worker and mystique
       expect(sendRunImportMessageStub).to.have.been.calledOnce;
@@ -525,17 +522,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
       const createArgs = context.dataAccess.Opportunity.create.getCall(0).args[0];
-      expect(createArgs.data.accessibility).to.have.lengthOf(2);
-
-      // Check first form
-      expect(createArgs.data.accessibility[0].form).to.equal('https://example.com/form1');
-      expect(createArgs.data.accessibility[0].formSource).to.equal('contact-form');
-      expect(createArgs.data.accessibility[0].a11yIssues).to.have.lengthOf(2);
-
-      // Check second form
-      expect(createArgs.data.accessibility[1].form).to.equal('https://example.com/form2');
-      expect(createArgs.data.accessibility[1].formSource).to.equal('newsletter-form');
-      expect(createArgs.data.accessibility[1].a11yIssues).to.have.lengthOf(2);
+      expect(createArgs.data.dataSources).to.deep.equal(['axe-core']);
 
       // Verify both importer-worker and mystique messages were sent
       expect(sendRunImportMessageStub).to.have.been.calledOnce;
@@ -602,10 +589,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
       const createArgs = context.dataAccess.Opportunity.create.getCall(0).args[0];
-      expect(createArgs.data.accessibility).to.have.lengthOf(1);
-      expect(createArgs.data.accessibility[0].form).to.equal('https://example.com/form1');
-      expect(createArgs.data.accessibility[0].formSource).to.equal(null);
-      expect(createArgs.data.accessibility[0].a11yIssues).to.have.lengthOf(1);
+      expect(createArgs.data.dataSources).to.deep.equal(['axe-core']);
     });
 
     it('should handle errors when processing a11y data', async () => {
@@ -695,7 +679,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
       expect(context.log.error).to.have.been.calledWith(
-        '[Form Opportunity] [Site Id: test-site-id] Failed to create/update a11y opportunity with error: Network error',
+        sinon.match(/Error creating a11y issues/),
       );
     });
 
@@ -818,6 +802,13 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         success: true,
         finalResultFiles: {
           current: {
+            overall: {
+              violations: {
+                total: 1,
+                critical: { count: 1, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
             'https://example.com/page1?source=contact-form': {
               violations: {
                 critical: {
@@ -881,11 +872,6 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
       // Verify individual suggestions were created
-      expect(aggregateAccessibilityIssuesStub).to.have.been.calledOnce;
-      expect(aggregateAccessibilityIssuesStub).to.have.been.calledWith(
-        sinon.match.object,
-        sinon.match.object,
-      );
       expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
     });
 
@@ -902,20 +888,30 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         success: true,
         finalResultFiles: {
           current: {
+            overall: {
+              violations: {
+                total: 1,
+                critical: { count: 1, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
             'https://example.com/page1': {
               violations: {
+                total: 1,
                 critical: {
+                  count: 1,
                   items: {
                     label: {
+                      count: 1,
                       description: 'Form elements must have labels',
-                      level: 'critical',
+                      level: 'A',
                       successCriteriaTags: ['wcag412'],
                       failureSummary: 'Ensure every form field has a label',
                       htmlWithIssues: ['<input type="text">'],
-                      target: ['input[type="text"]'],
                     },
                   },
                 },
+                serious: { count: 0, items: {} },
               },
             },
           },
@@ -924,6 +920,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       // Mock aggregateAccessibilityIssues to throw an error
       const aggregateAccessibilityIssuesStub = sandbox.stub().throws(new Error('Aggregation failed'));
+      const createIndividualOpportunitySuggestionsStub = sandbox.stub().resolves();
 
       const createdOpportunity = {
         getId: () => 'opportunity-123',
@@ -933,10 +930,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sandbox.stub().resolves(),
         },
         '../../../src/accessibility/utils/generate-individual-opportunities.js': {
           aggregateAccessibilityIssues: aggregateAccessibilityIssuesStub,
-          createIndividualOpportunitySuggestions: sandbox.stub().resolves(),
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
         },
       });
 
@@ -944,10 +942,6 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       // Verify that the error in individual suggestions doesn't break the main flow
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
-      expect(context.sqs.sendMessage).to.have.been.calledTwice;
-
-      // Verify the stub was called even though it threw an error
-      expect(aggregateAccessibilityIssuesStub).to.have.been.calledOnce;
 
       // Verify error was logged for individual suggestions but main success was still logged
       expect(context.log.error).to.have.been.calledWith(
@@ -1121,11 +1115,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
       const createArgs = context.dataAccess.Opportunity.create.getCall(0).args[0];
-      expect(createArgs.data.accessibility).to.have.lengthOf(1);
-
-      // Check that malformed key is handled gracefully
-      const form1Data = createArgs.data.accessibility.find((a) => a.form === 'https://example.com/form1');
-      expect(form1Data.formSource).to.equal(''); // Empty formSource for malformed key
+      expect(createArgs.data.dataSources).to.deep.equal(['axe-core']);
     });
 
     it('should not create opportunities when no content is present in aggregationResult', async () => {
@@ -1165,8 +1155,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.debug).to.have.been.calledWith(
-        '[Form Opportunity] [Site Id: test-site-id] No a11y data found to create or update opportunity ',
+      expect(context.log.info).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] No accessibility violations found, skipping opportunity creation',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     });
@@ -1220,8 +1210,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.debug).to.have.been.calledWith(
-        '[Form Opportunity] [Site Id: test-site-id] No a11y issues found to create or update opportunity',
+      expect(context.log.info).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] No accessibility violations found, skipping opportunity creation',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     });
@@ -1265,8 +1255,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.debug).to.have.been.calledWith(
-        '[Form Opportunity] [Site Id: test-site-id] No a11y issues found to create or update opportunity',
+      expect(context.log.info).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] No accessibility violations found, skipping opportunity creation',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     });
@@ -1362,14 +1352,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
       const createArgs = context.dataAccess.Opportunity.create.getCall(0).args[0];
-      expect(createArgs.data.accessibility).to.have.lengthOf(2);
-
-      // Check that both regular pages and forms are processed correctly
-      const pageData = createArgs.data.accessibility.find((a) => a.form === 'https://example.com/page1');
-      const formData = createArgs.data.accessibility.find((a) => a.form === 'https://example.com/form1');
-
-      expect(pageData.formSource).to.equal(null); // Regular page has no formSource
-      expect(formData.formSource).to.equal('contact-form'); // Form has formSource
+      expect(createArgs.data.dataSources).to.deep.equal(['axe-core']);
     });
 
     it('should successfully create accessibility opportunity with transformed data and send to Mystique', async () => {
@@ -1494,37 +1477,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
       });
 
-      // Verify the transformed accessibility data
-      expect(opportunityData.data.accessibility).to.have.lengthOf(2);
-
-      // Check first form's transformed data
-      const contactForm = opportunityData.data.accessibility.find(
-        (item) => item.form === 'https://example.com/contact',
-      );
-      expect(contactForm).to.deep.include({
-        form: 'https://example.com/contact',
-        formSource: 'contact-form',
-      });
-      expect(contactForm.a11yIssues).to.have.lengthOf(2);
-      expect(contactForm.a11yIssues[0]).to.deep.include({
-        issue: 'Select element must have an accessible name',
-        level: 'A',
-        recommendation: 'Fix any of the following: Element does not have a label',
-      });
-      expect(contactForm.a11yIssues[0].successCriterias[0]).to.deep.include({
-        name: 'Name, Role, Value',
-        criteriaNumber: '4.1.2',
-      });
-
-      // Check second form's transformed data
-      const newsletterForm = opportunityData.data.accessibility.find(
-        (item) => item.form === 'https://example.com/signup',
-      );
-      expect(newsletterForm).to.deep.include({
-        form: 'https://example.com/signup',
-        formSource: 'newsletter-form',
-      });
-      expect(newsletterForm.a11yIssues).to.have.lengthOf(1);
+      // Verify the opportunity has dataSources
+      expect(opportunityData.data.dataSources).to.deep.equal(['axe-core']);
 
       // Assert - Verify message was sent to importer-worker queue
       expect(sendRunImportMessageStub).to.have.been.calledOnce;
@@ -1810,9 +1764,13 @@ describe('Forms Opportunities - Accessibility Handler', () => {
     let mockOpportunityData;
     let mystiqueDetectedFormAccessibilityHandlerMocked;
     let isAuditEnabledForSiteStub;
+    let createIndividualOpportunitySuggestionsStub;
+    let sendCodeFixMessagesToMystiqueStub;
 
     beforeEach(async () => {
       isAuditEnabledForSiteStub = sandbox.stub().resolves(false); // Default: auto-fix disabled
+      createIndividualOpportunitySuggestionsStub = sandbox.stub().resolves();
+      sendCodeFixMessagesToMystiqueStub = sandbox.stub().resolves();
       mockOpportunityData = {
         accessibility: [{
           form: 'https://example.com/form1',
@@ -1872,6 +1830,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
               }),
               create: sandbox.stub().resolves({
                 getId: () => opportunityId,
+                getType: () => 'form-accessibility',
+                getSiteId: () => siteId,
                 setUpdatedBy: sandbox.stub(),
                 setAuditId: sandbox.stub(),
               }),
@@ -1895,6 +1855,12 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       mystiqueDetectedFormAccessibilityHandlerMocked = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/common/audit-utils.js': {
           isAuditEnabledForSite: isAuditEnabledForSiteStub,
+        },
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+        '../../../src/accessibility/utils/data-processing.js': {
+          sendCodeFixMessagesToMystique: sendCodeFixMessagesToMystiqueStub,
         },
       });
     });
@@ -1934,6 +1900,78 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(context.dataAccess.Opportunity.findById).to.not.have.been.called;
     });
 
+    it('should return notFound when opportunityId is provided but opportunity is not found', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          opportunityId,
+          a11y: [{
+            form: 'https://example.com/form1',
+            formSource: '#form1',
+            a11yIssues: [{
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [{
+                target_selector: 'input[type="text"]',
+              }],
+              failureSummary: 'Fix any of the following...',
+            }],
+          }],
+        },
+      };
+
+      // Override Opportunity.findById to return null
+      context.dataAccess.Opportunity.findById.resolves(null);
+
+      const result = await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
+
+      expect(result.status).to.equal(404);
+      expect(context.dataAccess.Opportunity.findById).to.have.been.calledOnceWith(opportunityId);
+      expect(context.log.error).to.have.been.calledWith(
+        `[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not found`,
+      );
+    });
+
+    it('should return ok when opportunity creation returns null', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          a11y: [{
+            form: 'https://example.com/form1',
+            formSource: '#form1',
+            a11yIssues: [{
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [{
+                target_selector: 'input[type="text"]',
+              }],
+              failureSummary: 'Fix any of the following...',
+            }],
+          }],
+        },
+      };
+
+      // Mock Opportunity.create to return null (opportunity creation failed)
+      context.dataAccess.Opportunity.create.resolves(null);
+
+      const result = await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(context.log.info).to.have.been.calledWith(
+        `[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not detected, skipping guidance`,
+      );
+      // Verify that no suggestions were created
+      expect(createIndividualOpportunitySuggestionsStub).to.not.have.been.called;
+    });
+
     it('should process message and send to mystique for quality agent', async () => {
       const message = {
         auditId,
@@ -1944,11 +1982,15 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             form: 'https://example.com/form1',
             formSource: '#form1',
             a11yIssues: [{
-              issue: 'Missing alt text',
-              level: 'error',
-              successCriterias: ['1.1.1'],
-              htmlWithIssues: ['<img src="test.jpg">'],
-              recommendation: 'Add alt text to image',
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [{
+                target_selector: 'input[type="text"]',
+              }],
+              failureSummary: 'Fix any of the following...',
             }],
           }],
         },
@@ -1956,9 +1998,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      const sqsMessage = context.sqs.sendMessage.getCall(0).args[1];
-      expect(sqsMessage.type).to.equal('detect:form-details');
+      // Verify that the handler processed the message successfully
+      expect(context.log.error).to.not.have.been.called;
     });
 
     it('should process message and send to mystique for guidance', async () => {
@@ -1971,11 +2012,15 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             form: 'https://example.com/form1',
             formSource: '#form1',
             a11yIssues: [{
-              issue: 'Missing alt text',
-              level: 'error',
-              successCriterias: ['1.1.1'],
-              htmlWithIssues: ['<img src="test.jpg">'],
-              recommendation: 'Add alt text to image',
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [{
+                target_selector: 'input[type="text"]',
+              }],
+              failureSummary: 'Fix any of the following...',
             }],
           }],
         },
@@ -2059,7 +2104,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      // Verify that the handler processed the message successfully
+      expect(context.log.error).to.not.have.been.called;
     });
 
     it('should send code-fix messages when auto-fix is enabled', async () => {
@@ -2072,11 +2118,15 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             form: 'https://example.com/form1',
             formSource: '#form1',
             a11yIssues: [{
-              issue: 'Missing alt text',
-              level: 'error',
-              successCriterias: ['1.1.1'],
-              htmlWithIssues: ['<img src="test.jpg">'],
-              recommendation: 'Add alt text to image',
+              type: 'image-alt',
+              description: 'Images must have alternative text',
+              wcagRule: 'wcag111',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [{
+                target_selector: 'img',
+              }],
+              failureSummary: 'Fix any of the following...',
             }],
           }],
         },
@@ -2085,18 +2135,13 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       // Override stub to return true for auto-fix enabled scenario
       isAuditEnabledForSiteStub.resolves(true);
 
-      // Verify context.sqs.sendMessage is stubbed and ready
-      expect(context.sqs.sendMessage).to.be.a('function');
-
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
-      // Verify SQS messages were sent (one for mystique, potentially one for code-fix importer)
-      expect(context.sqs.sendMessage).to.have.been.called;
-      // The actual number of calls depends on whether sendCodeFixMessagesToMystique sends messages
-      // At minimum, it should be called for mystique message
+      // Verify code-fix messages were sent
+      expect(sendCodeFixMessagesToMystiqueStub).to.have.been.calledOnce;
     });
 
-    it('should not send message to mystique when no opportunity is found', async () => {
+    it('should handle empty a11y data gracefully', async () => {
       const message = {
         auditId,
         siteId,
@@ -2107,13 +2152,20 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       };
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
-      expect(context.sqs.sendMessage).to.not.have.been.called;
+      
+      // Opportunity should be created even with empty a11y data
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      
+      // Should log that no individual suggestions were created
       expect(context.log.info).to.have.been.calledWith(
-        '[Form Opportunity] [Site Id: test-site-id] A11y opportunity not detected, skipping guidance',
+        '[FormMystiqueSuggestions] No individual form accessibility suggestions to create from Mystique data',
       );
+      
+      // Should not send code-fix messages when no issues found
+      expect(sendCodeFixMessagesToMystiqueStub).to.not.have.been.called;
     });
 
-    it('should append accessibility issue detected by mystique', async () => {
+    it('should create suggestions for accessibility issues detected by mystique', async () => {
       const message = {
         auditId,
         siteId,
@@ -2123,51 +2175,34 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             form: 'https://example.com/form1',
             formSource: '#form1',
             a11yIssues: [{
-              issue: 'Missing alt text',
-              level: 'error',
-              successCriterias: ['1.1.1'],
-              htmlWithIssues: ['<img src="test.jpg">'],
-              recommendation: 'Add alt text to image',
+              type: 'image-alt',
+              description: 'Images must have alternative text',
+              wcagRule: 'wcag111',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [{
+                target_selector: 'img',
+              }],
+              failureSummary: 'Fix any of the following...',
             }],
           }],
         },
       };
-      mockOpportunityData = {
-        accessibility: [{
-          form: 'https://example.com/form1',
-          formSource: '#form1',
-          a11yIssues: [],
-        }],
-      };
-
-      // mock existing opportunity
-      context.dataAccess.Opportunity.findById.resolves({
-        save: sandbox.stub().resolves({
-          getId: () => opportunityId,
-          getData: () => ({
-            form: 'test-form',
-            formsource: 'test-source',
-            a11yIssues: [],
-          }),
-        }),
-        setUpdatedBy: sandbox.stub(),
-        getData: () => mockOpportunityData,
-        setData: (data) => {
-          mockOpportunityData = data;
-        },
-      });
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
-      expect(context.dataAccess.Opportunity.findById).to.have.been.calledOnce;
-      const existingOpportunity = await context.dataAccess.Opportunity.findById
-        .getCall(0).returnValue;
-      expect(existingOpportunity.getData().accessibility).to.have.lengthOf(1);
-      expect(existingOpportunity.getData().accessibility[0].a11yIssues).to.have.lengthOf(1);
-      expect(existingOpportunity.save).to.have.been.calledOnce;
+      // Verify opportunity was found
+      expect(context.dataAccess.Opportunity.findById).to.have.been.calledOnceWith(opportunityId);
+      
+      // Verify individual suggestions were created
+      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
+      
+      // Verify the call was made with the correct opportunity
+      const callArgs = createIndividualOpportunitySuggestionsStub.getCall(0).args;
+      expect(callArgs[0].getId()).to.equal(opportunityId);
     });
 
-    it('should append a11y issues from mystique with empty axe issues', async () => {
+    it('should create suggestions for multiple a11y issues from mystique', async () => {
       const message = {
         auditId,
         siteId,
@@ -2177,48 +2212,47 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             form: 'https://example.com/form1',
             formSource: '#form1',
             a11yIssues: [{
-              issue: 'Missing alt text',
-              level: 'error',
-              successCriterias: ['1.1.1'],
-              htmlWithIssues: ['<img src="test.jpg">'],
-              recommendation: 'Add alt text to image',
+              type: 'image-alt',
+              description: 'Images must have alternative text',
+              wcagRule: 'wcag111',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [{
+                target_selector: 'img',
+              }],
+              failureSummary: 'Fix any of the following...',
+            }],
+          }, {
+            form: 'https://example.com/form2',
+            formSource: '#form2',
+            a11yIssues: [{
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [{
+                target_selector: 'input[type="text"]',
+              }],
+              failureSummary: 'Ensure every form field has a label',
             }],
           }],
         },
       };
-      mockOpportunityData = {
-        accessibility: [{
-          form: 'https://example.com/form2',
-          formSource: '#form2',
-          a11yIssues: [{
-            issue: 'label missing',
-            level: 'A',
-            successCriterias: ['1.1.1'],
-            htmlWithIssues: ['<label>test</label>'],
-            recommendation: 'Add label to input',
-          }],
-        }],
-      };
-      // mock existing opportunity
-      context.dataAccess.Opportunity.findById.resolves({
-        save: sandbox.stub().resolves({
-          getId: () => opportunityId,
-        }),
-        setUpdatedBy: sandbox.stub(),
-        getData: () => mockOpportunityData,
-        setData: (data) => {
-          mockOpportunityData = data;
-        },
-      });
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
-      expect(context.dataAccess.Opportunity.findById).to.have.been.calledOnce;
-      const existingOpportunity = await context.dataAccess.Opportunity.findById
-        .getCall(0).returnValue;
-      expect(existingOpportunity.getData().accessibility).to.have.lengthOf(2);
-      expect(existingOpportunity.getData().accessibility[0].a11yIssues).to.have.lengthOf(1);
-      expect(existingOpportunity.save).to.have.been.calledOnce;
+      // Verify opportunity was found
+      expect(context.dataAccess.Opportunity.findById).to.have.been.calledOnceWith(opportunityId);
+      
+      // Verify individual suggestions were created
+      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
+      
+      // Verify the suggestions data includes both forms' issues
+      const callArgs = createIndividualOpportunitySuggestionsStub.getCall(0).args;
+      const suggestionsData = callArgs[1];
+      expect(suggestionsData.data).to.be.an('array');
+      expect(suggestionsData.data.length).to.equal(2); // Two htmlWithIssues = two suggestions
     });
 
     it('should create a new opportunity when no existing opportunity is found', async () => {
@@ -2230,11 +2264,15 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             form: 'https://example.com/form1',
             formSource: '#form1',
             a11yIssues: [{
-              issue: 'Missing alt text',
-              level: 'error',
-              successCriterias: ['1.1.1'],
-              htmlWithIssues: '<img src="test.jpg">',
-              recommendation: 'Add alt text to image',
+              type: 'image-alt',
+              description: 'Images must have alternative text',
+              wcagRule: 'wcag111',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [{
+                target_selector: 'img',
+              }],
+              failureSummary: 'Fix any of the following...',
             }],
           }],
         },
@@ -2261,11 +2299,15 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             form: 'https://example.com/form1',
             formSource: '#form1',
             a11yIssues: [{
-              issue: 'Missing alt text',
-              level: 'error',
-              successCriterias: ['1.1.1'],
-              htmlWithIssues: '<img src="test.jpg">',
-              recommendation: 'Add alt text to image',
+              type: 'image-alt',
+              description: 'Images must have alternative text',
+              wcagRule: 'wcag111',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [{
+                target_selector: 'img',
+              }],
+              failureSummary: 'Fix any of the following...',
             }],
           }],
         },
@@ -2288,11 +2330,15 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             form: 'https://example.com/form1',
             formSource: '#form1',
             a11yIssues: [{
-              issue: 'Missing alt text',
-              level: 'error',
-              successCriterias: ['1.1.1'],
-              htmlWithIssues: '<img src="test.jpg">',
-              recommendation: 'Add alt text to image',
+              type: 'image-alt',
+              description: 'Images must have alternative text',
+              wcagRule: 'wcag111',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [{
+                target_selector: 'img',
+              }],
+              failureSummary: 'Fix any of the following...',
             }],
           }],
         },
@@ -2300,13 +2346,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       context.dataAccess.Opportunity.findById.rejects(new Error('Database error'));
 
-      try {
-        await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
-      } catch (error) {
-        expect(error.message).to.equal(
-          '[Form Opportunity] [Site Id: test-site-id] Failed to create/update a11y opportunity with error: Database error',
-        );
-      }
+      const result = await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
+
+      // Handler should catch errors and log them, then return ok()
+      expect(context.log.error).to.have.been.called;
+      expect(result.status).to.equal(200);
     });
   });
 
@@ -2778,430 +2822,4 @@ describe('Forms Opportunities - Accessibility Handler', () => {
     });
   });
 
-  describe('transformAxeViolationsToA11yData', () => {
-    it('should transform axe-core data with both critical and serious violations', () => {
-      // Arrange
-      const axeData = {
-        violations: {
-          critical: {
-            items: {
-              'select-name': {
-                count: 2,
-                description: 'Select element must have an accessible name',
-                level: 'A',
-                successCriteriaTags: ['wcag412'],
-                htmlWithIssues: ['<select id="inquiry">'],
-                failureSummary: 'Fix any of the following...',
-              },
-            },
-          },
-          serious: {
-            items: {
-              'color-contrast': {
-                count: 2,
-                description: 'Elements must meet minimum color contrast ratio thresholds',
-                level: 'AA',
-                successCriteriaTags: ['wcag143'],
-                htmlWithIssues: ['<span>(Optional)</span>'],
-                failureSummary: 'Fix any of the following...',
-              },
-            },
-          },
-        },
-        url: 'https://www.sunstar.com/contact',
-        formSource: 'form',
-      };
-
-      // Act
-      const result = transformAxeViolationsToA11yData(axeData);
-
-      // Assert
-      expect(result).to.deep.equal({
-        form: 'https://www.sunstar.com/contact',
-        formSource: 'form',
-        a11yIssues: [
-          {
-            issue: 'Select element must have an accessible name',
-            level: 'A',
-            successCriterias: ['4.1.2 Name, Role, Value'],
-            htmlWithIssues: ['<select id="inquiry">'],
-            recommendation: 'Fix any of the following...',
-          },
-          {
-            issue: 'Elements must meet minimum color contrast ratio thresholds',
-            level: 'AA',
-            successCriterias: ['1.4.3 Contrast (Minimum)'],
-            htmlWithIssues: ['<span>(Optional)</span>'],
-            recommendation: 'Fix any of the following...',
-          },
-        ],
-      });
-    });
-
-    it('should transform axe-core data with only critical violations', () => {
-      // Arrange
-      const axeData = {
-        violations: {
-          critical: {
-            items: {
-              'select-name': {
-                count: 1,
-                description: 'Select element must have an accessible name',
-                level: 'A',
-                successCriteriaTags: ['wcag412'],
-                htmlWithIssues: ['<select id="inquiry">'],
-                failureSummary: 'Fix any of the following...',
-              },
-            },
-          },
-          serious: {
-            items: {},
-          },
-        },
-        url: 'https://example.com/form',
-        formSource: 'contact-form',
-      };
-
-      // Act
-      const result = transformAxeViolationsToA11yData(axeData);
-
-      // Assert
-      expect(result).to.deep.equal({
-        form: 'https://example.com/form',
-        formSource: 'contact-form',
-        a11yIssues: [
-          {
-            issue: 'Select element must have an accessible name',
-            level: 'A',
-            successCriterias: ['4.1.2 Name, Role, Value'],
-            htmlWithIssues: ['<select id="inquiry">'],
-            recommendation: 'Fix any of the following...',
-          },
-        ],
-      });
-    });
-
-    it('should transform axe-core data with only serious violations', () => {
-      // Arrange
-      const axeData = {
-        violations: {
-          critical: {
-            items: {},
-          },
-          serious: {
-            items: {
-              'color-contrast': {
-                count: 2,
-                description: 'Elements must meet minimum color contrast ratio thresholds',
-                level: 'AA',
-                successCriteriaTags: ['wcag143'],
-                htmlWithIssues: ['<span>(Optional)</span>'],
-                failureSummary: 'Fix any of the following...',
-              },
-              'target-size': {
-                count: 1,
-                description: 'All touch targets must be 24px large',
-                level: 'AA',
-                successCriteriaTags: ['wcag258'],
-                htmlWithIssues: ['<button class="icon">'],
-                failureSummary: 'Fix any of the following...',
-              },
-            },
-          },
-        },
-        url: 'https://example.com/form',
-        formSource: 'newsletter-form',
-      };
-
-      // Act
-      const result = transformAxeViolationsToA11yData(axeData);
-
-      // Assert
-      expect(result).to.deep.equal({
-        form: 'https://example.com/form',
-        formSource: 'newsletter-form',
-        a11yIssues: [
-          {
-            issue: 'Elements must meet minimum color contrast ratio thresholds',
-            level: 'AA',
-            successCriterias: ['1.4.3 Contrast (Minimum)'],
-            htmlWithIssues: ['<span>(Optional)</span>'],
-            recommendation: 'Fix any of the following...',
-          },
-          {
-            issue: 'All touch targets must be 24px large',
-            level: 'AA',
-            successCriterias: ['2.5.8 Target Size (Minimum)'],
-            htmlWithIssues: ['<button class="icon">'],
-            recommendation: 'Fix any of the following...',
-          },
-        ],
-      });
-    });
-
-    it('should handle axe-core data with no violations', () => {
-      // Arrange
-      const axeData = {
-        violations: {
-          critical: {
-            items: {},
-          },
-          serious: {
-            items: {},
-          },
-        },
-        url: 'https://example.com/form',
-        formSource: 'empty-form',
-      };
-
-      // Act
-      const result = transformAxeViolationsToA11yData(axeData);
-
-      // Assert
-      expect(result).to.deep.equal({
-        form: 'https://example.com/form',
-        formSource: 'empty-form',
-        a11yIssues: [],
-      });
-    });
-
-    it('should handle axe-core data with missing violations object gracefully', () => {
-      // Arrange
-      const axeData = {
-        url: 'https://example.com/form',
-        formSource: 'no-violations',
-      };
-
-      // Act
-      const result = transformAxeViolationsToA11yData(axeData);
-
-      // Assert
-      expect(result).to.deep.equal({
-        form: 'https://example.com/form',
-        formSource: 'no-violations',
-        a11yIssues: [],
-      });
-    });
-
-    it('should handle axe-core data with missing critical and serious properties', () => {
-      // Arrange
-      const axeData = {
-        violations: {},
-        url: 'https://example.com/form',
-        formSource: 'missing-properties',
-      };
-
-      // Act
-      const result = transformAxeViolationsToA11yData(axeData);
-
-      // Assert
-      expect(result).to.deep.equal({
-        form: 'https://example.com/form',
-        formSource: 'missing-properties',
-        a11yIssues: [],
-      });
-    });
-
-    it('should handle axe-core data with missing items arrays', () => {
-      // Arrange
-      const axeData = {
-        violations: {
-          critical: {},
-          serious: {},
-        },
-        url: 'https://example.com/form',
-        formSource: 'missing-items',
-      };
-
-      // Act
-      const result = transformAxeViolationsToA11yData(axeData);
-
-      // Assert
-      expect(result).to.deep.equal({
-        form: 'https://example.com/form',
-        formSource: 'missing-items',
-        a11yIssues: [],
-      });
-    });
-
-    it('should handle multiple violations of the same type', () => {
-      // Arrange
-      const axeData = {
-        violations: {
-          critical: {
-            items: {
-              'select-name': {
-                count: 2,
-                description: 'Select element must have an accessible name',
-                level: 'A',
-                successCriteriaTags: ['wcag412'],
-                htmlWithIssues: ['<select id="inquiry">', '<select id="region">'],
-                failureSummary: 'Fix any of the following...',
-              },
-              'missing-alt': {
-                count: 1,
-                description: 'Images must have alternative text',
-                level: 'A',
-                successCriteriaTags: ['wcag111'],
-                htmlWithIssues: ['<img src="test.jpg">'],
-                failureSummary: 'Fix any of the following...',
-              },
-            },
-          },
-          serious: {
-            items: {},
-          },
-        },
-        url: 'https://example.com/form',
-        formSource: 'multiple-violations',
-      };
-
-      // Act
-      const result = transformAxeViolationsToA11yData(axeData);
-
-      // Assert
-      expect(result.a11yIssues).to.have.lengthOf(2);
-      expect(result.a11yIssues[0].issue).to.equal('Select element must have an accessible name');
-      expect(result.a11yIssues[1].issue).to.equal('Images must have alternative text');
-      expect(result.a11yIssues[0].successCriterias).to.deep.equal(['4.1.2 Name, Role, Value']);
-      expect(result.a11yIssues[1].successCriterias).to.deep.equal(['1.1.1 Non-text Content']);
-    });
-
-    it('should preserve all violation properties in the transformation', () => {
-      // Arrange
-      const axeData = {
-        violations: {
-          critical: {
-            items: {
-              'test-violation': {
-                count: 1,
-                description: 'Test violation description',
-                level: 'A',
-                successCriteriaTags: ['wcag111'],
-                htmlWithIssues: ['<test-element>'],
-                failureSummary: 'Test failure summary',
-                helpUrl: 'https://example.com/help',
-                target: ['#test'],
-                successCriteriaNumber: '111',
-                understandingUrl: 'https://example.com/understanding',
-              },
-            },
-          },
-          serious: {
-            items: {},
-          },
-        },
-        url: 'https://example.com/form',
-        formSource: 'test-form',
-      };
-
-      // Act
-      const result = transformAxeViolationsToA11yData(axeData);
-
-      // Assert
-      expect(result.a11yIssues[0]).to.deep.equal({
-        issue: 'Test violation description',
-        level: 'A',
-        successCriterias: ['1.1.1 Non-text Content'],
-        htmlWithIssues: ['<test-element>'],
-        recommendation: 'Test failure summary',
-      });
-
-      // Verify that only the expected properties are included (no extra properties)
-      expect(Object.keys(result.a11yIssues[0])).to.have.lengthOf(5);
-    });
-
-    it('should handle real sample data from JSON files', () => {
-      // Arrange - Using data similar to www_sunstar_com_contact_0.json
-      const axeData = {
-        violations: {
-          total: 5,
-          critical: {
-            count: 2,
-            items: {
-              'select-name': {
-                count: 2,
-                description: 'Select element must have an accessible name',
-                level: 'A',
-                htmlWithIssues: [
-                  '<select id="inquiry" required="required">',
-                  '<select id="region" disabled="" required="required"><option selected="" disabled="">Select region close to you</option><option value="Europe">Europe</option><option value="Japan">Japan</option><option value="Asia">Asia</option><option value="Americas">The Americas</option></select>',
-                ],
-                failureSummary: 'Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element\'s default semantics were not overridden with role="none" or role="presentation"',
-                successCriteriaTags: ['wcag412'],
-              },
-            },
-          },
-          serious: {
-            count: 3,
-            items: {
-              'color-contrast': {
-                count: 2,
-                description: 'Elements must meet minimum color contrast ratio thresholds',
-                level: 'AA',
-                htmlWithIssues: [
-                  '<span>(Optional)</span>',
-                  '<span>(Optional)</span>',
-                ],
-                failureSummary: 'Fix any of the following:\n  Element has insufficient color contrast of 2.54 (foreground color: #9ea3a8, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1',
-                successCriteriaTags: ['wcag143'],
-              },
-              'target-size': {
-                count: 1,
-                description: 'All touch targets must be 24px large, or leave sufficient space',
-                level: 'AA',
-                htmlWithIssues: [
-                  '<button class="icon search-icon" aria-label="Search"></button>',
-                ],
-                failureSummary: 'Fix any of the following:\n  Target has insufficient size (14px by 14px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 14px instead of at least 24px.',
-                successCriteriaTags: ['wcag258'],
-              },
-            },
-          },
-        },
-        url: 'https://www.sunstar.com/contact',
-        formSource: 'form',
-      };
-
-      // Act
-      const result = transformAxeViolationsToA11yData(axeData);
-
-      // Assert
-      expect(result).to.deep.equal({
-        form: 'https://www.sunstar.com/contact',
-        formSource: 'form',
-        a11yIssues: [
-          {
-            issue: 'Select element must have an accessible name',
-            level: 'A',
-            successCriterias: ['4.1.2 Name, Role, Value'],
-            htmlWithIssues: [
-              '<select id="inquiry" required="required">',
-              '<select id="region" disabled="" required="required"><option selected="" disabled="">Select region close to you</option><option value="Europe">Europe</option><option value="Japan">Japan</option><option value="Asia">Asia</option><option value="Americas">The Americas</option></select>',
-            ],
-            recommendation: 'Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element\'s default semantics were not overridden with role="none" or role="presentation"',
-          },
-          {
-            issue: 'Elements must meet minimum color contrast ratio thresholds',
-            level: 'AA',
-            successCriterias: ['1.4.3 Contrast (Minimum)'],
-            htmlWithIssues: [
-              '<span>(Optional)</span>',
-              '<span>(Optional)</span>',
-            ],
-            recommendation: 'Fix any of the following:\n  Element has insufficient color contrast of 2.54 (foreground color: #9ea3a8, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1',
-          },
-          {
-            issue: 'All touch targets must be 24px large, or leave sufficient space',
-            level: 'AA',
-            successCriterias: ['2.5.8 Target Size (Minimum)'],
-            htmlWithIssues: [
-              '<button class="icon search-icon" aria-label="Search"></button>',
-            ],
-            recommendation: 'Fix any of the following:\n  Target has insufficient size (14px by 14px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 14px instead of at least 24px.',
-          },
-        ],
-      });
-    });
-  });
 });

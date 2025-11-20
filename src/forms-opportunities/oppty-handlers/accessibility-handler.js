@@ -13,11 +13,7 @@
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORM_OPPORTUNITY_TYPES, formOpportunitiesMap } from '../constants.js';
-import {
-  getSuccessCriteriaDetails,
-  sendMessageToFormsQualityAgent,
-  sendMessageToMystiqueForGuidance,
-} from '../utils.js';
+import { getSuccessCriteriaDetails } from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
 import {
   aggregateAccessibilityIssues,
@@ -123,11 +119,10 @@ export async function createFormAccessibilitySuggestionsFromMystique(
  * Create a11y opportunity for the given siteId and auditId
  * @param {string} auditId - The auditId of the audit
  * @param {string} siteId - The siteId of the site
- * @param {object} a11yData - The a11y data
  * @param {object} context - The context object
  * @returns {Promise<void>}
  */
-async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opportunityId = null) {
+async function createOpportunity(auditId, siteId, context) {
   const {
     dataAccess, log,
   } = context;
@@ -135,148 +130,31 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
   let opportunity = null;
 
   try {
-    if (opportunityId) {
-      opportunity = await Opportunity.findById(opportunityId);
-    }
+    // change status to IGNORED for older opportunities
+    await updateStatusToIgnored(dataAccess, siteId, log, null, filterAccessibilityOpportunities);
 
-    if (a11yData?.length === 0) {
-      log.debug(`[Form Opportunity] [Site Id: ${siteId}] No a11y data found to create or update opportunity `);
-      return opportunity;
-    }
-
-    const filteredA11yData = a11yData.filter((a11y) => a11y.a11yIssues?.length > 0);
-    if (filteredA11yData.length === 0) {
-      log.debug(`[Form Opportunity] [Site Id: ${siteId}] No a11y issues found to create or update opportunity`);
-      return opportunity;
-    }
-
-    const a11yOpptyData = filteredA11yData.map((a11yOpty) => {
-      const a11yIssues = a11yOpty.a11yIssues.map((issue) => ({
-        ...issue,
-        successCriterias: issue.successCriterias.map(
-          (criteria) => getSuccessCriteriaDetails(criteria),
-        ),
-      }));
-      return {
-        form: a11yOpty.form,
-        formSource: a11yOpty.formSource,
-        a11yIssues,
-      };
-    });
-
-    // Update existing opportunity
-    if (opportunity) {
-      const data = opportunity.getData();
-      const existingA11yData = data.accessibility;
-
-      // Merge new data with existing data
-      const mergedData = [...existingA11yData];
-      a11yOpptyData.forEach((newForm) => {
-        const existingFormIndex = mergedData.findIndex(
-          (form) => form.form === newForm.form && form.formSource === newForm.formSource,
-        );
-
-        if (existingFormIndex !== -1) {
-          // Update existing form's a11yIssues
-          mergedData[existingFormIndex].a11yIssues = [
-            ...mergedData[existingFormIndex].a11yIssues,
-            ...newForm.a11yIssues,
-          ];
-        } else {
-          // Add new form data
-          mergedData.push({
-            form: newForm.form,
-            formSource: newForm.formSource,
-            a11yIssues: newForm.a11yIssues,
-          });
-        }
-      });
-
-      opportunity.setData({
-        ...data,
-        accessibility: mergedData,
-      });
-      opportunity = await opportunity.save();
-      log.info(`[Form Opportunity] [Site Id: ${siteId}] Updated existing a11y opportunity`);
-    }
-
-    // If no existing opportunity, create new opportunity
-    if (!opportunity) {
-      // change status to IGNORED for older opportunities
-      await updateStatusToIgnored(dataAccess, siteId, log, null, filterAccessibilityOpportunities);
-
-      const opportunityData = {
-        siteId,
-        auditId,
-        runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
-        type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
-        origin: 'AUTOMATION',
-        title: 'Accessibility - Assistive technology is incompatible on form',
-        description: '',
-        tags: [
-          'Forms Accessibility',
-        ],
-        data: {
-          accessibility: a11yOpptyData,
-        },
-      };
-      opportunity = await Opportunity.create(opportunityData);
-      log.debug(`[Form Opportunity] [Site Id: ${siteId}] Created new a11y opportunity`);
-    }
+    const opportunityData = {
+      siteId,
+      auditId,
+      runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
+      type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
+      origin: 'AUTOMATION',
+      title: 'Accessibility - Assistive technology is incompatible on form',
+      description: '',
+      tags: [
+        'Forms Accessibility',
+      ],
+      data: {
+        dataSources: ['axe-core'],
+      },
+    };
+    opportunity = await Opportunity.create(opportunityData);
+    log.debug(`[Form Opportunity] [Site Id: ${siteId}] Created new a11y opportunity`);
   } catch (e) {
-    log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create/update a11y opportunity with error: ${e.message}`);
-    throw new Error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create/update a11y opportunity with error: ${e.message}`);
+    log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create a11y opportunity with error: ${e.message}`);
+    throw new Error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create a11y opportunity with error: ${e.message}`);
   }
   return opportunity;
-}
-
-function getWCAGCriteriaString(criteria) {
-  const { name, criteriaNumber } = getSuccessCriteriaDetails(criteria);
-  return `${criteriaNumber} ${name}`;
-}
-
-/**
- * Transforms axe-core violation format to the expected output format
- * This is a temporary function to transform sites' accessibility schema to forms' old schema
- * to prevent impact on UI
- * @param {Object} axeData - The axe-core violation data
- * @returns {Object} Form with accessibility issues containing form, formSource, and a11yIssues
- */
-export function transformAxeViolationsToA11yData(axeData) {
-  const { violations, url, formSource } = axeData;
-  const a11yIssues = [];
-
-  // Process critical violations
-  if (violations?.critical?.items) {
-    Object.values(violations.critical.items).forEach((violation) => {
-      a11yIssues.push({
-        issue: violation.description,
-        level: violation.level,
-        successCriterias: violation.successCriteriaTags.map(getWCAGCriteriaString),
-        htmlWithIssues: violation.htmlWithIssues,
-        recommendation: violation.failureSummary,
-      });
-    });
-  }
-
-  // Process serious violations
-  if (violations?.serious?.items) {
-    Object.values(violations.serious.items).forEach((violation) => {
-      a11yIssues.push({
-        issue: violation.description,
-        level: violation.level,
-        successCriterias: violation.successCriteriaTags.map(getWCAGCriteriaString),
-        htmlWithIssues: violation.htmlWithIssues,
-        recommendation: violation.failureSummary,
-      });
-    });
-  }
-
-  return {
-    form: url,
-    formSource,
-    a11yIssues,
-  };
 }
 
 /**
@@ -380,34 +258,37 @@ export async function createAccessibilityOpportunity(auditData, context) {
     const aggregatedData = aggregationResult.finalResultFiles.current;
     const a11yData = [];
 
+    // Get total violations from overall data
+    const totalViolations = aggregatedData.overall?.violations?.total || 0;
+
     // Process each form identified by composite key (URL + formSource)
-    Object.entries(aggregatedData).forEach(([key, data]) => {
+    Object.entries(aggregatedData).forEach(([key]) => {
       // Skip the 'overall' key as it contains summary data
       if (key === 'overall') return;
-
-      const { violations } = data;
 
       // Extract URL and formSource from the composite key
       const [url, formSource] = key.includes(URL_SOURCE_SEPARATOR)
         ? key.split(URL_SOURCE_SEPARATOR)
         : [key, null];
 
-      // Transform violations to the expected format
-      const transformedData = transformAxeViolationsToA11yData({
-        violations,
-        url,
+      // Add all forms to a11yData
+      a11yData.push({
+        form: url,
         formSource,
       });
-
-      a11yData.push(transformedData);
     });
 
-    // Create opportunity
-    const opportunity = await createOrUpdateOpportunity(auditId, siteId, a11yData, context);
+    // Create opportunity only if there are violations
+    let opportunity = null;
+    if (totalViolations > 0) {
+      opportunity = await createOpportunity(auditId, siteId, context);
 
-    // Create individual suggestions for the opportunity (if opportunity was created/updated)
-    if (opportunity) {
-      await createFormAccessibilityIndividualSuggestions(aggregatedData, opportunity, context);
+      // Create individual suggestions for the opportunity (if opportunity was created/updated)
+      if (opportunity) {
+        await createFormAccessibilityIndividualSuggestions(aggregatedData, opportunity, context);
+      }
+    } else {
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] No accessibility violations found, skipping opportunity creation`);
     }
     // Send message to importer-worker to create/update a11y metrics
     log.debug(`[FormA11yAudit] [Site Id: ${siteId}] Sending message to importer-worker to create/update a11y metrics`);
@@ -449,7 +330,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Site } = dataAccess;
+  const { Site, Opportunity } = dataAccess;
   const { auditId, siteId, data } = message;
   const { opportunityId, a11y } = data;
   log.debug(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
@@ -461,13 +342,16 @@ export default async function handler(message, context) {
   }
 
   try {
-    const opportunity = await createOrUpdateOpportunity(
-      auditId,
-      siteId,
-      a11y,
-      context,
-      opportunityId,
-    );
+    let opportunity = null;
+    if (opportunityId) {
+      opportunity = await Opportunity.findById(opportunityId);
+      if (!opportunity) {
+        log.error(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not found`);
+        return notFound('A11y opportunity not found');
+      }
+    } else {
+      opportunity = await createOpportunity(auditId, siteId, context);
+    }
     if (!opportunity) {
       log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not detected, skipping guidance`);
       return ok();
@@ -488,16 +372,7 @@ export default async function handler(message, context) {
     } else {
       log.info(`[Form Opportunity] [Site Id: ${siteId}] ${opportunity.getType()}-auto-fix is disabled for site, skipping code-fix generation`);
     }
-
-    log.info(`[Form Opportunity] [Site Id: ${siteId}] a11y opportunity: ${JSON.stringify(opportunity, null, 2)}`);
-    const opportunityData = opportunity.getData();
-    const a11yData = opportunityData.accessibility;
-    // eslint-disable-next-line max-len
-    const formsList = a11yData.filter((item) => !item.formDetails).map((item) => ({ form: item.form, formSource: item.formSource }));
-    log.info(`[Form Opportunity] [Site Id: ${siteId}] formsList: ${JSON.stringify(formsList, null, 2)}`);
-    await (formsList.length === 0
-      ? sendMessageToMystiqueForGuidance(context, opportunity)
-      : sendMessageToFormsQualityAgent(context, opportunity, formsList));
+    // TODO: Send message to mystique for guidance
   } catch (error) {
     log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to process a11y opportunity from mystique: ${error.message}`);
   }
