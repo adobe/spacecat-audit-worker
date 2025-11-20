@@ -13,6 +13,7 @@
 import {
   badRequest, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getJsonSummarySuggestion } from './utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -57,7 +58,7 @@ async function addSuggestions(
 
 /**
  * Handles Mystique response for summarization and updates pages with AI suggestions
- * @param {Object} message - Message from Mystique with AI suggestions
+ * @param {Object} message - Message from Mystique with presigned URL
  * @param {Object} context - Context object with data access and logger
  * @returns {Promise<Object>} - HTTP response
  */
@@ -68,13 +69,19 @@ export default async function handler(message, context) {
     Site,
   } = dataAccess;
   const { siteId, data, auditId } = message;
-  const { guidance, suggestions } = data;
+  const { presignedUrl } = data;
 
-  log.info(`Message received in summarization guidance handler: ${JSON.stringify(message, null, 2)}`);
+  log.info(`[Summarization] Message received in summarization guidance handler: ${JSON.stringify(message, null, 2)}`);
+
+  // Validate presigned URL
+  if (!presignedUrl) {
+    log.error('[Summarization] No presigned URL provided in message data');
+    return badRequest('Presigned URL is required');
+  }
 
   const site = await Site.findById(siteId);
   if (!site) {
-    log.error(`Site not found for siteId: ${siteId}`);
+    log.error(`[Summarization] Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
 
@@ -82,29 +89,49 @@ export default async function handler(message, context) {
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
-    log.warn(`No audit found for auditId: ${auditId}`);
+    log.warn(`[Summarization] No audit found for auditId: ${auditId}`);
     return notFound();
   }
 
-  if (suggestions.length === 0) {
-    log.info(`No suggestions found for siteId: ${siteId}`);
-    return noContent();
-  }
-
-  const opportunity = await createOpportunity(
-    siteId,
-    auditId,
-    baseUrl,
-    guidance,
-    context,
-  );
-
   try {
-    await addSuggestions(opportunity, suggestions, context);
-  } catch (e) {
-    log.error(`Failed to save summarization opportunity on Mystique callback: ${e.message}`);
-    return badRequest('Failed to persist summarization opportunity');
-  }
+    // Fetch summarization data from presigned URL
+    log.info(`[Summarization] Fetching summarization data from presigned URL: ${presignedUrl}`);
+    const response = await fetch(presignedUrl);
 
-  return ok();
+    if (!response.ok) {
+      log.error(`[Summarization] Failed to fetch summarization data: ${response.status} ${response.statusText}`);
+      return badRequest(`Failed to fetch summarization data: ${response.statusText}`);
+    }
+
+    const summarizationData = await response.json();
+    const { guidance, suggestions } = summarizationData;
+
+    // Validate the fetched data
+    if (!suggestions || !Array.isArray(suggestions) || suggestions.length === 0) {
+      log.info('[Summarization] No suggestions found in the response');
+      return noContent();
+    }
+    log.info(`[Summarization] Received summarization data with ${suggestions.length} suggestions`);
+
+    const opportunity = await createOpportunity(
+      siteId,
+      auditId,
+      baseUrl,
+      guidance,
+      context,
+    );
+
+    try {
+      await addSuggestions(opportunity, suggestions, context);
+    } catch (e) {
+      log.error(`[Summarization] Failed to save summarization opportunity on Mystique callback: ${e.message}`);
+      return badRequest('Failed to persist summarization opportunity');
+    }
+
+    log.info(`[Summarization] Successfully processed ${suggestions.length} summarization suggestions for site: ${siteId}`);
+    return ok();
+  } catch (error) {
+    log.error(`[Summarization] Error processing summarization guidance: ${error.message}`, error);
+    return badRequest(`Error processing summarization guidance: ${error.message}`);
+  }
 }

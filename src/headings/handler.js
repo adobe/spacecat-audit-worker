@@ -16,9 +16,9 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
+import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
@@ -31,48 +31,42 @@ export const HEADINGS_CHECKS = Object.freeze({
   HEADING_EMPTY: {
     check: 'heading-empty',
     title: 'Empty Heading',
+    description: '{tagName} heading is empty.',
     explanation: 'Heading elements (H2–H6) should not be empty.',
     suggestion: 'Add descriptive text or remove the empty heading.',
   },
   HEADING_MISSING_H1: {
     check: 'heading-missing-h1',
     title: 'Missing H1 Heading',
+    description: 'Page does not have an H1 element',
     explanation: 'Pages should have exactly one H1 element for SEO and accessibility.',
     suggestion: 'Add an H1 element describing the main content.',
   },
   HEADING_H1_LENGTH: {
     check: 'heading-h1-length',
     title: 'H1 Length',
+    description: `H1 element is either empty or exceeds ${H1_LENGTH_CHARS} characters.`,
     explanation: `H1 elements should be less than ${H1_LENGTH_CHARS} characters.`,
     suggestion: `Update the H1 to be less than ${H1_LENGTH_CHARS} characters`,
   },
   HEADING_MULTIPLE_H1: {
     check: 'heading-multiple-h1',
     title: 'Multiple H1 Headings',
+    description: 'Page has more than one H1 element.',
     explanation: 'Pages should have only one H1 element.',
     suggestion: 'Change additional H1 elements to H2 or appropriate levels.',
-  },
-  HEADING_DUPLICATE_TEXT: {
-    check: 'heading-duplicate-text',
-    title: 'Duplicate Heading Text',
-    explanation: 'Headings should have unique text content (WCAG 2.2 2.4.6).',
-    suggestion: 'Ensure each heading has unique, descriptive text.',
   },
   HEADING_ORDER_INVALID: {
     check: 'heading-order-invalid',
     title: 'Invalid Heading Order',
+    description: 'Heading hierarchy skips levels.',
     explanation: 'Heading levels should increase by one (example: H1→H2), not jump levels (example: H1→H3).',
     suggestion: 'Adjust heading levels to maintain proper hierarchy.',
-  },
-  HEADING_NO_CONTENT: {
-    check: 'heading-no-content',
-    title: 'Heading Without Content',
-    explanation: 'Headings should be followed by content before the next heading.',
-    suggestion: 'Add meaningful content after each heading.',
   },
   TOPPAGES: {
     check: 'top-pages',
     title: 'Top Pages',
+    description: 'No top pages available for audit',
     explanation: 'No top pages found',
   },
 });
@@ -88,60 +82,6 @@ function getHeadingLevel(tagName) {
  */
 function getTextContent(element) {
   return (element.textContent || '').trim();
-}
-
-/**
- * Check if there is meaningful content between two DOM elements
- * @param {Element} startElement - The starting element (heading)
- * @param {Element} endElement - The ending element (next heading)
- * @returns {boolean} - True if meaningful content exists between the elements
- */
-function hasContentBetweenElements(startElement, endElement) {
-  const contentTags = new Set([
-    'P', 'DIV', 'SPAN', 'UL', 'OL', 'DL', 'LI', 'IMG', 'FIGURE', 'VIDEO', 'AUDIO',
-    'TABLE', 'FORM', 'FIELDSET', 'SECTION', 'ARTICLE', 'ASIDE', 'NAV', 'MAIN',
-    'BLOCKQUOTE', 'PRE', 'CODE', 'HR', 'BR', 'CANVAS', 'SVG', 'IFRAME',
-  ]);
-
-  let currentElement = startElement.nextSibling;
-
-  while (currentElement && currentElement !== endElement) {
-    // Check if it's an element node
-    if (currentElement.nodeType === 1) { // Element node
-      const tagName = currentElement.tagName.toUpperCase();
-
-      // If it's a content tag, check if it has meaningful content
-      if (contentTags.has(tagName)) {
-        const textContent = (currentElement.textContent || '').trim();
-        // Consider it meaningful if it has text content or is a self-closing content element
-        if (textContent.length > 0 || ['IMG', 'HR', 'BR', 'CANVAS', 'SVG', 'IFRAME'].includes(tagName)) {
-          return true;
-        }
-      }
-
-      // Recursively check child elements for content
-      if (currentElement.children && currentElement.children.length > 0) {
-        const hasChildContent = Array.from(currentElement.children).some((child) => {
-          const childTextContent = getTextContent(child);
-          const childTagName = child.tagName.toUpperCase();
-          return childTextContent.length > 0
-                 || ['IMG', 'HR', 'BR', 'CANVAS', 'SVG', 'IFRAME'].includes(childTagName);
-        });
-        if (hasChildContent) {
-          return true;
-        }
-      }
-    } else if (currentElement.nodeType === 3) { // Text node
-      const textContent = getTextContent(currentElement);
-      if (textContent.length > 0) {
-        return true;
-      }
-    }
-
-    currentElement = currentElement.nextSibling;
-  }
-
-  return false;
 }
 
 function getScrapeJsonPath(url, siteId) {
@@ -265,7 +205,7 @@ export async function getH1HeadingASuggestion(url, log, pageTags, context, brand
   }
 }
 
-async function getBrandGuidelines(healthyTagsObject, log, context) {
+export async function getBrandGuidelines(healthyTagsObject, log, context) {
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
   const prompt = await getPrompt(
     {
@@ -281,6 +221,166 @@ async function getBrandGuidelines(healthyTagsObject, log, context) {
   });
   const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
   return aiResponseContent;
+}
+
+/**
+ * Validate heading semantics for a single page from a scrapeJsonObject.
+ * - Ensure heading level increases by at most 1 when going deeper (no jumps, e.g., h1 → h3)
+ * - Ensure headings are not empty
+ *
+ * @param {string} url - The URL being validated
+ * @param {Object} scrapeJsonObject - The scraped page data from S3
+ * @param {Object} log - Logger instance
+ * @param {Object} context - Audit context
+ * @param {Object} seoChecks - SeoChecks instance for tracking healthy tags
+ * @returns {Promise<{url: string, checks: Array}>}
+ */
+export async function validatePageHeadingFromScrapeJson(
+  url,
+  scrapeJsonObject,
+  log,
+  seoChecks,
+) {
+  try {
+    let document = null;
+    if (!scrapeJsonObject) {
+      log.error(`Scrape JSON object not found for ${url}, skipping headings audit`);
+      return null;
+    } else {
+      document = new JSDOM(scrapeJsonObject.scrapeResult.rawBody).window.document;
+    }
+
+    const pageTags = {
+      h1: scrapeJsonObject.scrapeResult.tags.h1 || [],
+      title: scrapeJsonObject.scrapeResult.tags.title,
+      description: scrapeJsonObject.scrapeResult.tags.description,
+      lang: scrapeJsonObject.scrapeResult.tags.lang,
+      finalUrl: scrapeJsonObject.finalUrl,
+    };
+    seoChecks.performChecks(url, pageTags);
+
+    const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+
+    const checks = [];
+
+    const h1Elements = headings.filter((h) => h.tagName === 'H1');
+
+    if (h1Elements.length === 0) {
+      log.debug(`Missing h1 element detected at ${url}`);
+      checks.push({
+        check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
+        checkTitle: HEADINGS_CHECKS.HEADING_MISSING_H1.title,
+        description: HEADINGS_CHECKS.HEADING_MISSING_H1.description,
+        success: false,
+        explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
+        suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
+        transformRules: {
+          action: 'insertBefore',
+          selector: document.querySelector('body > main') ? 'body > main > :first-child' : 'body > :first-child',
+          tag: 'h1',
+          scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
+        },
+        pageTags,
+      });
+    } else if (h1Elements.length > 1) {
+      log.debug(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
+      checks.push({
+        check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
+        checkTitle: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.title,
+        description: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.description,
+        success: false,
+        explanation: `Found ${h1Elements.length} h1 elements: ${HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation}`,
+        suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
+        count: h1Elements.length,
+      });
+    } else if (getTextContent(h1Elements[0]).length === 0
+      || getTextContent(h1Elements[0]).length > H1_LENGTH_CHARS) {
+      const h1Selector = getHeadingSelector(h1Elements[0]);
+      const h1Length = h1Elements[0].textContent.length;
+      const lengthIssue = h1Length === 0 ? 'empty' : 'too long';
+      log.info(`H1 length ${lengthIssue} detected at ${url}: ${h1Length} characters using selector: ${h1Selector}`);
+      checks.push({
+        check: HEADINGS_CHECKS.HEADING_H1_LENGTH.check,
+        checkTitle: HEADINGS_CHECKS.HEADING_H1_LENGTH.title,
+        description: HEADINGS_CHECKS.HEADING_H1_LENGTH.description,
+        success: false,
+        explanation: HEADINGS_CHECKS.HEADING_H1_LENGTH.explanation,
+        suggestion: HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion,
+        transformRules: {
+          action: 'replace',
+          selector: h1Selector,
+          currValue: h1Elements[0].textContent,
+          scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
+        },
+        pageTags,
+      });
+    }
+
+    const headingChecks = headings.map(async (heading) => {
+      if (heading.tagName !== 'H1') {
+        const text = getTextContent(heading);
+        if (text.length === 0) {
+          log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
+          const headingSelector = getHeadingSelector(heading);
+          return {
+            check: HEADINGS_CHECKS.HEADING_EMPTY.check,
+            checkTitle: HEADINGS_CHECKS.HEADING_EMPTY.title,
+            description: HEADINGS_CHECKS.HEADING_EMPTY.description.replace('{tagName}', heading.tagName),
+            success: false,
+            explanation: `Found empty text for ${heading.tagName}: ${HEADINGS_CHECKS.HEADING_EMPTY.explanation}`,
+            suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
+            transformRules: {
+              action: 'replace',
+              selector: headingSelector,
+              currValue: text,
+              scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
+            },
+            tagName: heading.tagName,
+            pageTags,
+          };
+        }
+      }
+      return null;
+    });
+
+    const headingChecksResults = await Promise.all(headingChecks);
+    // Filter out nulls and add to checks array
+    checks.push(...headingChecksResults.filter(Boolean));
+
+    if (headings.length > 1) {
+      const invalidJumps = [];
+      for (let i = 1; i < headings.length; i += 1) {
+        const prev = headings[i - 1];
+        const cur = headings[i];
+        const prevLevel = getHeadingLevel(prev.tagName);
+        const curLevel = getHeadingLevel(cur.tagName);
+        if (curLevel - prevLevel > 1) {
+          invalidJumps.push({ previous: `h${prevLevel}`, current: `h${curLevel}` });
+          log.debug(`Heading level jump detected at ${url}: h${prevLevel} → h${curLevel}`);
+        }
+      }
+      // Create a single check with all invalid jumps in the explanation
+      if (invalidJumps.length > 0) {
+        const jumpDetails = invalidJumps.map((jump) => `${jump.previous} → ${jump.current}`).join(', ');
+        checks.push({
+          check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
+          checkTitle: HEADINGS_CHECKS.HEADING_ORDER_INVALID.title,
+          description: HEADINGS_CHECKS.HEADING_ORDER_INVALID.description,
+          success: false,
+          explanation: `${HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation} Invalid jumps found: ${jumpDetails}`,
+          suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
+        });
+      }
+    }
+
+    return { url, checks };
+  } catch (error) {
+    log.error(`Error validating headings for ${url}: ${error.message}`);
+    return {
+      url,
+      checks: [],
+    };
+  }
 }
 
 /**
@@ -313,187 +413,14 @@ export async function validatePageHeadings(
   try {
     const scrapeJsonPath = getScrapeJsonPath(url, site.getId());
     const s3Key = allKeys.find((key) => key.includes(scrapeJsonPath));
-    let document = null;
     let scrapeJsonObject = null;
     if (!s3Key) {
       log.error(`Scrape JSON path not found for ${url}, skipping headings audit`);
       return null;
     } else {
       scrapeJsonObject = await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, s3Key, log);
-      if (!scrapeJsonObject) {
-        log.error(`Scrape JSON object not found for ${url}, skipping headings audit`);
-        return null;
-      } else {
-        document = new JSDOM(scrapeJsonObject.scrapeResult.rawBody).window.document;
-      }
+      return validatePageHeadingFromScrapeJson(url, scrapeJsonObject, log, seoChecks);
     }
-
-    const pageTags = {
-      h1: scrapeJsonObject.scrapeResult.tags.h1 || [],
-      title: scrapeJsonObject.scrapeResult.tags.title,
-      description: scrapeJsonObject.scrapeResult.tags.description,
-      lang: scrapeJsonObject.scrapeResult.tags.lang,
-      finalUrl: scrapeJsonObject.finalUrl,
-    };
-    seoChecks.performChecks(url, pageTags);
-
-    const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
-
-    const checks = [];
-
-    const h1Elements = headings.filter((h) => h.tagName === 'H1');
-
-    if (h1Elements.length === 0) {
-      log.debug(`Missing h1 element detected at ${url}`);
-      checks.push({
-        check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
-        checkTitle: HEADINGS_CHECKS.HEADING_MISSING_H1.title,
-        success: false,
-        explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
-        suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
-        transformRules: {
-          action: 'insertBefore',
-          selector: document.querySelector('body > main') ? 'body > main > :first-child' : 'body > :first-child',
-          tag: 'h1',
-          scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
-        },
-        pageTags,
-      });
-    } else if (h1Elements.length > 1) {
-      log.debug(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
-      checks.push({
-        check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
-        checkTitle: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.title,
-        success: false,
-        explanation: `Found ${h1Elements.length} h1 elements: ${HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation}`,
-        suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
-        count: h1Elements.length,
-      });
-    } else if (getTextContent(h1Elements[0]).length === 0
-      || getTextContent(h1Elements[0]).length > H1_LENGTH_CHARS) {
-      const h1Selector = getHeadingSelector(h1Elements[0]);
-      const h1Length = h1Elements[0].textContent.length;
-      const lengthIssue = h1Length === 0 ? 'empty' : 'too long';
-      log.info(`H1 length ${lengthIssue} detected at ${url}: ${h1Length} characters using selector: ${h1Selector}`);
-      checks.push({
-        check: HEADINGS_CHECKS.HEADING_H1_LENGTH.check,
-        checkTitle: HEADINGS_CHECKS.HEADING_H1_LENGTH.title,
-        success: false,
-        explanation: HEADINGS_CHECKS.HEADING_H1_LENGTH.explanation,
-        suggestion: HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion,
-        transformRules: {
-          action: 'replace',
-          selector: h1Selector,
-          currValue: h1Elements[0].textContent,
-          scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
-        },
-        pageTags,
-      });
-    }
-
-    // Check for empty headings and collect text content for duplicate detection
-    const headingTexts = new Map();
-    const headingChecks = headings.map(async (heading) => {
-      if (heading.tagName !== 'H1') {
-        const text = getTextContent(heading);
-        if (text.length === 0) {
-          log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
-          const headingSelector = getHeadingSelector(heading);
-          return {
-            check: HEADINGS_CHECKS.HEADING_EMPTY.check,
-            checkTitle: HEADINGS_CHECKS.HEADING_EMPTY.title,
-            success: false,
-            explanation: `Found empty text for ${heading.tagName}: ${HEADINGS_CHECKS.HEADING_EMPTY.explanation}`,
-            suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
-            transformRules: {
-              action: 'replace',
-              selector: headingSelector,
-              currValue: text,
-              scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
-            },
-            tagName: heading.tagName,
-            pageTags,
-          };
-        } else {
-          // For tracking purposes
-          const lowerText = text.toLowerCase();
-          if (!headingTexts.has(lowerText)) {
-            headingTexts.set(lowerText, []);
-          }
-          headingTexts.get(lowerText).push({
-            text,
-            tagName: heading.tagName,
-            element: heading,
-          });
-          return null;
-        }
-      } else {
-        return null;
-      }
-    });
-
-    const headingChecksResults = await Promise.all(headingChecks);
-    // Filter out nulls and add to checks array
-    checks.push(...headingChecksResults.filter(Boolean));
-
-    // Check for duplicate heading text content
-    // eslint-disable-next-line no-unused-vars
-    for (const [lowerText, headingsWithSameText] of headingTexts) {
-      if (headingsWithSameText.length > 1) {
-        const detailedExplanation = `${HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation} \n Text "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`;
-        checks.push({
-          check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
-          checkTitle: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.title,
-          success: false,
-          explanation: detailedExplanation,
-          suggestion: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.suggestion,
-          text: headingsWithSameText[0].text,
-          duplicates: headingsWithSameText.map((h) => h.tagName),
-          count: headingsWithSameText.length,
-        });
-        log.debug(`Duplicate heading text detected at ${url}: "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`);
-      }
-    }
-    for (let i = 0; i < headings.length - 1; i += 1) {
-      const currentHeading = headings[i];
-      const nextHeading = headings[i + 1];
-
-      if (!hasContentBetweenElements(currentHeading, nextHeading)) {
-        checks.push({
-          check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
-          checkTitle: HEADINGS_CHECKS.HEADING_NO_CONTENT.title,
-          success: false,
-          explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
-          suggestion: HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion,
-          heading: currentHeading.tagName,
-          nextHeading: nextHeading.tagName,
-        });
-        log.debug(`Heading without content detected at ${url}: ${currentHeading.tagName} has no content before ${nextHeading.tagName}`);
-      }
-    }
-
-    if (headings.length > 1) {
-      for (let i = 1; i < headings.length; i += 1) {
-        const prev = headings[i - 1];
-        const cur = headings[i];
-        const prevLevel = getHeadingLevel(prev.tagName);
-        const curLevel = getHeadingLevel(cur.tagName);
-        if (curLevel - prevLevel > 1) {
-          checks.push({
-            check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
-            checkTitle: HEADINGS_CHECKS.HEADING_ORDER_INVALID.title,
-            success: false,
-            explanation: HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation,
-            suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
-            previous: `h${prevLevel}`,
-            current: `h${curLevel}`,
-          });
-          log.debug(`Heading level jump detected at ${url}: h${prevLevel} → h${curLevel}`);
-        }
-      }
-    }
-
-    return { url, checks };
   } catch (error) {
     log.error(`Error validating headings for ${url}: ${error.message}`);
     return {
@@ -653,10 +580,6 @@ function generateRecommendedAction(checkType) {
       return 'Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).';
     case HEADINGS_CHECKS.HEADING_EMPTY.check:
       return 'Provide meaningful text content for the empty heading or remove the element.';
-    case HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check:
-      return 'Ensure each heading has unique, descriptive text content that clearly identifies its section.';
-    case HEADINGS_CHECKS.HEADING_NO_CONTENT.check:
-      return 'Add meaningful content (paragraphs, lists, images, etc.) after the heading before the next heading.';
     default:
       return 'Review heading structure and content to follow heading best practices.';
   }
@@ -670,12 +593,6 @@ export function generateSuggestions(auditUrl, auditData, context) {
     log.info(`Headings audit for ${auditUrl} has no issues or failed, skipping suggestions generation`);
     return { ...auditData };
   }
-
-  // Get the order from HEADINGS_CHECKS object
-  const auditTypeOrder = [
-    ...Object.keys(HEADINGS_CHECKS),
-  ];
-
   // Group suggestions by audit type
   const suggestionsByType = {};
   const allSuggestions = [];
@@ -704,36 +621,10 @@ export function generateSuggestions(auditUrl, auditData, context) {
     }
   });
 
-  let mdTable = '';
-  auditTypeOrder.forEach((currentAuditType) => {
-    const checkType = HEADINGS_CHECKS[currentAuditType].check;
-    if (suggestionsByType[checkType] && suggestionsByType[checkType].length > 0) {
-      mdTable += `## ${HEADINGS_CHECKS[currentAuditType].title}\n\n`;
-      mdTable += '| Page Url | Explanation | Suggestion |\n';
-      mdTable += '|-------|-------|-------|\n';
-      suggestionsByType[checkType].forEach((suggestion) => {
-        let suggestionExplanation = suggestion.explanation;
-        if (suggestion.tagName) {
-          suggestionExplanation += `for tag name: ${suggestion.tagName.toUpperCase()}`;
-        }
-        mdTable += `| ${suggestion.url} | ${suggestionExplanation} | ${suggestion.recommendedAction} |\n`;
-      });
-      mdTable += '\n';
-    }
-  });
-
-  const elmoSuggestions = [];
-  if (mdTable) {
-    elmoSuggestions.push({
-      type: 'CODE_CHANGE',
-      recommendedAction: mdTable,
-    });
-  }
-
   const suggestions = [...allSuggestions];
 
   log.debug(`Generated ${suggestions.length} headings suggestions for ${auditUrl}`);
-  return { ...auditData, suggestions, elmoSuggestions };
+  return { ...auditData, suggestions };
 }
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
@@ -750,6 +641,18 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     createOpportunityData,
     auditType,
   );
+
+  const mergeDataFunction = (existingSuggestion, newSuggestion) => {
+    const mergedSuggestion = {
+      ...existingSuggestion,
+      ...newSuggestion,
+    };
+    // Preserve recommendedAction from existingSuggestion if isEdited is true
+    if (existingSuggestion.isEdited && existingSuggestion.recommendedAction !== undefined) {
+      mergedSuggestion.recommendedAction = existingSuggestion.recommendedAction;
+    }
+    return mergedSuggestion;
+  };
 
   const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
 
@@ -775,63 +678,11 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         }),
       },
     }),
+    mergeDataFunction,
     log,
   });
 
   log.info(`Headings opportunity created for Site Optimizer and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
-  return { ...auditData };
-}
-
-export async function opportunityAndSuggestionsForElmo(auditUrl, auditData, context) {
-  const { log } = context;
-  if (!auditData.elmoSuggestions?.length) {
-    log.info('Headings audit has no issues, skipping opportunity creation');
-    return { ...auditData };
-  }
-  const elmoOpportunityType = 'generic-opportunity';
-  const comparisonFn = (oppty) => {
-    const opptyData = oppty.getData();
-    const opptyAdditionalMetrics = opptyData?.additionalMetrics;
-    if (!opptyAdditionalMetrics || !Array.isArray(opptyAdditionalMetrics)) {
-      return false;
-    }
-    const hasHeadingsSubtype = opptyAdditionalMetrics.some(
-      (metric) => metric.key === 'subtype' && metric.value === 'headings',
-    );
-    return hasHeadingsSubtype;
-  };
-
-  const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
-    context,
-    createOpportunityDataForElmo,
-    elmoOpportunityType,
-    {},
-    comparisonFn,
-  );
-
-  log.info(`Headings opportunity created for Elmo with oppty id ${opportunity.getId()}`);
-
-  const buildKey = (suggestion) => `${suggestion.type}`;
-  await syncSuggestions({
-    opportunity,
-    newData: auditData.elmoSuggestions,
-    context,
-    buildKey,
-    mapNewSuggestion: (suggestion) => ({
-      opportunityId: opportunity.getId(),
-      type: suggestion.type,
-      rank: 0,
-      data: {
-        suggestionValue: suggestion.recommendedAction,
-      },
-    }),
-    keepLatestMergeDataFunction,
-    log,
-  });
-
-  log.info(`Headings opportunity created for Elmo and ${auditData.elmoSuggestions.length} suggestions synced for ${auditUrl}`);
   return { ...auditData };
 }
 
@@ -841,6 +692,5 @@ export default new AuditBuilder()
   .withPostProcessors([
     generateSuggestions,
     opportunityAndSuggestions,
-    opportunityAndSuggestionsForElmo,
   ])
   .build();

@@ -22,6 +22,7 @@ import {
   getBucketInfo,
   discoverCdnProviders,
   isStandardAdobeCdnBucket,
+  shouldRecreateRawTable,
 } from '../../src/utils/cdn-utils.js';
 
 use(sinonChai);
@@ -258,6 +259,60 @@ describe('CDN Utils', () => {
       expect(isStandardAdobeCdnBucket('logs-test123')).to.be.false;
       expect(isStandardAdobeCdnBucket('')).to.be.false;
       expect(isStandardAdobeCdnBucket('cdn-logs-test@123')).to.be.false;
+    });
+  });
+
+  describe('shouldRecreateRawTable', () => {
+    let athenaClient;
+    const database = 'test-database';
+    const rawTable = 'test-raw-table';
+    const expectedLocation = 's3://test-bucket/raw/';
+
+    beforeEach(() => {
+      athenaClient = { query: sandbox.stub(), execute: sandbox.stub() };
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('returns true if table does not exist', async () => {
+      athenaClient.query.resolves([]);
+
+      const result = await shouldRecreateRawTable(
+        athenaClient,
+        database,
+        rawTable,
+        expectedLocation,
+      );
+
+      expect(result).to.be.true;
+    });
+
+    it('returns true if table exists and location does not match', async () => {
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}/other'` }]);
+
+      const result = await shouldRecreateRawTable(
+        athenaClient,
+        database,
+        rawTable,
+        expectedLocation,
+      );
+
+      expect(result).to.be.true;
+    });
+
+    it('returns false if table exists and location matches', async () => {
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}'` }]);
+
+      const result = await shouldRecreateRawTable(
+        athenaClient,
+        database,
+        rawTable,
+        expectedLocation,
+      );
+
+      expect(result).to.be.false;
     });
   });
 });
