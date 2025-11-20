@@ -364,22 +364,28 @@ For each category:
 ## EXAMPLES (Category name is just a LABEL - analyze the actual URLs!)
 
 Example 1 - Category "Brand" with URLs: ["/sacs/lovesac", "/sectionals/design", "/accessories"]
-Pattern: (?i)/(sacs|sectionals|accessories)/
+Pattern: (?i)(sacs|sectionals|accessories)
 Explanation: These URLs contain product category names, so match those keywords
 
 Example 2 - Category "Product" with URLs: ["/products/item-123", "/shop/widget", "/store/catalog"]
-Pattern: (?i)/(products?|shop|store)/
+Pattern: (?i)(products?|shop|store)
 Explanation: These URLs have shopping-related paths
 
 Example 3 - Category "photoshop" with URLs: ["/ps/features", "/creative-cloud/photoshop", "/imaging-software"]
-Pattern: (?i)/(ps|photoshop|imaging-software|creative-cloud)/
+Pattern: (?i)(ps|photoshop|imaging-software|creative-cloud)
 Explanation: Look for keywords that appear in the actual URLs
 
 Example 4 - Category "Support" with URLs: ["/help", "/faq", "/contact-us"]
-Pattern: (?i)/(help|faq|contact)/
+Pattern: (?i)(help|faq|contact)
 Explanation: Match the actual keywords found in support URLs
 
 CRITICAL: Do NOT use the category name in the pattern unless it actually appears in the URLs!
+
+## SLASH HANDLING
+- URLs may or may not start with a forward slash
+- Focus on KEYWORD MATCHING, not strict slash positioning
+- DON'T require slashes before/after keywords: use (?i)(keyword) not (?i)/keyword/ or (?i)/(keyword)/
+- The pattern should match keywords wherever they appear in the path
 
 ## POSIX REGEX REQUIREMENTS (for Amazon Athena)
 - Start with (?i) for case-insensitive matching
@@ -388,6 +394,7 @@ CRITICAL: Do NOT use the category name in the pattern unless it actually appears
 - Use alternation (|) for multiple options
 - Use ? for optional, * for zero-or-more
 - Escape special chars: \\., \\-, \\+, \\?, \\*, \\(, \\), etc.
+- Keep patterns SIMPLE: Focus on keyword matching without requiring specific slash positions
 
 ## OUTPUT FORMAT
 Return ONLY valid JSON. No markdown, no code blocks, no explanations, no line breaks in strings:
