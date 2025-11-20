@@ -67,14 +67,14 @@ function formatColumns(worksheet, config) {
   }
 }
 
-export function createSheet(workbook, name, data, type, site) {
+export async function createSheet(workbook, name, data, type, site, context) {
   const worksheet = workbook.addWorksheet(name);
   const config = getSheetConfig(type);
 
   worksheet.addRow(config.headers);
   styleHeaders(worksheet);
 
-  const processedData = config.processData(data, site);
+  const processedData = await config.processData(data, site, context.dataAccess);
   processedData.forEach((row) => worksheet.addRow(row));
 
   formatColumns(worksheet, config);
@@ -82,7 +82,7 @@ export function createSheet(workbook, name, data, type, site) {
   return worksheet;
 }
 
-export async function createExcelReport(reportData, reportConfig, site) {
+export async function createExcelReport(reportData, reportConfig, site, context) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = reportConfig.workbookCreator;
   workbook.created = new Date();
@@ -91,7 +91,8 @@ export async function createExcelReport(reportData, reportConfig, site) {
 
   for (const sheet of sheets) {
     const data = reportData[sheet.dataKey];
-    createSheet(workbook, sheet.name, data, sheet.type, site);
+    // eslint-disable-next-line no-await-in-loop
+    await createSheet(workbook, sheet.name, data, sheet.type, site, context);
   }
 
   return workbook;

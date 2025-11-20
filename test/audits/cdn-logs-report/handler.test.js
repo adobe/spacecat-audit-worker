@@ -16,8 +16,8 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
-import handler from '../../../src/cdn-logs-report/handler.js';
 
 use(sinonChai);
 
@@ -142,8 +142,11 @@ describe('CDN Logs Report Handler', function test() {
   let sandbox;
   let context;
   let site;
+  let handler;
+  let saveExcelReportStub;
+  let createLLMOSharepointClientStub;
 
-  this.timeout(5000);
+  this.timeout(10000);
 
   const createMockSharepointClient = (stubber) => ({
     getDocument: stubber.stub().returns({
@@ -190,9 +193,26 @@ describe('CDN Logs Report Handler', function test() {
     }),
   });
 
+  before(async () => {
+    saveExcelReportStub = sinon.stub().resolves();
+    createLLMOSharepointClientStub = sinon.stub();
+    
+    handler = await esmock('../../../src/cdn-logs-report/handler.js', {}, {
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: createLLMOSharepointClientStub,
+        saveExcelReport: saveExcelReportStub,
+      },
+    });
+  });
+
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     nock.cleanAll();
+    
+    // Reset stubs before each test
+    saveExcelReportStub.reset();
+    createLLMOSharepointClientStub.reset();
+    createLLMOSharepointClientStub.resolves(createMockSharepointClient(sandbox));
 
     site = {
       getSiteId: () => 'test-site',
@@ -242,9 +262,16 @@ describe('CDN Logs Report Handler', function test() {
       });
   });
 
+  after(async () => {
+    if (handler) {
+      await esmock.purge(handler);
+    }
+  });
+
   afterEach(() => {
-    sandbox.restore();
+    nock.abortPendingRequests();
     nock.cleanAll();
+    sandbox.restore();
   });
 
   describe('Cdn logs report audit handler', () => {

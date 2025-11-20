@@ -365,6 +365,7 @@ export async function validatePageHeadingFromScrapeJson(
         checks.push({
           check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
           checkTitle: HEADINGS_CHECKS.HEADING_ORDER_INVALID.title,
+          description: HEADINGS_CHECKS.HEADING_ORDER_INVALID.description,
           success: false,
           explanation: `${HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation} Invalid jumps found: ${jumpDetails}`,
           suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
