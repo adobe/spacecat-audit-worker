@@ -95,6 +95,38 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
   }
 }
 
+/**
+ * Deduplicates prompts based on question text
+ * Prioritizes prompts with URL, then keeps the first occurrence
+ * @param {Array} prompts - Array of prompt objects with url, topic, and question
+ * @returns {Array} Deduplicated array of prompts
+ */
+function deduplicatePrompts(prompts) {
+  const seenQuestions = new Map();
+
+  prompts.forEach((prompt) => {
+    const questionKey = prompt.question.toLowerCase().trim();
+    const existing = seenQuestions.get(questionKey);
+
+    if (!existing) {
+      // First occurrence of this question
+      seenQuestions.set(questionKey, prompt);
+    } else {
+      // Duplicate found - prioritize the one with a URL
+      const existingHasUrl = existing.url && existing.url.length > 0;
+      const currentHasUrl = prompt.url && prompt.url.length > 0;
+
+      // Replace existing if current has URL and existing doesn't
+      if (currentHasUrl && !existingHasUrl) {
+        seenQuestions.set(questionKey, prompt);
+      }
+      // Otherwise keep existing (either it has URL, or both don't have URL - keep first)
+    }
+  });
+
+  return Array.from(seenQuestions.values());
+}
+
 async function runFaqsAudit(url, context, site) {
   const {
     log,
@@ -134,10 +166,14 @@ async function runFaqsAudit(url, context, site) {
       };
     }
 
-    // Group prompts by URL and topic (already limited to MAX_ROWS_TO_READ)
-    const promptsByUrl = groupPromptsByUrlAndTopic(topPrompts);
+    // Deduplicate prompts before grouping
+    const uniquePrompts = deduplicatePrompts(topPrompts);
+    log.info(`[FAQ] Deduplicated ${topPrompts.length} prompts to ${uniquePrompts.length} unique prompts`);
 
-    log.info(`[FAQ] Grouped ${topPrompts.length} prompts into ${promptsByUrl.length} topics`);
+    // Group prompts by URL and topic (already limited to MAX_ROWS_TO_READ)
+    const promptsByUrl = groupPromptsByUrlAndTopic(uniquePrompts);
+
+    log.info(`[FAQ] Grouped ${uniquePrompts.length} prompts into ${promptsByUrl.length} topics`);
 
     const auditResult = {
       success: true,
