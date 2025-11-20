@@ -1,3 +1,10 @@
+# [1.249.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.248.5...v1.249.0) (2025-11-20)
+
+
+### Features
+
+* add page citability handler to scrape pages and get citability score ([#1619](https://github.com/adobe/spacecat-audit-worker/issues/1619)) ([a49e0e1](https://github.com/adobe/spacecat-audit-worker/commit/a49e0e18959327563903b5a663ce27f8e601ead7))
+
 ## [1.248.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.248.4...v1.248.5) (2025-11-20)
 
 
