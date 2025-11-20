@@ -92,6 +92,7 @@ import permissions from './permissions/handler.js';
 import permissionsRedundant from './permissions/handler.redundant.js';
 import faqs from './faqs/handler.js';
 import faqsGuidance from './faqs/guidance-handler.js';
+import highValuePages from './high-value-pages/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -170,6 +171,7 @@ const HANDLERS = {
   'security-permissions-redundant': permissionsRedundant,
   faqs,
   'guidance:faqs': faqsGuidance,
+  'high-value-pages': highValuePages,
   dummy: (message) => ok(message),
 };
 
