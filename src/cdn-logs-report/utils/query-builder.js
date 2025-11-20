@@ -10,42 +10,15 @@
  * governing permissions and limitations under the License.
  */
 
-import { DEFAULT_COUNTRY_PATTERNS } from '../constants/country-patterns.js';
+import { DEFAULT_COUNTRY_PATTERNS } from '../../common/country-patterns.js';
 import { loadSql, fetchRemotePatterns, buildSiteFilters } from './report-utils.js';
-import { PROVIDER_USER_AGENT_PATTERNS, buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL } from '../../common/user-agent-classification.js';
-
-function buildDateFilter(startDate, endDate) {
-  const formatPart = (date) => ({
-    year: date.getUTCFullYear().toString(),
-    month: (date.getUTCMonth() + 1).toString().padStart(2, '0'),
-    day: date.getUTCDate().toString().padStart(2, '0'),
-  });
-
-  const start = formatPart(startDate);
-  const end = formatPart(endDate);
-
-  /* c8 ignore start */
-  return start.year === end.year && start.month === end.month
-    ? `(year = '${start.year}' AND month = '${start.month}' AND day >= '${start.day}' AND day <= '${end.day}')`
-    : `((year = '${start.year}' AND month = '${start.month}' AND day >= '${start.day}')
-       OR (year = '${end.year}' AND month = '${end.month}' AND day <= '${end.day}'))`;
-  /* c8 ignore stop */
-}
+import { buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL } from '../../common/user-agent-classification.js';
+import { buildDateFilter, buildUserAgentFilter } from '../../utils/cdn-utils.js';
 
 function buildWhereClause(conditions = [], siteFilters = []) {
   const allConditions = [...conditions];
 
-  // Filter for ChatGPT, Perplexity, Google, and Claude
-  const chatgptPattern = PROVIDER_USER_AGENT_PATTERNS.chatgpt;
-  const perplexityPattern = PROVIDER_USER_AGENT_PATTERNS.perplexity;
-  const googlePattern = PROVIDER_USER_AGENT_PATTERNS.google;
-  const claudePattern = PROVIDER_USER_AGENT_PATTERNS.claude;
-  allConditions.push(`(
-    REGEXP_LIKE(user_agent, '${chatgptPattern}') OR 
-    REGEXP_LIKE(user_agent, '${perplexityPattern}') OR 
-    REGEXP_LIKE(user_agent, '${googlePattern}') OR
-    REGEXP_LIKE(user_agent, '${claudePattern}')
-  )`);
+  allConditions.push(buildUserAgentFilter());
 
   if (siteFilters && siteFilters.length > 0) {
     allConditions.push(siteFilters);

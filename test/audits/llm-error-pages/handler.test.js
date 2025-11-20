@@ -524,6 +524,13 @@ describe('LLM Error Pages Handler', function () {
             },
           },
         },
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          validateCountryCode: (code) => {
+            if (!code || typeof code !== 'string') return 'GLOBAL';
+            const up = code.toUpperCase();
+            return up.length === 2 ? up : 'GLOBAL';
+          },
+        },
         '@adobe/spacecat-shared-tier-client': { default: {} },
       });
 
@@ -536,7 +543,7 @@ describe('LLM Error Pages Handler', function () {
       expect(dataRows[0][2]).to.equal(3); // Number of Hits
       // Fallbacks applied
       expect(dataRows[0][3]).to.equal(''); // Avg TTFB fallback
-      expect(dataRows[0][4]).to.equal(''); // Country fallback
+      expect(dataRows[0][4]).to.equal('GLOBAL'); // Country validated fallback
       expect(dataRows[0][6]).to.equal(''); // Product fallback
       expect(dataRows[0][7]).to.equal(''); // Category fallback
       // Second row hits fallback to 0

@@ -1,3 +1,66 @@
+## [1.249.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.249.0...v1.249.1) (2025-11-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-athena-client to v1.7.0 ([#1627](https://github.com/adobe/spacecat-audit-worker/issues/1627)) ([9cbdf23](https://github.com/adobe/spacecat-audit-worker/commit/9cbdf23b1047cd1d9e424e92ff6d5a43423f2c1a))
+
+# [1.249.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.248.5...v1.249.0) (2025-11-20)
+
+
+### Features
+
+* add page citability handler to scrape pages and get citability score ([#1619](https://github.com/adobe/spacecat-audit-worker/issues/1619)) ([a49e0e1](https://github.com/adobe/spacecat-audit-worker/commit/a49e0e18959327563903b5a663ce27f8e601ead7))
+
+## [1.248.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.248.4...v1.248.5) (2025-11-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.77.1 ([#1625](https://github.com/adobe/spacecat-audit-worker/issues/1625)) ([48997a6](https://github.com/adobe/spacecat-audit-worker/commit/48997a603a1aec7efc7cba51210aee7d9f214637))
+
+## [1.248.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.248.3...v1.248.4) (2025-11-20)
+
+
+### Bug Fixes
+
+* minor slash issues ([#1620](https://github.com/adobe/spacecat-audit-worker/issues/1620)) ([a720d4a](https://github.com/adobe/spacecat-audit-worker/commit/a720d4aa2373e01a36c13e5793846411d89a4ba7))
+
+## [1.248.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.248.2...v1.248.3) (2025-11-20)
+
+
+### Bug Fixes
+
+* message format of code fix ([#1624](https://github.com/adobe/spacecat-audit-worker/issues/1624)) ([8f29e70](https://github.com/adobe/spacecat-audit-worker/commit/8f29e70b81c98de5c0d56a18856bcca1c6271934))
+
+## [1.248.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.248.1...v1.248.2) (2025-11-20)
+
+
+### Bug Fixes
+
+* adding description for invalid heading order check ([#1623](https://github.com/adobe/spacecat-audit-worker/issues/1623)) ([a29072c](https://github.com/adobe/spacecat-audit-worker/commit/a29072cb4547d0f99056227db49487c830439aa2))
+
+## [1.248.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.248.0...v1.248.1) (2025-11-20)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1622](https://github.com/adobe/spacecat-audit-worker/issues/1622)) ([287f4b6](https://github.com/adobe/spacecat-audit-worker/commit/287f4b6c7e998b2de5eb2757d54936f0725abe6e))
+
+# [1.248.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.247.2...v1.248.0) (2025-11-20)
+
+
+### Features
+
+* presigned url for summarization ([#1591](https://github.com/adobe/spacecat-audit-worker/issues/1591)) ([e7c9281](https://github.com/adobe/spacecat-audit-worker/commit/e7c9281debeac8146b59faf1b6c4a166a8233410))
+
+## [1.247.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.247.1...v1.247.2) (2025-11-20)
+
+
+### Bug Fixes
+
+* added provision for country code ([#1618](https://github.com/adobe/spacecat-audit-worker/issues/1618)) ([3351624](https://github.com/adobe/spacecat-audit-worker/commit/3351624bdaac92f2cfbd524d5e6f22cf9845da95))
+
 ## [1.247.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.247.0...v1.247.1) (2025-11-20)
 
 

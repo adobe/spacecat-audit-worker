@@ -204,10 +204,6 @@ describe('Utils Report Uploader', () => {
       expect(fetchStub).to.have.been.calledTwice;
       expect(fetchStub.firstCall.args[0]).to.include('/preview/');
       expect(fetchStub.secondCall.args[0]).to.include('/live/');
-      expect(mockContext.log.debug).to.have.been.calledWith(
-        '%s: Waiting 2 seconds before publishing to live...',
-        'REPORT_UPLOADER',
-      );
     });
 
     it('should retry when 503 AND x-error contains 429', async function retryTest() {
