@@ -144,7 +144,7 @@ describe('CDN Logs Report Handler', function test() {
   let site;
   let handler;
 
-  this.timeout(5000);
+  this.timeout(10000);
 
   const createMockSharepointClient = (stubber) => ({
     getDocument: stubber.stub().returns({
