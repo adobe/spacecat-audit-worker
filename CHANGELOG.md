@@ -1,3 +1,10 @@
+## [1.247.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.247.0...v1.247.1) (2025-11-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-ims-client to v1.11.3 ([#1612](https://github.com/adobe/spacecat-audit-worker/issues/1612)) ([cd9c96d](https://github.com/adobe/spacecat-audit-worker/commit/cd9c96d11cc304c10a173d79357f48c509867ae2))
+
 # [1.247.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.246.6...v1.247.0) (2025-11-20)
 
 
