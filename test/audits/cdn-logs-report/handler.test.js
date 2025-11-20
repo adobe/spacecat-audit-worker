@@ -143,6 +143,8 @@ describe('CDN Logs Report Handler', function test() {
   let context;
   let site;
   let handler;
+  let saveExcelReportStub;
+  let createLLMOSharepointClientStub;
 
   this.timeout(10000);
 
@@ -191,21 +193,26 @@ describe('CDN Logs Report Handler', function test() {
     }),
   });
 
-  beforeEach(async () => {
+  before(async () => {
+    saveExcelReportStub = sinon.stub().resolves();
+    createLLMOSharepointClientStub = sinon.stub();
+    
+    handler = await esmock('../../../src/cdn-logs-report/handler.js', {}, {
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: createLLMOSharepointClientStub,
+        saveExcelReport: saveExcelReportStub,
+      },
+    });
+  });
+
+  beforeEach(() => {
     sandbox = sinon.createSandbox();
     nock.cleanAll();
     
-    // Mock report-uploader globally with sleep mocked inside it
-    const mockedReportUploader = await esmock('../../../src/utils/report-uploader.js', {
-      '../../../src/support/utils.js': {
-        sleep: sandbox.stub().resolves(),
-      },
-    });
-    
-    // Now mock the handler with the mocked report-uploader
-    handler = await esmock('../../../src/cdn-logs-report/handler.js', {}, {
-      '../../../src/utils/report-uploader.js': mockedReportUploader,
-    });
+    // Reset stubs before each test
+    saveExcelReportStub.reset();
+    createLLMOSharepointClientStub.reset();
+    createLLMOSharepointClientStub.resolves(createMockSharepointClient(sandbox));
 
     site = {
       getSiteId: () => 'test-site',
@@ -255,9 +262,16 @@ describe('CDN Logs Report Handler', function test() {
       });
   });
 
+  after(async () => {
+    if (handler) {
+      await esmock.purge(handler);
+    }
+  });
+
   afterEach(() => {
-    sandbox.restore();
+    nock.abortPendingRequests();
     nock.cleanAll();
+    sandbox.restore();
   });
 
   describe('Cdn logs report audit handler', () => {
