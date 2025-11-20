@@ -244,7 +244,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info('[FAQ] Queued FAQs to Mystique for processing');
+    log.info(`[FAQ] Queued ${promptsByUrl.length} FAQ topics to Mystique for AI processing`);
   } catch (error) {
     log.error(`[FAQ] Failed to send Mystique message: ${error.message}`);
   }
