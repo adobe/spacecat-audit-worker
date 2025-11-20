@@ -1,3 +1,24 @@
+## [1.248.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.248.2...v1.248.3) (2025-11-20)
+
+
+### Bug Fixes
+
+* message format of code fix ([#1624](https://github.com/adobe/spacecat-audit-worker/issues/1624)) ([8f29e70](https://github.com/adobe/spacecat-audit-worker/commit/8f29e70b81c98de5c0d56a18856bcca1c6271934))
+
+## [1.248.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.248.1...v1.248.2) (2025-11-20)
+
+
+### Bug Fixes
+
+* adding description for invalid heading order check ([#1623](https://github.com/adobe/spacecat-audit-worker/issues/1623)) ([a29072c](https://github.com/adobe/spacecat-audit-worker/commit/a29072cb4547d0f99056227db49487c830439aa2))
+
+## [1.248.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.248.0...v1.248.1) (2025-11-20)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1622](https://github.com/adobe/spacecat-audit-worker/issues/1622)) ([287f4b6](https://github.com/adobe/spacecat-audit-worker/commit/287f4b6c7e998b2de5eb2757d54936f0725abe6e))
+
 # [1.248.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.247.2...v1.248.0) (2025-11-20)
 
 
