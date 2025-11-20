@@ -116,8 +116,8 @@ function createMystiqueForwardPayload({
 }) {
   return {
     type: 'guidance:accessibility-remediation',
-    siteId: siteId || '',
-    auditId: auditId || '',
+    siteId,
+    auditId,
     deliveryType,
     time: new Date().toISOString(),
     aggregationKey,

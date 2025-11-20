@@ -1183,7 +1183,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive']).to.have.lengthOf(1);
     // URL should be cleaned
@@ -2723,6 +2723,36 @@ describe('createDirectMystiqueMessage', () => {
     expect(result.siteId).to.equal('');
     expect(result.auditId).to.equal('');
   });
+
+  it('should default siteId and auditId to empty string when null', () => {
+    const fakeOpportunity = { getId: () => 'oppty-456' };
+    const issuesList = [];
+    const result = generateIndividualOpportunitiesModule.createDirectMystiqueMessage({
+      url: 'https://example.com',
+      issuesList,
+      opportunity: fakeOpportunity,
+      siteId: null,
+      auditId: null,
+      deliveryType: 'aem_edge',
+    });
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('');
+  });
+
+  it('should default siteId and auditId to empty string when empty string', () => {
+    const fakeOpportunity = { getId: () => 'oppty-789' };
+    const issuesList = [];
+    const result = generateIndividualOpportunitiesModule.createDirectMystiqueMessage({
+      url: 'https://example.com',
+      issuesList,
+      opportunity: fakeOpportunity,
+      siteId: '',
+      auditId: '',
+      deliveryType: 'aem_edge',
+    });
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('');
+  });
 });
 
 describe('sendMystiqueMessage', () => {
@@ -2785,6 +2815,36 @@ describe('sendMystiqueMessage', () => {
     });
     expect(fakeSqs.sendMessage).to.have.been.calledOnce;
     expect(result).to.deep.include({ success: true, url: 'https://example.com' });
+  });
+
+  it('should handle null issuesList gracefully when auto-fix is enabled', async () => {
+    // Mock isAuditEnabledForSite to return true to test code fix flow logic
+    const moduleWithMock = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: sandbox.stub().resolves(true),
+      },
+    });
+
+    const result = await moduleWithMock.sendMystiqueMessage({
+      url: 'https://example.com',
+      issuesList: null, // Null issuesList
+      opportunity: fakeOpportunity,
+      siteId: 'site-1',
+      auditId: 'audit-1',
+      deliveryType: 'aem_edge',
+      aggregationKey: 'empty',
+      sqs: fakeSqs,
+      env: fakeEnv,
+      log: fakeLog,
+      context: fakeContext,
+    });
+
+    // Should use direct flow (not code fix flow) because issuesList is null
+    expect(result.success).to.be.true;
+    expect(fakeSqs.sendMessage).to.have.been.calledOnce;
+    const callArgs = fakeSqs.sendMessage.getCall(0).args;
+    // Direct to Mystique queue
+    expect(callArgs[0]).to.equal('test-queue');
   });
 
   it('should log error and return failure object on error', async () => {
@@ -2914,6 +2974,47 @@ describe('sendMystiqueMessage error path (coverage)', () => {
     expect(result.error).to.equal('Simulated SQS failure');
     expect(fakeLog.error).to.have.been.calledWithMatch(
       '[A11yIndividual][A11yProcessingError] Failed to send message',
+    );
+  });
+
+  it('should handle error when sending message to import worker in code fix flow', async () => {
+    // Mock isAuditEnabledForSite to enable code fix flow
+    const moduleWithMock = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: sinon.stub().resolves(true),
+      },
+    });
+
+    const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('Import worker connection failed')) };
+    const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue', IMPORT_WORKER_QUEUE_URL: 'import-queue' };
+    const fakeLog = { info: sinon.stub(), error: sinon.stub() };
+    const fakeOpportunity = { getId: () => 'oppty-456' };
+    const fakeContext = {
+      site: {
+        getId: sinon.stub().returns('site-123'),
+      },
+    };
+
+    const result = await moduleWithMock.sendMystiqueMessage({
+      url: 'https://example.com/test',
+      issuesList: [{ issueName: 'button-name' }], // This is a code fix type
+      opportunity: fakeOpportunity,
+      siteId: 'site-123',
+      auditId: 'audit-456',
+      deliveryType: 'aem_edge',
+      aggregationKey: 'button-name',
+      sqs: fakeSqs,
+      env: fakeEnv,
+      log: fakeLog,
+      context: fakeContext,
+    });
+
+    // Should return failure
+    expect(result.success).to.be.false;
+    expect(result.url).to.equal('https://example.com/test');
+    expect(result.error).to.equal('Import worker connection failed');
+    expect(fakeLog.error).to.have.been.calledWithMatch(
+      '[A11yIndividual][A11yProcessingError] Failed to send message to import worker for url https://example.com/test',
     );
   });
 });
@@ -3395,6 +3496,64 @@ describe('sendMessageToMystiqueForRemediation', () => {
         '[A11yProcessingError] Failed to send messages to Mystique for opportunity oppty-1: Database connection lost',
       );
     }
+  });
+
+  it('should return error when code fix issues exist but IMPORT_WORKER_QUEUE_URL is missing', async () => {
+    // Set up context without IMPORT_WORKER_QUEUE_URL
+    const contextWithoutImportQueue = {
+      ...mockContext,
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+        // IMPORT_WORKER_QUEUE_URL is missing
+      },
+    };
+
+    // Mock suggestions with code fix eligible issues
+    mockOpportunity.getSuggestions = sandbox.stub().resolves([
+      {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [
+            {
+              type: 'button-name', // This is a code fix type
+              occurrences: 1,
+              htmlWithIssues: [{ target_selector: 'button' }],
+            },
+          ],
+        }),
+        getStatus: () => 'NEW',
+        getId: () => 'suggestion-1',
+      },
+    ]);
+
+    // Mock processSuggestionsForMystique to return code fix eligible issues
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com/page1',
+            issuesList: [{ issueName: 'button-name' }], // This is a code fix type
+            aggregationKey: 'button-name',
+          },
+        ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    const result = await module.sendMessageToMystiqueForRemediation(
+      mockOpportunity,
+      contextWithoutImportQueue,
+      mockLog,
+    );
+
+    expect(result.success).to.be.false;
+    expect(result.error).to.equal('Preconditions not met for code fix');
+    expect(mockLog.error).to.have.been.calledWith(
+      '[A11yIndividual][A11yProcessingError] Preconditions not met for code fix flow',
+    );
   });
 });
 
