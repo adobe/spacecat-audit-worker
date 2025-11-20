@@ -29,6 +29,7 @@ import {
 } from './utils.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
+import { validateCountryCode } from '../cdn-logs-report/utils/report-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -183,7 +184,7 @@ export async function runAuditAndSendToMystique(context) {
           e.total_requests || 0,
           e.avg_ttfb_ms ?? '',
           /* c8 ignore next */
-          e.country_code ?? '',
+          validateCountryCode(e.country_code),
           /* c8 ignore next */
           e.url || '',
           e.product || '',

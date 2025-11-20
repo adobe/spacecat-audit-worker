@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { DEFAULT_COUNTRY_PATTERNS } from '../constants/country-patterns.js';
+import { DEFAULT_COUNTRY_PATTERNS } from '../../common/country-patterns.js';
 import { loadSql, fetchRemotePatterns, buildSiteFilters } from './report-utils.js';
 import { PROVIDER_USER_AGENT_PATTERNS, buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL } from '../../common/user-agent-classification.js';
 

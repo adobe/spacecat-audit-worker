@@ -22,7 +22,7 @@ import ExcelJS from 'exceljs';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
-import { DEFAULT_COUNTRY_PATTERNS } from '../cdn-logs-report/constants/country-patterns.js';
+import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
