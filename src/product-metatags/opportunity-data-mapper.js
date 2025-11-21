@@ -30,6 +30,7 @@ export function createOpportunityData(props = {}) {
     data: {
       ...props,
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
+      magentoEnvironmentId: props.magentoEnvironmentId || null,
     },
   };
 }

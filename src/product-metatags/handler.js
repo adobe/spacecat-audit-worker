@@ -292,6 +292,23 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
 
   const buildKey = buildSuggestionKey;
 
+  // Extract Magento-Environment-Id from suggestions (all have same value)
+  let magentoEnvironmentId = null;
+  if (suggestions.length > 0) {
+    const firstSuggestionWithConfig = suggestions.find((s) => s.config?.headers?.['Magento-Environment-Id']);
+    magentoEnvironmentId = firstSuggestionWithConfig?.config?.headers?.['Magento-Environment-Id'] || null;
+  }
+
+  // Update opportunity data with Magento-Environment-Id if available
+  if (magentoEnvironmentId) {
+    opportunity.setData({
+      ...opportunity.getData(),
+      magentoEnvironmentId,
+    });
+    await opportunity.save();
+    log.info(`[PRODUCT-METATAGS] Added Magento-Environment-Id to opportunity: ${magentoEnvironmentId}`);
+  }
+
   // Sync the suggestions from new audit with old ones
   try {
     await syncSuggestions({
