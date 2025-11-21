@@ -1,3 +1,10 @@
+# [1.251.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.250.1...v1.251.0) (2025-11-21)
+
+
+### Features
+
+* add no-cta-above-the-fold audit ([#1626](https://github.com/adobe/spacecat-audit-worker/issues/1626)) ([6954a6e](https://github.com/adobe/spacecat-audit-worker/commit/6954a6e6f72e919c71eabd844f0584c7e01da187))
+
 ## [1.250.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.250.0...v1.250.1) (2025-11-21)
 
 
