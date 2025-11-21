@@ -25,6 +25,8 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 // TODO: Change to Audit.AUDIT_TYPES.CONTENT_FRAGMENT_404
 // See https://github.com/adobe/spacecat-shared/pull/1049
 export const AUDIT_TYPE = 'content-fragment-404';
+// TODO: Change to Audit.AUDIT_TYPES.CONTENT_FRAGMENT_404_AUTO_SUGGEST
+export const AUDIT_TYPE_AUTO_SUGGEST = `${AUDIT_TYPE}-auto-suggest`;
 export const GUIDANCE_TYPE = `guidance:${AUDIT_TYPE}`;
 
 async function fetchContentFragment404s(context) {
@@ -121,7 +123,7 @@ export async function enrichContentFragmentPathSuggestions(
   const { Configuration, Suggestion, Opportunity } = dataAccess;
 
   const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite(AUDIT_TYPE, site)) {
+  if (!configuration.isHandlerEnabledForSite(AUDIT_TYPE_AUTO_SUGGEST, site)) {
     log.info(`[Content Fragment 404] Auto-Suggest is disabled for site ${site.getId()}`);
     return;
   }
