@@ -230,7 +230,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.message).to.include('geo-brand-presence-refresh triggered');
       expect(result.auditResult.triggeredSteps).to.deep.equal(['geo-brand-presence-refresh']);
-      expect(log.info).to.have.been.calledWith(sinon.match(/AI categorization flow.*triggering lightweight geo-brand-presence refresh/));
+      expect(log.info).to.have.been.calledWith(sinon.match(/AI categorization flow.*triggering geo-brand-presence refresh/));
     });
 
     it('should trigger referral traffic imports on first-time onboarding with OpTel data', async () => {
