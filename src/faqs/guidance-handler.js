@@ -14,6 +14,7 @@ import { JSDOM } from 'jsdom';
 import {
   badRequest, notFound, ok, noContent,
 } from '@adobe/spacecat-shared-http-utils';
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getJsonFaqSuggestion } from './utils.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
@@ -129,7 +130,7 @@ async function createOpportunity(siteId, auditId, baseUrl, guidance, context) {
 
 async function addSuggestions(
   opportunity,
-  faqs,
+  suggestions,
   context,
   site,
 ) {
@@ -148,7 +149,7 @@ async function addSuggestions(
   }
 
   // Get base JSON suggestions
-  const suggestionValues = getJsonFaqSuggestion(faqs);
+  const suggestionValues = getJsonFaqSuggestion(suggestions);
 
   // Enhance each suggestion with scrape data analysis
   const enhancedSuggestions = await Promise.all(suggestionValues.map(async (suggestion) => {
@@ -233,31 +234,31 @@ export default async function handler(message, context) {
     }
 
     const faqData = await response.json();
-    const { faqs } = faqData;
+    const { suggestions } = faqData;
 
     // Validate the fetched data
-    if (!faqs || !Array.isArray(faqs) || faqs.length === 0) {
-      log.info('[FAQ] No FAQs found in the response');
+    if (!suggestions || !Array.isArray(suggestions) || suggestions.length === 0) {
+      log.info('[FAQ] No suggestions found in the response');
       return noContent();
     }
-    log.info(`[FAQ] Received FAQ data with ${faqs.length} FAQ topics`);
+    log.info(`[FAQ] Received ${suggestions.length} FAQ suggestion groups`);
 
-    // Filter to count only suitable suggestions
-    const totalSuitableSuggestions = faqs.reduce((count, faq) => {
-      const suitable = (faq.suggestions || []).filter(
-        (s) => s.isAnswerSuitable && s.isQuestionRelevant,
+    // Count total suitable FAQs across all suggestions
+    const totalSuitableFaqs = suggestions.reduce((count, suggestion) => {
+      const suitableFaqs = (suggestion.faqs || []).filter(
+        (faq) => faq.isAnswerSuitable && faq.isQuestionRelevant,
       );
-      return count + suitable.length;
+      return count + suitableFaqs.length;
     }, 0);
 
-    if (totalSuitableSuggestions === 0) {
+    if (totalSuitableFaqs === 0) {
       log.info('[FAQ] No suitable FAQ suggestions found after filtering');
       return noContent();
     }
 
     // Create guidance object
     const guidance = [{
-      insight: `${totalSuitableSuggestions} relevant FAQs identified based on top user prompts in your brand presence analysis`,
+      insight: `${totalSuitableFaqs} relevant FAQs identified based on top user prompts in your brand presence analysis`,
       rationale: 'When your content aligns with the user intent recognized by large language models (LLMs), it becomes easier for these models to reference or mention your page in their responses',
       recommendation: 'Add the relevant FAQs listed below to the corresponding pages',
       type: 'CONTENT_UPDATE',
@@ -273,13 +274,13 @@ export default async function handler(message, context) {
     );
 
     try {
-      await addSuggestions(opportunity, faqs, context, site);
+      await addSuggestions(opportunity, suggestions, context, site);
     } catch (e) {
       log.error(`[FAQ] Failed to save FAQ opportunity on Mystique callback: ${e.message}`);
       return badRequest('Failed to persist FAQ opportunity');
     }
 
-    log.info(`[FAQ] Successfully processed FAQ guidance for site: ${siteId}, ${totalSuitableSuggestions} suitable suggestions`);
+    log.info(`[FAQ] Successfully processed FAQ guidance for site: ${siteId}, ${totalSuitableFaqs} suitable FAQs`);
     return ok();
   } catch (error) {
     log.error(`[FAQ] Error processing FAQ guidance: ${error.message}`, error);

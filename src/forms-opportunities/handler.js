@@ -54,13 +54,13 @@ export async function formsAuditRunner(auditUrl, context) {
 
 export async function runAuditAndSendUrlsForScrapingStep(context) {
   const {
-    site, log, finalUrl, dataAccess,
+    site, log, finalUrl, dataAccess, data,
   } = context;
 
   const { SiteTopForm } = dataAccess;
   const topForms = await SiteTopForm.allBySiteId(site.getId());
 
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting audit`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting audit${data ? ` with option: ${JSON.stringify(data)}` : ''}`);
   const formsAuditRunnerResult = await formsAuditRunner(finalUrl, context);
   const { formVitals } = formsAuditRunnerResult.auditResult;
 
@@ -148,6 +148,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     siteId: site.getId(),
     auditResult: formsAuditRunnerResult.auditResult,
     fullAuditRef: formsAuditRunnerResult.fullAuditRef,
+    ...(data && { auditContext: { data } }),
   };
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping: ${JSON.stringify(urlsData)}`);
@@ -156,7 +157,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
 
 export async function sendA11yUrlsForScrapingStep(context) {
   const {
-    log, site, dataAccess,
+    log, site, dataAccess, auditContext,
   } = context;
   const { SiteTopForm } = dataAccess;
   const topForms = await SiteTopForm.allBySiteId(site.getId());
@@ -201,6 +202,7 @@ export async function sendA11yUrlsForScrapingStep(context) {
     jobId: site.getId(),
     urls: urlsData,
     siteId: site.getId(),
+    ...(auditContext?.data && { auditContext: { data: auditContext.data } }),
   };
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] sending urls for form-accessibility audit: ${JSON.stringify(urlsData)}`);
@@ -209,7 +211,7 @@ export async function sendA11yUrlsForScrapingStep(context) {
 
 export async function codeImportStep(context) {
   const {
-    log, site,
+    log, site, auditContext,
   } = context;
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting code import step`);
@@ -217,6 +219,7 @@ export async function codeImportStep(context) {
   return {
     type: 'code',
     siteId: site.getId(),
+    ...(auditContext?.data && { auditContext: { data: auditContext.data } }),
   };
 }
 

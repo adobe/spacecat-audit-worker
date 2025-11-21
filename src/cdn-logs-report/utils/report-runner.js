@@ -69,7 +69,7 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
 
     const filename = `${reportConfig.filePrefix}-${periodIdentifier}.xlsx`;
 
-    const workbook = await createExcelReport(reportData, excelConfig, site);
+    const workbook = await createExcelReport(reportData, excelConfig, site, context);
 
     await saveExcelReport({
       workbook,

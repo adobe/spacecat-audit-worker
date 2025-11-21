@@ -20,7 +20,7 @@ import {
 } from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
 import {
-  aggregateAccessibilityIssues,
+  aggregateA11yIssuesByOppType,
   createIndividualOpportunitySuggestions,
 } from '../../accessibility/utils/generate-individual-opportunities.js';
 import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToMystique } from '../../accessibility/utils/data-processing.js';
@@ -153,9 +153,9 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
     const a11yOpptyData = filteredA11yData.map((a11yOpty) => {
       const a11yIssues = a11yOpty.a11yIssues.map((issue) => ({
         ...issue,
-        successCriterias: issue.successCriterias.map(
-          (criteria) => getSuccessCriteriaDetails(criteria),
-        ),
+        successCriterias: Array.isArray(issue.successCriterias) && issue.successCriterias.length > 0
+          ? issue.successCriterias.map((criteria) => getSuccessCriteriaDetails(criteria))
+          : [],
       }));
       return {
         form: a11yOpty.form,
@@ -310,7 +310,7 @@ async function createFormAccessibilityIndividualSuggestions(aggregatedData, oppo
       }
     });
 
-    const aggregatedIssues = aggregateAccessibilityIssues(
+    const aggregatedIssues = aggregateA11yIssuesByOppType(
       transformedAccessibilityData,
       formOpportunitiesMap,
     );
