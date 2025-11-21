@@ -7,6 +7,7 @@ WHERE
   AND url IS NOT NULL
   AND status BETWEEN 200 AND 399 
   AND ({{dateFilter}})
+  AND {{siteFilters}}
 GROUP BY url
 HAVING SUM(count) >= 10
 ORDER BY total_hits DESC

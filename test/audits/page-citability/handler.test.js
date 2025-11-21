@@ -56,6 +56,9 @@ describe('Page Citability Handler', () => {
       getSiteId: sandbox.stub().returns(siteId),
       getId: sandbox.stub().returns(siteId),
       getBaseURL: sandbox.stub().returns(baseURL),
+      getConfig: sandbox.stub().returns({
+        getLlmoCdnlogsFilter: sandbox.stub().returns([]),
+      }),
     };
 
     mockAudit = {
