@@ -20,7 +20,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import {
-  getLastSunday, compareConfigs, areCategoryNamesDifferent,
+  getLastSunday, compareConfigs, areCategoryNamesDifferent, areChangesAICategorizationOnly,
 } from './utils.js';
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
@@ -370,6 +370,22 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const hasCdnLogsChanges = changes.categories
     && areCategoryNamesDifferent(oldConfig.categories, newConfig.categories);
 
+  const isAICategorizationOnly = areChangesAICategorizationOnly(oldConfig, newConfig);
+  if (isAICategorizationOnly) {
+    log.info('LLMO config changes detected from AI categorization flow; triggering geo-brand-presence refresh');
+    await triggerGeoBrandPresenceRefresh(context, site, configVersion);
+    return {
+      auditResult: {
+        status: 'completed',
+        configChangesDetected: true,
+        message: 'AI categorization only - geo-brand-presence-refresh triggered',
+        triggeredSteps: ['geo-brand-presence-refresh'],
+        previousConfigVersion,
+        configVersion,
+      },
+      fullAuditRef: finalUrl,
+    };
+  }
   if (changes.cdnBucketConfig) {
     try {
       log.info('LLMO config changes detected in CDN bucket configuration; processing CDN config changes');
