@@ -213,11 +213,19 @@ describe('LLM Error Pages Utils', () => {
     it('should build query with all options', async () => {
       await utils.buildLlmErrorPagesQuery(mockOptions);
 
-      expect(mockGetStaticContent).to.have.been.calledWith({
-        databaseName: 'test_db',
-        tableName: 'test_table',
-        whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
-      }, './src/llm-error-pages/sql/llm-error-pages.sql');
+      expect(mockGetStaticContent).to.have.been.calledWith(
+        sinon.match({
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+        }),
+        './src/llm-error-pages/sql/llm-error-pages.sql',
+      );
+      const callArg = mockGetStaticContent.firstCall.args[0];
+      expect(callArg).to.have.property('countryExtraction');
+      expect(callArg.countryExtraction).to.include('COALESCE(');
+      expect(callArg.countryExtraction).to.include('REGEXP_EXTRACT(url');
+      expect(callArg.countryExtraction).to.include('GLOBAL');
     });
 
     it('should build query without date range', async () => {
@@ -227,11 +235,14 @@ describe('LLM Error Pages Utils', () => {
 
       await utils.buildLlmErrorPagesQuery(optionsWithoutDates);
 
-      expect(mockGetStaticContent).to.have.been.calledWith({
-        databaseName: 'test_db',
-        tableName: 'test_table',
-        whereClause: 'WHERE REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
-      }, './src/llm-error-pages/sql/llm-error-pages.sql');
+      expect(mockGetStaticContent).to.have.been.calledWith(
+        sinon.match({
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          whereClause: 'WHERE REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+        }),
+        './src/llm-error-pages/sql/llm-error-pages.sql',
+      );
     });
 
     it('should build query without LLM providers', async () => {
@@ -240,11 +251,14 @@ describe('LLM Error Pages Utils', () => {
 
       await utils.buildLlmErrorPagesQuery(optionsWithoutProviders);
 
-      expect(mockGetStaticContent).to.have.been.calledWith({
-        databaseName: 'test_db',
-        tableName: 'test_table',
-        whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
-      }, './src/llm-error-pages/sql/llm-error-pages.sql');
+      expect(mockGetStaticContent).to.have.been.calledWith(
+        sinon.match({
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+        }),
+        './src/llm-error-pages/sql/llm-error-pages.sql',
+      );
     });
 
     it('should build query without site filters', async () => {
@@ -253,11 +267,14 @@ describe('LLM Error Pages Utils', () => {
 
       await utils.buildLlmErrorPagesQuery(optionsWithoutFilters);
 
-      expect(mockGetStaticContent).to.have.been.calledWith({
-        databaseName: 'test_db',
-        tableName: 'test_table',
-        whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
-      }, './src/llm-error-pages/sql/llm-error-pages.sql');
+      expect(mockGetStaticContent).to.have.been.calledWith(
+        sinon.match({
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+        }),
+        './src/llm-error-pages/sql/llm-error-pages.sql',
+      );
     });
 
     it('should handle template with only static content', async () => {
@@ -268,11 +285,14 @@ describe('LLM Error Pages Utils', () => {
 
       await utils.buildLlmErrorPagesQuery(minimalOptions);
 
-      expect(mockGetStaticContent).to.have.been.calledWith({
-        databaseName: 'test_db',
-        tableName: 'test_table',
-        whereClause: 'WHERE status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
-      }, './src/llm-error-pages/sql/llm-error-pages.sql');
+      expect(mockGetStaticContent).to.have.been.calledWith(
+        sinon.match({
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          whereClause: 'WHERE status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+        }),
+        './src/llm-error-pages/sql/llm-error-pages.sql',
+      );
     });
 
     // Test for missing coverage: buildWhereClause with no conditions
@@ -288,11 +308,14 @@ describe('LLM Error Pages Utils', () => {
 
       await utils.buildLlmErrorPagesQuery(minimalOptions);
 
-      expect(mockGetStaticContent).to.have.been.calledWith({
-        databaseName: 'test_db',
-        tableName: 'test_table',
-        whereClause: 'WHERE status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
-      }, './src/llm-error-pages/sql/llm-error-pages.sql');
+      expect(mockGetStaticContent).to.have.been.calledWith(
+        sinon.match({
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          whereClause: 'WHERE status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+        }),
+        './src/llm-error-pages/sql/llm-error-pages.sql',
+      );
     });
 
     it('should handle cross-month/year date range', async () => {
@@ -307,11 +330,258 @@ describe('LLM Error Pages Utils', () => {
 
       await utils.buildLlmErrorPagesQuery(crossMonthOptions);
 
-      expect(mockGetStaticContent).to.have.been.calledWith({
-        databaseName: 'test_db',
-        tableName: 'test_table',
-        whereClause: 'WHERE ((year = \'2024\' AND month = \'12\' AND day >= \'25\')\n       OR (year = \'2025\' AND month = \'01\' AND day <= \'05\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
-      }, './src/llm-error-pages/sql/llm-error-pages.sql');
+      expect(mockGetStaticContent).to.have.been.calledWith(
+        sinon.match({
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          whereClause: 'WHERE ((year = \'2024\' AND month = \'12\' AND day >= \'25\')\n       OR (year = \'2025\' AND month = \'01\' AND day <= \'05\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+        }),
+        './src/llm-error-pages/sql/llm-error-pages.sql',
+      );
+    });
+  });
+
+  describe('buildLlmErrorPagesQuery with site patterns', () => {
+    it('injects classification SQL when site is provided', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      mockGetStaticContent = sinon.stub().returns('SELECT ...');
+      const fetchStub = sinon.stub().resolves({
+        ok: true,
+        json: async () => ({
+          pagetype: { data: [{ name: 'Help', regex: '/help' }] },
+          products: { data: [{ name: 'Adobe', regex: '/adobe' }] },
+        }),
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchStub;
+      try {
+        const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+          '@adobe/spacecat-shared-utils': {
+            getStaticContent: mockGetStaticContent,
+          },
+        });
+
+        await mocked.buildLlmErrorPagesQuery({
+          databaseName: 'db',
+          tableName: 'tbl',
+          site,
+        });
+
+        const callArg = mockGetStaticContent.firstCall.args[0];
+        expect(callArg).to.have.property('userAgentDisplay');
+        expect(callArg).to.have.property('agentTypeClassification');
+        expect(callArg).to.have.property('topicExtraction');
+        expect(callArg).to.have.property('pageCategoryClassification');
+        expect(callArg).to.have.property('countryExtraction');
+        expect(callArg.countryExtraction).to.include('COALESCE(');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  describe('classification fallbacks and variants', () => {
+    it('uses fallback classification when dataFolder is missing', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => undefined }) };
+      mockGetStaticContent = sinon.stub().returns('SELECT ...');
+      const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+        '@adobe/spacecat-shared-utils': {
+          getStaticContent: mockGetStaticContent,
+        },
+      });
+      await mocked.buildLlmErrorPagesQuery({
+        databaseName: 'db',
+        tableName: 'tbl',
+        site,
+      });
+      const callArg = mockGetStaticContent.firstCall.args[0];
+      expect(callArg.pageCategoryClassification).to.equal("'Other'");
+      expect(callArg.topicExtraction).to.include("CASE WHEN url IS NOT NULL THEN 'Other' END");
+    });
+
+    it('uses fallback classification when fetch throws', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      mockGetStaticContent = sinon.stub().returns('SELECT ...');
+      const fetchStub = sinon.stub().rejects(new Error('network error'));
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchStub;
+      try {
+        const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+          '@adobe/spacecat-shared-utils': {
+            getStaticContent: mockGetStaticContent,
+          },
+        });
+        await mocked.buildLlmErrorPagesQuery({
+          databaseName: 'db',
+          tableName: 'tbl',
+          site,
+        });
+        const callArg = mockGetStaticContent.firstCall.args[0];
+        expect(callArg.pageCategoryClassification).to.equal("'Other'");
+        expect(callArg.topicExtraction).to.include("CASE WHEN url IS NOT NULL THEN 'Other' END");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('uses fallback classification when fetch fails', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      mockGetStaticContent = sinon.stub().returns('SELECT ...');
+      const fetchStub = sinon.stub().resolves({ ok: false });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchStub;
+      try {
+        const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+          '@adobe/spacecat-shared-utils': {
+            getStaticContent: mockGetStaticContent,
+          },
+        });
+        await mocked.buildLlmErrorPagesQuery({
+          databaseName: 'db',
+          tableName: 'tbl',
+          site,
+        });
+        const callArg = mockGetStaticContent.firstCall.args[0];
+        expect(callArg.pageCategoryClassification).to.equal("'Other'");
+        expect(callArg.topicExtraction).to.include("CASE WHEN url IS NOT NULL THEN 'Other' END");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('topicExtraction handles named-only patterns', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      mockGetStaticContent = sinon.stub().returns('SELECT ...');
+      const fetchStub = sinon.stub().resolves({
+        ok: true,
+        json: async () => ({
+          pagetype: { data: [{ name: 'Help', regex: '/help' }] },
+          products: { data: [{ name: 'Adobe', regex: '/adobe' }] }, // named only
+        }),
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchStub;
+      try {
+        const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+          '@adobe/spacecat-shared-utils': {
+            getStaticContent: mockGetStaticContent,
+          },
+        });
+        await mocked.buildLlmErrorPagesQuery({
+          databaseName: 'db',
+          tableName: 'tbl',
+          site,
+        });
+        const callArg = mockGetStaticContent.firstCall.args[0];
+        expect(callArg.topicExtraction).to.include('CASE');
+        expect(callArg.topicExtraction).to.include("ELSE 'Other'");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('topicExtraction handles extract-only patterns', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      mockGetStaticContent = sinon.stub().returns('SELECT ...');
+      const fetchStub = sinon.stub().resolves({
+        ok: true,
+        json: async () => ({
+          pagetype: { data: [] },
+          products: { data: [{ regex: '/product/([^/]+)' }] }, // extract-only
+        }),
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchStub;
+      try {
+        const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+          '@adobe/spacecat-shared-utils': {
+            getStaticContent: mockGetStaticContent,
+          },
+        });
+        await mocked.buildLlmErrorPagesQuery({
+          databaseName: 'db',
+          tableName: 'tbl',
+          site,
+        });
+        const callArg = mockGetStaticContent.firstCall.args[0];
+        expect(callArg.topicExtraction.trim().startsWith('COALESCE(')).to.be.true;
+        expect(callArg.topicExtraction).to.include("'Other'");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('topicExtraction handles mixed named and extract patterns', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      mockGetStaticContent = sinon.stub().returns('SELECT ...');
+      const fetchStub = sinon.stub().resolves({
+        ok: true,
+        json: async () => ({
+          pagetype: { data: [] },
+          products: { data: [{ name: 'Adobe', regex: '/adobe' }, { regex: '/product/([^/]+)' }] },
+        }),
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchStub;
+      try {
+        const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+          '@adobe/spacecat-shared-utils': {
+            getStaticContent: mockGetStaticContent,
+          },
+        });
+        await mocked.buildLlmErrorPagesQuery({
+          databaseName: 'db',
+          tableName: 'tbl',
+          site,
+        });
+        const callArg = mockGetStaticContent.firstCall.args[0];
+        expect(callArg.topicExtraction).to.include('COALESCE(');
+        expect(callArg.topicExtraction).to.include('CASE');
+        expect(callArg.topicExtraction).to.include('NULLIF(');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  describe('fetchRemotePatterns direct', () => {
+    it('returns mapped pagePatterns/topicPatterns from JSON', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      const fetchStub = sinon.stub().resolves({
+        ok: true,
+        json: async () => ({
+          pagetype: { data: [{ name: 'Help', regex: '/help' }] },
+          products: { data: [{ name: 'Adobe', regex: '/adobe' }] },
+        }),
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchStub;
+      try {
+        const mocked = await esmock('../../../src/llm-error-pages/utils.js');
+        const patterns = await mocked.fetchRemotePatterns(site);
+        expect(patterns.pagePatterns).to.deep.equal([{ name: 'Help', regex: '/help' }]);
+        expect(patterns.topicPatterns).to.deep.equal([{ name: 'Adobe', regex: '/adobe' }]);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('falls back to [] when JSON omits keys', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      const fetchStub = sinon.stub().resolves({
+        ok: true,
+        json: async () => ({}),
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchStub;
+      try {
+        const mocked = await esmock('../../../src/llm-error-pages/utils.js');
+        const patterns = await mocked.fetchRemotePatterns(site);
+        expect(patterns.pagePatterns).to.deep.equal([]);
+        expect(patterns.topicPatterns).to.deep.equal([]);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
   });
 
@@ -344,13 +614,13 @@ describe('LLM Error Pages Utils', () => {
       const mockSite = {
         getConfig: () => ({}),
         getBaseURL: () => 'https://www.example.com',
+        getId: () => 'test-site-id',
       };
 
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
-          resolveCdnBucketName: sinon.stub().resolves('resolved-bucket'),
+          resolveConsolidatedBucketName: () => 'resolved-bucket',
           extractCustomerDomain: () => 'example_com',
-          isStandardAdobeCdnBucket: () => false,
         },
       });
 
@@ -358,22 +628,22 @@ describe('LLM Error Pages Utils', () => {
       expect(result.bucket).to.equal('resolved-bucket');
       expect(result.customerName).to.equal('example');
       expect(result.customerDomain).to.equal('example_com');
-      expect(result.aggregatedLocation).to.equal('s3://resolved-bucket/aggregated/');
+      expect(result.aggregatedLocation).to.equal('s3://resolved-bucket/aggregated/test-site-id/');
       expect(result.databaseName).to.equal('cdn_logs_example_com');
-      expect(result.tableName).to.equal('aggregated_logs_example_com');
+      expect(result.tableName).to.equal('aggregated_logs_example_com_consolidated');
     });
 
-    it('should use resolveCdnBucketName by default', async () => {
+    it('should use resolveConsolidatedBucketName by default', async () => {
       const mockSite = {
         getConfig: () => ({}),
         getBaseURL: () => 'https://www.example.com',
+        getId: () => 'test-site-id',
       };
 
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
-          resolveCdnBucketName: async () => 'resolved-bucket-name',
+          resolveConsolidatedBucketName: () => 'resolved-bucket-name',
           extractCustomerDomain: () => 'example_com',
-          isStandardAdobeCdnBucket: () => false,
         },
       });
 
@@ -387,11 +657,13 @@ describe('LLM Error Pages Utils', () => {
       const mockSite = {
         getBaseURL: () => 'https://test.example.com',
         getConfig: () => ({}),
+        getId: () => 'test-site-id',
       };
 
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
-          resolveCdnBucketName: async () => 'custom-bucket',
+          resolveConsolidatedBucketName: () => 'custom-bucket',
+          extractCustomerDomain: () => 'test_example_com',
         },
       });
 
@@ -405,11 +677,13 @@ describe('LLM Error Pages Utils', () => {
       const mockSite = {
         getBaseURL: () => 'https://www.example.com',
         getConfig: () => ({}),
+        getId: () => 'test-site-id',
       };
 
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
-          resolveCdnBucketName: async () => { throw new Error('boom'); },
+          resolveConsolidatedBucketName: () => { throw new Error('boom'); },
+          extractCustomerDomain: () => 'example_com',
         },
       });
 
@@ -421,77 +695,58 @@ describe('LLM Error Pages Utils', () => {
       }
     });
 
-    it('should include imsOrgId in aggregatedLocation for standard Adobe bucket', async () => {
-      const mockSite = {
-        getConfig: () => ({
-          getLlmoCdnBucketConfig: () => ({ orgId: 'IMS_ORG_123' }),
-        }),
-        getBaseURL: () => 'https://www.example.com',
-      };
-
-      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-        '../../../src/utils/cdn-utils.js': {
-          resolveCdnBucketName: sinon.stub().resolves('cdn-logs-adobe-prod'),
-          extractCustomerDomain: () => 'example_com',
-          isStandardAdobeCdnBucket: () => true,
-        },
-        '../../../src/utils/data-access.js': {
-          getImsOrgId: async () => null,
-        },
-      });
-
-      const result = await mockedUtils.getS3Config(mockSite, {
-        dataAccess: {},
-        log: { info: sinon.stub() },
-      });
-      expect(result.aggregatedLocation).to.equal('s3://cdn-logs-adobe-prod/IMS_ORG_123/aggregated/');
-    });
-
-    it('should keep default aggregatedLocation when IMS lookup throws', async () => {
+    it('should include siteId in aggregatedLocation for consolidated bucket', async () => {
       const mockSite = {
         getConfig: () => ({}),
         getBaseURL: () => 'https://www.example.com',
+        getId: () => 'test-site-id',
       };
 
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
-          resolveCdnBucketName: sinon.stub().resolves('cdn-logs-adobe-prod'),
+          resolveConsolidatedBucketName: () => 'spacecat-test-cdn-logs-aggregates-us-east-1',
           extractCustomerDomain: () => 'example_com',
-          isStandardAdobeCdnBucket: () => true,
-        },
-        '../../../src/utils/data-access.js': {
-          getImsOrgId: async () => { throw new Error('IMS failure'); },
         },
       });
 
       const result = await mockedUtils.getS3Config(mockSite, {});
-      expect(result.aggregatedLocation).to.equal('s3://cdn-logs-adobe-prod/aggregated/');
+      expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/test-site-id/');
     });
 
-    it('should use default aggregatedLocation when both orgId and IMS lookup return falsy', async () => {
+    it('should use siteId in aggregatedLocation regardless of config', async () => {
       const mockSite = {
-        getConfig: () => ({
-          getLlmoCdnBucketConfig: () => ({ orgId: null }), // orgId is falsy
-        }),
+        getConfig: () => ({}),
         getBaseURL: () => 'https://www.example.com',
+        getId: () => 'another-site-id',
       };
 
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
-          resolveCdnBucketName: sinon.stub().resolves('cdn-logs-adobe-prod'),
+          resolveConsolidatedBucketName: () => 'spacecat-test-cdn-logs-aggregates-us-east-1',
           extractCustomerDomain: () => 'example_com',
-          isStandardAdobeCdnBucket: () => true,
-        },
-        '../../../src/utils/data-access.js': {
-          getImsOrgId: async () => null, // Also returns falsy
         },
       });
 
-      const result = await mockedUtils.getS3Config(mockSite, {
-        dataAccess: {},
-        log: { info: sinon.stub() },
+      const result = await mockedUtils.getS3Config(mockSite, {});
+      expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/another-site-id/');
+    });
+
+    it('should always use siteId in aggregatedLocation', async () => {
+      const mockSite = {
+        getConfig: () => ({}),
+        getBaseURL: () => 'https://www.example.com',
+        getId: () => 'final-site-id',
+      };
+
+      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+        '../../../src/utils/cdn-utils.js': {
+          resolveConsolidatedBucketName: () => 'spacecat-test-cdn-logs-aggregates-us-east-1',
+          extractCustomerDomain: () => 'example_com',
+        },
       });
-      expect(result.aggregatedLocation).to.equal('s3://cdn-logs-adobe-prod/aggregated/'); // Default location without IMS org
+
+      const result = await mockedUtils.getS3Config(mockSite, {});
+      expect(result.aggregatedLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/aggregated/final-site-id/');
     });
   });
 

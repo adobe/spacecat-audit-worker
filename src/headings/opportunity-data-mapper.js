@@ -26,7 +26,7 @@ const OpptyData = {
       'Ensure headings follow brand guidelines and maintain consistent tone across the site.',
     ],
   },
-  tags: ['Accessibility', 'SEO'],
+  tags: ['Accessibility', 'SEO', 'isElmo', 'isASO'],
   data: {
     dataSources: [DATA_SOURCES.SITE],
   },
@@ -34,31 +34,4 @@ const OpptyData = {
 
 export function createOpportunityData() {
   return OpptyData;
-}
-
-export function createOpportunityDataForElmo() {
-  return {
-    ...OpptyData,
-    guidance: {
-      recommendations: [
-        {
-          insight: 'Headings analysis of page content reveals structure issues affecting accessibility and SEO',
-          recommendation: 'Ensure heading elements (h1–h6) are used in a logical, hierarchical order without skipping levels, and that no heading is empty',
-          type: 'CONTENT',
-          rationale: 'Proper heading structure improves accessibility and helps search engines and generative engines understand page content',
-        },
-      ],
-    },
-    tags: [...OpptyData.tags, 'llm', 'isElmo', 'headings'],
-    data: {
-      ...OpptyData.data,
-      dataSources: [DATA_SOURCES.SITE],
-      additionalMetrics: [
-        {
-          value: 'headings',
-          key: 'subtype',
-        },
-      ],
-    },
-  };
 }

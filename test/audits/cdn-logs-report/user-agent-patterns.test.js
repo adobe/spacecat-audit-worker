@@ -20,7 +20,7 @@ describe('User Agent Patterns', () => {
   let userAgentPatterns;
 
   before(async () => {
-    userAgentPatterns = await import('../../../src/cdn-logs-report/constants/user-agent-patterns.js');
+    userAgentPatterns = await import('../../../src/common/user-agent-classification.js');
   });
 
   describe('PROVIDER_USER_AGENT_PATTERNS', () => {

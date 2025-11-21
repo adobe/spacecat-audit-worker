@@ -16,7 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { MockContextBuilder } from '../../shared.js';
-import { cdnLogAnalysisRunner, cdnLogsAnalysisRunner } from '../../../src/cdn-analysis/handler.js';
+import { cdnLogsAnalysisRunner } from '../../../src/cdn-analysis/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -62,6 +62,10 @@ function createS3MockForCdnType(cdnType, options = {}) {
       return Promise.resolve({});
     }
     if (command.constructor.name === 'ListObjectsV2Command') {
+      const { Prefix = '' } = command.input || {};
+      if (Prefix.includes('aggregated')) {
+        return Promise.resolve({ Contents: [] });
+      }
       return Promise.resolve({
         Contents: [{ Key: config.keyPath }],
         CommonPrefixes: [{ Prefix: config.prefix }],
@@ -110,6 +114,7 @@ describe('CDN Analysis Handler', () => {
         },
         athenaClient: {
           execute: sandbox.stub().resolves(),
+          query: sandbox.stub().rejects(new Error('Table does not exist')),
         },
         dataAccess: {
           Organization: {
@@ -131,13 +136,6 @@ describe('CDN Analysis Handler', () => {
 
   describe('Handler test for cdn analysis', () => {
     it('successfully processes CDN analysis with valid configuration', async function () {
-      const result = await cdnLogAnalysisRunner('https://example.com', context, site);
-      expect(result.auditResult).to.include.keys('database', 'providers', 'completedAt');
-      expect(result.auditResult.database).to.equal('cdn_logs_example_com');
-      expect(result.auditResult.providers).to.be.an('array');
-    });
-
-    it('successfully processes CDN analysis with valid consolidated bucket configuration', async function () {
       const result = await cdnLogsAnalysisRunner('https://example.com', context, site);
       expect(result.auditResult).to.include.keys('database', 'providers', 'completedAt');
       expect(result.auditResult.database).to.equal('cdn_logs_example_com');
@@ -157,7 +155,7 @@ describe('CDN Analysis Handler', () => {
         return Promise.reject(error);
       });
 
-      const result = await cdnLogAnalysisRunner('https://example.com', context, site);
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site);
 
       expect(result.auditResult).to.have.property('error', 'No CDN bucket found');
       expect(result.fullAuditRef).to.equal('https://example.com');
@@ -180,12 +178,12 @@ describe('CDN Analysis Handler', () => {
       context.s3Client.send.callsFake(createS3MockForCdnType('cloudflare'));
 
       // Test CloudFlare at hour 23 (should process if bucket exists)
-      const result23 = await cdnLogAnalysisRunner('https://example.com', context, site, auditContext23);
+      const result23 = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext23);
       expect(result23.auditResult.providers).to.be.an('array').with.length.greaterThan(0);
       expect(result23.auditResult.providers[0]).to.have.property('cdnType', 'cloudflare');
 
       // Test CloudFlare at hour 22 (should skip CloudFlare if bucket exists)
-      const result22 = await cdnLogAnalysisRunner('https://example.com', context, site, auditContext22);
+      const result22 = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext22);
       expect(result22.auditResult.providers).to.be.an('array').with.length(0);
     });
 
@@ -204,12 +202,12 @@ describe('CDN Analysis Handler', () => {
       };
 
       // Test valid context
-      const resultValid = await cdnLogAnalysisRunner('https://example.com', context, site, validAuditContext);
-      expect(resultValid.fullAuditRef).to.equal('s3://cdn-logs-adobe-dev/test-ims-org-id/aggregated/2025/01/02/03/');
+      const resultValid = await cdnLogsAnalysisRunner('https://example.com', context, site, validAuditContext);
+      expect(resultValid.fullAuditRef).to.equal('s3://spacecat-dev-cdn-logs-aggregates-us-east-1/aggregated/test-site-id/2025/01/02/03/');
 
       // Test invalid context (should fallback to current time)
-      const resultInvalid = await cdnLogAnalysisRunner('https://example.com', context, site, invalidAuditContext);
-      expect(resultInvalid.fullAuditRef).to.not.equal('s3://cdn-logs-adobe-dev/test-ims-org-id/aggregated/2025/01/02/03/');
+      const resultInvalid = await cdnLogsAnalysisRunner('https://example.com', context, site, invalidAuditContext);
+      expect(resultInvalid.fullAuditRef).to.not.equal('s3://spacecat-dev-cdn-logs-aggregates-us-east-1/aggregated/test-site-id/2025/01/02/03/');
     });
 
     it('handles both orgId and imsOrgId being empty', async () => {
@@ -220,7 +218,7 @@ describe('CDN Analysis Handler', () => {
 
       context.s3Client.send.callsFake(createS3MockForCdnType('fastly', { isLegacy: true }));
 
-      const result = await cdnLogAnalysisRunner('https://example.com', context, site);
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site);
       expect(result.auditResult.providers[0]).to.have.property('cdnType', 'fastly');
     });
 
@@ -229,7 +227,7 @@ describe('CDN Analysis Handler', () => {
         getLlmoCdnBucketConfig: () => null,
       });
 
-      const result = await cdnLogAnalysisRunner('https://example.com', context, site);
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site);
       expect(result.auditResult.providers).to.be.an('array').with.length.greaterThan(0);
     });
 
@@ -238,7 +236,7 @@ describe('CDN Analysis Handler', () => {
       // Now = 2025-01-01T00:05Z -> previous hour = 2024-12-31T23
       Date.now = sandbox.stub().returns(new Date('2025-01-01T00:05:00Z').getTime());
 
-      const result = await cdnLogAnalysisRunner('https://example.com', context, site);
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site);
 
       expect(result.fullAuditRef).to.include('2024/12/31/23');
 
@@ -250,7 +248,7 @@ describe('CDN Analysis Handler', () => {
         year: 2025, month: 9, day: 7, hour: 4,
       };
 
-      const result = await cdnLogAnalysisRunner('https://example.com', context, site, auditContext);
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
 
       expect(result.fullAuditRef).to.include('2025/09/07/04');
 
@@ -267,7 +265,7 @@ describe('CDN Analysis Handler', () => {
         processFullDay: true,
       };
 
-      const result = await cdnLogAnalysisRunner('https://example.com', context, site, auditContext);
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
 
       expect(result.fullAuditRef).to.include('2025/09/07/04');
 
@@ -276,6 +274,69 @@ describe('CDN Analysis Handler', () => {
         expect(result.auditResult.providers[0].output).to.include('2025/09/07/04');
         expect(result.auditResult.providers[0].outputReferral).to.include('2025/09/07/04');
       }
+    });
+
+    it('should skip processing when aggregated data already exists', async () => {
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 10,
+      };
+
+      // Mock S3 to return aggregated data exists
+      context.s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          const { Prefix = '' } = command.input || {};
+          // Return Contents for aggregated paths to simulate existing data
+          if (Prefix.includes('aggregated')) {
+            return Promise.resolve({ Contents: [{ Key: `${Prefix}data.parquet` }] });
+          }
+          return Promise.resolve({ Contents: [] });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult).to.have.property('skipped', true);
+      expect(result.auditResult.providers).to.be.an('array').with.length(0);
+      expect(result.fullAuditRef).to.equal('https://example.com');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/aggregated data already exists.*Skipping processing/),
+      );
+    });
+
+    it('should skip provider when no raw data exists', async () => {
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 10,
+      };
+
+      context.s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          const { Prefix = '' } = command.input || {};
+          // Return providers for discovery, but no actual data
+          if (Prefix && Prefix.includes('test-ims-org-id/raw/')) {
+            return Promise.resolve({
+              Contents: [],
+              CommonPrefixes: [{ Prefix: 'test-ims-org-id/raw/aem-cs-fastly/' }],
+            });
+          }
+          // No aggregated or raw data
+          return Promise.resolve({ Contents: [] });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult.providers).to.be.an('array').with.length(0);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/no raw logs found/),
+      );
     });
   });
 });
