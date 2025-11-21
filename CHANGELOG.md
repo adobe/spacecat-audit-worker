@@ -1,3 +1,10 @@
+# [1.250.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.249.6...v1.250.0) (2025-11-21)
+
+
+### Features
+
+* **COMOPT-1426:** Add support for AC-* headers and Magento-Environment-Id handling ([#1631](https://github.com/adobe/spacecat-audit-worker/issues/1631)) ([9bfa58f](https://github.com/adobe/spacecat-audit-worker/commit/9bfa58f98aad46d6a98c840235d8208a94df6cef))
+
 ## [1.249.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.249.5...v1.249.6) (2025-11-21)
 
 
