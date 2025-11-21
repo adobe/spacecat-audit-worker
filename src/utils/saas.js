@@ -133,6 +133,9 @@ export function validateConfig(config, locale) {
 /**
  * Validates the commerce config return shape.
  * Checks for url and all required headers.
+ * Supports both legacy Magento-* headers and new AC format (minimal headers).
+ * AC-Environment-Id can be used in config as a fallback source for Magento-Environment-Id,
+ * but only Magento-Environment-Id is sent in actual request headers.
  * @param {Object} config - The config object with url and headers.
  * @param {string} locale - Locale identifier.
  * @throws {Error} If required fields are missing.
@@ -147,20 +150,42 @@ function validateCommerceConfigShape(config, locale) {
   if (!config.headers) {
     missingFields.push('headers');
   } else {
-    const requiredHeaders = [
-      'Magento-Customer-Group',
-      'Magento-Environment-Id',
-      'Magento-Store-Code',
-      'Magento-Store-View-Code',
-      'Magento-Website-Code',
-      'x-api-key',
-    ];
+    // Check for Magento-Environment-Id (required)
+    const hasEnvironmentId = hasText(config.headers['Magento-Environment-Id']);
 
-    for (const field of requiredHeaders) {
-      if (!hasText(config.headers[field])) {
-        missingFields.push(`headers.${field}`);
+    if (!hasEnvironmentId) {
+      missingFields.push('headers.Magento-Environment-Id');
+    }
+
+    // Determine if this is AC format or legacy Magento format
+    // AC format: only has Magento-Environment-Id and possibly AC-View-ID (no legacy fields)
+    // Legacy format: has all the Magento-* fields plus x-api-key
+    const hasLegacyFields = hasText(config.headers['Magento-Customer-Group'])
+      || hasText(config.headers['Magento-Store-Code'])
+      || hasText(config.headers['Magento-Store-View-Code'])
+      || hasText(config.headers['Magento-Website-Code'])
+      || hasText(config.headers['x-api-key']);
+
+    const isLegacyFormat = hasLegacyFields;
+
+    if (isLegacyFormat) {
+      // Legacy Magento-* format validation - all fields required
+      const requiredHeaders = [
+        'Magento-Customer-Group',
+        'Magento-Store-Code',
+        'Magento-Store-View-Code',
+        'Magento-Website-Code',
+        'x-api-key',
+      ];
+
+      for (const field of requiredHeaders) {
+        if (!hasText(config.headers[field])) {
+          missingFields.push(`headers.${field}`);
+        }
       }
     }
+    // For AC format, only Magento-Environment-Id is required
+    // Other AC-* headers like AC-View-ID are optional
   }
 
   if (missingFields.length > 0) {
@@ -240,6 +265,11 @@ export async function extractCommerceConfigFromPAAS(params, log) {
  * If params.config is provided directly, it should already be in the final shape { url, headers }.
  * Handles nested structure with headers containing multiple scopes.
  *
+ * Header handling:
+ * - AC-Environment-Id: Can be used in config as a fallback source for Magento-Environment-Id
+ * - Only Magento-Environment-Id is sent in actual request headers
+ * - AC-View-ID: Sent if present in config
+ *
  * Features:
  * - Generic scope support (cs, pdp, plp, etc.) via params.scope
  * - Path-based config matching (supports /en/, /en/us/, /products/, etc.)
@@ -306,16 +336,44 @@ export async function extractCommerceConfigFromACCS(params, log) {
     const mergedHeaders = extractHeaders(sectionData, localeData, params.scope || 'cs');
 
     // Build return object directly from extracted values
+    // Support both legacy Magento-* headers and new AC-* headers
+    const headers = {};
+
+    // Handle AC-Environment-Id as a fallback for Magento-Environment-Id.
+    // AC-Environment-Id is only used as a source but NOT sent in the headers.
+    // Only Magento-Environment-Id is sent in the actual request headers.
+    const acEnvironmentId = mergedHeaders['AC-Environment-Id'];
+    const magentoEnvironmentId = mergedHeaders['Magento-Environment-Id'];
+    const resolvedEnvironmentId = magentoEnvironmentId || acEnvironmentId;
+    if (resolvedEnvironmentId) {
+      headers['Magento-Environment-Id'] = resolvedEnvironmentId;
+    }
+
+    // Add legacy Magento-* headers if present
+    if (mergedHeaders['Magento-Customer-Group']) {
+      headers['Magento-Customer-Group'] = mergedHeaders['Magento-Customer-Group'];
+    }
+    if (mergedHeaders['Magento-Store-Code']) {
+      headers['Magento-Store-Code'] = mergedHeaders['Magento-Store-Code'];
+    }
+    if (mergedHeaders['Magento-Store-View-Code']) {
+      headers['Magento-Store-View-Code'] = mergedHeaders['Magento-Store-View-Code'];
+    }
+    if (mergedHeaders['Magento-Website-Code']) {
+      headers['Magento-Website-Code'] = mergedHeaders['Magento-Website-Code'];
+    }
+    if (mergedHeaders['x-api-key']) {
+      headers['x-api-key'] = mergedHeaders['x-api-key'];
+    }
+
+    // Add AC-View-ID if present
+    if (mergedHeaders['AC-View-ID']) {
+      headers['AC-View-ID'] = mergedHeaders['AC-View-ID'];
+    }
+
     const extractedConfig = {
       url: commerceEndpoint,
-      headers: {
-        'Magento-Customer-Group': mergedHeaders['Magento-Customer-Group'],
-        'Magento-Environment-Id': mergedHeaders['Magento-Environment-Id'],
-        'Magento-Store-Code': mergedHeaders['Magento-Store-Code'],
-        'Magento-Store-View-Code': mergedHeaders['Magento-Store-View-Code'],
-        'Magento-Website-Code': mergedHeaders['Magento-Website-Code'],
-        'x-api-key': mergedHeaders['x-api-key'],
-      },
+      headers,
     };
 
     // Validate the extracted config
@@ -452,14 +510,18 @@ export async function requestSaaS(query, operationName, variables, params, log) 
  * @returns {Promise<{
  *   url: string,
  *   headers: {
- *     'Magento-Customer-Group': string,
- *     'Magento-Environment-Id': string,
- *     'Magento-Store-Code': string,
- *     'Magento-Store-View-Code': string,
- *     'Magento-Website-Code': string,
- *     'x-api-key': string
+ *     'Magento-Customer-Group'?: string,
+ *     'Magento-Environment-Id'?: string,
+ *     'Magento-Store-Code'?: string,
+ *     'Magento-Store-View-Code'?: string,
+ *     'Magento-Website-Code'?: string,
+ *     'x-api-key'?: string,
+ *     'AC-View-ID'?: string,
  *   }
  * }>} Commerce configuration with url and headers.
+ * For PAAS: Returns legacy Magento-* headers (all required).
+ * For ACCS/ACO: Returns Magento-Environment-Id (required) + optional AC-View-ID.
+ * Note: AC-Environment-Id is used as fallback source but not sent in headers.
  */
 export async function getCommerceConfig(site, auditType, finalUrl, log, locale = '') {
   try {
@@ -483,16 +545,16 @@ export async function getCommerceConfig(site, auditType, finalUrl, log, locale =
     switch (instanceType) {
       case 'ACCS':
         log.info('Successfully retrieved commerce config');
-        return extractCommerceConfigFromACCS(params, log);
+        return await extractCommerceConfigFromACCS(params, log);
 
       case 'ACO':
         log.info('Successfully retrieved commerce config');
-        return extractCommerceConfigFromACO(params, log);
+        return await extractCommerceConfigFromACO(params, log);
 
       case 'PAAS':
       default:
         log.info('Successfully retrieved commerce config');
-        return extractCommerceConfigFromPAAS(params, log);
+        return await extractCommerceConfigFromPAAS(params, log);
     }
   } catch (error) {
     log.error(`Error fetching commerce config for site ${site.getId()}:`, error);
