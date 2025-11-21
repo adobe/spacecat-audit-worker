@@ -11,66 +11,8 @@
  */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
-import { v4 as uuidv4 } from 'uuid';
 import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../constants.js';
-
-/**
- * Fetches existing suggestions and merges them with new suggestions
- * @param opportunity
- * @param newSuggestions
- * @returns {Promise<void>}
- */
-async function addSuggestions(
-  opportunity,
-  newSuggestions,
-) {
-  const existingSuggestions = await opportunity.getSuggestions();
-
-  if (
-    (existingSuggestions && existingSuggestions.length > 0)
-    || (newSuggestions && newSuggestions.length > 0)
-  ) {
-    // merge existing and new suggestions and add to opportunity.
-    // To be done once M starts generating suggestions for this guidance
-  } else {
-    const emptySuggestionList = [
-      {
-        id: uuidv4(),
-        opportunityId: opportunity.opportunityId,
-        type: 'CONTENT_UPDATE',
-        rank: 1,
-        status: 'PENDING_VALIDATION',
-        data: {
-          variations: [
-            {
-              name: 'Control',
-              changes: [
-                {
-                  type: 'text',
-                  element: null,
-                  text: 'Control',
-                },
-              ],
-              variationEditPageUrl: null,
-              id: uuidv4(),
-              variationPageUrl: '',
-              explanation: null,
-              projectedImpact: null,
-              previewImage: '',
-            },
-          ],
-        },
-        kpiDeltas: {
-          estimatedKPILift: 0,
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        updatedBy: 'system',
-      },
-    ];
-    await opportunity.addSuggestions(emptySuggestionList);
-  }
-}
+import { addSuggestions } from './suggestion-utils.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
