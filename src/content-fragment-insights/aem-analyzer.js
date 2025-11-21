@@ -16,9 +16,6 @@ import { FragmentAnalyzer } from './fragment-analyzer.js';
 export class AemAnalyzer {
   static DEFAULT_FRAGMENT_ROOT_PATH = '/content/dam/';
 
-  // Max. pages to fetch for pagination to prevent long-running queries
-  static MAX_PAGES = 20;
-
   constructor(context) {
     const { log } = context;
 
