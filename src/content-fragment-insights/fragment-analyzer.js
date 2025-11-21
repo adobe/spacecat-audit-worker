@@ -44,6 +44,8 @@ export class FragmentAnalyzer {
         continue;
       }
 
+      // TODO: Check MODIFIED content to be unpublished before adding to unused fragments
+
       const lastTimestamp = fragment.modifiedAt || fragment.createdAt || null;
       if (!lastTimestamp) {
         // eslint-disable-next-line no-continue
