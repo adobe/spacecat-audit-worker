@@ -71,6 +71,7 @@ export default async function handler(message, context) {
   const opportunity = await Opportunity.create(entity);
 
   const suggestionData = await mapToSuggestion(
+    context,
     opportunity.getId(),
     url,
     guidanceParsed,

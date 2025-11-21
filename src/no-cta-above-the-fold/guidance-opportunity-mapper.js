@@ -11,6 +11,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 
 const ESTIMATED_CPC = 0.8;
 
@@ -69,17 +70,21 @@ export function mapToOpportunity(siteId, url, audit, pageGuidance) {
 }
 
 export async function mapToSuggestion(
+  context,
   opportunityId,
   url,
   pageGuidance = [],
 ) {
   const markdown = pageGuidance?.body?.markdown;
+  const requiresValidation = Boolean(context?.site?.requiresValidation);
 
   return {
     opportunityId,
     type: 'CONTENT_UPDATE',
     rank: 1,
-    status: 'NEW',
+    status: requiresValidation
+      ? SuggestionModel.STATUSES.PENDING_VALIDATION
+      : SuggestionModel.STATUSES.NEW,
     data: {
       recommendations: [
         {

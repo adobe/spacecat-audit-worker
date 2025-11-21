@@ -62,6 +62,9 @@ describe("No CTA above the fold guidance handler", () => {
         Opportunity,
         Suggestion,
       },
+      site: {
+        requiresValidation: false,
+      },
     };
   });
 
@@ -120,6 +123,41 @@ describe("No CTA above the fold guidance handler", () => {
     const suggestionArg = Suggestion.create.getCall(0).args[0];
     expect(suggestionArg.opportunityId).to.equal("oppty-123");
     expect(suggestionArg.data.suggestionValue).to.equal("Line1\nLine2");
+    expect(suggestionArg.status).to.equal("NEW");
+  });
+
+  it("creates a pending validation suggestion when site requires validation", async () => {
+    const audit = {
+      getAuditId: () => "audit-id",
+      getAuditResult: () => [
+        {
+          path: "/testpage",
+          pageviews: "1000",
+          bounce_rate: 0.6,
+          projected_traffic_lost: 900,
+        },
+      ],
+    };
+    Audit.findById.resolves(audit);
+    Opportunity.create.resolves({
+      getId: () => "oppty-123",
+    });
+    context.site = { requiresValidation: true };
+
+    const result = await handler(
+      {
+        auditId: "audit-id",
+        siteId,
+        data: { url: pageUrl, guidance },
+      },
+      context
+    );
+
+    expect(result.status).to.equal(ok().status);
+    expect(Suggestion.create).to.have.been.calledOnce;
+    const suggestionArg = Suggestion.create.getCall(0).args[0];
+    expect(suggestionArg.status).to.equal("PENDING_VALIDATION");
+    context.site = { requiresValidation: false };
   });
 
   it("skips opportunity creation when matching opportunity already exists", async () => {

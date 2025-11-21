@@ -77,7 +77,12 @@ describe("No Engageable Content opportunity mapper", () => {
   describe("mapToSuggestion", () => {
     it("creates suggestion payload with provided markdown", async () => {
       const recommendation = { body: { markdown: "Test markdown" } };
-      const suggestion = await mapToSuggestion("oppty-id", pageUrl, recommendation);
+      const suggestion = await mapToSuggestion(
+        { site: { requiresValidation: false } },
+        "oppty-id",
+        pageUrl,
+        recommendation
+      );
 
       expect(suggestion.type).to.equal("CONTENT_UPDATE");
       expect(suggestion.status).to.equal("NEW");
@@ -91,6 +96,7 @@ describe("No Engageable Content opportunity mapper", () => {
       };
 
       const suggestion = await mapToSuggestion(
+        { site: { requiresValidation: false } },
         "oppty-id",
         pageUrl,
         recommendation,
@@ -102,12 +108,24 @@ describe("No Engageable Content opportunity mapper", () => {
 
     it("defaults suggestion value to empty string when markdown missing", async () => {
       const suggestion = await mapToSuggestion(
+        { site: { requiresValidation: false } },
         "oppty-id",
         pageUrl,
         {},
       );
 
       expect(suggestion.data.suggestionValue).to.equal("");
+    });
+
+    it("marks suggestions as pending validation when required", async () => {
+      const suggestion = await mapToSuggestion(
+        { site: { requiresValidation: true } },
+        "oppty-id",
+        pageUrl,
+        { body: { markdown: "Test markdown" } }
+      );
+
+      expect(suggestion.status).to.equal("PENDING_VALIDATION");
     });
   });
 });
