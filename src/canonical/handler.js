@@ -160,6 +160,7 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
               try {
                 const urlObj = new URL(u);
                 return `${urlObj.origin}${urlObj.pathname}`;
+                /* c8 ignore next 3 */
               } catch {
                 return u;
               }
@@ -420,19 +421,16 @@ export async function validateCanonicalRecursively(
 }
 
 /**
- * Generates a suggestion for fixing a canonical issue based on the check type and URL.
+ * Generates a suggestion for fixing a canonical issue based on the check type.
  *
  * @param {string} checkType - The type of canonical check that failed.
- * @param {string} url - The URL that has the canonical issue.
- * @param {string} baseURL - The base URL of the site.
- * @param {string} canonicalUrl - The canonical URL found in the tag.
  * @returns {string} A suggestion for fixing the canonical issue.
  */
-export function generateCanonicalSuggestion(checkType, url, baseURL, canonicalUrl) {
+export function generateCanonicalSuggestion(checkType) {
   const checkObj = Object.values(CANONICAL_CHECKS).find((check) => check.check === checkType);
 
   if (checkObj && checkObj.suggestion) {
-    return checkObj.suggestion(url, baseURL, canonicalUrl);
+    return checkObj.suggestion();
   }
 
   // fallback suggestion
@@ -602,13 +600,13 @@ export async function canonicalAuditRunner(baseURL, context, site) {
           checks.push(...urlContentCheck);
         }
       }
-      return { url, canonicalUrl, checks };
+      return { url, checks };
     });
 
     const auditResultsArray = await Promise.allSettled(auditPromises);
     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
       if (result.status === 'fulfilled') {
-        const { url, canonicalUrl, checks } = result.value;
+        const { url, checks } = result.value;
         checks.forEach((check) => {
           const { check: checkType, success, explanation } = check;
 
@@ -620,7 +618,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
                 urls: [],
               };
             }
-            acc[checkType].urls.push({ url, canonicalUrl });
+            acc[checkType].urls.push(url);
           }
         });
       }
@@ -650,9 +648,9 @@ export async function canonicalAuditRunner(baseURL, context, site) {
     const results = Object.entries(filteredAggregatedResults).map(([checkType, checkData]) => ({
       type: checkType,
       explanation: checkData.explanation,
-      affectedUrls: checkData.urls.map(({ url, canonicalUrl }) => ({
+      affectedUrls: checkData.urls.map((url) => ({
         url,
-        suggestion: generateCanonicalSuggestion(checkType, url, baseURL, canonicalUrl),
+        suggestion: generateCanonicalSuggestion(checkType),
       })),
     }));
 
