@@ -15,7 +15,7 @@ export const CANONICAL_CHECKS = Object.freeze({
     check: 'canonical-tag-missing',
     title: 'Missing Canonical Tag',
     explanation: 'The canonical tag is missing, which can lead to duplicate content issues and negatively affect SEO rankings.',
-    suggestion: (url) => `Add a canonical tag to the head section: <link rel="canonical" href="${url}" />`,
+    suggestion: () => 'Add a canonical tag to the head section',
   },
   CANONICAL_TAG_MULTIPLE: {
     check: 'canonical-tag-multiple',
@@ -27,7 +27,7 @@ export const CANONICAL_CHECKS = Object.freeze({
     check: 'canonical-tag-empty',
     title: 'Empty Canonical Tag',
     explanation: 'The canonical tag is empty. It should point to the preferred version of the page to avoid content duplication.',
-    suggestion: (url) => `Set the canonical URL in the href attribute: <link rel="canonical" href="${url}" />`,
+    suggestion: () => 'Set the canonical URL in the href attribute',
   },
   CANONICAL_TAG_OUTSIDE_HEAD: {
     check: 'canonical-tag-outside-head',
@@ -63,31 +63,31 @@ export const CANONICAL_CHECKS = Object.freeze({
     check: 'canonical-self-referenced',
     title: 'Canonical URL Not Self-Referenced',
     explanation: 'The canonical URL should point to itself to indicate that it is the preferred version of the content.',
-    suggestion: (url) => `Update the canonical URL to point to itself: <link rel="canonical" href="${url}" />`,
+    suggestion: () => 'Update the canonical URL to point to itself',
   },
   CANONICAL_URL_ABSOLUTE: {
     check: 'canonical-url-absolute',
     title: 'Canonical URL Not Absolute',
     explanation: 'Canonical URLs must be absolute to avoid ambiguity in URL resolution and ensure proper indexing by search engines.',
-    suggestion: (url) => `Use an absolute URL for the canonical tag: <link rel="canonical" href="${url}" />`,
+    suggestion: () => 'Use an absolute URL for the canonical tag',
   },
   CANONICAL_URL_SAME_DOMAIN: {
     check: 'canonical-url-same-domain',
     title: 'Canonical URL Different Domain',
     explanation: 'The canonical URL should match the domain of the page to avoid signaling to search engines that the content is duplicated elsewhere.',
-    suggestion: (url) => `Update the canonical URL to use the same domain as the page: <link rel="canonical" href="${url}" />`,
+    suggestion: () => 'Update the canonical URL to use the same domain as the page',
   },
   CANONICAL_URL_SAME_PROTOCOL: {
     check: 'canonical-url-same-protocol',
     title: 'Canonical URL Different Protocol',
     explanation: 'The canonical URL must use the same protocol (HTTP or HTTPS) as the page to maintain consistency and avoid indexing issues.',
-    suggestion: (url) => `Update the canonical URL to use the same protocol: <link rel="canonical" href="${url}" />`,
+    suggestion: () => 'Update the canonical URL to use the same protocol',
   },
   CANONICAL_URL_LOWERCASED: {
     check: 'canonical-url-lowercased',
     title: 'Canonical URL Not Lowercased',
     explanation: 'Canonical URLs should be in lowercase to prevent duplicate content issues since URLs are case-sensitive.',
-    suggestion: (url) => `Update canonical URL to use lowercase: <link rel="canonical" href="${url.toLowerCase()}" />`,
+    suggestion: () => 'Update canonical URL to use lowercase',
   },
   CANONICAL_URL_FETCH_ERROR: {
     check: 'canonical-url-fetch-error',
@@ -99,7 +99,7 @@ export const CANONICAL_CHECKS = Object.freeze({
     check: 'canonical-url-invalid',
     title: 'Invalid Canonical URL',
     explanation: 'The canonical URL is malformed or invalid.',
-    suggestion: (url) => `Fix the malformed canonical URL and ensure it follows proper URL format: <link rel="canonical" href="${url}" />`,
+    suggestion: () => 'Fix the malformed canonical URL and ensure it follows proper URL format',
   },
   TOPPAGES: {
     check: 'top-pages',
