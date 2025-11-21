@@ -335,10 +335,6 @@ export async function extractCommerceConfigFromACCS(params, log) {
     const environmentId = mergedHeaders['AC-Environment-Id'] || mergedHeaders['Magento-Environment-Id'];
     if (environmentId) {
       extractedConfig.headers['Magento-Environment-Id'] = environmentId;
-      // Also set AC-Environment-Id if it was originally provided
-      if (mergedHeaders['AC-Environment-Id']) {
-        extractedConfig.headers['AC-Environment-Id'] = environmentId;
-      }
     }
 
     // Add legacy Magento-* headers if present
@@ -503,7 +499,6 @@ export async function requestSaaS(query, operationName, variables, params, log) 
  *     'Magento-Store-View-Code'?: string,
  *     'Magento-Website-Code'?: string,
  *     'x-api-key'?: string,
- *     'AC-Environment-Id'?: string,
  *     'AC-View-ID'?: string,
  *   }
  * }>} Commerce configuration with url and headers.
