@@ -1068,6 +1068,22 @@ describe('saas extractors - fallbacks and routing', () => {
       .to.be.rejectedWith('Missing required commerce config fields for default locale: url');
   });
 
+  it('throws when legacy Magento headers are missing required entries', async () => {
+    const incompleteLegacyConfig = {
+      url: 'https://co.example/graphql',
+      headers: {
+        'Magento-Customer-Group': 'cg',
+        'Magento-Environment-Id': 'eid',
+        'Magento-Store-Code': 'sc',
+        'Magento-Website-Code': 'wc',
+        // intentionally omit Magento-Store-View-Code and x-api-key to trigger validation
+      },
+    };
+
+    await expect(extractCommerceConfigFromACCS({ config: incompleteLegacyConfig }, log))
+      .to.be.rejectedWith('Missing required commerce config fields for default locale: headers.Magento-Store-View-Code, headers.x-api-key');
+  });
+
   it("uses empty locale path when locale is 'default' (PAAS)", async () => {
     fetchStub.reset();
     const paasData = {
