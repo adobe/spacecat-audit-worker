@@ -169,7 +169,6 @@ async function processUrl(url, scrapeResult, context) {
       normalWords: scores.normalWords,
     });
 
-    context.log.info(`${LOG_PREFIX} ${url} -> ${scores.citabilityScore}%`);
     return { url, success: true, ...scores };
     /* c8 ignore next 3 */
   } catch (error) {
