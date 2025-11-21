@@ -405,7 +405,7 @@ describe('Broken Content Fragment Links Handler', () => {
       await handlerModule.enrichContentFragmentPathSuggestions(baseURL, auditData, context, site);
 
       expect(context.dataAccess.Configuration.findLatest).to.have.been.calledOnce;
-      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith(AUDIT_TYPE, site);
+      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith(AUDIT_TYPE_AUTO_SUGGEST, site);
       expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith(TEST_SITE_ID, 'NEW');
       expect(context.dataAccess.Suggestion.allByOpportunityIdAndStatus).to.have.been.calledWith(TEST_OPPORTUNITY_ID, SuggestionModel.STATUSES.NEW);
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
