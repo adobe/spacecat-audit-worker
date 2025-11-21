@@ -138,6 +138,88 @@ describe('Forms Opportunities - Accessibility Handler', () => {
     });
   });
 
+  describe('successCriterias normalization', () => {
+    it('should set successCriterias to [] when missing or empty', async () => {
+      // Arrange
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          a11y: [{
+            form: 'https://example.com/form-empty',
+            formSource: '#form-empty',
+            a11yIssues: [
+              {
+                issue: 'Issue without criteria',
+                level: 'error',
+                successCriterias: null,
+                htmlWithIssues: ['<div>broken</div>'],
+                recommendation: 'Fix it',
+              },
+              {
+                issue: 'Issue with empty criteria',
+                level: 'error',
+                successCriterias: [],
+                htmlWithIssues: ['<span>broken</span>'],
+                recommendation: 'Fix it too',
+              },
+            ],
+          }],
+        },
+      };
+
+      const sandbox = sinon.createSandbox();
+      const context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+              create: sandbox.stub().resolves({ getId: () => 'new-oppty-id' }),
+              findById: sandbox.stub().resolves(null),
+            },
+            Site: {
+              findById: sandbox.stub().resolves({
+                getDeliveryType: sinon.stub().returns('aem'),
+                getBaseURL: sinon.stub().returns('https://example.com'),
+              }),
+            },
+          },
+          sqs: {
+            sendMessage: sandbox.stub().resolves(),
+          },
+          env: {
+            QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+          },
+          log: {
+            info: sinon.stub(),
+            error: sinon.stub(),
+            debug: sinon.stub(),
+          },
+        })
+        .build();
+
+      // Import with stubbed isAuditEnabledForSite
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: sandbox.stub().resolves(false),
+        },
+      });
+
+      // Act
+      await accessibilityHandlerModule.default(message, context);
+
+      // Assert
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      const createdArg = context.dataAccess.Opportunity.create.getCall(0).args[0];
+      const createdIssues = createdArg.data.accessibility[0].a11yIssues;
+      expect(createdIssues[0].successCriterias).to.deep.equal([]);
+      expect(createdIssues[1].successCriterias).to.deep.equal([]);
+
+      sandbox.restore();
+    });
+  });
+
   describe('createAccessibilityOpportunity', () => {
     let context;
     const siteId = 'test-site-id';
