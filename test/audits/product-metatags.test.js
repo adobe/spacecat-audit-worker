@@ -4734,11 +4734,11 @@ describe('Product MetaTags', () => {
 
       expect(setDataStub).to.have.been.calledWith({
         existing: 'data',
-        magentoEnvironmentId: 'env-123',
+        tenantId: 'env-123',
       });
       expect(saveStub).to.have.been.calledOnce;
       expect(logStub.info).to.have.been.calledWith(
-        '[PRODUCT-METATAGS] Added Magento-Environment-Id to opportunity: env-123',
+        '[PRODUCT-METATAGS] Added tenantId to opportunity: env-123',
       );
     });
   });

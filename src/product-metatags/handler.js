@@ -317,21 +317,21 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
       },
     });
 
-    // Extract Magento-Environment-Id from suggestions (all have same value)
-    let magentoEnvironmentId = null;
+    // Extract Magento-Environment-Id from suggestions (all have same value) as tenantId
+    let tenantId = null;
     if (suggestions.length > 0) {
       const firstSuggestionWithConfig = suggestions.find((s) => s.config?.headers?.['Magento-Environment-Id']);
-      magentoEnvironmentId = firstSuggestionWithConfig?.config?.headers?.['Magento-Environment-Id'] || null;
+      tenantId = firstSuggestionWithConfig?.config?.headers?.['Magento-Environment-Id'] || null;
     }
 
-    // Update opportunity data with Magento-Environment-Id if available
-    if (magentoEnvironmentId) {
+    // Update opportunity data with tenantId if available
+    if (tenantId) {
       opportunity.setData({
         ...opportunity.getData(),
-        magentoEnvironmentId,
+        tenantId,
       });
       await opportunity.save();
-      log.info(`[PRODUCT-METATAGS] Added Magento-Environment-Id to opportunity: ${magentoEnvironmentId}`);
+      log.info(`[PRODUCT-METATAGS] Added tenantId to opportunity: ${tenantId}`);
     }
 
     log.info(`[PRODUCT-METATAGS] Successfully synced ${suggestions.length} suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);

@@ -962,7 +962,7 @@ describe('saas extractors - ACCS and ACO', () => {
     expect(ok).to.deep.equal(good);
 
     await expect(extractCommerceConfigFromACCS({ config: { url: 'u', headers: {} } }, log))
-      .to.be.rejectedWith('Missing required commerce config fields for default locale: headers.Magento-Environment-Id or headers.AC-Environment-Id');
+      .to.be.rejectedWith('Missing required commerce config fields for default locale: headers.Magento-Environment-Id');
   });
 
   it('ACO delegates to ACCS (smoke)', async () => {
@@ -1199,7 +1199,8 @@ describe('saas extractors - AC-* header support', () => {
     const res = await extractCommerceConfigFromACCS({ storeUrl: 'https://example.com' }, log);
 
     expect(res.url).to.equal('https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql');
-    expect(res.headers['AC-Environment-Id']).to.equal('5Ypntkvni5L5ZiEZdkMFcw');
+    // AC-Environment-Id is used as fallback but not returned in headers
+    expect(res.headers['AC-Environment-Id']).to.be.undefined;
     expect(res.headers['Magento-Environment-Id']).to.equal('5Ypntkvni5L5ZiEZdkMFcw');
     expect(res.headers['AC-View-ID']).to.equal('6081b301-a202-481c-a8b7-6e36b3fe3e92');
   });
@@ -1224,7 +1225,8 @@ describe('saas extractors - AC-* header support', () => {
     const res = await extractCommerceConfigFromACO({ storeUrl: 'https://example.com' }, log);
 
     expect(res.url).to.equal('https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql');
-    expect(res.headers['AC-Environment-Id']).to.equal('5Ypntkvni5L5ZiEZdkMFcw');
+    // AC-Environment-Id is used as fallback but not returned in headers
+    expect(res.headers['AC-Environment-Id']).to.be.undefined;
     expect(res.headers['Magento-Environment-Id']).to.equal('5Ypntkvni5L5ZiEZdkMFcw');
     expect(res.headers['AC-View-ID']).to.equal('6081b301-a202-481c-a8b7-6e36b3fe3e92');
   });
@@ -1247,8 +1249,8 @@ describe('saas extractors - AC-* header support', () => {
 
     const res = await extractCommerceConfigFromACCS({ storeUrl: 'https://example.com' }, log);
 
-    // Both headers should be present with the same value
-    expect(res.headers['AC-Environment-Id']).to.equal('5Ypntkvni5L5ZiEZdkMFcw');
+    // AC-Environment-Id is used as fallback but not returned in headers
+    expect(res.headers['AC-Environment-Id']).to.be.undefined;
     expect(res.headers['Magento-Environment-Id']).to.equal('5Ypntkvni5L5ZiEZdkMFcw');
   });
 
@@ -1256,7 +1258,7 @@ describe('saas extractors - AC-* header support', () => {
     const directConfig = {
       url: 'https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql',
       headers: {
-        'AC-Environment-Id': '5Ypntkvni5L5ZiEZdkMFcw',
+        'Magento-Environment-Id': '5Ypntkvni5L5ZiEZdkMFcw',
         'AC-View-ID': '6081b301-a202-481c-a8b7-6e36b3fe3e92',
       },
     };
@@ -1264,7 +1266,7 @@ describe('saas extractors - AC-* header support', () => {
     const res = await extractCommerceConfigFromACCS({ config: directConfig }, log);
 
     expect(res.url).to.equal('https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql');
-    expect(res.headers['AC-Environment-Id']).to.equal('5Ypntkvni5L5ZiEZdkMFcw');
+    expect(res.headers['Magento-Environment-Id']).to.equal('5Ypntkvni5L5ZiEZdkMFcw');
     expect(res.headers['AC-View-ID']).to.equal('6081b301-a202-481c-a8b7-6e36b3fe3e92');
   });
 
@@ -1287,9 +1289,9 @@ describe('saas extractors - AC-* header support', () => {
 
     const res = await extractCommerceConfigFromACCS({ storeUrl: 'https://example.com' }, log);
 
-    // AC-Environment-Id should take precedence
-    expect(res.headers['AC-Environment-Id']).to.equal('new-env-id');
-    expect(res.headers['Magento-Environment-Id']).to.equal('new-env-id');
+    // Magento-Environment-Id should take precedence, AC-Environment-Id not returned
+    expect(res.headers['AC-Environment-Id']).to.be.undefined;
+    expect(res.headers['Magento-Environment-Id']).to.equal('old-env-id');
   });
 
   it('extracts AC-* headers from different scopes (pdp, plp)', async () => {
@@ -1311,7 +1313,9 @@ describe('saas extractors - AC-* header support', () => {
 
     const res = await extractCommerceConfigFromACCS({ storeUrl: 'https://example.com', scope: 'pdp' }, log);
 
-    expect(res.headers['AC-Environment-Id']).to.equal('pdp-env-id');
+    // AC-Environment-Id is used as fallback but not returned
+    expect(res.headers['AC-Environment-Id']).to.be.undefined;
+    expect(res.headers['Magento-Environment-Id']).to.equal('pdp-env-id');
     expect(res.headers['AC-View-ID']).to.equal('pdp-view-id');
   });
 
@@ -1336,16 +1340,18 @@ describe('saas extractors - AC-* header support', () => {
 
     const res = await extractCommerceConfigFromACCS({ storeUrl: 'https://example.com' }, log);
 
-    expect(res.headers['AC-Environment-Id']).to.equal('all-env-id');
+    // AC-Environment-Id is used as fallback but not returned
+    expect(res.headers['AC-Environment-Id']).to.be.undefined;
+    expect(res.headers['Magento-Environment-Id']).to.equal('all-env-id');
     expect(res.headers['AC-View-ID']).to.equal('cs-view-id');
   });
 
-  it('validates AC-* format requires only AC-Environment-Id', async () => {
-    // Minimal AC format with only AC-Environment-Id should pass validation
+  it('validates AC-* format requires only Magento-Environment-Id', async () => {
+    // Minimal AC format with only Magento-Environment-Id should pass validation
     const minimalConfig = {
       url: 'https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql',
       headers: {
-        'AC-Environment-Id': '5Ypntkvni5L5ZiEZdkMFcw',
+        'Magento-Environment-Id': '5Ypntkvni5L5ZiEZdkMFcw',
       },
     };
 
@@ -1362,7 +1368,7 @@ describe('saas extractors - AC-* header support', () => {
     };
 
     await expect(extractCommerceConfigFromACCS({ config: badConfig }, log))
-      .to.be.rejectedWith('Missing required commerce config fields for default locale: headers.Magento-Environment-Id or headers.AC-Environment-Id');
+      .to.be.rejectedWith('Missing required commerce config fields for default locale: headers.Magento-Environment-Id');
   });
 });
 

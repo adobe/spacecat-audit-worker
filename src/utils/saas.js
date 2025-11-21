@@ -133,7 +133,9 @@ export function validateConfig(config, locale) {
 /**
  * Validates the commerce config return shape.
  * Checks for url and all required headers.
- * Supports both legacy Magento-* headers and new AC-* headers for ACCS/ACO.
+ * Supports both legacy Magento-* headers and new AC format (minimal headers).
+ * AC-Environment-Id can be used in config as a fallback source for Magento-Environment-Id,
+ * but only Magento-Environment-Id is sent in actual request headers.
  * @param {Object} config - The config object with url and headers.
  * @param {string} locale - Locale identifier.
  * @throws {Error} If required fields are missing.
@@ -148,20 +150,26 @@ function validateCommerceConfigShape(config, locale) {
   if (!config.headers) {
     missingFields.push('headers');
   } else {
-    // Check for Magento-Environment-Id or AC-Environment-Id (either is valid)
-    const hasEnvironmentId = hasText(config.headers['Magento-Environment-Id'])
-      || hasText(config.headers['AC-Environment-Id']);
+    // Check for Magento-Environment-Id (required)
+    const hasEnvironmentId = hasText(config.headers['Magento-Environment-Id']);
 
     if (!hasEnvironmentId) {
-      missingFields.push('headers.Magento-Environment-Id or headers.AC-Environment-Id');
+      missingFields.push('headers.Magento-Environment-Id');
     }
 
-    // For AC-* format configs, only AC-Environment-Id is strictly required
-    // Other fields are optional for the new AC format
-    const isACFormat = hasText(config.headers['AC-Environment-Id']);
+    // Determine if this is AC format or legacy Magento format
+    // AC format: only has Magento-Environment-Id and possibly AC-View-ID (no legacy fields)
+    // Legacy format: has all the Magento-* fields plus x-api-key
+    const hasLegacyFields = hasText(config.headers['Magento-Customer-Group'])
+      || hasText(config.headers['Magento-Store-Code'])
+      || hasText(config.headers['Magento-Store-View-Code'])
+      || hasText(config.headers['Magento-Website-Code'])
+      || hasText(config.headers['x-api-key']);
 
-    if (!isACFormat) {
-      // Legacy Magento-* format validation
+    const isLegacyFormat = hasLegacyFields;
+
+    if (isLegacyFormat) {
+      // Legacy Magento-* format validation - all fields required
       const requiredHeaders = [
         'Magento-Customer-Group',
         'Magento-Store-Code',
@@ -176,6 +184,8 @@ function validateCommerceConfigShape(config, locale) {
         }
       }
     }
+    // For AC format, only Magento-Environment-Id is required
+    // Other AC-* headers like AC-View-ID are optional
   }
 
   if (missingFields.length > 0) {
@@ -255,9 +265,10 @@ export async function extractCommerceConfigFromPAAS(params, log) {
  * If params.config is provided directly, it should already be in the final shape { url, headers }.
  * Handles nested structure with headers containing multiple scopes.
  *
- * Supports both legacy Magento-* headers and new AC-* headers:
- * - AC-Environment-Id (alias for Magento-Environment-Id)
- * - AC-View-ID (new)
+ * Header handling:
+ * - AC-Environment-Id: Can be used in config as a fallback source for Magento-Environment-Id
+ * - Only Magento-Environment-Id is sent in actual request headers
+ * - AC-View-ID: Sent if present in config
  *
  * Features:
  * - Generic scope support (cs, pdp, plp, etc.) via params.scope
@@ -328,15 +339,13 @@ export async function extractCommerceConfigFromACCS(params, log) {
     // Support both legacy Magento-* headers and new AC-* headers
     const headers = {};
 
-    // Handle AC-Environment-Id / Magento-Environment-Id alias.
-    // Always expose both headers when either one is present so that:
-    // - AC-* only configs are treated as AC format by validation
-    // - Magento-* only configs continue to work
+    // Handle AC-Environment-Id as a fallback for Magento-Environment-Id.
+    // AC-Environment-Id is only used as a source but NOT sent in the headers.
+    // Only Magento-Environment-Id is sent in the actual request headers.
     const acEnvironmentId = mergedHeaders['AC-Environment-Id'];
     const magentoEnvironmentId = mergedHeaders['Magento-Environment-Id'];
-    const resolvedEnvironmentId = acEnvironmentId || magentoEnvironmentId;
+    const resolvedEnvironmentId = magentoEnvironmentId || acEnvironmentId;
     if (resolvedEnvironmentId) {
-      headers['AC-Environment-Id'] = resolvedEnvironmentId;
       headers['Magento-Environment-Id'] = resolvedEnvironmentId;
     }
 
@@ -510,8 +519,9 @@ export async function requestSaaS(query, operationName, variables, params, log) 
  *     'AC-View-ID'?: string,
  *   }
  * }>} Commerce configuration with url and headers.
- * For PAAS: Returns legacy Magento-* headers.
- * For ACCS/ACO: Returns AC-* headers (with AC-Environment-Id/Magento-Environment-Id alias support).
+ * For PAAS: Returns legacy Magento-* headers (all required).
+ * For ACCS/ACO: Returns Magento-Environment-Id (required) + optional AC-View-ID.
+ * Note: AC-Environment-Id is used as fallback source but not sent in headers.
  */
 export async function getCommerceConfig(site, auditType, finalUrl, log, locale = '') {
   try {
