@@ -82,8 +82,10 @@ export async function createFormAccessibilitySuggestionsFromMystique(
                 url: pageUrl,
                 ...(source && { source }),
                 issues: [formattedIssue],
-                aiGenerated: issue.aiGenerated || false,
               };
+              if ('aiGenerated' in issue) {
+                urlObject.aiGenerated = issue.aiGenerated;
+              }
 
               formAccessibilityData.push(urlObject);
             });
