@@ -23,6 +23,7 @@ import {
   resolveConsolidatedBucketName,
   buildDateFilter,
   buildUserAgentFilter,
+  buildSiteFilters,
 } from '../utils/cdn-utils.js';
 import { joinBaseAndPath } from '../utils/url-utils.js';
 
@@ -73,12 +74,14 @@ export async function extractUrls(context) {
 
   const s3Config = await getS3Config(site, context);
   const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
 
   const variables = {
     databaseName: s3Config.databaseName,
     tableName: s3Config.tableName,
     dateFilter: getDateFilter(),
     userAgentFilter: buildUserAgentFilter(),
+    siteFilters: buildSiteFilters(filters, site),
   };
 
   const query = await getStaticContent(variables, './src/page-citability/sql/top-urls.sql');
