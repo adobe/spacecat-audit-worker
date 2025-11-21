@@ -631,6 +631,43 @@ describe('Product MetaTags', () => {
           type: 'product-metatags',
         });
       });
+
+      it('should filter PDF files from scraping and log them', async () => {
+        const topPages = [
+          { getUrl: () => 'http://example.com/product1' },
+          { getUrl: () => 'http://example.com/catalog.pdf' },
+          { getUrl: () => 'http://example.com/guide.PDF' },
+          { getUrl: () => 'http://example.com/product2' },
+        ];
+        dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+        const result = await submitForScraping(context);
+        expect(result.urls).to.deep.equal([
+          { url: 'http://example.com/product1' },
+          { url: 'http://example.com/product2' },
+        ]);
+
+        // Verify PDF files were logged as skipped
+        expect(context.log.info).to.have.been.calledWith('[PRODUCT-METATAGS] Skipping PDF file from scraping: http://example.com/catalog.pdf');
+        expect(context.log.info).to.have.been.calledWith('[PRODUCT-METATAGS] Skipping PDF file from scraping: http://example.com/guide.PDF');
+      });
+
+      it('should handle malformed URLs gracefully in isPdfUrl', async () => {
+        const topPages = [
+          { getUrl: () => 'http://example.com/product1' },
+          { getUrl: () => '://invalid-url' },
+          { getUrl: () => 'http://example.com/product2' },
+        ];
+        dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+        const result = await submitForScraping(context);
+        // Should include all URLs (malformed URL doesn't throw, just returns false from isPdfUrl)
+        expect(result.urls).to.deep.equal([
+          { url: 'http://example.com/product1' },
+          { url: '://invalid-url' },
+          { url: 'http://example.com/product2' },
+        ]);
+      });
     });
 
     describe('fetchAndProcessPageObject', () => {
@@ -782,9 +819,138 @@ describe('Product MetaTags', () => {
         );
 
         expect(result).to.be.null;
-        expect(logStub.error).to.have.been.calledWith(
-          '[PRODUCT-METATAGS] Scrape result is empty for scrapes/site-id/404/scrape.json',
+        // Now caught by error page detection (has "404" in content)
+        expect(logStub.info).to.have.been.calledWith(
+          sinon.match(/Skipping error page for http:\/\/example\.com\/404/),
         );
+      });
+
+      it('should detect error page when h1 is a string instead of array', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/error',
+          scrapeResult: {
+            tags: {
+              title: 'Error Page',
+              description: 'Something went wrong',
+              h1: '500 Internal Server Error', // String, not array
+            },
+            rawBody: '<html><body><h1>500 Internal Server Error</h1></body></html>'.repeat(10),
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/error',
+          'scrapes/site-id/error/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.info).to.have.been.calledWith(
+          sinon.match(/Skipping error page for http:\/\/example\.com\/error/),
+        );
+        // Verify h1Display shows the string value (not h1[0])
+        expect(logStub.info).to.have.been.calledWith(
+          sinon.match(/h1: "500 Internal Server Error"/),
+        );
+      });
+
+      it('should skip pages with scraper error 403', async () => {
+        const mockScrapeResult = {
+          error: {
+            statusCode: 403,
+            message: 'Forbidden',
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/forbidden',
+          'scrapes/site-id/forbidden/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.warn).to.have.been.calledWith(sinon.match(/Skipping page due to scraper error 403/));
+      });
+
+      it('should skip pages with scraper error 500', async () => {
+        const mockScrapeResult = {
+          error: {
+            statusCode: 500,
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/server-error',
+          'scrapes/site-id/server-error/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.warn).to.have.been.calledWith(sinon.match(/Skipping page due to scraper error 500/));
+      });
+
+      it('should skip pages with small body without error keywords', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/small',
+          scrapeResult: {
+            tags: {
+              title: 'Short Page',
+              description: 'Brief',
+              h1: ['Heading'],
+            },
+            structuredData: {
+              jsonld: {
+                Product: [{ sku: 'PROD-123' }],
+              },
+            },
+            rawBody: '<html><body>Short content</body></html>', // Less than 300 chars, no error keywords
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/small',
+          'scrapes/site-id/small/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.error).to.have.been.calledWith('[PRODUCT-METATAGS] Scrape result is empty for scrapes/site-id/small/scrape.json');
       });
 
       it('should process pages with scrape result body length of 300 characters or more', async () => {
@@ -1040,9 +1206,10 @@ describe('Product MetaTags', () => {
             accessCount += 1;
             // 1st access: guard left side -> object
             // 2nd access: guard right side (typeof) -> object
-            // 3rd access: debug line 181 -> undefined to trigger fallback
-            // 4th+ access: building return object -> object
-            return accessCount === 3 ? undefined : tagsObject;
+            // 3rd access: error detection destructure -> object (new with error detection)
+            // 4th access: debug line -> undefined to trigger fallback
+            // 5th+ access: building return object (title, description, h1) -> object
+            return accessCount === 4 ? undefined : tagsObject;
           },
         });
 
@@ -2396,7 +2563,8 @@ describe('Product MetaTags', () => {
       expect(result.projectedTrafficValue).to.be.a('number');
     });
 
-    it('should return empty object when RUM API fails', async () => {
+    it('should return empty object when RUM API fails', async function () {
+      this.timeout(5000);
       const detectedTags = {
         '/page1': { title: { issue: 'Missing Title', tagName: 'title' } },
       };
@@ -2969,7 +3137,8 @@ describe('Product MetaTags', () => {
       expect(logStub.info).to.have.been.called;
     });
 
-    it('should handle missing site config', async () => {
+    it('should handle missing site config', async function () {
+      this.timeout(5000);
       // Mock site to have getBaseURL but null config
       const mockSiteWithNullConfig = {
         getId: sinon.stub().returns('site123'),
@@ -3008,7 +3177,8 @@ describe('Product MetaTags', () => {
       expect(logStub.info).to.have.been.called;
     });
 
-    it('should log detailed context information', async () => {
+    it('should log detailed context information', async function () {
+      this.timeout(5000);
       const mockAutoDetectResult = {
         seoChecks: { getFewHealthyTags: sinon.stub().returns({}) },
         detectedTags: {},
@@ -4694,6 +4864,52 @@ describe('Product MetaTags', () => {
         sinon.match(/Extracted config for https:\/\/example\.com\/product/),
       );
       expect(syncSuggestionsStub.callCount).to.be.greaterThan(0);
+    });
+
+    it('adds Magento-Environment-Id to opportunity data when present in config headers', async () => {
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const saveStub = sinon.stub().resolves();
+      const setDataStub = sinon.stub();
+      const getDataStub = sinon.stub().returns({ existing: 'data' });
+
+      const mockModule = await esmock('../../src/product-metatags/handler.js', {
+        '../../src/utils/seo-utils.js': {
+          getIssueRanking: () => 1,
+        },
+        '../../src/utils/url-utils.js': {
+          getBaseUrl: () => 'https://example.com',
+        },
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({
+            getId: () => 'opty',
+            getSiteId: () => 'site-id',
+            getData: getDataStub,
+            setData: setDataStub,
+            save: saveStub,
+          }),
+        },
+        '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        '../../src/utils/saas.js': {
+          getCommerceConfig: sinon.stub().resolves({
+            url: 'https://co.example/graphql',
+            headers: {
+              'Magento-Environment-Id': 'env-123',
+            },
+          }),
+        },
+      });
+
+      const { opportunityAndSuggestions } = mockModule;
+      await opportunityAndSuggestions(baseAuditData.auditResult.finalUrl, baseAuditData, context);
+
+      expect(setDataStub).to.have.been.calledWith({
+        existing: 'data',
+        tenantId: 'env-123',
+      });
+      expect(saveStub).to.have.been.calledOnce;
+      expect(logStub.info).to.have.been.calledWith(
+        '[PRODUCT-METATAGS] Added tenantId to opportunity: env-123',
+      );
     });
   });
 

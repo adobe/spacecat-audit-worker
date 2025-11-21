@@ -20,7 +20,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import productMetatagsAutoSuggest from './product-metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { getIssueRanking, trimTagValue } from '../utils/seo-utils.js';
+import { getIssueRanking, trimTagValue, normalizeTagValue } from '../utils/seo-utils.js';
 import { getBaseUrl } from '../utils/url-utils.js';
 import {
   DESCRIPTION,
@@ -316,6 +316,24 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
         };
       },
     });
+
+    // Extract Magento-Environment-Id from suggestions (all have same value) as tenantId
+    let tenantId = null;
+    if (suggestions.length > 0) {
+      const firstSuggestionWithConfig = suggestions.find((s) => s.config?.headers?.['Magento-Environment-Id']);
+      tenantId = firstSuggestionWithConfig?.config?.headers?.['Magento-Environment-Id'] || null;
+    }
+
+    // Update opportunity data with tenantId if available
+    if (tenantId) {
+      opportunity.setData({
+        ...opportunity.getData(),
+        tenantId,
+      });
+      await opportunity.save();
+      log.info(`[PRODUCT-METATAGS] Added tenantId to opportunity: ${tenantId}`);
+    }
+
     log.info(`[PRODUCT-METATAGS] Successfully synced ${suggestions.length} suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
   } catch (error) {
     log.error(`[PRODUCT-METATAGS] Error syncing suggestions for site ${auditData.siteId}:`, error);
@@ -366,10 +384,37 @@ export function extractProductTagsFromStructuredData(structuredData, log) {
 
 export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
+
+  // Check for scraper errors (403, 404, 5xx, etc.)
+  if (object?.error?.statusCode) {
+    log.warn(`[PRODUCT-METATAGS] Skipping page due to scraper error ${object.error.statusCode} for ${url}: ${object.error.message || 'Unknown error'}`);
+    return null;
+  }
+
   if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
     log.error(`[PRODUCT-METATAGS] No Scraped tags found in S3 ${key} object`);
     return null;
   }
+
+  // Check for error pages by content (only if tags are accessible)
+  const { tags } = object.scrapeResult;
+  if (tags && typeof tags === 'object') {
+    const title = normalizeTagValue(tags.title);
+    const h1Text = normalizeTagValue(tags.h1);
+    const httpStatusCodes = ['400', '401', '403', '404', '405', '500', '502', '503', '504'];
+
+    const hasErrorKeyword = title.includes('error') || h1Text.includes('error');
+    const hasStatusCode = httpStatusCodes.some(
+      (code) => title.includes(code) || h1Text.includes(code),
+    );
+
+    if (hasErrorKeyword || hasStatusCode) {
+      const h1Display = Array.isArray(tags.h1) ? tags.h1[0] : tags.h1;
+      log.info(`[PRODUCT-METATAGS] Skipping error page for ${url} (title: "${tags.title}", h1: "${h1Display}")`);
+      return null;
+    }
+  }
+
   // if the scrape result is empty, skip the page for product-metatags audit
   if (object?.scrapeResult?.rawBody?.length < 300) {
     log.error(`[PRODUCT-METATAGS] Scrape result is empty for ${key}`);
@@ -769,8 +814,28 @@ export async function submitForScraping(context) {
     throw new Error('No URLs found for site neither top pages nor included URLs');
   }
 
+  // Filter out PDF files
+  const isPdfUrl = (url) => {
+    try {
+      const pathname = new URL(url).pathname.toLowerCase();
+      return pathname.endsWith('.pdf');
+    } catch {
+      return false;
+    }
+  };
+
+  const filteredUrls = finalUrls.filter((url) => {
+    if (isPdfUrl(url)) {
+      log.info(`[PRODUCT-METATAGS] Skipping PDF file from scraping: ${url}`);
+      return false;
+    }
+    return true;
+  });
+
+  log.info(`[PRODUCT-METATAGS] Filtered ${finalUrls.length - filteredUrls.length} PDF files from ${finalUrls.length} URLs`);
+
   const result = {
-    urls: finalUrls.map((url) => ({ url })),
+    urls: filteredUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'product-metatags',
   };

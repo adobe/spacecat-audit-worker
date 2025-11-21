@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { ok } from '@adobe/spacecat-shared-http-utils';
+import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORM_OPPORTUNITY_TYPES, formOpportunitiesMap } from '../constants.js';
 import {
@@ -20,10 +20,10 @@ import {
 } from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
 import {
-  aggregateAccessibilityIssues,
+  aggregateA11yIssuesByOppType,
   createIndividualOpportunitySuggestions,
 } from '../../accessibility/utils/generate-individual-opportunities.js';
-import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToImporter } from '../../accessibility/utils/data-processing.js';
+import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToMystique } from '../../accessibility/utils/data-processing.js';
 import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from '../../accessibility/utils/constants.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 
@@ -153,9 +153,9 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
     const a11yOpptyData = filteredA11yData.map((a11yOpty) => {
       const a11yIssues = a11yOpty.a11yIssues.map((issue) => ({
         ...issue,
-        successCriterias: issue.successCriterias.map(
-          (criteria) => getSuccessCriteriaDetails(criteria),
-        ),
+        successCriterias: Array.isArray(issue.successCriterias) && issue.successCriterias.length > 0
+          ? issue.successCriterias.map((criteria) => getSuccessCriteriaDetails(criteria))
+          : [],
       }));
       return {
         form: a11yOpty.form,
@@ -203,7 +203,7 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
     // If no existing opportunity, create new opportunity
     if (!opportunity) {
       // change status to IGNORED for older opportunities
-      await updateStatusToIgnored(dataAccess, siteId, log, filterAccessibilityOpportunities);
+      await updateStatusToIgnored(dataAccess, siteId, log, null, filterAccessibilityOpportunities);
 
       const opportunityData = {
         siteId,
@@ -310,7 +310,7 @@ async function createFormAccessibilityIndividualSuggestions(aggregatedData, oppo
       }
     });
 
-    const aggregatedIssues = aggregateAccessibilityIssues(
+    const aggregatedIssues = aggregateA11yIssuesByOppType(
       transformedAccessibilityData,
       formOpportunitiesMap,
     );
@@ -448,10 +448,18 @@ export async function createAccessibilityOpportunity(auditData, context) {
 }
 
 export default async function handler(message, context) {
-  const { log, site } = context;
+  const { log, dataAccess } = context;
+  const { Site } = dataAccess;
   const { auditId, siteId, data } = message;
   const { opportunityId, a11y } = data;
   log.debug(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
+
+  const site = await Site.findById(siteId);
+  if (!site) {
+    log.error(`[Form Opportunity] [Site Id: ${siteId}] Site not found for siteId: ${siteId}`);
+    return notFound('Site not found');
+  }
+
   try {
     const opportunity = await createOrUpdateOpportunity(
       auditId,
@@ -471,9 +479,10 @@ export default async function handler(message, context) {
     // send message to importer for code-fix generation
     const isAutoFixEnabled = await isAuditEnabledForSite(`${opportunity.getType()}-auto-fix`, site, context);
     if (isAutoFixEnabled) {
-      await sendCodeFixMessagesToImporter(
+      await sendCodeFixMessagesToMystique(
         opportunity,
         auditId,
+        site,
         context,
       );
     } else {

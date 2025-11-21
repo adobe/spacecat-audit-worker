@@ -26,7 +26,6 @@ import {
   MIN_TEXT_LENGTH,
   MAX_CHARACTERS_DISPLAY,
 } from '../shared/constants.js';
-import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
 
@@ -154,299 +153,296 @@ export default async function readability(context, auditContext) {
     timeExecutionBreakdown,
   } = auditContext;
 
-  const isReadabilityEnabled = await isAuditEnabledForSite(`${PREFLIGHT_READABILITY}-preflight`, site, context);
-  if (isReadabilityEnabled) {
-    const readabilityStartTime = Date.now();
-    const readabilityStartTimestamp = new Date().toISOString();
+  const readabilityStartTime = Date.now();
+  const readabilityStartTimestamp = new Date().toISOString();
 
-    // Create readability audit entries for all pages
-    previewUrls.forEach((url) => {
-      const pageResult = audits.get(url);
-      pageResult.audits.push({ name: PREFLIGHT_READABILITY, type: 'seo', opportunities: [] });
-    });
+  // Create readability audit entries for all pages
+  previewUrls.forEach((url) => {
+    const pageResult = audits.get(url);
+    pageResult.audits.push({ name: PREFLIGHT_READABILITY, type: 'seo', opportunities: [] });
+  });
 
-    // Process each scraped page
-    for (const { data } of scrapedObjects) {
-      const { finalUrl, scrapeResult: { rawBody } } = data;
-      const normalizedFinalUrl = new URL(finalUrl).origin + new URL(finalUrl).pathname.replace(/\/$/, '');
-      const pageResult = audits.get(normalizedFinalUrl);
+  // Process each scraped page
+  for (const { data } of scrapedObjects) {
+    const { finalUrl, scrapeResult: { rawBody } } = data;
+    const normalizedFinalUrl = new URL(finalUrl).origin + new URL(finalUrl).pathname.replace(/\/$/, '');
+    const pageResult = audits.get(normalizedFinalUrl);
 
-      if (!pageResult) {
-        log.debug(`[readability-suggest handler] readability: No page result found for ${normalizedFinalUrl}`);
-        return;
-      }
-
-      const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
-
-      const doc = new JSDOM(rawBody).window.document;
-
-      // Get all paragraph, div, and list item elements
-      const textElements = Array.from(doc.querySelectorAll('p, div, li'));
-
-      let processedElements = 0;
-      let poorReadabilityCount = 0;
-      const detectedLanguages = new Set(); // Track languages actually detected
-
-      // Helper function to detect if text is in a supported language
-      const getSupportedLanguage = (text) => {
-        const detectedLanguageCode = franc(text);
-        if (isSupportedLanguage(detectedLanguageCode)) {
-          return getLanguageName(detectedLanguageCode);
-        }
-        return null; // Unsupported language
-      };
-
-      // Helper function to calculate readability score and create audit opportunity
-      const analyzeReadability = async (text, element, elementIndex) => {
-        try {
-          // Check if text is in a supported language before analyzing readability
-          const detectedLanguage = getSupportedLanguage(text);
-          if (!detectedLanguage) {
-            return; // Skip unsupported languages
-          }
-
-          // Track detected language
-          detectedLanguages.add(detectedLanguage);
-
-          // Use text-readability library for English, custom function for other languages
-          let readabilityScore;
-          if (detectedLanguage === 'english') {
-            readabilityScore = rs.fleschReadingEase(text.trim());
-          } else {
-            readabilityScore = await calculateReadabilityScore(text.trim(), detectedLanguage);
-          }
-
-          if (readabilityScore < TARGET_READABILITY_SCORE) {
-            poorReadabilityCount += 1;
-
-            // Truncate text for display
-            const displayText = text.length > MAX_CHARACTERS_DISPLAY
-              ? `${text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
-              : text;
-
-            const issueText = `Text element is difficult to read: "${displayText}"`;
-
-            audit.opportunities.push({
-              check: 'poor-readability',
-              issue: issueText,
-              seoImpact: 'Moderate',
-              fleschReadingEase: readabilityScore,
-              language: detectedLanguage,
-              seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
-              textContent: text, // Store full text for AI processing
-            });
-          }
-        } catch (error) {
-          const errorContext = `element with index ${elementIndex}`;
-          log.error(
-            `[readability-suggest handler] readability: Error calculating readability for ${errorContext} `
-            + `on ${normalizedFinalUrl}: ${error.message}`,
-          );
-        }
-      };
-
-      // Collect all readability analysis promises to run in parallel
-      const readabilityPromises = [];
-
-      // Filter and process elements without using continue statements
-      const elementsToProcess = textElements
-        .map((element, index) => ({ element, index }))
-        .filter(({ element }) => {
-          // Check if element has child elements
-          const hasBlockChildren = element.children.length > 0
-            && !Array.from(element.children).every((child) => {
-              const inlineTags = [
-                'strong', 'b', 'em', 'i', 'span', 'a', 'mark',
-                'small', 'sub', 'sup', 'u', 'code', 'br',
-              ];
-              return inlineTags.includes(child.tagName.toLowerCase());
-            });
-
-          // Skip if it has block-level children (to avoid duplicate analysis)
-          return !hasBlockChildren;
-        })
-        .filter(({ element }) => {
-          const textContent = element.textContent?.trim();
-          return textContent && textContent.length >= MIN_TEXT_LENGTH;
-        });
-
-      // Process filtered elements
-      elementsToProcess.forEach(({ element, index }) => {
-        const textContent = element.textContent?.trim();
-
-        // Check if the element contains <br> tags (indicating multiple paragraphs)
-        if (element.innerHTML.includes('<br')) {
-          // Create a temporary clone to manipulate
-          const tempElement = element.cloneNode(true);
-
-          // Replace <br> tags with a unique delimiter
-          const brRegex = /<br\s*\/?>/gi;
-          tempElement.innerHTML = tempElement.innerHTML.replace(brRegex, '<!--BR_DELIMITER-->');
-
-          // Split by the delimiter and extract text content
-          const paragraphs = tempElement.innerHTML
-            .split('<!--BR_DELIMITER-->')
-            .map((p) => {
-              // Create a temporary div to extract text content safely
-              const tempDiv = doc.createElement('div');
-              tempDiv.innerHTML = p;
-              return tempDiv.textContent;
-            })
-            .map((p) => p.trim())
-            .filter((p) => p.length >= MIN_TEXT_LENGTH);
-
-          // Add promises for each paragraph
-          paragraphs.forEach((paragraph) => {
-            readabilityPromises.push(analyzeReadability(paragraph, element, index));
-          });
-
-          processedElements += paragraphs.length;
-        } else {
-          // Add promise for single text block
-          readabilityPromises.push(analyzeReadability(textContent, element, index));
-          processedElements += 1;
-        }
-      });
-
-      // Execute all readability analyses in parallel
-      // eslint-disable-next-line no-await-in-loop
-      await Promise.all(readabilityPromises);
-
-      const detectedLanguagesList = detectedLanguages.size > 0
-        ? Array.from(detectedLanguages).join(', ')
-        : 'none detected';
-
-      log.debug(
-        `[readability-suggest handler] readability: Processed ${processedElements} text element(s) on `
-        + `${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability (detected languages: ${detectedLanguagesList})`,
-      );
+    if (!pageResult) {
+      log.debug(`[readability-suggest handler] readability: No page result found for ${normalizedFinalUrl}`);
+      return;
     }
 
-    // Process suggestions if this is the suggest step
-    if (step === 'suggest') {
-      // Collect all readability issues across all pages
-      const allReadabilityIssues = [];
-      for (const pageResult of auditsResult) {
-        const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
-        if (audit && audit.opportunities.length > 0) {
-          // Add page URL to each issue for context
-          const issuesWithContext = audit.opportunities.map((issue) => ({
-            ...issue,
-            pageUrl: pageResult.pageUrl,
-          }));
-          allReadabilityIssues.push(...issuesWithContext);
-        }
-      }
+    const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
 
-      if (allReadabilityIssues.length > 0) {
-        try {
-          // First, check if we already have suggestions from a previous run
-          await checkForExistingSuggestions(
+    const doc = new JSDOM(rawBody).window.document;
+
+    // Get all paragraph, div, and list item elements
+    const textElements = Array.from(doc.querySelectorAll('p, div, li'));
+
+    let processedElements = 0;
+    let poorReadabilityCount = 0;
+    const detectedLanguages = new Set(); // Track languages actually detected
+
+    // Helper function to detect if text is in a supported language
+    const getSupportedLanguage = (text) => {
+      const detectedLanguageCode = franc(text);
+      if (isSupportedLanguage(detectedLanguageCode)) {
+        return getLanguageName(detectedLanguageCode);
+      }
+      return null; // Unsupported language
+    };
+
+    // Helper function to calculate readability score and create audit opportunity
+    const analyzeReadability = async (text, element, elementIndex) => {
+      try {
+        // Check if text is in a supported language before analyzing readability
+        const detectedLanguage = getSupportedLanguage(text);
+        if (!detectedLanguage) {
+          return; // Skip unsupported languages
+        }
+
+        // Track detected language
+        detectedLanguages.add(detectedLanguage);
+
+        // Use text-readability library for English, custom function for other languages
+        let readabilityScore;
+        if (detectedLanguage === 'english') {
+          readabilityScore = rs.fleschReadingEase(text.trim());
+        } else {
+          readabilityScore = await calculateReadabilityScore(text.trim(), detectedLanguage);
+        }
+
+        if (readabilityScore < TARGET_READABILITY_SCORE) {
+          poorReadabilityCount += 1;
+
+          // Truncate text for display
+          const displayText = text.length > MAX_CHARACTERS_DISPLAY
+            ? `${text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
+            : text;
+
+          const issueText = `Text element is difficult to read: "${displayText}"`;
+
+          audit.opportunities.push({
+            check: 'poor-readability',
+            issue: issueText,
+            seoImpact: 'Moderate',
+            fleschReadingEase: readabilityScore,
+            language: detectedLanguage,
+            seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
+            textContent: text, // Store full text for AI processing
+          });
+        }
+      } catch (error) {
+        const errorContext = `element with index ${elementIndex}`;
+        log.error(
+          `[readability-suggest handler] readability: Error calculating readability for ${errorContext} `
+          + `on ${normalizedFinalUrl}: ${error.message}`,
+        );
+      }
+    };
+
+    // Collect all readability analysis promises to run in parallel
+    const readabilityPromises = [];
+
+    // Filter and process elements without using continue statements
+    const elementsToProcess = textElements
+      .map((element, index) => ({ element, index }))
+      .filter(({ element }) => {
+        // Check if element has child elements
+        const hasBlockChildren = element.children.length > 0
+          && !Array.from(element.children).every((child) => {
+            const inlineTags = [
+              'strong', 'b', 'em', 'i', 'span', 'a', 'mark',
+              'small', 'sub', 'sup', 'u', 'code', 'br',
+            ];
+            return inlineTags.includes(child.tagName.toLowerCase());
+          });
+
+        // Skip if it has block-level children (to avoid duplicate analysis)
+        return !hasBlockChildren;
+      })
+      .filter(({ element }) => {
+        const textContent = element.textContent?.trim();
+        return textContent && textContent.length >= MIN_TEXT_LENGTH;
+      });
+
+    // Process filtered elements
+    elementsToProcess.forEach(({ element, index }) => {
+      const textContent = element.textContent?.trim();
+
+      // Check if the element contains <br> tags (indicating multiple paragraphs)
+      if (element.innerHTML.includes('<br')) {
+        // Create a temporary clone to manipulate
+        const tempElement = element.cloneNode(true);
+
+        // Replace <br> tags with a unique delimiter
+        const brRegex = /<br\s*\/?>/gi;
+        tempElement.innerHTML = tempElement.innerHTML.replace(brRegex, '<!--BR_DELIMITER-->');
+
+        // Split by the delimiter and extract text content
+        const paragraphs = tempElement.innerHTML
+          .split('<!--BR_DELIMITER-->')
+          .map((p) => {
+            // Create a temporary div to extract text content safely
+            const tempDiv = doc.createElement('div');
+            tempDiv.innerHTML = p;
+            return tempDiv.textContent;
+          })
+          .map((p) => p.trim())
+          .filter((p) => p.length >= MIN_TEXT_LENGTH);
+
+        // Add promises for each paragraph
+        paragraphs.forEach((paragraph) => {
+          readabilityPromises.push(analyzeReadability(paragraph, element, index));
+        });
+
+        processedElements += paragraphs.length;
+      } else {
+        // Add promise for single text block
+        readabilityPromises.push(analyzeReadability(textContent, element, index));
+        processedElements += 1;
+      }
+    });
+
+    // Execute all readability analyses in parallel
+    // eslint-disable-next-line no-await-in-loop
+    await Promise.all(readabilityPromises);
+
+    const detectedLanguagesList = detectedLanguages.size > 0
+      ? Array.from(detectedLanguages).join(', ')
+      : 'none detected';
+
+    log.debug(
+      `[readability-suggest handler] readability: Processed ${processedElements} text element(s) on `
+      + `${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability (detected languages: ${detectedLanguagesList})`,
+    );
+  }
+
+  // Process suggestions if this is the suggest step
+  if (step === 'suggest') {
+    // Collect all readability issues across all pages
+    const allReadabilityIssues = [];
+    for (const pageResult of auditsResult) {
+      const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
+      if (audit && audit.opportunities.length > 0) {
+        // Add page URL to each issue for context
+        const issuesWithContext = audit.opportunities.map((issue) => ({
+          ...issue,
+          pageUrl: pageResult.pageUrl,
+        }));
+        allReadabilityIssues.push(...issuesWithContext);
+      }
+    }
+
+    if (allReadabilityIssues.length > 0) {
+      try {
+        // First, check if we already have suggestions from a previous run
+        await checkForExistingSuggestions(
+          allReadabilityIssues,
+          auditsResult,
+          site.getId(),
+          job.getId(),
+          context,
+        );
+
+        // Count how many still need processing
+        const allOpps = auditsResult
+          .flatMap((page) => {
+            const pageAudit = page.audits.find((a) => a.name === PREFLIGHT_READABILITY);
+            return pageAudit?.opportunities || [];
+          });
+        const stillProcessing = allOpps
+          .filter((opp) => opp.suggestionStatus === 'processing').length;
+
+        if (stillProcessing > 0) {
+          log.debug(
+            `[readability-suggest handler] readability: Sending ${stillProcessing} readability issues `
+            + 'to Mystique for async processing...',
+          );
+
+          // Send to Mystique asynchronously (like alt-text and accessibility audits)
+          await sendReadabilityToMystique(
+            context.auditUrl || site.getBaseURL(),
             allReadabilityIssues,
-            auditsResult,
             site.getId(),
             job.getId(),
             context,
+            'preflight',
           );
 
-          // Count how many still need processing
-          const allOpps = auditsResult
-            .flatMap((page) => {
-              const pageAudit = page.audits.find((a) => a.name === PREFLIGHT_READABILITY);
-              return pageAudit?.opportunities || [];
-            });
-          const stillProcessing = allOpps
-            .filter((opp) => opp.suggestionStatus === 'processing').length;
-
-          if (stillProcessing > 0) {
-            log.debug(
-              `[readability-suggest handler] readability: Sending ${stillProcessing} readability issues `
-              + 'to Mystique for async processing...',
-            );
-
-            // Send to Mystique asynchronously (like alt-text and accessibility audits)
-            await sendReadabilityToMystique(
-              context.auditUrl || site.getBaseURL(),
-              allReadabilityIssues,
-              site.getId(),
-              job.getId(),
-              context,
-              'preflight',
-            );
-
-            log.debug(`[readability-suggest handler] readability: Successfully sent ${allReadabilityIssues.length} `
-              + 'readability issues to Mystique for processing');
-            // Indicate to preflight runner that we are still processing
-            isProcessing = true;
-            // While waiting for Mystique, clear readability opportunities in response
-            auditsResult.forEach((page) => {
-              const readabilityAudit = page.audits.find((a) => a.name === PREFLIGHT_READABILITY);
-              if (readabilityAudit) {
-                readabilityAudit.opportunities = [];
-              }
-            });
-          } else {
-            log.info(`[readability-suggest handler] readability: All ${allReadabilityIssues.length} `
-              + 'readability issues already have suggestions');
-          }
-        } catch (error) {
-          log.error('[readability-suggest handler] readability: Error sending issues to Mystique:', {
-            error: error.message,
-            stack: error.stack,
-            siteId: site.getId(),
-            jobId: job.getId(),
-            issuesCount: allReadabilityIssues.length,
-            auditUrl: context.auditUrl || site.getBaseURL(),
-          });
-
-          // Create detailed error message for debugging
-          const detailedErrorMessage = `Mystique integration failed: ${error.message}. Details: siteId=${site.getId()}, jobId=${job.getId()}, issuesCount=${allReadabilityIssues.length}, hasEnvQueue=${!!context.env.QUEUE_SPACECAT_TO_MYSTIQUE}, hasSqs=${!!context.sqs}`;
-
-          // Update audit results to show error status with detailed debugging
-          for (const pageResult of auditsResult) {
-            const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
-            if (audit && audit.opportunities.length > 0) {
-              audit.opportunities.forEach((opportunity, index) => {
-                audit.opportunities[index] = {
-                  ...opportunity,
-                  suggestionStatus: 'error',
-                  suggestionMessage: detailedErrorMessage,
-                  debugInfo: {
-                    errorType: error.constructor.name,
-                    errorMessage: error.message,
-                    timestamp: new Date().toISOString(),
-                    mystiqueQueueConfigured: !!context.env.QUEUE_SPACECAT_TO_MYSTIQUE,
-                    sqsClientAvailable: !!context.sqs,
-                  },
-                };
-              });
+          log.debug(`[readability-suggest handler] readability: Successfully sent ${allReadabilityIssues.length} `
+            + 'readability issues to Mystique for processing');
+          // Indicate to preflight runner that we are still processing
+          isProcessing = true;
+          // While waiting for Mystique, clear readability opportunities in response
+          auditsResult.forEach((page) => {
+            const readabilityAudit = page.audits.find((a) => a.name === PREFLIGHT_READABILITY);
+            if (readabilityAudit) {
+              readabilityAudit.opportunities = [];
             }
+          });
+        } else {
+          log.info(`[readability-suggest handler] readability: All ${allReadabilityIssues.length} `
+            + 'readability issues already have suggestions');
+        }
+      } catch (error) {
+        log.error('[readability-suggest handler] readability: Error sending issues to Mystique:', {
+          error: error.message,
+          stack: error.stack,
+          siteId: site.getId(),
+          jobId: job.getId(),
+          issuesCount: allReadabilityIssues.length,
+          auditUrl: context.auditUrl || site.getBaseURL(),
+        });
+
+        // Create detailed error message for debugging
+        const detailedErrorMessage = `Mystique integration failed: ${error.message}. Details: siteId=${site.getId()}, jobId=${job.getId()}, issuesCount=${allReadabilityIssues.length}, hasEnvQueue=${!!context.env.QUEUE_SPACECAT_TO_MYSTIQUE}, hasSqs=${!!context.sqs}`;
+
+        // Update audit results to show error status with detailed debugging
+        for (const pageResult of auditsResult) {
+          const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
+          if (audit && audit.opportunities.length > 0) {
+            audit.opportunities.forEach((opportunity, index) => {
+              audit.opportunities[index] = {
+                ...opportunity,
+                suggestionStatus: 'error',
+                suggestionMessage: detailedErrorMessage,
+                debugInfo: {
+                  errorType: error.constructor.name,
+                  errorMessage: error.message,
+                  timestamp: new Date().toISOString(),
+                  mystiqueQueueConfigured: !!context.env.QUEUE_SPACECAT_TO_MYSTIQUE,
+                  sqsClientAvailable: !!context.sqs,
+                },
+              };
+            });
           }
         }
-      } else {
-        log.debug('[readability-suggest handler] readability: No readability issues found to send to Mystique');
       }
+    } else {
+      log.debug('[readability-suggest handler] readability: No readability issues found to send to Mystique');
     }
-
-    const readabilityEndTime = Date.now();
-    const readabilityEndTimestamp = new Date().toISOString();
-    const readabilityElapsed = ((readabilityEndTime - readabilityStartTime) / 1000).toFixed(2);
-    const auditStepName = step === 'suggest' ? 'readability-suggestions' : 'readability';
-
-    log.debug(
-      `[readability-suggest handler] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. `
-      + `Readability audit completed in ${readabilityElapsed} seconds`,
-    );
-
-    timeExecutionBreakdown.push({
-      name: auditStepName,
-      duration: `${readabilityElapsed} seconds`,
-      startTime: readabilityStartTimestamp,
-      endTime: readabilityEndTimestamp,
-    });
-
-    await saveIntermediateResults(context, auditsResult, `readability ${step}`);
   }
+
+  const readabilityEndTime = Date.now();
+  const readabilityEndTimestamp = new Date().toISOString();
+  const readabilityElapsed = ((readabilityEndTime - readabilityStartTime) / 1000).toFixed(2);
+  const auditStepName = step === 'suggest' ? 'readability-suggestions' : 'readability';
+
+  log.debug(
+    `[readability-suggest handler] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. `
+    + `Readability audit completed in ${readabilityElapsed} seconds`,
+  );
+
+  timeExecutionBreakdown.push({
+    name: auditStepName,
+    duration: `${readabilityElapsed} seconds`,
+    startTime: readabilityStartTimestamp,
+    endTime: readabilityEndTimestamp,
+  });
+
+  await saveIntermediateResults(context, auditsResult, `readability ${step}`);
 
   // Always return a value to satisfy consistent-return
   // eslint-disable-next-line consistent-return

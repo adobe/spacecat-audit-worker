@@ -288,6 +288,42 @@ describe('Backlinks Tests', function () {
       }
     });
 
+    it('returns { status: complete } if there are no broken backlinks in audit result', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: [],
+      });
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/No broken backlinks found/));
+    });
+
+    it('returns { status: complete } if brokenBacklinks is null', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: null,
+      });
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+    });
+
+    it('returns { status: complete } if brokenBacklinks is undefined', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+      });
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+    });
+
     it('processes suggestions for broken backlinks and send message to mystique', async () => {
       configuration.isHandlerEnabledForSite.returns(true);
       context.audit.getAuditResult.returns({

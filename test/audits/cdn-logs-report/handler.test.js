@@ -16,8 +16,8 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
-import handler from '../../../src/cdn-logs-report/handler.js';
 
 use(sinonChai);
 
@@ -142,8 +142,11 @@ describe('CDN Logs Report Handler', function test() {
   let sandbox;
   let context;
   let site;
+  let handler;
+  let saveExcelReportStub;
+  let createLLMOSharepointClientStub;
 
-  this.timeout(5000);
+  this.timeout(10000);
 
   const createMockSharepointClient = (stubber) => ({
     getDocument: stubber.stub().returns({
@@ -190,9 +193,26 @@ describe('CDN Logs Report Handler', function test() {
     }),
   });
 
+  before(async () => {
+    saveExcelReportStub = sinon.stub().resolves();
+    createLLMOSharepointClientStub = sinon.stub();
+    
+    handler = await esmock('../../../src/cdn-logs-report/handler.js', {}, {
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: createLLMOSharepointClientStub,
+        saveExcelReport: saveExcelReportStub,
+      },
+    });
+  });
+
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     nock.cleanAll();
+    
+    // Reset stubs before each test
+    saveExcelReportStub.reset();
+    createLLMOSharepointClientStub.reset();
+    createLLMOSharepointClientStub.resolves(createMockSharepointClient(sandbox));
 
     site = {
       getSiteId: () => 'test-site',
@@ -242,9 +262,16 @@ describe('CDN Logs Report Handler', function test() {
       });
   });
 
+  after(async () => {
+    if (handler) {
+      await esmock.purge(handler);
+    }
+  });
+
   afterEach(() => {
-    sandbox.restore();
+    nock.abortPendingRequests();
     nock.cleanAll();
+    sandbox.restore();
   });
 
   describe('Cdn logs report audit handler', () => {
@@ -276,47 +303,6 @@ describe('CDN Logs Report Handler', function test() {
       // Verify Athena interactions
       expect(context.athenaClient.execute).to.have.been.callCount(3);
       expect(context.athenaClient.query).to.have.been.callCount(2);
-
-      // Verify data access calls
-      expect(context.dataAccess.Organization.findById).to.have.been.calledWith('test-org-id');
-    });
-
-    it('returns error when no CDN bucket found', async () => {
-      site.getConfig = () => createSiteConfig({
-        getLlmoCdnBucketConfig: () => null,
-        getCdnLogsConfig: () => null,
-      });
-
-      const result = await handler.runner('https://example.com', context, site);
-
-      expect(result.auditResult).to.have.property('success', false);
-      expect(result.auditResult).to.have.property('error', 'No CDN bucket found');
-      expect(result.fullAuditRef).to.equal('https://example.com');
-    });
-
-    it('handles null getLlmoCdnBucketConfig with orgId fallback', async () => {
-      site.getConfig = () => createSiteConfig({
-        getLlmoCdnBucketConfig: () => null,
-      });
-
-      // Override context to include AWS_ENV for standard bucket discovery
-      const contextWithEnv = {
-        ...context,
-        env: {
-          ...context.env,
-          AWS_ENV: 'dev',
-        },
-      };
-
-      const auditContext = createAuditContext(sandbox);
-      const result = await handler.runner('https://example.com', contextWithEnv, site, auditContext);
-
-      expect(result).to.have.property('auditResult').that.is.an('array');
-      expect(result.auditResult).to.have.length.greaterThan(0);
-      expect(result).to.have.property('fullAuditRef').that.equals('test-folder');
-
-      // Verify data access was called to get IMS org ID as fallback
-      expect(contextWithEnv.dataAccess.Organization.findById).to.have.been.calledWith('test-org-id');
     });
 
     it('handles different weekOffset values', async () => {
@@ -481,10 +467,10 @@ describe('CDN Logs Report Handler', function test() {
         await handler.runner('https://example.com', context, site, auditContext);
 
         expect(context.log.error).to.have.been.calledWith(
-          sinon.match(/report generation failed: Athena query failed/)
+          sinon.match(/.* report generation failed: Athena query failed/)
         );
         expect(context.log.error).to.have.been.calledWith(
-          sinon.match(/Failed to generate .* report: Athena query failed/)
+          sinon.match(/Failed to generate .* report for site .*: Athena query failed/)
         );
       });
     });

@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { trimTagValue, getIssueRanking } from '../../src/utils/seo-utils.js';
+import { trimTagValue, normalizeTagValue, getIssueRanking } from '../../src/utils/seo-utils.js';
 
 describe('trimTagValue', () => {
   it('should trim leading and trailing whitespace from string', () => {
@@ -47,6 +47,85 @@ describe('trimTagValue', () => {
     // Real example from Okta "IP Spoofing" page
     const result = trimTagValue('                    What Is Federated Identity?                    ');
     expect(result).to.equal('What Is Federated Identity?');
+  });
+});
+
+describe('normalizeTagValue', () => {
+  it('should convert string to lowercase', () => {
+    const result = normalizeTagValue('Error Page');
+    expect(result).to.equal('error page');
+  });
+
+  it('should handle string with mixed case', () => {
+    const result = normalizeTagValue('404 Not Found');
+    expect(result).to.equal('404 not found');
+  });
+
+  it('should take first non-empty value from array', () => {
+    const result = normalizeTagValue(['Error Page', 'Another Title']);
+    expect(result).to.equal('error page');
+  });
+
+  it('should skip empty strings in array', () => {
+    const result = normalizeTagValue(['', '  ', 'Valid Title']);
+    expect(result).to.equal('valid title');
+  });
+
+  it('should handle array with null/undefined elements', () => {
+    const result = normalizeTagValue([null, undefined, '403 Forbidden']);
+    expect(result).to.equal('403 forbidden');
+  });
+
+  it('should return empty string for null', () => {
+    const result = normalizeTagValue(null);
+    expect(result).to.equal('');
+  });
+
+  it('should return empty string for undefined', () => {
+    const result = normalizeTagValue(undefined);
+    expect(result).to.equal('');
+  });
+
+  it('should return empty string for empty array', () => {
+    const result = normalizeTagValue([]);
+    expect(result).to.equal('');
+  });
+
+  it('should return empty string for array with only empty strings', () => {
+    const result = normalizeTagValue(['', '  ', '']);
+    expect(result).to.equal('');
+  });
+
+  it('should return empty string for non-string value', () => {
+    const result = normalizeTagValue(123);
+    expect(result).to.equal('');
+  });
+
+  it('should return empty string for boolean value', () => {
+    const result = normalizeTagValue(true);
+    expect(result).to.equal('');
+  });
+
+  it('should preserve original case when toLowerCase is false', () => {
+    const result = normalizeTagValue('Error Page', false);
+    expect(result).to.equal('Error Page');
+  });
+
+  it('should preserve original case for array when toLowerCase is false', () => {
+    const result = normalizeTagValue(['Error Page'], false);
+    expect(result).to.equal('Error Page');
+  });
+
+  it('should handle real-world error page title', () => {
+    // Real CloudFront 403 example
+    const result = normalizeTagValue('403 ERROR - Amazon S3');
+    expect(result).to.equal('403 error - amazon s3');
+  });
+
+  it('should handle h1 array from scraper', () => {
+    // Real scraper format for h1
+    const result = normalizeTagValue(['404 Not Found', 'Error']);
+    expect(result).to.equal('404 not found');
   });
 });
 
