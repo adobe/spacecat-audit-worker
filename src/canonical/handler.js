@@ -152,11 +152,25 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
               check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
               success: true,
             });
+
             const normalize = (u) => (typeof u === 'string' && u.endsWith('/') ? u.slice(0, -1) : u);
+
+            // strip query params and hash
+            const stripQueryParams = (u) => {
+              try {
+                const urlObj = new URL(u);
+                return `${urlObj.origin}${urlObj.pathname}`;
+              } catch {
+                return u;
+              }
+            };
+
             const canonicalPath = normalize(new URL(canonicalUrl).pathname).replace(/\/([^/]+)\.[a-zA-Z0-9]+$/, '/$1');
             const finalPath = normalize(new URL(finalUrl).pathname).replace(/\/([^/]+)\.[a-zA-Z0-9]+$/, '/$1');
-            const normalizedCanonical = normalize(canonicalUrl);
-            const normalizedFinal = normalize(finalUrl);
+            const normalizedCanonical = normalize(stripQueryParams(canonicalUrl));
+            const normalizedFinal = normalize(stripQueryParams(finalUrl));
+
+            // Check if canonical points to same page (query params are ignored)
             if ((isPreview && canonicalPath === finalPath)
                 || normalizedCanonical === normalizedFinal) {
               checks.push({
@@ -411,13 +425,14 @@ export async function validateCanonicalRecursively(
  * @param {string} checkType - The type of canonical check that failed.
  * @param {string} url - The URL that has the canonical issue.
  * @param {string} baseURL - The base URL of the site.
+ * @param {string} canonicalUrl - The canonical URL found in the tag.
  * @returns {string} A suggestion for fixing the canonical issue.
  */
-export function generateCanonicalSuggestion(checkType, url, baseURL) {
+export function generateCanonicalSuggestion(checkType, url, baseURL, canonicalUrl) {
   const checkObj = Object.values(CANONICAL_CHECKS).find((check) => check.check === checkType);
 
   if (checkObj && checkObj.suggestion) {
-    return checkObj.suggestion(url, baseURL);
+    return checkObj.suggestion(url, baseURL, canonicalUrl);
   }
 
   // fallback suggestion
@@ -587,13 +602,13 @@ export async function canonicalAuditRunner(baseURL, context, site) {
           checks.push(...urlContentCheck);
         }
       }
-      return { url, checks };
+      return { url, canonicalUrl, checks };
     });
 
     const auditResultsArray = await Promise.allSettled(auditPromises);
     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
       if (result.status === 'fulfilled') {
-        const { url, checks } = result.value;
+        const { url, canonicalUrl, checks } = result.value;
         checks.forEach((check) => {
           const { check: checkType, success, explanation } = check;
 
@@ -605,7 +620,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
                 urls: [],
               };
             }
-            acc[checkType].urls.push(url);
+            acc[checkType].urls.push({ url, canonicalUrl });
           }
         });
       }
@@ -635,9 +650,9 @@ export async function canonicalAuditRunner(baseURL, context, site) {
     const results = Object.entries(filteredAggregatedResults).map(([checkType, checkData]) => ({
       type: checkType,
       explanation: checkData.explanation,
-      affectedUrls: checkData.urls.map((url) => ({
+      affectedUrls: checkData.urls.map(({ url, canonicalUrl }) => ({
         url,
-        suggestion: generateCanonicalSuggestion(checkType, url, baseURL),
+        suggestion: generateCanonicalSuggestion(checkType, url, baseURL, canonicalUrl),
       })),
     }));
 
