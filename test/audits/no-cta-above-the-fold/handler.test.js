@@ -114,6 +114,12 @@ describe("No CTA above the fold handler", () => {
     const postProcessorResult = await sendResultsToMystique(auditUrl, auditData, context, site);
     expect(postProcessorResult).to.equal(auditData);
     expect(sqsStub.sendMessage).to.have.been.calledTwice;
+    expect(logStub.info).to.have.been.calledWithMatch(
+      "[no-cta-above-the-fold] [Site: example.com] Dispatching 2 message(s) to Mystique",
+    );
+    expect(logStub.info).to.have.been.calledWithMatch(
+      "[no-cta-above-the-fold] [Site: example.com] Successfully dispatched 2 message(s) to Mystique",
+    );
 
     const [firstCall, secondCall] = sqsStub.sendMessage.getCalls();
     expect(firstCall.args[1]).to.deep.include({
@@ -159,6 +165,20 @@ describe("No CTA above the fold handler", () => {
       sinon.match.string,
       "rum_metrics",
       sinon.match.string
+    );
+  });
+
+  it("logs and skips sending Mystique messages when there are no results", async () => {
+    const auditData = {
+      auditResult: [],
+    };
+
+    const result = await sendResultsToMystique(auditUrl, auditData, context, site);
+
+    expect(result).to.equal(auditData);
+    expect(sqsStub.sendMessage).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWithMatch(
+      "[no-cta-above-the-fold] [Site: example.com] No messages to dispatch to Mystique"
     );
   });
 });

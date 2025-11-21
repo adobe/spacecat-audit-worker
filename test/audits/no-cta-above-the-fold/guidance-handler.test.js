@@ -49,7 +49,10 @@ describe("No CTA above the fold guidance handler", () => {
     };
 
     Audit = { findById: sandbox.stub() };
-    Opportunity = { create: sandbox.stub() };
+    Opportunity = {
+      create: sandbox.stub(),
+      allBySiteId: sandbox.stub().resolves([]),
+    };
     Suggestion = { create: sandbox.stub().resolves() };
 
     context = {
@@ -117,6 +120,46 @@ describe("No CTA above the fold guidance handler", () => {
     const suggestionArg = Suggestion.create.getCall(0).args[0];
     expect(suggestionArg.opportunityId).to.equal("oppty-123");
     expect(suggestionArg.data.suggestionValue).to.equal("Line1\nLine2");
+  });
+
+  it("skips opportunity creation when matching opportunity already exists", async () => {
+    const audit = {
+      getAuditId: () => "audit-id",
+      getAuditResult: () => [
+        {
+          path: "/testpage",
+          pageviews: "1000",
+          bounce_rate: 0.6,
+          projected_traffic_lost: 900,
+        },
+      ],
+    };
+    Audit.findById.resolves(audit);
+
+    Opportunity.allBySiteId.resolves([
+      {
+        getId: () => "existing-oppty",
+        getType: () => "generic-opportunity",
+        getData: () => ({
+          opportunityType: "no-cta-above-the-fold",
+          page: pageUrl,
+        }),
+        getStatus: () => "NEW",
+      },
+    ]);
+
+    const result = await handler(
+      {
+        auditId: "audit-id",
+        siteId,
+        data: { url: pageUrl, guidance },
+      },
+      context
+    );
+
+    expect(result.status).to.equal(ok().status);
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
   });
 });
 

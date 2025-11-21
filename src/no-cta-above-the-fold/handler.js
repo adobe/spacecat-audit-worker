@@ -19,6 +19,7 @@ const AUDIT_CONSTANTS = {
   GUIDANCE_TYPE: 'guidance:no-cta-above-the-fold',
   OBSERVATION: 'High bounce rate detected on paid traffic page',
 };
+const MAX_PARALLEL_MESSAGES = 5;
 
 export async function runAudit(auditUrl, context, site) {
   const { log, env } = context;
@@ -80,30 +81,49 @@ export async function sendResultsToMystique(auditUrl, auditData, context, site) 
   const { auditResult = [] } = auditData;
   const siteId = site.getId();
   const deliveryType = site.getDeliveryType();
+  const messageCount = auditResult.length;
 
-  await Promise.all(
-    auditResult.map(async (row) => {
-      const url = row.url ?? `${baseURL}${row.path}`;
-      const auditId = audit?.getId?.();
+  if (messageCount === 0) {
+    log.info(`[no-cta-above-the-fold] [Site: ${auditUrl}] No messages to dispatch to Mystique`);
+    return auditData;
+  }
 
-      const message = {
-        type: AUDIT_CONSTANTS.GUIDANCE_TYPE,
-        observation: AUDIT_CONSTANTS.OBSERVATION,
-        siteId,
-        url,
-        auditId,
-        deliveryType,
-        time: new Date().toISOString(),
-        data: {
+  log.info(
+    `[no-cta-above-the-fold] [Site: ${auditUrl}] Dispatching ${messageCount} message(s) to Mystique for high bounce rate pages`,
+  );
+
+  for (let i = 0; i < auditResult.length; i += MAX_PARALLEL_MESSAGES) {
+    const batch = auditResult.slice(i, i + MAX_PARALLEL_MESSAGES);
+
+    // eslint-disable-next-line no-await-in-loop
+    await Promise.all(
+      batch.map(async (row) => {
+        const url = row.url ?? `${baseURL}${row.path}`;
+        const auditId = audit?.getId?.();
+
+        const message = {
+          type: AUDIT_CONSTANTS.GUIDANCE_TYPE,
+          observation: AUDIT_CONSTANTS.OBSERVATION,
+          siteId,
           url,
-        },
-      };
+          auditId,
+          deliveryType,
+          time: new Date().toISOString(),
+          data: {
+            url,
+          },
+        };
 
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-      log.debug(
-        `[no-cta-above-the-fold] [Site: ${auditUrl}] Sent Mystique message for ${url}`,
-      );
-    }),
+        await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+        log.debug(
+          `[no-cta-above-the-fold] [Site: ${auditUrl}] Sent Mystique message for ${url}`,
+        );
+      }),
+    );
+  }
+
+  log.info(
+    `[no-cta-above-the-fold] [Site: ${auditUrl}] Successfully dispatched ${messageCount} message(s) to Mystique`,
   );
 
   return auditData;

@@ -43,6 +43,26 @@ export default async function handler(message, context) {
 
   const guidanceParsed = getGuidanceObj(guidance);
 
+  const existingOpportunities = await Opportunity.allBySiteId(siteId);
+  const matchingOpportunity = existingOpportunities
+    .filter((oppty) => oppty.getType() === 'generic-opportunity')
+    .find((oppty) => {
+      const opportunityData = oppty.getData();
+      const status = oppty.getStatus();
+
+      return opportunityData?.opportunityType === 'no-cta-above-the-fold'
+        && opportunityData?.page === url
+        && status !== 'RESOLVED'
+        && status !== 'IGNORED';
+    });
+
+  if (matchingOpportunity) {
+    log.info(
+      `no-cta-above-the-fold opportunity already exists for site: ${siteId} page: ${url}`,
+    );
+    return ok();
+  }
+
   const entity = mapToOpportunity(siteId, url, audit, guidanceParsed);
   log.info(
     `Creating a new no-cta-above-the-fold opportunity for ${siteId} page: ${url}`,
