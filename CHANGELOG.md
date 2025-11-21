@@ -1,3 +1,24 @@
+## [1.249.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.249.4...v1.249.5) (2025-11-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.87.1 ([#1630](https://github.com/adobe/spacecat-audit-worker/issues/1630)) ([9243adc](https://github.com/adobe/spacecat-audit-worker/commit/9243adcd81d6a3afac352f7737d2593ceb17af6b))
+
+## [1.249.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.249.3...v1.249.4) (2025-11-21)
+
+
+### Bug Fixes
+
+* Added fix to check if successCriterias is empty or not ([#1616](https://github.com/adobe/spacecat-audit-worker/issues/1616)) ([e081bde](https://github.com/adobe/spacecat-audit-worker/commit/e081bdefcc079ca85a81405b448d0b0b3316a138))
+
+## [1.249.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.249.2...v1.249.3) (2025-11-20)
+
+
+### Bug Fixes
+
+* sites-37260 ([#1590](https://github.com/adobe/spacecat-audit-worker/issues/1590)) ([c2e4426](https://github.com/adobe/spacecat-audit-worker/commit/c2e442673df5af81b5f4467a6326a0028313574b))
+
 ## [1.249.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.249.1...v1.249.2) (2025-11-20)
 
 

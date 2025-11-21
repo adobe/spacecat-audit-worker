@@ -48,20 +48,58 @@ export default async function handler(message, context) {
     return badRequest('Site ID mismatch');
   }
 
+  // Validate brokenLinks array
+  if (!brokenLinks || !Array.isArray(brokenLinks)) {
+    log.error(`[${opportunity.getType()} Guidance] Invalid brokenLinks format. Expected array, got: ${typeof brokenLinks}. Message: ${JSON.stringify(message)}`);
+    return badRequest('Invalid brokenLinks format');
+  }
+
+  if (brokenLinks.length === 0) {
+    log.info(`[${opportunity.getType()} Guidance] No broken links provided in Mystique response`);
+    return ok();
+  }
+
   await Promise.all(brokenLinks.map(async (brokenLink) => {
     const suggestion = await Suggestion.findById(brokenLink.suggestionId);
     if (!suggestion) {
       log.error(`[${opportunity.getType()}] Suggestion not found for ID: ${brokenLink.suggestionId}`);
       return {};
     }
+
+    const suggestedUrls = brokenLink.suggestedUrls || [];
+
+    // Validate that suggestedUrls is an array
+    if (!Array.isArray(suggestedUrls)) {
+      log.info(
+        `[${opportunity.getType()}] Invalid suggestedUrls format for suggestion ${brokenLink.suggestionId}. `
+        + `Expected array, got: ${typeof suggestedUrls}. Available fields: ${Object.keys(brokenLink).join(', ')}`,
+      );
+    }
+
+    // Filter and validate suggested URLs
+    const validSuggestedUrls = Array.isArray(suggestedUrls) ? suggestedUrls : [];
     const filteredSuggestedUrls = await filterBrokenSuggestedUrls(
-      brokenLink.suggestedUrls,
+      validSuggestedUrls,
       site.getBaseURL(),
     );
+
+    // Handle AI rationale - clear it if all URLs were filtered out
+    // This prevents showing rationale for URLs that don't exist
+    let aiRationale = brokenLink.aiRationale || '';
+    if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length > 0) {
+      // All URLs were filtered out (likely invalid/broken), clear rationale
+      log.info('All the suggested URLs were filtered out');
+      aiRationale = '';
+    } else if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length === 0) {
+      // No URLs were provided by Mystique, clear rationale
+      log.info('No suggested URLs provided by Mystique');
+      aiRationale = '';
+    }
+
     suggestion.setData({
       ...suggestion.getData(),
       urlsSuggested: filteredSuggestedUrls,
-      aiRationale: brokenLink.aiRationale,
+      aiRationale,
     });
 
     return suggestion.save();
