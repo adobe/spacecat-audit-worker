@@ -173,6 +173,71 @@ describe('LLMO Customer Analysis Handler', () => {
       });
     });
 
+    it('should trigger geo-brand-presence-refresh when changes are AI categorization only', async () => {
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
+          entities: {},
+          categories: {
+            'cat-1': { name: 'AI Generated Category', region: 'us' },
+          },
+          topics: {
+            'topic-1': {
+              name: 'AI Generated Topic',
+              category: 'cat-1',
+              prompts: [
+                {
+                  prompt: 'AI Generated Prompt',
+                  regions: ['us'],
+                  origin: 'ai',
+                  source: 'api',
+                },
+              ],
+            },
+          },
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should trigger cdn-logs-report (4 calls) + geo-brand-presence-refresh (1 call)
+      expect(sqs.sendMessage).to.have.callCount(5);
+      expect(sqs.sendMessage).to.have.been.calledWith(
+        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
+        sinon.match({ type: 'cdn-logs-report' }),
+      );
+      expect(sqs.sendMessage).to.have.been.calledWith(
+        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
+        sinon.match({ type: 'geo-brand-presence-trigger-refresh' }),
+      );
+      expect(result.auditResult.status).to.equal('completed');
+      expect(result.auditResult.configChangesDetected).to.equal(true);
+      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
+      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-refresh');
+      expect(log.info).to.have.been.calledWith(sinon.match(/AI categorization flow.*triggering geo-brand-presence refresh/));
+    });
+
     it('should trigger referral traffic imports on first-time onboarding with OpTel data', async () => {
       const auditContext = {
         configVersion: 'v1',

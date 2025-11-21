@@ -752,5 +752,266 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
       expect(result.entities).to.deep.equal({});
     });
   });
+
+  describe('compareConfigs with AI categorization metadata', () => {
+    it('should return false for isAICategorizationOnly when oldConfig is null', () => {
+      const newConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        topics: {},
+        ai_topics: {},
+      };
+
+      const changes = compareConfigs(null, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.be.undefined;
+    });
+
+    it('should return false for isAICategorizationOnly when there are no changes', () => {
+      const config = {
+        categories: {},
+        topics: {},
+        ai_topics: {},
+      };
+
+      const changes = compareConfigs(config, config);
+      expect(changes.metadata).to.be.undefined; // No changes means no metadata
+    });
+
+    it('should return true when only new AI-origin categories and topics are added', () => {
+      const oldConfig = {
+        categories: {},
+        topics: {},
+        ai_topics: {},
+      };
+      const newConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        topics: {
+          'topic-1': {
+            name: 'Topic A',
+            category: 'cat-1',
+            prompts: [
+              { prompt: 'AI Prompt 1', regions: ['us'], origin: 'ai', source: 'api' },
+            ],
+          },
+        },
+        ai_topics: {},
+      };
+
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(true);
+    });
+
+    it('should return true when only AI-origin prompts are added to existing topics', () => {
+      const oldConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        topics: {
+          'topic-1': {
+            name: 'Topic A',
+            category: 'cat-1',
+            prompts: [
+              { prompt: 'Original Prompt', regions: ['us'], origin: 'human', source: 'config' },
+            ],
+          },
+        },
+        ai_topics: {},
+      };
+      const newConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        topics: {
+          'topic-1': {
+            name: 'Topic A',
+            category: 'cat-1',
+            prompts: [
+              { prompt: 'Original Prompt', regions: ['us'], origin: 'human', source: 'config' },
+              { prompt: 'AI Prompt 1', regions: ['us'], origin: 'ai', source: 'api' },
+            ],
+          },
+        },
+        ai_topics: {},
+      };
+
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(true);
+    });
+
+    it('should return false when human-origin prompts are added', () => {
+      const oldConfig = {
+        categories: {},
+        topics: {},
+        ai_topics: {},
+      };
+      const newConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        topics: {
+          'topic-1': {
+            name: 'Topic A',
+            category: 'cat-1',
+            prompts: [
+              { prompt: 'Human Prompt', regions: ['us'], origin: 'human', source: 'config' },
+            ],
+          },
+        },
+        ai_topics: {},
+      };
+
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
+    });
+
+    it('should return false when mixed AI and human prompts are added', () => {
+      const oldConfig = {
+        categories: {},
+        topics: {},
+        ai_topics: {},
+      };
+      const newConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        topics: {
+          'topic-1': {
+            name: 'Topic A',
+            category: 'cat-1',
+            prompts: [
+              { prompt: 'AI Prompt', regions: ['us'], origin: 'ai', source: 'api' },
+              { prompt: 'Human Prompt', regions: ['us'], origin: 'human', source: 'config' },
+            ],
+          },
+        },
+        ai_topics: {},
+      };
+
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
+    });
+
+    it('should return true when only ai_topics with AI-origin prompts are added', () => {
+      const oldConfig = {
+        categories: {},
+        topics: {},
+        ai_topics: {},
+      };
+      const newConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        topics: {},
+        ai_topics: {
+          'topic-1': {
+            name: 'AI Topic A',
+            category: 'cat-1',
+            prompts: [
+              { prompt: 'AI Prompt 1', regions: ['us'], origin: 'ai', source: 'api' },
+            ],
+          },
+        },
+      };
+
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(true);
+    });
+
+    it('should return false when categories added without any topics', () => {
+      const oldConfig = {
+        categories: {},
+        topics: {},
+        ai_topics: {},
+      };
+      const newConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        topics: {},
+        ai_topics: {},
+      };
+
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
+    });
+
+    it('should handle case-insensitive origin checking', () => {
+      const oldConfig = {
+        categories: {},
+        topics: {},
+        ai_topics: {},
+      };
+      const newConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        topics: {
+          'topic-1': {
+            name: 'Topic A',
+            category: 'cat-1',
+            prompts: [
+              { prompt: 'AI Prompt 1', regions: ['us'], origin: 'AI', source: 'api' },
+            ],
+          },
+        },
+        ai_topics: {},
+      };
+
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(true);
+    });
+
+    it('should return false when new topic has no origin property', () => {
+      const oldConfig = {
+        categories: {},
+        topics: {},
+        ai_topics: {},
+      };
+      const newConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        topics: {
+          'topic-1': {
+            name: 'Topic A',
+            category: 'cat-1',
+            prompts: [
+              { prompt: 'Prompt without origin', regions: ['us'], source: 'config' },
+            ],
+          },
+        },
+        ai_topics: {},
+      };
+
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
+    });
+
+    it('should handle empty prompts array in new topics', () => {
+      const oldConfig = {
+        categories: {},
+        topics: {},
+        ai_topics: {},
+      };
+      const newConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        topics: {
+          'topic-1': {
+            name: 'Topic A',
+            category: 'cat-1',
+            prompts: [],
+          },
+        },
+        ai_topics: {},
+      };
+
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
+    });
+
+    it('should handle missing prompts property in new topics', () => {
+      const oldConfig = {
+        categories: {},
+        topics: {},
+        ai_topics: {},
+      };
+      const newConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        topics: {
+          'topic-1': {
+            name: 'Topic A',
+            category: 'cat-1',
+          },
+        },
+        ai_topics: {},
+      };
+
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
+    });
+  });
 });
 
