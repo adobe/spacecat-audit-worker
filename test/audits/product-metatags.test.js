@@ -4695,6 +4695,52 @@ describe('Product MetaTags', () => {
       );
       expect(syncSuggestionsStub.callCount).to.be.greaterThan(0);
     });
+
+    it('adds Magento-Environment-Id to opportunity data when present in config headers', async () => {
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const saveStub = sinon.stub().resolves();
+      const setDataStub = sinon.stub();
+      const getDataStub = sinon.stub().returns({ existing: 'data' });
+
+      const mockModule = await esmock('../../src/product-metatags/handler.js', {
+        '../../src/utils/seo-utils.js': {
+          getIssueRanking: () => 1,
+        },
+        '../../src/utils/url-utils.js': {
+          getBaseUrl: () => 'https://example.com',
+        },
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({
+            getId: () => 'opty',
+            getSiteId: () => 'site-id',
+            getData: getDataStub,
+            setData: setDataStub,
+            save: saveStub,
+          }),
+        },
+        '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        '../../src/utils/saas.js': {
+          getCommerceConfig: sinon.stub().resolves({
+            url: 'https://co.example/graphql',
+            headers: {
+              'Magento-Environment-Id': 'env-123',
+            },
+          }),
+        },
+      });
+
+      const { opportunityAndSuggestions } = mockModule;
+      await opportunityAndSuggestions(baseAuditData.auditResult.finalUrl, baseAuditData, context);
+
+      expect(setDataStub).to.have.been.calledWith({
+        existing: 'data',
+        magentoEnvironmentId: 'env-123',
+      });
+      expect(saveStub).to.have.been.calledOnce;
+      expect(logStub.info).to.have.been.calledWith(
+        '[PRODUCT-METATAGS] Added Magento-Environment-Id to opportunity: env-123',
+      );
+    });
   });
 
   describe('opportunityAndSuggestions - invalid fullUrl handling', () => {

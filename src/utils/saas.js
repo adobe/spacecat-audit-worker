@@ -326,38 +326,46 @@ export async function extractCommerceConfigFromACCS(params, log) {
 
     // Build return object directly from extracted values
     // Support both legacy Magento-* headers and new AC-* headers
-    const extractedConfig = {
-      url: commerceEndpoint,
-      headers: {},
-    };
+    const headers = {};
 
-    // Handle AC-Environment-Id / Magento-Environment-Id alias
-    const environmentId = mergedHeaders['AC-Environment-Id'] || mergedHeaders['Magento-Environment-Id'];
-    if (environmentId) {
-      extractedConfig.headers['Magento-Environment-Id'] = environmentId;
+    // Handle AC-Environment-Id / Magento-Environment-Id alias.
+    // Always expose both headers when either one is present so that:
+    // - AC-* only configs are treated as AC format by validation
+    // - Magento-* only configs continue to work
+    const acEnvironmentId = mergedHeaders['AC-Environment-Id'];
+    const magentoEnvironmentId = mergedHeaders['Magento-Environment-Id'];
+    const resolvedEnvironmentId = acEnvironmentId || magentoEnvironmentId;
+    if (resolvedEnvironmentId) {
+      headers['AC-Environment-Id'] = resolvedEnvironmentId;
+      headers['Magento-Environment-Id'] = resolvedEnvironmentId;
     }
 
     // Add legacy Magento-* headers if present
     if (mergedHeaders['Magento-Customer-Group']) {
-      extractedConfig.headers['Magento-Customer-Group'] = mergedHeaders['Magento-Customer-Group'];
+      headers['Magento-Customer-Group'] = mergedHeaders['Magento-Customer-Group'];
     }
     if (mergedHeaders['Magento-Store-Code']) {
-      extractedConfig.headers['Magento-Store-Code'] = mergedHeaders['Magento-Store-Code'];
+      headers['Magento-Store-Code'] = mergedHeaders['Magento-Store-Code'];
     }
     if (mergedHeaders['Magento-Store-View-Code']) {
-      extractedConfig.headers['Magento-Store-View-Code'] = mergedHeaders['Magento-Store-View-Code'];
+      headers['Magento-Store-View-Code'] = mergedHeaders['Magento-Store-View-Code'];
     }
     if (mergedHeaders['Magento-Website-Code']) {
-      extractedConfig.headers['Magento-Website-Code'] = mergedHeaders['Magento-Website-Code'];
+      headers['Magento-Website-Code'] = mergedHeaders['Magento-Website-Code'];
     }
     if (mergedHeaders['x-api-key']) {
-      extractedConfig.headers['x-api-key'] = mergedHeaders['x-api-key'];
+      headers['x-api-key'] = mergedHeaders['x-api-key'];
     }
 
     // Add AC-View-ID if present
     if (mergedHeaders['AC-View-ID']) {
-      extractedConfig.headers['AC-View-ID'] = mergedHeaders['AC-View-ID'];
+      headers['AC-View-ID'] = mergedHeaders['AC-View-ID'];
     }
+
+    const extractedConfig = {
+      url: commerceEndpoint,
+      headers,
+    };
 
     // Validate the extracted config
     validateCommerceConfigShape(extractedConfig, locale);
@@ -527,16 +535,16 @@ export async function getCommerceConfig(site, auditType, finalUrl, log, locale =
     switch (instanceType) {
       case 'ACCS':
         log.info('Successfully retrieved commerce config');
-        return extractCommerceConfigFromACCS(params, log);
+        return await extractCommerceConfigFromACCS(params, log);
 
       case 'ACO':
         log.info('Successfully retrieved commerce config');
-        return extractCommerceConfigFromACO(params, log);
+        return await extractCommerceConfigFromACO(params, log);
 
       case 'PAAS':
       default:
         log.info('Successfully retrieved commerce config');
-        return extractCommerceConfigFromPAAS(params, log);
+        return await extractCommerceConfigFromPAAS(params, log);
     }
   } catch (error) {
     log.error(`Error fetching commerce config for site ${site.getId()}:`, error);

@@ -1139,6 +1139,34 @@ describe('saas extractors - fallbacks and routing', () => {
     expect(res.url).to.equal('https://co.example/graphql');
   });
 
+  it('logs and rethrows errors when getCommerceConfig fails', async () => {
+    const badDirectConfig = {
+      // Missing headers property entirely to trigger validation error
+      url: 'https://co.example/graphql',
+    };
+
+    const site = {
+      getId: () => 'site-error',
+      getConfig: () => ({
+        getHandlers: () => ({
+          auditACCS: {
+            instanceType: 'ACCS',
+            config: badDirectConfig,
+          },
+        }),
+      }),
+    };
+
+    await expect(
+      getCommerceConfig(site, 'auditACCS', 'https://example.com', log, 'en_US'),
+    ).to.be.rejectedWith('Missing required commerce config fields for en_US locale: headers');
+
+    expect(log.error).to.have.been.calledOnce;
+    expect(log.error.firstCall.args[0]).to.equal(
+      'Error fetching commerce config for site site-error:',
+    );
+  });
+
 });
 
 
