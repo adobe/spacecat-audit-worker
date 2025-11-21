@@ -1,3 +1,10 @@
+## [1.250.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.250.0...v1.250.1) (2025-11-21)
+
+
+### Bug Fixes
+
+* deduplicate prompts for FAQs ([#1629](https://github.com/adobe/spacecat-audit-worker/issues/1629)) ([13d3a4b](https://github.com/adobe/spacecat-audit-worker/commit/13d3a4b361b8dd4cccf04ed7962f1fb46adcc95f))
+
 # [1.250.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.249.6...v1.250.0) (2025-11-21)
 
 
