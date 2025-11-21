@@ -67,10 +67,10 @@ export class AemAnalyzer {
   async fetchAllFragments() {
     const fragments = [];
     let cursor = null;
-    let pageCount = 0;
 
     this.log.info(`[Content Fragment Insights] Fetching fragments from ${this.rootPath}`);
 
+    // For large tenants, this fetch loop can take minutes. Add pagination if needed in the future
     do {
       // eslint-disable-next-line no-await-in-loop
       const { items, cursor: nextCursor } = await this.aemClient.getFragments(
@@ -86,7 +86,6 @@ export class AemAnalyzer {
       });
 
       cursor = nextCursor;
-      pageCount += 1;
 
       if (cursor) {
         // Be respectful to the API
@@ -95,11 +94,7 @@ export class AemAnalyzer {
           setTimeout(resolve, 100);
         });
       }
-    } while (cursor && pageCount < AemAnalyzer.MAX_PAGES);
-
-    if (cursor) {
-      this.log.warn(`[Content Fragment Insights] Reached pagination limit (${AemAnalyzer.MAX_PAGES}) for ${this.rootPath}. Results may be incomplete.`);
-    }
+    } while (cursor);
 
     this.log.info(`[Content Fragment Insights] Collected ${fragments.length} fragments from ${this.rootPath}`);
 
