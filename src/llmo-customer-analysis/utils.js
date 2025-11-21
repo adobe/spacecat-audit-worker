@@ -67,21 +67,40 @@ export function getLastSunday() {
   return lastSunday;
 }
 
-function deepEqual(a, b) {
+/**
+ * Compares two prompt arrays for equality, treating them as sets (order-independent)
+ */
+function arePromptArraysEqual(prompts1, prompts2) {
+  if (!Array.isArray(prompts1) || !Array.isArray(prompts2)) return false;
+  if (prompts1.length !== prompts2.length) return false;
+
+  const sorted1 = JSON.stringify(
+    prompts1.sort((a, b) => a.prompt.localeCompare(b.prompt)),
+  );
+  const sorted2 = JSON.stringify(
+    prompts2.sort((a, b) => a.prompt.localeCompare(b.prompt)),
+  );
+
+  return new Set(sorted1).isSupersetOf(new Set(sorted2));
+}
+function deepEqual(a, b, path = '') {
   if (a === b) return true;
   if (a == null || b == null) return false;
   if (typeof a !== typeof b) return false;
+  if (path.endsWith('.prompts') && Array.isArray(a) && Array.isArray(b)) {
+    return arePromptArraysEqual(a, b);
+  }
 
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false;
-    return a.every((item, index) => deepEqual(item, b[index]));
+    return a.every((item, index) => deepEqual(item, b[index], `${path}[${index}]`));
   }
 
   if (typeof a === 'object' && typeof b === 'object') {
     const keysA = Object.keys(a).sort();
     const keysB = Object.keys(b).sort();
-    if (!deepEqual(keysA, keysB)) return false;
-    return keysA.every((key) => deepEqual(a[key], b[key]));
+    if (!deepEqual(keysA, keysB, `${path}.keys`)) return false;
+    return keysA.every((key) => deepEqual(a[key], b[key], `${path}.${key}`));
   }
 
   return false;
@@ -120,37 +139,94 @@ export function areCategoryNamesDifferent(oldCategories, newCategories) {
   const newNames = Object.values(newCategories || {}).map((c) => c?.name).filter(Boolean).sort();
   return oldNames.length !== newNames.length || !oldNames.every((name, i) => name === newNames[i]);
 }
+/**
+ * Checks if all changes in categories and topics are AI-origin only
+ */
+function checkAICategorizationOnly(changes, oldConfig, newConfig) {
+  if (!changes.categories && !changes.topics) return false;
+
+  // If there are other types of changes, not AI-only
+  const changeKeys = Object.keys(changes);
+  const hasOtherChanges = changeKeys.some((key) => key !== 'categories' && key !== 'topics');
+  if (hasOtherChanges) return false;
+
+  const oldTopics = oldConfig?.topics || {};
+  const newTopics = newConfig?.topics || {};
+  const oldAiTopics = oldConfig?.ai_topics || {};
+  const newAiTopics = newConfig?.ai_topics || {};
+
+  // Check new categories have topics with AI prompts
+  if (changes.categories) {
+    const newCategoryIds = Object.keys(changes.categories);
+    const topicsForNewCategories = [
+      ...Object.values(newTopics).filter((t) => newCategoryIds.includes(t.category)),
+      ...Object.values(newAiTopics).filter((t) => newCategoryIds.includes(t.category)),
+    ];
+
+    if (topicsForNewCategories.length === 0) return false;
+
+    for (const topic of topicsForNewCategories) {
+      const prompts = topic.prompts || [];
+      if (prompts.length === 0) return false;
+      if (prompts.some((p) => p.origin?.toLowerCase() !== 'ai')) return false;
+    }
+  }
+
+  // Check changed topics have only AI prompts
+  if (changes.topics) {
+    for (const topicId of Object.keys(changes.topics)) {
+      const newTopic = newTopics[topicId] || newAiTopics[topicId];
+      const oldTopic = oldTopics[topicId] || oldAiTopics[topicId];
+      const newPrompts = newTopic?.prompts || [];
+      const oldPrompts = oldTopic?.prompts || [];
+
+      if (!oldTopic && newPrompts.length === 0) return false;
+
+      const oldPromptTexts = new Set(oldPrompts.map((p) => p.prompt));
+      const addedPrompts = newPrompts.filter((p) => !oldPromptTexts.has(p.prompt));
+
+      if (addedPrompts.length > 0 && addedPrompts.some((p) => p.origin?.toLowerCase() !== 'ai')) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
 
 export function compareConfigs(oldConfig, newConfig) {
   const changes = {};
+  // Treat null/undefined oldConfig as empty config
+  const safeOldConfig = oldConfig || {};
+  const safeNewConfig = newConfig || {};
 
   const entitiesChanges = compareRecords(
-    oldConfig.entities || {},
-    newConfig.entities || {},
+    safeOldConfig.entities || {},
+    safeNewConfig.entities || {},
   );
   if (entitiesChanges) {
     changes.entities = entitiesChanges;
   }
 
   const categoriesChanges = compareRecords(
-    oldConfig.categories || {},
-    newConfig.categories || {},
+    safeOldConfig.categories || {},
+    safeNewConfig.categories || {},
   );
   if (categoriesChanges) {
     changes.categories = categoriesChanges;
   }
 
   const topicsChanges = compareRecords(
-    oldConfig.topics || {},
-    newConfig.topics || {},
+    safeOldConfig.topics || {},
+    safeNewConfig.topics || {},
   );
   if (topicsChanges) {
     changes.topics = topicsChanges;
   }
 
   const brandsAliasesChanges = compareArrays(
-    oldConfig.brands?.aliases || [],
-    newConfig.brands?.aliases || [],
+    safeOldConfig.brands?.aliases || [],
+    safeNewConfig.brands?.aliases || [],
   );
   if (brandsAliasesChanges) {
     changes.brands = {
@@ -159,8 +235,8 @@ export function compareConfigs(oldConfig, newConfig) {
   }
 
   const competitorsChanges = compareArrays(
-    oldConfig.competitors?.competitors || [],
-    newConfig.competitors?.competitors || [],
+    safeOldConfig.competitors?.competitors || [],
+    safeNewConfig.competitors?.competitors || [],
   );
   if (competitorsChanges) {
     changes.competitors = {
@@ -169,164 +245,19 @@ export function compareConfigs(oldConfig, newConfig) {
   }
 
   const cdnBucketConfigChanges = compareRecords(
-    oldConfig.cdnBucketConfig || {},
-    newConfig.cdnBucketConfig || {},
+    safeOldConfig.cdnBucketConfig || {},
+    safeNewConfig.cdnBucketConfig || {},
   );
   if (cdnBucketConfigChanges) {
     changes.cdnBucketConfig = cdnBucketConfigChanges;
   }
+  // Add metadata about AI-only changes
+  if (Object.keys(changes).length > 0 && oldConfig) {
+    changes.metadata = {
+      isAICategorizationOnly: checkAICategorizationOnly(changes, safeOldConfig, safeNewConfig),
+    };
+  }
 
   return changes;
-}
-/**
- * Compares two arrays of prompts for equality, regardless of original order.
- * Returns true if prompt arrays have the same items.
- * @param {Array} prompts1 - First array of prompts
- * @param {Array} prompts2 - Second array of prompts
- * @returns {boolean} True if arrays contain the same prompts
- */
-function arePromptArraysEqual(prompts1, prompts2) {
-  if (prompts1.length !== prompts2.length) return false;
-
-  const sortedPrompts1 = JSON.stringify(
-    prompts1.sort((a, b) => a.prompt.localeCompare(b.prompt)),
-  );
-
-  const sortedPrompts2 = JSON.stringify(
-    prompts2.sort((a, b) => a.prompt.localeCompare(b.prompt)),
-  );
-
-  return sortedPrompts1 === sortedPrompts2;
-}
-
-/**
- * Checks if config changes are only AI-origin categorization updates.
- * Returns true if all new/modified categories and topics contain only AI-origin prompts.
- * This is used to determine if changes were made by the brand categorization flow,
- * in which case we should skip re-triggering geo-brand-presence.
- * @param {Object} oldConfig - Previous LLMO config
- * @param {Object} newConfig - New LLMO config
- * @returns {boolean} True if changes are AI categorization only
- */
-export function areChangesAICategorizationOnly(oldConfig, newConfig) {
-  if (!oldConfig) return false;
-
-  const oldCategories = oldConfig?.categories || {};
-  const newCategories = newConfig?.categories || {};
-  const oldTopics = oldConfig?.topics || {};
-  const newTopics = newConfig?.topics || {};
-  const oldAiTopics = oldConfig?.ai_topics || {};
-  const newAiTopics = newConfig?.ai_topics || {};
-
-  const newCategoryIds = Object.keys(newCategories).filter((id) => !oldCategories[id]);
-
-  const changedTopicIds = Object.keys(newTopics).filter((id) => {
-    const isNewTopic = !oldTopics[id];
-    if (isNewTopic) return true;
-    const oldPrompts = oldTopics[id]?.prompts || [];
-    const newPrompts = newTopics[id]?.prompts || [];
-    return !arePromptArraysEqual(oldPrompts, newPrompts);
-  });
-
-  const changedAiTopicIds = Object.keys(newAiTopics).filter((id) => {
-    const isNewTopic = !oldTopics[id];
-    if (isNewTopic) return true;
-    const oldPrompts = oldAiTopics[id]?.prompts || [];
-    const newPrompts = newAiTopics[id]?.prompts || [];
-    return !arePromptArraysEqual(oldPrompts, newPrompts);
-  });
-
-  const noChanges = newCategoryIds.length === 0
-    && changedTopicIds.length === 0
-    && changedAiTopicIds.length === 0;
-
-  if (noChanges) return false;
-
-  const topicsReferencingNewCategories = [
-    ...Object.values(newTopics).filter(
-      (topic) => newCategoryIds.includes(topic.category),
-    ),
-    ...Object.values(newAiTopics).filter(
-      (topic) => newCategoryIds.includes(topic.category),
-    ),
-  ];
-
-  // If there are new categories, ensure they have topics with AI prompts
-  if (newCategoryIds.length > 0) {
-    if (topicsReferencingNewCategories.length === 0) {
-      // New categories but no topics - not AI categorization only
-      return false;
-    }
-
-    let hasAtLeastOneAIPrompt = false;
-    for (const topic of topicsReferencingNewCategories) {
-      const prompts = topic.prompts || [];
-
-      if (prompts.length === 0) {
-        // Topic with no prompts - not AI categorization
-        return false;
-      }
-
-      const hasNonAiPrompts = prompts.some((p) => p.origin?.toLowerCase() !== 'ai');
-      if (hasNonAiPrompts) return false;
-
-      // At least one topic has AI prompts
-      if (prompts.some((p) => p.origin?.toLowerCase() === 'ai')) {
-        hasAtLeastOneAIPrompt = true;
-      }
-    }
-
-    if (!hasAtLeastOneAIPrompt) {
-      // No AI prompts found at all
-      return false;
-    }
-  }
-
-  // Check changed topics - ensure all new/modified prompts are AI-origin
-  for (const topicId of changedTopicIds) {
-    const newTopic = newTopics[topicId];
-    const oldTopic = oldTopics[topicId];
-    const newPrompts = newTopic?.prompts || [];
-    const oldPrompts = oldTopic?.prompts || [];
-
-    // Get prompts that are new (not in old config)
-    const oldPromptTexts = new Set(oldPrompts.map((p) => p.prompt));
-    const addedPrompts = newPrompts.filter((p) => !oldPromptTexts.has(p.prompt));
-
-    // If there are added prompts but they're not AI-origin, return false
-    if (addedPrompts.length > 0 && addedPrompts.some((p) => p.origin?.toLowerCase() !== 'ai')) {
-      return false;
-    }
-
-    // If it's a new topic (not in old config) with no prompts or empty prompts, return false
-    if (!oldTopic && newPrompts.length === 0) {
-      return false;
-    }
-  }
-
-  // Check changed ai_topics - ensure all new/modified prompts are AI-origin
-  for (const topicId of changedAiTopicIds) {
-    const newTopic = newAiTopics[topicId];
-    const oldTopic = oldAiTopics[topicId];
-    const newPrompts = newTopic?.prompts || [];
-    const oldPrompts = oldTopic?.prompts || [];
-
-    // Get prompts that are new (not in old config)
-    const oldPromptTexts = new Set(oldPrompts.map((p) => p.prompt));
-    const addedPrompts = newPrompts.filter((p) => !oldPromptTexts.has(p.prompt));
-
-    // If there are added prompts but they're not AI-origin, return false
-    if (addedPrompts.length > 0 && addedPrompts.some((p) => p.origin?.toLowerCase() !== 'ai')) {
-      return false;
-    }
-
-    // If it's a new topic (not in old config) with no prompts or empty prompts, return false
-    if (!oldTopic && newPrompts.length === 0) {
-      return false;
-    }
-  }
-
-  // All changes are AI-origin only
-  return true;
 }
 /* c8 ignore end */

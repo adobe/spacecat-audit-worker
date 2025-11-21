@@ -13,7 +13,7 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
-import { compareConfigs, areChangesAICategorizationOnly } from '../../src/llmo-customer-analysis/utils.js';
+import { compareConfigs } from '../../src/llmo-customer-analysis/utils.js';
 
 describe('LLMO Customer Analysis Utils - compareConfigs', () => {
   describe('entities comparison', () => {
@@ -753,27 +753,27 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
     });
   });
 
-  describe('areChangesAICategorizationOnly', () => {
-    it('should return false when oldConfig is null', () => {
+  describe('compareConfigs with AI categorization metadata', () => {
+    it('should return false for isAICategorizationOnly when oldConfig is null', () => {
       const newConfig = {
         categories: { 'cat-1': { name: 'Category A', region: 'us' } },
         topics: {},
         ai_topics: {},
       };
 
-      const result = areChangesAICategorizationOnly(null, newConfig);
-      expect(result).to.equal(false);
+      const changes = compareConfigs(null, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.be.undefined;
     });
 
-    it('should return false when there are no changes', () => {
+    it('should return false for isAICategorizationOnly when there are no changes', () => {
       const config = {
         categories: {},
         topics: {},
         ai_topics: {},
       };
 
-      const result = areChangesAICategorizationOnly(config, config);
-      expect(result).to.equal(false);
+      const changes = compareConfigs(config, config);
+      expect(changes.metadata).to.be.undefined; // No changes means no metadata
     });
 
     it('should return true when only new AI-origin categories and topics are added', () => {
@@ -796,8 +796,8 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
         ai_topics: {},
       };
 
-      const result = areChangesAICategorizationOnly(oldConfig, newConfig);
-      expect(result).to.equal(true);
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(true);
     });
 
     it('should return true when only AI-origin prompts are added to existing topics', () => {
@@ -829,8 +829,8 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
         ai_topics: {},
       };
 
-      const result = areChangesAICategorizationOnly(oldConfig, newConfig);
-      expect(result).to.equal(true);
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(true);
     });
 
     it('should return false when human-origin prompts are added', () => {
@@ -853,8 +853,8 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
         ai_topics: {},
       };
 
-      const result = areChangesAICategorizationOnly(oldConfig, newConfig);
-      expect(result).to.equal(false);
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
     });
 
     it('should return false when mixed AI and human prompts are added', () => {
@@ -878,8 +878,8 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
         ai_topics: {},
       };
 
-      const result = areChangesAICategorizationOnly(oldConfig, newConfig);
-      expect(result).to.equal(false);
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
     });
 
     it('should return true when only ai_topics with AI-origin prompts are added', () => {
@@ -902,8 +902,8 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
         },
       };
 
-      const result = areChangesAICategorizationOnly(oldConfig, newConfig);
-      expect(result).to.equal(true);
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(true);
     });
 
     it('should return false when categories added without any topics', () => {
@@ -918,8 +918,8 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
         ai_topics: {},
       };
 
-      const result = areChangesAICategorizationOnly(oldConfig, newConfig);
-      expect(result).to.equal(false);
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
     });
 
     it('should handle case-insensitive origin checking', () => {
@@ -942,8 +942,8 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
         ai_topics: {},
       };
 
-      const result = areChangesAICategorizationOnly(oldConfig, newConfig);
-      expect(result).to.equal(true);
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(true);
     });
 
     it('should return false when new topic has no origin property', () => {
@@ -966,8 +966,8 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
         ai_topics: {},
       };
 
-      const result = areChangesAICategorizationOnly(oldConfig, newConfig);
-      expect(result).to.equal(false);
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
     });
 
     it('should handle empty prompts array in new topics', () => {
@@ -988,8 +988,8 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
         ai_topics: {},
       };
 
-      const result = areChangesAICategorizationOnly(oldConfig, newConfig);
-      expect(result).to.equal(false);
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
     });
 
     it('should handle missing prompts property in new topics', () => {
@@ -1009,8 +1009,8 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
         ai_topics: {},
       };
 
-      const result = areChangesAICategorizationOnly(oldConfig, newConfig);
-      expect(result).to.equal(false);
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
     });
   });
 });

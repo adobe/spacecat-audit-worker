@@ -221,15 +221,20 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(sqs.sendMessage).to.have.been.calledOnce;
+      // Should trigger cdn-logs-report (4 calls) + geo-brand-presence-refresh (1 call)
+      expect(sqs.sendMessage).to.have.callCount(5);
+      expect(sqs.sendMessage).to.have.been.calledWith(
+        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
+        sinon.match({ type: 'cdn-logs-report' }),
+      );
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
         sinon.match({ type: 'geo-brand-presence-trigger-refresh' }),
       );
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.message).to.include('geo-brand-presence-refresh triggered');
-      expect(result.auditResult.triggeredSteps).to.deep.equal(['geo-brand-presence-refresh']);
+      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
+      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-refresh');
       expect(log.info).to.have.been.calledWith(sinon.match(/AI categorization flow.*triggering geo-brand-presence refresh/));
     });
 
