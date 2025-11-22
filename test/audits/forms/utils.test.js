@@ -413,37 +413,6 @@ describe('sendMessageToMystiqueForGuidance', () => {
     sandbox.restore();
   });
 
-  it('should send message with normalized type and correct data structure for form-accessibility', async () => {
-    const opportunity = {
-      type: 'form-accessibility',
-      siteId: 'site-123',
-      auditId: 'audit-456',
-      data: {
-        accessibility: [{ form: 'https://example.com/form1' }],
-        trackedFormKPIValue: 0.75,
-        metrics: [],
-        formNavigation: {
-          source: 'source1',
-          text: 'Click here',
-        },
-        formsource: 'source1',
-        formDetails: { detail: 'detail1' },
-        pageViews: 100,
-        formViews: 50,
-      },
-    };
-
-    await sendMessageToMystiqueForGuidance(context, opportunity);
-
-    expect(sqsStub.calledOnce).to.be.true;
-    const message = sqsStub.firstCall.args[1];
-    expect(message.type).to.equal('guidance:forms-a11y');
-    expect(message.data.url).to.equal('https://example.com/form1');
-    expect(message.data.cr).to.equal(0.75);
-    expect(message.data.form_source).to.equal('source1');
-    expect(message.data.form_details).to.deep.equal([{ detail: 'detail1' }]);
-  });
-
   it('should send message with original type when not form-accessibility', async () => {
     const opportunity = {
       type: 'other-type',
@@ -481,7 +450,7 @@ describe('sendMessageToMystiqueForGuidance', () => {
       siteId: 'site-123',
       auditId: 'audit-456',
       data: {
-        accessibility: [{ form: 'https://example.com/form1' }],
+        form: 'https://example.com/form1',
         trackedFormKPIValue: 0.75,
         metrics: [],
         formNavigation: {
@@ -508,7 +477,7 @@ describe('sendMessageToMystiqueForGuidance', () => {
       siteId: 'site-123',
       auditId: 'audit-456',
       data: {
-        accessibility: [{ form: 'https://example.com/form1' }],
+        form: 'https://example.com/form1',
         trackedFormKPIValue: 0.75,
         metrics: [],
         formNavigation: {
@@ -535,7 +504,7 @@ describe('sendMessageToMystiqueForGuidance', () => {
       siteId: 'site-123',
       auditId: 'audit-456',
       data: {
-        accessibility: [{ form: 'https://example.com/form1' }],
+        form: 'https://example.com/form1',
         trackedFormKPIValue: 0.75,
         metrics: [],
         formsource: 'source1',
@@ -563,7 +532,7 @@ describe('sendMessageToMystiqueForGuidance', () => {
       siteId: 'site-123',
       auditId: 'audit-456',
       data: {
-        accessibility: [{ form: 'https://example.com/form1' }],
+        form: 'https://example.com/form1',
         trackedFormKPIValue: 0.75,
         metrics: [],
         formNavigation: {
@@ -584,59 +553,8 @@ describe('sendMessageToMystiqueForGuidance', () => {
     expect(message.data.form_details).to.deep.equal([{ detail: 'detail1' }, { detail: 'detail2' }]);
   });
 
-  it('should handle missing accessibility data gracefully', async () => {
-    const opportunity = {
-      type: 'form-accessibility',
-      siteId: 'site-123',
-      auditId: 'audit-456',
-      data: {
-        trackedFormKPIValue: 0.75,
-        metrics: [],
-        formNavigation: {
-          source: 'source1',
-          text: 'Click here',
-        },
-        formsource: 'source1',
-        formDetails: { detail: 'detail1' },
-        pageViews: 100,
-        formViews: 50,
-      },
-    };
-
-    await sendMessageToMystiqueForGuidance(context, opportunity);
-
-    expect(sqsStub.calledOnce).to.be.true;
-    const message = sqsStub.firstCall.args[1];
-    expect(message.data.url).to.equal('');
-  });
-
-  it('should handle empty accessibility array', async () => {
-    const opportunity = {
-      type: 'form-accessibility',
-      siteId: 'site-123',
-      auditId: 'audit-456',
-      data: {
-        accessibility: [],
-        trackedFormKPIValue: 0.75,
-        metrics: [],
-        formNavigation: {
-          source: 'source1',
-          text: 'Click here',
-        },
-        formsource: 'source1',
-        formDetails: { detail: 'detail1' },
-        pageViews: 100,
-        formViews: 50,
-      },
-    };
-
-    await sendMessageToMystiqueForGuidance(context, opportunity);
-
-    expect(sqsStub.calledOnce).to.be.true;
-    const message = sqsStub.firstCall.args[1];
-    expect(message.data.url).to.equal('');
-  });
 });
+
 
 describe('getFormTitle', () => {
   it('should return an empty string if formDetails is null', () => {
