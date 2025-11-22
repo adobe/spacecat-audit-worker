@@ -1,3 +1,10 @@
+# [1.252.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.251.3...v1.252.0) (2025-11-22)
+
+
+### Features
+
+* Standalone readability opportunities for main ASO UI ([#1286](https://github.com/adobe/spacecat-audit-worker/issues/1286)) ([006ac71](https://github.com/adobe/spacecat-audit-worker/commit/006ac715f968d09990d5e2438eadab1c21a0016c))
+
 ## [1.251.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.251.2...v1.251.3) (2025-11-21)
 
 
