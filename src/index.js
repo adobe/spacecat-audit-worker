@@ -72,7 +72,8 @@ import cdnLogsReport from './cdn-logs-report/handler.js';
 import analyticsReport from './analytics-report/handler.js';
 import pageIntent from './page-intent/handler.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
-import readabilityGuidance from './readability/guidance-readability-handler.js';
+import readabilityOpportunities from './readability/opportunities/handler.js';
+import unifiedReadabilityGuidance from './readability/shared/unified-guidance-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
@@ -151,7 +152,8 @@ const HANDLERS = {
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
   'detect:page-types': pageTypeGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
-  'guidance:readability': readabilityGuidance,
+  'guidance:readability': unifiedReadabilityGuidance, // unified for both preflight and opportunities
+  readability: readabilityOpportunities, // for opportunities
   'guidance:structured-data-remediation': structuredDataGuidance,
   preflight,
   'cdn-logs-analysis': cdnLogsAnalysis,

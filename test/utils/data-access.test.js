@@ -411,12 +411,16 @@ describe('data-access', () => {
           mapNewSuggestion,
         });
       } catch (e) {
-        expect(e.message).to.equal('Failed to create suggestions for siteId site-id');
+        expect(e.message).to.match(/Failed to create suggestions for siteId (site-id|unknown)/);
+        expect(e.message).to.include('Sample error: some error');
       }
 
-      expect(mockLogger.error).to.have.been.calledTwice;
-      expect(mockLogger.error.firstCall.args[0]).to.include('contains 1 items with errors');
-      expect(mockLogger.error.secondCall.args[0]).to.include('failed with error: some error');
+      // Now logs summary + detailed error + failed item data + error items array = 4 calls
+      expect(mockLogger.error).to.have.callCount(4);
+      expect(mockLogger.error.firstCall.args[0]).to.match(/contains 1 items with errors/);
+      expect(mockLogger.error.secondCall.args[0]).to.include('Error 1/1: some error');
+      expect(mockLogger.error.thirdCall.args[0]).to.include('Failed item data');
+      expect(mockLogger.error.getCall(3).args[0]).to.equal('[suggestions.errorItems]');
     });
 
     it('should throw an error if all items fail to be created', async () => {
@@ -744,6 +748,33 @@ describe('data-access', () => {
         const sampleLog = debugCalls.find((msg) => /New suggestions\s*=\s*15:/.test(msg));
         expect(sampleLog).to.exist;
       });
+    });
+
+    it('should handle large arrays without JSON.stringify errors', async () => {
+      // Create a very large array of suggestions (simulate the theplayers.com case)
+      const largeNewData = Array.from({ length: 1000 }, (_, i) => ({
+        key: `new${i}`,
+        textContent: 'x'.repeat(5000), // Large text content
+      }));
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({
+        createdItems: largeNewData.map((data) => ({ id: `suggestion-${data.key}` })),
+        errorItems: [],
+        length: largeNewData.length,
+      });
+
+      // This should not throw "Invalid string length" error
+      await expect(syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: largeNewData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+      })).to.not.be.rejected;
+
+      // Verify that debug was called (safeStringify should have prevented the error)
+      expect(mockLogger.debug).to.have.been.called;
     });
   });
 
