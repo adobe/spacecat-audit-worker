@@ -13,7 +13,7 @@ import wrap from '@adobe/helix-shared-wrap';
 import { helixStatus } from '@adobe/helix-status';
 import secrets from '@adobe/helix-shared-secrets';
 import dataAccess from '@adobe/spacecat-shared-data-access';
-import { resolveSecretsName, sqsEventAdapter } from '@adobe/spacecat-shared-utils';
+import { resolveSecretsName, sqsEventAdapter, logWrapper } from '@adobe/spacecat-shared-utils';
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { checkSiteRequiresValidation } from './utils/site-validation.js';
 
@@ -240,6 +240,7 @@ async function run(message, context) {
 export const main = wrap(run)
   .with(dataAccess)
   .with(sqsEventAdapter)
+  .with(logWrapper)
   .with(sqs)
   .with(s3Client)
   .with(secrets, { name: resolveSecretsName })
