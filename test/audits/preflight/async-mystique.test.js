@@ -75,13 +75,13 @@ describe('Async Mystique Tests', () => {
 
     // Mock the module
     sendReadabilityToMystique = await esmock(
-      '../../../src/readability/async-mystique.js',
+      '../../../src/readability/shared/async-mystique.js',
       {},
       {
         '../../../src/common/constants.js': {
           DATA_SOURCES: { SITE: 'Site', PAGE: 'Page' },
         },
-        '../../../src/readability/constants.js': {
+        '../../../src/readability/shared/constants.js': {
           READABILITY_GUIDANCE_TYPE: 'guidance:readability',
           READABILITY_OBSERVATION: 'Content readability needs improvement',
           TARGET_FLESCH_SCORE: 30.0,

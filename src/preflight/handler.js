@@ -23,7 +23,7 @@ import {
 import canonical from './canonical.js';
 import metatags from './metatags.js';
 import links from './links.js';
-import readability from '../readability/handler.js';
+import readability from '../readability/preflight/handler.js';
 import accessibility from './accessibility.js';
 import headings from './headings.js';
 
