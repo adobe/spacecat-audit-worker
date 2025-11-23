@@ -69,7 +69,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     if (auditContext?.weekOffset !== undefined) {
       weekOffsets = [auditContext.weekOffset];
     } else if (isMonday) {
-      weekOffsets = [0, -1];
+      weekOffsets = [-1];
     } else {
       weekOffsets = [0];
     }
