@@ -70,7 +70,7 @@ describe('AccessibilityCodeFixHandler', () => {
         dataAccess: mockDataAccess,
         s3Client: mockS3Client,
         env: {
-          QUEUE_SPACECAT_TO_MYSTIQUE: 'test-mystique-bucket',
+          S3_MYSTIQUE_BUCKET_NAME: 'test-mystique-bucket',
         },
       })
       .build();
@@ -253,7 +253,7 @@ describe('AccessibilityCodeFixHandler', () => {
     });
 
     it('should return internalServerError when S3 bucket not configured', async () => {
-      context.env.QUEUE_SPACECAT_TO_MYSTIQUE = undefined;
+      context.env.S3_MYSTIQUE_BUCKET_NAME = undefined;
 
       const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
         '../../../../src/common/codefix-handler.js': await esmock('../../../../src/common/codefix-handler.js', {
@@ -552,8 +552,8 @@ describe('AccessibilityCodeFixHandler', () => {
       expect(context.log.warn).to.have.been.called;
     });
 
-    it('should handle error when QUEUE_SPACECAT_TO_MYSTIQUE not set for old format', async () => {
-      context.env.QUEUE_SPACECAT_TO_MYSTIQUE = undefined;
+    it('should handle error when S3_MYSTIQUE_BUCKET_NAME not set for old format', async () => {
+      context.env.S3_MYSTIQUE_BUCKET_NAME = undefined;
 
       const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
         '../../../../src/common/codefix-handler.js': await esmock('../../../../src/common/codefix-handler.js', {

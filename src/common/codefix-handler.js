@@ -214,7 +214,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
   }
 
   // Default bucket name from environment
-  const defaultBucketName = env.QUEUE_SPACECAT_TO_MYSTIQUE;
+  const defaultBucketName = env.S3_MYSTIQUE_BUCKET_NAME;
 
   let totalUpdatedSuggestions = 0;
 
@@ -250,7 +250,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
       } else {
         // Fall back to default path construction
         if (!defaultBucketName) {
-          log.error('[CodeFixProcessor] QUEUE_SPACECAT_TO_MYSTIQUE environment variable not set and no code_fix_bucket provided');
+          log.error('[CodeFixProcessor] S3_MYSTIQUE_BUCKET_NAME environment variable not set and no code_fix_bucket provided');
           throw new CodeFixConfigurationError('S3 bucket name not configured');
         }
         bucketName = defaultBucketName;
@@ -292,7 +292,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
     }
 
     if (!defaultBucketName) {
-      log.error('[CodeFixProcessor] QUEUE_SPACECAT_TO_MYSTIQUE environment variable not set');
+      log.error('[CodeFixProcessor] S3_MYSTIQUE_BUCKET_NAME environment variable not set');
       throw new CodeFixConfigurationError('S3 bucket name not configured');
     }
 
