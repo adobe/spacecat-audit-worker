@@ -18,7 +18,13 @@ import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
   getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
-import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
+import {
+  FORM_OPPORTUNITY_TYPES,
+  OPPTY_OPTIONS_ALL,
+  successCriteriaLinks,
+  DAILY_PAGEVIEW_THRESHOLD_DEFAULT,
+  DAILY_PAGEVIEW_THRESHOLD_ALL,
+} from './constants.js';
 import { calculateCPCValue } from '../support/utils.js';
 import { getPresignedUrl as getPresignedUrlUtil } from '../utils/getPresignedUrl.js';
 import { isAuditEnabledForSite } from '../common/audit-utils.js';
@@ -266,10 +272,17 @@ export async function generateOpptyData(
   context,
   opportunityTypes = [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
     FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION, FORM_OPPORTUNITY_TYPES.LOW_VIEWS],
+  opptyOptions = null,
 ) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
+
+  // Determine the daily pageview threshold based on opptyOptions
+  const dailyPageviewThreshold = opptyOptions === OPPTY_OPTIONS_ALL
+    ? DAILY_PAGEVIEW_THRESHOLD_ALL
+    : DAILY_PAGEVIEW_THRESHOLD_DEFAULT;
+
   return Promise.all(
     Object.entries({
       [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]: getHighFormViewsLowConversionMetrics,
@@ -277,7 +290,10 @@ export async function generateOpptyData(
       [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]: getHighPageViewsLowFormViewsMetrics,
     })
       .filter(([opportunityType]) => opportunityTypes.includes(opportunityType))
-      .flatMap(([opportunityType, metricsMethod]) => metricsMethod(formVitalsCollection)
+      .flatMap(([opportunityType, metricsMethod]) => metricsMethod(
+        formVitalsCollection,
+        dailyPageviewThreshold,
+      )
         .map((metric) => convertToOpportunityData(opportunityType, metric, context))),
   );
 }
