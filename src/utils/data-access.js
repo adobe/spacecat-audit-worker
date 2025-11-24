@@ -126,6 +126,7 @@ export async function getImsOrgId(site, dataAccess, log) {
  * @param {Set} params.newDataKeys - The set of new data keys to check for outdated suggestions.
  * @param {Function} params.buildKey - The function to build a unique key for each suggestion.
  * @param {Object} params.context - The context object containing the data access object.
+ * @param {Set} [params.scrapedUrlsSet] - Optional set of URLs that were scraped in this audit
  * @returns {Promise<void>} - Resolves when the outdated suggestions are updated.
  */
 export const handleOutdatedSuggestions = async ({
@@ -134,6 +135,7 @@ export const handleOutdatedSuggestions = async ({
   newDataKeys,
   buildKey,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
+  scrapedUrlsSet = null,
 }) => {
   const { Suggestion } = context.dataAccess;
   const { log } = context;
@@ -144,7 +146,15 @@ export const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.FIXED,
       SuggestionDataAccess.STATUSES.ERROR,
       SuggestionDataAccess.STATUSES.SKIPPED,
-    ].includes(existing.getStatus()));
+    ].includes(existing.getStatus()))
+    .filter((existing) => {
+      // mark suggestions as outdated only if their URL was actually scraped
+      if (scrapedUrlsSet) {
+        const suggestionUrl = existing.getData()?.url;
+        return suggestionUrl && scrapedUrlsSet.has(suggestionUrl);
+      }
+      return true;
+    });
 
   // prevents JSON.stringify overflow
   log.debug(`Outdated suggestions count: ${existingOutdatedSuggestions.length}`);
@@ -215,6 +225,7 @@ export async function syncSuggestions({
   mapNewSuggestion,
   mergeDataFunction = defaultMergeDataFunction,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
+  scrapedUrlsSet = null,
 }) {
   if (!context) {
     return;
@@ -230,6 +241,7 @@ export async function syncSuggestions({
     buildKey,
     context,
     statusToSetForOutdated,
+    scrapedUrlsSet,
   });
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
