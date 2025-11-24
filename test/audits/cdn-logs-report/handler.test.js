@@ -321,7 +321,7 @@ describe('CDN Logs Report Handler', function test() {
       );
     });
 
-    it('runs -1 on Monday when no weekOffset provided', async () => {
+    it('runs -1 and 0 on Monday when no weekOffset provided', async () => {
       const clock = sinon.useFakeTimers({
         now: new Date('2025-01-06'),
         toFake: ['Date']
@@ -332,7 +332,7 @@ describe('CDN Logs Report Handler', function test() {
       await handler.runner('https://example.com', context, site, auditContext);
       
       clock.restore();
-      expect(context.athenaClient.query).to.have.been.callCount(2);
+      expect(context.athenaClient.query).to.have.been.callCount(4);
     });
 
     it('runs only week 0 on non-Monday when no weekOffset provided', async () => {
