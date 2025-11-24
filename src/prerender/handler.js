@@ -13,15 +13,18 @@
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
+import ExcelJS from 'exceljs';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
+import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './html-comparator-utils.js';
 import {
   generateReportingPeriods,
   getS3Config,
+  downloadExistingCdnSheet,
 } from '../llm-error-pages/utils.js';
 import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.js';
 
@@ -182,6 +185,75 @@ async function getAgenticTrafficForSpecificUrls(site, context, targetUrls = []) 
 }
 
 /**
+ * Fetch top Agentic URLs from the weekly Excel sheet (fallback).
+ * @param {any} site
+ * @param {any} context
+ * @param {number} limit
+ * @returns {Promise<Array<{url:string, agenticTraffic:number, agenticTrafficDuration:string}>>}
+ */
+async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
+  const { log } = context;
+  try {
+    const s3Config = await getS3Config(site, context);
+    const { periodIdentifier } = generateReportingPeriods();
+    const outputLocation = s3Config.aggregatedLocation || '';
+
+    const sharepointClient = await createLLMOSharepointClient(context);
+    const rows = await downloadExistingCdnSheet(
+      periodIdentifier,
+      outputLocation,
+      sharepointClient,
+      log,
+      readFromSharePoint,
+      ExcelJS,
+    );
+
+    if (!rows || rows.length === 0) {
+      log.warn(
+        `[PRERENDER] No agentic traffic rows found in sheet for ${periodIdentifier} `
+        + `at ${outputLocation}`,
+      );
+      return [];
+    }
+
+    // Aggregate by URL (sum hits)
+    const byUrl = new Map();
+    for (const r of rows) {
+      const path = typeof r.url === 'string' && r.url.length > 0 ? r.url : '/';
+      const hits = Number(r.number_of_hits || 0) || 0;
+      const prev = byUrl.get(path) || 0;
+      byUrl.set(path, prev + hits);
+    }
+
+    const baseUrl = site.getBaseURL?.() || '';
+    const top = Array.from(byUrl.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([path, hits]) => {
+        try {
+          return {
+            url: new URL(path, baseUrl).toString(),
+            agenticTraffic: hits,
+            agenticTrafficDuration: periodIdentifier,
+          };
+        } catch {
+          return {
+            url: path,
+            agenticTraffic: hits,
+            agenticTrafficDuration: periodIdentifier,
+          };
+        }
+      });
+
+    log.info(`[PRERENDER] Selected ${top.length} top agentic URLs via Sheet fallback.`);
+    return top;
+  } catch (e) {
+    context?.log?.warn?.(`[PRERENDER] Sheet fallback failed: ${e.message}`);
+    return [];
+  }
+}
+
+/**
  * Wrapper: Try Athena first, then fall back to sheet if needed.
  * @param {any} site
  * @param {any} context
@@ -189,7 +261,12 @@ async function getAgenticTrafficForSpecificUrls(site, context, targetUrls = []) 
  * @returns {Promise<string[]>}
  */
 async function getTopAgenticUrls(site, context, limit = 200) {
-  return getTopAgenticUrlsFromAthena(site, context, limit);
+  const fromAthena = await getTopAgenticUrlsFromAthena(site, context, limit);
+  if (Array.isArray(fromAthena) && fromAthena.length > 0) {
+    return fromAthena;
+  }
+  context?.log?.info?.('[PRERENDER] No agentic URLs from Athena; attempting Sheet fallback.');
+  return getTopAgenticUrlsFromSheet(site, context, limit);
 }
 
 /**

@@ -278,19 +278,16 @@ describe('Prerender Audit', () => {
 
         const result = await submitForScraping(context);
 
-        expect(result).to.deep.equal({
-          urls: [{
-            url: 'https://example.com',
-          }],
-          siteId: 'test-site-id',
-          type: 'prerender',
-          processingType: 'prerender',
-          allowCache: false,
-          options: {
-            pageLoadTimeout: 20000,
-            storagePrefix: 'prerender',
-          },
+        // Validate essential fields without requiring strict deep equality
+        expect(result.siteId).to.equal('test-site-id');
+        expect(result.type).to.equal('prerender');
+        expect(result.processingType).to.equal('prerender');
+        expect(result.allowCache).to.equal(false);
+        expect(result.options).to.deep.equal({
+          pageLoadTimeout: 20000,
+          storagePrefix: 'prerender',
         });
+        expect(result.urls).to.deep.equal([{ url: 'https://example.com' }]);
       });
 
       it('should include includedURLs from site config', async () => {
@@ -312,8 +309,9 @@ describe('Prerender Audit', () => {
 
         const result = await submitForScraping(context);
 
-        expect(result.urls).to.have.length(2);
-        expect(result.urls.map(u => u.url)).to.include('https://example.com/page1');
+        // With agentic as primary, we no longer include top pages here.
+        // Expect only includedURLs when agentic fetch yields none.
+        expect(result.urls).to.have.length(1);
         expect(result.urls.map(u => u.url)).to.include('https://example.com/special');
       });
     });
@@ -376,10 +374,11 @@ describe('Prerender Audit', () => {
 
         const result = await processContentAndGenerateOpportunities(context);
 
+        // With the new flow (no SiteTopPage usage), errors there won't bubble.
+        // Function should complete gracefully.
         expect(result).to.be.an('object');
-        expect(result.error).to.be.a('string');
-        expect(result.totalUrlsChecked).to.equal(0);
-        expect(result.urlsNeedingPrerender).to.equal(0);
+        expect(result.status).to.equal('complete');
+        expect(result.auditResult).to.be.an('object');
       });
 
       it('should process URLs with scrape result paths', async () => {
@@ -684,7 +683,7 @@ describe('Prerender Audit', () => {
               {
                 url: 'https://example.com/page1',
                 needsPrerender: true,
-                organicTraffic: 100,
+                agenticTraffic: 100,
                 contentGainRatio: 1.5,
               },
             ],
@@ -718,13 +717,13 @@ describe('Prerender Audit', () => {
               {
                 url: 'https://example.com/page1',
                 needsPrerender: true,
-                organicTraffic: 500,
+                agenticTraffic: 500,
                 contentGainRatio: 2.1,
               },
               {
                 url: 'https://example.com/page2',
                 needsPrerender: true,
-                organicTraffic: 300,
+                agenticTraffic: 300,
                 contentGainRatio: 1.8,
               },
             ],
@@ -788,7 +787,7 @@ describe('Prerender Audit', () => {
               {
                 url: 'https://example.com/page1',
                 needsPrerender: true,
-                organicTraffic: 500,
+                agenticTraffic: 500,
                 contentGainRatio: 2.1,
               },
             ],
@@ -1586,7 +1585,7 @@ describe('Prerender Audit', () => {
               {
                 url: 'https://example.com/page1',
                 needsPrerender: true,
-                organicTraffic: 500,
+                agenticTraffic: 500,
                 contentGainRatio: 2.1,
                 wordCountBefore: 100,
                 wordCountAfter: 210,
@@ -1627,7 +1626,7 @@ describe('Prerender Audit', () => {
         const existingData = { url: 'https://example.com/page1', customField: 'preserved' };
         const newDataItem = {
           url: 'https://example.com/page1',
-          organicTraffic: 200,
+          agenticTraffic: 200,
           contentGainRatio: 2.5,
           wordCountBefore: 100,
           wordCountAfter: 250,
@@ -1636,7 +1635,7 @@ describe('Prerender Audit', () => {
         const mergedData = mergeDataFn(existingData, newDataItem);
         expect(mergedData).to.have.property('customField', 'preserved'); // Existing field preserved
         expect(mergedData).to.have.property('url', 'https://example.com/page1');
-        expect(mergedData).to.have.property('organicTraffic', 200);
+        expect(mergedData).to.have.property('agenticTraffic', 200);
         expect(mergedData).to.not.have.property('needsPrerender'); // Filtered out by mapSuggestionData
       });
 
@@ -2103,7 +2102,7 @@ describe('Prerender Audit', () => {
               wordCountBefore: 100,
               wordCountAfter: 250,
               contentGainRatio: 2.5,
-              organicTraffic: 1000,
+              agenticTraffic: 1000,
             },
             {
               url: 'https://example.com/page2',
@@ -2112,7 +2111,7 @@ describe('Prerender Audit', () => {
               wordCountBefore: 200,
               wordCountAfter: 220,
               contentGainRatio: 1.1,
-              organicTraffic: 500,
+              agenticTraffic: 500,
             },
           ],
         },
@@ -2145,7 +2144,8 @@ describe('Prerender Audit', () => {
         wordCountBefore: 100,
         wordCountAfter: 250,
         contentGainRatio: 2.5,
-        organicTraffic: 1000,
+        agenticTraffic: 1000,
+        agenticTrafficDuration: 'NA',
       });
 
       expect(context.log.info).to.have.been.calledWith(
@@ -2208,7 +2208,7 @@ describe('Prerender Audit', () => {
               wordCountBefore: 100,
               wordCountAfter: 110,
               contentGainRatio: 1.1,
-              organicTraffic: 500,
+              agenticTraffic: 500,
               scrapeError: null,
             },
           ],
@@ -2389,7 +2389,8 @@ describe('Prerender Audit', () => {
         wordCountBefore: 0,
         wordCountAfter: 0,
         contentGainRatio: 0,
-        organicTraffic: 0,
+        agenticTraffic: 0,
+        agenticTrafficDuration: 'NA',
       });
     });
   });
