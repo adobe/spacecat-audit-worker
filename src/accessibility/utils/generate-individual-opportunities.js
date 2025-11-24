@@ -535,9 +535,6 @@ export async function createIndividualOpportunitySuggestions(
         rank: urlData.issues.reduce((total, issue) => total + issue.occurrences, 0),
         data: {
           ...urlData,
-          url: urlData.url,
-          type: urlData.type,
-          issues: urlData.issues, // Array of formatted accessibility issues
           jiraLink: '',
         },
       }),

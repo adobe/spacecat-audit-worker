@@ -290,7 +290,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
         await createFormAccessibilityIndividualSuggestions(aggregatedData, opportunity, context);
       }
     } else {
-      log.info(`[Form Opportunity] [Site Id: ${siteId}] No accessibility violations found, skipping opportunity creation`);
+      log.debug(`[Form Opportunity] [Site Id: ${siteId}] No accessibility violations found, skipping opportunity creation`);
     }
     // Send message to importer-worker to create/update a11y metrics
     log.debug(`[FormA11yAudit] [Site Id: ${siteId}] Sending message to importer-worker to create/update a11y metrics`);

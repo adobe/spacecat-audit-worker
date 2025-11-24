@@ -263,7 +263,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] No accessibility violations found, skipping opportunity creation',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -312,7 +312,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] No accessibility violations found, skipping opportunity creation',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -1167,7 +1167,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] No accessibility violations found, skipping opportunity creation',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -1222,7 +1222,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] No accessibility violations found, skipping opportunity creation',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -1267,7 +1267,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] No accessibility violations found, skipping opportunity creation',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
