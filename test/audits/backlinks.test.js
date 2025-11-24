@@ -374,10 +374,13 @@ describe('Backlinks Tests', function () {
           }),
         },
       ];
-      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(suggestionsWithRootUrl);
+      // Create new stub like internal links test does
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+        .resolves(suggestionsWithRootUrl);
 
       // Use top pages with any prefix - since broken link has no prefix, all will be included
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+        .resolves(topPages);
 
       const result = await generateSuggestionData(context);
 
