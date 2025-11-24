@@ -10,13 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
-  from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import {
-  isNonEmptyArray,
-  DELIVERY_TYPES,
-  tracingFetch as fetch,
-  hasText,
+  DELIVERY_TYPES, hasText, isNonEmptyArray, tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { createHash } from 'node:crypto';
@@ -26,12 +22,9 @@ import { createOpportunityData, createOpportunityProps } from './opportunity-dat
 import { getImsOrgId, syncSuggestions } from '../utils/data-access.js';
 import { mapVulnerabilityToSuggestion } from './suggestion-data-mapper.js';
 
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 1; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES;
-
-/**
- * @typedef {import('./vulnerability-report.d.ts').VulnerabilityReport} VulnerabilityReport
- */
 
 /**
  * Fetches vulnerability report for a given AEM Cloud Service site from the starfish API.
@@ -82,10 +75,7 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
   };
   let resp;
   try {
-    resp = await fetch(
-      `${env.STARFISH_API_BASE_URL}/reports/${programId}/${environmentId}/vulnerabilities`,
-      { headers },
-    );
+    resp = await fetch(`${env.STARFISH_API_BASE_URL}/reports/${programId}/${environmentId}/vulnerabilities`, { headers });
   } catch (error) {
     throw new Error('Failed to fetch vulnerability report');
   }
@@ -106,14 +96,13 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
  * Perform an audit to check if the environment has vulnerable dependencies.
  *
  * @async
- * @param {string} baseURL - The URL to run audit against
  * @param {Object} context - The context object containing configurations, services,
  * and environment variables.
- * @param {Object} site - The site object
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
-export async function vulnerabilityAuditRunner(baseURL, context, site) {
-  const { log } = context;
+export async function vulnerabilityAuditRunner(context) {
+  const { finalUrl, site, log } = context;
+  const baseURL = finalUrl;
 
   // This opportunity is only relevant for aem_cs delivery-type at the moment
   if (site.getDeliveryType() !== DELIVERY_TYPES.AEM_CS) {
@@ -172,6 +161,53 @@ export async function vulnerabilityAuditRunner(baseURL, context, site) {
   }
 }
 
+export async function extractCodeBucket(context) {
+  const { site } = context;
+  const result = await vulnerabilityAuditRunner(context);
+
+  // we explicitly do not fail here if the import worker failed,
+  // but instead delegate that to the next step
+
+  return {
+    type: 'code',
+    siteId: site.getId(),
+    auditResult: result.auditResult,
+    fullAuditRef: result.fullAuditRef,
+  };
+}
+
+export const dataContainsCode = (data) => {
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+
+  // Navigate the nested structure
+  const { importResults } = data;
+  if (!Array.isArray(importResults) || importResults.length === 0) {
+    return false;
+  }
+
+  const firstImportResult = importResults[0];
+  if (!firstImportResult || typeof firstImportResult !== 'object') {
+    return false;
+  }
+
+  const results = firstImportResult.result;
+  if (!Array.isArray(results) || results.length === 0) {
+    return false;
+  }
+
+  const codeInfo = results[0];
+  return !!(
+    codeInfo
+    && typeof codeInfo === 'object'
+    && typeof codeInfo.codeBucket === 'string'
+    && codeInfo.codeBucket.trim() !== ''
+    && typeof codeInfo.codePath === 'string'
+    && codeInfo.codePath.trim() !== ''
+  );
+};
+
 /**
  * Creates opportunities and syncs suggestions.
  *
@@ -181,25 +217,25 @@ export async function vulnerabilityAuditRunner(baseURL, context, site) {
  * @param {Object} site - The site object
  * @returns {Object} The audit data unchanged (opportunities created as side effect).
  */
-export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context, site) => {
-  const { log, dataAccess } = context;
+export const opportunityAndSuggestionsStep = async (context) => {
+  const {
+    site, data, audit, log, sqs, env, finalUrl, dataAccess,
+  } = context;
   const { Configuration, Suggestion } = dataAccess;
 
-  const { vulnerabilityReport, success } = auditData.auditResult;
-
-  if (!success) {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
-    return { status: 'complete' };
+  const auditResult = audit.getAuditResult();
+  if (auditResult.success === false) {
+    throw new Error('Audit failed, skipping suggestions generation');
   }
+
+  const { vulnerabilityReport } = auditResult;
 
   if (!isNonEmptyArray(vulnerabilityReport.vulnerableComponents)) {
     // No vulnerabilities found
     // Fetch opportunity
     let opportunity;
     try {
-      const opportunities = await site.getOpportunitiesByStatus(
-        Oppty.STATUSES.NEW,
-      );
+      const opportunities = await site.getOpportunitiesByStatus(Oppty.STATUSES.NEW);
       opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
     } catch (e) {
       log.error(`Fetching opportunities for siteId ${site.getId()} failed with error: ${e.message}`);
@@ -228,25 +264,27 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
 
   // Update opportunity
   const opportunity = await convertToOpportunity(
-    auditUrl,
-    { siteId: auditData.siteId, id: auditData.auditId },
+    finalUrl,
+    { siteId: site.getId(), id: audit.getId() },
     context,
     createOpportunityData,
     AUDIT_TYPE,
-    createOpportunityProps(auditData.auditResult.vulnerabilityReport),
+    createOpportunityProps(auditResult.vulnerabilityReport),
   );
 
   const configuration = await Configuration.findLatest();
   const generateSuggestions = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-suggest', site);
   if (!generateSuggestions) {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-suggest not configured, skipping version recommendations`);
+    log.debug(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-suggest not configured, skipping version recommendations`,
+    );
   }
 
   // As a buildKey we hash all the component details and add name and version for readability
-  const buildKey = (data) => {
-    const s = JSON.stringify(data);
+  const buildKey = (item) => {
+    const s = JSON.stringify(item);
     const hash = createHash('sha256').update(s).digest('hex').slice(0, 8);
-    return `${data.name}@${data.version}#${hash}`;
+    return `${item.name}@${item.version}#${hash}`;
   };
 
   // Populate suggestions
@@ -256,14 +294,41 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
     context,
     buildKey,
     mapNewSuggestion:
-      (entry) => mapVulnerabilityToSuggestion(opportunity, entry, generateSuggestions),
+        (entry) => mapVulnerabilityToSuggestion(opportunity, entry, generateSuggestions),
     log,
   });
 
+  const generateCodeFix = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-fix', site);
+  if (generateSuggestions && generateCodeFix && dataContainsCode(data)) {
+    // TODO => only add new suggestions to the payload
+    // TODO => optimize payload to reduce size use s3 instead of data as transport medium
+
+    const message = {
+      type: 'codefix:security-vulnerabilities',
+      siteId: site.getId(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {
+        suggestions: await opportunity.getSuggestions(),
+        importResults: data.importResults,
+      },
+    };
+
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to Mystique for code fix generation`);
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+  } else {
+    log.debug(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with mystique, because one of: 
+      security-vulnerabilities-auto-fix not configured, security-vulnerabilities-auto-suggest' not configured
+      or import worker could not get code.`,
+    );
+  }
   return { status: 'complete' };
 };
 
 export default new AuditBuilder()
-  .withRunner(vulnerabilityAuditRunner)
-  .withPostProcessors([opportunityAndSuggestionsStep])
+// Note the import worker MUST trigger the next step regardless if code repo is configured
+  .addStep('import-from-starfish', extractCodeBucket, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('generate-suggestion-data', opportunityAndSuggestionsStep)
   .build();
