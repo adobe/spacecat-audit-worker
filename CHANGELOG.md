@@ -1,3 +1,10 @@
+# [1.253.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.252.6...v1.253.0) (2025-11-24)
+
+
+### Features
+
+* CQ-4361662 security worker calls code import worker ([#1572](https://github.com/adobe/spacecat-audit-worker/issues/1572)) ([3ae7900](https://github.com/adobe/spacecat-audit-worker/commit/3ae7900aa6d8186d8c8bfd976684db3eaa494106))
+
 ## [1.252.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.252.5...v1.252.6) (2025-11-24)
 
 
