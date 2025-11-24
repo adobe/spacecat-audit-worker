@@ -195,12 +195,18 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
   const { log } = context;
   try {
     const s3Config = await getS3Config(site, context);
-    const { periodIdentifier } = generateReportingPeriods();
-    const outputLocation = s3Config.aggregatedLocation || '';
+    const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
+    const outputLocation = `${llmoFolder}/agentic-traffic`;
 
+    // Determine current week identifier (same logic as elsewhere)
+    const periods = generateReportingPeriods();
+    const latestWeek = periods.weeks[0];
+    const weekId = `w${String(latestWeek.weekNumber).padStart(2, '0')}-${latestWeek.year}`;
+
+    // Download sheet
     const sharepointClient = await createLLMOSharepointClient(context);
     const rows = await downloadExistingCdnSheet(
-      periodIdentifier,
+      weekId,
       outputLocation,
       sharepointClient,
       log,
@@ -209,10 +215,7 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
     );
 
     if (!rows || rows.length === 0) {
-      log.warn(
-        `[PRERENDER] No agentic traffic rows found in sheet for ${periodIdentifier} `
-        + `at ${outputLocation}`,
-      );
+      log.warn(`[PRERENDER] No agentic traffic rows found in sheet for ${weekId} at ${outputLocation}`);
       return [];
     }
 
@@ -234,21 +237,21 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
           return {
             url: new URL(path, baseUrl).toString(),
             agenticTraffic: hits,
-            agenticTrafficDuration: periodIdentifier,
+            agenticTrafficDuration: weekId,
           };
         } catch {
           return {
             url: path,
             agenticTraffic: hits,
-            agenticTrafficDuration: periodIdentifier,
+            agenticTrafficDuration: weekId,
           };
         }
       });
 
-    log.info(`[PRERENDER] Selected ${top.length} top agentic URLs via Sheet fallback.`);
+    log.info(`[PRERENDER] Selected ${top.length} top agentic URLs via Sheet (${weekId}).`);
     return top;
   } catch (e) {
-    context?.log?.warn?.(`[PRERENDER] Sheet fallback failed: ${e.message}`);
+    log?.warn?.(`[PRERENDER] Sheet-based agentic URL fetch failed: ${e?.message || e}`);
     return [];
   }
 }
