@@ -165,9 +165,8 @@ export async function extractCodeBucket(context) {
   const { site } = context;
   const result = await vulnerabilityAuditRunner(context);
 
-  if (result.auditResult.success === false) {
-    throw new Error('Audit failed, skipping call to import worker');
-  }
+  // we explicitly do not fail here if the import worker failed,
+  // but instead delegate that to the next step
 
   return {
     type: 'code',
@@ -316,10 +315,13 @@ export const opportunityAndSuggestionsStep = async (context) => {
       },
     };
 
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to Mystique for code fix generation`);
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
   } else {
     log.debug(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-fix not configured, skipping code generation with mystique`,
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with mystique, because one of: 
+      security-vulnerabilities-auto-fix not configured, security-vulnerabilities-auto-suggest' not configured
+      or import worker could not get code.`,
     );
   }
   return { status: 'complete' };
