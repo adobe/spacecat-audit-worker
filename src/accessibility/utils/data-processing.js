@@ -1081,10 +1081,12 @@ export async function sendCodeFixMessagesToMystique(opportunity, auditId, site, 
 
     suggestions.forEach((suggestion) => {
       const suggestionData = suggestion.getData();
-      const { url, source: formSource = 'default', issues } = suggestionData;
+      const {
+        url, source: formSource = 'default', issues, aiGenerated,
+      } = suggestionData;
 
       // By design, data.issues will always have length 1
-      if (issues && issues.length > 0) {
+      if (issues && issues.length > 0 && !aiGenerated) {
         const issueType = issues[0].type;
         const groupKey = `${url}|${formSource}|${issueType}`;
         if (!groupedSuggestions.has(groupKey)) {
