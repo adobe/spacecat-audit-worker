@@ -931,6 +931,365 @@ describe('Prerender Audit', () => {
     });
   });
 
+  describe('Athena and Sheet Fetch Coverage', () => {
+    it('should return top agentic URLs from Athena and filter "Other"; uses path fallback when baseUrl invalid', async () => {
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: () => ({ query: async () => ([
+            { url: '/a', number_of_hits: 5 },
+            { url: 'Other', number_of_hits: 100 },
+            { url: '/b', number_of_hits: 3 },
+          ]) }) },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createAgenticReportQuery: async () => 'SELECT 1',
+          },
+        },
+      });
+
+      const result = await mockHandler.submitForScraping({
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'invalid', // force URL constructor to throw for fallback branch
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+      });
+
+      const urls = result.urls.map((u) => u.url);
+      // '/a' normalized will fail due to invalid baseUrl, mapping will keep path string
+      expect(urls).to.include('/a');
+      expect(urls).to.include('/b');
+      // Ensure "Other" excluded and limit respected
+      expect(urls).to.have.length(2);
+    });
+
+    it('should populate agentic traffic for included URLs via Athena (hits-for-urls)', async () => {
+      const html = '<html><body><p>x</p></body></html>';
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: () => ({ query: async (q) => {
+            // Return hits for the specific-URLs query
+            if (q === 'SELECT 2') return [{ url: '/inc', number_of_hits: 7 }];
+            return [];
+          } }) },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createAgenticReportQuery: async () => 'SELECT 1',
+            createAgenticHitsForUrlsQuery: async () => 'SELECT 2',
+          },
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => html,
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => ['https://example.com/inc'] }),
+        },
+        audit: { getId: () => 'a' },
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKETNAME: 'b' },
+      };
+      const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
+      const found = res.auditResult.results.find((r) => r.url.includes('/inc'));
+      expect(found).to.exist;
+      expect(found.agenticTraffic).to.equal(7);
+    });
+
+    it('should default agentic traffic to 0 when hits-for-urls query fails', async () => {
+      const html = '<html><body><p>x</p></body></html>';
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: () => ({ query: async () => { throw new Error('boom'); } }) },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createAgenticReportQuery: async () => 'SELECT 1',
+            createAgenticHitsForUrlsQuery: async () => 'SELECT 2',
+          },
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => html,
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => ['https://example.com/inc'] }),
+        },
+        audit: { getId: () => 'a' },
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKETNAME: 'b' },
+      };
+      const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
+      const found = res.auditResult.results.find((r) => r.url.includes('/inc'));
+      expect(found).to.exist;
+      expect(found.agenticTraffic).to.equal(0);
+    });
+
+    it('should return [] when sheet fallback has no rows', async () => {
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
+        },
+        '../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: async () => ({}),
+          readFromSharePoint: async () => ({}),
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            customerName: 'adobe',
+          }),
+          downloadExistingCdnSheet: async () => [],
+          weeklyBreakdownQueries: {
+            createAgenticReportQuery: async () => 'SELECT 1',
+          },
+        },
+      });
+
+      const res = await mockHandler.submitForScraping({
+        site: { getId: () => 'id', getBaseURL: () => 'https://example.com', getConfig: () => ({ getIncludedURLs: () => [] }) },
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+      });
+      // Falls back to baseUrl when no URLs at all
+      expect(res.urls.length === 0 || res.urls[0].url === 'https://example.com').to.be.true;
+    });
+  });
+
+  describe('Additional branch coverage (mapping, catches)', () => {
+    it('should hit toPath catch for malformed included URL', async () => {
+      const html = '<html><body><p>x</p></body></html>';
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createAgenticReportQuery: async () => 'SELECT 1',
+            createAgenticHitsForUrlsQuery: async () => 'SELECT 2',
+          },
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => html,
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'invalid', // force new URL(fullUrl, baseUrl) to throw in toPath
+          getConfig: () => ({ getIncludedURLs: () => ['::'] }),
+        },
+        audit: { getId: () => 'a' },
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
+        s3Client: {},
+        env: { S3_SCRAPER_BUCKETNAME: 'b' },
+      };
+      const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
+      expect(res).to.be.an('object');
+      // At least one result exists; exact agenticTraffic may be 0
+      expect(res.auditResult).to.be.an('object');
+    });
+
+    it('should hit sheet mapping catch when baseUrl invalid', async () => {
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
+        },
+        '../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: async () => ({}),
+          readFromSharePoint: async () => ({}),
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            customerName: 'adobe',
+          }),
+          downloadExistingCdnSheet: async () => [
+            { url: '/p1', number_of_hits: 10 },
+          ],
+          weeklyBreakdownQueries: {
+            createAgenticReportQuery: async () => 'SELECT 1',
+          },
+        },
+      });
+
+      const res = await mockHandler.submitForScraping({
+        site: { getId: () => 'id', getBaseURL: () => 'invalid', getConfig: () => ({ getIncludedURLs: () => [] }) },
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+      });
+      // mapping catch keeps raw '/p1'
+      expect(res.urls.map((u) => u.url)).to.include('/p1');
+    });
+
+    it('should cover agenticStats mapping and ranking loop by returning non-empty top list', async () => {
+      const serverHtml = '<html><body>Same</body></html>';
+      const clientHtml = '<html><body>Same</body></html>';
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: () => ({ query: async () => ([
+            { url: '/x', number_of_hits: 2 },
+          ]) }) },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createAgenticReportQuery: async () => 'SELECT 1',
+          },
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectFromKey: async (_c, _b, key) => {
+            if (key.endsWith('server-side.html')) return serverHtml;
+            if (key.endsWith('client-side.html')) return clientHtml;
+            return null;
+          },
+        },
+      });
+      const ctx = {
+        site: { getId: () => 'site', getBaseURL: () => 'https://example.com', getConfig: () => ({ getIncludedURLs: () => [] }) },
+        audit: { getId: () => 'a' },
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
+        s3Client: { send: sinon.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        // Provide a scrape result to bypass later includedURLs call path
+        scrapeResultPaths: new Map([['https://example.com/x', '/tmp/x']]),
+      };
+      const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
+      // Should have processed at least the '/x' entry
+      expect(res.status).to.equal('complete');
+      expect(res.auditResult.totalUrlsChecked).to.be.greaterThan(0);
+    });
+
+    it('should log warn in mapping block catch when getIncludedURLs throws', async () => {
+      const html = '<html><body><p>x</p></body></html>';
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: () => ({ query: async () => ([
+            { url: '/x', number_of_hits: 1 },
+          ]) }) },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createAgenticReportQuery: async () => 'SELECT 1',
+          },
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => html,
+        },
+      });
+      const warn = sinon.stub();
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => { throw new Error('config failed'); },
+        },
+        audit: { getId: () => 'a' },
+        log: { info: sinon.stub(), warn, debug: sinon.stub(), error: sinon.stub() },
+        s3Client: { send: sinon.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        // Ensure we do not hit the later includedURLs call by providing scrape results
+        scrapeResultPaths: new Map([['https://example.com/y', '/tmp/y']]),
+      };
+      const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
+      expect(res.status).to.equal('complete');
+      expect(warn.called).to.be.true;
+      expect(warn.args.some(a => String(a[0]).includes('Failed to fetch agentic traffic for mapping'))).to.be.true;
+    });
+  });
+  describe('Shared utils coverage', () => {
+    it('should return S3 config shape and temp location function', async () => {
+      const shared = await esmock('../../src/prerender/utils/shared.js', {
+        '../../src/utils/cdn-utils.js': {
+          // Avoid depending on env; just return a deterministic bucket
+          resolveConsolidatedBucketName: () => 'bucket',
+          extractCustomerDomain: () => 'adobe_com',
+        },
+      });
+      const cfg = await shared.getS3Config({ getBaseURL: () => 'https://www.adobe.com' }, { });
+      expect(cfg).to.be.an('object');
+      expect(cfg).to.have.property('databaseName');
+      expect(cfg).to.have.property('tableName');
+      expect(cfg).to.have.property('getAthenaTempLocation');
+      expect(cfg.getAthenaTempLocation()).to.be.a('string');
+      expect(cfg.getAthenaTempLocation()).to.include('/temp/athena-results/');
+    });
+
+    it('should compute customerName correctly when domain starts with www', async () => {
+      const shared = await esmock('../../src/prerender/utils/shared.js', {
+        '../../src/utils/cdn-utils.js': {
+          resolveConsolidatedBucketName: () => 'bucket',
+          extractCustomerDomain: () => 'www.adobe_com',
+        },
+      });
+      const cfg = await shared.getS3Config({ }, { });
+      expect(cfg.customerName).to.equal('adobe');
+      expect(cfg.databaseName).to.equal('cdn_logs_www.adobe_com');
+      expect(cfg.tableName).to.equal('aggregated_logs_www.adobe_com_consolidated');
+    });
+  });
   describe('Edge Cases and Error Handling', () => {
     describe('HTML Content Processing', () => {
       it('should throw error for missing server-side HTML', async () => {

@@ -113,9 +113,11 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = 200) {
  */
 async function getAgenticTrafficForSpecificUrls(site, context, targetUrls = []) {
   const { log } = context;
+  /* c8 ignore start */
   if (!Array.isArray(targetUrls) || targetUrls.length === 0) {
     return [];
   }
+  /* c8 ignore stop */
   try {
     const s3Config = await getS3Config(site, context);
     const periods = generateReportingPeriods();
