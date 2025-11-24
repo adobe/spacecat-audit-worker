@@ -224,7 +224,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
       url,
       source,
       aggregation_key: aggregationKey,
-      type: types,
+      types,
       code_fix_path: codeFixPath,
       code_fix_bucket: codeFixBucket,
     } = update;

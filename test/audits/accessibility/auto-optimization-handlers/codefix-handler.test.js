@@ -325,7 +325,7 @@ describe('AccessibilityCodeFixHandler', () => {
             {
               url: 'https://example.com/contact',
               source: 'form',
-              type: ['color-contrast'],
+              types: ['color-contrast'],
             },
           ],
         },
@@ -571,7 +571,7 @@ describe('AccessibilityCodeFixHandler', () => {
             {
               url: 'https://example.com/contact',
               source: 'form',
-              type: ['color-contrast'],
+              types: ['color-contrast'],
             },
           ],
         },
@@ -715,7 +715,7 @@ describe('AccessibilityCodeFixHandler', () => {
             {
               url: 'https://example.com/contact',
               source: 'form',
-              type: ['color-contrast'],
+              types: ['color-contrast'],
             },
           ],
         },
@@ -756,7 +756,7 @@ describe('AccessibilityCodeFixHandler', () => {
             {
               url: 'https://example.com/contact',
               // No source
-              type: ['color-contrast'],
+              types: ['color-contrast'],
             },
           ],
         },
@@ -820,7 +820,7 @@ describe('AccessibilityCodeFixHandler', () => {
             {
               url: 'https://example.com/page1',
               source: 'form1',
-              type: ['color-contrast', 'select-name'],
+              types: ['color-contrast', 'select-name'],
             },
           ],
         },
@@ -870,7 +870,7 @@ describe('AccessibilityCodeFixHandler', () => {
               url: 'https://example.com/contact',
               source: 'form',
               aggregation_key: 'https://example.com/contact|button-name|form',
-              type: ['should-be-ignored'],
+              types: ['should-be-ignored'],
             },
           ],
         },
