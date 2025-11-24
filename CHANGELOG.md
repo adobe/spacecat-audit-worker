@@ -1,3 +1,10 @@
+## [1.252.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.252.2...v1.252.3) (2025-11-24)
+
+
+### Bug Fixes
+
+* stop saving issues in opportunity object ([#1614](https://github.com/adobe/spacecat-audit-worker/issues/1614)) ([53dd48b](https://github.com/adobe/spacecat-audit-worker/commit/53dd48b7588257d97f112ba966cd3497bdecf06b))
+
 ## [1.252.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.252.1...v1.252.2) (2025-11-23)
 
 
