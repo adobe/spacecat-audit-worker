@@ -36,9 +36,10 @@ export async function processImportStep(context) {
 
 export async function processAltTextWithMystique(context) {
   const {
-    log, site, audit, dataAccess,
+    log, site, audit, dataAccess, env,
   } = context;
 
+  log.info(`[${AUDIT_TYPE}]: Processing alt-text with Mystique for siteId ${site.getId()} using custom sqs queue ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
   log.debug(`[${AUDIT_TYPE}]: Processing alt-text with Mystique for site ${site.getId()}`);
 
   try {
