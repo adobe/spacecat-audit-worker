@@ -363,6 +363,10 @@ describe('Backlinks Tests', function () {
       brokenBacklinksOpportunity.getSuggestions.returns([]);
       brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
 
+      // Mock calculateKpiMetrics S3 calls (needed for the function to complete)
+      context.s3Client.send.onCall(0).resolves(null); // No RUM traffic data
+      context.s3Client.send.onCall(1).resolves(null); // No organic traffic data
+
       // Mock suggestions with broken link that has root-level URL (no path prefix)
       // This ensures alternatives with any prefix or no prefix will be included
       const suggestionsWithRootUrl = [
