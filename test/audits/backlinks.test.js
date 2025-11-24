@@ -52,6 +52,10 @@ describe('Backlinks Tests', function () {
     { getUrl: () => 'https://example.com/blog/page1' },
     { getUrl: () => 'https://example.com/blog/page2' },
   ];
+  const topPagesNoPrefix = [
+    { getUrl: () => 'https://example.com/page1' },
+    { getUrl: () => 'https://example.com/page2' },
+  ];
   const auditUrl = 'https://audit.url';
   const audit = {
     getId: () => auditDataMock.id,
@@ -359,9 +363,14 @@ describe('Backlinks Tests', function () {
       brokenBacklinksOpportunity.getSuggestions.returns([]);
       brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
 
+      // The broken link 'https://foo.com/redirects-throws-error' extracts prefix '/redirects-throws-error'
+      // Alternatives with '/blog' prefix won't match, so they get filtered out
+      // Use alternatives with no prefix (root-level) which will be included per logic:
+      // "Include if URL matches one of the broken links' locales, or has no locale"
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPagesNoPrefix);
+
       const result = await generateSuggestionData(context);
 
-      // filterByAuditScope returns all items when baseURL has no subpath
       expect(result.status).to.deep.equal('complete');
       expect(context.sqs.sendMessage).to.have.been.calledWithMatch('test-queue', {
         type: 'guidance:broken-links',
@@ -371,7 +380,7 @@ describe('Backlinks Tests', function () {
         time: sinon.match.any,
         data: {
           opportunityId: 'opportunity-id',
-          alternativeUrls: topPages.map((page) => page.getUrl()),
+          alternativeUrls: topPagesNoPrefix.map((page) => page.getUrl()),
           brokenLinks: [{
             urlFrom: 'https://from.com/from-2',
             urlTo: 'https://foo.com/redirects-throws-error',
