@@ -21,7 +21,7 @@ import { CONTENT_GAIN_THRESHOLD } from './utils/constants.js';
 export function createOpportunityData(auditData) {
   const { auditResult } = auditData || {};
   const { scrapeForbidden } = auditResult || {};
-  const trafficDuration = auditData?.agenticDateRange || 'NA';
+  const trafficDuration = auditData?.agenticDateRange ?? {};
 
   return {
     runbook: '',

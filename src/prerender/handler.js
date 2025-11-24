@@ -621,11 +621,15 @@ export async function processContentAndGenerateOpportunities(context) {
   try {
     let urlsToCheck = [];
     const agenticTrafficMap = new Map(); // agentic traffic (Athena)
-    const agenticDateRange = (() => {
+    const { agenticDateRange } = (() => {
       const periods = generateReportingPeriods();
       const latestWeek = periods.weeks[0];
       const fmt = (d) => d.toISOString().slice(0, 10);
-      return `${fmt(latestWeek.startDate)} – ${fmt(latestWeek.endDate)}`;
+      const startDate = fmt(latestWeek.startDate);
+      const endDate = fmt(latestWeek.endDate);
+      return {
+        agenticDateRange: { startDate, endDate },
+      };
     })();
 
     // Build agentic traffic map (best-effort)
