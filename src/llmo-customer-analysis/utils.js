@@ -81,7 +81,7 @@ function arePromptArraysEqual(prompts1, prompts2) {
     prompts2.sort((a, b) => a.prompt.localeCompare(b.prompt)),
   );
 
-  return new Set(sorted1).isSupersetOf(new Set(sorted2));
+  return sorted1 === sorted2;
 }
 function deepEqual(a, b, path = '') {
   if (a === b) return true;
