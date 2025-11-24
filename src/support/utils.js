@@ -196,6 +196,34 @@ export function getUrlWithoutPath(url) {
   return `${urlObj.protocol}//${urlObj.host}`;
 }
 
+/**
+ * Limits the concurrency of async tasks
+ * @param {Array<Function>} tasks - Array of async functions to execute
+ * @param {number} maxConcurrent - Maximum number of concurrent tasks
+ * @returns {Promise<Array>} - Array of results from all tasks
+ */
+export async function limitConcurrency(tasks, maxConcurrent) {
+  const results = [];
+  const executing = [];
+
+  for (const task of tasks) {
+    const promise = task().then((result) => {
+      executing.splice(executing.indexOf(promise), 1);
+      return result;
+    });
+
+    results.push(promise);
+    executing.push(promise);
+
+    if (executing.length >= maxConcurrent) {
+      // eslint-disable-next-line no-await-in-loop
+      await Promise.race(executing);
+    }
+  }
+
+  return Promise.all(results);
+}
+
 const extractScrapedMetadataFromJson = (data, log) => {
   try {
     log.debug(`Extracting data from JSON (${data.finalUrl}:`, JSON.stringify(data.scrapeResult.tags));
@@ -296,6 +324,7 @@ export async function calculateCPCValue(context, siteId) {
 export const getScrapedDataForSiteId = async (site, context) => {
   const { s3Client, env, log } = context;
   const siteId = site.getId();
+  const MAX_CONCURRENT_S3_READS = 10;
 
   let allFiles = [];
   let isTruncated = true;
@@ -323,16 +352,16 @@ export const getScrapedDataForSiteId = async (site, context) => {
   }
 
   async function fetchContentOfFiles(files) {
-    return Promise.all(
-      files.map(async (file) => {
-        const fileContent = await getObjectFromKey(
+    return limitConcurrency(
+      files.map(
+        (file) => async () => getObjectFromKey(
           s3Client,
           env.S3_SCRAPER_BUCKET_NAME,
           file.Key,
           log,
-        );
-        return fileContent;
-      }),
+        ),
+      ),
+      MAX_CONCURRENT_S3_READS,
     );
   }
 
@@ -347,16 +376,19 @@ export const getScrapedDataForSiteId = async (site, context) => {
     };
   }
 
-  const extractedData = await Promise.all(
-    allFiles.map(async (file) => {
-      const fileContent = await getObjectFromKey(
-        s3Client,
-        env.S3_SCRAPER_BUCKET_NAME,
-        file.Key,
-        log,
-      );
-      return extractScrapedMetadataFromJson(fileContent, log);
-    }),
+  const extractedData = await limitConcurrency(
+    allFiles.map(
+      (file) => async () => {
+        const fileContent = await getObjectFromKey(
+          s3Client,
+          env.S3_SCRAPER_BUCKET_NAME,
+          file.Key,
+          log,
+        );
+        return extractScrapedMetadataFromJson(fileContent, log);
+      },
+    ),
+    MAX_CONCURRENT_S3_READS,
   );
 
   const indexFile = allFiles

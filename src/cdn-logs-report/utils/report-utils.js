@@ -131,26 +131,6 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
     periodIdentifier,
   };
 }
-
-export function buildSiteFilters(filters, site) {
-  if (!filters || filters.length === 0) {
-    const baseURL = site.getBaseURL();
-    const { host } = new URL(baseURL);
-    return `REGEXP_LIKE(host, '(?i)(${host})')`;
-  }
-
-  const clauses = filters.map(({ key, value, type }) => {
-    const regexPattern = value.join('|');
-    if (type === 'exclude') {
-      return `NOT REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
-    }
-    return `REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
-  });
-
-  const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
-  return `(${filterConditions})`;
-}
-
 /**
  * Fetches remote patterns for a site
  */
