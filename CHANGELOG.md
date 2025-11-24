@@ -1,3 +1,10 @@
+## [1.252.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.252.5...v1.252.6) (2025-11-24)
+
+
+### Bug Fixes
+
+* enhance canonical suggestion generation and validation checks ([#1637](https://github.com/adobe/spacecat-audit-worker/issues/1637)) ([0b593de](https://github.com/adobe/spacecat-audit-worker/commit/0b593de84b48b3e8f739bd7f1b9b3085a5674eef))
+
 ## [1.252.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.252.4...v1.252.5) (2025-11-24)
 
 
