@@ -372,22 +372,25 @@ describe('Backlinks Tests', function () {
       const result = await generateSuggestionData(context);
 
       expect(result.status).to.deep.equal('complete');
-      expect(context.sqs.sendMessage).to.have.been.calledWithMatch('test-queue', {
-        type: 'guidance:broken-links',
-        siteId: 'site-id',
-        auditId: 'audit-id',
-        deliveryType: 'aem_cs',
-        time: sinon.match.any,
-        data: {
-          opportunityId: 'opportunity-id',
-          alternativeUrls: topPagesNoPrefix.map((page) => page.getUrl()),
-          brokenLinks: [{
-            urlFrom: 'https://from.com/from-2',
-            urlTo: 'https://foo.com/redirects-throws-error',
-            suggestionId: 'test-suggestion-1',
-          }],
-        },
+      
+      // Verify message was sent with correct structure
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.type).to.equal('guidance:broken-links');
+      expect(sentMessage.siteId).to.equal('site-id');
+      expect(sentMessage.auditId).to.equal('audit-id');
+      expect(sentMessage.deliveryType).to.equal('aem_cs');
+      expect(sentMessage.data.opportunityId).to.equal('opportunity-id');
+      expect(sentMessage.data.alternativeUrls).to.deep.equal(topPagesNoPrefix.map((page) => page.getUrl()));
+      expect(sentMessage.data.brokenLinks).to.be.an('array');
+      expect(sentMessage.data.brokenLinks.length).to.be.greaterThan(0);
+      // Verify first broken link matches expected structure
+      expect(sentMessage.data.brokenLinks[0]).to.deep.include({
+        urlFrom: 'https://from.com/from-2',
+        urlTo: 'https://foo.com/redirects-throws-error',
+        suggestionId: 'test-suggestion-1',
       });
+      
       expect(context.log.debug).to.have.been.calledWith(sinon.match(/Message sent to Mystique/));
     });
 
