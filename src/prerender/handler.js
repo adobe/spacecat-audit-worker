@@ -30,8 +30,8 @@ import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.j
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-
 const CONTENT_GAIN_THRESHOLD = 1.1;
+const TOP_AGENTIC_URLS_LIMIT = 50;
 
 /**
  * Fetch top Agentic URLs using Athena (preferred).
@@ -418,7 +418,7 @@ export async function submitForScraping(context) {
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
   // Fetch Top Agentic URLs (up to 200)
-  const agenticStats = await getTopAgenticUrls(site, context, 200);
+  const agenticStats = await getTopAgenticUrls(site, context, TOP_AGENTIC_URLS_LIMIT);
   const agenticUrls = agenticStats.map((s) => s.url);
 
   const finalUrls = [...new Set([...agenticUrls, ...includedURLs])];
@@ -635,7 +635,7 @@ export async function processContentAndGenerateOpportunities(context) {
     // Build agentic traffic map (best-effort)
     let agenticStats = [];
     try {
-      agenticStats = await getTopAgenticUrls(site, context, 200);
+      agenticStats = await getTopAgenticUrls(site, context, TOP_AGENTIC_URLS_LIMIT);
       agenticStats.forEach(({ url, agenticTraffic, agenticTrafficDuration }) => {
         agenticTrafficMap.set(url, Number(agenticTraffic || 0) || 0);
         if (agenticTrafficDuration) {
