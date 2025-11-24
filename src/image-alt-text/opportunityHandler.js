@@ -160,7 +160,7 @@ export async function sendAltTextOpportunityToMystique(
     const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
 
     log.debug(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to Mystique in ${urlBatches.length} batch(es)`);
-    log.info(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to Mystique ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+    log.info(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to Mystique in ${urlBatches.length} batch(es) using custom sqs queue`);
     // Send each batch as a separate message
     for (let i = 0; i < urlBatches.length; i += 1) {
       const batch = urlBatches[i];
