@@ -565,6 +565,8 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       siteId,
       auditType: AUDIT_TYPE,
       lastUpdated: auditedAt || new Date().toISOString(),
+      // Opportunity-level traffic window (startDate/endDate object)
+      trafficDuration: auditData?.trafficDuration || {},
       totalUrlsChecked: auditResult.totalUrlsChecked || 0,
       urlsNeedingPrerender: auditResult.urlsNeedingPrerender || 0,
       scrapeForbidden: auditResult.scrapeForbidden || false,
@@ -749,6 +751,8 @@ export async function processContentAndGenerateOpportunities(context) {
       auditedAt: new Date().toISOString(),
       auditType: AUDIT_TYPE,
       auditResult,
+      // include opportunity-level traffic window for summary writer
+      trafficDuration: agenticDateRange,
     };
     await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
 
