@@ -754,15 +754,55 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
   });
 
   describe('compareConfigs with AI categorization metadata', () => {
-    it('should return false for isAICategorizationOnly when oldConfig is null', () => {
+    it('should handle null oldConfig with ?? {} operator and set metadata', () => {
+      const newConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us', origin: 'ai' } },
+        topics: {},
+        ai_topics: { 'topic-1': { name: 'AI Topic', prompts: [] } },
+      };
+
+      const changes = compareConfigs(null ?? {}, newConfig ?? {});
+      // After ?? {}, oldConfig becomes {}, which is truthy, so metadata should be set
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(true);
+    });
+
+    it('should handle undefined oldConfig with ?? {} operator and set metadata', () => {
+      const newConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us', origin: 'ai' } },
+        topics: {},
+        ai_topics: { 'topic-1': { name: 'AI Topic', prompts: [] } },
+      };
+
+      const changes = compareConfigs(undefined ?? {}, newConfig ?? {});
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(true);
+    });
+
+    it('should handle null newConfig with ?? {} operator', () => {
+      const oldConfig = {
+        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        topics: {},
+        ai_topics: {},
+      };
+
+      const changes = compareConfigs(oldConfig ?? {}, null ?? {});
+      // Categories were deleted, so there should be a change
+      expect(changes).to.have.property('categories');
+    });
+
+    it('should return false for isAICategorizationOnly when oldConfig is empty', () => {
+      const oldConfig = {
+        categories: {},
+        topics: {},
+        ai_topics: {},
+      };
       const newConfig = {
         categories: { 'cat-1': { name: 'Category A', region: 'us' } },
         topics: {},
         ai_topics: {},
       };
 
-      const changes = compareConfigs(null, newConfig);
-      expect(changes.metadata?.isAICategorizationOnly).to.be.undefined;
+      const changes = compareConfigs(oldConfig, newConfig);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
     });
 
     it('should return false for isAICategorizationOnly when there are no changes', () => {
@@ -776,14 +816,14 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
       expect(changes.metadata).to.be.undefined; // No changes means no metadata
     });
 
-    it('should return true when only new AI-origin categories and topics are added', () => {
+    it('should return false when topics are added (topics are always human)', () => {
       const oldConfig = {
         categories: {},
         topics: {},
         ai_topics: {},
       };
       const newConfig = {
-        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        categories: { 'cat-1': { name: 'Category A', region: 'us', origin: 'ai' } },
         topics: {
           'topic-1': {
             name: 'Topic A',
@@ -797,10 +837,10 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
       };
 
       const changes = compareConfigs(oldConfig, newConfig);
-      expect(changes.metadata?.isAICategorizationOnly).to.equal(true);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
     });
 
-    it('should return true when only AI-origin prompts are added to existing topics', () => {
+    it('should return false when prompts are added to existing topics (topics are always human)', () => {
       const oldConfig = {
         categories: { 'cat-1': { name: 'Category A', region: 'us' } },
         topics: {
@@ -830,7 +870,7 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
       };
 
       const changes = compareConfigs(oldConfig, newConfig);
-      expect(changes.metadata?.isAICategorizationOnly).to.equal(true);
+      expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
     });
 
     it('should return false when human-origin prompts are added', () => {
@@ -889,7 +929,7 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
         ai_topics: {},
       };
       const newConfig = {
-        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
+        categories: { 'cat-1': { name: 'Category A', region: 'us', origin: 'ai' } },
         topics: {},
         ai_topics: {
           'topic-1': {
@@ -922,24 +962,24 @@ describe('LLMO Customer Analysis Utils - compareConfigs', () => {
       expect(changes.metadata?.isAICategorizationOnly).to.equal(false);
     });
 
-    it('should handle case-insensitive origin checking', () => {
+    it('should handle case-insensitive origin checking for categories', () => {
       const oldConfig = {
         categories: {},
         topics: {},
         ai_topics: {},
       };
       const newConfig = {
-        categories: { 'cat-1': { name: 'Category A', region: 'us' } },
-        topics: {
+        categories: { 'cat-1': { name: 'Category A', region: 'us', origin: 'AI' } },
+        topics: {},
+        ai_topics: {
           'topic-1': {
-            name: 'Topic A',
+            name: 'AI Topic A',
             category: 'cat-1',
             prompts: [
               { prompt: 'AI Prompt 1', regions: ['us'], origin: 'AI', source: 'api' },
             ],
           },
         },
-        ai_topics: {},
       };
 
       const changes = compareConfigs(oldConfig, newConfig);

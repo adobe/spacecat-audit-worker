@@ -152,7 +152,8 @@ function checkAICategorizationOnly(changes) {
     || changes.deleted
   ) return false;
 
-  const newHumanCategories = changes?.categories?.some((c) => c?.origin?.toLowerCase() !== 'ai');
+  const newHumanCategories = changes.categories
+    && Object.values(changes.categories).some((c) => c?.origin?.toLowerCase() !== 'ai');
 
   if (newHumanCategories) return false;
 
@@ -216,7 +217,7 @@ export function compareConfigs(oldConfig, newConfig) {
   // Add metadata about AI-only changes
   if (Object.keys(changes).length > 0 && oldConfig) {
     changes.metadata = {
-      isAICategorizationOnly: checkAICategorizationOnly(changes, oldConfig, newConfig),
+      isAICategorizationOnly: checkAICategorizationOnly(changes),
     };
   }
 

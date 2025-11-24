@@ -183,9 +183,10 @@ describe('LLMO Customer Analysis Handler', () => {
         config: {
           entities: {},
           categories: {
-            'cat-1': { name: 'AI Generated Category', region: 'us' },
+            'cat-1': { name: 'AI Generated Category', region: 'us', origin: 'ai' },
           },
-          topics: {
+          topics: {},
+          ai_topics: {
             'topic-1': {
               name: 'AI Generated Topic',
               category: 'cat-1',
@@ -209,6 +210,7 @@ describe('LLMO Customer Analysis Handler', () => {
           entities: {},
           categories: {},
           topics: {},
+          ai_topics: {},
           brands: { aliases: [] },
           competitors: { competitors: [] },
         },
@@ -1183,6 +1185,105 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(log.error).to.have.been.calledWith('Failed to process ContentAI for site site-123: ContentAI service unavailable');
 
       // Should still complete successfully despite the error
+      expect(result.auditResult.status).to.equal('completed');
+    });
+
+    it('should handle null oldConfig with nullish coalescing operator', async () => {
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      // First call returns a valid new config
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      // Second call returns null config to test nullish coalescing on line 369
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: null,
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should complete successfully with null oldConfig handled by ??
+      expect(result.auditResult.status).to.equal('completed');
+      expect(result.auditResult.configChangesDetected).to.equal(false);
+    });
+
+    it('should handle null newConfig with nullish coalescing operator', async () => {
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      // First call returns null new config to test nullish coalescing on line 369
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: null,
+      });
+
+      // Second call returns a valid old config
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should complete successfully with null newConfig handled by ??
+      expect(result.auditResult.status).to.equal('completed');
+      expect(result.auditResult.configChangesDetected).to.equal(false);
+    });
+
+    it('should handle undefined oldConfig from defaultConfig with nullish coalescing operator', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+        // No previousConfigVersion, so defaultConfig will be used
+      };
+
+      // New config is valid
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      // defaultConfig returns undefined to test nullish coalescing on line 369
+      mockLlmoConfig.defaultConfig.returns(undefined);
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should complete successfully with undefined oldConfig handled by ??
       expect(result.auditResult.status).to.equal('completed');
     });
 
