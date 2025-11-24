@@ -873,6 +873,7 @@ describe('AccessibilityCodeFixHandler', () => {
 
     it('should handle plain text diff content from S3 (non-JSON)', async () => {
       // Simulate plain text content from S3 (string instead of object)
+      // With the new behavior, non-JSON strings return null and no suggestions are updated
       const plainTextDiff = 'diff --git a/file.js b/file.js\nindex 123..456\n--- a/file.js\n+++ b/file.js\n@@ -1,3 +1,3 @@\n-old line\n+new line';
 
       const suggestionData = {
@@ -887,7 +888,7 @@ describe('AccessibilityCodeFixHandler', () => {
       };
 
       mockSuggestion.getData.returns(suggestionData);
-      // Return plain string instead of JSON object - this will be wrapped as {diff: string}
+      // Return plain string instead of JSON object - this will return null after JSON parse fails
       getObjectFromKeyStub.resolves(plainTextDiff);
 
       const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
@@ -916,6 +917,61 @@ describe('AccessibilityCodeFixHandler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(200);
+      // With new behavior, plain text (non-JSON) returns null, so no suggestions are updated
+      expect(mockSuggestion.setData).to.not.have.been.called;
+      expect(mockSuggestion.save).to.not.have.been.called;
+    });
+
+    it('should handle JSON string from S3 and parse it successfully', async () => {
+      // Simulate JSON string content from S3 that needs to be parsed
+      const mockDiffContent = 'mock diff content for button-name';
+      const reportDataObject = {
+        diff: mockDiffContent,
+      };
+      const jsonString = JSON.stringify(reportDataObject);
+
+      const suggestionData = {
+        url: 'https://example.com/contact',
+        source: 'form',
+        issues: [{
+          type: 'button-name',
+          htmlWithIssues: [{
+            target_selector: 'button.submit',
+          }],
+        }],
+      };
+
+      mockSuggestion.getData.returns(suggestionData);
+      // Return JSON string - this will be parsed successfully
+      getObjectFromKeyStub.resolves(jsonString);
+
+      const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
+        '../../../../src/common/codefix-handler.js': await esmock('../../../../src/common/codefix-handler.js', {
+          '../../../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        }),
+      });
+
+      const message = {
+        siteId: 'site-123',
+        type: 'codefix:accessibility',
+        data: {
+          opportunityId: 'opportunity-123',
+          updates: [
+            {
+              url: 'https://example.com/contact',
+              source: 'form',
+              aggregation_key: 'https://example.com/contact|button-name|form',
+            },
+          ],
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      // JSON string should be parsed and suggestion should be updated
       expect(mockSuggestion.setData).to.have.been.calledWith({
         url: 'https://example.com/contact',
         source: 'form',
@@ -925,7 +981,7 @@ describe('AccessibilityCodeFixHandler', () => {
             target_selector: 'button.submit',
           }],
         }],
-        patchContent: plainTextDiff,
+        patchContent: mockDiffContent,
         isCodeChangeAvailable: true,
       });
       expect(mockSuggestion.save).to.have.been.called;

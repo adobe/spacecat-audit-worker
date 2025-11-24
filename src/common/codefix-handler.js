@@ -70,10 +70,15 @@ async function readCodeChangeReport(s3Client, bucketName, reportKey, log) {
       return null;
     }
 
-    // If reportData is a plain string (not JSON), wrap it in a diff object
+    // If reportData is a plain string, try to parse it as JSON
     if (typeof reportData === 'string') {
-      log.info(`Report data is plain text, wrapping in diff object for key: ${reportKey}`);
-      return { diff: reportData };
+      try {
+        const parsedData = JSON.parse(reportData);
+        return parsedData;
+      } catch (error) {
+        log.warn(`Failed to parse report data as JSON for key: ${reportKey}, returning null`);
+        return null;
+      }
     }
 
     log.info(`Successfully read code change report from S3: ${reportKey}`);
