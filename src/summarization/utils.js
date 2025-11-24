@@ -10,6 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
+function joinKeyPoints(keyPoints) {
+  return keyPoints.map((keyPoint) => `  * ${keyPoint}`).join('\n');
+}
+
 export function getJsonSummarySuggestion(suggestions) {
   const suggestionValues = [];
   suggestions.forEach((suggestion) => {
@@ -18,7 +22,7 @@ export function getJsonSummarySuggestion(suggestions) {
 
     // handle page level summary
     suggestionValues.push({
-      summarizationText: suggestion.pageSummary?.formatted_summary,
+      summarizationText: `${suggestion.pageSummary?.formatted_summary}\n\n**Key Points**:\n${joinKeyPoints(suggestion.keyPoints?.formatted_items)}`,
       fullPage: true,
       url: suggestion.pageUrl,
       title: suggestion.pageSummary?.title,
