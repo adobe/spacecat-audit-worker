@@ -366,7 +366,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     await sendOnboardingNotification(context, site, 'first_configuration', { configVersion });
   }
 
-  const changes = compareConfigs(oldConfig, newConfig);
+  const changes = compareConfigs(oldConfig ?? {}, newConfig ?? {});
   const hasCdnLogsChanges = changes.categories
     && areCategoryNamesDifferent(oldConfig.categories, newConfig.categories);
 

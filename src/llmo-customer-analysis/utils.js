@@ -140,93 +140,55 @@ export function areCategoryNamesDifferent(oldCategories, newCategories) {
   return oldNames.length !== newNames.length || !oldNames.every((name, i) => name === newNames[i]);
 }
 /**
- * Checks if all changes in categories and topics are AI-origin only
+ * Returns true if any change unrelated to AI categories or AI topics is detected
  */
-function checkAICategorizationOnly(changes, oldConfig, newConfig) {
-  if (!changes.categories && !changes.topics) return false;
+function checkAICategorizationOnly(changes) {
+  if (
+    changes.topics
+    || changes.brands
+    || changes.competitors
+    || changes.entities
+    || changes.cdnBucketConfig
+    || changes.deleted
+  ) return false;
 
-  // If there are other types of changes, not AI-only
-  const changeKeys = Object.keys(changes);
-  const hasOtherChanges = changeKeys.some((key) => key !== 'categories' && key !== 'topics');
-  if (hasOtherChanges) return false;
+  const newHumanCategories = changes?.categories?.some((c) => c?.origin?.toLowerCase() !== 'ai');
 
-  const oldTopics = oldConfig?.topics || {};
-  const newTopics = newConfig?.topics || {};
-  const oldAiTopics = oldConfig?.ai_topics || {};
-  const newAiTopics = newConfig?.ai_topics || {};
-
-  // Check new categories have topics with AI prompts
-  if (changes.categories) {
-    const newCategoryIds = Object.keys(changes.categories);
-    const topicsForNewCategories = [
-      ...Object.values(newTopics).filter((t) => newCategoryIds.includes(t.category)),
-      ...Object.values(newAiTopics).filter((t) => newCategoryIds.includes(t.category)),
-    ];
-
-    if (topicsForNewCategories.length === 0) return false;
-
-    for (const topic of topicsForNewCategories) {
-      const prompts = topic.prompts || [];
-      if (prompts.length === 0) return false;
-      if (prompts.some((p) => p.origin?.toLowerCase() !== 'ai')) return false;
-    }
-  }
-
-  // Check changed topics have only AI prompts
-  if (changes.topics) {
-    for (const topicId of Object.keys(changes.topics)) {
-      const newTopic = newTopics[topicId] || newAiTopics[topicId];
-      const oldTopic = oldTopics[topicId] || oldAiTopics[topicId];
-      const newPrompts = newTopic?.prompts || [];
-      const oldPrompts = oldTopic?.prompts || [];
-
-      if (!oldTopic && newPrompts.length === 0) return false;
-
-      const oldPromptTexts = new Set(oldPrompts.map((p) => p.prompt));
-      const addedPrompts = newPrompts.filter((p) => !oldPromptTexts.has(p.prompt));
-
-      if (addedPrompts.length > 0 && addedPrompts.some((p) => p.origin?.toLowerCase() !== 'ai')) {
-        return false;
-      }
-    }
-  }
+  if (newHumanCategories) return false;
 
   return true;
 }
 
 export function compareConfigs(oldConfig, newConfig) {
   const changes = {};
-  // Treat null/undefined oldConfig as empty config
-  const safeOldConfig = oldConfig || {};
-  const safeNewConfig = newConfig || {};
 
   const entitiesChanges = compareRecords(
-    safeOldConfig.entities || {},
-    safeNewConfig.entities || {},
+    oldConfig.entities || {},
+    newConfig.entities || {},
   );
   if (entitiesChanges) {
     changes.entities = entitiesChanges;
   }
 
   const categoriesChanges = compareRecords(
-    safeOldConfig.categories || {},
-    safeNewConfig.categories || {},
+    oldConfig.categories || {},
+    newConfig.categories || {},
   );
   if (categoriesChanges) {
     changes.categories = categoriesChanges;
   }
 
   const topicsChanges = compareRecords(
-    safeOldConfig.topics || {},
-    safeNewConfig.topics || {},
+    oldConfig.topics || {},
+    newConfig.topics || {},
   );
   if (topicsChanges) {
     changes.topics = topicsChanges;
   }
 
   const brandsAliasesChanges = compareArrays(
-    safeOldConfig.brands?.aliases || [],
-    safeNewConfig.brands?.aliases || [],
+    oldConfig.brands?.aliases || [],
+    newConfig.brands?.aliases || [],
   );
   if (brandsAliasesChanges) {
     changes.brands = {
@@ -235,8 +197,8 @@ export function compareConfigs(oldConfig, newConfig) {
   }
 
   const competitorsChanges = compareArrays(
-    safeOldConfig.competitors?.competitors || [],
-    safeNewConfig.competitors?.competitors || [],
+    oldConfig.competitors?.competitors || [],
+    newConfig.competitors?.competitors || [],
   );
   if (competitorsChanges) {
     changes.competitors = {
@@ -245,8 +207,8 @@ export function compareConfigs(oldConfig, newConfig) {
   }
 
   const cdnBucketConfigChanges = compareRecords(
-    safeOldConfig.cdnBucketConfig || {},
-    safeNewConfig.cdnBucketConfig || {},
+    oldConfig.cdnBucketConfig || {},
+    newConfig.cdnBucketConfig || {},
   );
   if (cdnBucketConfigChanges) {
     changes.cdnBucketConfig = cdnBucketConfigChanges;
@@ -254,7 +216,7 @@ export function compareConfigs(oldConfig, newConfig) {
   // Add metadata about AI-only changes
   if (Object.keys(changes).length > 0 && oldConfig) {
     changes.metadata = {
-      isAICategorizationOnly: checkAICategorizationOnly(changes, safeOldConfig, safeNewConfig),
+      isAICategorizationOnly: checkAICategorizationOnly(changes, oldConfig, newConfig),
     };
   }
 
