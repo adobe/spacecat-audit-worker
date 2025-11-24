@@ -363,11 +363,21 @@ describe('Backlinks Tests', function () {
       brokenBacklinksOpportunity.getSuggestions.returns([]);
       brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
 
-      // The broken link 'https://foo.com/redirects-throws-error' extracts prefix '/redirects-throws-error'
-      // Alternatives with '/blog' prefix won't match, so they get filtered out
-      // Use alternatives with no prefix (root-level) which will be included per logic:
-      // "Include if URL matches one of the broken links' locales, or has no locale"
-      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPagesNoPrefix);
+      // Mock suggestions with broken link that has root-level URL (no path prefix)
+      // This ensures alternatives with any prefix or no prefix will be included
+      const suggestionsWithRootUrl = [
+        {
+          getId: () => 'test-suggestion-1',
+          getData: () => ({
+            url_from: 'https://from.com/from-2',
+            url_to: 'https://example.com', // Root-level URL - extractPathPrefix returns ''
+          }),
+        },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(suggestionsWithRootUrl);
+
+      // Use top pages with any prefix - since broken link has no prefix, all will be included
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
 
       const result = await generateSuggestionData(context);
 
@@ -381,13 +391,12 @@ describe('Backlinks Tests', function () {
       expect(sentMessage.auditId).to.equal('audit-id');
       expect(sentMessage.deliveryType).to.equal('aem_cs');
       expect(sentMessage.data.opportunityId).to.equal('opportunity-id');
-      expect(sentMessage.data.alternativeUrls).to.deep.equal(topPagesNoPrefix.map((page) => page.getUrl()));
+      expect(sentMessage.data.alternativeUrls).to.deep.equal(topPages.map((page) => page.getUrl()));
       expect(sentMessage.data.brokenLinks).to.be.an('array');
-      expect(sentMessage.data.brokenLinks.length).to.be.greaterThan(0);
-      // Verify first broken link matches expected structure
+      expect(sentMessage.data.brokenLinks.length).to.equal(1);
       expect(sentMessage.data.brokenLinks[0]).to.deep.include({
         urlFrom: 'https://from.com/from-2',
-        urlTo: 'https://foo.com/redirects-throws-error',
+        urlTo: 'https://example.com',
         suggestionId: 'test-suggestion-1',
       });
       
