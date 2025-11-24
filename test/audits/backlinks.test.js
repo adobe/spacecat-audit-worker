@@ -369,17 +369,23 @@ describe('Backlinks Tests', function () {
 
       // Mock suggestions with broken link that has root-level URL (no path prefix)
       // This ensures alternatives with any prefix or no prefix will be included
+      // IMPORTANT: Match the exact structure from the original test that works
       const suggestionsWithRootUrl = [
         {
+          opportunityId: 'test-opportunity-id',
           getId: () => 'test-suggestion-1',
+          type: 'REDIRECT_UPDATE',
+          rank: 550000,
           getData: () => ({
             url_from: 'https://from.com/from-2',
             url_to: 'https://example.com', // Root-level URL - extractPathPrefix returns ''
           }),
         },
       ];
-      // Create new stub like internal links test does
+      // Create new stub like internal links test does - MUST be set before generateSuggestionData is called
+      // The stub needs to accept opportunityId and status as parameters
       context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+        .withArgs('opportunity-id', sinon.match.any)
         .resolves(suggestionsWithRootUrl);
 
       // Use top pages with any prefix - since broken link has no prefix, all will be included
@@ -389,6 +395,10 @@ describe('Backlinks Tests', function () {
       const result = await generateSuggestionData(context);
 
       expect(result.status).to.deep.equal('complete');
+      
+      // Verify no warnings were called (meaning both brokenLinks and alternativeUrls have items)
+      expect(context.log.warn).to.not.have.been.calledWith('No valid broken links to send to Mystique. Skipping message.');
+      expect(context.log.warn).to.not.have.been.calledWith('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
       
       // Verify message was sent with correct structure
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
