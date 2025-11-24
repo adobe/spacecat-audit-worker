@@ -23,6 +23,7 @@ import {
 } from './helpers.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import { filterByAuditScope, isWithinAuditScope, extractPathPrefix } from './subpath-filter.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
@@ -64,8 +65,16 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     );
 
     // 5. Filter only inaccessible links and transform for further processing
+    // Also filter by audit scope (subpath/locale) if baseURL has a subpath
+    const baseURL = site.getBaseURL();
     const inaccessibleLinks = accessibilityResults
       .filter((result) => result.inaccessible)
+      .filter((result) => (
+        // Filter broken links to only include those within audit scope
+        // Both url_from and url_to should be within scope
+        isWithinAuditScope(result.link.url_from, baseURL)
+          && isWithinAuditScope(result.link.url_to, baseURL)
+      ))
       .map((result) => ({
         urlFrom: result.link.url_from,
         urlTo: result.link.url_to,
@@ -126,9 +135,13 @@ export async function prepareScrapingStep(context) {
   }
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages`);
+  // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
+  const baseURL = site.getBaseURL();
+  const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
 
-  const urls = topPages.map((page) => ({ url: page.getUrl() }));
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope`);
+
+  const urls = filteredTopPages.map((page) => ({ url: page.getUrl() }));
   return {
     urls,
     siteId: site.getId(),
@@ -212,11 +225,96 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   const configuration = await Configuration.findLatest();
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+  log.info(
+    `[${AUDIT_TYPE}] [Site: ${site.getId()}] Found ${topPages.length} top pages from Ahrefs`,
+  );
+
+  // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
+  // This determines what alternatives Mystique will see:
+  // - If baseURL is "site.com/en-ca" → only /en-ca alternatives
+  // - If baseURL is "site.com" → ALL locales alternatives
+  // Mystique will then filter by domain (not locale), so cross-locale suggestions
+  // are possible if audit scope includes multiple locales
+  const baseURL = site.getBaseURL();
+  const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
+
+  log.info(
+    `[${AUDIT_TYPE}] [Site: ${site.getId()}] After audit scope filtering: ${filteredTopPages.length} top pages available`,
+  );
+
   if (configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
     const suggestions = await Suggestion.allByOpportunityIdAndStatus(
       opportunity.getId(),
       SuggestionDataAccess.STATUSES.NEW,
     );
+
+    // Build broken links array without per-link alternatives
+    // Mystique expects: brokenLinks with only urlFrom, urlTo, suggestionId
+    const brokenLinks = suggestions
+      .map((suggestion) => ({
+        urlFrom: suggestion?.getData()?.urlFrom,
+        urlTo: suggestion?.getData()?.urlTo,
+        suggestionId: suggestion?.getId(),
+      }))
+      .filter((link) => link.urlFrom && link.urlTo && link.suggestionId); // Filter invalid entries
+
+    // Filter alternatives by locales/subpaths present in broken links
+    // This limits suggestions to relevant locales only
+    const allTopPageUrls = filteredTopPages.map((page) => page.getUrl());
+
+    // Extract unique locales/subpaths from broken links
+    const brokenLinkLocales = new Set();
+    brokenLinks.forEach((link) => {
+      const locale = extractPathPrefix(link.urlTo) || extractPathPrefix(link.urlFrom);
+      if (locale) {
+        brokenLinkLocales.add(locale);
+      }
+    });
+
+    // Filter alternatives to only include URLs matching broken links' locales
+    // If no locales found (no subpath), include all alternatives
+    // Always ensure alternativeUrls is an array (even if empty)
+    let alternativeUrls = [];
+    if (brokenLinkLocales.size > 0) {
+      alternativeUrls = allTopPageUrls.filter((url) => {
+        const urlLocale = extractPathPrefix(url);
+        // Include if URL matches one of the broken links' locales, or has no locale
+        return !urlLocale || brokenLinkLocales.has(urlLocale);
+      });
+    } else {
+      // No locale prefixes found, include all alternatives
+      alternativeUrls = allTopPageUrls;
+    }
+
+    // Validate before sending to Mystique
+    if (brokenLinks.length === 0) {
+      log.warn(
+        `[${AUDIT_TYPE}] [Site: ${site.getId()}] No valid broken links to send to Mystique. Skipping message.`,
+      );
+      return {
+        status: 'complete',
+      };
+    }
+
+    if (!opportunity?.getId()) {
+      log.error(
+        `[${AUDIT_TYPE}] [Site: ${site.getId()}] Opportunity ID is missing. Cannot send to Mystique.`,
+      );
+      return {
+        status: 'complete',
+      };
+    }
+
+    if (alternativeUrls.length === 0) {
+      log.warn(
+        `[${AUDIT_TYPE}] [Site: ${site.getId()}] No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.`,
+      );
+      return {
+        status: 'complete',
+      };
+    }
+
     const message = {
       type: 'guidance:broken-links',
       siteId: site.getId(),
@@ -224,13 +322,9 @@ export const opportunityAndSuggestionsStep = async (context) => {
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
-        alternativeUrls: topPages.map((page) => page.getUrl()),
-        opportunityId: opportunity?.getId(),
-        brokenLinks: suggestions.map((suggestion) => ({
-          urlFrom: suggestion?.getData()?.urlFrom,
-          urlTo: suggestion?.getData()?.urlTo,
-          suggestionId: suggestion?.getId(),
-        })),
+        alternativeUrls,
+        opportunityId: opportunity.getId(),
+        brokenLinks,
       },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);

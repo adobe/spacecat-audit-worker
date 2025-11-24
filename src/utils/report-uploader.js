@@ -83,7 +83,7 @@ export async function readFromSharePoint(filename, outputLocation, sharepointCli
   }
 }
 
-async function fetchWithRetry(url, options, endpointName, log, maxRetries = 5) {
+async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {
   async function attemptFetch(attemptNumber) {
     try {
       const response = await fetch(url, options);
@@ -94,46 +94,28 @@ async function fetchWithRetry(url, options, endpointName, log, maxRetries = 5) {
       error.response = response;
       throw error;
     } catch (error) {
-      const isRetryable = !error.status || error.status >= 500 || error.status === 429;
-      const shouldRetry = isRetryable && attemptNumber <= maxRetries;
-
-      if (!shouldRetry) {
-        const xError = error.response?.headers?.get
-          ? error.response.headers.get('x-error')
-          : null;
-        const xErrorInfo = xError ? `, x-error: ${xError}` : '';
-        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed after retries, error: ${error.message}, status: ${error.status}, statusText: ${error.response?.statusText}${xErrorInfo}, URL: ${url}`);
-        throw error;
-      }
-
-      // check for retry-after header
-      const retryAfter = error.response?.headers?.get
-        ? error.response.headers.get('retry-after')
-        : null;
-
+      // Check x-error header for throttling issues
       const xError = error.response?.headers?.get
         ? error.response.headers.get('x-error')
         : null;
       const xErrorInfo = xError ? `, x-error: ${xError}` : '';
 
-      let retryDelay;
-      if (retryAfter) {
-        // retry-after can be in seconds or HTTP-date format
-        const retryAfterSeconds = Number.parseInt(retryAfter, 10);
-        if (!Number.isNaN(retryAfterSeconds)) {
-          retryDelay = retryAfterSeconds * 1000;
-        } else {
-          const retryDate = new Date(retryAfter);
-          const now = new Date();
-          retryDelay = Math.max(0, retryDate.getTime() - now.getTime());
-        }
-        log.warn(`${AUDIT_NAME}: ${endpointName} Helix API failed with error ${error.message}${xErrorInfo}, retrying in ${retryDelay}ms per Retry-After header (attempt ${attemptNumber}/${maxRetries}), URL: ${url}`);
-      } else {
-        const baseDelay = 4000;
-        const jitter = Math.floor(Math.random() * 1000);
-        retryDelay = baseDelay + jitter;
-        log.warn(`${AUDIT_NAME}: ${endpointName} Helix API failed with error ${error.message}${xErrorInfo}, retrying in ${retryDelay}ms (attempt ${attemptNumber}/${maxRetries}), URL: ${url}`);
+      // Only retry on 503 and x-error contains "429"
+      const isRetryable = error.status === 503 && (xError && xError.includes('429'));
+      const shouldRetry = isRetryable && attemptNumber <= maxRetries;
+
+      if (!shouldRetry) {
+        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed after retries, error: ${error.message}, status: ${error.status}, statusText: ${error.response?.statusText}${xErrorInfo}, URL: ${url}`);
+        throw error;
       }
+
+      // Use exponential backoff with jitter for retries
+      const baseDelay = 10000;
+      const exponentialDelay = baseDelay * (2 ** (attemptNumber - 1));
+      const jitter = Math.floor(Math.random() * (exponentialDelay / 2));
+      const retryDelay = exponentialDelay + jitter;
+
+      log.warn(`${AUDIT_NAME}: ${endpointName} Helix API failed with error ${error.message}${xErrorInfo}, retrying in ${retryDelay}ms (attempt ${attemptNumber}/${maxRetries}), URL: ${url}`);
 
       await sleep(retryDelay);
       return attemptFetch(attemptNumber + 1);
@@ -161,7 +143,12 @@ export async function publishToAdminHlx(filename, outputLocation, log) {
       { name: 'live', url: `${baseUrl}/live/${org}/${site}/${ref}/${path}` },
     ];
 
-    for (const [index, endpoint] of endpoints.entries()) {
+    for (const [_, endpoint] of endpoints.entries()) {
+      const jitter = Math.floor(Math.random() * (15000 / 2));
+      const delay = 10000 + jitter;
+      log.info(`%s: Waiting ${delay}ms before publishing to ${endpoint.name}`, AUDIT_NAME);
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(delay);
       log.info(`%s: Publishing to ${endpoint.name}: ${endpoint.url}`, AUDIT_NAME);
       const endpointStartTime = Date.now();
 
@@ -170,12 +157,6 @@ export async function publishToAdminHlx(filename, outputLocation, log) {
 
       const endpointDuration = Date.now() - endpointStartTime;
       log.info(`%s: Successfully published to ${endpoint.name} in ${endpointDuration}ms`, AUDIT_NAME);
-
-      if (index === 0) {
-        log.debug('%s: Waiting 2 seconds before publishing to live...', AUDIT_NAME);
-        // eslint-disable-next-line no-await-in-loop
-        await sleep(2000);
-      }
     }
 
     const totalDuration = Date.now() - startTime;

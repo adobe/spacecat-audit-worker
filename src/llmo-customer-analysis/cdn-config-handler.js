@@ -111,10 +111,15 @@ async function handleBucketConfiguration(siteId, bucketName, pathId, { dataAcces
   const site = await Site.findById(siteId);
   const config = site.getConfig();
 
-  config.updateLlmoCdnBucketConfig({
-    ...(bucketName && { bucketName }),
-    ...(pathId && { orgId: pathId }),
-  });
+  if (!bucketName && !pathId) {
+    config.updateLlmoCdnBucketConfig({});
+  } else {
+    config.updateLlmoCdnBucketConfig({
+      ...(bucketName && { bucketName }),
+      ...(pathId && { orgId: pathId }),
+    });
+  }
+
   site.setConfig(Config.toDynamoItem(config));
   await site.save();
 }
@@ -129,7 +134,11 @@ export async function handleCdnBucketConfigChanges(context, data) {
   const { dataAccess: { Configuration }, log } = context;
 
   if (!siteId) throw new Error('Site ID is required for CDN configuration');
-  if (!cdnProvider) throw new Error('CDN provider is required for CDN configuration');
+  if (!cdnProvider) {
+    // if no cdn provider is provided, remove the bucket configuration
+    await handleBucketConfiguration(siteId, null, null, context);
+    throw new Error('CDN provider is required for CDN configuration');
+  }
 
   const site = await context.dataAccess.Site.findById(siteId);
   if (!site) throw new Error(`Site with ID ${siteId} not found`);

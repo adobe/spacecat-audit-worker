@@ -13,6 +13,7 @@
 import { HeadBucketCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 import zlib from 'zlib';
 import { hasText } from '@adobe/spacecat-shared-utils';
+import { PROVIDER_USER_AGENT_PATTERNS } from '../common/user-agent-classification.js';
 
 /* c8 ignore start */
 export const CDN_TYPES = {
@@ -316,5 +317,91 @@ export function resolveConsolidatedBucketName(context) {
   const { AWS_ENV, AWS_REGION = 'us-east-1' } = env;
   const environment = AWS_ENV || 'prod';
   return `spacecat-${environment}-cdn-logs-aggregates-${AWS_REGION}`;
+}
+
+/**
+ * Checks if raw table location matches expected location and recreates if needed
+ * @returns {Promise<boolean>} True if table needs to be created
+ */
+export async function shouldRecreateRawTable(
+  athenaClient,
+  database,
+  rawTable,
+  expectedLocation,
+  log,
+) {
+  try {
+    const result = await athenaClient.query(`SHOW CREATE TABLE ${database}.${rawTable}`, database, `[Athena Query] Check raw table location ${database}.${rawTable}`);
+    const createStatement = result?.map((row) => row.createtab_stmt).join('\n');
+    const locationMatch = createStatement?.match(/LOCATION\s*['"]([^'"]+)['"]/i);
+
+    if (!locationMatch) return true;
+
+    const normalize = (loc) => (loc.endsWith('/') ? loc : `${loc}/`);
+    if (normalize(locationMatch[1]) !== normalize(expectedLocation)) {
+      log.info(`Table location mismatch. Dropping table ${database}.${rawTable}`);
+      await athenaClient.execute(`DROP TABLE IF EXISTS ${database}.${rawTable}`, database, `[Athena Query] Drop raw table ${database}.${rawTable}`);
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    return true;
+  }
+}
+
+export function buildSiteFilters(filters, site) {
+  if (!filters || filters.length === 0) {
+    const baseURL = site.getBaseURL();
+    const { host } = new URL(baseURL);
+    return `REGEXP_LIKE(host, '(?i)(${host})')`;
+  }
+
+  const clauses = filters.map(({ key, value, type }) => {
+    const regexPattern = value.join('|');
+    if (type === 'exclude') {
+      return `NOT REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+    }
+    return `REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+  });
+
+  const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
+  return `(${filterConditions})`;
+}
+
+/**
+ * Builds date filter for Athena queries using UTC dates
+ */
+export function buildDateFilter(startDate, endDate) {
+  const formatPart = (date) => ({
+    year: date.getUTCFullYear().toString(),
+    month: (date.getUTCMonth() + 1).toString().padStart(2, '0'),
+    day: date.getUTCDate().toString().padStart(2, '0'),
+  });
+
+  const start = formatPart(startDate);
+  const end = formatPart(endDate);
+
+  return start.year === end.year && start.month === end.month
+    ? `(year = '${start.year}' AND month = '${start.month}' AND day >= '${start.day}' AND day <= '${end.day}')`
+    : `((year = '${start.year}' AND month = '${start.month}' AND day >= '${start.day}')
+       OR (year = '${end.year}' AND month = '${end.month}' AND day <= '${end.day}'))`;
+}
+
+/**
+ * Builds user agent filter for AI agents (ChatGPT, Perplexity, Google, Claude)
+ * Reusable across different audit modules for CDN log analysis
+ */
+export function buildUserAgentFilter() {
+  const {
+    chatgpt, perplexity, google, claude,
+  } = PROVIDER_USER_AGENT_PATTERNS;
+
+  return `(
+    REGEXP_LIKE(user_agent, '${chatgpt}') OR 
+    REGEXP_LIKE(user_agent, '${perplexity}') OR 
+    REGEXP_LIKE(user_agent, '${google}') OR
+    REGEXP_LIKE(user_agent, '${claude}')
+  )`;
 }
 /* c8 ignore end */

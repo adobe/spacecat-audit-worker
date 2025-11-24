@@ -137,60 +137,6 @@ describe('CDN Logs Report Utils', () => {
     });
   });
 
-  describe('buildSiteFilters', () => {
-    it('builds include filters correctly', () => {
-      const result = reportUtils.buildSiteFilters([
-        { key: 'url', value: ['test'], type: 'include' },
-      ]);
-      expect(result).to.include("REGEXP_LIKE(url, '(?i)(test)')");
-    });
-
-    it('builds exclude filters correctly', () => {
-      const result = reportUtils.buildSiteFilters([
-        { key: 'url', value: ['admin'], type: 'exclude' },
-      ]);
-      expect(result).to.include("NOT REGEXP_LIKE(url, '(?i)(admin)')");
-    });
-
-    it('combines multiple filters with AND', () => {
-      const result = reportUtils.buildSiteFilters([
-        { key: 'url', value: ['test'], type: 'include' },
-        { key: 'url', value: ['admin'], type: 'exclude' },
-      ]);
-      expect(result).to.include('AND');
-    });
-
-    it('falls back to baseURL when filters are empty', () => {
-      const mockSite = {
-        getBaseURL: () => 'https://adobe.com',
-      };
-
-      const result = reportUtils.buildSiteFilters([], mockSite);
-
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(adobe.com)')");
-    });
-
-    it('keeps www prefix when already present', () => {
-      const mockSite = {
-        getBaseURL: () => 'https://www.adobe.com',
-      };
-
-      const result = reportUtils.buildSiteFilters([], mockSite);
-
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(www.adobe.com)')");
-    });
-
-    it('keeps subdomain as-is without adding www', () => {
-      const mockSite = {
-        getBaseURL: () => 'https://business.adobe.com',
-      };
-
-      const result = reportUtils.buildSiteFilters([], mockSite);
-
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(business.adobe.com)')");
-    });
-  });
-
   describe('loadSql', () => {
     it('loads SQL templates with variables', async () => {
       const sql = await reportUtils.loadSql('create-database', { database: 'test_db' });
