@@ -19,8 +19,11 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
 
 export async function processImportStep(context) {
-  const { site, finalUrl } = context;
+  const {
+    site, finalUrl, env, log,
+  } = context;
 
+  log.info(`[${AUDIT_TYPE}]: Processing import step for siteId ${site.getId()} using custom sqs queue ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
   const s3BucketPath = `scrapes/${site.getId()}/`;
 
   return {
