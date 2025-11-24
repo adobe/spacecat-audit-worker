@@ -213,7 +213,7 @@ export const generateSuggestionData = async (context) => {
   // Extract unique locales/subpaths from broken links
   const brokenLinkLocales = new Set();
   brokenLinks.forEach((link) => {
-    const locale = extractPathPrefix(link.urlTo) || extractPathPrefix(link.urlFrom);
+    const locale = extractPathPrefix(link.urlTo);
     if (locale) {
       brokenLinkLocales.add(locale);
     }
