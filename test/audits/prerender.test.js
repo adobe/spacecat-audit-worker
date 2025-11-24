@@ -24,7 +24,7 @@ import prerenderHandler, {
   createScrapeForbiddenOpportunity,
   uploadStatusSummaryToS3,
 } from '../../src/prerender/handler.js';
-import { analyzeHtmlForPrerender } from '../../src/prerender/html-comparator-utils.js';
+import { analyzeHtmlForPrerender } from '../../src/prerender/utils/html-comparator.js';
 import { createOpportunityData } from '../../src/prerender/opportunity-data-mapper.js';
 
 describe('Prerender Audit', () => {
@@ -313,6 +313,125 @@ describe('Prerender Audit', () => {
         // Expect only includedURLs when agentic fetch yields none.
         expect(result.urls).to.have.length(1);
         expect(result.urls.map(u => u.url)).to.include('https://example.com/special');
+      });
+
+      it('should fall back to sheet when Athena returns no data and use weekId from shared utils', async () => {
+        const athenaQueryStub = sinon.stub().resolves([]);
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-athena-client': {
+            AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
+          },
+          '../../src/utils/report-uploader.js': {
+            createLLMOSharepointClient: async () => ({}),
+            readFromSharePoint: async () => ({}),
+          },
+          '../../src/prerender/utils/shared.js': {
+            generateReportingPeriods: () => ({
+              weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+              periodIdentifier: 'w45-2025',
+            }),
+            getS3Config: async () => ({
+              bucket: 'b',
+              customerName: 'adobe',
+              customerDomain: 'adobe_com',
+              databaseName: 'db',
+              tableName: 'tbl',
+              aggregatedLocation: 'agg/',
+              getAthenaTempLocation: () => 's3://tmp/',
+            }),
+            downloadExistingCdnSheet: sinon.stub().callsFake(async (weekId) => {
+              // Ensure weekId is passed from generateReportingPeriods
+              expect(weekId).to.equal('w45-2025');
+              // Return 60 rows to verify limit trimming
+              const rows = [];
+              for (let i = 0; i < 60; i += 1) {
+                rows.push({ url: `/p${i}`, number_of_hits: 100 - i });
+              }
+              return rows;
+            }),
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({
+              getIncludedURLs: () => [],
+              getLlmoDataFolder: () => 'adobe',
+            }),
+          },
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            AUDIT_JOBS_QUEUE_URL: 'https://sqs.test.com/test-queue',
+          },
+          auditContext: {
+            next: 'process-content-and-generate-opportunities',
+            auditId: 'test-audit-id',
+            auditType: 'prerender',
+          },
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        // TOP_AGENTIC_URLS_LIMIT is 50 in handler; expect 50 agentic URLs used
+        expect(result.urls).to.have.length(50);
+        // Sanity: top URL comes from sheet aggregation and is normalized against base URL
+        expect(result.urls[0].url).to.equal('https://example.com/p0');
+      });
+
+      it('should merge includedURLs with sheet fallback agentic URLs (unique union)', async () => {
+        const athenaQueryStub = sinon.stub().resolves([]);
+        const downloadStub = sinon.stub().resolves([
+          { url: '/a', number_of_hits: 10 },
+          { url: '/b', number_of_hits: 9 },
+        ]);
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-athena-client': {
+            AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
+          },
+          '../../src/utils/report-uploader.js': {
+            createLLMOSharepointClient: async () => ({}),
+            readFromSharePoint: async () => ({}),
+          },
+          '../../src/prerender/utils/shared.js': {
+            generateReportingPeriods: () => ({
+              weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+              periodIdentifier: 'w45-2025',
+            }),
+            getS3Config: async () => ({
+              bucket: 'b',
+              customerName: 'adobe',
+              customerDomain: 'adobe_com',
+              databaseName: 'db',
+              tableName: 'tbl',
+              aggregatedLocation: 'agg/',
+              getAthenaTempLocation: () => 's3://tmp/',
+            }),
+            downloadExistingCdnSheet: downloadStub,
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({
+              getIncludedURLs: () => ['https://example.com/b', 'https://example.com/c'],
+              getLlmoDataFolder: () => 'adobe',
+            }),
+          },
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+        const urls = result.urls.map((u) => u.url);
+        // Sheet /a and /b plus included /c (note: /b overlaps)
+        expect(urls).to.include('https://example.com/a');
+        expect(urls).to.include('https://example.com/b');
+        expect(urls).to.include('https://example.com/c');
+        // Unique union => 3
+        expect(urls.length).to.equal(3);
       });
     });
 
@@ -1527,7 +1646,7 @@ describe('Prerender Audit', () => {
               .onFirstCall().resolves('<html><body>Valid content</body></html>')
               .onSecondCall().resolves('<html><body>Valid content too</body></html>'),
           },
-          '../../src/prerender/html-comparator-utils.js': {
+          '../../src/prerender/utils/html-comparator.js': {
             analyzeHtmlForPrerender: sinon.stub().throws(new Error('Mocked analysis error')),
           },
         });
@@ -1725,7 +1844,7 @@ describe('Prerender Audit', () => {
 
       it('should throw when calculateStats fails', async () => {
         // Mock the HTML analysis to throw an error during processing
-        const mockAnalyze = await esmock('../../src/prerender/html-comparator-utils.js', {
+        const mockAnalyze = await esmock('../../src/prerender/utils/html-comparator.js', {
           '@adobe/spacecat-shared-html-analyzer': {
             calculateStats: sinon.stub().throws(new Error('Stats calculation failed')),
           },
@@ -2040,7 +2159,7 @@ describe('Prerender Audit', () => {
         // Mock analyzeHtmlForPrerender to throw an error
         const mockHandler = await esmock('../../src/prerender/handler.js', {
           '../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
-          '../../src/prerender/html-comparator-utils.js': {
+          '../../src/prerender/utils/html-comparator.js': {
             analyzeHtmlForPrerender: sandbox.stub().throws(new Error('Analysis failed')),
           },
         });
@@ -2145,7 +2264,6 @@ describe('Prerender Audit', () => {
         wordCountAfter: 250,
         contentGainRatio: 2.5,
         agenticTraffic: 1000,
-        agenticTrafficDuration: 'NA',
       });
 
       expect(context.log.info).to.have.been.calledWith(
@@ -2390,7 +2508,6 @@ describe('Prerender Audit', () => {
         wordCountAfter: 0,
         contentGainRatio: 0,
         agenticTraffic: 0,
-        agenticTrafficDuration: 'NA',
       });
     });
   });

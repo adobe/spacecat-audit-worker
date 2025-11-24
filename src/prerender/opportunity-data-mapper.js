@@ -11,6 +11,7 @@
  */
 
 import { DATA_SOURCES } from '../common/constants.js';
+import { CONTENT_GAIN_THRESHOLD } from './utils/constants.js';
 
 /**
  * Creates opportunity data for prerender audit results
@@ -20,6 +21,7 @@ import { DATA_SOURCES } from '../common/constants.js';
 export function createOpportunityData(auditData) {
   const { auditResult } = auditData || {};
   const { scrapeForbidden } = auditResult || {};
+  const trafficDuration = auditData?.agenticDateRange || 'NA';
 
   return {
     runbook: '',
@@ -41,8 +43,9 @@ export function createOpportunityData(auditData) {
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
       thresholds: {
-        contentGainRatio: 1.2,
+        contentGainRatio: CONTENT_GAIN_THRESHOLD,
       },
+      trafficDuration,
       benefits: [
         'Improved LLM visibility and brand presence',
         'Better LLM indexing and search results',

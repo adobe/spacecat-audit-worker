@@ -20,17 +20,17 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { analyzeHtmlForPrerender } from './html-comparator-utils.js';
+import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import {
   generateReportingPeriods,
   getS3Config,
   downloadExistingCdnSheet,
-} from '../llm-error-pages/utils.js';
-import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.js';
+  weeklyBreakdownQueries,
+} from './utils/shared.js';
+import { CONTENT_GAIN_THRESHOLD } from './utils/constants.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const CONTENT_GAIN_THRESHOLD = 1.1;
 const TOP_AGENTIC_URLS_LIMIT = 50;
 
 /**
@@ -46,8 +46,6 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = 200) {
   try {
     const s3Config = await getS3Config(site, context);
     const periods = generateReportingPeriods();
-    const latestWeek = periods.weeks[0];
-    const weekId = `w${String(latestWeek.weekNumber).padStart(2, '0')}-${latestWeek.year}`;
     const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
     // Build query using agentic report query builder (date-range + LLM UA + site filters)
     const query = await weeklyBreakdownQueries.createAgenticReportQuery({
@@ -88,13 +86,11 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = 200) {
           return {
             url: new URL(path, baseUrl).toString(),
             agenticTraffic: hits,
-            agenticTrafficDuration: weekId,
           };
         } catch {
           return {
             url: path,
             agenticTraffic: hits,
-            agenticTrafficDuration: weekId,
           };
         }
       });
@@ -113,7 +109,7 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = 200) {
  * @param {any} site
  * @param {any} context
  * @param {string[]} targetUrls - absolute URLs
- * @returns {Promise<Array<{url:string, agenticTraffic:number, agenticTrafficDuration:string}>>}
+ * @returns {Promise<Array<{url:string, agenticTraffic:number}>>}
  */
 async function getAgenticTrafficForSpecificUrls(site, context, targetUrls = []) {
   const { log } = context;
@@ -123,8 +119,7 @@ async function getAgenticTrafficForSpecificUrls(site, context, targetUrls = []) 
   try {
     const s3Config = await getS3Config(site, context);
     const periods = generateReportingPeriods();
-    const latestWeek = periods.weeks[0];
-    const weekId = `w${String(latestWeek.weekNumber).padStart(2, '0')}-${latestWeek.year}`;
+    // We attach week at opportunity level, not per-URL
     const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
 
     // Convert absolute URLs to site-relative paths, consistent with logs' url field
@@ -170,7 +165,6 @@ async function getAgenticTrafficForSpecificUrls(site, context, targetUrls = []) 
       return {
         url: fullUrl,
         agenticTraffic: hits,
-        agenticTrafficDuration: weekId,
       };
     });
   } catch (e) {
@@ -179,7 +173,6 @@ async function getAgenticTrafficForSpecificUrls(site, context, targetUrls = []) 
     return targetUrls.map((u) => ({
       url: u,
       agenticTraffic: 0,
-      agenticTrafficDuration: 'NA',
     }));
   }
 }
@@ -189,7 +182,7 @@ async function getAgenticTrafficForSpecificUrls(site, context, targetUrls = []) 
  * @param {any} site
  * @param {any} context
  * @param {number} limit
- * @returns {Promise<Array<{url:string, agenticTraffic:number, agenticTrafficDuration:string}>>}
+ * @returns {Promise<Array<{url:string, agenticTraffic:number}>>}
  */
 async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
   const { log } = context;
@@ -237,13 +230,11 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
           return {
             url: new URL(path, baseUrl).toString(),
             agenticTraffic: hits,
-            agenticTrafficDuration: weekId,
           };
         } catch {
           return {
             url: path,
             agenticTraffic: hits,
-            agenticTrafficDuration: weekId,
           };
         }
       });
@@ -520,7 +511,6 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
   const mapSuggestionData = (suggestion) => ({
     url: suggestion.url,
     agenticTraffic: suggestion.agenticTraffic,
-    agenticTrafficDuration: suggestion.agenticTrafficDuration ?? 'NA',
     contentGainRatio: suggestion.contentGainRatio,
     wordCountBefore: suggestion.wordCountBefore,
     wordCountAfter: suggestion.wordCountAfter,
@@ -585,7 +575,6 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
           wordCountAfter: result.wordCountAfter || 0,
           contentGainRatio: result.contentGainRatio || 0,
           agenticTraffic: Number(result.agenticTraffic) || 0,
-          agenticTrafficDuration: result.agenticTrafficDuration ?? 'NA',
         };
 
         // Include scrape error details if available
@@ -632,19 +621,19 @@ export async function processContentAndGenerateOpportunities(context) {
   try {
     let urlsToCheck = [];
     const agenticTrafficMap = new Map(); // agentic traffic (Athena)
-    const agenticTrafficDurationMap = new Map(); // agentic week id e.g. w45-2025
-    let agenticWeekId = null; // single agentic duration for the audit
+    const agenticDateRange = (() => {
+      const periods = generateReportingPeriods();
+      const latestWeek = periods.weeks[0];
+      const fmt = (d) => d.toISOString().slice(0, 10);
+      return `${fmt(latestWeek.startDate)} – ${fmt(latestWeek.endDate)}`;
+    })();
 
     // Build agentic traffic map (best-effort)
     let agenticStats = [];
     try {
       agenticStats = await getTopAgenticUrls(site, context, TOP_AGENTIC_URLS_LIMIT);
-      agenticStats.forEach(({ url, agenticTraffic, agenticTrafficDuration }) => {
+      agenticStats.forEach(({ url, agenticTraffic }) => {
         agenticTrafficMap.set(url, Number(agenticTraffic || 0) || 0);
-        if (agenticTrafficDuration) {
-          agenticTrafficDurationMap.set(url, agenticTrafficDuration);
-          agenticWeekId = agenticWeekId || agenticTrafficDuration;
-        }
       });
       // Ensure includedURLs have agentic traffic populated even if not in top set
       /* c8 ignore start */
@@ -656,12 +645,8 @@ export async function processContentAndGenerateOpportunities(context) {
           context,
           missingIncluded,
         );
-        includedStats.forEach(({ url, agenticTraffic, agenticTrafficDuration }) => {
+        includedStats.forEach(({ url, agenticTraffic }) => {
           agenticTrafficMap.set(url, Number(agenticTraffic || 0) || 0);
-          if (agenticTrafficDuration) {
-            agenticTrafficDurationMap.set(url, agenticTrafficDuration);
-            agenticWeekId = agenticWeekId || agenticTrafficDuration;
-          }
         });
       }
       /* c8 ignore stop */
@@ -693,11 +678,9 @@ export async function processContentAndGenerateOpportunities(context) {
       urlsToCheck.map(async (url) => {
         const result = await compareHtmlContent(url, siteId, context);
         const agenticTraffic = agenticTrafficMap.has(url) ? agenticTrafficMap.get(url) : 0;
-        const agenticTrafficDuration = agenticTrafficDurationMap.has(url) ? agenticTrafficDurationMap.get(url) : 'NA';
         return {
           ...result,
           agenticTraffic,
-          agenticTrafficDuration,
         };
       }),
     );
@@ -733,6 +716,7 @@ export async function processContentAndGenerateOpportunities(context) {
         siteId,
         auditId: audit.getId(),
         auditResult,
+        agenticDateRange,
       }, context);
     } else if (scrapeForbidden) {
       // Create a dummy opportunity when scraping is forbidden (403)
@@ -741,6 +725,7 @@ export async function processContentAndGenerateOpportunities(context) {
         siteId,
         auditId: audit.getId(),
         auditResult,
+        agenticDateRange,
       }, context);
     } else {
       log.info(`Prerender - No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}`);
