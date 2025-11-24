@@ -71,26 +71,32 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   return resultMap;
 }
 
-function hasHighViews(views, opptyOptions = null) {
-  const threshold = opptyOptions === OPPTY_OPTIONS_ALL
+/**
+ * Get the daily pageview threshold based on opportunity options
+ * @param {string} opptyOptions - opportunity options ('all' for lower threshold)
+ * @returns {number} - daily pageview threshold
+ */
+function getPageviewThreshold(opptyOptions) {
+  return opptyOptions === OPPTY_OPTIONS_ALL
     ? DAILY_PAGEVIEW_THRESHOLD_ALL
     : DAILY_PAGEVIEW_THRESHOLD_DEFAULT;
+}
+
+function hasHighViews(views, opptyOptions = null) {
+  const threshold = getPageviewThreshold(opptyOptions);
   return views > threshold * FORMS_AUDIT_INTERVAL;
 }
 
-function hasLowerConversionRate(formSubmit, formViews, formEngagement) {
-  return (formViews > 0 && formSubmit / formViews < CR_THRESHOLD_RATIO) && formEngagement > 0;
+function hasLowerConversionRate(formSubmit, formViews, formEngagement, opptyOptions = null) {
+  if (opptyOptions === OPPTY_OPTIONS_ALL) {
+    return (formViews > 0 && formSubmit / formViews < CR_THRESHOLD_RATIO);
+  } else {
+    return (formViews > 0 && formSubmit / formViews < CR_THRESHOLD_RATIO) && formEngagement > 0;
+  }
 }
 
-function hasLowFormViews(
-  pageViews,
-  formViews,
-  formEngagement,
-  opptyOptions = null,
-) {
-  const threshold = opptyOptions === OPPTY_OPTIONS_ALL
-    ? DAILY_PAGEVIEW_THRESHOLD_ALL
-    : DAILY_PAGEVIEW_THRESHOLD_DEFAULT;
+function hasLowFormViews(pageViews, formViews, formEngagement, opptyOptions = null) {
+  const threshold = getPageviewThreshold(opptyOptions);
   if (formViews < threshold * FORMS_AUDIT_INTERVAL) {
     // If form views are less than this threshold, then we can anyways
     // cannot proceed to detecting low form conversion opportunity as
@@ -125,7 +131,7 @@ export function getHighFormViewsLowConversionMetrics(formVitalsCollection, oppty
     const formEngagement = metrics.formengagement.total;
 
     // eslint-disable-next-line max-len
-    if (hasHighViews(formViews, opptyOptions) && hasLowerConversionRate(formSubmit, formViews, formEngagement)) {
+    if (hasHighViews(formViews, opptyOptions) && hasLowerConversionRate(formSubmit, formViews, formEngagement, opptyOptions)) {
       urls.push({
         url,
         ...metrics,
