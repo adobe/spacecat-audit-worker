@@ -444,27 +444,29 @@ describe('Canonical URL Tests', () => {
     });
 
     it('should pass self-reference check when canonical URL strips query parameters', async () => {
-      const url = 'https://www.slalom.com/co/es/who-we-are/culture/karl-mehu?id=7323991002';
-      const canonicalUrl = 'https://www.slalom.com/co/es/who-we-are/culture/karl-mehu';
-      const html = `<html lang="en"><head><link rel="canonical" href="${canonicalUrl}"><title>test</title></head><body></body></html>`;
-      
-      nock('https://www.slalom.com').get('/co/es/who-we-are/culture/karl-mehu?id=7323991002').reply(200, html);
+        const url = 'https://example.com/products/category/item-name?id=12345&ref=abc';
+        const canonicalUrl = 'https://example.com/products/category/item-name';
+        const html = `<html lang="en"><head><link rel="canonical" href="${canonicalUrl}"><title>test</title></head><body></body></html>`;
 
-      const result = await validateCanonicalTag(url, log);
+        nock('https://example.com')
+            .get('/products/category/item-name?id=12345&ref=abc')
+            .reply(200, html);
 
-      expect(result.canonicalUrl).to.equal(canonicalUrl);
-      expect(result.checks).to.deep.include({
-        check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-        success: true,
-      });
-      expect(log.info).to.have.been.calledWith(`Canonical URL ${canonicalUrl} references itself`);
+        const result = await validateCanonicalTag(url, log);
+
+        expect(result.canonicalUrl).to.equal(canonicalUrl);
+        expect(result.checks).to.deep.include({
+            check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+            success: true,
+        });
+        expect(log.info).to.have.been.calledWith(`Canonical URL ${canonicalUrl} references itself`);
     });
 
     it('should handle canonical URL with unusual format during comparison', async () => {
       const url = 'https://example.com/page?param=value';
       // Use a relative canonical URL that becomes absolute but might have edge cases
       const html = '<html lang="en"><head><link rel="canonical" href="/page"><title>test</title></head><body></body></html>';
-      
+
       nock('https://example.com').get('/page').query({ param: 'value' }).reply(200, html);
 
       const result = await validateCanonicalTag(url, log);
@@ -481,7 +483,7 @@ describe('Canonical URL Tests', () => {
       const url = 'https://example.com/page%20with%20spaces';
       const canonicalUrl = 'https://example.com/page%20with%20spaces';
       const html = `<html lang="en"><head><link rel="canonical" href="${canonicalUrl}"><title>test</title></head><body></body></html>`;
-      
+
       nock('https://example.com').get('/page%20with%20spaces').reply(200, html);
 
       const result = await validateCanonicalTag(url, log);
@@ -1202,77 +1204,77 @@ describe('Canonical URL Tests', () => {
 
     it('should generate suggestion for CANONICAL_TAG_MISSING', () => {
       const result = generateCanonicalSuggestion(checks.TAG_MISSING);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_TAG_MISSING.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_TAG_MISSING.suggestion);
     });
 
     it('should generate suggestion for CANONICAL_TAG_MULTIPLE', () => {
       const result = generateCanonicalSuggestion(checks.TAG_MULTIPLE);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.suggestion);
     });
 
     it('should generate suggestion for CANONICAL_TAG_EMPTY', () => {
       const result = generateCanonicalSuggestion(checks.TAG_EMPTY);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.suggestion);
     });
 
     it('should generate suggestion for CANONICAL_TAG_OUTSIDE_HEAD', () => {
       const result = generateCanonicalSuggestion(checks.TAG_OUTSIDE_HEAD);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.suggestion);
     });
 
     it('should generate suggestion for CANONICAL_URL_STATUS_OK', () => {
       const result = generateCanonicalSuggestion(checks.URL_STATUS_OK);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.suggestion);
     });
 
     it('should generate suggestion for CANONICAL_URL_NO_REDIRECT', () => {
       const result = generateCanonicalSuggestion(checks.URL_NO_REDIRECT);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.suggestion);
     });
 
     it('should generate suggestion for CANONICAL_URL_4XX', () => {
       const result = generateCanonicalSuggestion(checks.URL_4XX);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_4XX.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_4XX.suggestion);
     });
 
     it('should generate suggestion for CANONICAL_URL_5XX', () => {
       const result = generateCanonicalSuggestion(checks.URL_5XX);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_5XX.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_5XX.suggestion);
     });
 
     it('should generate suggestion for CANONICAL_SELF_REFERENCED', () => {
       const result = generateCanonicalSuggestion(checks.SELF_REFERENCED);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.suggestion);
     });
 
     it('should generate suggestion for CANONICAL_URL_ABSOLUTE', () => {
       const result = generateCanonicalSuggestion(checks.URL_ABSOLUTE);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.suggestion);
     });
 
     it('should generate suggestion for CANONICAL_URL_SAME_DOMAIN', () => {
       const result = generateCanonicalSuggestion(checks.URL_SAME_DOMAIN);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.suggestion);
     });
 
     it('should generate suggestion for CANONICAL_URL_SAME_PROTOCOL', () => {
       const result = generateCanonicalSuggestion(checks.URL_SAME_PROTOCOL);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.suggestion);
     });
 
     it('should generate suggestion for CANONICAL_URL_LOWERCASED', () => {
       const result = generateCanonicalSuggestion(checks.URL_LOWERCASED);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.suggestion);
     });
 
     it('should generate suggestion for CANONICAL_URL_FETCH_ERROR', () => {
       const result = generateCanonicalSuggestion(checks.URL_FETCH_ERROR);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.suggestion);
     });
 
     it('should generate suggestion for CANONICAL_URL_INVALID', () => {
       const result = generateCanonicalSuggestion(checks.URL_INVALID);
-      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_INVALID.suggestion());
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_INVALID.suggestion);
     });
 
     it('should return fallback message for unknown check type', () => {

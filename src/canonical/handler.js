@@ -430,7 +430,7 @@ export function generateCanonicalSuggestion(checkType) {
   const checkObj = Object.values(CANONICAL_CHECKS).find((check) => check.check === checkType);
 
   if (checkObj && checkObj.suggestion) {
-    return checkObj.suggestion();
+    return checkObj.suggestion;
   }
 
   // fallback suggestion
