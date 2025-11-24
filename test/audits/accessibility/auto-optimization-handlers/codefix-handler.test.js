@@ -252,22 +252,6 @@ describe('AccessibilityCodeFixHandler', () => {
       expect(result.status).to.equal(200);
     });
 
-    it('should return internalServerError when S3 bucket not configured', async () => {
-      context.env.S3_MYSTIQUE_BUCKET_NAME = undefined;
-
-      const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
-        '../../../../src/common/codefix-handler.js': await esmock('../../../../src/common/codefix-handler.js', {
-          '../../../../src/utils/s3-utils.js': {
-            getObjectFromKey: getObjectFromKeyStub,
-          },
-        }),
-      });
-
-      const result = await handler.default(validMessage, context);
-
-      expect(result.status).to.equal(500);
-    });
-
     it('should handle missing S3 reports gracefully', async () => {
       getObjectFromKeyStub.resolves(null);
 
@@ -552,7 +536,7 @@ describe('AccessibilityCodeFixHandler', () => {
       expect(context.log.warn).to.have.been.called;
     });
 
-    it('should handle error when S3_MYSTIQUE_BUCKET_NAME not set for old format', async () => {
+    it('should use default bucket when S3_MYSTIQUE_BUCKET_NAME not set for old format', async () => {
       context.env.S3_MYSTIQUE_BUCKET_NAME = undefined;
 
       const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
@@ -579,9 +563,12 @@ describe('AccessibilityCodeFixHandler', () => {
 
       const result = await handler.default(messageOldFormat, context);
 
-      expect(result.status).to.equal(500);
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Configuration error.*S3 bucket name not configured/),
+      expect(result.status).to.equal(200);
+      expect(getObjectFromKeyStub).to.have.been.calledWith(
+        context.s3Client,
+        'spacecat-prod-mystique-assets',
+        sinon.match.string,
+        context.log,
       );
     });
 

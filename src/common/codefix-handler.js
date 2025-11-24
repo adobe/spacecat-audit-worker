@@ -214,7 +214,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
   }
 
   // Default bucket name from environment
-  const defaultBucketName = env.S3_MYSTIQUE_BUCKET_NAME;
+  const defaultBucketName = env.S3_MYSTIQUE_BUCKET_NAME || 'spacecat-prod-mystique-assets';
 
   let totalUpdatedSuggestions = 0;
 
