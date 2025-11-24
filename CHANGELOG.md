@@ -1,3 +1,10 @@
+# [1.254.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.253.0...v1.254.0) (2025-11-24)
+
+
+### Features
+
+* retrieve selector ([#1642](https://github.com/adobe/spacecat-audit-worker/issues/1642)) ([e897c69](https://github.com/adobe/spacecat-audit-worker/commit/e897c6969a5adc152e199b7861d6c6dce7e4b9f8))
+
 # [1.253.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.252.6...v1.253.0) (2025-11-24)
 
 
