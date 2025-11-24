@@ -1,3 +1,52 @@
+## [1.252.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.252.4...v1.252.5) (2025-11-24)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.39.0 ([#1644](https://github.com/adobe/spacecat-audit-worker/issues/1644)) ([6a2b77c](https://github.com/adobe/spacecat-audit-worker/commit/6a2b77c26e350837e76d8cd33e7e9b449cb672d8))
+
+## [1.252.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.252.3...v1.252.4) (2025-11-24)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1641](https://github.com/adobe/spacecat-audit-worker/issues/1641)) ([378fce3](https://github.com/adobe/spacecat-audit-worker/commit/378fce37321525f261b82fe572a35dec90dcb9ec))
+
+## [1.252.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.252.2...v1.252.3) (2025-11-24)
+
+
+### Bug Fixes
+
+* stop saving issues in opportunity object ([#1614](https://github.com/adobe/spacecat-audit-worker/issues/1614)) ([53dd48b](https://github.com/adobe/spacecat-audit-worker/commit/53dd48b7588257d97f112ba966cd3497bdecf06b))
+
+## [1.252.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.252.1...v1.252.2) (2025-11-23)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1639](https://github.com/adobe/spacecat-audit-worker/issues/1639)) ([fc4bf39](https://github.com/adobe/spacecat-audit-worker/commit/fc4bf3930c4d028b2c6e7b156425c9833bc0486d))
+
+## [1.252.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.252.0...v1.252.1) (2025-11-22)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1638](https://github.com/adobe/spacecat-audit-worker/issues/1638)) ([92037c0](https://github.com/adobe/spacecat-audit-worker/commit/92037c02ecfc7bcd76453ca47b92e468e741e194))
+
+# [1.252.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.251.3...v1.252.0) (2025-11-22)
+
+
+### Features
+
+* Standalone readability opportunities for main ASO UI ([#1286](https://github.com/adobe/spacecat-audit-worker/issues/1286)) ([006ac71](https://github.com/adobe/spacecat-audit-worker/commit/006ac715f968d09990d5e2438eadab1c21a0016c))
+
+## [1.251.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.251.2...v1.251.3) (2025-11-21)
+
+
+### Bug Fixes
+
+* remove frequent logs ([#1636](https://github.com/adobe/spacecat-audit-worker/issues/1636)) ([5ec7202](https://github.com/adobe/spacecat-audit-worker/commit/5ec72027abc1357fd91cea3fad28acf059f43127))
+
 ## [1.251.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.251.1...v1.251.2) (2025-11-21)
 
 

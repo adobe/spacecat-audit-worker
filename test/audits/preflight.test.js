@@ -1187,7 +1187,7 @@ describe('Preflight Audit', () => {
 
     it('completes successfully on the happy path for the identify step with readability check', async () => {
       const head = '<head><title>Readability Test Page</title></head>';
-      const body = '<body><p>The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience.</p></body>';
+      const body = '<body><p>The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience. Furthermore, the multifaceted infrastructure exemplifies sophisticated aesthetic considerations. Such complex arrangements require meticulous coordination.</p></body>';
       const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
 
       s3Client.send.callsFake((command) => {
@@ -1591,7 +1591,7 @@ describe('Preflight Audit', () => {
 
       // Mock the preflight audit with readability handler returning processing: true
       const { preflightAudit: testPreflightAudit } = await esmock('../../src/preflight/handler.js', {
-        '../../src/readability/handler.js': {
+        '../../src/readability/preflight/handler.js': {
           default: sinon.stub().resolves({ processing: true }),
         },
         '../../src/preflight/accessibility.js': {
@@ -1677,7 +1677,7 @@ describe('Preflight Audit', () => {
         '../../src/preflight/metatags.js': { default: async () => undefined },
         '../../src/preflight/links.js': { default: async () => undefined },
         '../../src/preflight/headings.js': { default: async () => undefined },
-        '../../src/readability/handler.js': { default: async () => undefined },
+        '../../src/readability/preflight/handler.js': { default: async () => undefined },
         '../../src/preflight/accessibility.js': { default: async () => undefined },
         '@adobe/spacecat-shared-ims-client': {
           retrievePageAuthentication: retrievePageAuthenticationStub,
