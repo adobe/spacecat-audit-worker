@@ -1,3 +1,10 @@
+## [1.255.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.0...v1.255.1) (2025-11-25)
+
+
+### Bug Fixes
+
+* fix athena query for the no-cta-above-the-fold audit ([#1652](https://github.com/adobe/spacecat-audit-worker/issues/1652)) ([e8d66e4](https://github.com/adobe/spacecat-audit-worker/commit/e8d66e4b901c3ec687bb484bf4075d9d186d31c7))
+
 # [1.255.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.254.1...v1.255.0) (2025-11-25)
 
 
