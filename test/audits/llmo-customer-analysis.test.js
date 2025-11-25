@@ -157,8 +157,11 @@ describe('LLMO Customer Analysis Handler', () => {
             return Promise.resolve();
           }),
         },
-        '../../src/llmo-customer-analysis/content-ai.js': {
-          enableContentAI: sandbox.stub().resolves(),
+        '../../src/utils/content-ai.js': {
+          ContentAIClient: class {
+            async initialize() { return this; }
+            async createConfiguration() { return; }
+          },
         },
         '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
           Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
@@ -912,8 +915,11 @@ describe('LLMO Customer Analysis Handler', () => {
         '../../src/llmo-customer-analysis/cdn-config-handler.js': {
           handleCdnBucketConfigChanges: sandbox.stub().resolves(),
         },
-        '../../src/llmo-customer-analysis/content-ai.js': {
-          enableContentAI: sandbox.stub().resolves(),
+        '../../src/utils/content-ai.js': {
+          ContentAIClient: class {
+            async initialize() { return this; }
+            async createConfiguration() { return; }
+          },
         },
         '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
           Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
@@ -961,8 +967,11 @@ describe('LLMO Customer Analysis Handler', () => {
         '../../src/llmo-customer-analysis/cdn-config-handler.js': {
           handleCdnBucketConfigChanges: sandbox.stub().resolves(),
         },
-        '../../src/llmo-customer-analysis/content-ai.js': {
-          enableContentAI: sandbox.stub().resolves(),
+        '../../src/utils/content-ai.js': {
+          ContentAIClient: class {
+            async initialize() { return this; }
+            async createConfiguration() { return; }
+          },
         },
         '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
           Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
@@ -1092,8 +1101,11 @@ describe('LLMO Customer Analysis Handler', () => {
         '../../src/llmo-customer-analysis/cdn-config-handler.js': {
           handleCdnBucketConfigChanges: sandbox.stub().resolves(),
         },
-        '../../src/llmo-customer-analysis/content-ai.js': {
-          enableContentAI: sandbox.stub().rejects(new Error('ContentAI service unavailable')),
+        '../../src/utils/content-ai.js': {
+          ContentAIClient: class {
+            async initialize() { return this; }
+            async createConfiguration() { throw new Error('ContentAI service unavailable'); }
+          },
         },
         '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
           Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
@@ -1169,8 +1181,11 @@ describe('LLMO Customer Analysis Handler', () => {
         '../../src/llmo-customer-analysis/cdn-config-handler.js': {
           handleCdnBucketConfigChanges: sandbox.stub().resolves(),
         },
-        '../../src/llmo-customer-analysis/content-ai.js': {
-          enableContentAI: sandbox.stub().resolves(),
+        '../../src/utils/content-ai.js': {
+          ContentAIClient: class {
+            async initialize() { return this; }
+            async createConfiguration() { return; }
+          },
         },
         '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
           Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
