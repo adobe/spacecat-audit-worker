@@ -1,3 +1,10 @@
+## [1.255.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.1...v1.255.2) (2025-11-25)
+
+
+### Bug Fixes
+
+* permission opportunity created wrong KPI values ([#1655](https://github.com/adobe/spacecat-audit-worker/issues/1655)) ([92e67fc](https://github.com/adobe/spacecat-audit-worker/commit/92e67fc649869bdf69991a49285e340a5029c253))
+
 ## [1.255.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.0...v1.255.1) (2025-11-25)
 
 
