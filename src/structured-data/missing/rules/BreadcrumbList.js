@@ -12,7 +12,10 @@
 /* eslint-disable no-await-in-loop */
 import { removeLanguageFromPath } from '../lib.js';
 
-async function hasMissingBreadcrumb(page) {
+/**
+ * Detect if page has missing BreadcrumbList entity
+ */
+async function detect(page) {
   const BREADCRUMB_LIST_ENTITY = 'BreadcrumbList';
   const result = [];
 
@@ -110,4 +113,25 @@ async function hasMissingBreadcrumb(page) {
   return result;
 }
 
-export default hasMissingBreadcrumb;
+/**
+ * Statically analyze page and suggest BreadcrumbList entity
+ */
+async function suggest(context, entityWithPages, topPages) {
+  // TODO: If elemeent with .breadcrumb is present, try extracting links and link text and add
+
+  return entityWithPages;
+}
+
+/**
+ * Improve suggestion from earlier step using Mystique response
+ */
+async function guidance(page, data) {
+  // TODO: Throw if minimum data is not present
+  return {};
+}
+
+export default {
+  detect,
+  suggest,
+  guidance,
+};

@@ -10,10 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import hasMissingOrganization from './Organization.js';
-import hasMissingBreadcrumb from './BreadcrumbList.js';
+import Organization from './Organization.js';
+import BreadcrumbList from './BreadcrumbList.js';
 
-export default [
-  hasMissingOrganization,
-  hasMissingBreadcrumb,
-];
+export default {
+  Organization,
+  BreadcrumbList,
+};

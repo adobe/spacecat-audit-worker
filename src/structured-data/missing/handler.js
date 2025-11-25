@@ -15,7 +15,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 
 import { AuditBuilder } from '../../common/audit-builder.js';
-import missingRules from './rules/index.js';
+import entityRules from './rules/index.js';
 import { getScrapeForPath } from '../../support/utils.js';
 import { getClickableElements, getCssClasses } from './lib.js';
 import { convertToOpportunity } from '../../common/opportunity.js';
@@ -134,8 +134,8 @@ export async function detectMissingStructuredDataCandidates(context) {
       if (pathname.endsWith('/')) {
         pathname = pathname.slice(0, -1);
       }
-      const scrapeResult = await getScrapeForPath(pathname, context, site);
-      const { microdata, rdfa, jsonld } = scrapeResult.scrapeResult.structuredData;
+      page.scrapeResult = await getScrapeForPath(pathname, context, site);
+      const { microdata, rdfa, jsonld } = page.scrapeResult.scrapeResult.structuredData;
       page.structuredDataEntities.push(
         ...Object.keys(microdata ?? {}),
         ...Object.keys(rdfa ?? {}),
@@ -145,7 +145,7 @@ export async function detectMissingStructuredDataCandidates(context) {
       log.info(`[MSDA] Page ${page.url} has existing structured data entities: ${JSON.stringify(page.structuredDataEntities)}`);
 
       // Extract clickable elements
-      const { href, text } = getClickableElements(scrapeResult.scrapeResult.rawBody);
+      const { href, text } = getClickableElements(page.scrapeResult.scrapeResult.rawBody);
       page.clickableElementsHref = href;
       page.clickableElements = text;
 
@@ -153,7 +153,7 @@ export async function detectMissingStructuredDataCandidates(context) {
       log.info(`[MSDA] Page ${page.url} has clickable elements text: ${JSON.stringify(page.clickableElements)}`);
 
       // Extract all CSS classes and blocks
-      const [cssClasses, cssBlocks] = getCssClasses(scrapeResult.scrapeResult.rawBody);
+      const [cssClasses, cssBlocks] = getCssClasses(page.scrapeResult.scrapeResult.rawBody);
       page.cssClasses = cssClasses;
       page.cssBlocks = cssBlocks;
 
@@ -162,8 +162,9 @@ export async function detectMissingStructuredDataCandidates(context) {
 
       // Apply rules
       log.info(`[MSDA] Applying rules to page ${page.url}`);
-      for (const rule of missingRules) {
-        const result = await rule(page);
+      for (const [entity, { detect }] of Object.entries(entityRules)) {
+        log.debug(`[MSDA] Applying detection rule for entity ${entity} to page ${page.url}`);
+        const result = await detect(page);
         if (isNonEmptyArray(result)) {
           if (!results[page.url]) {
             results[page.url] = [];
@@ -199,21 +200,66 @@ export async function detectMissingStructuredDataCandidates(context) {
       'missing-structured-data',
     );
 
-    const acceptedResults = [];
-    Object.keys(results).forEach((page) => {
-      // TODO: Temporary remove non-accepted results,
-      //       candidates need to go through Mystique first to confirm detection
-      results[page].forEach((result) => {
-        if (result.confidence !== 'accepted') {
-          return;
+    // Group messages to mystique by page
+    let resultByEntity = Object.keys(results).reduce((acc, pageUrl) => {
+      for (const result of results[pageUrl]) {
+        if (!acc[result.entity]) {
+          acc[result.entity] = { entity: result.entity, pages: [] };
         }
-        acceptedResults.push({
-          ...result,
-          pageUrl: page,
+        acc[result.entity].pages.push({
+          pageUrl,
+          rationale: result.rationale,
+          confidence: result.confidence,
         });
-      });
-    });
+      }
+      return acc;
+    }, {});
 
+    // Remove the ones that don't have any pages
+    resultByEntity = Object
+      .fromEntries(Object
+        .entries(resultByEntity)
+        .filter(([_, data]) => data.pages.length > 0));
+    log.info(`[MSDA] Result by entity: ${JSON.stringify(resultByEntity)}`);
+
+    // Apply static suggest method
+    for (const [entity, { suggest }] of Object.entries(entityRules)) {
+      log.debug(`[MSDA] Applying suggest method for entity ${entity}`);
+      const suggestion = await suggest(context, resultByEntity[entity], topPages);
+      resultByEntity[entity] = suggestion;
+    }
+
+    log.info(`[MSDA] Result by entity with suggestion: ${JSON.stringify(resultByEntity)}`);
+
+    // Save suggestions
+
+    // Send mystique SQS events
+    for (const [entity, data] of Object.entries(resultByEntity)) {
+      const message = {
+        type: 'guidance:missing-structured-data',
+        siteId,
+        auditId: audit.getId(),
+        opportunityId: opportunity.getId(),
+        deliveryType: site.getDeliveryType(),
+        time: new Date().toISOString(),
+        data,
+      };
+      log.info(`[MSDA] Sending mystique SQS event for entity ${entity}: ${JSON.stringify(message)}`);
+      // await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    }
+
+    // Already sync accepted results for now
+    const acceptedResults = [];
+    Object.keys(resultByEntity).forEach((entity) => {
+      for (const page of resultByEntity[entity].pages) {
+        if (page.confidence === 'accepted') {
+          acceptedResults.push({
+            ...page,
+            entity,
+          });
+        }
+      }
+    });
     log.info(`[MSDA] Accepted results by page: ${JSON.stringify(acceptedResults)}`);
 
     const buildKey = (data) => `${data.pageUrl}|${data.entity}`;
@@ -232,46 +278,11 @@ export async function detectMissingStructuredDataCandidates(context) {
 
     log.info(`[MSDA] Synced ${acceptedResults.length} accepted results for site into opportunity ${opportunity.getId()}`);
 
-    // TODO: Send all candidates and detections to mystique
-    // Limit results and send out events to mystique
-    /* const pagesWithResults = Object.keys(results)
-      .filter((page) => isNonEmptyArray(results[page]));
-    log.info(`[MSDA] Pages with results: ${JSON.stringify(pagesWithResults)}`);
-
-    // Group messages to mystique by page
-    const resultByIssue = Object.keys(results).reduce((acc, pageUrl) => {
-      for (const result of results[pageUrl]) {
-        acc[result.type] = acc[result.type] || { type: result.type, pages: [] };
-        acc[result.type].pages.push({
-          url: pageUrl,
-          rationale: result.rationale,
-          confidence: result.confidence,
-        });
-      }
-      return acc;
-    }, {});
-
-    log.info(`[MSDA] Result by issue: ${JSON.stringify(resultByIssue)}`); */
-
-    // TODO: Save suggestions with page url + entity identifier as key
-    /*
-
-    const message = {
-      type: 'guidance:missing-structured-data',
-      siteId,
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      data: {},
-    };
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    */
-
     return {
       fullAuditRef: finalUrl,
       auditResult: {
         success: true,
-        results: acceptedResults,
+        results: resultByEntity,
       },
     };
   } catch (error) {
@@ -287,7 +298,7 @@ export async function detectMissingStructuredDataCandidates(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver((site) => site.getBaseURL())
+  .withUrlResolver((site) => site.resolveFinalURL())
   .addStep('import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('detect-missing-structured-data-candidates', detectMissingStructuredDataCandidates)
