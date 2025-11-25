@@ -152,11 +152,26 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
               check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
               success: true,
             });
+
             const normalize = (u) => (typeof u === 'string' && u.endsWith('/') ? u.slice(0, -1) : u);
+
+            // strip query params and hash
+            const stripQueryParams = (u) => {
+              try {
+                const urlObj = new URL(u);
+                return `${urlObj.origin}${urlObj.pathname}`;
+                /* c8 ignore next 3 */
+              } catch {
+                return u;
+              }
+            };
+
             const canonicalPath = normalize(new URL(canonicalUrl).pathname).replace(/\/([^/]+)\.[a-zA-Z0-9]+$/, '/$1');
             const finalPath = normalize(new URL(finalUrl).pathname).replace(/\/([^/]+)\.[a-zA-Z0-9]+$/, '/$1');
-            const normalizedCanonical = normalize(canonicalUrl);
-            const normalizedFinal = normalize(finalUrl);
+            const normalizedCanonical = normalize(stripQueryParams(canonicalUrl));
+            const normalizedFinal = normalize(stripQueryParams(finalUrl));
+
+            // Check if canonical points to same page (query params are ignored)
             if ((isPreview && canonicalPath === finalPath)
                 || normalizedCanonical === normalizedFinal) {
               checks.push({
@@ -406,18 +421,16 @@ export async function validateCanonicalRecursively(
 }
 
 /**
- * Generates a suggestion for fixing a canonical issue based on the check type and URL.
+ * Generates a suggestion for fixing a canonical issue based on the check type.
  *
  * @param {string} checkType - The type of canonical check that failed.
- * @param {string} url - The URL that has the canonical issue.
- * @param {string} baseURL - The base URL of the site.
  * @returns {string} A suggestion for fixing the canonical issue.
  */
-export function generateCanonicalSuggestion(checkType, url, baseURL) {
+export function generateCanonicalSuggestion(checkType) {
   const checkObj = Object.values(CANONICAL_CHECKS).find((check) => check.check === checkType);
 
   if (checkObj && checkObj.suggestion) {
-    return checkObj.suggestion(url, baseURL);
+    return checkObj.suggestion;
   }
 
   // fallback suggestion
@@ -637,7 +650,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       explanation: checkData.explanation,
       affectedUrls: checkData.urls.map((url) => ({
         url,
-        suggestion: generateCanonicalSuggestion(checkType, url, baseURL),
+        suggestion: generateCanonicalSuggestion(checkType),
       })),
     }));
 
