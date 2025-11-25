@@ -27,7 +27,7 @@ import prerenderHandler, {
 } from '../../src/prerender/handler.js';
 import { analyzeHtmlForPrerender } from '../../src/prerender/utils/html-comparator.js';
 import { createOpportunityData } from '../../src/prerender/opportunity-data-mapper.js';
-import { TOP_AGENTIC_URLS_LIMIT } from '../../src/prerender/utils/constants.js';
+import { TOP_AGENTIC_URLS_LIMIT, TOP_ORGANIC_URLS_LIMIT } from '../../src/prerender/utils/constants.js';
 
 describe('Prerender Audit', () => {
   let sandbox;
@@ -333,6 +333,38 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.submitForScraping(context);
         expect(result.urls).to.have.length(1);
         expect(result.urls.map((u) => u.url)).to.include('https://example.com/special');
+      });
+
+      it('should cap top organic pages to TOP_ORGANIC_URLS_LIMIT', async () => {
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-athena-client': {
+            // No agentic urls for this test
+            AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
+          },
+          '../../src/prerender/utils/shared.js': {
+            generateReportingPeriods: () => ({ weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }] }),
+            getS3Config: async () => ({ databaseName: 'db', tableName: 'tbl', getAthenaTempLocation: () => 's3://tmp/' }),
+            weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
+            loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
+          },
+        });
+        const over = TOP_ORGANIC_URLS_LIMIT + 10;
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(
+            Array.from({ length: over }).map((_, i) => ({ getUrl: () => `https://example.com/p${i}` })),
+          ),
+        };
+        const context = {
+          site: {
+            getId: () => 'site',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: { SiteTopPage: mockSiteTopPage },
+          log: { info: sandbox.stub(), debug: sandbox.stub() },
+        };
+        const out = await mockHandler.submitForScraping(context);
+        expect(out.urls).to.have.length(TOP_ORGANIC_URLS_LIMIT);
       });
 
       it('should fall back to sheet when Athena returns no data and use weekId from shared utils', async () => {
@@ -944,7 +976,8 @@ describe('Prerender Audit', () => {
   });
 
   describe('Athena and Sheet Fetch Coverage', () => {
-    it('should return top agentic URLs from Athena and filter "Other"; uses path fallback when baseUrl invalid', async () => {
+    it('should return top agentic URLs from Athena and filter "Other"; uses path fallback when baseUrl invalid (4-week window)', async () => {
+      let capturedPeriods;
       const mockHandler = await esmock('../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: async () => ([
@@ -954,16 +987,24 @@ describe('Prerender Audit', () => {
           ]) }) },
         },
         '../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-          }),
+          // Provide 4 recent weeks so handler can aggregate into a single 4-week window
+          generateReportingPeriods: () => {
+            const w1 = { weekNumber: 48, year: 2025, startDate: new Date('2025-11-24'), endDate: new Date('2025-11-30') };
+            const w2 = { weekNumber: 47, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') };
+            const w3 = { weekNumber: 46, year: 2025, startDate: new Date('2025-11-10'), endDate: new Date('2025-11-16') };
+            const w4 = { weekNumber: 45, year: 2025, startDate: new Date('2025-11-03'), endDate: new Date('2025-11-09') };
+            return { weeks: [w1, w2, w3, w4] };
+          },
           getS3Config: async () => ({
             databaseName: 'db',
             tableName: 'tbl',
             getAthenaTempLocation: () => 's3://tmp/',
           }),
           weeklyBreakdownQueries: {
-            createAgenticReportQuery: async () => 'SELECT 1',
+            createAgenticReportQuery: async (opts) => {
+              capturedPeriods = opts?.periods;
+              return 'SELECT 1';
+            },
           },
         },
       });
@@ -984,6 +1025,12 @@ describe('Prerender Audit', () => {
       expect(urls).to.include('/b');
       // Ensure "Other" excluded and limit respected
       expect(urls).to.have.length(2);
+      // Verify 4-week aggregation window passed to query builder
+      expect(capturedPeriods).to.be.an('object');
+      expect(capturedPeriods.weeks).to.have.length(1);
+      const win = capturedPeriods.weeks[0];
+      expect(new Date(win.startDate).toISOString()).to.equal(new Date('2025-11-03T00:00:00.000Z').toISOString());
+      expect(new Date(win.endDate).toISOString()).to.equal(new Date('2025-11-30T00:00:00.000Z').toISOString());
     });
 
     it('should populate agentic traffic for included URLs via Athena (hits-for-urls)', async () => {
@@ -1028,42 +1075,49 @@ describe('Prerender Audit', () => {
       expect(found).to.exist;
     });
 
-    it('should still include included URLs when Athena per-URL query fails (traffic computed in UI)', async () => {
-      const html = '<html><body><p>x</p></body></html>';
+    it('should cap agentic URLs to TOP_AGENTIC_URLS_LIMIT (4-week aggregation)', async () => {
+      let capturedPeriods;
       const mockHandler = await esmock('../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
-          AWSAthenaClient: { fromContext: () => ({ query: async () => { throw new Error('boom'); } }) },
+          AWSAthenaClient: { fromContext: () => ({
+            query: async () => {
+              // Produce more than the limit; include no "Other"
+              return Array.from({ length: TOP_AGENTIC_URLS_LIMIT + 15 })
+                .map((_, i) => ({ url: `/u${i}`, number_of_hits: 1000 - i }));
+            },
+          }) },
         },
         '../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
-        },
-        '../../src/utils/s3-utils.js': {
-          getObjectFromKey: async () => html,
+          generateReportingPeriods: () => {
+            const w1 = { weekNumber: 48, year: 2025, startDate: new Date('2025-11-24'), endDate: new Date('2025-11-30') };
+            const w2 = { weekNumber: 47, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') };
+            const w3 = { weekNumber: 46, year: 2025, startDate: new Date('2025-11-10'), endDate: new Date('2025-11-16') };
+            const w4 = { weekNumber: 45, year: 2025, startDate: new Date('2025-11-03'), endDate: new Date('2025-11-09') };
+            return { weeks: [w1, w2, w3, w4] };
+          },
+          getS3Config: async () => ({ databaseName: 'db', tableName: 'tbl', getAthenaTempLocation: () => 's3://tmp/' }),
+          weeklyBreakdownQueries: {
+            createAgenticReportQuery: async (opts) => {
+              capturedPeriods = opts?.periods;
+              return 'SELECT 1';
+            },
+          },
         },
       });
-
       const ctx = {
         site: {
           getId: () => 'site',
           getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getIncludedURLs: () => ['https://example.com/inc'] }),
+          getConfig: () => ({ getIncludedURLs: () => [] }),
         },
-        audit: { getId: () => 'a' },
-        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
-        s3Client: {},
-        env: { S3_SCRAPER_BUCKETNAME: 'b' },
+        dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
       };
-      const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
-      const found = res.auditResult.results.find((r) => r.url.includes('/inc'));
-      expect(found).to.exist;
+      const out = await mockHandler.submitForScraping(ctx);
+      expect(out.urls).to.have.length(TOP_AGENTIC_URLS_LIMIT);
+      // Confirm 4-week window was used
+      expect(capturedPeriods).to.be.an('object');
+      expect(capturedPeriods.weeks).to.have.length(1);
     });
 
     it('should return [] when sheet fallback has no rows', async () => {

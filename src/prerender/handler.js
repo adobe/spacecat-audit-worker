@@ -52,7 +52,8 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
 
 /**
  * Fetch top Agentic URLs using Athena (preferred).
- * Groups by URL across agentic rows, filters out pooled 'Other', sorts by hits.
+ * Aggregates over the last 4 reporting weeks, filters out pooled 'Other',
+ * groups by URL, and returns the top URLs by total hits.
  * @param {any} site
  * @param {any} context
  * @param {number} limit
@@ -63,10 +64,20 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = TOP_AGENTIC_UR
   try {
     const s3Config = await getS3Config(site, context);
     const periods = generateReportingPeriods();
+    // Build a single contiguous date window covering the last up to 4 weeks
+    const recentWeeks = Array.isSame ? periods.weeks : periods.weeks;
+    const windowWeeks = recentWeeks.slice(0, 4);
+    const startBoundary = windowWeeks.length > 0
+      ? windowWeeks[windowWeeks.length - 1].startDate
+      : periods.weeks[periods.weeks.length - 1].startDate;
+    const endBoundary = windowWeeks.length > 0
+      ? windowWeeks[0].endDate
+      : periods.weeks[0].endDate;
+    const fourWeekPeriods = { weeks: [{ startDate: startBoundary, endDate: endBoundary }] };
     const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
     // Build query using agentic report query builder (date-range + LLM UA + site filters)
     const query = await weeklyBreakdownQueries.createAgenticReportQuery({
-      periods,
+      periods: fourWeekPeriods,
       databaseName: s3Config.databaseName,
       tableName: s3Config.tableName,
       site,
