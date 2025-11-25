@@ -401,4 +401,28 @@ describe('CDN Logs Report Utils', () => {
       expect(patternNock.isDone()).to.be.true;
     });
   });
+
+  describe('saveExcelReportForBatch', () => {
+    it('returns null when sharepointClient is not provided', async () => {
+      const mockWorkbook = {
+        xlsx: {
+          writeBuffer: sandbox.stub().resolves(Buffer.from('test')),
+        },
+      };
+      const mockLog = {
+        info: sandbox.stub(),
+      };
+
+      const result = await reportUtils.saveExcelReportForBatch({
+        workbook: mockWorkbook,
+        outputLocation: 'test-location',
+        log: mockLog,
+        sharepointClient: null,
+        filename: 'test-file.xlsx',
+      });
+
+      expect(result).to.be.null;
+      expect(mockWorkbook.xlsx.writeBuffer).to.have.been.calledOnce;
+    });
+  });
 });
