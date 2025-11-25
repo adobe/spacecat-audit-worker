@@ -28,8 +28,9 @@
     "local-build-run": "sam build && sam local invoke -l output.txt",
     "local-watch": "node scripts/watch-and-copy.js"
   },
-  "wsk": {
+  "hlx": {
     "target": "aws",
+    "linkRoutes": false,
     "name": "spacecat-services/audit-worker@${version}",
     "memory": 6144,
     "awsRole!important": "arn:aws:iam::${env.AWS_ACCOUNT_ID}:role/spacecat-role-lambda-generic",
@@ -122,7 +123,7 @@
   },
   "devDependencies": {
     "@adobe/eslint-config-helix": "3.0.14",
-    "@adobe/helix-deploy": "https://gitpkg.now.sh/alinarublea/helix-deploy?main",
+    "@adobe/helix-deploy": "13.2.0",
     "@adobe/helix-universal": "5.3.0",
     "@adobe/helix-universal-devserver": "1.1.141",
     "@adobe/semantic-release-coralogix": "1.1.40",
