@@ -57,20 +57,6 @@ const mockTopPages = [
   },
 ];
 
-// Mock existing high value pages (one overlaps with top pages)
-const mockExistingHighValuePages = [
-  {
-    url: 'https://example.com/page1',
-    reasoning: 'High value page',
-    rank: '1:95',
-  },
-  {
-    url: 'https://example.com/existing-page',
-    reasoning: 'Another high value page',
-    rank: '2:90',
-  },
-];
-
 describe('High value pages audit', () => {
   let context;
 
@@ -104,17 +90,14 @@ describe('High value pages audit', () => {
       expect(result).to.have.property('siteId', site.getId());
       expect(result).to.have.property('fullAuditRef', 'www.example.com');
       expect(result).to.have.property('auditResult');
-      expect(result.auditResult).to.have.property('existingHighValuePages');
-      expect(result.auditResult.existingHighValuePages).to.be.an('array').that.is.empty;
+      expect(result.auditResult).to.deep.equal({});
     });
 
-    it('should return proper structure with empty existingHighValuePages', async () => {
+    it('should return proper structure with empty auditResult', async () => {
       const result = await runAuditAndImportTopPagesStep(context);
       
       expect(result).to.deep.equal({
-        auditResult: {
-          existingHighValuePages: [],
-        },
+        auditResult: {},
         fullAuditRef: 'www.example.com',
         type: 'top-pages',
         siteId: 'site-id-1',
@@ -147,9 +130,6 @@ describe('High value pages audit', () => {
       // Mock Audit
       mockAudit = {
         getId: () => 'audit-id-1',
-        getAuditResult: () => ({
-          existingHighValuePages: [],
-        }),
       };
 
       // Update context with mocks
@@ -174,67 +154,19 @@ describe('High value pages audit', () => {
       expect(mockSqs.sendMessage).to.have.been.calledOnce;
 
       const messageArg = mockSqs.sendMessage.getCall(0).args[1];
-      expect(messageArg).to.have.property('type', 'guidance:high-value-pages');
+      expect(messageArg).to.have.property('type', 'detect:high-value-pages');
       expect(messageArg).to.have.property('siteId', 'site-id-1');
       expect(messageArg).to.have.property('auditId', 'audit-id-1');
       expect(messageArg).to.have.property('deliveryType', 'aem_edge');
-      expect(messageArg.data).to.have.property('finalUrl', 'www.example.com');
-      expect(messageArg.data).to.have.property('highValuePages').that.is.an('array').that.is.empty;
-      expect(messageArg.data).to.have.property('topPages').that.is.an('array').with.lengthOf(3);
+      expect(messageArg.data).to.have.property('site_url', 'www.example.com');
+      expect(messageArg.data).to.have.property('top_pages').that.is.an('array').with.lengthOf(3);
       
       // Verify top pages format
-      expect(messageArg.data.topPages[0]).to.deep.equal({
+      expect(messageArg.data.top_pages[0]).to.deep.equal({
         url: 'https://example.com/page1',
         traffic: 5000,
         topKeyword: 'keyword1',
       });
-    });
-
-    it('should filter out existing high value pages from top pages', async () => {
-      // Update audit to have existing high value pages
-      mockAudit.getAuditResult = () => ({
-        existingHighValuePages: mockExistingHighValuePages,
-      });
-
-      const result = await sendToMystiqueForGeneration(context);
-
-      expect(result).to.deep.equal({ status: 'complete' });
-      
-      const messageArg = mockSqs.sendMessage.getCall(0).args[1];
-      
-      // Should only include page2 and page3, page1 is filtered out
-      expect(messageArg.data.topPages).to.have.lengthOf(2);
-      expect(messageArg.data.topPages[0]).to.deep.equal({
-        url: 'https://example.com/page2',
-        traffic: 3000,
-        topKeyword: 'keyword2',
-      });
-      expect(messageArg.data.topPages[1]).to.deep.equal({
-        url: 'https://example.com/page3',
-        traffic: 1500,
-        topKeyword: 'keyword3',
-      });
-
-      // Should include existing high value pages in the message
-      expect(messageArg.data.highValuePages).to.deep.equal(mockExistingHighValuePages);
-    });
-
-    it('should send empty topPages array when all pages are already high value pages', async () => {
-      // All top pages match existing high value pages
-      mockAudit.getAuditResult = () => ({
-        existingHighValuePages: [
-          { url: 'https://example.com/page1', reasoning: 'test', rank: '1:95' },
-          { url: 'https://example.com/page2', reasoning: 'test', rank: '2:90' },
-          { url: 'https://example.com/page3', reasoning: 'test', rank: '3:85' },
-        ],
-      });
-
-      const result = await sendToMystiqueForGeneration(context);
-
-      expect(result).to.deep.equal({ status: 'complete' });
-      
-      const messageArg = mockSqs.sendMessage.getCall(0).args[1];
-      expect(messageArg.data.topPages).to.be.an('array').that.is.empty;
     });
 
     it('should send message when no top pages are found', async () => {
@@ -245,7 +177,8 @@ describe('High value pages audit', () => {
       expect(result).to.deep.equal({ status: 'complete' });
       
       const messageArg = mockSqs.sendMessage.getCall(0).args[1];
-      expect(messageArg.data.topPages).to.be.an('array').that.is.empty;
+      expect(messageArg.data.top_pages).to.be.an('array').that.is.empty;
+      expect(messageArg.data.top_pages).to.be.an('array').that.is.empty;
     });
 
     it('should throw error when SQS message sending fails', async () => {
@@ -284,8 +217,8 @@ describe('High value pages audit', () => {
       await sendToMystiqueForGeneration(context);
 
       const messageArg = mockSqs.sendMessage.getCall(0).args[1];
-      expect(messageArg.data.topPages).to.have.lengthOf(1);
-      expect(messageArg.data.topPages[0]).to.deep.equal({
+      expect(messageArg.data.top_pages).to.have.lengthOf(1);
+      expect(messageArg.data.top_pages[0]).to.deep.equal({
         url: 'https://example.com/test',
         traffic: 9999,
         topKeyword: 'test-keyword',

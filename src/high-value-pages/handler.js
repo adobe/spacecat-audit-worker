@@ -19,29 +19,18 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.HIGH_VALUE_PAGES || 'high-value-pages';
 
 /**
  * Step 1: Run the audit and import top pages data
- * Retrieves existing high value pages from the URL store (to be implemented)
+ * Currently this step only seeds baseline metadata for later steps because
+ * there is no pre-existing high-value page state to fetch anymore.
  * @param {Object} context - The execution context containing site, log, and finalUrl
- * @returns {Object} Audit result with existing high value pages
+ * @returns {Object} Audit result placeholder
  */
 export async function runAuditAndImportTopPagesStep(context) {
   const { site, log, finalUrl } = context;
 
   log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] starting audit`);
 
-  /**
-   * TODO: Implement getting existing high value pages from URL store when URL store API is ready
-   * Format of the HighValuePage should be: {
-    "url": "https://www.example.com/services/engineering/iot",
-    "reasoning": "This is a service detail page for IoT engineering, relevant to the...",
-    "rank": "3:96" // 3 is the rank of the page, 96 is the score of the page
-  }
-   */
-  const existingHighValuePages = [];
-
   return {
-    auditResult: {
-      existingHighValuePages,
-    },
+    auditResult: {},
     fullAuditRef: finalUrl,
     type: 'top-pages',
     siteId: site.getId(),
@@ -59,21 +48,16 @@ export async function sendToMystiqueForGeneration(context) {
     log, site, finalUrl, sqs, env, dataAccess, audit,
   } = context;
   const { SiteTopPage } = dataAccess;
-
-  const { existingHighValuePages } = audit.getAuditResult();
-  let topPagesWithoutExistingHighValuePages = [];
+  let topPagesPayload = [];
   try {
     // Fetch all top pages for the site
     const topPages = await SiteTopPage.allBySiteId(site.getId());
-    // Filter out existing high value pages and map to required format
-    const existingHvpUrls = new Set(existingHighValuePages.map((hvp) => hvp.url));
-    topPagesWithoutExistingHighValuePages = topPages
-      .filter((topPage) => !existingHvpUrls.has(topPage.getUrl()))
-      .map((topPage) => ({
-        url: topPage.getUrl(),
-        traffic: topPage.getTraffic(),
-        topKeyword: topPage.getTopKeyword(),
-      }));
+    // Forward every top page because we no longer exclude existing high-value pages upstream.
+    topPagesPayload = topPages.map((topPage) => ({
+      url: topPage.getUrl(),
+      traffic: topPage.getTraffic(),
+      topKeyword: topPage.getTopKeyword(),
+    }));
   } catch (error) {
     log.error(
       `[${AUDIT_TYPE}] [Site: ${site.getId()}] Error occurred: ${error.message}`,
@@ -84,15 +68,14 @@ export async function sendToMystiqueForGeneration(context) {
   try {
     // Prepare message for Mystique queue
     const message = {
-      type: 'guidance:high-value-pages',
+      type: 'detect:high-value-pages',
       siteId: site.getId(),
       auditId: audit.getId(),
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
-        finalUrl,
-        highValuePages: existingHighValuePages,
-        topPages: topPagesWithoutExistingHighValuePages,
+        site_url: finalUrl,
+        top_pages: topPagesPayload,
       },
     };
 
@@ -101,8 +84,7 @@ export async function sendToMystiqueForGeneration(context) {
       ...message,
       data: {
         ...message.data,
-        highValuePages: `total existing high value pages: ${existingHighValuePages.length}`,
-        topPages: `total top pages: ${topPagesWithoutExistingHighValuePages.length}, without existing high value pages`,
+        top_pages: `total top pages: ${topPagesPayload.length}`,
       },
     });
 
