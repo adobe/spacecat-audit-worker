@@ -99,8 +99,6 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
     existingObjectKeys,
   );
 
-  log.info(`[A11yAudit] Found ${existingUrls.length} URLs already scraped today for site ${siteId}`);
-
   const remainingUrls = getRemainingUrls(urlsToScrape, existingUrls);
 
   log.info(`[A11yAudit] Will scrape ${remainingUrls.length} remaining URLs for site ${siteId} (${urlsToScrape.length} total - ${existingUrls.length} already scraped = ${remainingUrls.length} remaining)`);

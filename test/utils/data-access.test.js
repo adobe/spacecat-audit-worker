@@ -225,7 +225,7 @@ describe('data-access', () => {
 
       await syncSuggestions({
         context: {
-          log: { debug: () => {} },
+          log: { debug: () => {}, info: () => {} },
           dataAccess: { Suggestion: { bulkUpdateStatus: () => {} } },
         },
         opportunity: mockOpportunity,
@@ -487,7 +487,7 @@ describe('data-access', () => {
 
         // Verify that bulkUpdateStatus was NOT called (suggestions preserved)
         expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
-        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 0');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 0');
       });
 
       it('should mark suggestions as outdated when their URLs were scraped but issues are gone', async () => {
@@ -534,7 +534,7 @@ describe('data-access', () => {
           existingSuggestions,
           'OUTDATED',
         );
-        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 2');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 2');
       });
 
       it('should handle mixed scenario: some URLs scraped, some not', async () => {
@@ -586,7 +586,7 @@ describe('data-access', () => {
         const markedOutdated = context.dataAccess.Suggestion.bulkUpdateStatus.firstCall.args[0];
         expect(markedOutdated).to.have.length(1);
         expect(markedOutdated[0].id).to.equal('2');
-        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 1');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
       });
 
       it('should work without scrapedUrlsSet (backward compatibility)', async () => {
@@ -626,7 +626,7 @@ describe('data-access', () => {
           existingSuggestions,
           'OUTDATED',
         );
-        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 2');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 2');
       });
 
       it('should use FIXED status when statusToSetForOutdated is specified', async () => {
@@ -680,7 +680,7 @@ describe('data-access', () => {
         });
 
         // Check that outdated count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 0');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 0');
         // Verify no sample logs for empty array
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
         expect(debugCalls.some((msg) => msg.includes('Outdated suggestions sample'))).to.be.false;
@@ -707,7 +707,7 @@ describe('data-access', () => {
         });
 
         // Check that outdated count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 5');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 5');
         // Check that full sample is logged (all 5 items)
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
         const sampleLog = debugCalls.find((msg) => msg.includes('Outdated suggestions sample:'));
@@ -736,7 +736,7 @@ describe('data-access', () => {
         });
 
         // Check that outdated count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 15');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 15');
         // Check that only first 10 are logged
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
         const sampleLog = debugCalls.find((msg) => msg.includes('Outdated suggestions sample (first 10):'));
