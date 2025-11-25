@@ -101,7 +101,9 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
   }
 
   const processBatch = async (batch, urlTo) => {
-    const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
+    // Extract only URLs from batch (items can be strings or objects with url property)
+    const urls = batch.map((item) => (typeof item === 'string' ? item : item.url));
+    const requestBody = await getPrompt({ alternative_urls: urls, broken_url: urlTo }, 'broken-backlinks', log);
     const response = await azureOpenAIClient.fetchChatCompletion(requestBody, azureOpenAIOptions);
     if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
       log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No suggestions found for ${urlTo}`);
@@ -185,8 +187,10 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     try {
       // Use link-specific filtered header links
       const linkHeaderLinks = link.filteredHeaderLinks || filteredHeaderLinks;
+      // Extract only URLs from header links (items can be strings or objects with url property)
+      const headerUrls = linkHeaderLinks.map((item) => (typeof item === 'string' ? item : item.url));
       // eslint-disable-next-line no-await-in-loop
-      const requestBody = await getPrompt({ alternative_urls: linkHeaderLinks, broken_url: link.urlTo }, 'broken-backlinks', log);
+      const requestBody = await getPrompt({ alternative_urls: headerUrls, broken_url: link.urlTo }, 'broken-backlinks', log);
       // eslint-disable-next-line no-await-in-loop
       const response = await azureOpenAIClient.fetchChatCompletion(
         requestBody,
