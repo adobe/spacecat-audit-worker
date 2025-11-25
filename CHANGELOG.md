@@ -1,3 +1,10 @@
+## [1.255.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.2...v1.255.3) (2025-11-25)
+
+
+### Bug Fixes
+
+* Inconsistent URL set mapping leads to incorrect issue resolving ([#1646](https://github.com/adobe/spacecat-audit-worker/issues/1646)) ([deb91f9](https://github.com/adobe/spacecat-audit-worker/commit/deb91f9e137c075d66cbd148557d4cc9bbb80c5c))
+
 ## [1.255.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.1...v1.255.2) (2025-11-25)
 
 
