@@ -58,6 +58,18 @@ function generateUrlSourceHash(url, source) {
  * @param {string} reportKey - The S3 key path to the report
  * @param {Object} log - Logger instance
  * @returns {Promise<Object|null>} - The report data or null if not found
+ *
+ * Expected report.json structure:
+ * {
+ *   url: "https://example.com/contact-us",
+ *   source: "#contact-us",
+ *   type: "color-contrast",
+ *   updatedFiles: ["blocks/form/form.js"],
+ *   htmlWithIssues: ["<span>Optional<span>", "<span>Optional<span>"],
+ *   diff: "diff --git ...",
+ *   createdAt: "",
+ *   updatedAt: ""
+ * }
  */
 async function readCodeChangeReport(s3Client, bucketName, reportKey, log) {
   try {
