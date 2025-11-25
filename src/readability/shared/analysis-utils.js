@@ -134,21 +134,20 @@ async function analyzeTextReadability(
  * that are descendants of <header> or <footer>.
  * Also filters out elements with insufficient text content length.
  *
- * @param {Document} doc - The DOM Document to search for text elements.
+ * @param {Document} originalDoc - The DOM Document to search for text elements.
  * @returns {Element[]} Array of meaningful text elements for readability analysis and enhancement.
  */
-const getMeaningfulElements = (doc) => Array.from(doc.querySelectorAll('p, blockquote, li'))
-  .filter((element) => {
-    if (element.tagName.toLowerCase() === 'li') {
-      // Check if this <li> is inside a <header> or <footer>
-      return !element.closest('header, footer');
-    }
-    return true; // include p and blockquote as is
-  })
-  .filter((element) => {
-    const textContent = element.textContent?.trim();
-    return textContent && textContent.length >= MIN_TEXT_LENGTH;
+const getMeaningfulElements = (originalDoc) => {
+  const doc = originalDoc.cloneNode(true);
+  doc.querySelectorAll('header, footer').forEach((element) => {
+    element.remove();
   });
+  return Array.from(doc.querySelectorAll('p, blockquote, li'))
+    .filter((element) => {
+      const textContent = element.textContent?.trim();
+      return textContent && textContent.length >= MIN_TEXT_LENGTH;
+    });
+};
 
 /**
  * Analyzes readability for a single page's content
