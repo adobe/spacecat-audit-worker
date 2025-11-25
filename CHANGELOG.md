@@ -1,3 +1,10 @@
+## [1.255.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.5...v1.255.6) (2025-11-25)
+
+
+### Bug Fixes
+
+* geo-brand-prensence-refresh trigger refresh only for the past 4 … ([#1661](https://github.com/adobe/spacecat-audit-worker/issues/1661)) ([05394b6](https://github.com/adobe/spacecat-audit-worker/commit/05394b6ee19f65d81e4ad8fc721ee6765affc914))
+
 ## [1.255.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.4...v1.255.5) (2025-11-25)
 
 
