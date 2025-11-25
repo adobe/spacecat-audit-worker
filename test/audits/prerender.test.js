@@ -18,6 +18,7 @@ import esmock from 'esmock';
 
 use(sinonChai);
 import prerenderHandler, {
+  importTopPages,
   submitForScraping,
   processContentAndGenerateOpportunities,
   processOpportunityAndSuggestions,
@@ -26,6 +27,7 @@ import prerenderHandler, {
 } from '../../src/prerender/handler.js';
 import { analyzeHtmlForPrerender } from '../../src/prerender/utils/html-comparator.js';
 import { createOpportunityData } from '../../src/prerender/opportunity-data-mapper.js';
+import { TOP_AGENTIC_URLS_LIMIT } from '../../src/prerender/utils/constants.js';
 
 describe('Prerender Audit', () => {
   let sandbox;
@@ -45,11 +47,27 @@ describe('Prerender Audit', () => {
     });
 
     it('should export step functions', () => {
+      expect(importTopPages).to.be.a('function');
       expect(submitForScraping).to.be.a('function');
       expect(processContentAndGenerateOpportunities).to.be.a('function');
     });
   });
 
+  describe('Import Top Pages', () => {
+    it('should build a top-pages import job payload', async () => {
+      const context = {
+        site: { getId: () => 'test-site-id' },
+        finalUrl: 'https://example.com',
+      };
+      const res = await importTopPages(context);
+      expect(res).to.deep.equal({
+        type: 'top-pages',
+        siteId: 'test-site-id',
+        auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+        fullAuditRef: 'scrapes/test-site-id/',
+      });
+    });
+  });
   describe('HTML Analysis', () => {
     it('should analyze HTML and detect prerender opportunities', async () => {
       const directHtml = '<html><body><h1>Simple content</h1></body></html>';
@@ -291,28 +309,30 @@ describe('Prerender Audit', () => {
       });
 
       it('should include includedURLs from site config', async () => {
-        const mockSiteTopPage = {
-          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-            { getUrl: () => 'https://example.com/page1' },
-          ]),
-        };
-
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-athena-client': {
+            AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
+          },
+          '../../src/prerender/utils/shared.js': {
+            generateReportingPeriods: () => ({ weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }] }),
+            getS3Config: async () => ({ databaseName: 'db', tableName: 'tbl', getAthenaTempLocation: () => 's3://tmp/' }),
+            weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
+            loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
+          },
+        });
+        const mockSiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) };
         const context = {
           site: {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
-            getConfig: () => ({ getIncludedURLs: (auditType) => auditType === 'prerender' ? ['https://example.com/special'] : [] }),
+            getConfig: () => ({ getIncludedURLs: (auditType) => (auditType === 'prerender' ? ['https://example.com/special'] : []) }),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: { info: sandbox.stub(), debug: sandbox.stub() },
         };
-
-        const result = await submitForScraping(context);
-
-        // With agentic as primary, we no longer include top pages here.
-        // Expect only includedURLs when agentic fetch yields none.
+        const result = await mockHandler.submitForScraping(context);
         expect(result.urls).to.have.length(1);
-        expect(result.urls.map(u => u.url)).to.include('https://example.com/special');
+        expect(result.urls.map((u) => u.url)).to.include('https://example.com/special');
       });
 
       it('should fall back to sheet when Athena returns no data and use weekId from shared utils', async () => {
@@ -354,6 +374,7 @@ describe('Prerender Audit', () => {
               getLlmoDataFolder: () => 'adobe',
             }),
           },
+          dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
           log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
           env: {
             S3_SCRAPER_BUCKET_NAME: 'test-bucket',
@@ -367,8 +388,8 @@ describe('Prerender Audit', () => {
         };
 
         const result = await mockHandler.submitForScraping(context);
-        // TOP_AGENTIC_URLS_LIMIT is 50 in handler; expect 50 agentic URLs used
-        expect(result.urls).to.have.length(50);
+        // Expect agentic URLs to equal limit
+        expect(result.urls).to.have.length(TOP_AGENTIC_URLS_LIMIT);
         // Sanity: top URL comes from sheet aggregation and is normalized against base URL
         expect(result.urls[0].url).to.equal('https://example.com/p0');
       });
@@ -414,6 +435,7 @@ describe('Prerender Audit', () => {
               getLlmoDataFolder: () => 'adobe',
             }),
           },
+          dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
           log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
         };
 
@@ -955,6 +977,7 @@ describe('Prerender Audit', () => {
           getBaseURL: () => 'invalid', // force URL constructor to throw for fallback branch
           getConfig: () => ({ getIncludedURLs: () => [] }),
         },
+        dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
       });
 
@@ -1073,8 +1096,9 @@ describe('Prerender Audit', () => {
         },
       });
 
-      const res = await mockHandler.submitForScraping({
+        const res = await mockHandler.submitForScraping({
         site: { getId: () => 'id', getBaseURL: () => 'https://example.com', getConfig: () => ({ getIncludedURLs: () => [] }) },
+          dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
       });
       // Falls back to baseUrl when no URLs at all
@@ -1264,6 +1288,7 @@ describe('Prerender Audit', () => {
 
       const res = await mockHandler.submitForScraping({
         site: { getId: () => 'id', getBaseURL: () => 'invalid', getConfig: () => ({ getIncludedURLs: () => [] }) },
+        dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
       });
       // mapping catch keeps raw '/p1'
