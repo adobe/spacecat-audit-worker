@@ -16,23 +16,6 @@ import { DATA_SOURCES } from '../common/constants.js';
 import { MYSTIQUE_BATCH_SIZE } from './constants.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
-const { AUDIT_STEP_DESTINATIONS } = AuditModel;
-
-export async function processImportStep(context) {
-  const {
-    site, finalUrl, env, log,
-  } = context;
-
-  log.info(`[${AUDIT_TYPE}]: Processing import step for siteId ${site.getId()} using custom sqs queue ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
-  const s3BucketPath = `scrapes/${site.getId()}/`;
-
-  return {
-    auditResult: { status: 'preparing', finalUrl },
-    fullAuditRef: s3BucketPath,
-    type: 'top-pages',
-    siteId: site.getId(),
-  };
-}
 
 export async function processAltTextWithMystique(context) {
   const {
@@ -143,6 +126,5 @@ export async function processAltTextWithMystique(context) {
 
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
-  .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('processAltTextWithMystique', processAltTextWithMystique)
   .build();
