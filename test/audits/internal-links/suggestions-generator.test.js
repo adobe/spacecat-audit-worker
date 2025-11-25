@@ -930,6 +930,42 @@ describe('generateSuggestionData', async function test() {
     expect(context.log.error).to.have.been.calledWithMatch(/No final suggestions found for/);
   });
 
+  it('should handle empty batch URLs', async () => {
+    class EmptySliceArray extends Array {
+      slice() {
+        return [];
+      }
+    }
+
+    const customSiteData = new EmptySliceArray('https://example.com/page1');
+
+    const mockedModule = await esmock('../../../src/internal-links/suggestions-generator.js', {
+      '../../../src/support/utils.js': {
+        getScrapedDataForSiteId: sandbox.stub().resolves({
+          siteData: customSiteData,
+          headerLinks: ['https://example.com/home'],
+        }),
+      },
+      '../../../src/internal-links/subpath-filter.js': {
+        filterByAuditScope: (data) => data,
+        extractPathPrefix: () => null,
+        isWithinAuditScope: () => true,
+      },
+    });
+
+    azureOpenAIClient.fetchChatCompletion.resolves({
+      choices: [{
+        message: { content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }) },
+        finish_reason: 'stop',
+      }],
+    });
+
+    const result = await mockedModule.generateSuggestionData('https://example.com', brokenInternalLinksData, context, site);
+
+    expect(result).to.be.an('array');
+    expect(context.log.warn).to.have.been.calledWithMatch(/No valid URLs in batch for/);
+  });
+
   it('should handle header suggestions finish_reason !== stop', async () => {
     context.s3Client.send.onCall(0).resolves({
       Contents: [
