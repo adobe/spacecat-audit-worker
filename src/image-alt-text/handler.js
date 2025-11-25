@@ -17,6 +17,16 @@ import { MYSTIQUE_BATCH_SIZE } from './constants.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
+// Persist using an already-created audit if present, otherwise fall back
+export async function persistUsingExistingAudit(auditData, context) {
+  const { audit, dataAccess } = context;
+  if (audit?.getId) {
+    return audit;
+  }
+  const { Audit } = dataAccess;
+  return Audit.create(auditData);
+}
+
 export async function processAltTextWithMystique(context) {
   const {
     log, site, audit, dataAccess, env,
@@ -28,6 +38,23 @@ export async function processAltTextWithMystique(context) {
   try {
     const { Opportunity } = dataAccess;
     const siteId = site.getId();
+    // Ensure an Audit exists in a single-step flow
+    let workingAudit = audit;
+    if (!workingAudit) {
+      const { Audit } = dataAccess;
+      const auditData = {
+        siteId,
+        isLive: site.getIsLive(),
+        auditedAt: new Date().toISOString(),
+        auditType: AUDIT_TYPE,
+        auditResult: { status: 'preparing' },
+        fullAuditRef: '',
+        invocationId: context.invocation?.id,
+      };
+      workingAudit = await Audit.create(auditData);
+      context.audit = workingAudit;
+      log.debug(`[${AUDIT_TYPE}]: Created audit ${workingAudit.getId()} for single-step flow`);
+    }
 
     // Get top pages and included URLs
     const { SiteTopPage } = dataAccess;
@@ -66,7 +93,7 @@ export async function processAltTextWithMystique(context) {
       log.debug(`[${AUDIT_TYPE}]: Creating new opportunity for site ${siteId}`);
       const opportunityDTO = {
         siteId,
-        auditId: audit.getId(),
+        auditId: workingAudit.getId(),
         runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
         type: AUDIT_TYPE,
         origin: 'AUTOMATION',
@@ -106,7 +133,7 @@ export async function processAltTextWithMystique(context) {
       site.getBaseURL(),
       pageUrls,
       site.getId(),
-      audit.getId(),
+      workingAudit.getId(),
       context,
     );
 
@@ -126,5 +153,7 @@ export async function processAltTextWithMystique(context) {
 
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
+  // Prevent duplicate audit records in single-step flow by reusing the created audit
+  .withPersister(persistUsingExistingAudit)
   .addStep('processAltTextWithMystique', processAltTextWithMystique)
   .build();
