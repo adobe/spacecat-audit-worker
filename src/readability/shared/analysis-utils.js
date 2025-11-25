@@ -129,6 +129,28 @@ async function analyzeTextReadability(
 }
 
 /**
+ * Returns an array of meaningful text elements from the provided document.
+ * Selects <p>, <blockquote>, and <li> elements, but excludes <li> elements
+ * that are descendants of <header> or <footer>.
+ * Also filters out elements with insufficient text content length.
+ *
+ * @param {Document} doc - The DOM Document to search for text elements.
+ * @returns {Element[]} Array of meaningful text elements for readability analysis and enhancement.
+ */
+const getMeaningfulElements = (doc) => Array.from(doc.querySelectorAll('p, blockquote, li'))
+  .filter((element) => {
+    if (element.tagName.toLowerCase() === 'li') {
+      // Check if this <li> is inside a <header> or <footer>
+      return !element.closest('header, footer');
+    }
+    return true; // include p and blockquote as is
+  })
+  .filter((element) => {
+    const textContent = element.textContent?.trim();
+    return textContent && textContent.length >= MIN_TEXT_LENGTH;
+  });
+
+/**
  * Analyzes readability for a single page's content
  */
 export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
@@ -138,7 +160,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
     const doc = new JSDOM(rawBody).window.document;
 
     // Get all paragraph, div, and list item elements (same as preflight)
-    const textElements = Array.from(doc.querySelectorAll('p, div, li'));
+    const textElements = getMeaningfulElements(doc);
 
     const detectedLanguages = new Set();
 
@@ -166,10 +188,6 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
           });
 
         return !hasBlockChildren;
-      })
-      .filter(({ element }) => {
-        const textContent = element.textContent?.trim();
-        return textContent && textContent.length >= MIN_TEXT_LENGTH && /\s/.test(textContent);
       });
 
     // Process each element and collect analysis promises
