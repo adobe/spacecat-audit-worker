@@ -1,3 +1,10 @@
+## [1.254.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.254.0...v1.254.1) (2025-11-25)
+
+
+### Bug Fixes
+
+* issue with upload for patterns file ([#1654](https://github.com/adobe/spacecat-audit-worker/issues/1654)) ([c7280b1](https://github.com/adobe/spacecat-audit-worker/commit/c7280b19f910ef3a312e3e7e70d7b0c61a4e93b9))
+
 # [1.254.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.253.0...v1.254.0) (2025-11-24)
 
 
