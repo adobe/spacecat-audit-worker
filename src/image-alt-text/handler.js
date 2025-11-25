@@ -145,6 +145,10 @@ export async function processAltTextWithMystique(context) {
       setTimeout(resolve, 1000);
     });
     await cleanupOutdatedSuggestions(altTextOppty, log);
+    return {
+      auditResult: { status: 'submitted', pagesSent: pageUrls.length },
+      fullAuditRef: '',
+    };
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to process with Mystique: ${error.message}`);
     throw error;
