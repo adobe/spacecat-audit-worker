@@ -1,3 +1,15 @@
+# [1.255.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.254.1...v1.255.0) (2025-11-25)
+
+
+### Bug Fixes
+
+* add batching to run daily and minor urls fix ([#1651](https://github.com/adobe/spacecat-audit-worker/issues/1651)) ([776fa1a](https://github.com/adobe/spacecat-audit-worker/commit/776fa1aec2e94a3529c461d1ff7f002a16e20e4e))
+
+
+### Features
+
+* use batch preview and live operations for multiple reports ([#1647](https://github.com/adobe/spacecat-audit-worker/issues/1647)) ([13bc7a1](https://github.com/adobe/spacecat-audit-worker/commit/13bc7a1be63d5f9efdb7d1d2293690dc2c3febd1))
+
 ## [1.254.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.254.0...v1.254.1) (2025-11-25)
 
 
