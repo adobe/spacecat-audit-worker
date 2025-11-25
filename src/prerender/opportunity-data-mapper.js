@@ -21,7 +21,6 @@ import { CONTENT_GAIN_THRESHOLD } from './utils/constants.js';
 export function createOpportunityData(auditData) {
   const { auditResult } = auditData || {};
   const { scrapeForbidden } = auditResult || {};
-  const trafficDuration = auditData?.agenticDateRange ?? {};
 
   return {
     runbook: '',
@@ -45,7 +44,6 @@ export function createOpportunityData(auditData) {
       thresholds: {
         contentGainRatio: CONTENT_GAIN_THRESHOLD,
       },
-      trafficDuration,
       benefits: [
         'Improved LLM visibility and brand presence',
         'Better LLM indexing and search results',

@@ -817,7 +817,6 @@ describe('Prerender Audit', () => {
               {
                 url: 'https://example.com/page1',
                 needsPrerender: true,
-                agenticTraffic: 100,
                 contentGainRatio: 1.5,
               },
             ],
@@ -851,13 +850,11 @@ describe('Prerender Audit', () => {
               {
                 url: 'https://example.com/page1',
                 needsPrerender: true,
-                agenticTraffic: 500,
                 contentGainRatio: 2.1,
               },
               {
                 url: 'https://example.com/page2',
                 needsPrerender: true,
-                agenticTraffic: 300,
                 contentGainRatio: 1.8,
               },
             ],
@@ -1008,10 +1005,7 @@ describe('Prerender Audit', () => {
             tableName: 'tbl',
             getAthenaTempLocation: () => 's3://tmp/',
           }),
-          weeklyBreakdownQueries: {
-            createAgenticReportQuery: async () => 'SELECT 1',
-            createAgenticHitsForUrlsQuery: async () => 'SELECT 2',
-          },
+          weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
         },
         '../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
@@ -1032,10 +1026,9 @@ describe('Prerender Audit', () => {
       const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
       const found = res.auditResult.results.find((r) => r.url.includes('/inc'));
       expect(found).to.exist;
-      expect(found.agenticTraffic).to.equal(7);
     });
 
-    it('should default agentic traffic to 0 when hits-for-urls query fails', async () => {
+    it('should still include included URLs when Athena per-URL query fails (traffic computed in UI)', async () => {
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
@@ -1050,10 +1043,7 @@ describe('Prerender Audit', () => {
             tableName: 'tbl',
             getAthenaTempLocation: () => 's3://tmp/',
           }),
-          weeklyBreakdownQueries: {
-            createAgenticReportQuery: async () => 'SELECT 1',
-            createAgenticHitsForUrlsQuery: async () => 'SELECT 2',
-          },
+          weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
         },
         '../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
@@ -1074,7 +1064,6 @@ describe('Prerender Audit', () => {
       const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
       const found = res.auditResult.results.find((r) => r.url.includes('/inc'));
       expect(found).to.exist;
-      expect(found.agenticTraffic).to.equal(0);
     });
 
     it('should return [] when sheet fallback has no rows', async () => {
@@ -1132,10 +1121,7 @@ describe('Prerender Audit', () => {
             tableName: 'tbl',
             getAthenaTempLocation: () => 's3://tmp/',
           }),
-          weeklyBreakdownQueries: {
-            createAgenticReportQuery: async () => 'SELECT top',
-            createAgenticHitsForUrlsQuery: async () => 'SELECT hits',
-          },
+          weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT top' },
           // Fallback sheet with a default-path entry
           loadLatestAgenticSheet: async () => ({
             weekId: 'w45-2025',
@@ -1165,11 +1151,11 @@ describe('Prerender Audit', () => {
       };
       const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
       expect(res.status).to.equal('complete');
-      // Ensure the included URL got agenticTraffic from sheet fallback (=5)
-      const withHits = res.auditResult.results.find((r) => r.url === 'https://example.com/inc');
-      expect(withHits && Number(withHits.agenticTraffic)).to.equal(5);
+      // Ensure the included URL is present in results
+      const withUrl = res.auditResult.results.find((r) => r.url === 'https://example.com/inc');
+      expect(withUrl).to.exist;
     });
-    it('should use sheet fallback for specific URLs when Athena returns no rows', async () => {
+    it('should include specific URLs via sheet fallback when Athena returns no rows (no agenticTraffic from backend)', async () => {
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
@@ -1185,10 +1171,7 @@ describe('Prerender Audit', () => {
             tableName: 'tbl',
             getAthenaTempLocation: () => 's3://tmp/',
           }),
-          weeklyBreakdownQueries: {
-            createAgenticReportQuery: async () => 'SELECT 1',
-            createAgenticHitsForUrlsQuery: async () => 'SELECT 2',
-          },
+          weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
           // Provide sheet rows and a simple aggregator that maps '/inc' -> 12
           loadLatestAgenticSheet: async () => ({
             weekId: 'w45-2025',
@@ -1219,7 +1202,8 @@ describe('Prerender Audit', () => {
       expect(res.status).to.equal('complete');
       const found = res.auditResult.results.find((r) => r.url.includes('/inc'));
       expect(found).to.exist;
-      expect(found.agenticTraffic).to.equal(12);
+      // Backend no longer populates agenticTraffic; UI computes it
+      expect(found).to.not.have.property('agenticTraffic');
     });
     it('should hit toPath catch for malformed included URL', async () => {
       const html = '<html><body><p>x</p></body></html>';
@@ -1340,7 +1324,7 @@ describe('Prerender Audit', () => {
       expect(res.auditResult.totalUrlsChecked).to.be.greaterThan(0);
     });
 
-    it('should log warn in mapping block catch when getIncludedURLs throws', async () => {
+    it('should log error when getIncludedURLs throws (handled by top-level catch)', async () => {
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
@@ -1366,6 +1350,7 @@ describe('Prerender Audit', () => {
         },
       });
       const warn = sinon.stub();
+      const err = sinon.stub();
       const ctx = {
         site: {
           getId: () => 'site',
@@ -1373,16 +1358,17 @@ describe('Prerender Audit', () => {
           getConfig: () => { throw new Error('config failed'); },
         },
         audit: { getId: () => 'a' },
-        log: { info: sinon.stub(), warn, debug: sinon.stub(), error: sinon.stub() },
+        log: { info: sinon.stub(), warn, debug: sinon.stub(), error: err },
         s3Client: { send: sinon.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-        // Ensure we do not hit the later includedURLs call by providing scrape results
-        scrapeResultPaths: new Map([['https://example.com/y', '/tmp/y']]),
+        // No scrapeResultPaths so includedURLs is attempted and throws
       };
       const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
-      expect(res.status).to.equal('complete');
-      expect(warn.called).to.be.true;
-      expect(warn.args.some(a => String(a[0]).includes('Failed to fetch agentic traffic for mapping'))).to.be.true;
+      // Top-level catch should return an error object (no status field)
+      expect(res).to.have.property('error').that.is.a('string');
+      // Top-level catch logs error (not warn)
+      expect(err.called).to.be.true;
+      expect(err.args.some(a => String(a[0]).includes('Audit failed')) || err.args.some(a => String(a[0]).includes('config failed'))).to.be.true;
     });
   });
 
@@ -2308,7 +2294,6 @@ describe('Prerender Audit', () => {
         const existingData = { url: 'https://example.com/page1', customField: 'preserved' };
         const newDataItem = {
           url: 'https://example.com/page1',
-          agenticTraffic: 200,
           contentGainRatio: 2.5,
           wordCountBefore: 100,
           wordCountAfter: 250,
@@ -2317,7 +2302,7 @@ describe('Prerender Audit', () => {
         const mergedData = mergeDataFn(existingData, newDataItem);
         expect(mergedData).to.have.property('customField', 'preserved'); // Existing field preserved
         expect(mergedData).to.have.property('url', 'https://example.com/page1');
-        expect(mergedData).to.have.property('agenticTraffic', 200);
+        expect(mergedData).to.not.have.property('agenticTraffic');
         expect(mergedData).to.not.have.property('needsPrerender'); // Filtered out by mapSuggestionData
       });
 
@@ -2826,7 +2811,6 @@ describe('Prerender Audit', () => {
         wordCountBefore: 100,
         wordCountAfter: 250,
         contentGainRatio: 2.5,
-        agenticTraffic: 1000,
       });
 
       expect(context.log.info).to.have.been.calledWith(
@@ -3070,7 +3054,6 @@ describe('Prerender Audit', () => {
         wordCountBefore: 0,
         wordCountAfter: 0,
         contentGainRatio: 0,
-        agenticTraffic: 0,
       });
     });
   });

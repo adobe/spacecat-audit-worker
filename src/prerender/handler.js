@@ -26,10 +26,29 @@ import {
   loadLatestAgenticSheet,
   buildSheetHitsMap,
 } from './utils/shared.js';
-import { CONTENT_GAIN_THRESHOLD, TOP_AGENTIC_URLS_LIMIT, TOP_ORGANIC_URLS_LIMIT } from './utils/constants.js';
+import {
+  CONTENT_GAIN_THRESHOLD,
+  TOP_AGENTIC_URLS_LIMIT,
+  TOP_ORGANIC_URLS_LIMIT,
+} from './utils/constants.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+
+async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIMIT) {
+  const { dataAccess, log, site } = context;
+  let topPagesUrls = [];
+  try {
+    const { SiteTopPage } = dataAccess || {};
+    if (SiteTopPage?.allBySiteIdAndSourceAndGeo) {
+      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+      topPagesUrls = (topPages || []).map((p) => p.getUrl()).slice(0, limit);
+    }
+  } catch (error) {
+    log.warn(`Prerender - Failed to load top pages for fallback: ${error.message}. baseUrl=${site.getBaseURL()}`);
+  }
+  return topPagesUrls;
+}
 
 /**
  * Fetch top Agentic URLs using Athena (preferred).
@@ -37,9 +56,9 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
  * @param {any} site
  * @param {any} context
  * @param {number} limit
- * @returns {Promise<string[]>}
+ * @returns {Promise<Array<{url:string}>>}
  */
-async function getTopAgenticUrlsFromAthena(site, context, limit = 200) {
+async function getTopAgenticUrlsFromAthena(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
   const { log } = context;
   try {
     const s3Config = await getS3Config(site, context);
@@ -79,16 +98,14 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = 200) {
     const topUrls = Array.from(byUrl.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, limit)
-      .map(([path, hits]) => {
+      .map(([path]) => {
         try {
           return {
             url: new URL(path, baseUrl).toString(),
-            agenticTraffic: hits,
           };
         } catch {
           return {
             url: path,
-            agenticTraffic: hits,
           };
         }
       });
@@ -102,130 +119,11 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = 200) {
 }
 
 /**
- * Fetch agentic traffic for a specific set of URLs using Athena.
- * Ensures we can populate agenticTraffic for includedURLs even if not in top N.
- * @param {any} site
- * @param {any} context
- * @param {string[]} targetUrls - absolute URLs
- * @returns {Promise<Array<{url:string, agenticTraffic:number}>>}
- */
-async function getAgenticTrafficForSpecificUrls(site, context, targetUrls = []) {
-  const { log } = context;
-  /* c8 ignore start */
-  if (!Array.isArray(targetUrls) || targetUrls.length === 0) {
-    return [];
-  }
-  /* c8 ignore stop */
-  try {
-    const s3Config = await getS3Config(site, context);
-    const periods = generateReportingPeriods();
-    // We attach week at opportunity level, not per-URL
-    const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
-
-    // Convert absolute URLs to site-relative paths, consistent with logs' url field
-    const baseUrl = site.getBaseURL?.() || '';
-    const toPath = (fullUrl) => {
-      try {
-        return new URL(fullUrl, baseUrl).pathname || '/';
-      } catch {
-        return '/';
-      }
-    };
-    const uniquePaths = Array.from(new Set(targetUrls.map(toPath)));
-
-    // Helper: compute hits from latest sheet for the requested paths
-    const computeFromSheet = async () => {
-      try {
-        const { rows } = await loadLatestAgenticSheet(site, context);
-        const sheetMap = buildSheetHitsMap(rows);
-        return targetUrls.map((fullUrl) => {
-          const p = toPath(fullUrl);
-          return {
-            url: fullUrl,
-            agenticTraffic: sheetMap.get(p) || 0,
-          };
-        });
-      } catch (sheetErr) {
-        log?.warn?.(
-          `Prerender - Sheet fallback for specific URLs failed: ${sheetErr?.message || sheetErr}. baseUrl=${site.getBaseURL()}`,
-        );
-        return targetUrls.map((u) => ({ url: u, agenticTraffic: 0 }));
-      }
-    };
-
-    const query = await weeklyBreakdownQueries.createAgenticHitsForUrlsQuery({
-      periods,
-      databaseName: s3Config.databaseName,
-      tableName: s3Config.tableName,
-      site,
-      urlPaths: uniquePaths,
-    });
-
-    log.info(`Prerender - Executing Athena query for specific included URLs agentic hits... baseUrl=${site.getBaseURL()}`);
-    const rows = await athenaClient.query(
-      query,
-      s3Config.databaseName,
-      '[Athena Query] Prerender - Agentic Hits For Specific URLs',
-    );
-
-    // If Athena returns nothing, try sheet-based fallback
-    if (!rows || rows.length === 0) {
-      log.warn(`Prerender - No specific URL hits from Athena; trying sheet fallback. baseUrl=${site.getBaseURL()}`);
-      return computeFromSheet();
-    }
-
-    // Build a map of path -> hits
-    const hitsByPath = new Map();
-    for (const row of rows || []) {
-      const path = row?.url || '';
-      const hits = Number(row?.number_of_hits || 0) || 0;
-      if (path) {
-        hitsByPath.set(path, hits);
-      }
-    }
-
-    // Return entry per original included URL, defaulting to 0 when missing
-    return targetUrls.map((fullUrl) => {
-      const path = toPath(fullUrl);
-      const hits = hitsByPath.has(path) ? hitsByPath.get(path) : 0;
-      return {
-        url: fullUrl,
-        agenticTraffic: hits,
-      };
-    });
-  } catch (e) {
-    log?.warn?.(
-      `Prerender - Failed to fetch agentic traffic for specific URLs: ${e.message}. Attempting sheet fallback. baseUrl=${site.getBaseURL()}`,
-    );
-    // On failure, fallback to sheet extraction
-    try {
-      const baseUrl = site.getBaseURL?.() || '';
-      const { rows } = await loadLatestAgenticSheet(site, context);
-      const sheetMap = buildSheetHitsMap(rows);
-      return targetUrls.map((fullUrl) => {
-        let path = '/';
-        try {
-          path = new URL(fullUrl, baseUrl).pathname || '/';
-        } catch {
-          path = '/';
-        }
-        return { url: fullUrl, agenticTraffic: sheetMap.get(path) || 0 };
-      });
-    } catch (fallbackErr) {
-      log?.warn?.(
-        `Prerender - Specific URLs sheet fallback failed: ${fallbackErr?.message || fallbackErr}. baseUrl=${site.getBaseURL()}`,
-      );
-      return targetUrls.map((u) => ({ url: u, agenticTraffic: 0 }));
-    }
-  }
-}
-
-/**
  * Fetch top Agentic URLs from the weekly Excel sheet (fallback).
  * @param {any} site
  * @param {any} context
  * @param {number} limit
- * @returns {Promise<Array<{url:string, agenticTraffic:number}>>}
+ * @returns {Promise<Array<{url:string}>>}
  */
 async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
   const { log } = context;
@@ -241,16 +139,14 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
     const top = Array.from(byUrl.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, limit)
-      .map(([path, hits]) => {
+      .map(([path]) => {
         try {
           return {
             url: new URL(path, baseUrl).toString(),
-            agenticTraffic: hits,
           };
         } catch {
           return {
             url: path,
-            agenticTraffic: hits,
           };
         }
       });
@@ -270,7 +166,7 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
  * @param {number} limit
  * @returns {Promise<string[]>}
  */
-async function getTopAgenticUrls(site, context, limit = 200) {
+async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
   const fromAthena = await getTopAgenticUrlsFromAthena(site, context, limit);
   if (Array.isArray(fromAthena) && fromAthena.length > 0) {
     return fromAthena;
@@ -436,20 +332,15 @@ export async function importTopPages(context) {
 export async function submitForScraping(context) {
   const {
     site,
-    dataAccess,
     log,
   } = context;
 
-  const { SiteTopPage } = dataAccess;
   const siteId = site.getId();
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-  const topPagesUrls = (topPages || [])
-    .map((page) => page.getUrl()).slice(0, TOP_ORGANIC_URLS_LIMIT);
-
+  const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
   // Fetch Top Agentic URLs (limited by TOP_AGENTIC_URLS_LIMIT)
-  const agenticStats = await getTopAgenticUrls(site, context, TOP_AGENTIC_URLS_LIMIT);
+  const agenticStats = await getTopAgenticUrls(site, context);
   const agenticUrls = agenticStats.map((s) => s.url);
 
   const finalUrls = [...new Set([...topPagesUrls, ...agenticUrls, ...includedURLs])];
@@ -540,7 +431,6 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
   // Helper function to extract only the fields we want in suggestions
   const mapSuggestionData = (suggestion) => ({
     url: suggestion.url,
-    agenticTraffic: suggestion.agenticTraffic,
     contentGainRatio: suggestion.contentGainRatio,
     wordCountBefore: suggestion.wordCountBefore,
     wordCountAfter: suggestion.wordCountAfter,
@@ -557,7 +447,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: Suggestion.TYPES.CONFIG_UPDATE,
-      rank: Number(suggestion.agenticTraffic),
+      rank: 0,
       data: mapSuggestionData(suggestion),
     }),
     // Custom merge function: preserve existing fields, update with clean new data
@@ -593,8 +483,6 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       siteId,
       auditType: AUDIT_TYPE,
       lastUpdated: auditedAt || new Date().toISOString(),
-      // Opportunity-level traffic window (startDate/endDate object)
-      trafficDuration: auditData?.trafficDuration || {},
       totalUrlsChecked: auditResult.totalUrlsChecked || 0,
       urlsNeedingPrerender: auditResult.urlsNeedingPrerender || 0,
       scrapeForbidden: auditResult.scrapeForbidden || false,
@@ -606,7 +494,6 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
           wordCountBefore: result.wordCountBefore || 0,
           wordCountAfter: result.wordCountAfter || 0,
           contentGainRatio: result.contentGainRatio || 0,
-          agenticTraffic: Number(result.agenticTraffic) || 0,
         };
 
         // Include scrape error details if available
@@ -642,7 +529,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
  */
 export async function processContentAndGenerateOpportunities(context) {
   const {
-    site, audit, log, scrapeResultPaths, dataAccess,
+    site, audit, log, scrapeResultPaths,
   } = context;
 
   const siteId = site.getId();
@@ -652,73 +539,34 @@ export async function processContentAndGenerateOpportunities(context) {
 
   try {
     let urlsToCheck = [];
-    const agenticTrafficMap = new Map(); // agentic traffic (Athena)
-    // Cache top organic pages (Ahrefs) once for reuse
-    let topPagesUrls = [];
-    const { agenticDateRange } = (() => {
-      const periods = generateReportingPeriods();
-      const latestWeek = periods.weeks[0];
-      const fmt = (d) => d.toISOString().slice(0, 10);
-      const startDate = fmt(latestWeek.startDate);
-      const endDate = fmt(latestWeek.endDate);
-      return {
-        agenticDateRange: { startDate, endDate },
-      };
-    })();
 
-    // Build agentic traffic map (best-effort)
+    // Fetch agentic URLs only for URL list fallback
     let agenticStats = [];
     try {
-      agenticStats = await getTopAgenticUrls(site, context, TOP_AGENTIC_URLS_LIMIT);
-      agenticStats.forEach(({ url, agenticTraffic }) => {
-        agenticTrafficMap.set(url, Number(agenticTraffic || 0) || 0);
-      });
-      // Helper to populate agentic traffic for any URL list not already in the map
-      const populateAgenticForUrls = async (urls, sourceLabel) => {
-        if (!Array.isArray(urls) || urls.length === 0) return;
-        const missing = urls.filter((u) => !agenticTrafficMap.has(u));
-        if (missing.length === 0) return;
-        try {
-          const stats = await getAgenticTrafficForSpecificUrls(site, context, missing);
-          stats.forEach(({ url, agenticTraffic }) => {
-            agenticTrafficMap.set(url, Number(agenticTraffic || 0) || 0);
-          });
-        } catch (err) {
-          log?.warn?.(`Prerender - Failed to populate agentic traffic for ${sourceLabel}: ${err.message}. baseUrl=${site.getBaseURL()}`);
-        }
-      };
-      // Ensure includedURLs have agentic traffic populated even if not in top set
-      /* c8 ignore start */
-      const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
-      await populateAgenticForUrls(includedURLs, 'included URLs');
-      /* c8 ignore stop */
-      // Ensure top organic pages (Ahrefs) have agentic traffic populated even if not in top set
-      try {
-        const { SiteTopPage } = dataAccess || {};
-        if (SiteTopPage?.allBySiteIdAndSourceAndGeo) {
-          const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-          topPagesUrls = (topPages || []).map((p) => p.getUrl()).slice(0, TOP_ORGANIC_URLS_LIMIT);
-          await populateAgenticForUrls(topPagesUrls, 'top pages');
-        }
-      } catch (tpErr) {
-        log?.warn?.(`Prerender - Failed to populate agentic traffic for top pages: ${tpErr.message}. baseUrl=${site.getBaseURL()}`);
-      }
+      agenticStats = await getTopAgenticUrls(site, context);
     } catch (e) {
-      log?.warn?.(`Prerender - Failed to fetch agentic traffic for mapping: ${e.message}. baseUrl=${site.getBaseURL()}`);
+      log.warn(`Prerender - Failed to fetch agentic URLs for fallback: ${e.message}. baseUrl=${site.getBaseURL()}`);
     }
+
+    // Load top organic pages cache for fallback merging
+    const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
 
     // Try to get URLs from the audit context first
     if (scrapeResultPaths?.size > 0) {
       urlsToCheck = Array.from(context.scrapeResultPaths.keys());
       log.info(`Prerender - Found ${urlsToCheck.length} URLs from scrape results`);
     } else {
-      // Fallback: get agentic URLs, top organic pages (cached) and included URLs
-      urlsToCheck = [...new Set([...agenticStats.map((s) => s.url), ...topPagesUrls])];
       /* c8 ignore start */
       const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
-      urlsToCheck = [...new Set([...urlsToCheck, ...includedURLs])];
+      const merged = [...agenticStats.map((s) => s.url), ...topPagesUrls];
+      urlsToCheck = [...new Set([...merged, ...includedURLs])];
       /* c8 ignore stop */
-      log.info(`Prerender - Fallback for baseUrl=${site.getBaseURL()}, siteId=${siteId}. Using agenticURLs=${agenticStats.length}, topPages=${(topPagesUrls || []).length}, includedURLs=${includedURLs.length}, total=${urlsToCheck.length}`);
+      const msg = `Prerender - Fallback for baseUrl=${site.getBaseURL()}, siteId=${siteId}. `
+        + `Using agenticURLs=${agenticStats.length}, `
+        + `topPages=${(topPagesUrls || []).length}, `
+        + `includedURLs=${includedURLs.length}, `
+        + `total=${urlsToCheck.length}`;
+      log.info(msg);
     }
 
     if (urlsToCheck.length === 0) {
@@ -730,10 +578,8 @@ export async function processContentAndGenerateOpportunities(context) {
     const comparisonResults = await Promise.all(
       urlsToCheck.map(async (url) => {
         const result = await compareHtmlContent(url, siteId, context);
-        const agenticTraffic = agenticTrafficMap.has(url) ? agenticTrafficMap.get(url) : 0;
         return {
           ...result,
-          agenticTraffic,
         };
       }),
     );
@@ -769,7 +615,6 @@ export async function processContentAndGenerateOpportunities(context) {
         siteId,
         auditId: audit.getId(),
         auditResult,
-        agenticDateRange,
       }, context);
     } else if (scrapeForbidden) {
       // Create a dummy opportunity when scraping is forbidden (403)
@@ -778,7 +623,6 @@ export async function processContentAndGenerateOpportunities(context) {
         siteId,
         auditId: audit.getId(),
         auditResult,
-        agenticDateRange,
       }, context);
     } else {
       log.info(`Prerender - No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}`);
@@ -796,8 +640,6 @@ export async function processContentAndGenerateOpportunities(context) {
       auditedAt: new Date().toISOString(),
       auditType: AUDIT_TYPE,
       auditResult,
-      // include opportunity-level traffic window for summary writer
-      trafficDuration: agenticDateRange,
     };
     await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
 

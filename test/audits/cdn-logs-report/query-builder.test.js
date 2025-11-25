@@ -215,24 +215,4 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include('(?i)ChatGPT|GPTBot|OAI-SearchBot');
     expect(query).to.include('(?i)Claude(?!-web)');
   });
-
-  it('creates agentic-hits-for-urls query with escaped url list', async () => {
-    const customOptions = createMockOptions({
-      urlPaths: ['/a', '/b', "/a'quote"],
-    });
-    const query = await weeklyBreakdownQueries.createAgenticHitsForUrlsQuery(customOptions);
-    expect(query).to.be.a('string');
-    expect(query).to.include('FROM test_db.test_table');
-    // Single quote in path should be escaped as two single quotes in SQL
-    expect(query).to.include("IN ('/a', '/b', '/a''quote')");
-  });
-
-  it('creates agentic-hits-for-urls query with empty list producing empty IN()', async () => {
-    const customOptions = createMockOptions({
-      urlPaths: [],
-    });
-    const query = await weeklyBreakdownQueries.createAgenticHitsForUrlsQuery(customOptions);
-    expect(query).to.be.a('string');
-    expect(query).to.include('IN ()');
-  });
 });
