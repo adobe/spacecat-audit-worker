@@ -22,8 +22,22 @@ export function getJsonSummarySuggestion(suggestions) {
 
     // handle page level summary
     suggestionValues.push({
-      summarizationText: `${suggestion.pageSummary?.formatted_summary}\n\n**Key Points**:\n${joinKeyPoints(suggestion.keyPoints?.formatted_items)}`,
+      summarizationText: suggestion.pageSummary?.formatted_summary,
       fullPage: true,
+      url: suggestion.pageUrl,
+      title: suggestion.pageSummary?.title,
+      transformRules: {
+        selector: suggestion.pageSummary?.heading_selector || 'body',
+        action: suggestion.pageSummary?.insertion_method || 'appendChild',
+      },
+      scrapedAt,
+    });
+
+    // handle key points summary
+    suggestionValues.push({
+      summarizationText: `${joinKeyPoints(suggestion.keyPoints?.formatted_items)}`,
+      fullPage: true,
+      keyPoints: true,
       url: suggestion.pageUrl,
       title: suggestion.pageSummary?.title,
       transformRules: {
