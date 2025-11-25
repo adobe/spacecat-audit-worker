@@ -420,8 +420,9 @@ describe('Prerender Audit', () => {
         };
 
         const result = await mockHandler.submitForScraping(context);
-        // Expect agentic URLs to equal limit
-        expect(result.urls).to.have.length(TOP_AGENTIC_URLS_LIMIT);
+        // Expect agentic URLs to be capped by TOP_AGENTIC_URLS_LIMIT (or available rows if fewer)
+        const expectedCount = Math.min(TOP_AGENTIC_URLS_LIMIT, 60);
+        expect(result.urls).to.have.length(expectedCount);
         // Sanity: top URL comes from sheet aggregation and is normalized against base URL
         expect(result.urls[0].url).to.equal('https://example.com/p0');
       });
