@@ -24,6 +24,7 @@ export function getJsonSummarySuggestion(suggestions) {
     suggestionValues.push({
       summarizationText: suggestion.pageSummary?.formatted_summary,
       fullPage: true,
+      keyPoints: false,
       url: suggestion.pageUrl,
       title: suggestion.pageSummary?.title,
       transformRules: {
@@ -52,6 +53,7 @@ export function getJsonSummarySuggestion(suggestions) {
       suggestionValues.push({
         summarizationText: section.formatted_summary,
         fullPage: false,
+        keyPoints: false,
         url: suggestion.pageUrl,
         title: section.title,
         transformRules: {
