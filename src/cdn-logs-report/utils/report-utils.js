@@ -19,6 +19,7 @@ import {
   extractCustomerDomain,
   resolveConsolidatedBucketName,
 } from '../../utils/cdn-utils.js';
+import { uploadToSharePoint } from '../../utils/report-uploader.js';
 
 export async function getS3Config(site, context) {
   const customerDomain = extractCustomerDomain(site);
@@ -190,4 +191,21 @@ export async function getConfigCategories(site, context) {
     log.warn(`Failed to fetch config categories: ${error.message}`);
     return [];
   }
+}
+
+export async function saveExcelReportForBatch({
+  workbook,
+  outputLocation,
+  log,
+  sharepointClient,
+  filename,
+}) {
+  const buffer = await workbook.xlsx.writeBuffer();
+
+  if (sharepointClient) {
+    await uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log);
+    return { filename, outputLocation };
+  }
+
+  return null;
 }

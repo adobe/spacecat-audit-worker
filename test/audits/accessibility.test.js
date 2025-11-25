@@ -141,7 +141,7 @@ describe('Accessibility Audit Handler', () => {
 
       expect(getExistingUrlsFromFailedAuditsStub).to.have.been.calledOnce;
 
-      expect(mockContext.log.debug).to.have.been.calledWith(
+      expect(mockContext.log.info).to.have.been.calledWith(
         '[A11yAudit] Step 1: Preparing content scrape for desktop accessibility audit for https://example.com with siteId test-site-id',
       );
 
@@ -292,7 +292,7 @@ describe('Accessibility Audit Handler', () => {
       await scrapeAccessibilityData(mockContext);
 
       // Assert
-      expect(mockContext.log.debug).to.have.been.calledWith(
+      expect(mockContext.log.info).to.have.been.calledWith(
         '[A11yAudit] Step 1: Preparing content scrape for desktop accessibility audit for https://example.com with siteId test-site-id',
       );
     });
