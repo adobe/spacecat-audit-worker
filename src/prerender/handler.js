@@ -13,19 +13,18 @@
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
-import ExcelJS from 'exceljs';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import {
   generateReportingPeriods,
   getS3Config,
-  downloadExistingCdnSheet,
   weeklyBreakdownQueries,
+  loadLatestAgenticSheet,
+  buildSheetHitsMap,
 } from './utils/shared.js';
 import { CONTENT_GAIN_THRESHOLD } from './utils/constants.js';
 
@@ -54,7 +53,7 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = 200) {
       tableName: s3Config.tableName,
       site,
     });
-    log.info('[PRERENDER] Executing Athena query for top agentic URLs...');
+    log.info(`Prerender - Executing Athena query for top agentic URLs... baseUrl=${site.getBaseURL()}`);
     const results = await athenaClient.query(
       query,
       s3Config.databaseName,
@@ -62,7 +61,7 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = 200) {
     );
 
     if (!Array.isArray(results) || results.length === 0) {
-      log.warn('[PRERENDER] Athena returned no agentic rows.');
+      log.warn(`Prerender - Athena returned no agentic rows. baseUrl=${site.getBaseURL()}`);
       return [];
     }
 
@@ -95,10 +94,10 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = 200) {
         }
       });
 
-    log.info(`[PRERENDER] Selected ${topUrls.length} top agentic URLs via Athena.`);
+    log.info(`Prerender - Selected ${topUrls.length} top agentic URLs via Athena. baseUrl=${site.getBaseURL()}`);
     return topUrls;
   } catch (e) {
-    log?.warn?.(`[PRERENDER] Athena agentic URL fetch failed: ${e.message}`);
+    log?.warn?.(`Prerender - Athena agentic URL fetch failed: ${e.message}. baseUrl=${site.getBaseURL()}`);
     return [];
   }
 }
@@ -135,6 +134,26 @@ async function getAgenticTrafficForSpecificUrls(site, context, targetUrls = []) 
     };
     const uniquePaths = Array.from(new Set(targetUrls.map(toPath)));
 
+    // Helper: compute hits from latest sheet for the requested paths
+    const computeFromSheet = async () => {
+      try {
+        const { rows } = await loadLatestAgenticSheet(site, context);
+        const sheetMap = buildSheetHitsMap(rows);
+        return targetUrls.map((fullUrl) => {
+          const p = toPath(fullUrl);
+          return {
+            url: fullUrl,
+            agenticTraffic: sheetMap.get(p) || 0,
+          };
+        });
+      } catch (sheetErr) {
+        log?.warn?.(
+          `Prerender - Sheet fallback for specific URLs failed: ${sheetErr?.message || sheetErr}. baseUrl=${site.getBaseURL()}`,
+        );
+        return targetUrls.map((u) => ({ url: u, agenticTraffic: 0 }));
+      }
+    };
+
     const query = await weeklyBreakdownQueries.createAgenticHitsForUrlsQuery({
       periods,
       databaseName: s3Config.databaseName,
@@ -143,12 +162,18 @@ async function getAgenticTrafficForSpecificUrls(site, context, targetUrls = []) 
       urlPaths: uniquePaths,
     });
 
-    log.info('[PRERENDER] Executing Athena query for specific included URLs agentic hits...');
+    log.info(`Prerender - Executing Athena query for specific included URLs agentic hits... baseUrl=${site.getBaseURL()}`);
     const rows = await athenaClient.query(
       query,
       s3Config.databaseName,
       '[Athena Query] Prerender - Agentic Hits For Specific URLs',
     );
+
+    // If Athena returns nothing, try sheet-based fallback
+    if (!rows || rows.length === 0) {
+      log.warn(`Prerender - No specific URL hits from Athena; trying sheet fallback. baseUrl=${site.getBaseURL()}`);
+      return computeFromSheet();
+    }
 
     // Build a map of path -> hits
     const hitsByPath = new Map();
@@ -170,12 +195,29 @@ async function getAgenticTrafficForSpecificUrls(site, context, targetUrls = []) 
       };
     });
   } catch (e) {
-    log?.warn?.(`[PRERENDER] Failed to fetch agentic traffic for specific URLs: ${e.message}`);
-    // On failure, still return zeros for provided URLs
-    return targetUrls.map((u) => ({
-      url: u,
-      agenticTraffic: 0,
-    }));
+    log?.warn?.(
+      `Prerender - Failed to fetch agentic traffic for specific URLs: ${e.message}. Attempting sheet fallback. baseUrl=${site.getBaseURL()}`,
+    );
+    // On failure, fallback to sheet extraction
+    try {
+      const baseUrl = site.getBaseURL?.() || '';
+      const { rows } = await loadLatestAgenticSheet(site, context);
+      const sheetMap = buildSheetHitsMap(rows);
+      return targetUrls.map((fullUrl) => {
+        let path = '/';
+        try {
+          path = new URL(fullUrl, baseUrl).pathname || '/';
+        } catch {
+          path = '/';
+        }
+        return { url: fullUrl, agenticTraffic: sheetMap.get(path) || 0 };
+      });
+    } catch (fallbackErr) {
+      log?.warn?.(
+        `Prerender - Specific URLs sheet fallback failed: ${fallbackErr?.message || fallbackErr}. baseUrl=${site.getBaseURL()}`,
+      );
+      return targetUrls.map((u) => ({ url: u, agenticTraffic: 0 }));
+    }
   }
 }
 
@@ -189,41 +231,14 @@ async function getAgenticTrafficForSpecificUrls(site, context, targetUrls = []) 
 async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
   const { log } = context;
   try {
-    const s3Config = await getS3Config(site, context);
-    const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
-    const outputLocation = `${llmoFolder}/agentic-traffic`;
-
-    // Determine current week identifier (same logic as elsewhere)
-    const periods = generateReportingPeriods();
-    const latestWeek = periods.weeks[0];
-    const weekId = `w${String(latestWeek.weekNumber).padStart(2, '0')}-${latestWeek.year}`;
-
-    // Download sheet
-    const sharepointClient = await createLLMOSharepointClient(context);
-    const rows = await downloadExistingCdnSheet(
-      weekId,
-      outputLocation,
-      sharepointClient,
-      log,
-      readFromSharePoint,
-      ExcelJS,
-    );
+    const { weekId, baseUrl, rows } = await loadLatestAgenticSheet(site, context);
 
     if (!rows || rows.length === 0) {
-      log.warn(`[PRERENDER] No agentic traffic rows found in sheet for ${weekId} at ${outputLocation}`);
+      log.warn(`Prerender - No agentic traffic rows found in sheet for ${weekId}. baseUrl=${baseUrl}`);
       return [];
     }
 
-    // Aggregate by URL (sum hits)
-    const byUrl = new Map();
-    for (const r of rows) {
-      const path = typeof r.url === 'string' && r.url.length > 0 ? r.url : '/';
-      const hits = Number(r.number_of_hits || 0) || 0;
-      const prev = byUrl.get(path) || 0;
-      byUrl.set(path, prev + hits);
-    }
-
-    const baseUrl = site.getBaseURL?.() || '';
+    const byUrl = buildSheetHitsMap(rows);
     const top = Array.from(byUrl.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, limit)
@@ -241,10 +256,10 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
         }
       });
 
-    log.info(`[PRERENDER] Selected ${top.length} top agentic URLs via Sheet (${weekId}).`);
+    log.info(`Prerender - Selected ${top.length} top agentic URLs via Sheet (${weekId}). baseUrl=${baseUrl}`);
     return top;
   } catch (e) {
-    log?.warn?.(`[PRERENDER] Sheet-based agentic URL fetch failed: ${e?.message || e}`);
+    log?.warn?.(`Prerender - Sheet-based agentic URL fetch failed: ${e?.message || e}. baseUrl=${site.getBaseURL()}`);
     return [];
   }
 }
@@ -261,7 +276,7 @@ async function getTopAgenticUrls(site, context, limit = 200) {
   if (Array.isArray(fromAthena) && fromAthena.length > 0) {
     return fromAthena;
   }
-  context?.log?.info?.('[PRERENDER] No agentic URLs from Athena; attempting Sheet fallback.');
+  context?.log?.info?.(`Prerender - No agentic URLs from Athena; attempting Sheet fallback. baseUrl=${site.getBaseURL()}`);
   return getTopAgenticUrlsFromSheet(site, context, limit);
 }
 
@@ -659,7 +674,7 @@ export async function processContentAndGenerateOpportunities(context) {
       }
       /* c8 ignore stop */
     } catch (e) {
-      log?.warn?.(`[PRERENDER] Failed to fetch agentic traffic for mapping: ${e.message}`);
+      log?.warn?.(`Prerender - Failed to fetch agentic traffic for mapping: ${e.message}. baseUrl=${site.getBaseURL()}`);
     }
 
     // Try to get URLs from the audit context first

@@ -321,10 +321,6 @@ describe('Prerender Audit', () => {
           '@adobe/spacecat-shared-athena-client': {
             AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
           },
-          '../../src/utils/report-uploader.js': {
-            createLLMOSharepointClient: async () => ({}),
-            readFromSharePoint: async () => ({}),
-          },
           '../../src/prerender/utils/shared.js': {
             generateReportingPeriods: () => ({
               weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
@@ -339,15 +335,12 @@ describe('Prerender Audit', () => {
               aggregatedLocation: 'agg/',
               getAthenaTempLocation: () => 's3://tmp/',
             }),
-            downloadExistingCdnSheet: sinon.stub().callsFake(async (weekId) => {
-              // Ensure weekId is passed from generateReportingPeriods
-              expect(weekId).to.equal('w45-2025');
-              // Return 60 rows to verify limit trimming
-              const rows = [];
-              for (let i = 0; i < 60; i += 1) {
-                rows.push({ url: `/p${i}`, number_of_hits: 100 - i });
-              }
-              return rows;
+            loadLatestAgenticSheet: async () => ({
+              weekId: 'w45-2025',
+              baseUrl: 'https://example.com',
+              rows: Array.from({ length: 60 }).map((_, i) => ({
+                url: `/p${i}`, number_of_hits: 100 - i,
+              })),
             }),
           },
         });
@@ -382,17 +375,13 @@ describe('Prerender Audit', () => {
 
       it('should merge includedURLs with sheet fallback agentic URLs (unique union)', async () => {
         const athenaQueryStub = sinon.stub().resolves([]);
-        const downloadStub = sinon.stub().resolves([
+        const sheetRows = [
           { url: '/a', number_of_hits: 10 },
           { url: '/b', number_of_hits: 9 },
-        ]);
+        ];
         const mockHandler = await esmock('../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {
             AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
-          },
-          '../../src/utils/report-uploader.js': {
-            createLLMOSharepointClient: async () => ({}),
-            readFromSharePoint: async () => ({}),
           },
           '../../src/prerender/utils/shared.js': {
             generateReportingPeriods: () => ({
@@ -408,7 +397,11 @@ describe('Prerender Audit', () => {
               aggregatedLocation: 'agg/',
               getAthenaTempLocation: () => 's3://tmp/',
             }),
-            downloadExistingCdnSheet: downloadStub,
+            loadLatestAgenticSheet: async () => ({
+              weekId: 'w45-2025',
+              baseUrl: 'https://example.com',
+              rows: sheetRows,
+            }),
           },
         });
 
@@ -1066,10 +1059,6 @@ describe('Prerender Audit', () => {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
         },
-        '../../src/utils/report-uploader.js': {
-          createLLMOSharepointClient: async () => ({}),
-          readFromSharePoint: async () => ({}),
-        },
         '../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
@@ -1077,7 +1066,7 @@ describe('Prerender Audit', () => {
           getS3Config: async () => ({
             customerName: 'adobe',
           }),
-          downloadExistingCdnSheet: async () => [],
+          loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
           weeklyBreakdownQueries: {
             createAgenticReportQuery: async () => 'SELECT 1',
           },
@@ -1094,6 +1083,120 @@ describe('Prerender Audit', () => {
   });
 
   describe('Additional branch coverage (mapping, catches)', () => {
+    it('should use catch-path sheet fallback and hit toPath catch in fallback', async () => {
+      const html = '<html><body><p>x</p></body></html>';
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: {
+            fromContext: () => ({
+              // First call (Top Agentic URLs): return empty to force missingIncluded
+              // Second call (Hits For Specific URLs): throw to enter catch/fallback
+              query: async (_q, _db, label) => {
+                if (label && String(label).includes('Top Agentic URLs')) return [];
+                if (label && String(label).includes('Agentic Hits For Specific URLs')) throw new Error('athena-fail');
+                return [];
+              },
+            }),
+          },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createAgenticReportQuery: async () => 'SELECT top',
+            createAgenticHitsForUrlsQuery: async () => 'SELECT hits',
+          },
+          // Fallback sheet with a default-path entry
+          loadLatestAgenticSheet: async () => ({
+            weekId: 'w45-2025',
+            baseUrl: 'https://example.com',
+            rows: [{ url: '/inc', number_of_hits: 5 }],
+          }),
+          buildSheetHitsMap: (rows) => new Map([[rows[0]?.url || '/inc', rows[0]?.number_of_hits || 0]]),
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => html,
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          // Invalid base URL triggers toPath catch branch in fallback section
+          getBaseURL: () => 'invalid',
+          // Use absolute URL so keys align with results and sheet mapping on '/inc'
+          getConfig: () => ({ getIncludedURLs: () => ['https://example.com/inc'] }),
+        },
+        audit: { getId: () => 'a' },
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
+        s3Client: { send: sinon.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        // No scrapeResultPaths so includedURLs are used to build urlsToCheck
+      };
+      const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
+      expect(res.status).to.equal('complete');
+      // Ensure the included URL got agenticTraffic from sheet fallback (=5)
+      const withHits = res.auditResult.results.find((r) => r.url === 'https://example.com/inc');
+      expect(withHits && Number(withHits.agenticTraffic)).to.equal(5);
+    });
+    it('should use sheet fallback for specific URLs when Athena returns no rows', async () => {
+      const html = '<html><body><p>x</p></body></html>';
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          // Return empty for specific-URLs query to trigger sheet fallback
+          AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createAgenticReportQuery: async () => 'SELECT 1',
+            createAgenticHitsForUrlsQuery: async () => 'SELECT 2',
+          },
+          // Provide sheet rows and a simple aggregator that maps '/inc' -> 12
+          loadLatestAgenticSheet: async () => ({
+            weekId: 'w45-2025',
+            baseUrl: 'https://example.com',
+            rows: [{ url: '/inc', number_of_hits: 12 }],
+          }),
+          buildSheetHitsMap: (rows) => new Map([['/inc', 12]]),
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => html,
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => ['https://example.com/inc'] }),
+        },
+        audit: { getId: () => 'a' },
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
+        s3Client: { send: sinon.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        // Provide scrape results to ensure completion without suggestion sync
+        scrapeResultPaths: new Map([['https://example.com/inc', '/tmp/inc']]),
+      };
+      const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
+      expect(res.status).to.equal('complete');
+      const found = res.auditResult.results.find((r) => r.url.includes('/inc'));
+      expect(found).to.exist;
+      expect(found.agenticTraffic).to.equal(12);
+    });
     it('should hit toPath catch for malformed included URL', async () => {
       const html = '<html><body><p>x</p></body></html>';
       const mockHandler = await esmock('../../src/prerender/handler.js', {
@@ -1141,10 +1244,6 @@ describe('Prerender Audit', () => {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
         },
-        '../../src/utils/report-uploader.js': {
-          createLLMOSharepointClient: async () => ({}),
-          readFromSharePoint: async () => ({}),
-        },
         '../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
@@ -1152,9 +1251,11 @@ describe('Prerender Audit', () => {
           getS3Config: async () => ({
             customerName: 'adobe',
           }),
-          downloadExistingCdnSheet: async () => [
-            { url: '/p1', number_of_hits: 10 },
-          ],
+          loadLatestAgenticSheet: async () => ({
+            weekId: 'w45-2025',
+            baseUrl: 'invalid',
+            rows: [{ url: '/p1', number_of_hits: 10 }],
+          }),
           weeklyBreakdownQueries: {
             createAgenticReportQuery: async () => 'SELECT 1',
           },
@@ -1257,6 +1358,84 @@ describe('Prerender Audit', () => {
       expect(res.status).to.equal('complete');
       expect(warn.called).to.be.true;
       expect(warn.args.some(a => String(a[0]).includes('Failed to fetch agentic traffic for mapping'))).to.be.true;
+    });
+  });
+
+  describe('Shared utils loadLatestAgenticSheet', () => {
+    it('returns latest week and calls downloadExistingCdnSheet with correct params', async () => {
+      const called = { weekId: null, outputLocation: null };
+      const shared = await esmock('../../src/prerender/utils/shared.js', {
+        '../../src/cdn-logs-report/utils/report-utils.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') }],
+          }),
+        },
+        '../../src/llm-error-pages/utils.js': {
+          downloadExistingCdnSheet: async (weekId, outputLocation) => {
+            called.weekId = weekId;
+            called.outputLocation = outputLocation;
+            return [{ url: '/x', number_of_hits: 1 }];
+          },
+        },
+        '../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: async () => ({}),
+          readFromSharePoint: async () => ({}),
+        },
+        '../../src/utils/cdn-utils.js': {
+          resolveConsolidatedBucketName: () => 'bucket',
+          extractCustomerDomain: () => 'acme_com',
+        },
+      });
+
+      const site = {
+        getBaseURL: () => 'https://acme.com',
+        getConfig: () => ({ getLlmoDataFolder: () => 'acme' }),
+      };
+      const ctx = { log: { info: () => {} } };
+      const result = await shared.loadLatestAgenticSheet(site, ctx);
+      expect(result.weekId).to.equal('w45-2025');
+      expect(called.weekId).to.equal('w45-2025');
+      expect(called.outputLocation).to.equal('acme/agentic-traffic');
+      expect(result.rows).to.have.length(1);
+      expect(result.baseUrl).to.equal('https://acme.com');
+    });
+  });
+
+  describe('Shared utils coverage', () => {
+    it('buildSheetHitsMap covers default path and numeric coercion', async () => {
+      const shared = await esmock('../../src/prerender/utils/shared.js', {});
+      const rows = [{}, { url: '', number_of_hits: undefined }, { url: '/a', number_of_hits: '3' }];
+      const map = shared.buildSheetHitsMap(rows);
+      expect(map.get('/')).to.equal(0); // two defaulted entries sum to 0
+      expect(map.get('/a')).to.equal(3);
+    });
+
+    it('loadLatestAgenticSheet covers baseUrl fallback when getBaseURL is missing', async () => {
+      const shared = await esmock('../../src/prerender/utils/shared.js', {
+        '../../src/cdn-logs-report/utils/report-utils.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') }],
+          }),
+        },
+        '../../src/llm-error-pages/utils.js': {
+          downloadExistingCdnSheet: async () => [{ url: '/x', number_of_hits: 1 }],
+        },
+        '../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: async () => ({}),
+          readFromSharePoint: async () => ({}),
+        },
+        '../../src/utils/cdn-utils.js': {
+          resolveConsolidatedBucketName: () => 'bucket',
+          extractCustomerDomain: () => 'acme_com',
+        },
+      });
+      const site = {
+        // getBaseURL intentionally omitted to trigger fallback to ''
+        getConfig: () => ({ getLlmoDataFolder: () => 'acme' }),
+      };
+      const ctx = { log: { info: () => {} } };
+      const result = await shared.loadLatestAgenticSheet(site, ctx);
+      expect(result.baseUrl).to.equal('');
     });
   });
   describe('Shared utils coverage', () => {
