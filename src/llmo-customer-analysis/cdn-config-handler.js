@@ -174,6 +174,7 @@ export async function handleCdnBucketConfigChanges(context, data) {
   // enable cdn-logs-analysis audit
   const configuration = await Configuration.findLatest();
   configuration.enableHandlerForSite('cdn-logs-analysis', site);
+  configuration.enableHandlerForSite('page-citability', site);
   await configuration.save();
 
   // Run analysis and reporting for CS fastly customers
