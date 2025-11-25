@@ -56,7 +56,7 @@ export async function sendToMystiqueForGeneration(context) {
     topPagesPayload = topPages.map((topPage) => ({
       url: topPage.getUrl(),
       traffic: topPage.getTraffic(),
-      topKeyword: topPage.getTopKeyword(),
+      top_keyword: topPage.getTopKeyword(),
     }));
   } catch (error) {
     log.error(

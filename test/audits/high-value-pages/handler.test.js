@@ -165,7 +165,7 @@ describe('High value pages audit', () => {
       expect(messageArg.data.top_pages[0]).to.deep.equal({
         url: 'https://example.com/page1',
         traffic: 5000,
-        topKeyword: 'keyword1',
+        top_keyword: 'keyword1',
       });
     });
 
@@ -221,7 +221,7 @@ describe('High value pages audit', () => {
       expect(messageArg.data.top_pages[0]).to.deep.equal({
         url: 'https://example.com/test',
         traffic: 9999,
-        topKeyword: 'test-keyword',
+        top_keyword: 'test-keyword',
       });
     });
   });
