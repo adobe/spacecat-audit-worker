@@ -157,7 +157,7 @@ export const handleOutdatedSuggestions = async ({
     });
 
   // prevents JSON.stringify overflow
-  log.debug(`Outdated suggestions count: ${existingOutdatedSuggestions.length}`);
+  log.info(`[SuggestionSync] Final count of suggestions to mark as ${statusToSetForOutdated}: ${existingOutdatedSuggestions.length}`);
   if (existingOutdatedSuggestions.length > 0 && existingOutdatedSuggestions.length <= 10) {
     log.debug(`Outdated suggestions sample: ${JSON.stringify(existingOutdatedSuggestions, null, 2)}`);
   } else if (existingOutdatedSuggestions.length > 10) {
@@ -289,7 +289,7 @@ export async function syncSuggestions({
   // Add new suggestions if any
   if (newSuggestions.length > 0) {
     const siteId = opportunity.getSiteId?.() || 'unknown';
-    log.debug(`Adding ${newSuggestions.length} new suggestions for siteId ${siteId}`);
+    log.info(`Adding ${newSuggestions.length} new suggestions for siteId ${siteId}`);
 
     const suggestions = await opportunity.addSuggestions(newSuggestions);
     log.debug(`New suggestions = ${suggestions.length}: ${safeStringify(suggestions)}`);
