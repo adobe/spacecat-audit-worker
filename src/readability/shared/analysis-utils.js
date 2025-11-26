@@ -11,7 +11,7 @@
  */
 
 import rs from 'text-readability';
-import { JSDOM } from 'jsdom';
+import { load as cheerioLoad } from 'cheerio';
 import { franc } from 'franc-min';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../../utils/s3-utils.js';
 import {
@@ -135,10 +135,10 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
   const readabilityIssues = [];
 
   try {
-    const doc = new JSDOM(rawBody).window.document;
+    const $ = cheerioLoad(rawBody);
 
     // Get all paragraph, div, and list item elements (same as preflight)
-    const textElements = Array.from(doc.querySelectorAll('p, div, li'));
+    const textElements = $('p, div, li').toArray();
 
     const detectedLanguages = new Set();
 
@@ -156,19 +156,21 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
       .map((element) => ({ element }))
       .filter(({ element }) => {
         // Check if element has child elements (avoid duplicate analysis)
-        const hasBlockChildren = element.children.length > 0
-          && !Array.from(element.children).every((child) => {
+        const $el = $(element);
+        const children = $el.children().toArray();
+        const hasBlockChildren = children.length > 0
+          && !children.every((child) => {
             const inlineTags = [
               'strong', 'b', 'em', 'i', 'span', 'a', 'mark',
               'small', 'sub', 'sup', 'u', 'code', 'br',
             ];
-            return inlineTags.includes(child.tagName.toLowerCase());
+            return inlineTags.includes($(child).prop('tagName').toLowerCase());
           });
 
         return !hasBlockChildren;
       })
       .filter(({ element }) => {
-        const textContent = element.textContent?.trim();
+        const textContent = $(element).text()?.trim();
         return textContent && textContent.length >= MIN_TEXT_LENGTH && /\s/.test(textContent);
       });
 
@@ -176,17 +178,17 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
     const analysisPromises = [];
 
     elementsToProcess.forEach(({ element }) => {
-      const textContent = element.textContent?.trim();
+      const $el = $(element);
+      const textContent = $el.text()?.trim();
       const selector = getElementSelector(element);
 
       // Handle elements with <br> tags (multiple paragraphs)
-      if (element.innerHTML.includes('<br')) {
-        const paragraphs = element.innerHTML
+      if ($el.html().includes('<br')) {
+        const paragraphs = $el.html()
           .split(/<br\s*\/?>/gi)
           .map((p) => {
-            const tempDiv = doc.createElement('div');
-            tempDiv.innerHTML = p;
-            return tempDiv.textContent;
+            const tempDiv = cheerioLoad(`<div>${p}</div>`)('div');
+            return tempDiv.text();
           })
           .map((p) => p.trim())
           .filter((p) => p.length >= MIN_TEXT_LENGTH && /\s/.test(p));
