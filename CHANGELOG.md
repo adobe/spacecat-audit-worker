@@ -1,3 +1,10 @@
+## [1.255.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.12...v1.255.13) (2025-11-26)
+
+
+### Bug Fixes
+
+* add helix webpack to dev dependencies ([#1671](https://github.com/adobe/spacecat-audit-worker/issues/1671)) ([eaaf118](https://github.com/adobe/spacecat-audit-worker/commit/eaaf1186f6dffacfe4dde703136e41f30716b2e8))
+
 ## [1.255.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.11...v1.255.12) (2025-11-26)
 
 
