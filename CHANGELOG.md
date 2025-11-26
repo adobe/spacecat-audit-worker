@@ -1,3 +1,17 @@
+## [1.255.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.8...v1.255.9) (2025-11-26)
+
+
+### Bug Fixes
+
+* audit worker deploy ([#1669](https://github.com/adobe/spacecat-audit-worker/issues/1669)) ([60d0075](https://github.com/adobe/spacecat-audit-worker/commit/60d007541a068883eb32fe8b8f23b5513d5a8cde))
+
+## [1.255.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.7...v1.255.8) (2025-11-26)
+
+
+### Bug Fixes
+
+* avoid triggering llmo-customer-analysis if llmo config was updat… ([#1634](https://github.com/adobe/spacecat-audit-worker/issues/1634)) ([52d3130](https://github.com/adobe/spacecat-audit-worker/commit/52d313084faee9ac81f7cffb52aff5ecf782af5e))
+
 ## [1.255.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.6...v1.255.7) (2025-11-26)
 
 
