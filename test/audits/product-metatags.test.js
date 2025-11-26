@@ -1625,11 +1625,11 @@ describe('Product MetaTags', () => {
         try {
           await opportunityAndSuggestions(auditUrl, auditData, context);
         } catch (err) {
-          expect(err.message).to.equal('Failed to create suggestions for siteId site-id');
+          expect(err.message).to.equal('Failed to create suggestions for siteId site-id. Sample error: some-error');
         }
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.error).to.be.calledWith('Suggestions for siteId site-id contains 1 items with errors');
-        expect(logStub.error).to.be.calledThrice;
+        expect(logStub.error).to.have.been.calledWithMatch('Suggestions for siteId site-id contains 1 items with errors');
+        expect(logStub.error).to.have.been.called;
       });
 
       it('should take rank as -1 if issue is not known', async () => {

@@ -13,9 +13,9 @@
 /* c8 ignore start */
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-import { JSDOM } from 'jsdom';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
+import { load as cheerioLoad } from 'cheerio';
 
 const DEFAULT_MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD = 500;
 
@@ -275,15 +275,14 @@ async function getExperimentMetaDataFromExperimentPage(url, id) {
       throw new Error(`Failed to fetch URL: ${url}, status: ${response.status}`);
     }
     const html = await response.text();
-    const dom = new JSDOM(html);
-    const doc = dom.window.document;
+    const $ = cheerioLoad(html);
 
-    const experimentId = getMetadata(EXPERIMENT_PLUGIN_OPTIONS.experimentsMetaTag, doc);
+    const experimentId = getMetadata(EXPERIMENT_PLUGIN_OPTIONS.experimentsMetaTag, $);
     if (experimentId !== id) {
       return data;
     }
-    const variants = getMetadata('instant-experiment', doc)
-      || getMetadata(`${EXPERIMENT_PLUGIN_OPTIONS.experimentsMetaTag}-variants`, doc);
+    const variants = getMetadata('instant-experiment', $)
+      || getMetadata(`${EXPERIMENT_PLUGIN_OPTIONS.experimentsMetaTag}-variants`, $);
 
     const experimentConfig = variants
       ? await getConfigForInstantExperiment(
@@ -291,13 +290,13 @@ async function getExperimentMetaDataFromExperimentPage(url, id) {
         url,
         variants,
         EXPERIMENT_PLUGIN_OPTIONS,
-        doc,
-      ) : await getConfigForFullExperiment(experimentId, url, EXPERIMENT_PLUGIN_OPTIONS, doc);
-    const experimentStartDate = getMetadata('experiment-start-date', doc) || '';
-    const experimentEndDate = getMetadata('experiment-end-date', doc) || '';
-    const conversionEventName = getMetadata('experiment-conversion-event-name', doc) || '';
-    const conversionEventValue = getMetadata('experiment-conversion-event-value', doc) || '';
-    const experimentType = getMetadata('experiment-type', doc) || '';
+        $,
+      ) : await getConfigForFullExperiment(experimentId, url, EXPERIMENT_PLUGIN_OPTIONS, $);
+    const experimentStartDate = getMetadata('experiment-start-date', $) || '';
+    const experimentEndDate = getMetadata('experiment-end-date', $) || '';
+    const conversionEventName = getMetadata('experiment-conversion-event-name', $) || '';
+    const conversionEventValue = getMetadata('experiment-conversion-event-value', $) || '';
+    const experimentType = getMetadata('experiment-type', $) || '';
     const updatedVariants = [];
     for (const variant of Object.keys(experimentConfig.variants)) {
       const variantConfig = experimentConfig.variants[variant];

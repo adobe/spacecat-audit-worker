@@ -10,10 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { JSDOM } from 'jsdom';
 import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
+import { load as cheerioLoad } from 'cheerio';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -81,8 +81,9 @@ function getHeadingLevel(tagName) {
  * @param {Element} element - The DOM element
  * @returns {string} - The trimmed text content, or empty string if null/undefined
  */
-function getTextContent(element) {
-  return (element.textContent || '').trim();
+function getTextContent(element, $) {
+  if (!element || !$) return '';
+  return $(element).text().trim();
 }
 
 function getScrapeJsonPath(url, siteId) {
@@ -176,12 +177,12 @@ export async function validatePageHeadingFromScrapeJson(
   seoChecks,
 ) {
   try {
-    let document = null;
+    let $;
     if (!scrapeJsonObject) {
       log.error(`Scrape JSON object not found for ${url}, skipping headings audit`);
       return null;
     } else {
-      document = new JSDOM(scrapeJsonObject.scrapeResult.rawBody).window.document;
+      $ = cheerioLoad(scrapeJsonObject.scrapeResult.rawBody);
     }
 
     const pageTags = {
@@ -193,11 +194,11 @@ export async function validatePageHeadingFromScrapeJson(
     };
     seoChecks.performChecks(url, pageTags);
 
-    const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+    const headings = $('h1, h2, h3, h4, h5, h6').toArray();
 
     const checks = [];
 
-    const h1Elements = headings.filter((h) => h.tagName === 'H1');
+    const h1Elements = headings.filter((h) => $(h).prop('tagName') === 'H1');
     const h1Selectors = h1Elements.map((h) => getHeadingSelector(h)).filter(Boolean);
 
     if (h1Elements.length === 0) {
@@ -211,7 +212,7 @@ export async function validatePageHeadingFromScrapeJson(
         suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
         transformRules: {
           action: 'insertBefore',
-          selector: document.querySelector('body > main') ? 'body > main > :first-child' : 'body > :first-child',
+          selector: $('body > main').length > 0 ? 'body > main > :first-child' : 'body > :first-child',
           tag: 'h1',
           scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
         },
@@ -229,10 +230,10 @@ export async function validatePageHeadingFromScrapeJson(
         count: h1Elements.length,
         selectors: h1Selectors,
       });
-    } else if (getTextContent(h1Elements[0]).length === 0
-      || getTextContent(h1Elements[0]).length > H1_LENGTH_CHARS) {
+    } else if (getTextContent(h1Elements[0], $).length === 0
+      || getTextContent(h1Elements[0], $).length > H1_LENGTH_CHARS) {
       const h1Selector = getHeadingSelector(h1Elements[0]);
-      const h1Length = h1Elements[0].textContent.length;
+      const h1Length = $(h1Elements[0]).text().length;
       const lengthIssue = h1Length === 0 ? 'empty' : 'too long';
       log.info(`H1 length ${lengthIssue} detected at ${url}: ${h1Length} characters using selector: ${h1Selector}`);
       checks.push({
@@ -245,7 +246,7 @@ export async function validatePageHeadingFromScrapeJson(
         transformRules: {
           action: 'replace',
           selector: h1Selector,
-          currValue: h1Elements[0].textContent,
+          currValue: $(h1Elements[0]).text(),
           scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
         },
         pageTags,
@@ -254,17 +255,18 @@ export async function validatePageHeadingFromScrapeJson(
     }
 
     const headingChecks = headings.map(async (heading) => {
-      if (heading.tagName !== 'H1') {
-        const text = getTextContent(heading);
+      const tagName = $(heading).prop('tagName');
+      if (tagName !== 'H1') {
+        const text = getTextContent(heading, $);
         if (text.length === 0) {
-          log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
+          log.info(`Empty heading detected (${tagName}) at ${url}`);
           const headingSelector = getHeadingSelector(heading);
           return {
             check: HEADINGS_CHECKS.HEADING_EMPTY.check,
             checkTitle: HEADINGS_CHECKS.HEADING_EMPTY.title,
-            description: HEADINGS_CHECKS.HEADING_EMPTY.description.replace('{tagName}', heading.tagName),
+            description: HEADINGS_CHECKS.HEADING_EMPTY.description.replace('{tagName}', tagName),
             success: false,
-            explanation: `Found empty text for ${heading.tagName}: ${HEADINGS_CHECKS.HEADING_EMPTY.explanation}`,
+            explanation: `Found empty text for ${tagName}: ${HEADINGS_CHECKS.HEADING_EMPTY.explanation}`,
             suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
             transformRules: {
               action: 'replace',
@@ -272,7 +274,7 @@ export async function validatePageHeadingFromScrapeJson(
               currValue: text,
               scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
             },
-            tagName: heading.tagName,
+            tagName,
             pageTags,
             selectors: headingSelector ? [headingSelector] : [],
           };

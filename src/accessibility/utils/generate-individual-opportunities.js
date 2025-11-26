@@ -518,8 +518,12 @@ export async function createIndividualOpportunitySuggestions(
   aggregatedData,
   context,
   log,
+  scrapedUrls,
 ) {
   log.info(`[A11yIndividual] ${aggregatedData.data.length} issues aggregated for opportunity ${opportunity.getId()}`);
+
+  // Convert scraped URLs to a Set for efficient lookup
+  const scrapedUrlsSet = new Set(scrapedUrls);
 
   try {
     await syncSuggestions({
@@ -534,15 +538,13 @@ export async function createIndividualOpportunitySuggestions(
         // Rank by total occurrences across all issues for this URL
         rank: urlData.issues.reduce((total, issue) => total + issue.occurrences, 0),
         data: {
-          url: urlData.url,
-          type: urlData.type,
-          issues: urlData.issues, // Array of formatted accessibility issues
-          ...(urlData.source && { source: urlData.source }),
+          ...urlData,
           jiraLink: '',
         },
       }),
       mergeDataFunction: keepSameDataFunction,
       statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
+      scrapedUrlsSet,
     });
 
     return { success: true };
@@ -759,6 +761,8 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
   } = context;
 
   log.info(`[A11yIndividual] Creating accessibility opportunities for ${site.getBaseURL()}`);
+  const scrapedUrls = Object.keys(accessibilityData).filter((key) => key !== 'overall');
+  log.info(`[A11yIndividual] ${scrapedUrls.length} URLs scraped in audit.`);
 
   // Step 1: Aggregate accessibility issues by URL
   const aggregatedData = aggregateA11yIssuesByOppType(accessibilityData);
@@ -831,6 +835,7 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
             typeSpecificData,
             context,
             log,
+            scrapedUrls,
           );
 
           // Step 4: Send messages to Mystique for remediation

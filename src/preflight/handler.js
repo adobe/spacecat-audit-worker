@@ -12,7 +12,7 @@
 
 import { isValidUrl, stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
-import { JSDOM } from 'jsdom';
+import { load as cheerioLoad } from 'cheerio';
 import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { isAuditEnabledForSite, noopPersister, noopUrlResolver } from '../common/index.js';
@@ -24,7 +24,7 @@ import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.j
 import canonical from './canonical.js';
 import metatags from './metatags.js';
 import links from './links.js';
-import readability from '../readability/handler.js';
+import readability from '../readability/preflight/handler.js';
 import accessibility from './accessibility.js';
 import headings from './headings.js';
 
@@ -218,13 +218,13 @@ export const preflightAudit = async (context) => {
       scrapedObjects.forEach(({ data }) => {
         const { finalUrl, scrapeResult: { rawBody } } = data;
         const pageResult = audits.get(stripTrailingSlash(finalUrl));
-        const doc = new JSDOM(rawBody).window.document;
+        const $ = cheerioLoad(rawBody);
 
         const auditsByName = Object.fromEntries(
           pageResult.audits.map((auditEntry) => [auditEntry.name, auditEntry]),
         );
 
-        const textContent = doc.body.textContent.replace(/\n/g, '').trim();
+        const textContent = $('body').text().replace(/\n/g, '').trim();
 
         if (bodySizeEnabled) {
           if (textContent.length > 0 && textContent.length <= 100) {
@@ -233,15 +233,15 @@ export const preflightAudit = async (context) => {
               issue: 'Body content length is below 100 characters',
               seoImpact: 'Moderate',
               seoRecommendation: 'Add more meaningful content to the page',
-              elements: toElementTargets(getDomElementSelector(doc.body)),
+              elements: toElementTargets(getDomElementSelector($('body').get(0))),
             });
           }
         }
 
         if (loremIpsumEnabled && /lorem ipsum/i.test(textContent)) {
-          const loremElements = Array.from(
-            doc.querySelectorAll('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6'),
-          ).filter((node) => /lorem ipsum/i.test(node.textContent || ''));
+          const loremElements = $('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6')
+            .toArray()
+            .filter((el) => /lorem ipsum/i.test($(el).text() || ''));
           const loremSelectors = loremElements.map(
             (el) => getDomElementSelector(el),
           ).filter(Boolean);
@@ -251,24 +251,32 @@ export const preflightAudit = async (context) => {
             seoImpact: 'High',
             seoRecommendation: 'Replace placeholder text with meaningful content',
             elements: toElementTargets(
-              loremSelectors.length > 0 ? loremSelectors : getDomElementSelector(doc.body),
+              loremSelectors.length > 0 ? loremSelectors : getDomElementSelector($('body').get(0)),
               10,
             ),
           });
         }
 
         if (h1CountEnabled) {
-          const headingCount = doc.querySelectorAll('h1').length;
+          const headingCount = $('h1').length;
           if (headingCount !== 1) {
-            const h1Elements = Array.from(doc.querySelectorAll('h1'));
-            const h1Selectors = h1Elements.map((el) => getDomElementSelector(el)).filter(Boolean);
-            const fallbackElement = doc.querySelector('body > main') || doc.body;
-            const fallbackSelector = getDomElementSelector(fallbackElement) || 'body';
+            const h1Elements = $('h1').toArray();
+
+            const h1Selectors = h1Elements
+              .map((el) => getDomElementSelector(el))
+              .filter(Boolean);
+            const fallbackElement = $('body > main').get(0) || $('body').get(0);
+            const fallbackSelector = (fallbackElement && getDomElementSelector(fallbackElement)) || 'body';
+
             auditsByName[AUDIT_H1_COUNT].opportunities.push({
               check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
-              issue: headingCount > 1 ? `Found ${headingCount} H1 tags` : 'No H1 tag found on the page',
+              issue:
+                headingCount > 1
+                  ? `Found ${headingCount} H1 tags`
+                  : 'No H1 tag found on the page',
               seoImpact: 'High',
-              seoRecommendation: 'Use exactly one H1 tag per page for better SEO structure',
+              seoRecommendation:
+                'Use exactly one H1 tag per page for better SEO structure',
               elements: toElementTargets(
                 headingCount > 0 ? h1Selectors : fallbackSelector,
               ),

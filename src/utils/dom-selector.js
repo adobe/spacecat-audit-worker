@@ -11,119 +11,82 @@
  */
 
 /**
- * Minimal CSS identifier escape helper.
- * Escapes characters that could break a CSS selector (#, ., :, spaces, etc.).
- * @param {string} value
- * @returns {string}
- */
-function escapeCssIdentifier(value) {
-  if (!value) {
-    return '';
-  }
-  return `${value}`.replace(/([ !"#$%&'()*+,./:;<=>?@[\\\]^`{|}~])/g, '\\$1');
-}
-
-/**
- * Build a selector segment for a DOM element (tag with optional classes/nth-of-type).
- * @param {Element} element
- * @returns {string}
- */
-function buildSelectorSegment(element) {
-  const tag = element.tagName.toLowerCase();
-
-  if (element.id) {
-    return `${tag}#${escapeCssIdentifier(element.id)}`;
-  }
-
-  if (typeof element.className === 'string' && element.className.trim()) {
-    const classSelector = element.className
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((cls) => escapeCssIdentifier(cls))
-      .join('.');
-    if (classSelector) {
-      return `${tag}.${classSelector}`;
-    }
-  }
-
-  return tag;
-}
-
-/**
- * Returns children of `parent` that share the same tagName.
- * @param {Element} parent
- * @param {string} tagName
- * @returns {Element[]}
- */
-function getSameTagSiblings(parent, tagName) {
-  return Array.from(parent.children).filter((child) => child.tagName === tagName);
-}
-
-/**
  * Generates a unique-ish CSS selector for any DOM element.
  * Strategy mirrors the Heading audit logic and limits depth for readability.
  * @param {Element} element
  * @returns {string|null}
  */
 export function getDomElementSelector(element) {
-  if (!element || !element.tagName) {
+  // Works with cheerio elements only
+  if (!element || !element.name) {
     return null;
   }
 
-  const tagName = element.tagName.toLowerCase();
-  if (!tagName) {
-    return null;
+  const { name, attribs, parent } = element;
+  const tag = name.toLowerCase();
+  let selectors = [tag];
+
+  // 1. Check for ID (most specific - return immediately)
+  const id = attribs?.id;
+  if (id) {
+    return `${tag}#${id}`;
   }
 
-  const parent = element.parentElement;
-  const selectors = [buildSelectorSegment(element)];
+  // 2. Add classes if available
+  const className = attribs?.class;
+  if (className && typeof className === 'string') {
+    const classes = className.trim().split(/\s+/).filter(Boolean);
+    if (classes.length > 0) {
+      const classSelector = classes.slice(0, 2).join('.');
+      selectors = [`${tag}.${classSelector}`];
+    }
+  }
 
-  if (parent) {
-    const siblings = getSameTagSiblings(parent, element.tagName);
-    if (siblings.length > 1) {
-      const index = siblings.indexOf(element) + 1;
+  // 3. Add nth-of-type if multiple siblings of same tag exist
+  if (parent && parent.children) {
+    const siblingsOfSameTag = parent.children.filter(
+      (child) => child.type === 'tag' && child.name === name,
+    );
+
+    if (siblingsOfSameTag.length > 1) {
+      const index = siblingsOfSameTag.indexOf(element) + 1;
       selectors.push(`:nth-of-type(${index})`);
     }
   }
 
   const selector = selectors.join('');
+
+  // 4. Build path with parent selectors for more specificity (max 3 levels)
   const pathParts = [selector];
   let current = parent;
   let levels = 0;
 
-  while (
-    current
-    && current.tagName
-    && current.tagName.toLowerCase() !== 'html'
-    && levels < 3
-  ) {
-    const segment = buildSelectorSegment(current);
-    const parentParent = current.parentElement;
+  while (current && current.name && current.name.toLowerCase() !== 'html' && levels < 3) {
+    let parentSelector = current.name.toLowerCase();
 
-    if (current.id) {
-      pathParts.unshift(segment);
+    // If parent has ID, use it and stop (ID is unique enough)
+    const parentId = current.attribs?.id;
+    if (parentId) {
+      pathParts.unshift(`#${parentId}`);
       break;
     }
 
-    if (parentParent) {
-      const siblings = getSameTagSiblings(parentParent, current.tagName);
-
-      if (siblings.length > 1) {
-        const index = siblings.indexOf(current) + 1;
-        pathParts.unshift(`${segment}:nth-of-type(${index})`);
-      } else {
-        pathParts.unshift(segment);
+    // Add parent classes (limit to first 2 for readability)
+    const parentClassName = current.attribs?.class;
+    if (parentClassName && typeof parentClassName === 'string') {
+      const classes = parentClassName.trim().split(/\s+/).filter(Boolean);
+      if (classes.length > 0) {
+        const classSelector = classes.slice(0, 2).join('.');
+        parentSelector = `${parentSelector}.${classSelector}`;
       }
-    } else {
-      pathParts.unshift(segment);
     }
 
-    current = parentParent;
+    pathParts.unshift(parentSelector);
+    current = current.parent;
     levels += 1;
   }
 
+  // 5. Join with '>' (direct child combinator)
   return pathParts.join(' > ');
 }
 

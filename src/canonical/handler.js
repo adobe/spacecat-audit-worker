@@ -10,11 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-import { JSDOM } from 'jsdom';
-import * as cheerio from 'cheerio';
 import { composeBaseURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
+import { load as cheerioLoad } from 'cheerio';
+
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { isPreviewPage } from '../utils/url-utils.js';
@@ -87,19 +87,14 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
     const finalUrl = response.url;
     const html = await response.text();
 
-    // Use Cheerio to check if canonical is in <head> (more reliable than JSDOM for large HTML).
+    // Use Cheerio for all parsing (more reliable than JSDOM for large HTML).
     // This is the same approach used in the MetaTags audit (ssr-meta-validator.js).
-    const $ = cheerio.load(html);
+    const $ = cheerioLoad(html);
     const cheerioCanonicalInHead = $('head link[rel="canonical"]').length > 0;
-    const cheerioCanonicalCount = $('link[rel="canonical"]').length;
+    const canonicalLinks = $('link[rel="canonical"]');
 
-    log.info(`Cheerio found ${cheerioCanonicalCount} canonical link(s), ${cheerioCanonicalInHead ? 'IN <head>' : 'NOT in <head>'}`);
+    log.info(`Cheerio found ${canonicalLinks.length} canonical link(s), ${cheerioCanonicalInHead ? 'IN <head>' : 'NOT in <head>'}`);
 
-    // Still use JSDOM for the rest of the parsing and checks
-    const dom = new JSDOM(html);
-    const { document } = dom.window;
-
-    const canonicalLinks = document.querySelectorAll('link[rel="canonical"]');
     const checks = [];
     let canonicalUrl = null;
 
@@ -129,8 +124,8 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
         });
         log.info(`Multiple canonical tags found for URL: ${url}`);
       } else {
-        const canonicalLink = canonicalLinks[0];
-        const href = canonicalLink.getAttribute('href');
+        const canonicalLink = canonicalLinks.first();
+        const href = canonicalLink.attr('href');
         if (!href) {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
@@ -152,11 +147,26 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
               check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
               success: true,
             });
+
             const normalize = (u) => (typeof u === 'string' && u.endsWith('/') ? u.slice(0, -1) : u);
+
+            // strip query params and hash
+            const stripQueryParams = (u) => {
+              try {
+                const urlObj = new URL(u);
+                return `${urlObj.origin}${urlObj.pathname}`;
+                /* c8 ignore next 3 */
+              } catch {
+                return u;
+              }
+            };
+
             const canonicalPath = normalize(new URL(canonicalUrl).pathname).replace(/\/([^/]+)\.[a-zA-Z0-9]+$/, '/$1');
             const finalPath = normalize(new URL(finalUrl).pathname).replace(/\/([^/]+)\.[a-zA-Z0-9]+$/, '/$1');
-            const normalizedCanonical = normalize(canonicalUrl);
-            const normalizedFinal = normalize(finalUrl);
+            const normalizedCanonical = normalize(stripQueryParams(canonicalUrl));
+            const normalizedFinal = normalize(stripQueryParams(finalUrl));
+
+            // Check if canonical points to same page (query params are ignored)
             if ((isPreview && canonicalPath === finalPath)
                 || normalizedCanonical === normalizedFinal) {
               checks.push({
@@ -183,8 +193,7 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
         }
 
         // Check if canonical link is in the <head> section.
-        // Use Cheerio result instead of JSDOM's closest('head') because JSDOM can fail
-        // to parse large HTML correctly and may incorrectly place tags in <body>
+        // Using Cheerio result which is more reliable for large HTML parsing
         if (!cheerioCanonicalInHead) {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
@@ -406,18 +415,16 @@ export async function validateCanonicalRecursively(
 }
 
 /**
- * Generates a suggestion for fixing a canonical issue based on the check type and URL.
+ * Generates a suggestion for fixing a canonical issue based on the check type.
  *
  * @param {string} checkType - The type of canonical check that failed.
- * @param {string} url - The URL that has the canonical issue.
- * @param {string} baseURL - The base URL of the site.
  * @returns {string} A suggestion for fixing the canonical issue.
  */
-export function generateCanonicalSuggestion(checkType, url, baseURL) {
+export function generateCanonicalSuggestion(checkType) {
   const checkObj = Object.values(CANONICAL_CHECKS).find((check) => check.check === checkType);
 
   if (checkObj && checkObj.suggestion) {
-    return checkObj.suggestion(url, baseURL);
+    return checkObj.suggestion;
   }
 
   // fallback suggestion
@@ -637,7 +644,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       explanation: checkData.explanation,
       affectedUrls: checkData.urls.map((url) => ({
         url,
-        suggestion: generateCanonicalSuggestion(checkType, url, baseURL),
+        suggestion: generateCanonicalSuggestion(checkType),
       })),
     }));
 

@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { isNonEmptyArray, stripTrailingSlash } from '@adobe/spacecat-shared-utils';
-import { JSDOM } from 'jsdom';
+import { load as cheerioLoad } from 'cheerio';
 import { saveIntermediateResults } from './utils.js';
 import { runLinksChecks } from './links-checks.js';
 import { generateSuggestionData } from '../internal-links/suggestions-generator.js';
@@ -202,29 +202,38 @@ export default async function links(context, auditContext) {
     endTime: linksEndTimestamp,
   });
 
-  // Check for insecure links in each scraped page
   scrapedObjects.forEach(({ data }) => {
     const { finalUrl, scrapeResult: { rawBody } } = data;
-    const doc = new JSDOM(rawBody).window.document;
+    const $ = cheerioLoad(rawBody);
     const auditUrl = stripTrailingSlash(finalUrl);
     const audit = linksAuditMap.get(auditUrl);
-    const insecureLinks = Array.from(doc.querySelectorAll('a'))
-      .filter((anchor) => anchor.href.startsWith('http://'))
-      .map((anchor) => {
+    const insecureLinks = $('a').map((i, anchor) => {
+      const href = $(anchor).attr('href');
+      if (href && href.startsWith('http://')) {
+        // Normalize URL using URL class to match jsdom behavior
+        let normalizedUrl;
+        try {
+          normalizedUrl = new URL(href).href;
+        } catch {
+          normalizedUrl = href;
+        }
         const selector = getDomElementSelector(anchor);
         return {
-          url: anchor.href,
+          url: normalizedUrl,
           issue: 'Link using HTTP instead of HTTPS',
           seoImpact: 'High',
           seoRecommendation: 'Update all links to use HTTPS protocol',
           ...(selector ? { elements: toElementTargets(selector) } : {}),
         };
-      });
+      }
+      return null;
+    }).get().filter((link) => link !== null);
 
     if (insecureLinks.length > 0) {
       audit.opportunities.push({ check: 'bad-links', issue: insecureLinks });
     }
   });
+  // Check for insecure links in each scraped page
 
   await saveIntermediateResults(context, auditsResult, 'links audit');
 }
