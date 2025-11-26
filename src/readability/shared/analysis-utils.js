@@ -137,7 +137,7 @@ async function analyzeTextReadability(
  * @param {Cheerio} $ - The Cheerio object to search for text elements.
  * @returns {Element[]} Array of meaningful text elements for readability analysis and enhancement.
  */
-const getMeaningfulElements = ($) => {
+const getMeaningfulElementsForReadability = ($) => {
   $.root.find('header, footer').remove();
   return $.root.find('p, blockquote, li').toArray();
 };
@@ -152,7 +152,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
     const $ = cheerioLoad(rawBody);
 
     // Get all paragraph, div, and list item element selectors (same as preflight)
-    const textElements = getMeaningfulElements($);
+    const textElements = getMeaningfulElementsForReadability($);
 
     const detectedLanguages = new Set();
 
