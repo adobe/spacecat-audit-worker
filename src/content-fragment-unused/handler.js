@@ -137,7 +137,7 @@ export async function createContentFragmentUnusedSuggestions(auditUrl, auditData
     AUDIT_TYPE,
   );
 
-  const buildKey = (fragment) => `${fragment.path}`;
+  const buildKey = (fragment) => `${fragment.fragmentPath}`;
 
   await syncSuggestions({
     context,
