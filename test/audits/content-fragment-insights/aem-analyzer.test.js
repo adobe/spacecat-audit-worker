@@ -12,9 +12,14 @@
 
 /* eslint-env mocha */
 
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+
+use(sinonChai);
+use(chaiAsPromised);
 
 describe('AemAnalyzer', () => {
   let AemAnalyzer;
@@ -245,25 +250,54 @@ describe('AemAnalyzer', () => {
       expect(mockAemClient.getFragments).to.have.been.calledTwice;
     });
 
-    it('should stop at max pages limit', async () => {
+    it('should continue fetching until cursor is null', async () => {
       const analyzer = new AemAnalyzer(context);
 
-      mockAemClient.getFragments.resolves({
-        items: [
-          {
-            path: '/content/dam/fragment',
-            status: 'new',
-            created: { at: '2024-01-01T00:00:00.000Z' },
-            modified: null,
-            published: null,
-          },
-        ],
-        cursor: 'next-page',
-      });
+      mockAemClient.getFragments
+        .onFirstCall()
+        .resolves({
+          items: [
+            {
+              path: '/content/dam/fragment1',
+              status: 'new',
+              created: { at: '2024-01-01T00:00:00.000Z' },
+              modified: null,
+              published: null,
+            },
+          ],
+          cursor: 'page2',
+        })
+        .onSecondCall()
+        .resolves({
+          items: [
+            {
+              path: '/content/dam/fragment2',
+              status: 'new',
+              created: { at: '2024-01-02T00:00:00.000Z' },
+              modified: null,
+              published: null,
+            },
+          ],
+          cursor: 'page3',
+        })
+        .onThirdCall()
+        .resolves({
+          items: [
+            {
+              path: '/content/dam/fragment3',
+              status: 'new',
+              created: { at: '2024-01-03T00:00:00.000Z' },
+              modified: null,
+              published: null,
+            },
+          ],
+          cursor: null,
+        });
 
       await analyzer.fetchAllFragments();
 
-      expect(mockAemClient.getFragments.callCount).to.equal(AemAnalyzer.MAX_PAGES);
+      expect(mockAemClient.getFragments.callCount).to.equal(3);
+      expect(analyzer.fragments).to.have.lengthOf(3);
     });
 
     it('should skip null fragments from parseFragment', async () => {
@@ -339,6 +373,63 @@ describe('AemAnalyzer', () => {
 
       expect(analyzer.fragments).to.be.an('array').that.is.empty;
     });
+
+    it('should retry on timeout error and succeed', async () => {
+      const analyzer = new AemAnalyzer(context);
+
+      const timeoutError = new Error('Timeout');
+      timeoutError.code = 'ETIMEOUT';
+
+      mockAemClient.getFragments
+        .onFirstCall()
+        .rejects(timeoutError)
+        .onSecondCall()
+        .resolves({
+          items: [
+            {
+              path: '/content/dam/fragment1',
+              status: 'new',
+              created: { at: '2024-01-01T00:00:00.000Z' },
+              modified: null,
+              published: null,
+            },
+          ],
+          cursor: null,
+        });
+
+      await analyzer.fetchAllFragments();
+
+      expect(mockAemClient.getFragments).to.have.been.calledTwice;
+      expect(analyzer.fragments).to.have.lengthOf(1);
+      expect(log.warn).to.have.been.called;
+    });
+
+    it('should return empty result after max retry attempts on timeout', async () => {
+      const analyzer = new AemAnalyzer(context);
+
+      const timeoutError = new Error('Timeout');
+      timeoutError.code = 'ETIMEOUT';
+
+      mockAemClient.getFragments.rejects(timeoutError);
+
+      await analyzer.fetchAllFragments();
+
+      expect(mockAemClient.getFragments.callCount).to.equal(AemAnalyzer.MAX_FETCH_ATTEMPTS);
+      expect(analyzer.fragments).to.be.an('array').that.is.empty;
+      expect(log.warn.callCount).to.equal(AemAnalyzer.MAX_FETCH_ATTEMPTS);
+    });
+
+    it('should throw non-timeout error immediately without retry', async () => {
+      const analyzer = new AemAnalyzer(context);
+
+      const genericError = new Error('Some other error');
+
+      mockAemClient.getFragments.rejects(genericError);
+
+      await expect(analyzer.fetchAllFragments()).to.be.rejectedWith('Some other error');
+
+      expect(mockAemClient.getFragments).to.have.been.calledOnce;
+    });
   });
 
   describe('findUnusedFragments', () => {
@@ -372,7 +463,7 @@ describe('AemAnalyzer', () => {
 
       expect(result.totalFragments).to.equal(1);
       expect(result.totalUnused).to.equal(1);
-      expect(result.unusedFragments).to.have.lengthOf(1);
+      expect(result.data).to.have.lengthOf(1);
     });
 
     it('should return empty unused fragments when none found', async () => {
@@ -389,7 +480,7 @@ describe('AemAnalyzer', () => {
 
       expect(result.totalFragments).to.equal(0);
       expect(result.totalUnused).to.equal(0);
-      expect(result.unusedFragments).to.be.an('array').that.is.empty;
+      expect(result.data).to.be.an('array').that.is.empty;
     });
 
     it('should call fetchAllFragments before analysis', async () => {
@@ -438,8 +529,12 @@ describe('AemAnalyzer', () => {
       expect(AemAnalyzer.DEFAULT_FRAGMENT_ROOT_PATH).to.equal('/content/dam/');
     });
 
-    it('should have correct MAX_PAGES', () => {
-      expect(AemAnalyzer.MAX_PAGES).to.equal(20);
+    it('should have correct MAX_FETCH_ATTEMPTS', () => {
+      expect(AemAnalyzer.MAX_FETCH_ATTEMPTS).to.equal(3);
+    });
+
+    it('should have correct ERROR_CODE_TIMEOUT', () => {
+      expect(AemAnalyzer.ERROR_CODE_TIMEOUT).to.equal('ETIMEOUT');
     });
   });
 });
