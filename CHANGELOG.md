@@ -1,3 +1,10 @@
+# [1.256.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.16...v1.256.0) (2025-11-26)
+
+
+### Features
+
+* update agents classification ([#1662](https://github.com/adobe/spacecat-audit-worker/issues/1662)) ([33e4592](https://github.com/adobe/spacecat-audit-worker/commit/33e4592d31e77a17eef8a2eeae6454c9971a865e))
+
 ## [1.255.16](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.15...v1.255.16) (2025-11-26)
 
 
