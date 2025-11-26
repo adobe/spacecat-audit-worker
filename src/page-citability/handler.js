@@ -23,6 +23,7 @@ import {
   resolveConsolidatedBucketName,
   buildDateFilter,
   buildUserAgentFilter,
+  buildSiteFilters,
 } from '../utils/cdn-utils.js';
 import { joinBaseAndPath } from '../utils/url-utils.js';
 
@@ -64,55 +65,78 @@ function getDateFilter() {
 
 export async function extractUrls(context) {
   const {
-    site, finalUrl, log,
+    site, finalUrl, log, auditContext,
   } = context;
   const baseURL = site.getBaseURL();
   const siteId = site.getId();
 
   log.info(`${LOG_PREFIX} Extracting URLs for ${baseURL}`);
 
-  const s3Config = await getS3Config(site, context);
-  const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+  let urlsToAnalyze;
 
-  const variables = {
-    databaseName: s3Config.databaseName,
-    tableName: s3Config.tableName,
-    dateFilter: getDateFilter(),
-    userAgentFilter: buildUserAgentFilter(),
-  };
+  let skipJoinPath = false;
 
-  const query = await getStaticContent(variables, './src/page-citability/sql/top-urls.sql');
-  const urls = await athenaClient.query(query, s3Config.databaseName, '[Athena] Bot URLs');
+  // If URLs are provided in auditContext, use them directly
+  if (auditContext?.urls) {
+    log.info(`${LOG_PREFIX} Using ${auditContext.urls.length} URLs from auditContext`);
+    urlsToAnalyze = auditContext.urls.map((url) => ({ url }));
+    skipJoinPath = true;
+  } else {
+    const s3Config = await getS3Config(site, context);
+    const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+    const filters = site.getConfig().getLlmoCdnlogsFilter();
 
-  if (urls.length === 0) {
-    log.info(`${LOG_PREFIX} No URLs found for site in Athena ${baseURL} with site id ${siteId}`);
-    return createEmptyResult(baseURL, siteId);
+    const variables = {
+      databaseName: s3Config.databaseName,
+      tableName: s3Config.tableName,
+      dateFilter: getDateFilter(),
+      userAgentFilter: buildUserAgentFilter(),
+      siteFilters: buildSiteFilters(filters, site),
+    };
+
+    const query = await getStaticContent(variables, './src/page-citability/sql/top-urls.sql');
+    const urls = await athenaClient.query(query, s3Config.databaseName, '[Athena] Bot URLs');
+
+    if (urls.length === 0) {
+      log.info(`${LOG_PREFIX} No URLs found for site in Athena ${baseURL} with site id ${siteId}`);
+      return createEmptyResult(baseURL, siteId);
+    }
+
+    // Filter out URLs that already have recent citability scores (within 7 days)
+    const { PageCitability } = context.dataAccess;
+    const existingScores = await PageCitability.allBySiteId(siteId);
+    const sevenDaysAgo = subDays(new Date(), 7);
+
+    const recentUrls = new Set(
+      existingScores
+        .filter((score) => new Date(score.getUpdatedAt()) > sevenDaysAgo)
+        .map((score) => score.getUrl()),
+    );
+
+    urlsToAnalyze = urls.filter(({ url }) => !recentUrls.has(joinBaseAndPath(baseURL, url)));
+
+    if (urlsToAnalyze.length === 0) {
+      log.info(`${LOG_PREFIX} No URLs to analyze for site ${baseURL} with site id ${siteId}`);
+      return createEmptyResult(baseURL, siteId);
+    }
+
+    log.info(`${LOG_PREFIX} Found ${urlsToAnalyze.length} URLs (${existingScores.length - recentUrls.size} stale/new)`);
   }
 
-  // Filter out URLs that already have recent citability scores (within 7 days)
-  const { PageCitability } = context.dataAccess;
-  const existingScores = await PageCitability.allBySiteId(siteId);
-  const sevenDaysAgo = subDays(new Date(), 7);
+  // Apply batch size limit
+  const batchSize = auditContext?.batchSize ?? (skipJoinPath ? urlsToAnalyze.length : 300);
+  const batchedUrls = urlsToAnalyze.slice(0, batchSize);
 
-  const recentUrls = new Set(
-    existingScores
-      .filter((score) => new Date(score.getUpdatedAt()) > sevenDaysAgo)
-      .map((score) => score.getUrl()),
-  );
-
-  const urlsToAnalyze = urls.filter(({ url }) => !recentUrls.has(joinBaseAndPath(baseURL, url)));
-
-  if (urlsToAnalyze.length === 0) {
-    log.info(`${LOG_PREFIX} No URLs to analyze for site ${baseURL} with site id ${siteId}`);
-    return createEmptyResult(baseURL, siteId);
+  if (batchedUrls.length < urlsToAnalyze.length) {
+    log.info(`${LOG_PREFIX} Limiting to ${batchedUrls.length} URLs (batch size: ${batchSize})`);
   }
 
-  log.info(`${LOG_PREFIX} Found ${urlsToAnalyze.length} URLs (${existingScores.length - recentUrls.size} stale/new)`);
-
-  const urlsForScraping = urlsToAnalyze.map(({ url }) => ({ url: joinBaseAndPath(baseURL, url) }));
+  const urlsForScraping = batchedUrls.map(({ url }) => ({
+    url: skipJoinPath ? url : joinBaseAndPath(baseURL, url),
+  }));
 
   return {
-    auditResult: { urlCount: urlsToAnalyze.length },
+    auditResult: { urlCount: batchedUrls.length },
     fullAuditRef: finalUrl,
     urls: urlsForScraping,
     processingType: 'page-citability',
@@ -166,7 +190,6 @@ async function processUrl(url, scrapeResult, context) {
       normalWords: scores.normalWords,
     });
 
-    context.log.info(`${LOG_PREFIX} ${url} -> ${scores.citabilityScore}%`);
     return { url, success: true, ...scores };
     /* c8 ignore next 3 */
   } catch (error) {

@@ -56,6 +56,9 @@ describe('Page Citability Handler', () => {
       getSiteId: sandbox.stub().returns(siteId),
       getId: sandbox.stub().returns(siteId),
       getBaseURL: sandbox.stub().returns(baseURL),
+      getConfig: sandbox.stub().returns({
+        getLlmoCdnlogsFilter: sandbox.stub().returns([]),
+      }),
     };
 
     mockAudit = {
@@ -125,6 +128,66 @@ describe('Page Citability Handler', () => {
       expect(result.processingType).to.equal('page-citability');
       expect(result.siteId).to.equal(siteId);
       expect(result.fullAuditRef).to.equal(baseURL);
+    });
+
+    it('should use URLs from auditContext when provided', async () => {
+      context.auditContext = {
+        urls: ['https://example.com/custom-page1', 'https://example.com/custom-page2']
+      };
+
+      const result = await handler.steps['extract-urls'].handler(context);
+
+      expect(context.athenaClient.query).to.not.have.been.called;
+      expect(result.urls).to.have.lengthOf(2);
+      expect(result.urls[0].url).to.equal('https://example.com/custom-page1');
+      expect(result.urls[1].url).to.equal('https://example.com/custom-page2');
+      expect(result.auditResult.urlCount).to.equal(2);
+    });
+
+    it('should run all URLs when provided in auditContext without batch size limit', async () => {
+      const customUrls = Array.from({ length: 500 }, (_, i) => `https://example.com/page${i}`);
+      context.auditContext = { urls: customUrls };
+
+      const result = await handler.steps['extract-urls'].handler(context);
+
+      expect(context.athenaClient.query).to.not.have.been.called;
+      expect(result.urls).to.have.lengthOf(500);
+      expect(result.auditResult.urlCount).to.equal(500);
+    });
+
+    it('should apply batch size limit with default 300', async () => {
+      const manyUrls = Array.from({ length: 400 }, (_, i) => ({ url: `/page${i}`, total_hits: 100 - i }));
+      context.athenaClient.query.resolves(manyUrls);
+
+      const result = await handler.steps['extract-urls'].handler(context);
+
+      expect(result.urls).to.have.lengthOf(300);
+      expect(result.auditResult.urlCount).to.equal(300);
+    });
+
+    it('should apply custom batch size from auditContext', async () => {
+      const manyUrls = Array.from({ length: 100 }, (_, i) => ({ url: `/page${i}`, total_hits: 100 - i }));
+      context.athenaClient.query.resolves(manyUrls);
+      context.auditContext = { batchSize: 50 };
+
+      const result = await handler.steps['extract-urls'].handler(context);
+
+      expect(result.urls).to.have.lengthOf(50);
+      expect(result.auditResult.urlCount).to.equal(50);
+    });
+
+    it('should respect batch size limit when provided with custom URLs', async () => {
+      const customUrls = Array.from({ length: 100 }, (_, i) => `https://example.com/page${i}`);
+      context.auditContext = {
+        urls: customUrls,
+        batchSize: 25
+      };
+
+      const result = await handler.steps['extract-urls'].handler(context);
+
+      expect(context.athenaClient.query).to.not.have.been.called;
+      expect(result.urls).to.have.lengthOf(25);
+      expect(result.auditResult.urlCount).to.equal(25);
     });
 
     it('should handle dash path URLs correctly', async () => {

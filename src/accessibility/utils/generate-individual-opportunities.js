@@ -20,7 +20,7 @@ import {
 import {
   successCriteriaLinks, accessibilityOpportunitiesMap, URL_SOURCE_SEPARATOR, issueTypesForCodeFix,
 } from './constants.js';
-import { getAuditData } from './data-processing.js';
+import { getAuditData, getCodeInfo } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 import { saveMystiqueValidationMetricsToS3, saveOpptyWithRetry } from './scrape-utils.js';
@@ -173,81 +173,45 @@ async function sendMystiqueMessage({
   log,
   context,
 }) {
+  // Create base message
+  const message = createDirectMystiqueMessage({
+    url,
+    issuesList,
+    opportunity,
+    siteId,
+    auditId,
+    deliveryType,
+    aggregationKey,
+  });
+
   // Check if code fix flow is enabled for this site
   const autoFixEnabled = await isAuditEnabledForSite('a11y-mystique-auto-fix', context.site, context);
   const useCodeFixFlow = autoFixEnabled && shouldUseCodeFixFlow(issuesList);
 
+  // Add code info if code fix flow is enabled
   if (useCodeFixFlow) {
-    const forwardPayload = createMystiqueForwardPayload({
-      url,
-      issuesList,
-      opportunity,
-      aggregationKey,
-      siteId,
-      auditId,
-      deliveryType,
-    });
+    const codeInfo = await getCodeInfo(context.site, 'accessibility', context);
+    if (codeInfo?.codeBucket && codeInfo?.codePath) {
+      message.data.codeBucket = codeInfo.codeBucket;
+      message.data.codePath = codeInfo.codePath;
+    }
+  }
 
-    const message = {
-      type: 'code',
-      siteId,
-      allowCache: true,
-      data: {},
-      forward: {
-        queue: env.QUEUE_SPACECAT_TO_MYSTIQUE,
-        payload: forwardPayload,
-      },
+  try {
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    return {
+      success: true,
+      url,
     };
-
-    try {
-      await sqs.sendMessage(env.IMPORT_WORKER_QUEUE_URL, message);
-      log.info(
-        `[A11yIndividual] Sent message to import worker for code fix and forwarding to Mystique for url ${url}`,
-      );
-      return {
-        success: true,
-        url,
-      };
-    } catch (error) {
-      log.error(
-        `[A11yIndividual][A11yProcessingError] Failed to send message to import worker for url ${url} with error: ${error.message}`,
-      );
-      return {
-        success: false,
-        url,
-        error: error.message,
-      };
-    }
-  } else {
-    // Legacy flow: Send directly to Mystique without code injection
-    const message = createDirectMystiqueMessage({
+  } catch (error) {
+    log.error(
+      `[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url ${url} with error: ${error.message}`,
+    );
+    return {
+      success: false,
       url,
-      issuesList,
-      opportunity,
-      siteId,
-      auditId,
-      deliveryType,
-    });
-
-    try {
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-      log.info(
-        `[A11yIndividual] Sent message directly to Mystique (legacy flow) for url ${url}`,
-      );
-      return {
-        success: true,
-        url,
-      };
-    } catch (error) {
-      log.error(
-        `[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url ${url}, message: ${JSON.stringify(message, null, 2)} with error: ${error.message}`,
-      );
-      return {
-        success: false,
-        url,
-        error: error.message,
-      };
-    }
+      error: error.message,
+    };
   }
 }
 
@@ -518,8 +482,12 @@ export async function createIndividualOpportunitySuggestions(
   aggregatedData,
   context,
   log,
+  scrapedUrls,
 ) {
   log.info(`[A11yIndividual] ${aggregatedData.data.length} issues aggregated for opportunity ${opportunity.getId()}`);
+
+  // Convert scraped URLs to a Set for efficient lookup
+  const scrapedUrlsSet = new Set(scrapedUrls);
 
   try {
     await syncSuggestions({
@@ -534,15 +502,13 @@ export async function createIndividualOpportunitySuggestions(
         // Rank by total occurrences across all issues for this URL
         rank: urlData.issues.reduce((total, issue) => total + issue.occurrences, 0),
         data: {
-          url: urlData.url,
-          type: urlData.type,
-          issues: urlData.issues, // Array of formatted accessibility issues
-          ...(urlData.source && { source: urlData.source }),
+          ...urlData,
           jiraLink: '',
         },
       }),
       mergeDataFunction: keepSameDataFunction,
       statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
+      scrapedUrlsSet,
     });
 
     return { success: true };
@@ -759,6 +725,8 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
   } = context;
 
   log.info(`[A11yIndividual] Creating accessibility opportunities for ${site.getBaseURL()}`);
+  const scrapedUrls = Object.keys(accessibilityData).filter((key) => key !== 'overall');
+  log.info(`[A11yIndividual] ${scrapedUrls.length} URLs scraped in audit.`);
 
   // Step 1: Aggregate accessibility issues by URL
   const aggregatedData = aggregateA11yIssuesByOppType(accessibilityData);
@@ -831,6 +799,7 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
             typeSpecificData,
             context,
             log,
+            scrapedUrls,
           );
 
           // Step 4: Send messages to Mystique for remediation

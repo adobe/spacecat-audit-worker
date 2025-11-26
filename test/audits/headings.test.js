@@ -1642,20 +1642,11 @@ describe('Headings Audit', () => {
       ContentType: 'application/json',
     });
 
-    // Use esmock to mock JSDOM to throw an error during processing
+    // Use esmock to mock cheerio to throw an error during processing
     const mockedHandler = await esmock('../../src/headings/handler.js', {
-      jsdom: {
-        JSDOM: class {
-          constructor() {
-            // Don't throw in constructor, but make window.document.querySelectorAll throw
-            this.window = {
-              document: {
-                querySelectorAll: () => {
-                  throw new Error('DOM processing failed');
-                }
-              }
-            };
-          }
+      cheerio: {
+        load: () => {
+          throw new Error('DOM processing failed');
         }
       },
     });
@@ -3797,32 +3788,32 @@ describe('Headings Audit', () => {
         expect(result).to.be.null;
       });
 
-      it('returns null when heading has no tagName property', () => {
-        const headingWithoutTag = { id: 'test', className: 'heading' };
+      it('returns null when heading has no name property', () => {
+        const headingWithoutTag = { attribs: { id: 'test', class: 'heading' } };
         const result = getHeadingSelector(headingWithoutTag);
         expect(result).to.be.null;
       });
 
-      it('returns null when heading.tagName is null', () => {
-        const headingWithNullTag = { tagName: null, id: 'test' };
+      it('returns null when heading.name is null', () => {
+        const headingWithNullTag = { name: null, attribs: { id: 'test' } };
         const result = getHeadingSelector(headingWithNullTag);
         expect(result).to.be.null;
       });
 
-      it('returns null when heading.tagName is undefined', () => {
-        const headingWithUndefinedTag = { tagName: undefined, id: 'test' };
+      it('returns null when heading.name is undefined', () => {
+        const headingWithUndefinedTag = { name: undefined, attribs: { id: 'test' } };
         const result = getHeadingSelector(headingWithUndefinedTag);
         expect(result).to.be.null;
       });
 
-      it('returns null when heading.tagName is empty string', () => {
-        const headingWithEmptyTag = { tagName: '', id: 'test' };
+      it('returns null when heading.name is empty string', () => {
+        const headingWithEmptyTag = { name: '', attribs: { id: 'test' } };
         const result = getHeadingSelector(headingWithEmptyTag);
         expect(result).to.be.null;
       });
 
-      it('returns selector when heading has valid tagName', () => {
-        const heading = { tagName: 'H1', id: 'main' };
+      it('returns selector when heading has valid name', () => {
+        const heading = { name: 'H1', attribs: { id: 'main' } };
         const result = getHeadingSelector(heading);
         expect(result).to.equal('h1#main');
       });

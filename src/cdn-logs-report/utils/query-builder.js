@@ -11,9 +11,9 @@
  */
 
 import { DEFAULT_COUNTRY_PATTERNS } from '../../common/country-patterns.js';
-import { loadSql, fetchRemotePatterns, buildSiteFilters } from './report-utils.js';
+import { loadSql, fetchRemotePatterns } from './report-utils.js';
 import { buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL } from '../../common/user-agent-classification.js';
-import { buildDateFilter, buildUserAgentFilter } from '../../utils/cdn-utils.js';
+import { buildDateFilter, buildUserAgentFilter, buildSiteFilters } from '../../utils/cdn-utils.js';
 
 function buildWhereClause(conditions = [], siteFilters = []) {
   const allConditions = [...conditions];
