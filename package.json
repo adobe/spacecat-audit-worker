@@ -75,6 +75,7 @@
   },
   "dependencies": {
     "@adobe/fetch": "4.2.3",
+    "@adobe/helix-deploy-plugin-webpack": "^1.0.14",
     "@adobe/helix-shared-secrets": "2.3.0",
     "@adobe/helix-shared-wrap": "2.0.2",
     "@adobe/helix-status": "10.1.5",
