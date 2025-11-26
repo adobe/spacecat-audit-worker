@@ -17,7 +17,7 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
-import { AUDIT_TYPE, GUIDANCE_TYPE } from '../../../src/content-fragment-404/handler.js';
+import { AUDIT_TYPE, AUDIT_TYPE_AUTO_SUGGEST, GUIDANCE_TYPE } from '../../../src/content-fragment-404/handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
