@@ -14,7 +14,7 @@ import ExcelJS from 'exceljs';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
-import { generateReportingPeriods } from '../llm-error-pages/utils.js';
+import { getPreviousWeekTriples } from '../utils/date-utils.js';
 import { SPREADSHEET_COLUMNS, validateContentAI } from './utils.js';
 
 const MAX_ROWS_TO_READ = 200;
@@ -178,7 +178,17 @@ async function runFaqsAudit(url, context, site) {
       : `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
 
     // Try to find brand presence spreadsheet from the last weeks (most recent first)
-    const weeks = generateReportingPeriods().weeks.slice(0, WEEKS_TO_LOOK_BACK);
+    const weekTriples = getPreviousWeekTriples(new Date(), WEEKS_TO_LOOK_BACK);
+    // Convert to unique weeks since triples may contain multiple entries per week
+    const uniqueWeeks = new Map();
+    weekTriples.forEach(({ year, week }) => {
+      const key = `${year}-${week}`;
+      if (!uniqueWeeks.has(key)) {
+        uniqueWeeks.set(key, { weekNumber: week, year });
+      }
+    });
+    const weeks = Array.from(uniqueWeeks.values());
+
     let topPrompts = [];
     let usedPeriodIdentifier = null;
 

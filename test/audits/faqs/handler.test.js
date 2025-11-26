@@ -32,7 +32,6 @@ describe('FAQs Handler', () => {
   let sendMystiqueMessagePostProcessor;
   let createLLMOSharepointClientStub;
   let readFromSharePointStub;
-  let generateReportingPeriodsStub;
   let validateContentAIStub;
   let ExcelJSStub;
 
@@ -43,9 +42,6 @@ describe('FAQs Handler', () => {
     // Setup stubs
     createLLMOSharepointClientStub = sandbox.stub().resolves({ client: 'mock' });
     readFromSharePointStub = sandbox.stub();
-    generateReportingPeriodsStub = sandbox.stub().returns({
-      weeks: [{ weekNumber: 10, year: 2025 }],
-    });
     validateContentAIStub = sandbox.stub().resolves({
       uid: 'test-uid-123',
       indexName: 'test-index',
@@ -73,9 +69,6 @@ describe('FAQs Handler', () => {
       '../../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
         readFromSharePoint: readFromSharePointStub,
-      },
-      '../../../src/llm-error-pages/utils.js': {
-        generateReportingPeriods: generateReportingPeriodsStub,
       },
       '../../../src/faqs/utils.js': {
         validateContentAI: validateContentAIStub,
@@ -181,9 +174,6 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
-        },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
         },
@@ -224,9 +214,6 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
-        },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
         },
@@ -253,9 +240,6 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
-        },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
         },
@@ -281,9 +265,6 @@ describe('FAQs Handler', () => {
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
-        },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
         },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
@@ -314,9 +295,6 @@ describe('FAQs Handler', () => {
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
-        },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
         },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
@@ -353,9 +331,6 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
-        },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
         },
@@ -379,9 +354,6 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
-        },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
         },
@@ -398,15 +370,8 @@ describe('FAQs Handler', () => {
     });
 
     it('should retry multiple weeks and succeed when data is found in a later week', async () => {
-      // Mock 4 weeks of data
-      generateReportingPeriodsStub.returns({
-        weeks: [
-          { weekNumber: 47, year: 2025 },
-          { weekNumber: 46, year: 2025 },
-          { weekNumber: 45, year: 2025 },
-          { weekNumber: 44, year: 2025 },
-        ],
-      });
+      // getWeekRangeStub will be called with offsets -1, -2, -3, -4
+      // The stub will return different weeks for each offset
 
       const mockWorkbook = {
         worksheets: [
@@ -435,9 +400,6 @@ describe('FAQs Handler', () => {
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
-        },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
         },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
@@ -498,9 +460,6 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
-        },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
         },
@@ -537,9 +496,6 @@ describe('FAQs Handler', () => {
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
-        },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
         },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
@@ -584,9 +540,6 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
-        },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
         },
@@ -621,9 +574,6 @@ describe('FAQs Handler', () => {
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
-        },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
         },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
@@ -681,9 +631,6 @@ describe('FAQs Handler', () => {
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
-        },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
         },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
@@ -747,9 +694,6 @@ describe('FAQs Handler', () => {
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
-        },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
         },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
@@ -816,9 +760,6 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
-        },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
         },
@@ -883,9 +824,6 @@ describe('FAQs Handler', () => {
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
-        },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
         },
         '../../../src/faqs/utils.js': {
           validateContentAI: validateContentAIStub,
