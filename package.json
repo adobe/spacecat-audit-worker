@@ -20,7 +20,7 @@
     "build": "hedy -v --plugin=@adobe/helix-deploy-plugin-webpack --bundler=webpack --esm=false --test-bundle",
     "deploy": "hedy -v --deploy -v --plugin=@adobe/helix-deploy-plugin-webpack --bundler=webpack --esm=false --aws-deploy-bucket=spacecat-prod-deploy --pkgVersion=latest",
     "deploy-stage": "hedy -v --deploy -v --plugin=@adobe/helix-deploy-plugin-webpack --bundler=webpack --esm=false --aws-deploy-bucket=spacecat-stage-deploy --pkgVersion=latest",
-    "deploy-dev": "hedy -v --deploy --plugin=@adobe/helix-deploy-plugin-webpack --bundler=webpack --esm=false --pkgVersion=latest$CI_BUILD_NUM -l latest --aws-deploy-bucket=spacecat-dev-deploy --cleanup-ci=24h",
+    "deploy-dev": "hedy -v --deploy --plugin=@adobe/helix-deploy-plugin-webpack --bundler=webpack --esm=false --pkgVersion=latest$CI_BUILD_NUM -l dzehnder --aws-deploy-bucket=spacecat-dev-deploy --cleanup-ci=24h",
     "deploy-secrets": "hedy --aws-update-secrets --params-file=secrets/secrets.env",
     "prepare": "husky",
     "local-build": "sam build",
