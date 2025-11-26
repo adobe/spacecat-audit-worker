@@ -75,7 +75,6 @@
   },
   "dependencies": {
     "@adobe/fetch": "4.2.3",
-    "@adobe/helix-deploy-plugin-webpack": "1.0.14",
     "@adobe/helix-shared-secrets": "2.3.0",
     "@adobe/helix-shared-wrap": "2.0.2",
     "@adobe/helix-status": "10.1.5",
@@ -124,6 +123,7 @@
   "devDependencies": {
     "@adobe/eslint-config-helix": "3.0.14",
     "@adobe/helix-deploy": "13.2.0",
+    "@adobe/helix-deploy-plugin-webpack": "1.0.14",
     "@adobe/helix-universal": "5.3.0",
     "@adobe/helix-universal-devserver": "1.1.141",
     "@adobe/semantic-release-coralogix": "1.1.40",
