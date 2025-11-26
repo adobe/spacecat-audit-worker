@@ -13,12 +13,15 @@ import wrap from '@adobe/helix-shared-wrap';
 import { helixStatus } from '@adobe/helix-status';
 import secrets from '@adobe/helix-shared-secrets';
 import dataAccess from '@adobe/spacecat-shared-data-access';
-import { resolveSecretsName, sqsEventAdapter } from '@adobe/spacecat-shared-utils';
+import { resolveSecretsName, sqsEventAdapter, logWrapper } from '@adobe/spacecat-shared-utils';
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { checkSiteRequiresValidation } from './utils/site-validation.js';
 
 import sqs from './support/sqs.js';
 import s3Client from './support/s3-client.js';
 import accessibility from './accessibility/handler.js';
+import accessibilityDesktop from './accessibility/handler-desktop.js';
+import accessibilityMobile from './accessibility/handler-mobile.js';
 import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
 import lhsDesktop from './lhs/handler-desktop.js';
@@ -28,6 +31,7 @@ import sitemap from './sitemap/handler.js';
 import sitemapProductCoverage from './sitemap-product-coverage/handler.js';
 import redirectChains from './redirect-chains/handler.js';
 import paid from './paid-cookie-consent/handler.js';
+import noCTAAboveTheFold from './no-cta-above-the-fold/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
 import brokenLinksGuidance from './broken-links-guidance/guidance-handler.js';
@@ -48,25 +52,28 @@ import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-hand
 import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-views.js';
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import paidConsentGuidance from './paid-cookie-consent/guidance-handler.js';
+import noCTAAboveTheFoldGuidance from './no-cta-above-the-fold/guidance-handler.js';
 import paidTrafficAnalysisGuidance from './paid-traffic-analysis/guidance-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
 import llmBlocked from './llm-blocked/handler.js';
 import geoBrandPresence from './geo-brand-presence/handler.js';
 import detectGeoBrandPresence from './geo-brand-presence/detect-geo-brand-presence-handler.js';
+import { handleCategorizationResponseHandler } from './geo-brand-presence/categorization-response-handler.js';
 import geoBrandPresenceDaily from './geo-brand-presence-daily/handler.js';
 import detectGeoBrandPresenceDaily from './geo-brand-presence-daily/detect-geo-brand-presence-handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
 import detectFormDetails from './forms-opportunities/form-details-handler/detect-form-details.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
 import accessibilityRemediationGuidance from './accessibility/guidance-handlers/guidance-accessibility-remediation.js';
-import cdnAnalysis from './cdn-analysis/handler.js';
+import accessibilityCodeFix from './common/codefix-response-handler.js';
+import cdnLogsAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
 import analyticsReport from './analytics-report/handler.js';
-import detectPageIntent from './page-intent/handler.detect.js';
-import updatePageIntent from './page-intent/handler.update.js';
+import pageIntent from './page-intent/handler.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
-import readabilityGuidance from './readability/guidance-readability-handler.js';
+import readabilityOpportunities from './readability/opportunities/handler.js';
+import unifiedReadabilityGuidance from './readability/shared/unified-guidance-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
@@ -79,16 +86,21 @@ import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
 import prerender from './prerender/handler.js';
+import productMetatags from './product-metatags/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
+import accessibilityCodeFixHandler from './accessibility/auto-optimization-handlers/codefix-handler.js';
 import permissions from './permissions/handler.js';
 import permissionsRedundant from './permissions/handler.redundant.js';
 import faqs from './faqs/handler.js';
 import faqsGuidance from './faqs/guidance-handler.js';
+import pageCitability from './page-citability/handler.js';
 
 const HANDLERS = {
   accessibility,
+  'accessibility-desktop': accessibilityDesktop,
+  'accessibility-mobile': accessibilityMobile,
   apex,
   cwv,
   'lhs-mobile': lhsMobile,
@@ -98,6 +110,7 @@ const HANDLERS = {
   'sitemap-product-coverage': sitemapProductCoverage,
   'redirect-chains': redirectChains,
   paid,
+  'no-cta-above-the-fold': noCTAAboveTheFold,
   'paid-traffic-analysis-weekly': paidTrafficAnalysisWeekly,
   'paid-traffic-analysis-monthly': paidTrafficAnalysisMonthly,
   'page-type-detection': pageTypeDetection,
@@ -118,10 +131,12 @@ const HANDLERS = {
   'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
   'guidance:broken-links': brokenLinksGuidance,
   'alt-text': imageAltText,
-  'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
+  'guidance:high-form-views-low-conversions':
+    highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'geo-brand-presence': geoBrandPresence,
+  'category:geo-brand-presence': handleCategorizationResponseHandler,
   'detect:geo-brand-presence': detectGeoBrandPresence,
   'refresh:geo-brand-presence': detectGeoBrandPresence,
   'geo-brand-presence-daily': geoBrandPresenceDaily,
@@ -131,19 +146,21 @@ const HANDLERS = {
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
+  'codefix:accessibility': accessibilityCodeFix,
   'guidance:paid-cookie-consent': paidConsentGuidance,
+  'guidance:no-cta-above-the-fold': noCTAAboveTheFoldGuidance,
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
   'detect:page-types': pageTypeGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
-  'guidance:readability': readabilityGuidance,
+  'guidance:readability': unifiedReadabilityGuidance, // unified for both preflight and opportunities
+  readability: readabilityOpportunities, // for opportunities
   'guidance:structured-data-remediation': structuredDataGuidance,
   preflight,
-  'cdn-analysis': cdnAnalysis,
+  'cdn-logs-analysis': cdnLogsAnalysis,
   'cdn-logs-report': cdnLogsReport,
   'analytics-report': analyticsReport,
-  'detect:page-intent': detectPageIntent,
   'detect:form-details': detectFormDetails,
-  'page-intent': updatePageIntent,
+  'page-intent': pageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
   'llm-error-pages': llmErrorPages,
   'guidance:llm-error-pages': llmErrorPagesGuidance,
@@ -154,11 +171,14 @@ const HANDLERS = {
   hreflang,
   headings,
   prerender,
+  'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,
+  'codefix:form-accessibility': accessibilityCodeFixHandler,
   'security-permissions': permissions,
   'security-permissions-redundant': permissionsRedundant,
   faqs,
   'guidance:faqs': faqsGuidance,
+  'page-citability': pageCitability,
   dummy: (message) => ok(message),
 };
 
@@ -187,6 +207,22 @@ async function run(message, context) {
     return notFound();
   }
 
+  // If siteId, fetch the site and check if it requires validation
+  if (siteId) {
+    try {
+      const { Site } = context.dataAccess;
+      const site = await Site.findById(siteId);
+      if (site) {
+        // Set the requiresValidation flag on the site object
+        const requiresValidation = await checkSiteRequiresValidation(site, context);
+        site.requiresValidation = requiresValidation;
+        context.site = site;
+      }
+    } catch (e) {
+      log.warn(`Failed to fetch site ${siteId}: ${e.message}`);
+    }
+  }
+
   const startTime = process.hrtime();
 
   try {
@@ -204,6 +240,7 @@ async function run(message, context) {
 export const main = wrap(run)
   .with(dataAccess)
   .with(sqsEventAdapter)
+  .with(logWrapper)
   .with(sqs)
   .with(s3Client)
   .with(secrets, { name: resolveSecretsName })

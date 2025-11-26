@@ -15,7 +15,12 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import nock from 'nock';
-import { isPreviewPage, getCountryCodeFromLang, parseCustomUrls } from '../../src/utils/url-utils.js';
+import {
+  isPreviewPage,
+  getCountryCodeFromLang,
+  parseCustomUrls,
+  findBestMatchingPath,
+} from '../../src/utils/url-utils.js';
 import * as utils from '../../src/utils/url-utils.js';
 
 describe('isPreviewPage', () => {
@@ -231,5 +236,51 @@ describe('filterBrokenSuggestedUrls', () => {
 
     const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
     expect(result).to.deep.equal(['https://www.example.com/page2']);
+  });
+});
+
+describe('url-utils.findBestMatchingPath', () => {
+  const sectionData = {
+    default: {},
+    '/en/': {},
+    '/en/us/': {},
+    '/en/us/products/': {},
+  };
+
+  it('returns default when contextPath is falsy or "default"', () => {
+    expect(findBestMatchingPath(sectionData, null)).to.equal('default');
+    expect(findBestMatchingPath(sectionData, undefined)).to.equal('default');
+    expect(findBestMatchingPath(sectionData, 'default')).to.equal('default');
+  });
+
+  it('returns the deepest matching path for a given context', () => {
+    expect(findBestMatchingPath(sectionData, '/en/us/products/item')).to.equal('/en/us/products/');
+    expect(findBestMatchingPath(sectionData, '/en/us/')).to.equal('/en/us/');
+    expect(findBestMatchingPath(sectionData, '/en/ca/foo')).to.equal('/en/');
+  });
+
+  it('returns default when no match is found', () => {
+    expect(findBestMatchingPath(sectionData, '/de/')).to.equal('default');
+  });
+});
+
+describe('joinBaseAndPath', () => {
+  it('should handle dash path by returning base URL with trailing slash', () => {
+    expect(utils.joinBaseAndPath('https://example.com', '-')).to.equal('https://example.com/');
+    expect(utils.joinBaseAndPath('https://example.com/', '-')).to.equal('https://example.com/');
+  });
+
+  it('should join base URL and path correctly', () => {
+    expect(utils.joinBaseAndPath('https://example.com', '/page1')).to.equal('https://example.com/page1');
+    expect(utils.joinBaseAndPath('https://example.com/', '/page1')).to.equal('https://example.com/page1');
+    expect(utils.joinBaseAndPath('https://example.com', 'page1')).to.equal('https://example.com/page1');
+    expect(utils.joinBaseAndPath('https://example.com/', 'page1')).to.equal('https://example.com/page1');
+  });
+
+  it('should handle various base URL and path combinations', () => {
+    expect(utils.joinBaseAndPath('https://example.com', '/products/analytics')).to.equal('https://example.com/products/analytics');
+    expect(utils.joinBaseAndPath('https://example.com/', 'products/analytics')).to.equal('https://example.com/products/analytics');
+    expect(utils.joinBaseAndPath('https://example.com/base', '/page')).to.equal('https://example.com/base/page');
+    expect(utils.joinBaseAndPath('https://example.com/base/', 'page')).to.equal('https://example.com/base/page');
   });
 });

@@ -252,6 +252,7 @@ describe('Audit tests', () => {
         auditType: message.type,
         auditResult: { metric: 42 },
         fullAuditRef,
+        invocationId: 'some-id',
       };
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
       context.dataAccess.Site.findById.withArgs(message.siteId).resolves(site);
@@ -362,6 +363,7 @@ describe('Audit tests', () => {
       auditType: message.type,
       auditResult: { metric: 42 },
       fullAuditRef,
+      invocationId: 'some-id',
     });
 
     expect(context.sqs.sendMessage).not.to.have.been.calledOnce;

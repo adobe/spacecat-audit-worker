@@ -145,6 +145,16 @@ export const generateSuggestionData = async (context) => {
     throw new Error('Auto-suggest is disabled for site');
   }
 
+  // Check if there are broken backlinks BEFORE creating opportunity
+  if (!auditResult?.brokenBacklinks
+    || !Array.isArray(auditResult.brokenBacklinks)
+    || auditResult.brokenBacklinks.length === 0) {
+    log.info(`No broken backlinks found for ${site.getId()}, skipping opportunity creation`);
+    return {
+      status: 'complete',
+    };
+  }
+
   const kpiDeltas = await calculateKpiMetrics(audit, context, site);
 
   const opportunity = await convertToOpportunity(

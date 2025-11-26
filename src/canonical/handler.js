@@ -10,9 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-import { JSDOM } from 'jsdom';
-import { composeBaseURL, tracingFetch as fetch, retrievePageAuthentication } from '@adobe/spacecat-shared-utils';
+import { composeBaseURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
+import { load as cheerioLoad } from 'cheerio';
+
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { isPreviewPage } from '../utils/url-utils.js';
@@ -84,10 +86,15 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
     // finalUrl is the URL after any redirects
     const finalUrl = response.url;
     const html = await response.text();
-    const dom = new JSDOM(html);
-    const { document } = dom.window;
 
-    const canonicalLinks = document.querySelectorAll('link[rel="canonical"]');
+    // Use Cheerio for all parsing (more reliable than JSDOM for large HTML).
+    // This is the same approach used in the MetaTags audit (ssr-meta-validator.js).
+    const $ = cheerioLoad(html);
+    const cheerioCanonicalInHead = $('head link[rel="canonical"]').length > 0;
+    const canonicalLinks = $('link[rel="canonical"]');
+
+    log.info(`Cheerio found ${canonicalLinks.length} canonical link(s), ${cheerioCanonicalInHead ? 'IN <head>' : 'NOT in <head>'}`);
+
     const checks = [];
     let canonicalUrl = null;
 
@@ -117,8 +124,8 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
         });
         log.info(`Multiple canonical tags found for URL: ${url}`);
       } else {
-        const canonicalLink = canonicalLinks[0];
-        const href = canonicalLink.getAttribute('href');
+        const canonicalLink = canonicalLinks.first();
+        const href = canonicalLink.attr('href');
         if (!href) {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
@@ -140,11 +147,26 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
               check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
               success: true,
             });
+
             const normalize = (u) => (typeof u === 'string' && u.endsWith('/') ? u.slice(0, -1) : u);
+
+            // strip query params and hash
+            const stripQueryParams = (u) => {
+              try {
+                const urlObj = new URL(u);
+                return `${urlObj.origin}${urlObj.pathname}`;
+                /* c8 ignore next 3 */
+              } catch {
+                return u;
+              }
+            };
+
             const canonicalPath = normalize(new URL(canonicalUrl).pathname).replace(/\/([^/]+)\.[a-zA-Z0-9]+$/, '/$1');
             const finalPath = normalize(new URL(finalUrl).pathname).replace(/\/([^/]+)\.[a-zA-Z0-9]+$/, '/$1');
-            const normalizedCanonical = normalize(canonicalUrl);
-            const normalizedFinal = normalize(finalUrl);
+            const normalizedCanonical = normalize(stripQueryParams(canonicalUrl));
+            const normalizedFinal = normalize(stripQueryParams(finalUrl));
+
+            // Check if canonical points to same page (query params are ignored)
             if ((isPreview && canonicalPath === finalPath)
                 || normalizedCanonical === normalizedFinal) {
               checks.push({
@@ -170,19 +192,21 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
           }
         }
 
-        // Check if canonical link is in the head section
-        if (!canonicalLink.closest('head')) {
+        // Check if canonical link is in the <head> section.
+        // Using Cheerio result which is more reliable for large HTML parsing
+        if (!cheerioCanonicalInHead) {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
             success: false,
             explanation: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.explanation,
           });
-          log.info('Canonical tag is not in the head section');
+          log.info('Canonical tag is not in the head section (detected via Cheerio)');
         } else {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
             success: true,
           });
+          log.info('Canonical tag is in the head section (verified via Cheerio)');
         }
       }
     }
@@ -391,18 +415,16 @@ export async function validateCanonicalRecursively(
 }
 
 /**
- * Generates a suggestion for fixing a canonical issue based on the check type and URL.
+ * Generates a suggestion for fixing a canonical issue based on the check type.
  *
  * @param {string} checkType - The type of canonical check that failed.
- * @param {string} url - The URL that has the canonical issue.
- * @param {string} baseURL - The base URL of the site.
  * @returns {string} A suggestion for fixing the canonical issue.
  */
-export function generateCanonicalSuggestion(checkType, url, baseURL) {
+export function generateCanonicalSuggestion(checkType) {
   const checkObj = Object.values(CANONICAL_CHECKS).find((check) => check.check === checkType);
 
   if (checkObj && checkObj.suggestion) {
-    return checkObj.suggestion(url, baseURL);
+    return checkObj.suggestion;
   }
 
   // fallback suggestion
@@ -495,8 +517,47 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       return true;
     });
 
-    const auditPromises = filteredTopPages.map(async (page) => {
-      const { url } = page;
+    // Check which pages return 200 status
+    log.info('Checking HTTP status for top pages...');
+    const statusCheckPromises = filteredTopPages.map(async ({ url }) => {
+      try {
+        const response = await fetch(url, options);
+        const { status } = response;
+        const finalUrl = response.url;
+
+        // Check if page redirected to an auth/login page
+        if (finalUrl !== url && shouldSkipAuthPage(finalUrl)) {
+          log.info(`Page ${url} redirected to auth page ${finalUrl}, skipping`);
+          return {
+            url, status, isOk: false,
+          };
+        }
+
+        log.info(`Page ${url} returned status: ${status}`);
+        return { url, status, isOk: status === 200 };
+      } catch (error) {
+        log.error(`Error fetching ${url}: ${error.message}`);
+        return { url, status: null, isOk: false };
+      }
+    });
+
+    const statusCheckResults = await Promise.all(statusCheckPromises);
+    const pagesWithOkStatus = statusCheckResults.filter(({ isOk }) => isOk);
+
+    if (pagesWithOkStatus.length === 0) {
+      log.info('No pages returned 200 status, ending audit without creating opportunities.');
+      return {
+        fullAuditRef: baseURL,
+        auditResult: {
+          status: 'success',
+          message: 'No pages with 200 status found to analyze for canonical tags',
+        },
+      };
+    }
+
+    log.info(`Found ${pagesWithOkStatus.length} pages with 200 status out of ${filteredTopPages.length} filtered pages`);
+
+    const auditPromises = pagesWithOkStatus.map(async ({ url }) => {
       const checks = [];
 
       const {
@@ -510,8 +571,28 @@ export async function canonicalAuditRunner(baseURL, context, site) {
         const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log);
         checks.push(...urlFormatChecks);
 
-        const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log, options);
-        checks.push(...urlContentCheck);
+        // self-reference check
+        const selfRefCheck = canonicalTagChecks.find(
+          (c) => c.check === CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+        );
+        const isSelfReferenced = selfRefCheck?.success === true;
+
+        // if self-referenced - skip accessibility
+        if (isSelfReferenced) {
+          checks.push({
+            check: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
+            success: true,
+          });
+          checks.push({
+            check: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
+            success: true,
+          });
+        } else {
+          // if not self-referenced  - validate accessibility
+          log.info(`Canonical URL points to different page, validating accessibility: ${canonicalUrl}`);
+          const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log, options);
+          checks.push(...urlContentCheck);
+        }
       }
       return { url, checks };
     });
@@ -563,7 +644,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       explanation: checkData.explanation,
       affectedUrls: checkData.urls.map((url) => ({
         url,
-        suggestion: generateCanonicalSuggestion(checkType, url, baseURL),
+        suggestion: generateCanonicalSuggestion(checkType),
       })),
     }));
 

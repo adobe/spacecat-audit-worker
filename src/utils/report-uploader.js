@@ -14,6 +14,7 @@ import * as helixContentSDK from '@adobe/spacecat-helix-content-sdk';
 import { sleep } from '../support/utils.js';
 
 const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/Shared%20Documents/sites/elmo-ui-data';
+const AUDIT_NAME = 'REPORT_UPLOADER';
 
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js'
@@ -56,53 +57,116 @@ export function createLLMOSharepointClient({ env, log }, options = {}) {
  * @returns {Promise<Buffer>} - The document content as a buffer
  */
 export async function readFromSharePoint(filename, outputLocation, sharepointClient, log) {
+  const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
+
   try {
-    const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
+    log.info(`%s: SharePoint download starting: ${documentPath}`, AUDIT_NAME);
+    const startTime = Date.now();
+
     const sharepointDoc = sharepointClient.getDocument(documentPath);
     const buffer = await sharepointDoc.getDocumentContent();
-    log.debug(`Document successfully downloaded from SharePoint: ${documentPath}`);
+
+    const duration = Date.now() - startTime;
+    const fileSize = buffer.byteLength || buffer.length;
+    log.info(`%s: SharePoint download successful: ${documentPath} (${fileSize} bytes in ${duration}ms)`, AUDIT_NAME);
+
     return buffer;
   } catch (error) {
-    log.error(`Failed to read from SharePoint: ${error.message}`);
+    log.error(`%s: SharePoint download failed: ${documentPath}`, AUDIT_NAME, {
+      filename,
+      outputLocation,
+      error: error.message,
+      stack: error.stack,
+      errorCode: error.code || 'UNKNOWN',
+    });
     throw error;
   }
 }
 
-export async function publishToAdminHlx(filename, outputLocation, log) {
-  try {
-    const org = 'adobe';
-    const site = 'project-elmo-ui-data';
-    const ref = 'main';
-    const jsonFilename = `${filename.replace(/\.[^/.]+$/, '')}.json`;
-    const path = `${outputLocation}/${jsonFilename}`;
-    const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}` };
+async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {
+  async function attemptFetch(attemptNumber) {
+    try {
+      const response = await fetch(url, options);
+      if (response.ok) return response;
 
+      const error = new Error(`${response.status} ${response.statusText}`);
+      error.status = response.status;
+      error.response = response;
+      throw error;
+    } catch (error) {
+      // Check x-error header for throttling issues
+      const xError = error.response?.headers?.get
+        ? error.response.headers.get('x-error')
+        : null;
+      const xErrorInfo = xError ? `, x-error: ${xError}` : '';
+
+      // Only retry on 503 and x-error contains "429"
+      const isRetryable = error.status === 503 && (xError && xError.includes('429'));
+      const shouldRetry = isRetryable && attemptNumber <= maxRetries;
+
+      if (!shouldRetry) {
+        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed after retries, error: ${error.message}, status: ${error.status}, statusText: ${error.response?.statusText}${xErrorInfo}, URL: ${url}`);
+        throw error;
+      }
+
+      // Use exponential backoff with jitter for retries
+      const baseDelay = 10000;
+      const exponentialDelay = baseDelay * (2 ** (attemptNumber - 1));
+      const jitter = Math.floor(Math.random() * (exponentialDelay / 2));
+      const retryDelay = exponentialDelay + jitter;
+
+      log.warn(`${AUDIT_NAME}: ${endpointName} Helix API failed with error ${error.message}${xErrorInfo}, retrying in ${retryDelay}ms (attempt ${attemptNumber}/${maxRetries}), URL: ${url}`);
+
+      await sleep(retryDelay);
+      return attemptFetch(attemptNumber + 1);
+    }
+  }
+
+  return attemptFetch(1);
+}
+
+export async function publishToAdminHlx(filename, outputLocation, log) {
+  const org = 'adobe';
+  const site = 'project-elmo-ui-data';
+  const ref = 'main';
+  const jsonFilename = `${filename.replace(/\.[^/.]+$/, '')}.json`;
+  const path = `${outputLocation}/${jsonFilename}`;
+
+  try {
+    log.info(`%s: Publishing to admin.hlx.page: ${path}`, AUDIT_NAME);
+    const startTime = Date.now();
+
+    const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}` };
     const baseUrl = 'https://admin.hlx.page';
     const endpoints = [
       { name: 'preview', url: `${baseUrl}/preview/${org}/${site}/${ref}/${path}` },
       { name: 'live', url: `${baseUrl}/live/${org}/${site}/${ref}/${path}` },
     ];
 
-    for (const [index, endpoint] of endpoints.entries()) {
-      log.debug(`Publishing Excel report via admin API (${endpoint.name}): ${endpoint.url}`);
+    for (const [_, endpoint] of endpoints.entries()) {
+      const delay = 2000;
+      log.info(`%s: Waiting ${delay}ms before publishing to ${endpoint.name}`, AUDIT_NAME);
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(delay);
+      log.info(`%s: Publishing to ${endpoint.name}: ${endpoint.url}`, AUDIT_NAME);
+      const endpointStartTime = Date.now();
 
       // eslint-disable-next-line no-await-in-loop
-      const response = await fetch(endpoint.url, { method: 'POST', headers });
+      await fetchWithRetry(endpoint.url, { method: 'POST', headers }, endpoint.name, log);
 
-      if (!response.ok) {
-        throw new Error(`${endpoint.name} failed: ${response.status} ${response.statusText}`);
-      }
-
-      log.debug(`Excel report successfully published to ${endpoint.name}`);
-
-      if (index === 0) {
-        log.debug('Waiting 2 seconds before publishing to live...');
-        // eslint-disable-next-line no-await-in-loop
-        await sleep(2000);
-      }
+      const endpointDuration = Date.now() - endpointStartTime;
+      log.info(`%s: Successfully published to ${endpoint.name} in ${endpointDuration}ms`, AUDIT_NAME);
     }
+
+    const totalDuration = Date.now() - startTime;
+    log.info(`%s: Successfully published ${path} to both preview and live in ${totalDuration}ms`, AUDIT_NAME);
   } catch (publishError) {
-    log.error(`Failed to publish via admin.hlx.page: ${publishError.message}`);
+    log.error(`%s: Failed to publish via admin.hlx.page: ${path}`, AUDIT_NAME, {
+      filename,
+      outputLocation,
+      error: publishError.message,
+      stack: publishError.stack,
+    });
   }
 }
 
@@ -114,13 +178,27 @@ export async function publishToAdminHlx(filename, outputLocation, log) {
  * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} log
  */
 export async function uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log) {
+  const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
+  const fileSize = buffer.byteLength || buffer.length;
+
   try {
-    const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
+    log.info(`%s: SharePoint upload starting: ${documentPath} (${fileSize} bytes)`, AUDIT_NAME);
+    const startTime = Date.now();
+
     const sharepointDoc = sharepointClient.getDocument(documentPath);
     await sharepointDoc.uploadRawDocument(buffer);
-    log.debug(`Excel report successfully uploaded to SharePoint: ${documentPath}`);
+
+    const duration = Date.now() - startTime;
+    log.info(`%s: SharePoint upload successful: ${documentPath} (${fileSize} bytes in ${duration}ms)`, AUDIT_NAME);
   } catch (error) {
-    log.error(`Failed to upload to SharePoint: ${error.message}`);
+    log.error(`%s: SharePoint upload failed: ${documentPath}`, AUDIT_NAME, {
+      filename,
+      outputLocation,
+      fileSize,
+      error: error.message,
+      stack: error.stack,
+      errorCode: error.code || 'UNKNOWN',
+    });
     throw error;
   }
 }
@@ -140,8 +218,73 @@ export async function uploadAndPublishFile(
   sharepointClient,
   log,
 ) {
-  await uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log);
-  await publishToAdminHlx(filename, outputLocation, log);
+  const fileSize = buffer.byteLength || buffer.length;
+  log.info(`%s: Starting upload and publish workflow for ${filename} to ${outputLocation} (${fileSize} bytes)`, AUDIT_NAME);
+  const startTime = Date.now();
+
+  try {
+    await uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log);
+    await publishToAdminHlx(filename, outputLocation, log);
+
+    const duration = Date.now() - startTime;
+    log.info(`%s: Upload and publish workflow completed for ${filename} in ${duration}ms`, AUDIT_NAME);
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    log.error(`%s: Upload and publish workflow failed for ${filename} after ${duration}ms`, AUDIT_NAME, {
+      filename,
+      outputLocation,
+      fileSize,
+      error: error.message,
+      stack: error.stack,
+    });
+    throw error;
+  }
+}
+
+async function runBulkJob(route, operation, paths, log) {
+  const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}`, 'Content-Type': 'application/json' };
+  const url = `https://admin.hlx.page/${route}/adobe/project-elmo-ui-data/main/*`;
+  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ paths }) });
+  const data = await res.json();
+  const jobUrl = data.links?.self;
+  if (!jobUrl) throw new Error(`No job URL from ${operation}`);
+
+  // Poll until complete for 5 minutes
+  for (let i = 0; i < 300; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const statusRes = await fetch(jobUrl, { method: 'GET', headers });
+    // eslint-disable-next-line no-await-in-loop
+    const status = await statusRes.json();
+    const { state, progress } = status;
+    if (state === 'stopped') {
+      log.info(`%s: ${operation} done - ${progress.success} success, ${progress.failed} failed`, AUDIT_NAME);
+      return;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(1000);
+  }
+  throw new Error(`${operation} timeout`);
+}
+
+/**
+ * Bulk preview and publish files to admin.hlx.page
+ * @param {Array<{filename: string, outputLocation: string}>} reports - Reports to publish
+ * @param {object} log - Logger
+ */
+export async function bulkPublishToAdminHlx(reports, log) {
+  if (!reports?.length) return;
+
+  const paths = reports.map((r) => `/${r.outputLocation}/${r.filename.replace(/\.[^/.]+$/, '')}.json`);
+  log.info(`%s: Starting bulk publish for ${paths.length} files`, AUDIT_NAME);
+
+  try {
+    await runBulkJob('preview', 'preview', paths, log);
+    await runBulkJob('live', 'publish', paths, log);
+    log.info(`%s: Bulk publish completed for ${paths.length} files`, AUDIT_NAME);
+  } catch (error) {
+    log.error(`%s: Bulk publish failed: ${error.message}`, AUDIT_NAME);
+    throw error;
+  }
 }
 
 export async function saveExcelReport({
@@ -152,12 +295,26 @@ export async function saveExcelReport({
   filename,
 }) {
   try {
+    log.info(`%s: Generating Excel buffer for ${filename}`, AUDIT_NAME);
+    const bufferStartTime = Date.now();
     const buffer = await workbook.xlsx.writeBuffer();
+    const bufferDuration = Date.now() - bufferStartTime;
+    const fileSize = buffer.byteLength || buffer.length;
+
+    log.info(`%s: Excel buffer generated for ${filename} (${fileSize} bytes in ${bufferDuration}ms)`, AUDIT_NAME);
+
     if (sharepointClient) {
       await uploadAndPublishFile(buffer, filename, outputLocation, sharepointClient, log);
+    } else {
+      log.warn(`%s: No SharePoint client provided for ${filename}, skipping upload`, AUDIT_NAME);
     }
   } catch (error) {
-    log.error(`Failed to save Excel report: ${error.message}`);
+    log.error(`%s: Failed to save Excel report: ${filename}`, AUDIT_NAME, {
+      filename,
+      outputLocation,
+      error: error.message,
+      stack: error.stack,
+    });
     throw error;
   }
 }

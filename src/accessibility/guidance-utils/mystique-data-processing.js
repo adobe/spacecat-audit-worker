@@ -10,73 +10,89 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, isNonEmptyObject, buildAggregationKey } from '@adobe/spacecat-shared-utils';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { issueTypesForMystique } from '../utils/constants.js';
 
 /**
  * Processes suggestions directly to create Mystique message data
  *
+ * Supports multiple aggregation strategies:
+ * - PER_ELEMENT: Each suggestion has one issue with one htmlWithIssues element
+ * - PER_ISSUE_TYPE_PER_PAGE: Each suggestion has one issue with multiple htmlWithIssues elements
+ * - PER_PAGE: Each suggestion has multiple issues with multiple htmlWithIssues elements
+ *
  * @param {Array} suggestions - Array of suggestion objects from the opportunity
  * @returns {Array} Array of message data objects ready for SQS sending
  */
 export function processSuggestionsForMystique(suggestions) {
-  if (!suggestions || !Array.isArray(suggestions)) {
+  if (!Array.isArray(suggestions) || suggestions.length === 0) {
     return [];
   }
 
-  // Group suggestions by url
-  const suggestionsByUrl = {};
-  for (const suggestion of suggestions) {
-    const suggestionData = suggestion.getData();
+  const SKIPPED_STATUSES = [
+    SuggestionDataAccess.STATUSES.FIXED,
+    SuggestionDataAccess.STATUSES.SKIPPED,
+  ];
+
+  // Helper: Extract issue items from a suggestion that need Mystique processing
+  const extractIssueItems = (suggestion) => {
+    const data = suggestion.getData();
     const suggestionId = suggestion.getId();
-    // skip sending to M suggestions that are fixed or skipped
-    if (![SuggestionDataAccess.STATUSES.FIXED, SuggestionDataAccess.STATUSES.SKIPPED]
-      .includes(suggestion.getStatus())
-      && suggestionData.issues
-      && isNonEmptyArray(suggestionData.issues)
-      && isNonEmptyArray(suggestionData.issues[0].htmlWithIssues)) {
-      // Starting with SITES-33832, a suggestion corresponds to a single granular issue,
-      // i.e. target selector and faulty HTML line
-      const singleIssue = suggestionData.issues[0];
-      const singleHtmlWithIssue = singleIssue.htmlWithIssues[0];
-      // skip sending to M suggestions that already have guidance
-      if (issueTypesForMystique.includes(singleIssue.type)
-      && !isNonEmptyObject(singleHtmlWithIssue.guidance)) {
-        const { url } = suggestionData;
-        if (!suggestionsByUrl[url]) {
-          suggestionsByUrl[url] = [];
-        }
-        suggestionsByUrl[url].push({ ...suggestionData, suggestionId });
-      }
-    }
-  }
 
-  const messageData = [];
-  for (const [url, suggestionsForUrl] of Object.entries(suggestionsByUrl)) {
-    const issuesList = [];
-    for (const suggestion of suggestionsForUrl) {
-      if (isNonEmptyArray(suggestion.issues)) {
-        // Starting with SITES-33832, a suggestion corresponds to a single granular issue,
-        // i.e. target selector and faulty HTML line
-        const singleIssue = suggestion.issues[0];
-        if (isNonEmptyArray(singleIssue.htmlWithIssues)) {
-          const singleHtmlWithIssue = singleIssue.htmlWithIssues[0];
-          issuesList.push({
-            issueName: singleIssue.type,
-            faultyLine: singleHtmlWithIssue.update_from || singleHtmlWithIssue.updateFrom || '',
-            targetSelector: singleHtmlWithIssue.target_selector || singleHtmlWithIssue.targetSelector || '',
-            issueDescription: singleIssue.description || '',
-            suggestionId: suggestion.suggestionId,
-          });
-        }
-      }
+    if (!isNonEmptyArray(data.issues)) {
+      return [];
     }
-    messageData.push({
-      url,
-      issuesList,
-    });
-  }
 
-  return messageData;
+    return data.issues
+      .filter((issue) => issueTypesForMystique.includes(issue.type))
+      .filter((issue) => isNonEmptyArray(issue.htmlWithIssues))
+      .flatMap((issue) => issue.htmlWithIssues
+        .filter((html) => !isNonEmptyObject(html.guidance))
+        .map((html) => {
+          // Build aggregation key based on granularity strategy for this issue type
+          const targetSelector = html.target_selector || html.targetSelector || '';
+          const aggregationKey = buildAggregationKey(
+            issue.type,
+            data.url,
+            targetSelector,
+            data.source,
+          );
+
+          return {
+            issueName: issue.type,
+            faultyLine: html.update_from || html.updateFrom || '',
+            targetSelector,
+            issueDescription: issue.description || '',
+            suggestionId,
+            url: data.url,
+            aggregationKey,
+          };
+        }));
+  };
+
+  // Process all suggestions and extract issue items
+  const allIssueItems = suggestions
+    .filter((suggestion) => !SKIPPED_STATUSES.includes(suggestion.getStatus()))
+    .flatMap(extractIssueItems);
+
+  // Group by aggregation key
+  const byAggregationKey = allIssueItems.reduce((acc, item) => {
+    const { aggregationKey, ...issueItem } = item;
+    if (!acc[aggregationKey]) {
+      acc[aggregationKey] = {
+        url: item.url,
+        issuesList: [],
+      };
+    }
+    acc[aggregationKey].issuesList.push(issueItem);
+    return acc;
+  }, {});
+
+  // Convert to final format
+  return Object.entries(byAggregationKey).map(([aggregationKey, data]) => ({
+    url: data.url,
+    aggregationKey,
+    issuesList: data.issuesList,
+  }));
 }

@@ -13,6 +13,31 @@ import { isNonEmptyArray, isObject } from '@adobe/spacecat-shared-utils';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 /**
+ * Safely stringify an object for logging, truncating large arrays to prevent
+ * exceeding JavaScript's maximum string length.
+ *
+ * @param {*} data - The data to stringify.
+ * @param {number} maxArrayLength - Maximum number of array items to include (default: 10).
+ * @returns {string} - The stringified data or an error message.
+ */
+function safeStringify(data, maxArrayLength = 10) {
+  try {
+    if (Array.isArray(data) && data.length > maxArrayLength) {
+      const truncated = data.slice(0, maxArrayLength);
+      return JSON.stringify({
+        truncated: true,
+        totalLength: data.length,
+        items: truncated,
+        message: `Showing first ${maxArrayLength} of ${data.length} items`,
+      }, null, 2);
+    }
+    return JSON.stringify(data, null, 2);
+  } catch (error) {
+    return `[Unable to stringify: ${error.message}. Total items: ${Array.isArray(data) ? data.length : 'N/A'}]`;
+  }
+}
+
+/**
  * Fetches site data based on the given base URL. If no site is found for the given
  * base URL, null is returned. Otherwise, the site object is returned. If an error
  * occurs while fetching the site, an error is thrown.
@@ -101,15 +126,17 @@ export async function getImsOrgId(site, dataAccess, log) {
  * @param {Set} params.newDataKeys - The set of new data keys to check for outdated suggestions.
  * @param {Function} params.buildKey - The function to build a unique key for each suggestion.
  * @param {Object} params.context - The context object containing the data access object.
+ * @param {Set} [params.scrapedUrlsSet] - Optional set of URLs that were scraped in this audit
  * @returns {Promise<void>} - Resolves when the outdated suggestions are updated.
  */
-const handleOutdatedSuggestions = async ({
+export const handleOutdatedSuggestions = async ({
   context,
   opportunity,
   existingSuggestions,
   newDataKeys,
   buildKey,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
+  scrapedUrlsSet = null,
 }) => {
   const { Suggestion } = context.dataAccess;
   const { log } = context;
@@ -120,9 +147,23 @@ const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.FIXED,
       SuggestionDataAccess.STATUSES.ERROR,
       SuggestionDataAccess.STATUSES.SKIPPED,
-    ].includes(existing.getStatus()));
+    ].includes(existing.getStatus()))
+    .filter((existing) => {
+      // mark suggestions as outdated only if their URL was actually scraped
+      if (scrapedUrlsSet) {
+        const suggestionUrl = existing.getData()?.url;
+        return suggestionUrl && scrapedUrlsSet.has(suggestionUrl);
+      }
+      return true;
+    });
 
-  log.debug(`Outdated suggestions = ${existingOutdatedSuggestions.length}: ${JSON.stringify(existingOutdatedSuggestions, null, 2)}`);
+  // prevents JSON.stringify overflow
+  log.info(`[SuggestionSync] Final count of suggestions to mark as ${statusToSetForOutdated}: ${existingOutdatedSuggestions.length}`);
+  if (existingOutdatedSuggestions.length > 0 && existingOutdatedSuggestions.length <= 10) {
+    log.debug(`Outdated suggestions sample: ${JSON.stringify(existingOutdatedSuggestions, null, 2)}`);
+  } else if (existingOutdatedSuggestions.length > 10) {
+    log.debug(`Outdated suggestions sample (first 10): ${JSON.stringify(existingOutdatedSuggestions.slice(0, 10), null, 2)}`);
+  }
 
   if (isNonEmptyArray(existingOutdatedSuggestions)) {
     await Suggestion.bulkUpdateStatus(
@@ -161,6 +202,17 @@ const handleOutdatedSuggestions = async ({
 export const keepSameDataFunction = (existingData) => ({ ...existingData });
 
 /**
+ * Keep latest merge function for combining existing and new data.
+ * This performs a shallow merge where new data overrides existing data.
+ * @param {Object} existingData - The existing suggestion data.
+ * @param {Object} newData - The new data to merge.
+ * @returns {Object} - The merged data object.
+ */
+export const keepLatestMergeDataFunction = (existingData, newData) => ({
+  ...newData,
+});
+
+/**
  * Default merge function for combining existing and new data.
  * This performs a shallow merge where new data overrides existing data.
  *
@@ -170,17 +222,6 @@ export const keepSameDataFunction = (existingData) => ({ ...existingData });
  */
 const defaultMergeDataFunction = (existingData, newData) => ({
   ...existingData,
-  ...newData,
-});
-
-/**
- * Keep latest merge function for combining existing and new data.
- * This performs a shallow merge where new data overrides existing data.
- * @param {Object} existingData - The existing suggestion data.
- * @param {Object} newData - The new data to merge.
- * @returns {Object} - The merged data object.
- */
-export const keepLatestMergeDataFunction = (existingData, newData) => ({
   ...newData,
 });
 
@@ -211,6 +252,7 @@ export async function syncSuggestions({
   mapNewSuggestion,
   mergeDataFunction = defaultMergeDataFunction,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
+  scrapedUrlsSet = null,
 }) {
   if (!context) {
     return;
@@ -227,9 +269,10 @@ export async function syncSuggestions({
     context,
     opportunity,
     statusToSetForOutdated,
+    scrapedUrlsSet,
   });
 
-  log.debug(`Existing suggestions = ${existingSuggestions.length}: ${JSON.stringify(existingSuggestions, null, 2)}`);
+  log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
   // Update existing suggestions
   await Promise.all(
@@ -243,35 +286,65 @@ export async function syncSuggestions({
         existing.setData(mergeDataFunction(existing.getData(), newDataItem));
         if ([SuggestionDataAccess.STATUSES.OUTDATED].includes(existing.getStatus())) {
           log.warn('Resolved suggestion found in audit. Possible regression.');
-          existing.setStatus(SuggestionDataAccess.STATUSES.NEW);
+          const { site } = context;
+          const requiresValidation = Boolean(site?.requiresValidation);
+          existing.setStatus(requiresValidation
+            ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+            : SuggestionDataAccess.STATUSES.NEW);
         }
         existing.setUpdatedBy('system');
         return existing.save();
       }),
   );
-  log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${JSON.stringify(existingSuggestions, null, 2)}`);
+  log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
   // Prepare new suggestions
+  const { site } = context;
+  const requiresValidation = Boolean(site?.requiresValidation);
   const newSuggestions = newData
     .filter((data) => !existingSuggestions.some(
       (existing) => buildKey(existing.getData()) === buildKey(data),
     ))
-    .map(mapNewSuggestion);
+    .map((data) => {
+      const suggestion = mapNewSuggestion(data);
+      return {
+        ...suggestion,
+        status: requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+          : SuggestionDataAccess.STATUSES.NEW,
+      };
+    });
 
   // Add new suggestions if any
   if (newSuggestions.length > 0) {
+    const siteId = opportunity.getSiteId?.() || 'unknown';
+    log.info(`Adding ${newSuggestions.length} new suggestions for siteId ${siteId}`);
+
     const suggestions = await opportunity.addSuggestions(newSuggestions);
-    log.debug(`New suggestions = ${suggestions.length}: ${JSON.stringify(suggestions, null, 2)}`);
+    log.debug(`New suggestions = ${suggestions.length}: ${safeStringify(suggestions)}`);
 
     if (suggestions.errorItems?.length > 0) {
-      log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${suggestions.errorItems.length} items with errors`);
-      suggestions.errorItems.forEach((errorItem) => {
-        log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+      log.error(`Suggestions for siteId ${siteId} contains ${suggestions.errorItems.length} items with errors out of ${newSuggestions.length} total`);
+
+      // Log first few errors with more detail
+      const errorsToLog = suggestions.errorItems.slice(0, 5);
+      errorsToLog.forEach((errorItem, index) => {
+        log.error(`Error ${index + 1}/${suggestions.errorItems.length}: ${errorItem.error}`);
+        log.error(`Failed item data: ${safeStringify(errorItem.item, 1)}`);
       });
 
-      if (suggestions.createdItems?.length <= 0) {
-        throw new Error(`Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
+      if (suggestions.errorItems.length > 5) {
+        log.error(`... and ${suggestions.errorItems.length - 5} more errors`);
       }
+
+      if (suggestions.createdItems?.length <= 0) {
+        const sampleError = suggestions.errorItems[0]?.error || 'Unknown error';
+        log.error('[suggestions.errorItems]', suggestions.errorItems);
+        throw new Error(`Failed to create suggestions for siteId ${siteId}. Sample error: ${sampleError}`);
+      } else {
+        log.warn(`Partial success: Created ${suggestions.createdItems.length} suggestions, ${suggestions.errorItems.length} failed`);
+      }
+    } else {
+      log.debug(`Successfully created ${suggestions.createdItems?.length || suggestions.length} suggestions for siteId ${siteId}`);
     }
   }
 }

@@ -35,6 +35,12 @@ Resources:
           SHAREPOINT_CLIENT_SECRET: !Ref SHAREPOINT_CLIENT_SECRET
           SHAREPOINT_DOMAIN_ID: !Ref SHAREPOINT_DOMAIN_ID
           ADMIN_HLX_API_KEY: !Ref ADMIN_HLX_API_KEY
+          SCRAPE_JOB_CONFIGURATION: !Ref SCRAPE_JOB_CONFIGURATION
+          CONTENTAI_IMS_HOST: !Ref CONTENTAI_IMS_HOST
+          CONTENTAI_CLIENT_ID: !Ref CONTENTAI_CLIENT_ID
+          CONTENTAI_CLIENT_SECRET: !Ref CONTENTAI_CLIENT_SECRET
+          CONTENTAI_CLIENT_SCOPE: !Ref CONTENTAI_CLIENT_SCOPE
+          CONTENTAI_ENDPOINT: !Ref CONTENTAI_ENDPOINT
       Role: arn:aws:iam::682033462621:role/spacecat-role-lambda-generic
       Events:
         ApiEvent:
@@ -117,3 +123,21 @@ Parameters:
   ADMIN_HLX_API_KEY:
     Type: String
     Description: Admin HLX API Key
+  SCRAPE_JOB_CONFIGURATION:
+    Type: String
+    Description: Scrape job configuration JSON
+  CONTENTAI_IMS_HOST:
+    Type: String
+    Description: ContentAI IMS Host
+  CONTENTAI_CLIENT_ID:
+    Type: String
+    Description: ContentAI Client ID
+  CONTENTAI_CLIENT_SECRET:
+    Type: String
+    Description: ContentAI Client Secret
+  CONTENTAI_CLIENT_SCOPE:
+    Type: String
+    Description: ContentAI Client Scope
+  CONTENTAI_ENDPOINT:
+    Type: String
+    Description: ContentAI Endpoint

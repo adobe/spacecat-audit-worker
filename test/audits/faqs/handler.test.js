@@ -423,6 +423,272 @@ describe('FAQs Handler', () => {
         sinon.match(/\[FAQ\] Audit failed.*Failed to create SharePoint client/),
       );
     });
+
+    it('should deduplicate prompts with same question (case-insensitive)', async () => {
+      const mockWorkbook = {
+        worksheets: [
+          {
+            rowCount: 4,
+            getRows: () => [
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'Photoshop' };
+                  if (col === 3) return { value: 'How to use layers?' };
+                  if (col === 7) return { value: 'https://adobe.com/page1' };
+                  return { value: '' };
+                },
+              },
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'Illustrator' };
+                  if (col === 3) return { value: 'how to use layers?' };
+                  if (col === 7) return { value: '' };
+                  return { value: '' };
+                },
+              },
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'InDesign' };
+                  if (col === 3) return { value: 'What is typography?' };
+                  if (col === 7) return { value: 'https://adobe.com/page2' };
+                  return { value: '' };
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      readFromSharePointStub.resolves(Buffer.from('mock data'));
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/llm-error-pages/utils.js': {
+          generateReportingPeriods: generateReportingPeriodsStub,
+        },
+        exceljs: {
+          Workbook: class {
+            constructor() {}
+
+            get xlsx() {
+              const self = this;
+              return {
+                load: async () => {
+                  Object.assign(self, mockWorkbook);
+                },
+              };
+            }
+          },
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.promptsByUrl).to.be.an('array');
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/Deduplicated 3 prompts to 2 unique prompts/),
+      );
+    });
+
+    it('should prioritize prompt with URL when deduplicating', async () => {
+      const mockWorkbook = {
+        worksheets: [
+          {
+            rowCount: 3,
+            getRows: () => [
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'Topic1' };
+                  if (col === 3) return { value: 'How do I get started?' };
+                  if (col === 7) return { value: '' };
+                  return { value: '' };
+                },
+              },
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'Topic2' };
+                  if (col === 3) return { value: 'How do I get started?' };
+                  if (col === 7) return { value: 'https://adobe.com/starter-guide' };
+                  return { value: '' };
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      readFromSharePointStub.resolves(Buffer.from('mock data'));
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/llm-error-pages/utils.js': {
+          generateReportingPeriods: generateReportingPeriodsStub,
+        },
+        exceljs: {
+          Workbook: class {
+            constructor() {}
+
+            get xlsx() {
+              const self = this;
+              return {
+                load: async () => {
+                  Object.assign(self, mockWorkbook);
+                },
+              };
+            }
+          },
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.promptsByUrl).to.have.lengthOf(1);
+      expect(result.auditResult.promptsByUrl[0].topic).to.equal('Topic2');
+      expect(result.auditResult.promptsByUrl[0].prompts).to.have.lengthOf(1);
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/Deduplicated 2 prompts to 1 unique prompts/),
+      );
+    });
+
+    it('should keep first occurrence when both duplicates have URLs', async () => {
+      const mockWorkbook = {
+        worksheets: [
+          {
+            rowCount: 3,
+            getRows: () => [
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'FirstTopic' };
+                  if (col === 3) return { value: 'What is the price?' };
+                  if (col === 7) return { value: 'https://adobe.com/first' };
+                  return { value: '' };
+                },
+              },
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'SecondTopic' };
+                  if (col === 3) return { value: 'What is the price?' };
+                  if (col === 7) return { value: 'https://adobe.com/second' };
+                  return { value: '' };
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      readFromSharePointStub.resolves(Buffer.from('mock data'));
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/llm-error-pages/utils.js': {
+          generateReportingPeriods: generateReportingPeriodsStub,
+        },
+        exceljs: {
+          Workbook: class {
+            constructor() {}
+
+            get xlsx() {
+              const self = this;
+              return {
+                load: async () => {
+                  Object.assign(self, mockWorkbook);
+                },
+              };
+            }
+          },
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.promptsByUrl).to.have.lengthOf(1);
+      expect(result.auditResult.promptsByUrl[0].topic).to.equal('FirstTopic');
+      expect(result.auditResult.promptsByUrl[0].prompts).to.have.lengthOf(1);
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/Deduplicated 2 prompts to 1 unique prompts/),
+      );
+    });
+
+    it('should keep first occurrence when neither duplicate has URL', async () => {
+      const mockWorkbook = {
+        worksheets: [
+          {
+            rowCount: 3,
+            getRows: () => [
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'FirstTopic' };
+                  if (col === 3) return { value: 'How to export?' };
+                  if (col === 7) return { value: '' };
+                  return { value: '' };
+                },
+              },
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'SecondTopic' };
+                  if (col === 3) return { value: 'How to export?' };
+                  if (col === 7) return { value: '' };
+                  return { value: '' };
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      readFromSharePointStub.resolves(Buffer.from('mock data'));
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/llm-error-pages/utils.js': {
+          generateReportingPeriods: generateReportingPeriodsStub,
+        },
+        exceljs: {
+          Workbook: class {
+            constructor() {}
+
+            get xlsx() {
+              const self = this;
+              return {
+                load: async () => {
+                  Object.assign(self, mockWorkbook);
+                },
+              };
+            }
+          },
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.promptsByUrl).to.have.lengthOf(1);
+      expect(result.auditResult.promptsByUrl[0].topic).to.equal('FirstTopic');
+      expect(result.auditResult.promptsByUrl[0].prompts).to.have.lengthOf(1);
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/Deduplicated 2 prompts to 1 unique prompts/),
+      );
+    });
   });
 
   describe('sendMystiqueMessagePostProcessor', () => {
@@ -473,7 +739,7 @@ describe('FAQs Handler', () => {
       expect(message.data.faqs).to.deep.equal(auditData.auditResult.promptsByUrl);
 
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/Queued 2 FAQ topics to Mystique/),
+        sinon.match(/Queued 2 FAQ groups to Mystique/),
       );
     });
 

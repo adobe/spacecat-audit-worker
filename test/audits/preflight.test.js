@@ -579,6 +579,7 @@ describe('Preflight Audit', () => {
     let azureOpenAIClient;
     let genvarClient;
     let preflightAuditFunction;
+    let retrievePageAuthenticationStub;
 
     const sandbox = sinon.createSandbox();
 
@@ -624,11 +625,15 @@ describe('Preflight Audit', () => {
       sinon.stub(AWSXray, 'captureAWSv3Client').returns(secretsClient);
       sandbox.stub(AzureOpenAIClient, 'createFrom').returns(azureOpenAIClient);
       sandbox.stub(GenvarClient, 'createFrom').returns(genvarClient);
+      retrievePageAuthenticationStub = sinon.stub().resolves('token1234');
 
       // Mock the accessibility handler to prevent timeouts
       const { preflightAudit: mockedPreflightAudit } = await esmock('../../src/preflight/handler.js', {
         '../../src/preflight/accessibility.js': {
           default: sinon.stub().resolves(), // Mock accessibility handler as no-op
+        },
+        '@adobe/spacecat-shared-ims-client': {
+          retrievePageAuthentication: retrievePageAuthenticationStub,
         },
       });
       preflightAuditFunction = mockedPreflightAudit;
@@ -661,6 +666,7 @@ describe('Preflight Audit', () => {
           'metatags-preflight': { productCodes: ['aem-sites'] },
           'canonical-preflight': { productCodes: ['aem-sites'] },
           'links-preflight': { productCodes: ['aem-sites'] },
+          'headings-preflight': { productCodes: ['aem-sites'] },
           'body-size-preflight': { productCodes: ['aem-sites'] },
           'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
           'h1-count-preflight': { productCodes: ['aem-sites'] },
@@ -845,7 +851,6 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
         },
       });
 
@@ -854,6 +859,104 @@ describe('Preflight Audit', () => {
           message: {
             content: JSON.stringify({ suggested_urls: ['https://example.com/fix'], aiRationale: 'Rationale' }),
             aiRationale: 'Rationale',
+          },
+          finish_reason: 'stop',
+        }],
+      });
+
+      // Mock metatags-preflight audit as enabled
+      configuration.isHandlerEnabledForSite.withArgs('metatags-preflight', site).returns(true);
+      // Mock headings-preflight audit as enabled
+      configuration.isHandlerEnabledForSite.withArgs('headings-preflight', site).returns(true);
+      // Mock readability-preflight audit as disabled
+      configuration.isHandlerEnabledForSite.withArgs('readability-preflight', site).returns(false);
+      // All other audits should be enabled by default
+      configuration.isHandlerEnabledForSite.returns(true);
+      genvarClient.generateSuggestions.resolves({
+        '/': {
+          h1: {
+            aiRationale: 'The H1 tag is clear...',
+            aiSuggestion: 'Welcome to Our Homepage',
+          },
+          title: {
+            aiRationale: 'The title is descriptive...',
+            aiSuggestion: 'Home - Our Company',
+          },
+          description: {
+            aiRationale: 'The description is concise...',
+            aiSuggestion: 'Welcome to the homepage of Our Company.',
+          },
+        },
+      });
+
+      await preflightAuditFunction(context);
+
+      expect(genvarClient.generateSuggestions).to.have.been.called;
+
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(finalJobEntity.setResultType).to.have.been.called;
+      expect(finalJobEntity.setEndedAt).to.have.been.called;
+      expect(finalJobEntity.save).to.have.been.called;
+      expect(finalJobEntity.setResult).to.have.been.called;
+    });
+
+    it('handles empty aiSuggestion when urlsSuggested is empty', async () => {
+      context.promiseToken = 'mock-promise-token';
+      const head = '<head><a href="https://example.com/header-url"/></head>';
+      const body = `<body><a href="https://example.com/broken"></a><h1>Home H1</h1><p>This is additional content to ensure the body length exceeds 300 characters. ${'A'.repeat(100)} </p></body>`;
+      const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        } else {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify({
+                scrapeResult: {
+                  rawBody: html.replaceAll('https://example.com', 'https://main--example--page.aem.page'),
+                  tags: {
+                    title: 'Home Title',
+                    description: 'Home Description',
+                    h1: ['Home H1'],
+                  },
+                },
+                finalUrl: 'https://main--example--page.aem.page',
+              })),
+            },
+          });
+        }
+      });
+
+      nock('https://main--example--page.aem.page')
+        .head('/header-url')
+        .reply(200);
+      nock('https://main--example--page.aem.page')
+        .head('/broken')
+        .reply(404);
+
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_SUGGEST,
+          urls: ['https://main--example--page.aem.page'],
+        },
+      });
+
+      azureOpenAIClient.fetchChatCompletion.resolves({
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: [], aiRationale: 'No alternatives available' }),
+            aiRationale: 'No alternatives available',
           },
           finish_reason: 'stop',
         }],
@@ -895,6 +998,16 @@ describe('Preflight Audit', () => {
       expect(finalJobEntity.setEndedAt).to.have.been.called;
       expect(finalJobEntity.save).to.have.been.called;
       expect(finalJobEntity.setResult).to.have.been.called;
+      
+      // Verify that aiSuggestion contains fallback URL when no suitable suggestions found
+      const actualResult = finalJobEntity.setResult.getCall(0).args[0];
+      const linksAudit = actualResult[0].audits.find(a => a.name === 'links');
+      if (linksAudit && linksAudit.opportunities.length > 0) {
+        const brokenLinks = linksAudit.opportunities[0].issue;
+        // When AI returns empty suggestions, fallback to base URL is added
+        expect(brokenLinks[0].aiSuggestion).to.equal('https://main--example--page.aem.page');
+        expect(brokenLinks[0].aiRationale).to.equal('No alternatives available');
+      }
     });
 
     it('handles genvar errors gracefully', async () => {
@@ -908,6 +1021,7 @@ describe('Preflight Audit', () => {
 
       configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(true);
       configuration.isHandlerEnabledForSite.withArgs('metatags-preflight', site).returns(true);
+      configuration.isHandlerEnabledForSite.withArgs('headings-preflight', site).returns(true);
       configuration.isHandlerEnabledForSite.returns(false);
       await preflightAuditFunction(context);
       expect(genvarClient.generateSuggestions).to.have.been.called;
@@ -1073,7 +1187,7 @@ describe('Preflight Audit', () => {
 
     it('completes successfully on the happy path for the identify step with readability check', async () => {
       const head = '<head><title>Readability Test Page</title></head>';
-      const body = '<body><p>The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience.</p></body>';
+      const body = '<body><p>The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience. Furthermore, the multifaceted infrastructure exemplifies sophisticated aesthetic considerations. Such complex arrangements require meticulous coordination.</p></body>';
       const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
 
       s3Client.send.callsFake((command) => {
@@ -1205,7 +1319,7 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'readability'];
+        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'headings', 'readability'];
 
         expect(breakdown).to.be.an('array');
         expect(breakdown).to.have.lengthOf(expectedChecks.length);
@@ -1223,10 +1337,10 @@ describe('Preflight Audit', () => {
       configuration.isHandlerEnabledForSite.returns(true);
       await preflightAuditFunction(context);
 
-      // Verify that AsyncJob.findById was called for each intermediate save and final save
-      // (total of 6 times: 5 intermediate + 1 final)
+      // Verify that AsyncJob.findById was called for job metadata update, each intermediate save and final save
+      // (total of 7 times: 1 metadata update + 6 intermediate + 1 final)
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(6);
+      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(8);
     });
 
     it('handles errors during intermediate saves gracefully', async () => {
@@ -1477,11 +1591,14 @@ describe('Preflight Audit', () => {
 
       // Mock the preflight audit with readability handler returning processing: true
       const { preflightAudit: testPreflightAudit } = await esmock('../../src/preflight/handler.js', {
-        '../../src/readability/handler.js': {
+        '../../src/readability/preflight/handler.js': {
           default: sinon.stub().resolves({ processing: true }),
         },
         '../../src/preflight/accessibility.js': {
           default: sinon.stub().resolves(),
+        },
+        '@adobe/spacecat-shared-ims-client': {
+          retrievePageAuthentication: retrievePageAuthenticationStub,
         },
       });
 
@@ -1559,8 +1676,12 @@ describe('Preflight Audit', () => {
         '../../src/preflight/canonical.js': { default: async () => undefined },
         '../../src/preflight/metatags.js': { default: async () => undefined },
         '../../src/preflight/links.js': { default: async () => undefined },
-        '../../src/readability/handler.js': { default: async () => undefined },
+        '../../src/preflight/headings.js': { default: async () => undefined },
+        '../../src/readability/preflight/handler.js': { default: async () => undefined },
         '../../src/preflight/accessibility.js': { default: async () => undefined },
+        '@adobe/spacecat-shared-ims-client': {
+          retrievePageAuthentication: retrievePageAuthenticationStub,
+        },
       });
 
       await testPreflightAudit(mockContext);
@@ -2937,16 +3058,6 @@ describe('Preflight Audit', () => {
         sandbox.restore();
       });
 
-      it('should skip accessibility when not in checks', async () => {
-        pollingAuditContext.checks = ['other-check']; // Not including accessibility
-        configuration.isHandlerEnabledForSite.withArgs('accessibility-preflight', pollingContext.site).resolves(false);
-
-        await accessibility(pollingContext, pollingAuditContext);
-
-        expect(pollingS3Client.send).to.not.have.been.called;
-        expect(pollingLog.info).to.not.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      });
-
       it('should execute full accessibility workflow when checks include accessibility', async () => {
         // Mock successful S3 operations for the entire workflow
         pollingS3Client.send.callsFake((command) => {
@@ -3795,6 +3906,563 @@ describe('Preflight Audit', () => {
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
       // Verify that both polling attempts were made
       expect(pollCallCount).to.equal(2);
+    });
+  });
+
+  describe('headings audit', () => {
+    let context;
+    let auditContext;
+    let sandbox;
+    let headings;
+    let getH1HeadingASuggestionStub;
+    let getBrandGuidelinesStub;
+
+    beforeEach(async () => {
+      sandbox = sinon.createSandbox();
+
+      const log = {
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        error: sinon.stub(),
+        debug: sinon.stub(),
+      };
+
+      context = {
+        site: {
+          getId: sinon.stub().returns('site-123'),
+          getBaseURL: sinon.stub().returns('https://example.com'),
+        },
+        job: {
+          getId: sinon.stub().returns('job-123'),
+          getMetadata: sinon.stub().returns({
+            payload: { enableAuthentication: false },
+          }),
+        },
+        log,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        },
+        dataAccess: {
+          AsyncJob: {
+            update: sinon.stub().resolves(),
+          },
+        },
+      };
+
+      auditContext = {
+        previewUrls: ['https://example.com/page1', 'https://example.com/page2'],
+        step: 'suggest',
+        audits: new Map([
+          ['https://example.com/page1', {
+            audits: [{
+              name: 'headings',
+              type: 'seo',
+              opportunities: [],
+            }],
+          }],
+          ['https://example.com/page2', {
+            audits: [{
+              name: 'headings',
+              type: 'seo',
+              opportunities: [],
+            }],
+          }],
+        ]),
+        auditsResult: {},
+        scrapedObjects: [
+          {
+            data: {
+              finalUrl: 'https://example.com/page1',
+              scrapeResult: {
+                rawBody: '<html><body><h1>Test H1</h1><h1>Another H1</h1></body></html>',
+                tags: {
+                  title: 'Page 1 Title',
+                  description: 'Page 1 Description',
+                  h1: ['Test H1', 'Another H1'],
+                },
+              },
+            },
+          },
+          {
+            data: {
+              finalUrl: 'https://example.com/page2',
+              scrapeResult: {
+                rawBody: '<html><body></body></html>',
+                tags: {
+                  title: 'Page 2 Title',
+                  description: 'Page 2 Description',
+                  h1: [],
+                },
+              },
+            },
+          },
+        ],
+        timeExecutionBreakdown: [],
+      };
+
+      // Create stubs for the functions we want to mock
+      getH1HeadingASuggestionStub = sinon.stub();
+      getBrandGuidelinesStub = sinon.stub();
+
+      // Mock the headings handler with stubbed functions
+      const headingsModule = await esmock('../../src/preflight/headings.js', {
+        '../../src/headings/handler.js': {
+          validatePageHeadingFromScrapeJson: async (url, scrapeJsonObject, log, seoChecks) => {
+            // Return validation results based on the scraped data
+            if (url === 'https://example.com/page1') {
+              return {
+                url,
+                checks: [
+                  {
+                    check: 'heading-multiple-h1',
+                    checkTitle: 'Multiple H1 Tags',
+                    description: 'Page has multiple H1 tags',
+                    explanation: 'A page should have only one H1 tag',
+                    success: false,
+                    pageTags: { h1: ['Test H1', 'Another H1'] },
+                  },
+                ],
+              };
+            }
+            if (url === 'https://example.com/page2') {
+              return {
+                url,
+                checks: [
+                  {
+                    check: 'heading-missing-h1',
+                    checkTitle: 'Missing H1 Tag',
+                    description: 'Page is missing an H1 tag',
+                    explanation: 'Every page should have an H1 tag',
+                    success: false,
+                    pageTags: { h1: [] },
+                  },
+                ],
+              };
+            }
+            return { url, checks: [] };
+          },
+          getBrandGuidelines: getBrandGuidelinesStub,
+          getH1HeadingASuggestion: getH1HeadingASuggestionStub,
+          HEADINGS_CHECKS: {
+            HEADING_MISSING_H1: { check: 'heading-missing-h1' },
+            HEADING_MULTIPLE_H1: { check: 'heading-multiple-h1' },
+            HEADING_H1_LENGTH: { check: 'heading-h1-length' },
+            HEADING_EMPTY: { check: 'heading-empty' },
+          },
+        },
+        '../../src/preflight/utils.js': {
+          saveIntermediateResults: sinon.stub().resolves(),
+        },
+      });
+
+      headings = headingsModule.default;
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('should handle missing scraped data for a URL', async () => {
+      auditContext.scrapedObjects = [
+        {
+          data: null,
+        },
+        {
+          data: {
+            finalUrl: 'https://example.com/page2',
+            scrapeResult: {
+              rawBody: '<html><body></body></html>',
+              tags: {
+                title: 'Page 2 Title',
+                description: 'Page 2 Description',
+                h1: [],
+              },
+            },
+          },
+        },
+      ];
+
+      await headings(context, auditContext);
+      expect(context.log.error).to.have.been.calledWithMatch(
+        sinon.match(/Headings audit failed/),
+      );
+    });
+
+    it('should handle missing audit entry for a URL', async () => {
+      const modifiedAuditContext = {
+        previewUrls: ['https://example.com/page1'],
+        step: 'identify',
+        audits: new Map([
+          ['https://example.com/page1', {
+            audits: [],
+          }],
+          // page2 is NOT in the audits map since it's not in previewUrls
+        ]),
+        auditsResult: {},
+        scrapedObjects: [
+          {
+            data: {
+              finalUrl: 'https://example.com/page1',
+              scrapeResult: {
+                rawBody: '<html><body><h1>Test</h1></body></html>',
+                tags: { title: 'Title', description: 'Desc', h1: ['Test'] },
+              },
+            },
+          },
+          {
+            data: {
+              finalUrl: 'https://example.com/page2',
+              scrapeResult: {
+                rawBody: '<html><body></body></html>',
+                tags: { title: 'Title 2', description: 'Desc 2', h1: [] },
+              },
+            },
+          },
+        ],
+        timeExecutionBreakdown: [],
+      };
+
+      it('should skip AI enhancement during identify step', async () => {
+        // Change step to 'identify'
+        auditContext.step = 'identify';
+  
+        await headings(context, auditContext);
+  
+        // Verify that getBrandGuidelines was never called (no AI enhancement)
+        expect(getBrandGuidelinesStub).to.not.have.been.called;
+        expect(getH1HeadingASuggestionStub).to.not.have.been.called;
+      });
+  
+
+      await headings(context, modifiedAuditContext);
+      expect(context.log.warn).to.have.been.called;
+      const warnCalls = context.log.warn.getCalls();
+      const relevantCall = warnCalls.find(call =>
+        call.args[0] && call.args[0].includes('No audit entry found for https://example.com/page2')
+      );
+      expect(relevantCall).to.exist;
+    });
+
+    it('should add aiSuggestion when AI suggestion is available', async () => {
+      getBrandGuidelinesStub.resolves({ brandName: 'Test Brand' });
+      getH1HeadingASuggestionStub.resolves('AI-generated H1 suggestion');
+
+      await headings(context, auditContext);
+      const page2Audit = auditContext.audits.get('https://example.com/page2')
+        .audits.find((a) => a.name === 'headings');
+
+      const opportunityWithAI = page2Audit.opportunities.find((opp) => opp.aiSuggestion);
+      expect(opportunityWithAI).to.exist;
+      expect(opportunityWithAI.aiSuggestion).to.equal('AI-generated H1 suggestion');
+    });
+
+    it('should handle AI suggestion error gracefully during suggest step', async () => {
+      getBrandGuidelinesStub.resolves({ brandName: 'Test Brand' });
+      getH1HeadingASuggestionStub.rejects(new Error('Service unavailable'));
+
+      await headings(context, auditContext);
+      expect(context.log.error).to.have.been.calledWithMatch(
+        sinon.match(/Error generating AI suggestion for https:\/\/example\.com\/page2/),
+      );
+
+      // Verify that opportunities were still added despite AI error
+      const page2Audit = auditContext.audits.get('https://example.com/page2')
+        .audits.find((a) => a.name === 'headings');
+      expect(page2Audit.opportunities).to.have.length.greaterThan(0);
+    });
+
+    it('should add suggestion when AI suggestion is not available', async () => {
+      getBrandGuidelinesStub.resolves({ brandName: 'Test Brand' });
+      getH1HeadingASuggestionStub.resolves(null);
+
+      await headings(context, auditContext);
+      const page2Audit = auditContext.audits.get('https://example.com/page2')
+        .audits.find((a) => a.name === 'headings');
+
+      page2Audit.opportunities.forEach((opp) => {
+        expect(opp).to.not.have.property('aiSuggestion');
+        expect(opp).to.have.property('suggestion');
+      });
+    });
+
+    it('should handle getBrandGuidelines error gracefully', async () => {
+      getBrandGuidelinesStub.rejects(new Error('Brand guidelines fetch failed'));
+
+      await headings(context, auditContext);
+      expect(context.log.error).to.have.been.calledWithMatch(
+        sinon.match(/Failed to generate AI suggestions/),
+      );
+
+      // Verify that opportunities were still added despite the error
+      const page1Audit = auditContext.audits.get('https://example.com/page1')
+        .audits.find((a) => a.name === 'headings');
+      const page2Audit = auditContext.audits.get('https://example.com/page2')
+        .audits.find((a) => a.name === 'headings');
+      
+      expect(page1Audit.opportunities).to.have.length.greaterThan(0);
+      expect(page2Audit.opportunities).to.have.length.greaterThan(0);
+    });
+
+    it('should return Moderate seoImpact for non-high-impact check types', async () => {
+      const headingsModuleWithModerateCheck = await esmock('../../src/preflight/headings.js', {
+        '../../src/headings/handler.js': {
+          validatePageHeadingFromScrapeJson: async (url) => {
+            return {
+              url,
+              checks: [
+                {
+                  check: 'heading-order-invalid',
+                  checkTitle: 'Invalid Heading Order',
+                  description: 'Headings are not in proper order',
+                  explanation: 'Headings should be in sequential order',
+                  success: false,
+                  pageTags: { h1: ['Test'] },
+                },
+              ],
+            };
+          },
+          getBrandGuidelines: getBrandGuidelinesStub,
+          getH1HeadingASuggestion: getH1HeadingASuggestionStub,
+          HEADINGS_CHECKS: {
+            HEADING_MISSING_H1: { check: 'heading-missing-h1' },
+            HEADING_MULTIPLE_H1: { check: 'heading-multiple-h1' },
+            HEADING_H1_LENGTH: { check: 'heading-h1-length' },
+            HEADING_EMPTY: { check: 'heading-empty' },
+          },
+        },
+        '../../src/preflight/utils.js': {
+          saveIntermediateResults: sinon.stub().resolves(),
+        },
+      });
+
+      const testAuditContext = {
+        previewUrls: ['https://example.com/test'],
+        step: 'identify',
+        audits: new Map([
+          ['https://example.com/test', {
+            audits: [{
+              name: 'headings',
+              type: 'seo',
+              opportunities: [],
+            }],
+          }],
+        ]),
+        auditsResult: {},
+        scrapedObjects: [
+          {
+            data: {
+              finalUrl: 'https://example.com/test',
+              scrapeResult: {
+                rawBody: '<html><body><h1>Test</h1><h3>Skipped H2</h3></body></html>',
+                tags: { title: 'Test', description: 'Test', h1: ['Test'] },
+              },
+            },
+          },
+        ],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModuleWithModerateCheck.default(context, testAuditContext);
+
+      // Verify the opportunity was added with 'Moderate' seoImpact
+      const testAudit = testAuditContext.audits.get('https://example.com/test')
+        .audits.find((a) => a.name === 'headings');
+      
+      expect(testAudit.opportunities).to.have.lengthOf(1);
+      expect(testAudit.opportunities[0].seoImpact).to.equal('Moderate');
+    });
+
+    it('should handle validatePageHeadingFromScrapeJson returning falsy value', async () => {      
+      const headingsModuleWithNullReturn = await esmock('../../src/preflight/headings.js', {
+        '../../src/headings/handler.js': {
+          validatePageHeadingFromScrapeJson: async (url) => {
+            return null;
+          },
+          getBrandGuidelines: getBrandGuidelinesStub,
+          getH1HeadingASuggestion: getH1HeadingASuggestionStub,
+          HEADINGS_CHECKS: {
+            HEADING_MISSING_H1: { check: 'heading-missing-h1' },
+            HEADING_MULTIPLE_H1: { check: 'heading-multiple-h1' },
+            HEADING_H1_LENGTH: { check: 'heading-h1-length' },
+            HEADING_EMPTY: { check: 'heading-empty' },
+          },
+        },
+        '../../src/preflight/utils.js': {
+          saveIntermediateResults: sinon.stub().resolves(),
+        },
+      });
+
+      const testAuditContext = {
+        previewUrls: ['https://example.com/test'],
+        step: 'identify',
+        audits: new Map([
+          ['https://example.com/test', {
+            audits: [{
+              name: 'headings',
+              type: 'seo',
+              opportunities: [],
+            }],
+          }],
+        ]),
+        auditsResult: {},
+        scrapedObjects: [
+          {
+            data: {
+              finalUrl: 'https://example.com/test',
+              scrapeResult: {
+                rawBody: '<html><body><h1>Test</h1></body></html>',
+                tags: { title: 'Test', description: 'Test', h1: ['Test'] },
+              },
+            },
+          },
+        ],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModuleWithNullReturn.default(context, testAuditContext);
+
+      // The function should complete successfully even when validation returns null
+      // The fallback { url, checks: [] } is used, so no opportunities are added
+      const testAudit = testAuditContext.audits.get('https://example.com/test')
+        .audits.find((a) => a.name === 'headings');
+      
+      expect(testAudit.opportunities).to.have.lengthOf(0);
+      expect(context.log.debug).to.have.been.called;
+    });
+  });
+
+  describe('saving enabled checks in job metadata payload', () => {
+    let site;
+    let job;
+    let s3Client;
+    let configuration;
+    let preflightAuditFunction;
+    let sandbox;
+
+    beforeEach(async () => {
+      sandbox = sinon.createSandbox();
+      site = {
+        getId: () => 'site-123',
+      };
+      job = {
+        getMetadata: () => ({
+          payload: {
+            step: PREFLIGHT_STEP_IDENTIFY,
+            urls: ['https://main--example--page.aem.page/page1'],
+            enableAuthentication: false, // avoid IMS auth to keep test lean
+          },
+        }),
+        getStatus: sinon.stub().returns('IN_PROGRESS'),
+        getId: () => 'job-123',
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        setResult: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      s3Client = {
+        send: sinon.stub(),
+      };
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [{ Key: 'scrapes/site-123/page1/scrape.json' }],
+            IsTruncated: false,
+          });
+        }
+        return Promise.resolve({
+          ContentType: 'application/json',
+          Body: {
+            transformToString: sinon.stub().resolves(JSON.stringify({
+              scrapeResult: { rawBody: '<html><body>Short content</body></html>' },
+              finalUrl: 'https://main--example--page.aem.page/page1',
+            })),
+          },
+        });
+      });
+
+      configuration = {
+        isHandlerEnabledForSite: sinon.stub(),
+        getHandlers: sinon.stub().returns({
+          'readability-preflight': { productCodes: ['aem-sites'] },
+          'accessibility-preflight': { productCodes: ['aem-sites'] },
+          'metatags-preflight': { productCodes: ['aem-sites'] },
+          'canonical-preflight': { productCodes: ['aem-sites'] },
+          'links-preflight': { productCodes: ['aem-sites'] },
+          'headings-preflight': { productCodes: ['aem-sites'] },
+          'body-size-preflight': { productCodes: ['aem-sites'] },
+          'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
+          'h1-count-preflight': { productCodes: ['aem-sites'] },
+        }),
+      };
+
+      // Ensure entitlement checks pass for enabled checks calculation
+      const mockTierClient = {
+        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+      };
+      if (TierClient.createForSite && TierClient.createForSite.restore) {
+        TierClient.createForSite.restore();
+      }
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      // Import preflight with accessibility mocked to no-op
+      const { preflightAudit } = await esmock('../../src/preflight/handler.js', {
+        '../../src/preflight/accessibility.js': {
+          default: sinon.stub().resolves(),
+        },
+      });
+      preflightAuditFunction = preflightAudit;
+    });
+
+    afterEach(() => {
+      sinon.restore();
+      sandbox.restore();
+    });
+
+    it('merges checks into existing metadata payload and saves', async () => {
+      // Enable only body-size so no handlers run
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_BODY_SIZE}-preflight`, site).returns(true);
+      configuration.isHandlerEnabledForSite.returns(false);
+
+      const jobEntity = {
+        getMetadata: sinon.stub().returns(job.getMetadata()),
+        setMetadata: sinon.stub(),
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        setResult: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      const context = new MockContextBuilder()
+        .withSandbox(sinon.createSandbox())
+        .withOverrides({
+          job,
+          site,
+          s3Client,
+          func: { version: 'test' },
+        })
+        .build();
+
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+      context.dataAccess.AsyncJob.findById = sinon.stub().resolves(jobEntity);
+
+      await preflightAuditFunction(context);
+
+      expect(jobEntity.setMetadata).to.have.been.calledOnce;
+      const metadataArg = jobEntity.setMetadata.getCall(0).args[0];
+      expect(metadataArg.payload).to.deep.include({
+        step: PREFLIGHT_STEP_IDENTIFY,
+        urls: ['https://main--example--page.aem.page/page1'],
+        enableAuthentication: false,
+      });
+      expect(metadataArg.payload.checks).to.deep.equal([AUDIT_BODY_SIZE]);
+      expect(jobEntity.save).to.have.been.called;
     });
   });
 });

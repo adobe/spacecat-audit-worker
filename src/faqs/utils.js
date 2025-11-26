@@ -39,91 +39,72 @@ export const SPREADSHEET_COLUMNS = {
 };
 
 /**
- * Generates formatted markdown from FAQ data
- * @param {Array} faqs - Array of FAQ objects from Mystique
- * @param {Object} log - Logger object
- * @returns {string} Formatted markdown string
+ * Normalizes sources to an array of URL strings
+ * Sources can be strings, objects with 'url' key, or objects with 'link' key
+ * @param {Array} sources - Array of source objects or strings
+ * @returns {Array} Array of URL strings
  */
-export function getFaqMarkdown(faqs, log) {
-  let markdown = '';
-  let faqNumber = 1;
+function normalizeSources(sources) {
+  if (!sources || !Array.isArray(sources)) {
+    return [];
+  }
 
-  faqs.forEach((faq) => {
-    const {
-      url, topic, prompts, suggestions,
-    } = faq;
+  return sources
+    .map((source) => {
+      if (typeof source === 'string') {
+        return source;
+      }
+      if (source && typeof source === 'object') {
+        return source.url || source.link || null;
+      }
+      return null;
+    })
+    .filter((url) => url !== null);
+}
 
-    // Filter only suitable suggestions
-    const suitableSuggestions = (suggestions || []).filter(
-      (s) => s.isAnswerSuitable && s.isQuestionRelevant,
+/**
+ * Generates JSON FAQ suggestions with transform rules for code changes
+ * Each suggestion has nested FAQs array
+ * @param {Array} suggestions - Array of suggestions from Mystique
+ * @returns {Array} Array of FAQ suggestion objects with transform rules
+ */
+export function getJsonFaqSuggestion(suggestions) {
+  const suggestionValues = [];
+
+  suggestions.forEach((suggestion) => {
+    const { url, topic, faqs } = suggestion;
+
+    // Filter only suitable FAQs
+    const suitableFaqs = (faqs || []).filter(
+      (faq) => faq.isAnswerSuitable && faq.isQuestionRelevant,
     );
 
-    if (suitableSuggestions.length === 0) {
-      log.info(`[FAQ] Skipping FAQ topic "${topic}" - no suitable suggestions`);
+    if (suitableFaqs.length === 0) {
       return;
     }
 
-    // Add URL as heading (or use topic if no URL)
-    if (url) {
-      const urlPath = url.replace(/^https?:\/\/[^/]+/, '');
-      markdown += `## ${faqNumber}. Target URL: [${urlPath}](${url})\n\n`;
-      if (topic) {
-        markdown += `**Topic:** ${topic}\n\n`;
-      }
-    } else if (topic) {
-      // Fallback to topic as heading if no URL
-      markdown += `## ${faqNumber}. Topic: ${topic}\n\n`;
-    }
-    // If no URL and no topic, skip heading entirely
-
-    // Add prompts that led to these FAQs in a collapsible section
-    if (prompts && Array.isArray(prompts) && prompts.length > 0) {
-      markdown += '<details>\n<summary>Related Search Queries</summary>\n\n';
-      prompts.forEach((prompt) => {
-        markdown += `- ${prompt}\n`;
+    // Create one suggestion per FAQ question
+    suitableFaqs.forEach((faq) => {
+      suggestionValues.push({
+        headingText: 'FAQs',
+        shouldOptimize: true, // Default to true, will be updated based on analysis
+        url: url || '',
+        topic: topic || '',
+        transformRules: {
+          selector: 'body',
+          action: 'appendChild',
+        },
+        item: {
+          question: faq.question,
+          answer: faq.answer,
+          sources: normalizeSources(faq.sources),
+          questionRelevanceReason: faq.questionRelevanceReason,
+          answerSuitabilityReason: faq.answerSuitabilityReason,
+          scrapedAt: faq.scrapedAt || new Date().toISOString(),
+        },
       });
-      markdown += '\n</details>\n\n';
-    }
-
-    // Add suggested FAQ section
-    markdown += '### Suggested FAQs\n\n';
-
-    suitableSuggestions.forEach((suggestion) => {
-      const { question, answer, sources } = suggestion;
-
-      // Add question and answer
-      markdown += `#### ${question}\n\n`;
-      markdown += `*AI suggested answer:* ${answer}\n\n`;
-
-      // Add sources if available
-      if (sources && Array.isArray(sources) && sources.length > 0) {
-        markdown += '**Sources:**\n';
-        sources.forEach((source) => {
-          if (source.title && source.url) {
-            markdown += `- [${source.title}](${source.url})\n`;
-          } else if (source.url) {
-            markdown += `- ${source.url}\n`;
-          }
-        });
-        markdown += '\n';
-      }
-
-      // Add rationale in a collapsible section (optional, for transparency)
-      if (suggestion.answerSuitabilityReason || suggestion.questionRelevanceReason) {
-        markdown += '<details>\n<summary>AI Analysis</summary>\n\n';
-        if (suggestion.answerSuitabilityReason) {
-          markdown += `**Answer Suitability:** ${suggestion.answerSuitabilityReason}\n\n`;
-        }
-        if (suggestion.questionRelevanceReason) {
-          markdown += `**Question Relevance:** ${suggestion.questionRelevanceReason}\n\n`;
-        }
-        markdown += '</details>\n\n';
-      }
     });
-
-    markdown += '---\n\n';
-    faqNumber += 1;
   });
 
-  return markdown;
+  return suggestionValues;
 }

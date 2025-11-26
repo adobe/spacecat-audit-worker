@@ -733,6 +733,22 @@ export const accessibilityOpportunitiesMap = {
 };
 
 /**
+ * Accessibility issue types that should be sent to Mystique for automatic code fix
+ */
+export const issueTypesForCodeFix = [
+  'aria-allowed-attr',
+  'aria-prohibited-attr',
+  'aria-roles',
+  'aria-hidden-focus',
+  'aria-required-attr',
+  'aria-valid-attr-value',
+  'button-name',
+  'link-name',
+  'select-name',
+  'aria-required-parent',
+];
+
+/**
  * Accessibility issue types that should be sent to Mystique for remediation guidance
  */
 export const issueTypesForMystique = [
@@ -774,6 +790,10 @@ export const URL_SOURCE_SEPARATOR = '?source=';
  * Prefixes for different audit types
  */
 export const AUDIT_PREFIXES = {
+  'accessibility-mobile': {
+    logIdentifier: 'A11yAuditMobile',
+    storagePrefix: 'accessibility-mobile',
+  },
   [Audit.AUDIT_TYPES.ACCESSIBILITY]: {
     logIdentifier: 'A11yAudit',
     storagePrefix: 'accessibility',

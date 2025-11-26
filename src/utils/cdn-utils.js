@@ -13,6 +13,7 @@
 import { HeadBucketCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 import zlib from 'zlib';
 import { hasText } from '@adobe/spacecat-shared-utils';
+import { PROVIDER_USER_AGENT_PATTERNS } from '../common/user-agent-classification.js';
 
 /* c8 ignore start */
 export const CDN_TYPES = {
@@ -167,21 +168,21 @@ export async function determineCdnProvider(s3, bucket, prefix) {
  * @param {string} bucketName - S3 bucket name
  * @param {string} serviceProvider - service provider
  * @param {Object} timeParts - Time parts {year, month, day, hour}
- * @param {string} imsOrgId - IMS Organization ID (for new structure)
+ * @param {string} pathId - Path ID for the logs
  */
-export function buildCdnPaths(bucketName, serviceProvider, timeParts, imsOrgId = null) {
+export function buildCdnPaths(bucketName, serviceProvider, timeParts, pathId = null) {
   const {
     year, month, day, hour,
   } = timeParts;
 
-  // New standardized bucket structure: cdn-logs-adobe-{env}/{imsOrgId}/raw/{serviceProvider}/
-  if (isStandardAdobeCdnBucket(bucketName) && imsOrgId) {
+  // New standardized bucket structure: cdn-logs-adobe-{env}/{pathId}/raw/{serviceProvider}/
+  if (isStandardAdobeCdnBucket(bucketName) && pathId) {
     return {
-      rawLocation: `s3://${bucketName}/${imsOrgId}/raw/${serviceProvider}/`,
-      aggregatedLocation: `s3://${bucketName}/${imsOrgId}/aggregated/`,
-      aggregatedOutput: `s3://${bucketName}/${imsOrgId}/aggregated/${year}/${month}/${day}/${hour}/`,
-      aggregatedReferralLocation: `s3://${bucketName}/${imsOrgId}/aggregated-referral/`,
-      aggregatedReferralOutput: `s3://${bucketName}/${imsOrgId}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
+      rawLocation: `s3://${bucketName}/${pathId}/raw/${serviceProvider}/`,
+      aggregatedLocation: `s3://${bucketName}/${pathId}/aggregated/`,
+      aggregatedOutput: `s3://${bucketName}/${pathId}/aggregated/${year}/${month}/${day}/${hour}/`,
+      aggregatedReferralLocation: `s3://${bucketName}/${pathId}/aggregated-referral/`,
+      aggregatedReferralOutput: `s3://${bucketName}/${pathId}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
       tempLocation: `s3://${bucketName}/temp/athena-results/`,
     };
   }
@@ -193,6 +194,39 @@ export function buildCdnPaths(bucketName, serviceProvider, timeParts, imsOrgId =
     aggregatedOutput: `s3://${bucketName}/aggregated/${year}/${month}/${day}/${hour}/`,
     aggregatedReferralOutput: `s3://${bucketName}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
     tempLocation: `s3://${bucketName}/temp/athena-results/`,
+  };
+}
+
+/**
+ * Builds paths with consolidated bucket for aggregated output
+ * @param {string} cdnBucketName - CDN bucket for raw logs
+ * @param {string} consolidatedBucket - Consolidated bucket for aggregated output
+ * @param {string} serviceProvider - service provider
+ * @param {Object} timeParts - Time parts {year, month, day, hour}
+ * @param {string} pathId - Path ID for the logs
+ * @param {string} siteId - Site ID
+ */
+export function buildConsolidatedPaths(
+  cdnBucketName,
+  consolidatedBucket,
+  serviceProvider,
+  timeParts,
+  pathId,
+  siteId,
+) {
+  const {
+    year, month, day, hour,
+  } = timeParts;
+
+  const cdnPaths = buildCdnPaths(cdnBucketName, serviceProvider, timeParts, pathId);
+
+  return {
+    rawLocation: cdnPaths.rawLocation,
+    aggregatedLocation: `s3://${consolidatedBucket}/aggregated/${siteId}/`,
+    aggregatedOutput: `s3://${consolidatedBucket}/aggregated/${siteId}/${year}/${month}/${day}/${hour}/`,
+    aggregatedReferralLocation: `s3://${consolidatedBucket}/aggregated-referral/${siteId}/`,
+    aggregatedReferralOutput: `s3://${consolidatedBucket}/aggregated-referral/${siteId}/${year}/${month}/${day}/${hour}/`,
+    tempLocation: `s3://${consolidatedBucket}/temp/athena-results/`,
   };
 }
 
@@ -216,23 +250,23 @@ function isLegacyBucketStructure(providers) {
  * Gets bucket structure info once and returns legacy status + service providers
  * @param {Object} s3Client - S3 client instance
  * @param {string} bucketName - The S3 bucket name
- * @param {string} imsOrgId - IMS Organization ID (for new structure)
+ * @param {string} pathId - Path ID for the logs
  * @returns {Promise<{isLegacy: boolean, providers: string[]}>} Bucket info
  */
-export async function getBucketInfo(s3Client, bucketName, imsOrgId = null) {
+export async function getBucketInfo(s3Client, bucketName, pathId = null) {
   try {
     let providers = [];
-    // For standardized Adobe buckets with IMS org, check under {imsOrgId}/raw/
-    if (isStandardAdobeCdnBucket(bucketName) && imsOrgId) {
+    // For standardized Adobe buckets with pathId, check under {pathId}/raw/
+    if (isStandardAdobeCdnBucket(bucketName) && pathId) {
       const response = await s3Client.send(new ListObjectsV2Command({
         Bucket: bucketName,
-        Prefix: `${imsOrgId}/raw/`,
+        Prefix: `${pathId}/raw/`,
         Delimiter: '/',
         MaxKeys: 10,
       }));
 
       providers = (response.CommonPrefixes || [])
-        .map((prefix) => prefix.Prefix.replace(`${imsOrgId}/raw/`, '').replace('/', ''))
+        .map((prefix) => prefix.Prefix.replace(`${pathId}/raw/`, '').replace('/', ''))
         .filter((provider) => provider && provider.length > 0);
 
       return { isLegacy: isLegacyBucketStructure(providers), providers };
@@ -276,5 +310,98 @@ export async function discoverCdnProviders(s3Client, bucketName, timeParts) {
   }
 
   return [];
+}
+
+export function resolveConsolidatedBucketName(context) {
+  const { env } = context;
+  const { AWS_ENV, AWS_REGION = 'us-east-1' } = env;
+  const environment = AWS_ENV || 'prod';
+  return `spacecat-${environment}-cdn-logs-aggregates-${AWS_REGION}`;
+}
+
+/**
+ * Checks if raw table location matches expected location and recreates if needed
+ * @returns {Promise<boolean>} True if table needs to be created
+ */
+export async function shouldRecreateRawTable(
+  athenaClient,
+  database,
+  rawTable,
+  expectedLocation,
+  log,
+) {
+  try {
+    const result = await athenaClient.query(`SHOW CREATE TABLE ${database}.${rawTable}`, database, `[Athena Query] Check raw table location ${database}.${rawTable}`);
+    const createStatement = result?.map((row) => row.createtab_stmt).join('\n');
+    const locationMatch = createStatement?.match(/LOCATION\s*['"]([^'"]+)['"]/i);
+
+    if (!locationMatch) return true;
+
+    const normalize = (loc) => (loc.endsWith('/') ? loc : `${loc}/`);
+    if (normalize(locationMatch[1]) !== normalize(expectedLocation)) {
+      log.info(`Table location mismatch. Dropping table ${database}.${rawTable}`);
+      await athenaClient.execute(`DROP TABLE IF EXISTS ${database}.${rawTable}`, database, `[Athena Query] Drop raw table ${database}.${rawTable}`);
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    return true;
+  }
+}
+
+export function buildSiteFilters(filters, site) {
+  if (!filters || filters.length === 0) {
+    const baseURL = site.getBaseURL();
+    const { host } = new URL(baseURL);
+    return `REGEXP_LIKE(host, '(?i)(${host})')`;
+  }
+
+  const clauses = filters.map(({ key, value, type }) => {
+    const regexPattern = value.join('|');
+    if (type === 'exclude') {
+      return `NOT REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+    }
+    return `REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+  });
+
+  const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
+  return `(${filterConditions})`;
+}
+
+/**
+ * Builds date filter for Athena queries using UTC dates
+ */
+export function buildDateFilter(startDate, endDate) {
+  const formatPart = (date) => ({
+    year: date.getUTCFullYear().toString(),
+    month: (date.getUTCMonth() + 1).toString().padStart(2, '0'),
+    day: date.getUTCDate().toString().padStart(2, '0'),
+  });
+
+  const start = formatPart(startDate);
+  const end = formatPart(endDate);
+
+  return start.year === end.year && start.month === end.month
+    ? `(year = '${start.year}' AND month = '${start.month}' AND day >= '${start.day}' AND day <= '${end.day}')`
+    : `((year = '${start.year}' AND month = '${start.month}' AND day >= '${start.day}')
+       OR (year = '${end.year}' AND month = '${end.month}' AND day <= '${end.day}'))`;
+}
+
+/**
+ * Builds user agent filter for AI agents (ChatGPT, Perplexity, Google, Claude)
+ * Reusable across different audit modules for CDN log analysis
+ */
+export function buildUserAgentFilter() {
+  const {
+    chatgpt, perplexity, google, claude,
+  } = PROVIDER_USER_AGENT_PATTERNS;
+
+  return `(
+    REGEXP_LIKE(user_agent, '${chatgpt}') OR 
+    REGEXP_LIKE(user_agent, '${perplexity}') OR 
+    REGEXP_LIKE(user_agent, '${google}') OR
+    REGEXP_LIKE(user_agent, '${claude}')
+  )`;
 }
 /* c8 ignore end */
