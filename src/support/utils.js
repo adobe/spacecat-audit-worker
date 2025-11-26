@@ -18,7 +18,7 @@ import {
   tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import URI from 'urijs';
-import { JSDOM } from 'jsdom';
+import * as cheerio from 'cheerio';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 
@@ -137,16 +137,16 @@ export function extractDomainAndProtocol(inputUrl) {
  * @returns {Array<string>} An array of URLs extracted from the sitemap.
  */
 export function extractUrlsFromSitemap(payload, tagName = 'url') {
-  const dom = new JSDOM(payload, { contentType: 'text/xml' });
-  const { document } = dom.window;
+  const $ = cheerio.load(payload, { xmlMode: true });
 
-  const elements = document.getElementsByTagName(tagName);
+  const elements = $(tagName);
 
   // Filter out any nulls if 'loc' element is missing
-  return Array.from(elements).map((element) => {
-    const loc = element.getElementsByTagName('loc')[0];
-    return loc ? loc.textContent.trim() : null;
-  }).filter((url) => url !== null);
+  return elements.map((i, element) => {
+    const loc = $(element).find('loc').first().text()
+      .trim();
+    return loc || null;
+  }).get().filter((url) => url !== null);
 }
 
 /**
@@ -246,24 +246,26 @@ const extractScrapedMetadataFromJson = (data, log) => {
 };
 
 export const extractLinksFromHeader = (data, baseUrl, log) => {
-  if (!isNonEmptyObject(data?.scrapeResult) && !hasText(data?.scrapeResult?.rawBody)) {
+  if (!isNonEmptyObject(data?.scrapeResult) || !hasText(data?.scrapeResult?.rawBody)) {
     log.warn(`No content found in index file for site ${baseUrl}`);
     return [];
   }
   const rawHtml = data.scrapeResult.rawBody;
-  const dom = new JSDOM(rawHtml);
+  if (typeof rawHtml !== 'string') {
+    log.warn(`Invalid content type in index file for site ${baseUrl}`);
+    return [];
+  }
+  const $ = cheerio.load(rawHtml);
 
-  const { document } = dom.window;
-
-  const header = document.querySelector('header');
-  if (!header) {
+  const header = $('header');
+  if (header.length === 0) {
     log.info(`No <header> element found for site ${baseUrl}`);
     return [];
   }
 
   const links = [];
-  header.querySelectorAll('a[href]').forEach((aTag) => {
-    const href = aTag.getAttribute('href');
+  header.find('a[href]').each((i, aTag) => {
+    const href = $(aTag).attr('href');
 
     try {
       const url = href.startsWith('/')

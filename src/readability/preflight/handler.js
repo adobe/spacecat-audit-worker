@@ -11,7 +11,7 @@
  */
 
 import rs from 'text-readability';
-import { JSDOM } from 'jsdom';
+import { load as cheerioLoad } from 'cheerio';
 import { franc } from 'franc-min';
 import { saveIntermediateResults } from '../../preflight/utils.js';
 
@@ -175,10 +175,10 @@ export default async function readability(context, auditContext) {
 
     const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
 
-    const doc = new JSDOM(rawBody).window.document;
+    const $ = cheerioLoad(rawBody);
 
     // Get all paragraph, div, and list item elements
-    const textElements = Array.from(doc.querySelectorAll('p, div, li'));
+    const textElements = $('p, div, li').toArray();
 
     let processedElements = 0;
     let poorReadabilityCount = 0;
@@ -250,44 +250,46 @@ export default async function readability(context, auditContext) {
       .map((element, index) => ({ element, index }))
       .filter(({ element }) => {
         // Check if element has child elements
-        const hasBlockChildren = element.children.length > 0
-          && !Array.from(element.children).every((child) => {
+        const $el = $(element);
+        const children = $el.children().toArray();
+        const hasBlockChildren = children.length > 0
+          && !children.every((child) => {
             const inlineTags = [
               'strong', 'b', 'em', 'i', 'span', 'a', 'mark',
               'small', 'sub', 'sup', 'u', 'code', 'br',
             ];
-            return inlineTags.includes(child.tagName.toLowerCase());
+            return inlineTags.includes($(child).prop('tagName').toLowerCase());
           });
 
         // Skip if it has block-level children (to avoid duplicate analysis)
         return !hasBlockChildren;
       })
       .filter(({ element }) => {
-        const textContent = element.textContent?.trim();
+        const textContent = $(element).text()?.trim();
         return textContent && textContent.length >= MIN_TEXT_LENGTH;
       });
 
     // Process filtered elements
     elementsToProcess.forEach(({ element, index }) => {
-      const textContent = element.textContent?.trim();
+      const $el = $(element);
+      const textContent = $el.text()?.trim();
 
       // Check if the element contains <br> tags (indicating multiple paragraphs)
-      if (element.innerHTML.includes('<br')) {
+      if ($el.html().includes('<br')) {
         // Create a temporary clone to manipulate
-        const tempElement = element.cloneNode(true);
+        const tempElement = $el.clone();
 
         // Replace <br> tags with a unique delimiter
         const brRegex = /<br\s*\/?>/gi;
-        tempElement.innerHTML = tempElement.innerHTML.replace(brRegex, '<!--BR_DELIMITER-->');
+        const htmlWithDelimiter = tempElement.html().replace(brRegex, '<!--BR_DELIMITER-->');
 
         // Split by the delimiter and extract text content
-        const paragraphs = tempElement.innerHTML
+        const paragraphs = htmlWithDelimiter
           .split('<!--BR_DELIMITER-->')
           .map((p) => {
-            // Create a temporary div to extract text content safely
-            const tempDiv = doc.createElement('div');
-            tempDiv.innerHTML = p;
-            return tempDiv.textContent;
+            // Create a temporary cheerio object to extract text content safely
+            const tempDiv = cheerioLoad(`<div>${p}</div>`)('div');
+            return tempDiv.text();
           })
           .map((p) => p.trim())
           .filter((p) => p.length >= MIN_TEXT_LENGTH);
