@@ -272,14 +272,6 @@ export const opportunityAndSuggestionsStep = async (context) => {
     createOpportunityProps(auditResult.vulnerabilityReport),
   );
 
-  const configuration = await Configuration.findLatest();
-  const generateSuggestions = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-suggest', site);
-  if (!generateSuggestions) {
-    log.debug(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-suggest not configured, skipping version recommendations`,
-    );
-  }
-
   // As a buildKey we hash all the component details and add name and version for readability
   const buildKey = (item) => {
     const s = JSON.stringify(item);
@@ -294,12 +286,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
     context,
     buildKey,
     mapNewSuggestion:
-        (entry) => mapVulnerabilityToSuggestion(opportunity, entry, generateSuggestions),
+        (entry) => mapVulnerabilityToSuggestion(opportunity, entry),
     log,
   });
 
-  const generateCodeFix = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-fix', site);
-  if (generateSuggestions && generateCodeFix && dataContainsCode(data)) {
+  const configuration = await Configuration.findLatest();
+  const generateSuggestions = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-suggest', site);
+
+  if (generateSuggestions && dataContainsCode(data)) {
     // TODO => only add new suggestions to the payload
     // TODO => optimize payload to reduce size use s3 instead of data as transport medium
 
@@ -319,9 +313,8 @@ export const opportunityAndSuggestionsStep = async (context) => {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
   } else {
     log.debug(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with mystique, because one of: 
-      security-vulnerabilities-auto-fix not configured, security-vulnerabilities-auto-suggest' not configured
-      or import worker could not get code.`,
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with mystique, because 
+      'security-vulnerabilities-auto-suggest' not configured or import worker could not get code.`,
     );
   }
   return { status: 'complete' };
