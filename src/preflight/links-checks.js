@@ -10,8 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import { JSDOM } from 'jsdom';
 import { stripTrailingSlash, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { load as cheerioLoad } from 'cheerio';
 
 /**
  * Helper function to check if a link is broken
@@ -99,24 +99,25 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
       .map(async ({ data }) => {
         const html = data.scrapeResult.rawBody;
         const pageUrl = data.finalUrl;
-        const dom = new JSDOM(html);
+        const $ = cheerioLoad(html);
 
-        const doc = dom.window.document;
-        const anchors = Array.from(doc.querySelectorAll('a[href]'));
+        const anchors = $('a[href]');
         const pageOrigin = new URL(pageUrl).origin;
         const internalSet = new Set();
         const externalSet = new Set();
 
-        log.debug(`[preflight-audit] Total links found (${anchors.length}):`, anchors.map((a) => a.href));
+        log.debug(`[preflight-audit] Total links found (${anchors.length}):`, anchors.map((i, a) => $(a).attr('href')).get());
 
-        anchors.forEach((a) => {
+        anchors.each((i, a) => {
+          const $a = $(a);
           // Skip links that are inside header or footer elements
-          if (a.closest('header') || a.closest('footer')) {
+          if ($a.closest('header').length || $a.closest('footer').length) {
             return;
           }
 
           try {
-            const abs = new URL(a.href, pageUrl).toString();
+            const href = $a.attr('href');
+            const abs = new URL(href, pageUrl).toString();
             if (new URL(abs).origin === pageOrigin) {
               internalSet.add(abs);
             } else {

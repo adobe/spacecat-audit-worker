@@ -11,7 +11,7 @@
  */
 
 import rs from 'text-readability';
-import { JSDOM } from 'jsdom';
+import { load as cheerioLoad } from 'cheerio';
 import { franc } from 'franc-min';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../../utils/s3-utils.js';
 import {
@@ -134,19 +134,12 @@ async function analyzeTextReadability(
  * that are descendants of <header> or <footer>.
  * Also filters out elements with insufficient text content length.
  *
- * @param {Document} originalDoc - The DOM Document to search for text elements.
+ * @param {Cheerio} $ - The Cheerio object to search for text elements.
  * @returns {Element[]} Array of meaningful text elements for readability analysis and enhancement.
  */
-const getMeaningfulElements = (originalDoc) => {
-  const doc = originalDoc.cloneNode(true);
-  doc.querySelectorAll('header, footer').forEach((element) => {
-    element.remove();
-  });
-  return Array.from(doc.querySelectorAll('p, blockquote, li'))
-    .filter((element) => {
-      const textContent = element.textContent?.trim();
-      return textContent && textContent.length >= MIN_TEXT_LENGTH;
-    });
+const getMeaningfulElements = ($) => {
+  $.root.find('header, footer').remove();
+  return $.root.find('p, blockquote, li').toArray();
 };
 
 /**
@@ -156,10 +149,10 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
   const readabilityIssues = [];
 
   try {
-    const doc = new JSDOM(rawBody).window.document;
+    const $ = cheerioLoad(rawBody);
 
-    // Get all paragraph, div, and list item elements (same as preflight)
-    const textElements = getMeaningfulElements(doc);
+    // Get all paragraph, div, and list item element selectors (same as preflight)
+    const textElements = getMeaningfulElements($);
 
     const detectedLanguages = new Set();
 
@@ -177,33 +170,39 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
       .map((element) => ({ element }))
       .filter(({ element }) => {
         // Check if element has child elements (avoid duplicate analysis)
-        const hasBlockChildren = element.children.length > 0
-          && !Array.from(element.children).every((child) => {
+        const $el = $(element);
+        const children = $el.children().toArray();
+        const hasBlockChildren = children.length > 0
+          && !children.every((child) => {
             const inlineTags = [
               'strong', 'b', 'em', 'i', 'span', 'a', 'mark',
               'small', 'sub', 'sup', 'u', 'code', 'br',
             ];
-            return inlineTags.includes(child.tagName.toLowerCase());
+            return inlineTags.includes($(child).prop('tagName').toLowerCase());
           });
 
         return !hasBlockChildren;
+      })
+      .filter(({ element }) => {
+        const textContent = $(element).text()?.trim();
+        return textContent && textContent.length >= MIN_TEXT_LENGTH && /\s/.test(textContent);
       });
 
     // Process each element and collect analysis promises
     const analysisPromises = [];
 
     elementsToProcess.forEach(({ element }) => {
-      const textContent = element.textContent?.trim();
+      const $el = $(element);
+      const textContent = $el.text()?.trim();
       const selector = getElementSelector(element);
 
       // Handle elements with <br> tags (multiple paragraphs)
-      if (element.innerHTML.includes('<br')) {
-        const paragraphs = element.innerHTML
+      if ($el.html().includes('<br')) {
+        const paragraphs = $el.html()
           .split(/<br\s*\/?>/gi)
           .map((p) => {
-            const tempDiv = doc.createElement('div');
-            tempDiv.innerHTML = p;
-            return tempDiv.textContent;
+            const tempDiv = cheerioLoad(`<div>${p}</div>`)('div');
+            return tempDiv.text();
           })
           .map((p) => p.trim())
           .filter((p) => p.length >= MIN_TEXT_LENGTH && /\s/.test(p));

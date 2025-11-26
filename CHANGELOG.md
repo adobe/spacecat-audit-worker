@@ -1,3 +1,10 @@
+## [1.255.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.6...v1.255.7) (2025-11-26)
+
+
+### Bug Fixes
+
+* remove jdsom ([#1666](https://github.com/adobe/spacecat-audit-worker/issues/1666)) ([ca88899](https://github.com/adobe/spacecat-audit-worker/commit/ca888997c3ba4bc20d4b6e9067f52adcc799f273))
+
 ## [1.255.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.5...v1.255.6) (2025-11-25)
 
 
