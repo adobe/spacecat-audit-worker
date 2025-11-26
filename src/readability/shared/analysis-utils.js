@@ -139,7 +139,7 @@ async function analyzeTextReadability(
  */
 const getMeaningfulElementsForReadability = ($) => {
   $('header, footer').remove();
-  return $('p, blockquote, div, li').toArray().filter((el) => {
+  return $('p, blockquote, li').toArray().filter((el) => {
     const text = $(el).text()?.trim();
     return text && text.length >= MIN_TEXT_LENGTH;
   });
