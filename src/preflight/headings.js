@@ -169,6 +169,11 @@ export default async function headings(context, auditContext) {
             seoRecommendation: check.explanation,
           };
 
+          // Include transform rules (selectors/actions) when available so UI can apply fixes
+          if (check.transformRules) {
+            opportunity.transformRules = check.transformRules;
+          }
+
           // Add AI suggestion if available
           if (check.isAISuggested) {
             opportunity.aiSuggestion = check.suggestion;
