@@ -522,53 +522,14 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(springSuggestion.data.cves[1].score).to.equal(5.5);
     });
 
-    it('should handle disabled auto-suggest configuration', async () => {
+    it('should handle auto suggest to trigger mystique', async () => {
       const configuration = {
         isHandlerEnabledForSite: sandbox.stub(),
       };
       context.dataAccess.Configuration.findLatest.resolves(configuration);
 
-      // Enable main handler but disable auto-suggest
-      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities').returns(true);
-      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities-auto-suggest').returns(false);
-
-      context.audit = {
-        getAuditResult: () => ({
-          vulnerabilityReport: VULNERABILITY_REPORT_WITH_VULNERABILITIES,
-          success: true,
-        }),
-        getId: () => 'test-audit-id',
-      };
-
-      const result = await opportunityAndSuggestionsStep(context);
-
-      expect(result).to.deep.equal({ status: 'complete' });
-      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
-      expect(context.log.debug).to.have.been.calledWithMatch(
-        /security-vulnerabilities-auto-suggest not configured, skipping version recommendations/,
-      );
-
-      // Verify opportunity was created and addSuggestions was called
-      const createdOpportunity = await context.dataAccess.Opportunity.create.getCall(0).returnValue;
-      expect(createdOpportunity.addSuggestions).to.have.been.calledOnce;
-
-      // Verify suggestions were created with empty recommended_version (generateSuggestions=false)
-      const suggestionsCall = createdOpportunity.addSuggestions.getCall(0);
-      const suggestions = suggestionsCall.args[0];
-      expect(suggestions).to.be.an('array');
-      expect(suggestions[0].data.recommended_version).to.equal('');
-    });
-
-    it('should handle code fixt to trigger mystique', async () => {
-      const configuration = {
-        isHandlerEnabledForSite: sandbox.stub(),
-      };
-      context.dataAccess.Configuration.findLatest.resolves(configuration);
-
-      // Enable main handler but disable auto-suggest
       configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities').returns(true);
       configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities-auto-suggest').returns(true);
-      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities-auto-fix').returns(true);
 
       context.audit = {
         getAuditResult: () => ({

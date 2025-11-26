@@ -25,7 +25,7 @@ export const TOP_PAGES_LIMIT = 10;
 export const TARGET_READABILITY_SCORE = 30;
 
 // Minimum character length for text chunks to be considered for readability analysis
-export const MIN_TEXT_LENGTH = 100;
+export const MIN_TEXT_LENGTH = 150;
 
 // Maximum characters to display in the audit report
 export const MAX_CHARACTERS_DISPLAY = 200;
