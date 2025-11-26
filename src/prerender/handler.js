@@ -534,7 +534,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
 }
 
 /**
- * Step 2: Process scraped content and compare server-side vs client-side HTML
+ * Step 3: Process scraped content and compare server-side vs client-side HTML
  * @param {Object} context - Audit context with site, audit, and other dependencies
  * @returns {Promise<Object>} - Audit results with opportunities
  */
@@ -594,8 +594,6 @@ export async function processContentAndGenerateOpportunities(context) {
         };
       }),
     );
-
-    // No server-side sorting; ranking is applied in suggestions and UI sorts client-side.
 
     const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
     const successfulComparisons = comparisonResults.filter((result) => !result.error);
