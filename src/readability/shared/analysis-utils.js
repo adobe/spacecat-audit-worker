@@ -24,6 +24,7 @@ import {
   MIN_TEXT_LENGTH,
   MAX_CHARACTERS_DISPLAY,
 } from './constants.js';
+import { getElementSelector } from './selector-utils.js';
 
 /**
  * Categorizes readability issues by severity and traffic impact
@@ -176,7 +177,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
 
     elementsToProcess.forEach(({ element }) => {
       const textContent = element.textContent?.trim();
-      const selector = '.dummy-selector';
+      const selector = getElementSelector(element);
 
       // Handle elements with <br> tags (multiple paragraphs)
       if (element.innerHTML.includes('<br')) {

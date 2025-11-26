@@ -207,7 +207,7 @@ export async function getObjectKeysFromSubfolders(
   }
 
   // return the object keys for the JSON files that have the reports per url
-  log.debug(`Found ${objectKeys.length} data files for site ${siteId}`);
+  log.info(`[A11yAudit] Found ${objectKeys.length} data files for site ${siteId} for date ${version}`);
   return { success: true, objectKeys, message: `Found ${objectKeys.length} data files` };
 }
 
