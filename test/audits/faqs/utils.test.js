@@ -22,7 +22,7 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/photoshop',
           topic: 'photoshop',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -59,7 +59,7 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/test',
           topic: 'test',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -92,7 +92,7 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/test',
           topic: 'test',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -122,7 +122,7 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/test',
           topic: 'test',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: false,
@@ -143,7 +143,7 @@ describe('FAQ Utils', () => {
       const faqs = [
         {
           topic: 'test',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -166,7 +166,7 @@ describe('FAQ Utils', () => {
       const faqs = [
         {
           url: 'https://www.adobe.com/products/test',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -190,7 +190,7 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/photoshop',
           topic: 'photoshop',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -203,7 +203,7 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/illustrator',
           topic: 'illustrator',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -235,12 +235,12 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/test1',
           topic: 'test1',
-          // No suggestions property
+          // No faqs property
         },
         {
           url: 'https://www.adobe.com/products/test2',
           topic: 'test2',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -263,7 +263,7 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/test',
           topic: 'test',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -295,7 +295,7 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/test',
           topic: 'test',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -317,7 +317,7 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/test',
           topic: 'test',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -345,7 +345,7 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/test',
           topic: 'test',
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -372,6 +372,60 @@ describe('FAQ Utils', () => {
       ]);
     });
 
+    it('should use provided scrapedAt timestamp when available', () => {
+      const testTimestamp = '2025-11-17T18:53:21.143931';
+      const faqs = [
+        {
+          url: 'https://www.adobe.com/products/test',
+          topic: 'test',
+          faqs: [
+            {
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Question?',
+              answer: 'Answer.',
+              sources: [],
+              scrapedAt: testTimestamp,
+            },
+          ],
+        },
+      ];
+
+      const suggestions = getJsonFaqSuggestion(faqs);
+
+      expect(suggestions).to.have.length(1);
+      expect(suggestions[0].item.scrapedAt).to.equal(testTimestamp);
+    });
+
+    it('should generate current timestamp when scrapedAt is missing', () => {
+      const faqs = [
+        {
+          url: 'https://www.adobe.com/products/test',
+          topic: 'test',
+          faqs: [
+            {
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Question?',
+              answer: 'Answer.',
+              sources: [],
+              // No scrapedAt property
+            },
+          ],
+        },
+      ];
+
+      const beforeTime = new Date().toISOString();
+      const suggestions = getJsonFaqSuggestion(faqs);
+      const afterTime = new Date().toISOString();
+
+      expect(suggestions).to.have.length(1);
+      expect(suggestions[0].item.scrapedAt).to.be.a('string');
+      expect(suggestions[0].item.scrapedAt).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+      // Timestamp should be between before and after
+      expect(suggestions[0].item.scrapedAt >= beforeTime).to.be.true;
+      expect(suggestions[0].item.scrapedAt <= afterTime).to.be.true;
+    });
   });
 });
 

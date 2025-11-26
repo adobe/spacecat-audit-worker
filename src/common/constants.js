@@ -20,3 +20,5 @@ export const DATA_SOURCES = {
   SITE: 'Site',
   PAGE: 'Page',
 };
+
+export const ELMO_LIVE_HOST = 'https://main--project-elmo-ui-data--adobe.aem.live';

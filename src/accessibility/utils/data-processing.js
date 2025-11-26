@@ -13,6 +13,7 @@
 import {
   DeleteObjectCommand,
   DeleteObjectsCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
@@ -206,7 +207,7 @@ export async function getObjectKeysFromSubfolders(
   }
 
   // return the object keys for the JSON files that have the reports per url
-  log.debug(`Found ${objectKeys.length} data files for site ${siteId}`);
+  log.info(`[A11yAudit] Found ${objectKeys.length} data files for site ${siteId} for date ${version}`);
   return { success: true, objectKeys, message: `Found ${objectKeys.length} data files` };
 }
 
@@ -977,16 +978,79 @@ export async function sendRunImportMessage(
 }
 
 /**
+ * Retrieves code path information saved in S3 bucket
+ * @param {Object} site - The site object
+ * @param {string} opportunityType - Opportunity type for logging
+ * @param {Object} context - The context object containing log, s3Client, env
+ * @returns {Promise<Object|null>} Object containing codeBucket and codePath, or null if should skip
+ */
+async function getCodeInfo(site, opportunityType, context) {
+  const { log, s3Client, env } = context;
+  const siteId = site.getId();
+  const deliveryType = site.getDeliveryType();
+  const codeConfig = site.getCode();
+
+  // For aem_edge delivery type, proceed without codeConfig
+  if (!codeConfig) {
+    if (deliveryType === 'aem_edge') {
+      return {
+        codeBucket: env.S3_IMPORTER_BUCKET_NAME,
+        codePath: '',
+      };
+    }
+    log.warn(`[${opportunityType}] [Site Id: ${siteId}] No code configuration found for site`);
+    return null;
+  }
+
+  const {
+    type: source, owner, repo, ref,
+  } = codeConfig;
+
+  const codeBucket = env.S3_IMPORTER_BUCKET_NAME;
+  const codePath = `code/${siteId}/${source}/${owner}/${repo}/${ref}/repository.zip`;
+
+  // Verify if the file exists in S3 bucket
+  let fileExists = false;
+  try {
+    await s3Client.send(new HeadObjectCommand({
+      Bucket: codeBucket,
+      Key: codePath,
+    }));
+    fileExists = true;
+    log.info(`[${opportunityType}] [Site Id: ${siteId}] Code file verified in S3 bucket`);
+  } catch (error) {
+    if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
+      log.warn(`[${opportunityType}] [Site Id: ${siteId}] Code file not found in S3: ${codePath}`);
+    } else {
+      log.error(`[${opportunityType}] [Site Id: ${siteId}] Error checking S3 file: ${error.message}`);
+    }
+  }
+
+  // Handle based on file existence and delivery type
+  if (!fileExists && deliveryType !== 'aem_edge') {
+    return null;
+  }
+
+  return {
+    codeBucket,
+    codePath: (!fileExists && deliveryType === 'aem_edge') ? '' : codePath,
+  };
+}
+
+/**
  * Groups suggestions by URL, source, and issue type, then sends messages
- * to the importer worker for code-fix generation
+ * directly to Mystique for code-fix generation.
+ * Verifies the code file exists in S3 bucket before sending messages.
+ * For aem_edge delivery type, sends message with empty codePath if file doesn't exist.
+ * For other delivery types, skips sending if file doesn't exist.
  *
  * @param {Object} opportunity - The opportunity object containing suggestions
  * @param {string} auditId - The audit ID
  * @param {Object} site - The site object
- * @param {Object} context - The context object containing log, sqs, env, and site
+ * @param {Object} context - The context object containing log, sqs, env, s3Client, and site
  * @returns {Promise<void>}
  */
-export async function sendCodeFixMessagesToImporter(opportunity, auditId, site, context) {
+export async function sendCodeFixMessagesToMystique(opportunity, auditId, site, context) {
   const {
     log, sqs, env,
   } = context;
@@ -996,6 +1060,15 @@ export async function sendCodeFixMessagesToImporter(opportunity, auditId, site, 
   const opportunityType = opportunity.getType();
 
   try {
+    // Verify and get code path information
+    const codeInfo = await getCodeInfo(site, opportunityType, context);
+
+    if (!codeInfo) {
+      return;
+    }
+
+    const { codeBucket, codePath } = codeInfo;
+
     // Get all suggestions from the opportunity
     const suggestions = await opportunity.getSuggestions();
     if (!suggestions || suggestions.length === 0) {
@@ -1008,16 +1081,18 @@ export async function sendCodeFixMessagesToImporter(opportunity, auditId, site, 
 
     suggestions.forEach((suggestion) => {
       const suggestionData = suggestion.getData();
-      const { url, source = 'default', issues } = suggestionData;
+      const {
+        url, source: formSource = 'default', issues, aiGenerated,
+      } = suggestionData;
 
       // By design, data.issues will always have length 1
-      if (issues && issues.length > 0) {
+      if (issues && issues.length > 0 && !aiGenerated) {
         const issueType = issues[0].type;
-        const groupKey = `${url}|${source}|${issueType}`;
+        const groupKey = `${url}|${formSource}|${issueType}`;
         if (!groupedSuggestions.has(groupKey)) {
           groupedSuggestions.set(groupKey, {
             url,
-            source,
+            source: formSource,
             issueType,
             suggestionIds: [],
           });
@@ -1032,37 +1107,33 @@ export async function sendCodeFixMessagesToImporter(opportunity, auditId, site, 
 
     const messagePromises = Array.from(groupedSuggestions.values()).map(async (group) => {
       const message = {
-        type: 'code',
+        type: `codefix:${opportunityType}`,
         siteId,
-        forward: {
-          queue: env.QUEUE_SPACECAT_TO_MYSTIQUE,
-          payload: {
-            type: `codefix:${opportunityType}`,
-            siteId,
-            auditId,
-            url: baseUrl,
-            deliveryType: site.getDeliveryType(),
-            source: 'spacecat',
-            observation: 'Auto optimize form accessibility',
-            data: {
-              opportunityId: opportunity.getId(),
-              suggestionIds: group.suggestionIds,
-            },
-          },
+        auditId,
+        url: baseUrl,
+        deliveryType: site.getDeliveryType(),
+        source: 'spacecat',
+        observation: 'Auto optimize form accessibility',
+        time: new Date().toISOString(),
+        data: {
+          opportunityId: opportunity.getId(),
+          suggestionIds: group.suggestionIds,
+          codeBucket,
+          codePath,
         },
       };
 
       try {
-        await sqs.sendMessage(env.IMPORT_WORKER_QUEUE_URL, message);
-        log.info(`[${opportunityType}] [Site Id: ${siteId}] Sent code-fix message to importer for URL: ${group.url}, source: ${group.source}, issueType: ${group.issueType}, suggestions: ${group.suggestionIds.length}`);
+        await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+        log.info(`[${opportunityType}] [Site Id: ${siteId}] Sent code-fix message to Mystique for URL: ${group.url}, source: ${group.source}, issueType: ${group.issueType}, suggestions: ${group.suggestionIds.length}`);
       } catch (error) {
         log.error(`[${opportunityType}] [Site Id: ${siteId}] Failed to send code-fix message for URL: ${group.url}, error: ${error.message}`);
       }
     });
 
     await Promise.all(messagePromises);
-    log.info(`[${opportunityType}] [Site Id: ${siteId}] Completed sending ${messagePromises.length} code-fix messages to importer`);
+    log.info(`[${opportunityType}] [Site Id: ${siteId}] Completed sending ${messagePromises.length} code-fix messages to Mystique`);
   } catch (error) {
-    log.error(`[${opportunityType}] [Site Id: ${siteId}] Error in sendCodeFixMessagesToImporter: ${error.message}`);
+    log.error(`[${opportunityType}] [Site Id: ${siteId}] Error in sendCodeFixMessagesToMystique: ${error.message}`);
   }
 }

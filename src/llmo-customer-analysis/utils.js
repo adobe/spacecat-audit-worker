@@ -67,21 +67,40 @@ export function getLastSunday() {
   return lastSunday;
 }
 
-function deepEqual(a, b) {
+/**
+ * Compares two prompt arrays for equality, treating them as sets (order-independent)
+ */
+function arePromptArraysEqual(prompts1, prompts2) {
+  if (!Array.isArray(prompts1) || !Array.isArray(prompts2)) return false;
+  if (prompts1.length !== prompts2.length) return false;
+
+  const sorted1 = JSON.stringify(
+    prompts1.sort((a, b) => a.prompt.localeCompare(b.prompt)),
+  );
+  const sorted2 = JSON.stringify(
+    prompts2.sort((a, b) => a.prompt.localeCompare(b.prompt)),
+  );
+
+  return sorted1 === sorted2;
+}
+function deepEqual(a, b, path = '') {
   if (a === b) return true;
   if (a == null || b == null) return false;
   if (typeof a !== typeof b) return false;
+  if (path.endsWith('.prompts') && Array.isArray(a) && Array.isArray(b)) {
+    return arePromptArraysEqual(a, b);
+  }
 
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false;
-    return a.every((item, index) => deepEqual(item, b[index]));
+    return a.every((item, index) => deepEqual(item, b[index], `${path}[${index}]`));
   }
 
   if (typeof a === 'object' && typeof b === 'object') {
     const keysA = Object.keys(a).sort();
     const keysB = Object.keys(b).sort();
-    if (!deepEqual(keysA, keysB)) return false;
-    return keysA.every((key) => deepEqual(a[key], b[key]));
+    if (!deepEqual(keysA, keysB, `${path}.keys`)) return false;
+    return keysA.every((key) => deepEqual(a[key], b[key], `${path}.${key}`));
   }
 
   return false;
@@ -119,6 +138,26 @@ export function areCategoryNamesDifferent(oldCategories, newCategories) {
   const oldNames = Object.values(oldCategories || {}).map((c) => c?.name).filter(Boolean).sort();
   const newNames = Object.values(newCategories || {}).map((c) => c?.name).filter(Boolean).sort();
   return oldNames.length !== newNames.length || !oldNames.every((name, i) => name === newNames[i]);
+}
+/**
+ * Returns true if any change unrelated to AI categories or AI topics is detected
+ */
+function checkAICategorizationOnly(changes) {
+  if (
+    changes.topics
+    || changes.brands
+    || changes.competitors
+    || changes.entities
+    || changes.cdnBucketConfig
+    || changes.deleted
+  ) return false;
+
+  const newHumanCategories = changes.categories
+    && Object.values(changes.categories).some((c) => c?.origin?.toLowerCase() !== 'ai');
+
+  if (newHumanCategories) return false;
+
+  return true;
 }
 
 export function compareConfigs(oldConfig, newConfig) {
@@ -174,6 +213,12 @@ export function compareConfigs(oldConfig, newConfig) {
   );
   if (cdnBucketConfigChanges) {
     changes.cdnBucketConfig = cdnBucketConfigChanges;
+  }
+  // Add metadata about AI-only changes
+  if (Object.keys(changes).length > 0 && oldConfig) {
+    changes.metadata = {
+      isAICategorizationOnly: checkAICategorizationOnly(changes),
+    };
   }
 
   return changes;

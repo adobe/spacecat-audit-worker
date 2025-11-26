@@ -39,7 +39,7 @@ export async function checkSiteRequiresValidation(site, context) {
 
   // Entitlement-driven: require validation only for PAID tier of ASO
   try {
-    const tierClient = TierClient.createForSite(context, site, ASO_PRODUCT_CODE);
+    const tierClient = await TierClient.createForSite(context, site, ASO_PRODUCT_CODE);
     const { entitlement } = await tierClient.checkValidEntitlement();
     const tier = entitlement?.getTier?.() ?? null;
     const productCode = entitlement?.getProductCode?.() ?? null;
