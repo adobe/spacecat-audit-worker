@@ -451,7 +451,6 @@ describe('data-access', () => {
       })).to.be.rejectedWith('Failed to create suggestions for siteId');
     });
 
-
     it('creates FixEntity items when marking suggestions as FIXED', async () => {
       const suggestionsData = [{ key: '1' }];
       const existingSuggestions = [
@@ -707,7 +706,7 @@ describe('data-access', () => {
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
       expect(mockOpportunity.addFixEntities).to.not.have.been.called;
     });
-    
+ 
     describe('scrapedUrlsSet filtering', () => {
       it('should preserve suggestions when their URLs were not scraped', async () => {
         const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
