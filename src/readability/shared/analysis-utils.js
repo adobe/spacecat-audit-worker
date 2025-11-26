@@ -139,7 +139,10 @@ async function analyzeTextReadability(
  */
 const getMeaningfulElementsForReadability = ($) => {
   $.root.find('header, footer').remove();
-  return $.root.find('p, blockquote, li').toArray();
+  return $.root.find('p, blockquote, li').toArray().filter((el) => {
+    const text = $(el).text()?.trim();
+    return text && text.length >= MIN_TEXT_LENGTH;
+  });
 };
 
 /**
