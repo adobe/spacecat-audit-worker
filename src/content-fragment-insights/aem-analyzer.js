@@ -105,15 +105,17 @@ export class AemAnalyzer {
       projection: 'minimal',
     };
 
+    let result = { items: [], cursor: null };
+
     for (let attempt = 0; attempt < AemAnalyzer.MAX_FETCH_ATTEMPTS; attempt += 1) {
       try {
         // eslint-disable-next-line no-await-in-loop
-        return await this.aemClient.getFragments(this.rootPath, options);
+        result = await this.aemClient.getFragments(this.rootPath, options);
+        break;
       } catch (error) {
         const isTimeout = error?.code === AemAnalyzer.ERROR_CODE_TIMEOUT;
-        const hasAttemptsLeft = attempt < AemAnalyzer.MAX_FETCH_ATTEMPTS - 1;
 
-        if (!isTimeout || !hasAttemptsLeft) {
+        if (!isTimeout) {
           throw error;
         }
 
@@ -124,6 +126,6 @@ export class AemAnalyzer {
       }
     }
 
-    return { items: [], cursor: null };
+    return result;
   }
 }
