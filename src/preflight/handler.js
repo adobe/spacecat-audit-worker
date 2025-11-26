@@ -20,6 +20,7 @@ import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js
 import {
   getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults,
 } from './utils.js';
+import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
 import canonical from './canonical.js';
 import metatags from './metatags.js';
 import links from './links.js';
@@ -232,27 +233,45 @@ export const preflightAudit = async (context) => {
               issue: 'Body content length is below 100 characters',
               seoImpact: 'Moderate',
               seoRecommendation: 'Add more meaningful content to the page',
+              elements: toElementTargets(getDomElementSelector(doc.body)),
             });
           }
         }
 
         if (loremIpsumEnabled && /lorem ipsum/i.test(textContent)) {
+          const loremElements = Array.from(
+            doc.querySelectorAll('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6'),
+          ).filter((node) => /lorem ipsum/i.test(node.textContent || ''));
+          const loremSelectors = loremElements.map(
+            (el) => getDomElementSelector(el),
+          ).filter(Boolean);
           auditsByName[AUDIT_LOREM_IPSUM].opportunities.push({
             check: 'placeholder-text',
             issue: 'Found Lorem ipsum placeholder text in the page content',
             seoImpact: 'High',
             seoRecommendation: 'Replace placeholder text with meaningful content',
+            elements: toElementTargets(
+              loremSelectors.length > 0 ? loremSelectors : getDomElementSelector(doc.body),
+              10,
+            ),
           });
         }
 
         if (h1CountEnabled) {
           const headingCount = doc.querySelectorAll('h1').length;
           if (headingCount !== 1) {
+            const h1Elements = Array.from(doc.querySelectorAll('h1'));
+            const h1Selectors = h1Elements.map((el) => getDomElementSelector(el)).filter(Boolean);
+            const fallbackElement = doc.querySelector('body > main') || doc.body;
+            const fallbackSelector = getDomElementSelector(fallbackElement) || 'body';
             auditsByName[AUDIT_H1_COUNT].opportunities.push({
               check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
               issue: headingCount > 1 ? `Found ${headingCount} H1 tags` : 'No H1 tag found on the page',
               seoImpact: 'High',
               seoRecommendation: 'Use exactly one H1 tag per page for better SEO structure',
+              elements: toElementTargets(
+                headingCount > 0 ? h1Selectors : fallbackSelector,
+              ),
             });
           }
         }

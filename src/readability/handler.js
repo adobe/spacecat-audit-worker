@@ -14,6 +14,7 @@ import rs from 'text-readability';
 import { JSDOM } from 'jsdom';
 import { franc } from 'franc-min';
 import { saveIntermediateResults } from '../preflight/utils.js';
+import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
 
 import { sendReadabilityToMystique } from './async-mystique.js';
 import {
@@ -223,6 +224,7 @@ export default async function readability(context, auditContext) {
 
           const issueText = `Text element is difficult to read: "${displayText}"`;
 
+          const selector = getDomElementSelector(element);
           audit.opportunities.push({
             check: 'poor-readability',
             issue: issueText,
@@ -231,6 +233,7 @@ export default async function readability(context, auditContext) {
             language: detectedLanguage,
             seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
             textContent: text, // Store full text for AI processing
+            ...(selector ? { elements: toElementTargets(selector) } : {}),
           });
         }
       } catch (error) {

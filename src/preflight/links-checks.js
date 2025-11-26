@@ -12,6 +12,7 @@
 
 import { JSDOM } from 'jsdom';
 import { stripTrailingSlash, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
 
 /**
  * Helper function to check if a link is broken
@@ -27,7 +28,9 @@ async function checkLinkStatus(href, pageUrl, context, options = {
   pageAuthToken: null,
 }) {
   const { log } = context;
-  const { pageAuthToken, isInternal } = options;
+  const {
+    pageAuthToken, isInternal, selectors = [],
+  } = options;
 
   const fetchOptions = {
     method: 'HEAD',
@@ -47,7 +50,12 @@ async function checkLinkStatus(href, pageUrl, context, options = {
     if (res.status >= 400) {
       const linkType = isInternal ? 'internal' : 'external';
       log.debug(`[preflight-audit] ${linkType} url ${href} returned with status code: %s`, res.status, res.statusText);
-      return { urlTo: href, href: pageUrl, status: res.status };
+      return {
+        urlTo: href,
+        href: pageUrl,
+        status: res.status,
+        elements: toElementTargets(selectors),
+      };
     }
 
     return null;
@@ -63,7 +71,12 @@ async function checkLinkStatus(href, pageUrl, context, options = {
       if (res.status >= 400) {
         const linkType = isInternal ? 'internal' : 'external';
         log.debug(`[preflight-audit] ${linkType} url ${href} returned with status code: %s`, res.status, res.statusText);
-        return { urlTo: href, href: pageUrl, status: res.status };
+        return {
+          urlTo: href,
+          href: pageUrl,
+          status: res.status,
+          elements: toElementTargets(selectors),
+        };
       }
 
       return null;
@@ -104,8 +117,8 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         const doc = dom.window.document;
         const anchors = Array.from(doc.querySelectorAll('a[href]'));
         const pageOrigin = new URL(pageUrl).origin;
-        const internalSet = new Set();
-        const externalSet = new Set();
+        const internalLinks = new Map();
+        const externalLinks = new Map();
 
         log.debug(`[preflight-audit] Total links found (${anchors.length}):`, anchors.map((a) => a.href));
 
@@ -117,27 +130,39 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
 
           try {
             const abs = new URL(a.href, pageUrl).toString();
+            const selector = getDomElementSelector(a);
             if (new URL(abs).origin === pageOrigin) {
-              internalSet.add(abs);
+              if (!internalLinks.has(abs)) {
+                internalLinks.set(abs, new Set());
+              }
+              if (selector) {
+                internalLinks.get(abs).add(selector);
+              }
             } else {
-              externalSet.add(abs);
+              if (!externalLinks.has(abs)) {
+                externalLinks.set(abs, new Set());
+              }
+              if (selector) {
+                externalLinks.get(abs).add(selector);
+              }
             }
           } catch {
             // skip invalid hrefs
           }
         });
 
-        log.debug('[preflight-audit] Found internal links:', internalSet);
-        log.debug('[preflight-audit] Found external links:', externalSet);
+        log.debug('[preflight-audit] Found internal links:', internalLinks);
+        log.debug('[preflight-audit] Found external links:', externalLinks);
 
         // Check internal links
         const internalResults = await Promise.all(
-          Array.from(internalSet).map(async (href) => checkLinkStatus(
+          Array.from(internalLinks.entries()).map(async ([href, selectorSet]) => checkLinkStatus(
             href,
             pageUrl,
             context,
             {
               ...options,
+              selectors: [...selectorSet],
               isInternal: true,
             },
           )),
@@ -145,12 +170,13 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
 
         // Check external links
         const externalResults = await Promise.all(
-          Array.from(externalSet).map(async (href) => checkLinkStatus(
+          Array.from(externalLinks.entries()).map(async ([href, selectorSet]) => checkLinkStatus(
             href,
             pageUrl,
             context,
             {
               ...options,
+              selectors: [...selectorSet],
               isInternal: false,
             },
           )),
