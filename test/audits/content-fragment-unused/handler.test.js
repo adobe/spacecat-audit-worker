@@ -27,8 +27,13 @@ describe('Content Fragment Unused Handler', () => {
   let context;
   let mockAemAnalyzer;
   let mockConvertToOpportunity;
+  let mockGetImsOrgId;
+  let mockSyncSuggestions;
+  let mockUploadFragmentsToS3;
+  let mockDownloadFragmentsFromS3;
+  let mockBuildStoragePath;
   let contentFragmentUnusedAuditRunner;
-  let createContentFragmentUnusedOpportunity;
+  let createContentFragmentUnusedSuggestions;
   let createStatusSummary;
   let AUDIT_TYPE;
 
@@ -36,12 +41,19 @@ describe('Content Fragment Unused Handler', () => {
     sandbox = sinon.createSandbox();
 
     context = new MockContextBuilder().withSandbox(sandbox).build();
+    context.env = { AWS_ENV: 'test' };
+    context.s3Client = { send: sandbox.stub().resolves() };
 
     mockAemAnalyzer = {
       findUnusedFragments: sandbox.stub(),
     };
 
     mockConvertToOpportunity = sandbox.stub();
+    mockGetImsOrgId = sandbox.stub().resolves('test-ims-org-id');
+    mockSyncSuggestions = sandbox.stub().resolves();
+    mockUploadFragmentsToS3 = sandbox.stub().resolves();
+    mockDownloadFragmentsFromS3 = sandbox.stub().resolves([]);
+    mockBuildStoragePath = sandbox.stub().returns('s3://test-bucket/test-path/file.json');
 
     const handlerModule = await esmock(
       '../../../src/content-fragment-unused/handler.js',
@@ -52,11 +64,20 @@ describe('Content Fragment Unused Handler', () => {
         '../../../src/common/opportunity.js': {
           convertToOpportunity: mockConvertToOpportunity,
         },
+        '../../../src/utils/data-access.js': {
+          getImsOrgId: mockGetImsOrgId,
+          syncSuggestions: mockSyncSuggestions,
+        },
+        '../../../src/content-fragment-unused/storage/s3-storage.js': {
+          uploadFragmentsToS3: mockUploadFragmentsToS3,
+          downloadFragmentsFromS3: mockDownloadFragmentsFromS3,
+          buildStoragePath: mockBuildStoragePath,
+        },
       },
     );
 
     contentFragmentUnusedAuditRunner = handlerModule.contentFragmentUnusedAuditRunner;
-    createContentFragmentUnusedOpportunity = handlerModule.createContentFragmentUnusedOpportunity;
+    createContentFragmentUnusedSuggestions = handlerModule.createContentFragmentUnusedSuggestions;
     createStatusSummary = handlerModule.createStatusSummary;
     AUDIT_TYPE = handlerModule.AUDIT_TYPE;
   });
@@ -247,7 +268,7 @@ describe('Content Fragment Unused Handler', () => {
       mockAemAnalyzer.findUnusedFragments.resolves({
         totalFragments: 10,
         totalUnused: 2,
-        unusedFragments: [
+        data: [
           { status: 'NEW', ageInDays: 100 },
           { status: 'DRAFT', ageInDays: 120 },
         ],
@@ -259,15 +280,15 @@ describe('Content Fragment Unused Handler', () => {
       expect(result).to.have.property('auditResult');
       expect(result.auditResult.totalFragments).to.equal(10);
       expect(result.auditResult.totalUnused).to.equal(2);
-      expect(result.auditResult.unusedFragments).to.have.lengthOf(2);
       expect(result.auditResult.statusSummary).to.be.an('array');
+      expect(result.auditResult.s3Path).to.be.a('string');
     });
 
     it('should include status summary in result', async () => {
       mockAemAnalyzer.findUnusedFragments.resolves({
         totalFragments: 5,
         totalUnused: 1,
-        unusedFragments: [
+        data: [
           { status: 'MODIFIED', ageInDays: 95 },
         ],
       });
@@ -285,7 +306,7 @@ describe('Content Fragment Unused Handler', () => {
       mockAemAnalyzer.findUnusedFragments.resolves({
         totalFragments: 0,
         totalUnused: 0,
-        unusedFragments: [],
+        data: [],
       });
 
       await contentFragmentUnusedAuditRunner(baseURL, context, site);
@@ -297,90 +318,220 @@ describe('Content Fragment Unused Handler', () => {
       mockAemAnalyzer.findUnusedFragments.resolves({
         totalFragments: 10,
         totalUnused: 0,
-        unusedFragments: [],
+        data: [],
       });
 
       const result = await contentFragmentUnusedAuditRunner(baseURL, context, site);
 
       expect(result.auditResult.totalUnused).to.equal(0);
-      expect(result.auditResult.unusedFragments).to.be.empty;
+    });
+
+    it('should throw error when IMS org ID is missing', async () => {
+      mockGetImsOrgId.resolves(null);
+
+      await expect(
+        contentFragmentUnusedAuditRunner(baseURL, context, site),
+      ).to.be.rejected;
+    });
+
+    it('should throw error when AWS_ENV is missing', async () => {
+      context.env = {};
+
+      await expect(
+        contentFragmentUnusedAuditRunner(baseURL, context, site),
+      ).to.be.rejected;
+    });
+
+    it('should upload fragments to S3', async () => {
+      const fragments = [
+        { status: 'NEW', ageInDays: 100 },
+      ];
+      mockAemAnalyzer.findUnusedFragments.resolves({
+        totalFragments: 10,
+        totalUnused: 1,
+        data: fragments,
+      });
+
+      await contentFragmentUnusedAuditRunner(baseURL, context, site);
+
+      expect(mockUploadFragmentsToS3).to.have.been.calledOnce;
+      expect(mockUploadFragmentsToS3).to.have.been.calledWith(
+        fragments,
+        sinon.match.string,
+        context.s3Client,
+        context.log,
+      );
     });
   });
 
-  describe('createContentFragmentUnusedOpportunity', () => {
+  describe('createContentFragmentUnusedSuggestions', () => {
     const auditUrl = 'https://example.com';
 
-    it('should create opportunity with valid audit data', async () => {
+    it('should create suggestions with valid audit data', async () => {
+      const fragments = [
+        { fragmentPath: '/content/dam/fragment1', status: 'NEW', ageInDays: 100 },
+      ];
+      mockDownloadFragmentsFromS3.resolves(fragments);
+
+      const mockOpportunity = {
+        getId: sandbox.stub().returns('opp-123'),
+      };
+      mockConvertToOpportunity.resolves(mockOpportunity);
+
       const auditData = {
         siteId: 'test-site-id',
         id: 'audit-123',
         auditResult: {
           totalFragments: 10,
-          totalUnused: 2,
-          unusedFragments: [],
+          totalUnused: 1,
+          s3Path: 's3://test-bucket/test-path/file.json',
           statusSummary: [],
         },
       };
 
-      mockConvertToOpportunity.resolves({});
-
-      await createContentFragmentUnusedOpportunity(auditUrl, auditData, context);
+      await createContentFragmentUnusedSuggestions(auditUrl, auditData, context);
 
       expect(mockConvertToOpportunity).to.have.been.calledOnce;
+      expect(mockSyncSuggestions).to.have.been.calledOnce;
     });
 
-    it('should skip opportunity creation when audit result is missing', async () => {
+    it('should skip suggestions creation when audit result is missing', async () => {
       const auditData = {
         siteId: 'test-site-id',
         id: 'audit-123',
       };
 
-      await createContentFragmentUnusedOpportunity(auditUrl, auditData, context);
+      await createContentFragmentUnusedSuggestions(auditUrl, auditData, context);
 
       expect(mockConvertToOpportunity).to.not.have.been.called;
     });
 
-    it('should skip opportunity creation when audit data is null', async () => {
-      await createContentFragmentUnusedOpportunity(auditUrl, null, context);
+    it('should skip suggestions creation when audit data is null', async () => {
+      await createContentFragmentUnusedSuggestions(auditUrl, null, context);
 
       expect(mockConvertToOpportunity).to.not.have.been.called;
     });
 
-    it('should skip opportunity creation when auditResult is null', async () => {
+    it('should skip suggestions creation when auditResult is null', async () => {
       const auditData = {
         siteId: 'test-site-id',
         id: 'audit-123',
         auditResult: null,
       };
 
-      await createContentFragmentUnusedOpportunity(auditUrl, auditData, context);
+      await createContentFragmentUnusedSuggestions(auditUrl, auditData, context);
 
       expect(mockConvertToOpportunity).to.not.have.been.called;
     });
 
-    it('should pass correct parameters to convertToOpportunity', async () => {
+    it('should skip suggestions creation when s3Path is missing', async () => {
       const auditData = {
         siteId: 'test-site-id',
         id: 'audit-123',
         auditResult: {
           totalFragments: 10,
           totalUnused: 2,
-          unusedFragments: [],
           statusSummary: [],
         },
       };
 
-      mockConvertToOpportunity.resolves({});
+      await createContentFragmentUnusedSuggestions(auditUrl, auditData, context);
 
-      await createContentFragmentUnusedOpportunity(auditUrl, auditData, context);
+      expect(mockConvertToOpportunity).to.not.have.been.called;
+    });
+
+    it('should skip suggestions creation when no fragments downloaded', async () => {
+      mockDownloadFragmentsFromS3.resolves([]);
+
+      const auditData = {
+        siteId: 'test-site-id',
+        id: 'audit-123',
+        auditResult: {
+          totalFragments: 10,
+          totalUnused: 0,
+          s3Path: 's3://test-bucket/test-path/file.json',
+          statusSummary: [],
+        },
+      };
+
+      await createContentFragmentUnusedSuggestions(auditUrl, auditData, context);
+
+      expect(mockConvertToOpportunity).to.not.have.been.called;
+    });
+
+    it('should pass correct parameters to convertToOpportunity', async () => {
+      const fragments = [
+        { fragmentPath: '/content/dam/fragment1', status: 'NEW', ageInDays: 100 },
+      ];
+      mockDownloadFragmentsFromS3.resolves(fragments);
+
+      const mockOpportunity = {
+        getId: sandbox.stub().returns('opp-123'),
+      };
+      mockConvertToOpportunity.resolves(mockOpportunity);
+
+      const auditData = {
+        siteId: 'test-site-id',
+        id: 'audit-123',
+        auditResult: {
+          totalFragments: 10,
+          totalUnused: 1,
+          s3Path: 's3://test-bucket/test-path/file.json',
+          statusSummary: [],
+        },
+      };
+
+      await createContentFragmentUnusedSuggestions(auditUrl, auditData, context);
 
       expect(mockConvertToOpportunity).to.have.been.calledWith(
         auditUrl,
-        auditData,
+        sinon.match.object,
         context,
         sinon.match.func,
         'content-fragment-unused',
       );
+    });
+
+    it('should build correct suggestion from mapNewSuggestion callback', async () => {
+      const fragments = [
+        { fragmentPath: '/content/dam/fragment1', status: 'NEW', ageInDays: 100 },
+      ];
+      mockDownloadFragmentsFromS3.resolves(fragments);
+
+      const mockOpportunity = {
+        getId: sandbox.stub().returns('opp-123'),
+      };
+      mockConvertToOpportunity.resolves(mockOpportunity);
+
+      const auditData = {
+        siteId: 'test-site-id',
+        id: 'audit-123',
+        auditResult: {
+          totalFragments: 10,
+          totalUnused: 1,
+          s3Path: 's3://test-bucket/test-path/file.json',
+          statusSummary: [],
+        },
+      };
+
+      await createContentFragmentUnusedSuggestions(auditUrl, auditData, context);
+
+      // Get the mapNewSuggestion callback from the syncSuggestions call
+      const syncCall = mockSyncSuggestions.firstCall;
+      const { mapNewSuggestion, buildKey } = syncCall.args[0];
+
+      // Test buildKey function
+      const testFragment = { fragmentPath: '/content/dam/test-fragment' };
+      expect(buildKey(testFragment)).to.equal('/content/dam/test-fragment');
+
+      // Test mapNewSuggestion function
+      const suggestion = mapNewSuggestion(fragments[0]);
+      expect(suggestion).to.deep.equal({
+        opportunityId: 'opp-123',
+        type: 'CONTENT_UPDATE',
+        rank: 0,
+        data: fragments[0],
+      });
     });
   });
 
