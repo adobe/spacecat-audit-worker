@@ -1,3 +1,10 @@
+## [1.256.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.256.2...v1.256.3) (2025-11-26)
+
+
+### Bug Fixes
+
+* add code import as step audit ([#1649](https://github.com/adobe/spacecat-audit-worker/issues/1649)) ([d44fd70](https://github.com/adobe/spacecat-audit-worker/commit/d44fd70c89c1b7da8ea2fd8b9ef312b91beaf186))
+
 ## [1.256.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.256.1...v1.256.2) (2025-11-26)
 
 
