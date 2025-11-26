@@ -1,3 +1,10 @@
+## [1.255.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.11...v1.255.12) (2025-11-26)
+
+
+### Bug Fixes
+
+* add proper logging for publish ([#1667](https://github.com/adobe/spacecat-audit-worker/issues/1667)) ([30345b2](https://github.com/adobe/spacecat-audit-worker/commit/30345b21a2caf073192dbf748431cab943d9e5b7))
+
 ## [1.255.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.10...v1.255.11) (2025-11-26)
 
 
