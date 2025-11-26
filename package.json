@@ -83,7 +83,7 @@
     "@adobe/spacecat-helix-content-sdk": "1.4.28",
     "@adobe/spacecat-shared-ahrefs-client": "1.10.1",
     "@adobe/spacecat-shared-athena-client": "1.7.3",
-    "@adobe/spacecat-shared-data-access": "2.88.3",
+    "@adobe/spacecat-shared-data-access": "2.88.1",
     "@adobe/spacecat-shared-google-client": "1.4.58",
     "@adobe/spacecat-shared-gpt-client": "1.6.10",
     "@adobe/spacecat-shared-html-analyzer": "1.0.6",

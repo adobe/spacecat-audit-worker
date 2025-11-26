@@ -237,8 +237,7 @@ async function run(message, context) {
   }
 }
 
-// Export as a named constant to prevent bundler mangling
-const main = wrap(run)
+export const main = wrap(run)
   .with(dataAccess)
   .with(sqsEventAdapter)
   .with(logWrapper)
@@ -246,9 +245,3 @@ const main = wrap(run)
   .with(s3Client)
   .with(secrets, { name: resolveSecretsName })
   .with(helixStatus);
-
-// Explicit export to ensure bundler doesn't rename it
-export { main };
-
-// Also export as default for compatibility
-export default main;
