@@ -413,6 +413,19 @@ export function createProcessAccessibilityOpportunitiesWithDevice(deviceType) {
   };
 }
 
+export async function codeImportStep(context) {
+  const {
+    log, site,
+  } = context;
+
+  log.info(`[A11yAudit] [Site Id: ${site.getId()}] starting code import step`);
+
+  return {
+    type: 'code',
+    siteId: site.getId(),
+  };
+}
+
 export default new AuditBuilder()
   .withUrlResolver((site) => site.resolveFinalURL())
   .addStep(
@@ -425,5 +438,6 @@ export default new AuditBuilder()
     scrapeAccessibilityData,
     AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
   )
+  .addStep('codeImport', codeImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('processAccessibilityOpportunities', processAccessibilityOpportunities)
   .build();

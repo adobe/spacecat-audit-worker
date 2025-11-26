@@ -984,7 +984,7 @@ export async function sendRunImportMessage(
  * @param {Object} context - The context object containing log, s3Client, env
  * @returns {Promise<Object|null>} Object containing codeBucket and codePath, or null if should skip
  */
-async function getCodeInfo(site, opportunityType, context) {
+export async function getCodeInfo(site, opportunityType, context) {
   const { log, s3Client, env } = context;
   const siteId = site.getId();
   const deliveryType = site.getDeliveryType();
