@@ -16,8 +16,14 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import {
-  retrieveSiteBySiteId, syncSuggestions, getImsOrgId, retrieveAuditById, keepSameDataFunction,
+  retrieveSiteBySiteId,
+  syncSuggestions,
+  getImsOrgId,
+  retrieveAuditById,
+  keepSameDataFunction,
+  keepLatestMergeDataFunction,
 } from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -125,8 +131,9 @@ describe('data-access', () => {
         .build();
     });
 
-    it('should return early if context is empty', async () => {
+    it('should return early if context is null', async () => {
       await syncSuggestions({
+        context: null,
         opportunity: mockOpportunity,
         newData: [],
         buildKey,
@@ -159,6 +166,8 @@ describe('data-access', () => {
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
       mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+      // mark site as requiring validation
+      context.site = { requiresValidation: true };
 
       await syncSuggestions({
         opportunity: mockOpportunity,
@@ -169,21 +178,25 @@ describe('data-access', () => {
       });
 
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
-      expect(mockOpportunity.addSuggestions).to.have.been.calledOnceWith([{
-        opportunityId: '123',
-        type: 'TYPE',
-        rank: 123,
-        data: {
-          key: '3',
-        },
-      }, {
-        opportunityId: '123',
-        type: 'TYPE',
-        rank: 123,
-        data: {
-          key: '4',
-        },
-      }]);
+      const addSuggestionsCall = mockOpportunity.addSuggestions.getCall(0);
+      expect(addSuggestionsCall).to.exist;
+
+      const actualArgs = addSuggestionsCall.args[0];
+      expect(actualArgs.length).to.equal(2);
+
+      // Check first suggestion
+      expect(actualArgs[0].opportunityId).to.equal('123');
+      expect(actualArgs[0].type).to.equal('TYPE');
+      expect(actualArgs[0].rank).to.equal(123);
+      expect(actualArgs[0].status).to.equal('PENDING_VALIDATION');
+      expect(actualArgs[0].data).to.deep.equal({ key: '3' });
+
+      // Check second suggestion
+      expect(actualArgs[1].opportunityId).to.equal('123');
+      expect(actualArgs[1].type).to.equal('TYPE');
+      expect(actualArgs[1].rank).to.equal(123);
+      expect(actualArgs[1].status).to.equal('PENDING_VALIDATION');
+      expect(actualArgs[1].data).to.deep.equal({ key: '4' });
       expect(mockLogger.error).to.not.have.been.called;
     });
 
@@ -211,6 +224,10 @@ describe('data-access', () => {
       mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
 
       await syncSuggestions({
+        context: {
+          log: { debug: () => {}, info: () => {} },
+          dataAccess: { Suggestion: { bulkUpdateStatus: () => {} } },
+        },
         opportunity: mockOpportunity,
         newData,
         buildKey,
@@ -218,6 +235,78 @@ describe('data-access', () => {
       });
 
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    });
+
+    it('should update OUTDATED suggestions to PENDING_VALIDATION when site requires validation', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title' },
+        { key: '2', title: 'same title' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.OUTDATED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'updated title' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      context.site = { requiresValidation: true };
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setStatus).to.have.been
+        .calledWith(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
+      expect(existingSuggestions[0].save).to.have.been.called;
+    });
+
+    it('should update OUTDATED suggestions to NEW when site does not require validation', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title' },
+        { key: '2', title: 'same title' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.OUTDATED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'updated title' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      context.site = { requiresValidation: false };
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(existingSuggestions[0].setStatus).to.have
+        .been.calledWith(SuggestionDataAccess.STATUSES.NEW);
+      expect(existingSuggestions[0].save).to.have.been.called;
     });
 
     it('should update suggestions when they are detected again', async () => {
@@ -290,7 +379,8 @@ describe('data-access', () => {
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
       expect(mockOpportunity.addSuggestions).to.not.have.been.called;
       expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
-      expect(existingSuggestions[0].setStatus).to.have.been.calledOnceWith('NEW');
+      expect(existingSuggestions[0].setStatus).to.have.been
+        .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
       expect(mockLogger.warn).to.have.been.calledOnceWith('Resolved suggestion found in audit. Possible regression.');
       expect(existingSuggestions[0].save).to.have.been.calledOnce;
     });
@@ -372,12 +462,16 @@ describe('data-access', () => {
           mapNewSuggestion,
         });
       } catch (e) {
-        expect(e.message).to.equal('Failed to create suggestions for siteId site-id');
+        expect(e.message).to.match(/Failed to create suggestions for siteId (site-id|unknown)/);
+        expect(e.message).to.include('Sample error: some error');
       }
 
-      expect(mockLogger.error).to.have.been.calledTwice;
-      expect(mockLogger.error.firstCall.args[0]).to.include('contains 1 items with errors');
-      expect(mockLogger.error.secondCall.args[0]).to.include('failed with error: some error');
+      // Now logs summary + detailed error + failed item data + error items array = 4 calls
+      expect(mockLogger.error).to.have.callCount(4);
+      expect(mockLogger.error.firstCall.args[0]).to.match(/contains 1 items with errors/);
+      expect(mockLogger.error.secondCall.args[0]).to.include('Error 1/1: some error');
+      expect(mockLogger.error.thirdCall.args[0]).to.include('Failed item data');
+      expect(mockLogger.error.getCall(3).args[0]).to.equal('[suggestions.errorItems]');
     });
 
     it('should throw an error if all items fail to be created', async () => {
@@ -406,6 +500,222 @@ describe('data-access', () => {
       })).to.be.rejectedWith('Failed to create suggestions for siteId');
     });
 
+    describe('scrapedUrlsSet filtering', () => {
+      it('should preserve suggestions when their URLs were not scraped', async () => {
+        const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+        // Existing suggestions for URLs that weren't in this audit run
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { url: 'https://example.com/page1', key: 'page1' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+          {
+            id: '2',
+            data: { url: 'https://example.com/page2', key: 'page2' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+        ];
+
+        // New audit data only has page3 (page1 and page2 were not scraped)
+        const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+        const scrapedUrlsSet = new Set(['https://example.com/page3']);
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey: buildKeyWithUrl,
+          mapNewSuggestion,
+          scrapedUrlsSet,
+        });
+
+        // Verify that bulkUpdateStatus was NOT called (suggestions preserved)
+        expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 0');
+      });
+
+      it('should mark suggestions as outdated when their URLs were scraped but issues are gone', async () => {
+        const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+        // Existing suggestions for URLs that were scraped
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { url: 'https://example.com/page1', key: 'page1' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+          {
+            id: '2',
+            data: { url: 'https://example.com/page2', key: 'page2' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+        ];
+
+        // New audit data has page3, but not page1 or page2 (they were scraped but issues are gone)
+        const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+        const scrapedUrlsSet = new Set([
+          'https://example.com/page1',
+          'https://example.com/page2',
+          'https://example.com/page3',
+        ]);
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey: buildKeyWithUrl,
+          mapNewSuggestion,
+          scrapedUrlsSet,
+        });
+
+        // Verify that bulkUpdateStatus WAS called to mark them as outdated
+        expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+          existingSuggestions,
+          'OUTDATED',
+        );
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 2');
+      });
+
+      it('should handle mixed scenario: some URLs scraped, some not', async () => {
+        const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { url: 'https://example.com/page1', key: 'page1' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+          {
+            id: '2',
+            data: { url: 'https://example.com/page2', key: 'page2' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+          {
+            id: '3',
+            data: { url: 'https://example.com/page3', key: 'page3' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page3', key: 'page3' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+        ];
+
+        // New audit: page4 has issues, page2 was scraped but no issues, page1 and page3 not scraped
+        const newData = [{ url: 'https://example.com/page4', key: 'page4' }];
+        const scrapedUrlsSet = new Set([
+          'https://example.com/page2', // scraped, no issues (should be marked OUTDATED)
+          'https://example.com/page4', // scraped, has issues (new suggestion)
+        ]);
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey: buildKeyWithUrl,
+          mapNewSuggestion,
+          scrapedUrlsSet,
+        });
+
+        // Only page2 should be marked as outdated (it was scraped but issue is gone)
+        // page1 and page3 should be preserved (not scraped)
+        expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnce;
+        const markedOutdated = context.dataAccess.Suggestion.bulkUpdateStatus.firstCall.args[0];
+        expect(markedOutdated).to.have.length(1);
+        expect(markedOutdated[0].id).to.equal('2');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+      });
+
+      it('should work without scrapedUrlsSet (backward compatibility)', async () => {
+        // When scrapedUrlsSet is not provided, all non-matching suggestions
+        // should be marked outdated
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { key: '1' },
+            getData: sinon.stub().returns({ key: '1' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+          {
+            id: '2',
+            data: { key: '2' },
+            getData: sinon.stub().returns({ key: '2' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+        ];
+
+        const newData = [{ key: '3' }];
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+          // scrapedUrlsSet not provided
+        });
+
+        // Without scrapedUrlsSet, all non-matching suggestions should be marked outdated
+        expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+          existingSuggestions,
+          'OUTDATED',
+        );
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 2');
+      });
+
+      it('should use FIXED status when statusToSetForOutdated is specified', async () => {
+        const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { url: 'https://example.com/page1', key: 'page1' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+        ];
+
+        const newData = [{ url: 'https://example.com/page2', key: 'page2' }];
+        const scrapedUrlsSet = new Set(['https://example.com/page1', 'https://example.com/page2']);
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey: buildKeyWithUrl,
+          mapNewSuggestion,
+          scrapedUrlsSet,
+          statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
+        });
+
+        // Verify FIXED status is used instead of OUTDATED
+        expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+          existingSuggestions,
+          SuggestionDataAccess.STATUSES.FIXED,
+        );
+      });
+    });
+
     describe('debug logging for large datasets', () => {
       it('should log count only when there are 0 outdated suggestions', async () => {
         const newData = [{ key: '1' }];
@@ -421,7 +731,7 @@ describe('data-access', () => {
         });
 
         // Check that outdated count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 0');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 0');
         // Verify no sample logs for empty array
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
         expect(debugCalls.some((msg) => msg.includes('Outdated suggestions sample'))).to.be.false;
@@ -448,7 +758,7 @@ describe('data-access', () => {
         });
 
         // Check that outdated count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 5');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 5');
         // Check that full sample is logged (all 5 items)
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
         const sampleLog = debugCalls.find((msg) => msg.includes('Outdated suggestions sample:'));
@@ -477,7 +787,7 @@ describe('data-access', () => {
         });
 
         // Check that outdated count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 15');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 15');
         // Check that only first 10 are logged
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
         const sampleLog = debugCalls.find((msg) => msg.includes('Outdated suggestions sample (first 10):'));
@@ -706,6 +1016,33 @@ describe('data-access', () => {
         expect(sampleLog).to.exist;
       });
     });
+
+    it('should handle large arrays without JSON.stringify errors', async () => {
+      // Create a very large array of suggestions (simulate the theplayers.com case)
+      const largeNewData = Array.from({ length: 1000 }, (_, i) => ({
+        key: `new${i}`,
+        textContent: 'x'.repeat(5000), // Large text content
+      }));
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({
+        createdItems: largeNewData.map((data) => ({ id: `suggestion-${data.key}` })),
+        errorItems: [],
+        length: largeNewData.length,
+      });
+
+      // This should not throw "Invalid string length" error
+      await expect(syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: largeNewData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+      })).to.not.be.rejected;
+
+      // Verify that debug was called (safeStringify should have prevented the error)
+      expect(mockLogger.debug).to.have.been.called;
+    });
   });
 
   describe('getImsOrgId', () => {
@@ -814,6 +1151,29 @@ describe('data-access', () => {
       expect(result).to.deep.equal(inputData);
       expect(result).to.not.equal(inputData);
       expect(result.nested).to.equal(inputData.nested);
+    });
+  });
+
+  describe('keepLatestMergeDataFunction', () => {
+    it('completely replaces existing data structure with new one', () => {
+      const existingData = {
+        type: 'OLD_TYPE',
+        url: 'https://old.com',
+        oldProperty: 'oldValue',
+        sharedProperty: 'oldValue',
+      };
+      const newData = {
+        type: 'NEW_TYPE',
+        url: 'https://new.com',
+        newProperty: 'newValue',
+        sharedProperty: 'newValue',
+      };
+      const result = keepLatestMergeDataFunction(existingData, newData);
+
+      expect(result).to.deep.equal(newData);
+      expect(result).to.not.have.property('oldProperty');
+      expect(result).to.have.property('newProperty', 'newValue');
+      expect(result).to.have.property('sharedProperty', 'newValue');
     });
   });
 });

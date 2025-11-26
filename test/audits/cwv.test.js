@@ -79,6 +79,10 @@ describe('CWVRunner Tests', () => {
     },
   };
 
+  beforeEach(() => {
+    context.rumApiClient.query = sandbox.stub().resolves(rumData);
+  });
+
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
@@ -100,57 +104,15 @@ describe('CWVRunner Tests', () => {
       ),
     ).to.be.true;
 
-    expect(result).to.deep.equal({
-      auditResult: {
-        cwv: rumData.filter((data) => data.pageviews >= 7000),
-        auditContext: {
-          interval: 7,
-        },
-      },
-      fullAuditRef: auditUrl,
-    });
-  });
+    // With new logic: top 15 pages by pageviews are always included
+    // rumData has 31 entries, top 15 will be selected (first 15 when sorted by pageviews desc)
+    const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
+    const expectedData = sortedData.slice(0, 15);
 
-  it('uses custom delivery config if present', async () => {
-    const customConfig = { cwv: { dailyThreshold: 500, interval: 14 } };
-    site.getDeliveryConfig.returns(customConfig);
-
-    const result = await CWVRunner(auditUrl, context, site);
-
-    expect(context.rumApiClient.query).to.have.been.calledWith(
-      Audit.AUDIT_TYPES.CWV,
-      {
-        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
-        interval: customConfig.cwv.interval,
-        groupedURLs,
-      },
-    );
-
-    expect(result.auditResult.cwv).to.deep.equal(
-      rumData.filter((data) => data.pageviews >= customConfig.cwv.dailyThreshold * customConfig.cwv.interval),
-    );
-    expect(result.auditResult.auditContext.interval).to.equal(customConfig.cwv.interval);
-  });
-
-  it('caps the interval at 30 days if a larger value is provided', async () => {
-    const customConfig = { cwv: { dailyThreshold: 500, interval: 90 } };
-    site.getDeliveryConfig.returns(customConfig);
-
-    const result = await CWVRunner(auditUrl, context, site);
-
-    expect(context.rumApiClient.query).to.have.been.calledWith(
-      Audit.AUDIT_TYPES.CWV,
-      {
-        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
-        interval: 30, // Capped value
-        groupedURLs,
-      },
-    );
-
-    expect(result.auditResult.cwv).to.deep.equal(
-      rumData.filter((data) => data.pageviews >= customConfig.cwv.dailyThreshold * 30), // Uses capped interval
-    );
-    expect(result.auditResult.auditContext.interval).to.equal(30); // Reports capped interval
+    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    expect(result.auditResult.cwv).to.deep.equal(expectedData);
+    expect(result.auditResult.auditContext.interval).to.equal(7);
+    expect(result.fullAuditRef).to.equal(auditUrl);
   });
 
   it('uses default values when delivery config is null', async () => {
@@ -167,10 +129,189 @@ describe('CWVRunner Tests', () => {
       },
     );
 
-    expect(result.auditResult.cwv).to.deep.equal(
-      rumData.filter((data) => data.pageviews >= 1000 * 7),
-    );
+    // With default threshold (1000 * 7 = 7000), 4 entries meet threshold
+    // But top 15 are always included, so result should have 15 entries
+    const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
+    const expectedData = sortedData.slice(0, 15);
+    
+    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    expect(result.auditResult.cwv).to.deep.equal(expectedData);
     expect(result.auditResult.auditContext.interval).to.equal(7);
+  });
+
+  it('includes pages beyond top 15 if they meet threshold', async () => {
+    // With default threshold (1000 * 7 = 7000), check pages that meet threshold
+    const result = await CWVRunner(auditUrl, context, site);
+
+    // At least top 15 should be included
+    expect(result.auditResult.cwv.length).to.be.at.least(15);
+    
+    // Verify sorted by pageviews descending
+    for (let i = 1; i < result.auditResult.cwv.length; i++) {
+      expect(result.auditResult.cwv[i - 1].pageviews).to.be.at.least(result.auditResult.cwv[i].pageviews);
+    }
+    
+    // Verify that pages beyond top 15 meet the threshold
+    if (result.auditResult.cwv.length > 15) {
+      for (let i = 15; i < result.auditResult.cwv.length; i++) {
+        expect(result.auditResult.cwv[i].pageviews).to.be.at.least(7000);
+      }
+    }
+  });
+
+  it('adds pages to threshold group beyond top 15', async () => {
+    // Create custom data: 15 pages with high pageviews + 3 pages with threshold pageviews
+    const customData = [
+      // Top 15 pages (pageviews 20000-10000)
+      ...Array.from({ length: 15 }, (_, i) => ({
+        type: 'url',
+        url: `https://example.com/page${i}`,
+        pageviews: 20000 - (i * 500),
+        organic: 1000,
+        metrics: [{
+          deviceType: 'desktop',
+          pageviews: 20000 - (i * 500),
+          lcp: 2000,
+          lcpCount: 1,
+          cls: 0.1,
+          clsCount: 1,
+          inp: 200,
+          inpCount: 1,
+        }],
+      })),
+      // 3 more pages that meet threshold (7000+)
+      {
+        type: 'url',
+        url: 'https://example.com/threshold1',
+        pageviews: 8000,
+        organic: 800,
+        metrics: [{
+          deviceType: 'mobile',
+          pageviews: 8000,
+          lcp: 2500,
+          lcpCount: 1,
+          cls: 0.15,
+          clsCount: 1,
+          inp: 250,
+          inpCount: 1,
+        }],
+      },
+      {
+        type: 'url',
+        url: 'https://example.com/threshold2',
+        pageviews: 7500,
+        organic: 750,
+        metrics: [{
+          deviceType: 'desktop',
+          pageviews: 7500,
+          lcp: 2200,
+          lcpCount: 1,
+          cls: 0.12,
+          clsCount: 1,
+          inp: 220,
+          inpCount: 1,
+        }],
+      },
+      {
+        type: 'url',
+        url: 'https://example.com/threshold3',
+        pageviews: 7100,
+        organic: 710,
+        metrics: [{
+          deviceType: 'mobile',
+          pageviews: 7100,
+          lcp: 2300,
+          lcpCount: 1,
+          cls: 0.13,
+          clsCount: 1,
+          inp: 230,
+          inpCount: 1,
+        }],
+      },
+    ];
+
+    context.rumApiClient.query.resolves(customData);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    // Should have 15 (top) + 3 (threshold) = 18 pages
+    expect(result.auditResult.cwv).to.have.lengthOf(18);
+
+    // Verify the last 3 are the threshold pages
+    const thresholdPages = result.auditResult.cwv.slice(15);
+    expect(thresholdPages).to.have.lengthOf(3);
+    expect(thresholdPages[0].url).to.equal('https://example.com/threshold1');
+    expect(thresholdPages[1].url).to.equal('https://example.com/threshold2');
+    expect(thresholdPages[2].url).to.equal('https://example.com/threshold3');
+  });
+
+  it('always includes homepage even if not in top 15 or meeting threshold', async () => {
+    // Add homepage to rumData with low pageviews (below default threshold 7000 and not in top 15)
+    const homepageData = {
+      type: 'url',
+      url: baseURL,
+      pageviews: 50, // Very low pageviews (below threshold and below top 15)
+      organic: 10,
+      metrics: [
+        {
+          deviceType: 'desktop',
+          pageviews: 50,
+          organic: 10,
+          lcp: 2000,
+          lcpCount: 1,
+          cls: 0.01,
+          clsCount: 1,
+          inp: 100,
+          inpCount: 1,
+          ttfb: 500,
+          ttfbCount: 1,
+        },
+      ],
+    };
+
+    const dataWithHomepage = [...rumData, homepageData];
+    context.rumApiClient.query.resolves(dataWithHomepage);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    // Should have top 15 + homepage (16 total)
+    expect(result.auditResult.cwv).to.have.lengthOf(16);
+    
+    // Verify homepage is included
+    const homepageInResult = result.auditResult.cwv.find((entry) => entry.url === baseURL);
+    expect(homepageInResult).to.exist;
+    expect(homepageInResult.pageviews).to.equal(50);
+  });
+
+  it('does not treat grouped URLs as homepage', async () => {
+    const groupedData = {
+      type: 'group', // Not 'url' - should not match homepage logic
+      // url field is absent for grouped entries (they have pattern instead)
+      pageviews: 50, // Low pageviews - not in top 15, below threshold
+      organic: 10,
+      metrics: [
+        {
+          deviceType: 'desktop',
+          pageviews: 50,
+          organic: 10,
+          lcp: 2000,
+          lcpCount: 1,
+          cls: 0.01,
+          clsCount: 1,
+          inp: 100,
+          inpCount: 1,
+          ttfb: 500,
+          ttfbCount: 1,
+        },
+      ],
+    };
+
+    const dataWithGrouped = [...rumData, groupedData];
+    context.rumApiClient.query.resolves(dataWithGrouped);
+
+    const result = await CWVRunner(auditUrl, context, site);
+    // Should only have top 15 (grouped entry excluded: type !== 'url')
+    expect(result.auditResult.cwv).to.have.lengthOf(15);
   });
 
   describe('CWV audit to oppty conversion', () => {

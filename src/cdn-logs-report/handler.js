@@ -24,26 +24,13 @@ import {
 import { pathHasData } from '../utils/cdn-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
-import { createLLMOSharepointClient } from '../utils/report-uploader.js';
+import { createLLMOSharepointClient, bulkPublishToAdminHlx } from '../utils/report-uploader.js';
 import { getConfigs } from './constants/report-configs.js';
-import { getImsOrgId } from '../utils/data-access.js';
 import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
 
 async function runCdnLogsReport(url, context, site, auditContext) {
-  const { log, dataAccess } = context;
+  const { log } = context;
   const s3Config = await getS3Config(site, context);
-
-  if (!s3Config?.bucket) {
-    return {
-      auditResult: {
-        success: false,
-        error: 'No CDN bucket found',
-        completedAt: new Date().toISOString(),
-      },
-      fullAuditRef: url,
-    };
-  }
-
   log.debug(`Starting CDN logs report audit for ${url}`);
 
   const sharepointClient = await createLLMOSharepointClient(
@@ -54,14 +41,11 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     pollIntervalMs: 3000,
     maxPollAttempts: 250,
   });
-  /* c8 ignore next */
-  const { orgId } = site.getConfig().getLlmoCdnBucketConfig() || {};
-  // for non-adobe customers, use the orgId from the config
-  const imsOrgId = orgId || await getImsOrgId(site, dataAccess, log);
-
-  const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain, imsOrgId);
+  const siteId = site.getId();
+  const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain, siteId);
 
   const results = [];
+  const reportsToPublish = [];
   for (const reportConfig of reportConfigs) {
     // eslint-disable-next-line no-await-in-loop
     if (!(await pathHasData(context.s3Client, reportConfig.aggregatedLocation))) {
@@ -86,7 +70,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     if (auditContext?.weekOffset !== undefined) {
       weekOffsets = [auditContext.weekOffset];
     } else if (isMonday) {
-      weekOffsets = [0, -1];
+      weekOffsets = [-1, 0];
     } else {
       weekOffsets = [0];
     }
@@ -130,6 +114,10 @@ async function runCdnLogsReport(url, context, site, auditContext) {
         context,
       });
 
+      if (result.success && result.uploadResult) {
+        reportsToPublish.push(result.uploadResult);
+      }
+
       results.push({
         name: reportConfig.name,
         table: reportConfig.tableName,
@@ -138,6 +126,15 @@ async function runCdnLogsReport(url, context, site, auditContext) {
         success: result.success,
         weekOffset,
       });
+    }
+  }
+
+  // Batch publish all uploaded reports using bulk API
+  if (reportsToPublish.length > 0) {
+    try {
+      await bulkPublishToAdminHlx(reportsToPublish, log);
+    } catch (error) {
+      log.error('Failed to bulk publish reports:', error);
     }
   }
 

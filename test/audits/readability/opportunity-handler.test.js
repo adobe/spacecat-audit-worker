@@ -49,7 +49,7 @@ describe('Opportunity Handler Tests', () => {
 
     // Mock the module
     const opportunityHandler = await esmock(
-      '../../../src/readability/opportunity-handler.js',
+      '../../../src/readability/preflight/opportunity-handler.js',
       {},
       {
         '@adobe/spacecat-shared-data-access': {

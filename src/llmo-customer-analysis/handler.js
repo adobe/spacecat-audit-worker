@@ -25,6 +25,7 @@ import {
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
 import { sendOnboardingNotification } from './onboarding-notifications.js';
+import { enableContentAI } from './content-ai.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
@@ -275,6 +276,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   // Ensure relevant audits and imports are enabled
   await enableAudits(site, context, [
+    'scrape-top-pages',
     'headings',
     'llm-blocked',
     'llm-error-pages',
@@ -282,10 +284,17 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     'hreflang',
     'summarization',
     REFERRAL_TRAFFIC_AUDIT,
-    'cdn-logs-analysis',
     'cdn-logs-report',
     'geo-brand-presence',
   ]);
+
+  // Enable ContentAI for the site
+  try {
+    await enableContentAI(site, context);
+    log.info(`Successfully processed ContentAI for site ${siteId}`);
+  } catch (error) {
+    log.error(`Failed to process ContentAI for site ${siteId}: ${error.message}`);
+  }
 
   await enableImports(site, [
     { type: REFERRAL_TRAFFIC_IMPORT },
@@ -357,7 +366,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     await sendOnboardingNotification(context, site, 'first_configuration', { configVersion });
   }
 
-  const changes = compareConfigs(oldConfig, newConfig);
+  const changes = compareConfigs(oldConfig ?? {}, newConfig ?? {});
   const hasCdnLogsChanges = changes.categories
     && areCategoryNamesDifferent(oldConfig.categories, newConfig.categories);
 
@@ -382,7 +391,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       await handleCdnBucketConfigChanges(cdnConfigContext, newConfig.cdnBucketConfig);
       triggeredSteps.push('cdn-bucket-config');
     } catch (error) {
-      log.error('Error processing CDN bucket configuration changes', error);
+      log.error(`Error processing CDN bucket configuration changes for siteId: ${siteId}`, error);
     }
   }
 
@@ -401,9 +410,17 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const isAdobe = baseUrl.startsWith('https://adobe.com');
 
   if (hasBrandPresenceChanges && !isAdobe) {
-    log.info('LLMO config changes detected in topics, categories, or entities; triggering geo-brand-presence audit');
-    await triggerGeoBrandPresence(context, site, auditContext);
-    triggeredSteps.push(brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
+    const isAICategorizationOnly = changes.metadata?.isAICategorizationOnly || false;
+
+    if (isAICategorizationOnly) {
+      log.info('LLMO config changes detected from AI categorization flow; triggering geo-brand-presence refresh');
+      await triggerGeoBrandPresenceRefresh(context, site, configVersion);
+      triggeredSteps.push('geo-brand-presence-refresh');
+    } else {
+      log.info('LLMO config changes detected in topics, categories, or entities; triggering geo-brand-presence audit');
+      await triggerGeoBrandPresence(context, site, auditContext);
+      triggeredSteps.push(brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
+    }
   }
   if (needsBrandPresenceRefresh && !isAdobe) {
     log.info('LLMO config changes detected in brand or competitor aliases; triggering geo-brand-presence-refresh');

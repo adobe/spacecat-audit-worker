@@ -11,8 +11,10 @@
  */
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
-import { resolveCdnBucketName, extractCustomerDomain, isStandardAdobeCdnBucket } from '../utils/cdn-utils.js';
-import { getImsOrgId } from '../utils/data-access.js';
+import { resolveConsolidatedBucketName, extractCustomerDomain } from '../utils/cdn-utils.js';
+import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL } from '../common/user-agent-classification.js';
+import { ELMO_LIVE_HOST } from '../common/constants.js';
+import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 
 // ============================================================================
 // CONSTANTS
@@ -126,7 +128,78 @@ function buildWhereClause(conditions = [], llmProviders = null, siteFilters = []
   return `WHERE ${allConditions.join(' AND ')}`;
 }
 
-export function buildLlmErrorPagesQuery(options) {
+function buildCountryExtractionSQL() {
+  const extracts = DEFAULT_COUNTRY_PATTERNS
+    .map(({ regex }) => `NULLIF(UPPER(REGEXP_EXTRACT(url, '${regex}', 1)), '')`)
+    .join(',\n    ');
+
+  return `COALESCE(\n    ${extracts},\n    'GLOBAL'\n  )`;
+}
+
+export async function fetchRemotePatterns(site) {
+  const dataFolder = site.getConfig()?.getLlmoDataFolder?.();
+  if (!dataFolder) {
+    return null;
+  }
+
+  try {
+    const url = `${ELMO_LIVE_HOST}/${dataFolder}/agentic-traffic/patterns/patterns.json`;
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'spacecat-audit-worker',
+        Authorization: `token ${process.env.LLMO_HLX_API_KEY}`,
+      },
+    });
+    if (!res.ok) {
+      return null;
+    }
+    const data = await res.json();
+    return {
+      pagePatterns: data.pagetype?.data || [],
+      topicPatterns: data.products?.data || [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function generatePageTypeClassification(remotePatterns = null) {
+  const patterns = remotePatterns?.pagePatterns || [];
+  if (patterns.length === 0) {
+    return "'Other'";
+  }
+  const caseConditions = patterns
+    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.regex}') THEN '${pattern.name}'`)
+    .join('\n');
+  return `CASE\n${caseConditions}\n      ELSE 'Other'\n    END`;
+}
+
+function buildTopicExtractionSQL(remotePatterns = null) {
+  const patterns = remotePatterns?.topicPatterns || [];
+  if (Array.isArray(patterns) && patterns.length > 0) {
+    const namedPatterns = [];
+    const extractPatterns = [];
+    patterns.forEach(({ regex, name }) => {
+      if (name) {
+        namedPatterns.push(`WHEN REGEXP_LIKE(url, '${regex}') THEN '${name}'`);
+      } else {
+        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${regex}', 1), '')`);
+      }
+    });
+    if (namedPatterns.length > 0 && extractPatterns.length > 0) {
+      const caseClause = `CASE\n          ${namedPatterns.join('\n          ')}\n          ELSE NULL\n        END`;
+      const coalesceClause = extractPatterns.join(',\n    ');
+      return `COALESCE(\n    ${caseClause},\n    ${coalesceClause},\n    'Other'\n  )`;
+    } else if (namedPatterns.length > 0) {
+      return `CASE\n          ${namedPatterns.join('\n          ')}\n          ELSE 'Other'\n        END`;
+    } else {
+      return `COALESCE(\n    ${extractPatterns.join(',\n    ')},\n    'Other'\n  )`;
+    }
+  }
+  return "CASE WHEN url IS NOT NULL THEN 'Other' END";
+}
+
+export async function buildLlmErrorPagesQuery(options) {
   const {
     databaseName,
     tableName,
@@ -134,6 +207,7 @@ export function buildLlmErrorPagesQuery(options) {
     endDate,
     llmProviders = null,
     siteFilters = [],
+    site = null,
   } = options;
 
   const conditions = [];
@@ -145,10 +219,20 @@ export function buildLlmErrorPagesQuery(options) {
 
   const whereClause = buildWhereClause(conditions, llmProviders, siteFilters);
 
+  const remotePatterns = site ? await fetchRemotePatterns(site) : null;
+
   return getStaticContent({
     databaseName,
     tableName,
     whereClause,
+    // user-agent labeling and classification
+    userAgentDisplay: buildUserAgentDisplaySQL(),
+    agentTypeClassification: buildAgentTypeClassificationSQL(),
+    // product/category classification via patterns
+    topicExtraction: buildTopicExtractionSQL(remotePatterns),
+    pageCategoryClassification: generatePageTypeClassification(remotePatterns),
+    // country extraction
+    countryExtraction: buildCountryExtractionSQL(),
   }, './src/llm-error-pages/sql/llm-error-pages.sql');
 }
 
@@ -161,27 +245,17 @@ export async function getS3Config(site, context) {
   const domainParts = customerDomain.split(/[._]/);
   /* c8 ignore next */
   const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = await resolveCdnBucketName(site, context);
+  const bucket = resolveConsolidatedBucketName(context);
+  const siteId = site.getId();
+  const aggregatedLocation = `s3://${bucket}/aggregated/${siteId}/`;
 
-  let aggregatedLocation = `s3://${bucket}/aggregated/`;
-  try {
-    if (isStandardAdobeCdnBucket(bucket)) {
-      const { orgId } = site.getConfig()?.getLlmoCdnBucketConfig?.() || {};
-      const imsOrgId = orgId || await getImsOrgId?.(site, context?.dataAccess, context?.log);
-      if (imsOrgId) {
-        aggregatedLocation = `s3://${bucket}/${imsOrgId}/aggregated/`;
-      }
-    }
-  } catch {
-    // keep default aggregatedLocation
-  }
   return {
     bucket,
     customerName,
     customerDomain,
     aggregatedLocation,
     databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}`,
+    tableName: `aggregated_logs_${customerDomain}_consolidated`,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
   };
 }
