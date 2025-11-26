@@ -138,8 +138,8 @@ async function analyzeTextReadability(
  * @returns {Element[]} Array of meaningful text elements for readability analysis and enhancement.
  */
 const getMeaningfulElementsForReadability = ($) => {
-  $.root.find('header, footer').remove();
-  return $.root.find('p, blockquote, li').toArray().filter((el) => {
+  $('header, footer').remove();
+  return $('p, blockquote, div, li').toArray().filter((el) => {
     const text = $(el).text()?.trim();
     return text && text.length >= MIN_TEXT_LENGTH;
   });
@@ -147,6 +147,23 @@ const getMeaningfulElementsForReadability = ($) => {
 
 /**
  * Analyzes readability for a single page's content
+ */
+/**
+ * Analyzes the readability of HTML page content and returns an array of readability issue objects
+ * for text elements with poor readability.
+ *
+ * - Extracts meaningful text elements from the HTML.
+ * - Detects each element's language and filters for supported languages.
+ * - Handles elements containing <br> tags as multiple paragraphs.
+ * - Uses `analyzeTextReadability` to evaluate readability and collect issues.
+ * - Logs summary information about the analysis.
+ *
+ * @param {string} rawBody - Raw HTML content of the page.
+ * @param {string} pageUrl - The URL of the analyzed page.
+ * @param {number} traffic - Estimated traffic or popularity metric for the page.
+ * @param {object} log - Logger utility (must support .debug and .error).
+ * @returns {Promise<Array>} Array of readability issue objects for text elements
+ *  with poor readability.
  */
 export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
   const readabilityIssues = [];
