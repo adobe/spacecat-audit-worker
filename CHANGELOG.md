@@ -1,3 +1,38 @@
+## [1.255.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.7...v1.255.8) (2025-11-26)
+
+
+### Bug Fixes
+
+* avoid triggering llmo-customer-analysis if llmo config was updat… ([#1634](https://github.com/adobe/spacecat-audit-worker/issues/1634)) ([52d3130](https://github.com/adobe/spacecat-audit-worker/commit/52d313084faee9ac81f7cffb52aff5ecf782af5e))
+
+## [1.255.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.6...v1.255.7) (2025-11-26)
+
+
+### Bug Fixes
+
+* remove jdsom ([#1666](https://github.com/adobe/spacecat-audit-worker/issues/1666)) ([ca88899](https://github.com/adobe/spacecat-audit-worker/commit/ca888997c3ba4bc20d4b6e9067f52adcc799f273))
+
+## [1.255.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.5...v1.255.6) (2025-11-25)
+
+
+### Bug Fixes
+
+* geo-brand-prensence-refresh trigger refresh only for the past 4 … ([#1661](https://github.com/adobe/spacecat-audit-worker/issues/1661)) ([05394b6](https://github.com/adobe/spacecat-audit-worker/commit/05394b6ee19f65d81e4ad8fc721ee6765affc914))
+
+## [1.255.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.4...v1.255.5) (2025-11-25)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1656](https://github.com/adobe/spacecat-audit-worker/issues/1656)) ([6394c6c](https://github.com/adobe/spacecat-audit-worker/commit/6394c6c0662a70de4b7a426d96815c96988ceee9))
+
+## [1.255.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.3...v1.255.4) (2025-11-25)
+
+
+### Bug Fixes
+
+* lambda deployment ([#1659](https://github.com/adobe/spacecat-audit-worker/issues/1659)) ([11e7ae8](https://github.com/adobe/spacecat-audit-worker/commit/11e7ae8957a3484a576fe8eda34a8bf27179096b))
+
 ## [1.255.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.2...v1.255.3) (2025-11-25)
 
 
