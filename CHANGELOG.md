@@ -1,3 +1,10 @@
+## [1.255.16](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.15...v1.255.16) (2025-11-26)
+
+
+### Bug Fixes
+
+* **llmo-referral-traffic:** always create sheet if OpTel data exists ([#1672](https://github.com/adobe/spacecat-audit-worker/issues/1672)) ([4dde12b](https://github.com/adobe/spacecat-audit-worker/commit/4dde12b52884636dcf723d0c5b5711c641e16347))
+
 ## [1.255.15](https://github.com/adobe/spacecat-audit-worker/compare/v1.255.14...v1.255.15) (2025-11-26)
 
 
