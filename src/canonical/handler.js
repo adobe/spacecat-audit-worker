@@ -10,11 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-import { JSDOM } from 'jsdom';
-import * as cheerio from 'cheerio';
 import { composeBaseURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
+import { load as cheerioLoad } from 'cheerio';
+
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { isPreviewPage } from '../utils/url-utils.js';
@@ -87,19 +87,14 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
     const finalUrl = response.url;
     const html = await response.text();
 
-    // Use Cheerio to check if canonical is in <head> (more reliable than JSDOM for large HTML).
+    // Use Cheerio for all parsing (more reliable than JSDOM for large HTML).
     // This is the same approach used in the MetaTags audit (ssr-meta-validator.js).
-    const $ = cheerio.load(html);
+    const $ = cheerioLoad(html);
     const cheerioCanonicalInHead = $('head link[rel="canonical"]').length > 0;
-    const cheerioCanonicalCount = $('link[rel="canonical"]').length;
+    const canonicalLinks = $('link[rel="canonical"]');
 
-    log.info(`Cheerio found ${cheerioCanonicalCount} canonical link(s), ${cheerioCanonicalInHead ? 'IN <head>' : 'NOT in <head>'}`);
+    log.info(`Cheerio found ${canonicalLinks.length} canonical link(s), ${cheerioCanonicalInHead ? 'IN <head>' : 'NOT in <head>'}`);
 
-    // Still use JSDOM for the rest of the parsing and checks
-    const dom = new JSDOM(html);
-    const { document } = dom.window;
-
-    const canonicalLinks = document.querySelectorAll('link[rel="canonical"]');
     const checks = [];
     let canonicalUrl = null;
 
@@ -129,8 +124,8 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
         });
         log.info(`Multiple canonical tags found for URL: ${url}`);
       } else {
-        const canonicalLink = canonicalLinks[0];
-        const href = canonicalLink.getAttribute('href');
+        const canonicalLink = canonicalLinks.first();
+        const href = canonicalLink.attr('href');
         if (!href) {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
@@ -198,8 +193,7 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
         }
 
         // Check if canonical link is in the <head> section.
-        // Use Cheerio result instead of JSDOM's closest('head') because JSDOM can fail
-        // to parse large HTML correctly and may incorrectly place tags in <body>
+        // Using Cheerio result which is more reliable for large HTML parsing
         if (!cheerioCanonicalInHead) {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
