@@ -81,7 +81,7 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%gemini-deep-research%', result: 'Research' },
     { pattern: 'google', result: 'Web search crawlers' },
     { pattern: '%googleagent-urlcontext%', result: 'Chatbots' },
-    { pattern: '%googleagent-chrome%', result: 'Media fetchers' },
+    { pattern: '%googleagent-chrome%', result: 'Action agents' },
     { pattern: '%googleagent-shopping%', result: 'Shopping agents' },
     { pattern: '%googleagent-mariner%', result: 'Action agents' },
     { pattern: '%google-notebooklm%', result: 'Research' },
