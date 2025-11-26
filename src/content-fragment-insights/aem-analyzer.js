@@ -16,6 +16,10 @@ import { FragmentAnalyzer } from './fragment-analyzer.js';
 export class AemAnalyzer {
   static DEFAULT_FRAGMENT_ROOT_PATH = '/content/dam/';
 
+  static MAX_FETCH_ATTEMPTS = 3;
+
+  static ERROR_CODE_TIMEOUT = 'ETIMEOUT';
+
   constructor(context) {
     const { log } = context;
 
@@ -70,10 +74,7 @@ export class AemAnalyzer {
     // For large tenants, this fetch loop can take minutes. Add pagination if needed in the future
     do {
       // eslint-disable-next-line no-await-in-loop
-      const { items, cursor: nextCursor } = await this.aemClient.getFragments(
-        this.rootPath,
-        { cursor, projection: 'minimal' },
-      );
+      const { items, cursor: nextCursor } = await this.fetchFragmentsPage({ cursor });
 
       items.forEach((item) => {
         const parsedFragment = AemAnalyzer.parseFragment(item);
@@ -96,5 +97,33 @@ export class AemAnalyzer {
     this.log.info(`[Content Fragment Insights] Collected ${fragments.length} fragments from ${this.rootPath}`);
 
     this.fragments = fragments;
+  }
+
+  async fetchFragmentsPage({ cursor }) {
+    const options = {
+      cursor,
+      projection: 'minimal',
+    };
+
+    for (let attempt = 0; attempt < AemAnalyzer.MAX_FETCH_ATTEMPTS; attempt += 1) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        return await this.aemClient.getFragments(this.rootPath, options);
+      } catch (error) {
+        const isTimeout = error?.code === AemAnalyzer.ERROR_CODE_TIMEOUT;
+        const hasAttemptsLeft = attempt < AemAnalyzer.MAX_FETCH_ATTEMPTS - 1;
+
+        if (!isTimeout || !hasAttemptsLeft) {
+          throw error;
+        }
+
+        this.log.warn(
+          `[Content Fragment Insights] Timeout while fetching fragment page. Retrying... attempt ${attempt + 1}/${AemAnalyzer.MAX_FETCH_ATTEMPTS}`,
+          error,
+        );
+      }
+    }
+
+    return { items: [], cursor: null };
   }
 }
