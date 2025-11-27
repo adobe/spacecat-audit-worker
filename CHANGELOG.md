@@ -1,3 +1,10 @@
+## [1.257.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.257.1...v1.257.2) (2025-11-27)
+
+
+### Bug Fixes
+
+* back to working version of @adobe/helix-deploy ([#1683](https://github.com/adobe/spacecat-audit-worker/issues/1683)) ([7200791](https://github.com/adobe/spacecat-audit-worker/commit/72007915580da8ea62b725f1bd7e80cf30653be9))
+
 ## [1.257.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.257.0...v1.257.1) (2025-11-27)
 
 
