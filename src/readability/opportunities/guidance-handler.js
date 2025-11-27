@@ -154,6 +154,13 @@ export default async function handler(message, context) {
     if (matchingSuggestion) {
       return async () => {
         try {
+          // If improvedText is empty or null, remove the suggestion instead of updating
+          if (!mystiquesuggestion.improvedText || mystiquesuggestion.improvedText.trim() === '') {
+            await matchingSuggestion.remove();
+            log.warn(`[readability-opportunity guidance]: Removed suggestion ${matchingSuggestion.getId()} because Mystique 'improvedText' is empty`);
+            return true;
+          }
+
           // Update the existing suggestion with AI improvements
           const currentData = matchingSuggestion.getData();
           const updatedData = {
@@ -168,15 +175,8 @@ export default async function handler(message, context) {
             mystiqueProcessingCompleted: new Date().toISOString(),
           };
 
-          // Enrich with auto-optimize data
+          // Enrich with auto-optimize data only after validating improvedText
           const enrichedData = enrichSuggestionDataForAutoOptimize(updatedData);
-
-          // If improvedText is empty or null, remove the suggestion instead of updating
-          if (!mystiquesuggestion.improvedText || mystiquesuggestion.improvedText.trim() === '') {
-            await matchingSuggestion.remove();
-            log.warn(`[readability-opportunity guidance]: Removed suggestion ${matchingSuggestion.getId()} because Mystique 'improvedText' is empty`);
-            return true;
-          }
 
           await matchingSuggestion.setData(enrichedData);
           await matchingSuggestion.save();
