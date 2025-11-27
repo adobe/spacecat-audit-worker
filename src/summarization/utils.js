@@ -10,6 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
+function joinKeyPoints(keyPoints) {
+  return keyPoints.map((keyPoint) => `  * ${keyPoint}`).join('\n');
+}
+
 export function getJsonSummarySuggestion(suggestions) {
   const suggestionValues = [];
   suggestions.forEach((suggestion) => {
@@ -20,6 +24,21 @@ export function getJsonSummarySuggestion(suggestions) {
     suggestionValues.push({
       summarizationText: suggestion.pageSummary?.formatted_summary,
       fullPage: true,
+      keyPoints: false,
+      url: suggestion.pageUrl,
+      title: suggestion.pageSummary?.title,
+      transformRules: {
+        selector: suggestion.pageSummary?.heading_selector || 'body',
+        action: suggestion.pageSummary?.insertion_method || 'appendChild',
+      },
+      scrapedAt,
+    });
+
+    // handle key points summary
+    suggestionValues.push({
+      summarizationText: `${joinKeyPoints(suggestion.keyPoints?.formatted_items)}`,
+      fullPage: true,
+      keyPoints: true,
       url: suggestion.pageUrl,
       title: suggestion.pageSummary?.title,
       transformRules: {
@@ -34,6 +53,7 @@ export function getJsonSummarySuggestion(suggestions) {
       suggestionValues.push({
         summarizationText: section.formatted_summary,
         fullPage: false,
+        keyPoints: false,
         url: suggestion.pageUrl,
         title: section.title,
         transformRules: {

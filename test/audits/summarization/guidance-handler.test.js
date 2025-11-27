@@ -52,6 +52,9 @@ describe('summarization guidance handler', () => {
           heading_selector: 'h1',
           insertion_method: 'insertAfter',
         },
+        keyPoints: {
+          formatted_items: ['Key point 1', 'Key point 2', 'Key point 3'],
+        },
         sectionSummaries: [
           {
             title: 'Section 1',
@@ -322,6 +325,9 @@ describe('summarization guidance handler', () => {
               heading_selector: 'h1',
               insertion_method: 'insertAfter',
             },
+            keyPoints: {
+              formatted_items: ['Key point A', 'Key point B'],
+            },
             sectionSummaries: [],
           },
         ],
@@ -358,9 +364,9 @@ describe('summarization guidance handler', () => {
     const syncCall = syncSuggestionsStub.getCall(0);
     const syncArgs = syncCall.args[0];
 
-    // Verify newData structure contains page and section suggestions
+    // Verify newData structure contains page, key points, and section suggestions
     expect(syncArgs.newData).to.be.an('array');
-    expect(syncArgs.newData).to.have.length(2); // page + section
+    expect(syncArgs.newData).to.have.length(3); // page + key points + section
 
     // Test the mapNewSuggestion function
     const testData = {
@@ -400,16 +406,19 @@ describe('summarization guidance handler', () => {
             pageUrl: 'https://example.com/page1',
             pageSummary: {
               title: 'Page Title 1',
-              summary: 'This is a page summary',
-              key_points: ['Key point 1', 'Key point 2'],
+              formatted_summary: 'This is a page summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
             },
-            sections: [
+            keyPoints: {
+              formatted_items: ['Key point 1', 'Key point 2'],
+            },
+            sectionSummaries: [
               {
                 title: 'Section 1',
-                summary: 'Section summary 1',
-                readability_score: 65.2,
-                word_count: 15,
-                brand_consistency_score: 88,
+                formatted_summary: 'Section summary 1',
+                heading_selector: 'h2',
+                insertion_method: 'insertAfter',
               },
             ],
           },
@@ -434,8 +443,15 @@ describe('summarization guidance handler', () => {
     
     // Test the mapNewSuggestion function
     const testData = {
-      suggestionValue: '## 1. https://adobe.com/page1\n\n### Page Title\n\nPage Title 1\n\n### Page Summary (AI generated)\n\n> This is a page summary\n\n### Key Points (AI generated)\n\n> - Key point 1\n> - Key point 2\n\n### Section Summaries (AI generated)\n\n#### Section 1\n\n> Section summary 1\n\n---\n\n',
-      bKey: 'summarization:https://adobe.com'
+      summarizationText: 'Test summary',
+      fullPage: true,
+      keyPoints: false,
+      url: 'https://example.com/page1',
+      title: 'Page Title 1',
+      transformRules: {
+        selector: 'h1',
+        action: 'insertAfter',
+      },
     };
     
     const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
@@ -504,6 +520,7 @@ describe('summarization guidance handler', () => {
     const testData = {
       summarizationText: 'test summary',
       fullPage: true,
+      keyPoints: false,
       url: 'https://example.com/page1',
       title: 'Page Title 1',
       transformRules: {
@@ -512,7 +529,7 @@ describe('summarization guidance handler', () => {
       },
     };
     const buildKeyResult = syncArgs.buildKey(testData);
-    expect(buildKeyResult).to.equal('https://example.com/page1-h1');
+    expect(buildKeyResult).to.equal('https://example.com/page1-h1-text');
   });
 
   it('should correctly map new suggestion with CODE_CHANGE type', async () => {
@@ -536,20 +553,31 @@ describe('summarization guidance handler', () => {
     
     // Verify the newData structure (from getJsonSummarySuggestion)
     expect(syncArgs.newData).to.be.an('array');
-    expect(syncArgs.newData).to.have.length(2); // page summary + section summary
+    expect(syncArgs.newData).to.have.length(3); // page summary + key points + section summary
     
     // Test the first suggestion (page-level)
     const pageLevelSuggestion = syncArgs.newData[0];
     expect(pageLevelSuggestion).to.have.property('summarizationText', 'This is a formatted page summary');
     expect(pageLevelSuggestion).to.have.property('fullPage', true);
+    expect(pageLevelSuggestion).to.have.property('keyPoints', false);
     expect(pageLevelSuggestion).to.have.property('url', 'https://adobe.com/page1');
     expect(pageLevelSuggestion).to.have.nested.property('transformRules.selector', 'h1');
     expect(pageLevelSuggestion).to.have.nested.property('transformRules.action', 'insertAfter');
     
-    // Test the second suggestion (section-level)
-    const sectionLevelSuggestion = syncArgs.newData[1];
+    // Test the second suggestion (key points)
+    const keyPointsSuggestion = syncArgs.newData[1];
+    expect(keyPointsSuggestion).to.have.property('summarizationText', '  * Key point 1\n  * Key point 2\n  * Key point 3');
+    expect(keyPointsSuggestion).to.have.property('fullPage', true);
+    expect(keyPointsSuggestion).to.have.property('keyPoints', true);
+    expect(keyPointsSuggestion).to.have.property('url', 'https://adobe.com/page1');
+    expect(keyPointsSuggestion).to.have.nested.property('transformRules.selector', 'h1');
+    expect(keyPointsSuggestion).to.have.nested.property('transformRules.action', 'insertAfter');
+    
+    // Test the third suggestion (section-level)
+    const sectionLevelSuggestion = syncArgs.newData[2];
     expect(sectionLevelSuggestion).to.have.property('summarizationText', 'Section summary 1');
     expect(sectionLevelSuggestion).to.have.property('fullPage', false);
+    expect(sectionLevelSuggestion).to.have.property('keyPoints', false);
     expect(sectionLevelSuggestion).to.have.property('url', 'https://adobe.com/page1');
     expect(sectionLevelSuggestion).to.have.nested.property('transformRules.selector', 'h2.section-heading');
     expect(sectionLevelSuggestion).to.have.nested.property('transformRules.action', 'insertAfter');
@@ -558,6 +586,7 @@ describe('summarization guidance handler', () => {
     const testSuggestionData = {
       summarizationText: 'Test summary text',
       fullPage: true,
+      keyPoints: false,
       url: 'https://adobe.com/test',
       transformRules: {
         selector: 'h1',
@@ -571,9 +600,23 @@ describe('summarization guidance handler', () => {
     expect(mappedSuggestion.rank).to.equal(10);
     expect(mappedSuggestion.data).to.deep.equal(testSuggestionData);
     
-    // Test the buildKey function
+    // Test the buildKey function for text
     const buildKeyResult = syncArgs.buildKey(testSuggestionData);
-    expect(buildKeyResult).to.equal('https://adobe.com/test-h1');
+    expect(buildKeyResult).to.equal('https://adobe.com/test-h1-text');
+    
+    // Test the buildKey function for key points
+    const keyPointsData = {
+      summarizationText: '  * Key point 1\n  * Key point 2',
+      fullPage: true,
+      keyPoints: true,
+      url: 'https://adobe.com/test',
+      transformRules: {
+        selector: 'h1',
+        action: 'insertAfter',
+      },
+    };
+    const keyPointsBuildKeyResult = syncArgs.buildKey(keyPointsData);
+    expect(keyPointsBuildKeyResult).to.equal('https://adobe.com/test-h1-key-points');
   });
 
 });
