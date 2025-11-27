@@ -1,3 +1,10 @@
+## [1.257.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.257.0...v1.257.1) (2025-11-27)
+
+
+### Bug Fixes
+
+* Support legacy URL-based aggregation and code fix flow ([#1676](https://github.com/adobe/spacecat-audit-worker/issues/1676)) ([fcc7b67](https://github.com/adobe/spacecat-audit-worker/commit/fcc7b67d5c97f90b6b3cf7f58ffb273f45d7c6f8))
+
 # [1.257.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.256.4...v1.257.0) (2025-11-27)
 
 
