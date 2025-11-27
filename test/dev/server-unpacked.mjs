@@ -56,7 +56,7 @@ async function run() {
     console.log('Unpacked bundle loaded successfully (using lambda adapter)');
 
     // Set environment variables for DevelopmentServer
-    process.env.HLX_DEV_SERVER_HOST = 'localhost:3000';
+    process.env.HLX_DEV_SERVER_HOST ??= 'localhost:3000';
     process.env.HLX_DEV_SERVER_SCHEME = 'http';
 
     // Set mock Lambda environment variables for local dev
