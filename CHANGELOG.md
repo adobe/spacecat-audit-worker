@@ -1,3 +1,10 @@
+## [1.257.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.257.3...v1.257.4) (2025-11-27)
+
+
+### Bug Fixes
+
+* Lambda deployment failures caused by legacy RUM client ([#1684](https://github.com/adobe/spacecat-audit-worker/issues/1684)) ([3c8b8b3](https://github.com/adobe/spacecat-audit-worker/commit/3c8b8b398d09f2557eb22e951423ec2680c5b767))
+
 ## [1.257.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.257.2...v1.257.3) (2025-11-27)
 
 
