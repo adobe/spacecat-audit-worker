@@ -19,12 +19,7 @@ import {
   generateReportOpportunities,
   sendRunImportMessage,
 } from './utils/data-processing.js';
-import {
-  getExistingObjectKeysFromFailedAudits,
-  getRemainingUrls,
-  getExistingUrlsFromFailedAudits,
-  updateStatusToIgnored,
-} from './utils/scrape-utils.js';
+import { updateStatusToIgnored } from './utils/scrape-utils.js';
 import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
 import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from './utils/constants.js';
 
@@ -84,22 +79,6 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
     log.debug(`[A11yAudit] Top 100 pages for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(urlsToScrape, null, 2)}`);
   }
 
-  const existingObjectKeys = await getExistingObjectKeysFromFailedAudits(
-    s3Client,
-    bucketName,
-    siteId,
-    log,
-  );
-
-  const existingUrls = await getExistingUrlsFromFailedAudits(
-    s3Client,
-    bucketName,
-    log,
-    existingObjectKeys,
-  );
-
-  const remainingUrls = getRemainingUrls(urlsToScrape, existingUrls);
-
   // get scraping config from site
   const scrapingConfig = await site.getConfig();
   // eslint-disable-next-line max-len
@@ -108,21 +87,18 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
 
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
-  const storagePrefix = deviceType === 'mobile' ? 'accessibility-mobile' : 'accessibility';
   return {
     auditResult: {
       status: 'SCRAPING_REQUESTED',
       message: 'Content scraping for accessibility audit initiated.',
-      scrapedUrls: remainingUrls,
+      scrapedUrls: urlsToScrape,
     },
     fullAuditRef: finalUrl,
     // Data for the CONTENT_SCRAPER
-    urls: remainingUrls,
+    urls: urlsToScrape,
     siteId,
-    jobId: siteId,
     processingType: AUDIT_TYPE_ACCESSIBILITY,
     options: {
-      storagePrefix,
       deviceType,
       accessibilityScrapingParams,
     },
@@ -132,7 +108,7 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
 // Second step: gets data from the first step and processes it to create new opportunities
 export async function processAccessibilityOpportunities(context) {
   const {
-    site, log, s3Client, env, dataAccess, sqs,
+    site, log, s3Client, env, dataAccess, sqs, scrapeResultPaths,
   } = context;
   const siteId = site.getId();
   const version = new Date().toISOString().split('T')[0];
@@ -162,6 +138,7 @@ export async function processAccessibilityOpportunities(context) {
       outputKey,
       AUDIT_TYPE_ACCESSIBILITY,
       version,
+      scrapeResultPaths,
     );
 
     if (!aggregationResult.success) {
@@ -420,7 +397,7 @@ export default new AuditBuilder()
   .addStep(
     'scrapeAccessibilityData',
     scrapeAccessibilityData,
-    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+    AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT,
   )
   .addStep('processAccessibilityOpportunities', processAccessibilityOpportunities)
   .build();

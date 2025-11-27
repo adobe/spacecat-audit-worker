@@ -132,15 +132,6 @@ describe('Accessibility Audit Handler', () => {
         mockContext.log,
       );
 
-      expect(getExistingObjectKeysFromFailedAuditsStub).to.have.been.calledOnceWith(
-        mockS3Client,
-        'test-bucket',
-        'test-site-id',
-        mockContext.log,
-      );
-
-      expect(getExistingUrlsFromFailedAuditsStub).to.have.been.calledOnce;
-
       expect(mockContext.log.debug).to.have.been.calledWith(
         '[A11yAudit] Step 1: Preparing content scrape for desktop accessibility audit for https://example.com with siteId test-site-id',
       );
@@ -154,12 +145,10 @@ describe('Accessibility Audit Handler', () => {
         fullAuditRef: 'https://example.com',
         urls: mockUrls,
         siteId: 'test-site-id',
-        jobId: 'test-site-id',
         processingType: 'accessibility',
         options: {
           accessibilityScrapingParams: null,
           deviceType: 'desktop',
-          storagePrefix: 'accessibility',
         },
       });
     });
@@ -261,7 +250,6 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(result.siteId).to.equal('test-site-id');
-      expect(result.jobId).to.equal('test-site-id');
       expect(mockSite.getId).to.have.been.calledOnce;
     });
 
@@ -326,7 +314,7 @@ describe('Accessibility Audit Handler', () => {
           },
         },
       };
-      
+
       getUrlsForAuditStub.resolves(mockUrls);
       mockSite.getConfig.resolves(mockConfig);
 
@@ -350,7 +338,7 @@ describe('Accessibility Audit Handler', () => {
       const mockUrls = [
         { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
       ];
-      
+
       getUrlsForAuditStub.resolves(mockUrls);
       mockSite.getConfig.resolves(null);
 
@@ -370,7 +358,7 @@ describe('Accessibility Audit Handler', () => {
       const mockUrls = [
         { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
       ];
-      
+
       getUrlsForAuditStub.resolves(mockUrls);
       mockSite.getConfig.resolves(undefined);
 
@@ -400,7 +388,7 @@ describe('Accessibility Audit Handler', () => {
           },
         },
       };
-      
+
       getUrlsForAuditStub.resolves(mockUrls);
       mockSite.getConfig.resolves(mockConfig);
 
@@ -424,7 +412,7 @@ describe('Accessibility Audit Handler', () => {
         // No state property
         someOtherProperty: 'value',
       };
-      
+
       getUrlsForAuditStub.resolves(mockUrls);
       mockSite.getConfig.resolves(mockConfig);
 
@@ -454,7 +442,7 @@ describe('Accessibility Audit Handler', () => {
           },
         },
       };
-      
+
       getUrlsForAuditStub.resolves(mockUrls);
       mockSite.getConfig.resolves(mockConfig);
 
@@ -475,14 +463,14 @@ describe('Accessibility Audit Handler', () => {
         { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
       ];
       const configError = new Error('Failed to get site config');
-      
+
       getUrlsForAuditStub.resolves(mockUrls);
       mockSite.getConfig.rejects(configError);
 
       // Act & Assert
       await expect(scrapeAccessibilityData(mockContext))
         .to.be.rejectedWith('Failed to get site config');
-      
+
       expect(mockSite.getConfig).to.have.been.calledOnce;
     });
 
@@ -590,34 +578,6 @@ describe('Accessibility Audit Handler', () => {
           'ahrefs', // source
           'global', // geo
         );
-    });
-
-    it('filters out urls that have existing failed audits', async () => {
-      // Arrange
-      const mockUrls = [
-        { url: 'https://example.com/page1' },
-        { url: 'https://example.com/page2' },
-        { url: 'https://example.com/page3' },
-      ];
-      const mockObjectKeys = ['key1', 'key2'];
-      const existingUrls = ['https://example.com/page1', 'https://example.com/page2'];
-
-      getUrlsForAuditStub.resolves(mockUrls);
-      getExistingObjectKeysFromFailedAuditsStub.resolves(mockObjectKeys);
-      getExistingUrlsFromFailedAuditsStub.resolves(existingUrls);
-
-      // Act
-      const result = await scrapeAccessibilityData(mockContext);
-
-      // Assert
-      expect(getExistingUrlsFromFailedAuditsStub).to.have.been.calledWith(
-        mockS3Client,
-        'test-bucket',
-        mockContext.log,
-        mockObjectKeys,
-      );
-
-      expect(result.urls).to.deep.equal([{ url: 'https://example.com/page3' }]);
     });
 
     it('should process top pages and log top 100 when pages exist', async () => {
@@ -773,7 +733,7 @@ describe('Accessibility Audit Handler', () => {
       );
     });
 
-    it('should use mobile-specific storage prefix when deviceType is mobile', async () => {
+    it('should use mobile as deviceType', async () => {
       // Arrange
       const mockUrls = [
         { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
@@ -784,7 +744,6 @@ describe('Accessibility Audit Handler', () => {
       const result = await scrapeAccessibilityData(mockContext, 'mobile');
 
       // Assert
-      expect(result.options.storagePrefix).to.equal('accessibility-mobile');
       expect(result.options.deviceType).to.equal('mobile');
     });
   });
@@ -1541,7 +1500,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert - individual opportunities should be skipped for mobile
       expect(createAccessibilityIndividualOpportunitiesStub).to.not.have.been.called;
-      
+
       // Assert - metrics import SHOULD be called for mobile (changed behavior)
       expect(sendRunImportMessageStub).to.have.been.calledOnceWith(
         mockContext.sqs,
@@ -1554,11 +1513,11 @@ describe('Accessibility Audit Handler', () => {
           deviceType: 'mobile',
         }),
       );
-      
+
       expect(result.status).to.equal('OPPORTUNITIES_FOUND');
       expect(result.deviceType).to.equal('mobile');
       expect(result.opportunitiesFound).to.equal(3); // 3 mobile issues
-      
+
       // Check that the specific log messages were called
       const logCalls = mockContext.log.info.getCalls().map(call => call.args[0]);
       expect(logCalls).to.include('[A11yAudit] Step 2: Processing scraped data for mobile on site test-site-id (https://example.com)');
@@ -1621,7 +1580,7 @@ describe('Accessibility Audit Handler', () => {
       // Assert
       expect(result.opportunitiesFound).to.equal(3); // desktop appears 3 times
       expect(result.deviceType).to.equal('desktop');
-      
+
       const logCalls = mockContext.log.info.getCalls().map(call => call.args[0]);
       expect(logCalls).to.include('[A11yAudit] Found 3 desktop accessibility issues across 1 unique URLs for site test-site-id (https://example.com)');
     });
@@ -1991,12 +1950,12 @@ describe('Accessibility Audit Handler', () => {
       const handlerDesktop = await import('../../src/accessibility/handler-desktop.js');
       expect(handlerDesktop.default).to.exist;
       expect(handlerDesktop.default.steps).to.exist;
-      
+
       // Get the scrapeAccessibilityData step handler from the handler
       const scrapeStep = handlerDesktop.default.steps.scrapeAccessibilityData;
       expect(scrapeStep).to.exist;
       expect(scrapeStep.handler).to.be.a('function');
-      
+
       // Call the wrapper function to cover lines 24-26
       const result = await scrapeStep.handler(mockContext);
       expect(result).to.exist;
@@ -2006,12 +1965,12 @@ describe('Accessibility Audit Handler', () => {
       const handlerMobile = await import('../../src/accessibility/handler-mobile.js');
       expect(handlerMobile.default).to.exist;
       expect(handlerMobile.default.steps).to.exist;
-      
+
       // Get the scrapeAccessibilityData step handler from the handler
       const scrapeStep = handlerMobile.default.steps.scrapeAccessibilityData;
       expect(scrapeStep).to.exist;
       expect(scrapeStep.handler).to.be.a('function');
-      
+
       // Call the wrapper function to cover lines 24-26
       const result = await scrapeStep.handler(mockContext);
       expect(result).to.exist;
