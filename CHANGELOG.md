@@ -1,3 +1,24 @@
+## [1.257.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.257.1...v1.257.2) (2025-11-27)
+
+
+### Bug Fixes
+
+* back to working version of @adobe/helix-deploy ([#1683](https://github.com/adobe/spacecat-audit-worker/issues/1683)) ([7200791](https://github.com/adobe/spacecat-audit-worker/commit/72007915580da8ea62b725f1bd7e80cf30653be9))
+
+## [1.257.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.257.0...v1.257.1) (2025-11-27)
+
+
+### Bug Fixes
+
+* Support legacy URL-based aggregation and code fix flow ([#1676](https://github.com/adobe/spacecat-audit-worker/issues/1676)) ([fcc7b67](https://github.com/adobe/spacecat-audit-worker/commit/fcc7b67d5c97f90b6b3cf7f58ffb273f45d7c6f8))
+
+# [1.257.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.256.4...v1.257.0) (2025-11-27)
+
+
+### Features
+
+* add content AI pre-req check to FAQs ([#1663](https://github.com/adobe/spacecat-audit-worker/issues/1663)) ([c615060](https://github.com/adobe/spacecat-audit-worker/commit/c6150600665db01d42d20cb4cf2ba8b515b9ce11))
+
 ## [1.256.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.256.3...v1.256.4) (2025-11-27)
 
 
