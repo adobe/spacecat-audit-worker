@@ -1,3 +1,10 @@
+## [1.256.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.256.3...v1.256.4) (2025-11-27)
+
+
+### Bug Fixes
+
+* removing helix-universal from run time dependencies ([#1681](https://github.com/adobe/spacecat-audit-worker/issues/1681)) ([9fbf65c](https://github.com/adobe/spacecat-audit-worker/commit/9fbf65c3ac513d6060f0e787f16cc067cfc35b46))
+
 ## [1.256.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.256.2...v1.256.3) (2025-11-26)
 
 
