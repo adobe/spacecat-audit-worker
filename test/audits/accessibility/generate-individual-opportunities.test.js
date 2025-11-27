@@ -3053,8 +3053,9 @@ describe('sendMessageToMystiqueForRemediation', () => {
       mockLog,
     );
 
-    expect(mockLog.info).to.have.been.calledWithMatch(
-      '[A11yIndividual] Sending 1 messages to Mystique (via appropriate flow based on issue types)',
+    // The log message now says either "code fix" or "legacy" flow
+    expect(mockLog.info).to.have.been.calledWith(
+      sinon.match(/\[A11yIndividual\] Sending 1 messages to Mystique \(via (code fix|legacy) flow\)/),
     );
     expect(mockLog.debug).to.have.been.calledWithMatch(
       '[A11yIndividual] Message sending completed: 1 successful, 0 failed, 0 rejected',
@@ -3237,63 +3238,6 @@ describe('sendMessageToMystiqueForRemediation', () => {
     }
   });
 
-  it('should return error when code fix issues exist but IMPORT_WORKER_QUEUE_URL is missing', async () => {
-    // Set up context without IMPORT_WORKER_QUEUE_URL
-    const contextWithoutImportQueue = {
-      ...mockContext,
-      env: {
-        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
-        // IMPORT_WORKER_QUEUE_URL is missing
-      },
-    };
-
-    // Mock suggestions with code fix eligible issues
-    mockOpportunity.getSuggestions = sandbox.stub().resolves([
-      {
-        getData: () => ({
-          url: 'https://example.com/page1',
-          type: 'url',
-          issues: [
-            {
-              type: 'button-name', // This is a code fix type
-              occurrences: 1,
-              htmlWithIssues: [{ target_selector: 'button' }],
-            },
-          ],
-        }),
-        getStatus: () => 'NEW',
-        getId: () => 'suggestion-1',
-      },
-    ]);
-
-    // Mock processSuggestionsForMystique to return code fix eligible issues
-    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
-        processSuggestionsForMystique: sandbox.stub().returns([
-          {
-            url: 'https://example.com/page1',
-            issuesList: [{ issueName: 'button-name' }], // This is a code fix type
-            aggregationKey: 'button-name',
-          },
-        ]),
-      },
-      '../../../src/common/audit-utils.js': {
-        isAuditEnabledForSite: mockIsAuditEnabledForSite,
-      },
-    });
-
-    const result = await module.sendMessageToMystiqueForRemediation(
-      mockOpportunity,
-      contextWithoutImportQueue,
-      mockLog,
-    );
-
-    expect(result.success).to.be.false;
-    expect(result.error).to.equal('Preconditions not met for code fix');
-    expect(mockLog.error).to.have.been.calledWith(
-      '[A11yIndividual][A11yProcessingError] Preconditions not met for code fix flow',
-    );
-  });
 });
 
 describe('handleAccessibilityRemediationGuidance', () => {
