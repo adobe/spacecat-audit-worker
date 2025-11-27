@@ -94,6 +94,7 @@ import permissionsRedundant from './permissions/handler.redundant.js';
 import faqs from './faqs/handler.js';
 import faqsGuidance from './faqs/guidance-handler.js';
 import pageCitability from './page-citability/handler.js';
+import healthCheck from './health-check/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -175,6 +176,7 @@ const HANDLERS = {
   faqs,
   'guidance:faqs': faqsGuidance,
   'page-citability': pageCitability,
+  'health-check': healthCheck,
   dummy: (message) => ok(message),
 };
 
