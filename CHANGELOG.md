@@ -1,3 +1,10 @@
+# [1.257.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.256.4...v1.257.0) (2025-11-27)
+
+
+### Features
+
+* add content AI pre-req check to FAQs ([#1663](https://github.com/adobe/spacecat-audit-worker/issues/1663)) ([c615060](https://github.com/adobe/spacecat-audit-worker/commit/c6150600665db01d42d20cb4cf2ba8b515b9ce11))
+
 ## [1.256.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.256.3...v1.256.4) (2025-11-27)
 
 
