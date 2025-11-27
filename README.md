@@ -96,7 +96,7 @@ AWS_SESSION_TOKEN=<acquired from KLAM>
 # ... other required variables depending on the audit
 ```
 
-#### 2. Run/Debug with `npm start`
+#### 2. Run/Debug with `npm start` (Source Mode)
 
 Once your `.env` file is set up, start the local development server using:
 
@@ -104,7 +104,42 @@ Once your `.env` file is set up, start the local development server using:
 npm start
 ```
 
-To use breakpoints, make sure to use the debugging tools provided by your IDE (e.g., VSCode, WebStorm, etc.).
+This runs the source code directly with hot-reloading. To use breakpoints, make sure to use the debugging tools provided by your IDE (e.g., VSCode, WebStorm, etc.).
+
+#### 3. Run/Debug with `npm run start:unpacked` (Bundle Mode)
+
+To test the **actual bundled Lambda artifact** that gets deployed to AWS, use the `start:unpacked` script. This is useful for debugging bundle-specific issues like missing dependencies or runtime module resolution problems.
+
+**Steps:**
+
+1. **Build the bundle:**
+   ```bash
+   npm run build
+   ```
+
+2. **Prepare the unpacked bundle:**
+   ```bash
+   # Remove old artifacts
+   rm -rf dist/spacecat-services/unpacked
+   
+   # Unzip the bundle into the unpacked directory
+   cd dist/spacecat-services
+   unzip api-service@*.zip -d unpacked/
+   cd ../..
+   ```
+
+3. **Start the dev server:**
+   ```bash
+   npm run start:unpacked
+   ```
+
+4. **Attach the Chrome debugger:**
+   - Open Chrome and navigate to `chrome://inspect`
+   - Click "Configure..." and ensure `localhost:9229` is listed
+   - Under "Remote Target", click "inspect" on the running Node process
+   - Set breakpoints in the bundled code at `dist/spacecat-services/unpacked/index.js`
+
+**Note:** The bundled version loads secrets from AWS Secrets Manager and reflects the exact production runtime behavior, including helix-deploy's packaging of dependencies.
 
 #### 3. Trigger an Audit
 

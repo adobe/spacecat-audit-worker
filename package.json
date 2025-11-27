@@ -29,9 +29,6 @@
     "local-build-run": "sam build && sam local invoke -l output.txt",
     "local-watch": "node scripts/watch-and-copy.js"
   },
-  "wsk": {
-    "name": "spacecat-services--audit-worker@latest"
-  },
   "hlx": {
     "target": "aws",
     "linkRoutes": false,
