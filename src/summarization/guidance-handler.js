@@ -46,7 +46,7 @@ async function addSuggestions(
     context,
     opportunity,
     newData: suggestionValues,
-    buildKey: (suggestion) => `${suggestion.url}-${suggestion.transformRules.selector}`,
+    buildKey: (suggestion) => `${suggestion.url}-${suggestion.transformRules.selector}-${suggestion.keyPoints ? 'key-points' : 'text'}`,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: 'CODE_CHANGE',
