@@ -167,6 +167,20 @@ async function addSuggestions(
       };
     }
 
+    // Check if URL is in the sources
+    const sources = suggestion.item?.sources || [];
+    const urlInSources = sources.some((source) => source === suggestion.url);
+
+    // If URL is not in sources, should not optimize
+    if (!urlInSources) {
+      log.info(`[FAQ] URL ${suggestion.url} not found in sources, will not optimize`);
+      return {
+        ...suggestion,
+        shouldOptimize: false,
+      };
+    }
+
+    // URL is in sources, proceed with scrape data analysis
     const analysis = await analyzeScrapeData(
       suggestion.url,
       siteId,
