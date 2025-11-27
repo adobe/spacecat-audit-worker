@@ -58,6 +58,18 @@ function generateUrlSourceHash(url, source) {
  * @param {string} reportKey - The S3 key path to the report
  * @param {Object} log - Logger instance
  * @returns {Promise<Object|null>} - The report data or null if not found
+ *
+ * Expected report.json structure:
+ * {
+ *   url: "https://example.com/contact-us",
+ *   source: "#contact-us",
+ *   type: "color-contrast",
+ *   updatedFiles: ["blocks/form/form.js"],
+ *   htmlWithIssues: ["<span>Optional<span>", "<span>Optional<span>"],
+ *   diff: "diff --git ...",
+ *   createdAt: "",
+ *   updatedAt: ""
+ * }
  */
 async function readCodeChangeReport(s3Client, bucketName, reportKey, log) {
   try {
@@ -70,10 +82,15 @@ async function readCodeChangeReport(s3Client, bucketName, reportKey, log) {
       return null;
     }
 
-    // If reportData is a plain string (not JSON), wrap it in a diff object
+    // If reportData is a plain string, try to parse it as JSON
     if (typeof reportData === 'string') {
-      log.info(`Report data is plain text, wrapping in diff object for key: ${reportKey}`);
-      return { diff: reportData };
+      try {
+        const parsedData = JSON.parse(reportData);
+        return parsedData;
+      } catch (error) {
+        log.warn(`Failed to parse report data as JSON for key: ${reportKey}, returning null`);
+        return null;
+      }
     }
 
     log.info(`Successfully read code change report from S3: ${reportKey}`);
@@ -214,7 +231,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
   }
 
   // Default bucket name from environment
-  const defaultBucketName = env.S3_MYSTIQUE_BUCKET_NAME;
+  const defaultBucketName = env.S3_MYSTIQUE_BUCKET_NAME || 'spacecat-prod-mystique-assets';
 
   let totalUpdatedSuggestions = 0;
 
@@ -224,7 +241,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
       url,
       source,
       aggregation_key: aggregationKey,
-      type: types,
+      types,
       code_fix_path: codeFixPath,
       code_fix_bucket: codeFixBucket,
     } = update;

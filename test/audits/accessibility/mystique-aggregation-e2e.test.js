@@ -517,7 +517,8 @@ describe('Accessibility Suggestion Aggregation - End-to-End', () => {
         }),
       };
 
-      const result = processSuggestionsForMystique([suggestionWithGuidance, suggestionWithoutGuidance]);
+      // Use legacy flow (useCodeFixFlow = false) to skip issues with guidance
+      const result = processSuggestionsForMystique([suggestionWithGuidance, suggestionWithoutGuidance], false);
 
       // Should only process the suggestion without guidance
       expect(result).to.have.length(1);
