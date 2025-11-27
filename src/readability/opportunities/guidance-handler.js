@@ -13,28 +13,50 @@
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 
 /**
+ * Enriches suggestion data with fileds required for auto-optimize.
+ *
+ * Adds the URL and transform rules required for auto-optimize
+ * based on the suggestion's properties.
+ *
+ * @param {Object} data - The suggestion data object.
+ * @returns {Object} The enriched data with auto-optimize fields.
+ */
+function enrichSuggestionDataForAutoOptimize(data) {
+  return {
+    ...data,
+    url: data.pageUrl,
+    scrapedAt: new Date(data.scrapedAt).toISOString(),
+    transformRules: {
+      action: 'replace',
+      selector: data.selector,
+    },
+  };
+}
+
+/**
  * Maps Mystique readability suggestions to opportunity format
  * @param {Array} mystiquesuggestions - Array of suggestions from Mystique
  * @returns {Array} Array of suggestions for opportunity
  */
 function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
-  return mystiquesuggestions.map((suggestion, index) => {
-    const suggestionId = `readability-opportunity-${suggestion.pageUrl || 'unknown'}-${index}`;
+  return mystiquesuggestions
+    .map((suggestion, index) => {
+      const suggestionId = `readability-opportunity-${suggestion.pageUrl || 'unknown'}-${index}`;
 
-    return {
-      id: suggestionId,
-      pageUrl: suggestion.pageUrl,
-      originalText: suggestion.original_paragraph,
-      improvedText: suggestion.improved_paragraph,
-      selector: suggestion.selector,
-      originalFleschScore: suggestion.current_flesch_score,
-      improvedFleschScore: suggestion.improved_flesch_score,
-      seoRecommendation: suggestion.seo_recommendation,
-      aiRationale: suggestion.ai_rationale,
-      targetFleschScore: suggestion.target_flesch_score,
-      type: 'READABILITY_IMPROVEMENT',
-    };
-  });
+      return {
+        id: suggestionId,
+        pageUrl: suggestion.pageUrl,
+        originalText: suggestion.original_paragraph,
+        improvedText: suggestion.improved_paragraph,
+        selector: suggestion.selector,
+        originalFleschScore: suggestion.current_flesch_score,
+        improvedFleschScore: suggestion.improved_flesch_score,
+        seoRecommendation: suggestion.seo_recommendation,
+        aiRationale: suggestion.ai_rationale,
+        targetFleschScore: suggestion.target_flesch_score,
+        type: 'READABILITY_IMPROVEMENT',
+      };
+    });
 }
 
 export default async function handler(message, context) {
@@ -92,6 +114,7 @@ export default async function handler(message, context) {
       pageUrl: data.pageUrl || auditUrl,
       originalText: data.original_paragraph,
       improvedText: data.improved_paragraph,
+      selector: data.selector,
       originalFleschScore: data.current_flesch_score,
       improvedFleschScore: data.improved_flesch_score,
       seoRecommendation: data.seo_recommendation,
@@ -145,7 +168,17 @@ export default async function handler(message, context) {
             mystiqueProcessingCompleted: new Date().toISOString(),
           };
 
-          await matchingSuggestion.setData(updatedData);
+          // Enrich with auto-optimize data
+          const enrichedData = enrichSuggestionDataForAutoOptimize(updatedData);
+
+          // If improvedText is empty or null, remove the suggestion instead of updating
+          if (!mystiquesuggestion.improvedText || mystiquesuggestion.improvedText.trim() === '') {
+            await matchingSuggestion.remove();
+            log.warn(`[readability-opportunity guidance]: Removed suggestion ${matchingSuggestion.getId()} because Mystique 'improvedText' is empty`);
+            return true;
+          }
+
+          await matchingSuggestion.setData(enrichedData);
           await matchingSuggestion.save();
 
           log.info(`[readability-opportunity guidance]: Updated suggestion ${matchingSuggestion.getId()} with AI improvements`);

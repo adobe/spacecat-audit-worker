@@ -72,6 +72,7 @@ async function analyzeTextReadability(
   detectedLanguages,
   getSupportedLanguage,
   log,
+  scrapedAt,
 ) {
   try {
     // Check if text is in a supported language
@@ -107,6 +108,7 @@ async function analyzeTextReadability(
 
       return {
         pageUrl,
+        scrapedAt,
         selector,
         textContent: text,
         displayText,
@@ -165,7 +167,7 @@ const getMeaningfulElementsForReadability = ($) => {
  * @returns {Promise<Array>} Array of readability issue objects for text elements
  *  with poor readability.
  */
-export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
+export async function analyzePageContent(rawBody, pageUrl, traffic, log, scrapedAt) {
   const readabilityIssues = [];
 
   try {
@@ -236,6 +238,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
             detectedLanguages,
             getSupportedLanguage,
             log,
+            scrapedAt,
           );
           analysisPromises.push(analysisPromise);
         });
@@ -248,6 +251,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
           detectedLanguages,
           getSupportedLanguage,
           log,
+          scrapedAt,
         );
         analysisPromises.push(analysisPromise);
       }
@@ -279,7 +283,18 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
 }
 
 /**
- * Analyzes readability for all scraped pages from S3
+/**
+ * Analyzes readability for all scraped pages from S3.
+ *
+ * Fetches all scraped page objects for the specified site from S3, analyzes the readability
+ * of each page's content, and returns the combined list of readability issues found as well
+ * as the number of processed URLs.
+ *
+ * @param {AWS.S3} s3Client - The AWS S3 client instance.
+ * @param {string} bucketName - The name of the S3 bucket containing scraped pages.
+ * @param {string} siteId - The site ID whose pages should be analyzed.
+ * @param {Object} log - Logger instance for info, warn, and error messages.
+ * @returns {Promise<Object>} The analysis result.
  */
 export async function analyzePageReadability(s3Client, bucketName, siteId, log) {
   try {
@@ -307,12 +322,12 @@ export async function analyzePageReadability(s3Client, bucketName, siteId, log) 
           return { issues: [], processed: false };
         }
 
-        const { finalUrl, scrapeResult: { rawBody } } = scrapedData;
+        const { finalUrl, scrapeResult: { rawBody }, scrapedAt } = scrapedData;
 
         // Extract page traffic data if available
         const traffic = extractTrafficFromKey(key) || 0;
 
-        const pageIssues = await analyzePageContent(rawBody, finalUrl, traffic, log);
+        const pageIssues = await analyzePageContent(rawBody, finalUrl, traffic, log, scrapedAt);
 
         return {
           issues: pageIssues,
