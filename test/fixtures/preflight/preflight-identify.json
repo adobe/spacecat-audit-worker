@@ -96,6 +96,11 @@
         ]
       },
       {
+        "name": "headings",
+        "opportunities": [],
+        "type": "seo"
+      },
+      {
         "name": "readability",
         "type": "seo",
         "opportunities": []

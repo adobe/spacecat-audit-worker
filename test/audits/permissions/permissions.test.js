@@ -591,6 +591,53 @@ describe('Permissions Handler Tests', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.dataAccess.Opportunity.create).to.have.been.called;
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledWith(sinon.match(
+          {
+            data: sinon.match(
+                {
+                  mainMetric: {name: 'Issues', value: 1},
+                  metrics: {insecure_permissions: 1, redundant_permissions: 0}
+                }
+            )
+          }));
+    });
+
+    it('should create new too strong opportunity when allPermissions found with multiple users / paths', async () => {
+      // Mock the data access methods to simulate opportunity creation
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves({
+        getId: () => 'opp-123',
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub(),
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        getSuggestions: sandbox.stub().resolves([]),
+      });
+
+      // Add allPermissions data to trigger opportunity creation
+      auditData.auditResult.permissionsReport.allPermissions = [
+        {
+          path: '/content/test',
+          details: [{ principal: 'everyone', acl: ['jcr:all'], otherPermissions: [] }],
+        },
+        {
+          path: '/content/test-2',
+          details: [{ principal: 'everyone', acl: ['jcr:all'], otherPermissions: [] }, { principal: 'somebody', acl: ['jcr:all'], otherPermissions: [] }],
+        },
+      ];
+
+      const result = await tooStrongOpportunityStep('https://example.com', auditData, context, site);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.dataAccess.Opportunity.create).to.have.been.called;
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledWith(sinon.match(
+          {
+            data: sinon.match(
+                {
+                  mainMetric: {name: 'Issues', value: 3},
+                  metrics: {insecure_permissions: 3, redundant_permissions: 0}
+                }
+            )
+          }));
     });
 
     it('should reuse existing too strong opportunity when allPermissions found', async () => {
@@ -641,10 +688,57 @@ describe('Permissions Handler Tests', () => {
         },
       ];
 
-      const result = await tooStrongOpportunityStep('https://example.com', auditData, context, site);
+      const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.dataAccess.Opportunity.create).to.have.been.called;
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledWith(sinon.match(
+          {
+            data: sinon.match(
+                {
+                  mainMetric: {name: 'Issues', value: 1},
+                  metrics: {insecure_permissions: 0, redundant_permissions: 1}
+                }
+            )
+          }));
+    });
+
+    it('should create new admin opportunity when adminChecks found with multiple users/paths', async () => {
+      // Mock the data access methods to simulate opportunity creation
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves({
+        getId: () => 'opp-123',
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub(),
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        getSuggestions: sandbox.stub().resolves([]),
+      });
+
+      // Add adminChecks data to trigger opportunity creation
+      auditData.auditResult.permissionsReport.adminChecks = [
+        {
+          principal: 'admin1',
+          details: [{ path: '/content/admin1', allow: true, privileges: ['jcr:all'] }, { path: '/content/test1', allow: true, privileges: ['jcr:all'] }],
+        },
+        {
+          principal: 'admin2',
+          details: [{ path: '/content/admin1', allow: true, privileges: ['jcr:all'] }],
+        },
+      ];
+
+      const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.dataAccess.Opportunity.create).to.have.been.called;
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledWith(sinon.match(
+          {
+            data: sinon.match(
+                {
+                  mainMetric: {name: 'Issues', value: 3},
+                  metrics: {insecure_permissions: 0, redundant_permissions: 3}
+                }
+            )
+          }));
     });
 
     it('should handle opportunities with suggestions when resolving', async () => {

@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 
 import { buildProductMetatagsAuditResult } from '../../src/product-metatags/handler.js';
+import { createOpportunityData } from '../../src/product-metatags/opportunity-data-mapper.js';
 import { getIssueRanking } from '../../src/utils/seo-utils.js';
 
 describe('buildProductMetatagsAuditResult', () => {
@@ -76,5 +77,34 @@ describe('getIssueRanking', () => {
     const result = getIssueRanking('title', 'missing');
     expect(result).to.be.a('number');
     expect(result).to.be.greaterThan(-1);
+  });
+});
+
+describe('createOpportunityData', () => {
+  it('should include projected traffic metrics without magentoEnvironmentId by default', () => {
+    const data = createOpportunityData({
+      projectedTrafficLost: 150,
+      projectedTrafficValue: 75,
+    });
+
+    expect(data.data).to.deep.include({
+      projectedTrafficLost: 150,
+      projectedTrafficValue: 75,
+    });
+    expect('magentoEnvironmentId' in data.data).to.equal(false);
+  });
+
+  it('should add magentoEnvironmentId to data when provided', () => {
+    const data = createOpportunityData({
+      projectedTrafficLost: 150,
+      projectedTrafficValue: 75,
+      magentoEnvironmentId: 'env-123',
+    });
+
+    expect(data.data).to.deep.include({
+      projectedTrafficLost: 150,
+      projectedTrafficValue: 75,
+      magentoEnvironmentId: 'env-123',
+    });
   });
 });

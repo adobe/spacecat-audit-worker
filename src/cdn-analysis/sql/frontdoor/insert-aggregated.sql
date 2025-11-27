@@ -22,7 +22,7 @@ WHERE year  = '{{year}}'
   {{hourFilter}}
   
    -- match known LLM-related user-agents
-  AND REGEXP_LIKE(properties.userAgent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot|^Google$)')
+  AND REGEXP_LIKE(properties.userAgent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|GoogleAgent|Googlebot|bingbot|^Google$)')
 
   -- exclude static assets, but always include HTML, PDF, robots.txt, and sitemaps
   AND (

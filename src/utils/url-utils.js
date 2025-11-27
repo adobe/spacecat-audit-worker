@@ -146,3 +146,14 @@ export function getBaseUrl(url, useHostnameOnly = false) {
   }
   return removeTrailingSlash(url);
 }
+
+export function joinBaseAndPath(baseURL, path) {
+  if (path === '-') {
+    return baseURL.endsWith('/') ? baseURL : `${baseURL}/`;
+  }
+
+  const normalizedBase = baseURL.endsWith('/') ? baseURL.slice(0, -1) : baseURL;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+  return `${normalizedBase}${normalizedPath}`;
+}

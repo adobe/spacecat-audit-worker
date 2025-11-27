@@ -204,47 +204,9 @@ describe('Utils Report Uploader', () => {
       expect(fetchStub).to.have.been.calledTwice;
       expect(fetchStub.firstCall.args[0]).to.include('/preview/');
       expect(fetchStub.secondCall.args[0]).to.include('/live/');
-      expect(mockContext.log.debug).to.have.been.calledWith(
-        '%s: Waiting 2 seconds before publishing to live...',
-        'REPORT_UPLOADER',
-      );
     });
 
-    it('should retry on 503 error and then succeed', async function retryTest() {
-      this.timeout(10000);
-
-      const buffer = Buffer.from('test data');
-      const filename = 'test.xlsx';
-      const outputLocation = 'reports';
-
-      // First call fails with 503, second call succeeds for preview
-      fetchStub.onCall(0).resolves({
-        ok: false,
-        status: 503,
-        statusText: 'Service Unavailable',
-        headers: {
-          get: sandbox.stub().returns(null),
-        },
-      });
-      fetchStub.onCall(1).resolves({ ok: true, status: 200, statusText: 'OK' });
-      // Live endpoint succeeds immediately
-      fetchStub.onCall(2).resolves({ ok: true, status: 200, statusText: 'OK' });
-
-      await uploadAndPublishFile(
-        buffer,
-        filename,
-        outputLocation,
-        mockContext.sharepointClient,
-        mockContext.log,
-      );
-
-      expect(fetchStub).to.have.been.calledThrice;
-      expect(mockContext.log.warn).to.have.been.calledWith(
-        sinon.match(/preview Helix API failed.*retrying in \d+ms.*attempt 1\/5/),
-      );
-    });
-
-    it('should retry with Retry-After header', async function retryAfterTest() {
+    it('should retry when 503 AND x-error contains 429', async function retryTest() {
       this.timeout(10000);
 
       const buffer = Buffer.from('test data');
@@ -252,14 +214,14 @@ describe('Utils Report Uploader', () => {
       const outputLocation = 'reports';
 
       const headersStub = sandbox.stub();
-      headersStub.withArgs('retry-after').returns('5');
+      headersStub.withArgs('x-error').returns('[admin] Unable to fetch from onedrive: (429) - The request has been throttled');
       headersStub.returns(null);
 
-      // First call fails with 429 and Retry-After header
+      // First call fails with 503 AND x-error containing 429, second call succeeds for preview
       fetchStub.onCall(0).resolves({
         ok: false,
-        status: 429,
-        statusText: 'Too Many Requests',
+        status: 503,
+        statusText: 'Service Unavailable',
         headers: { get: headersStub },
       });
       fetchStub.onCall(1).resolves({ ok: true, status: 200, statusText: 'OK' });
@@ -276,23 +238,21 @@ describe('Utils Report Uploader', () => {
 
       expect(fetchStub).to.have.been.calledThrice;
       expect(mockContext.log.warn).to.have.been.calledWith(
-        sinon.match(/preview Helix API failed.*retrying in 5000ms per Retry-After header/),
+        sinon.match(/preview Helix API failed.*retrying in \d+ms.*attempt 1\/3/),
       );
     });
 
-    it('should log error with x-error header on final failure', async function finalFailureTest() {
-      this.timeout(10000);
+    it('should NOT retry on 503 without x-error containing 429', async function noRetry503Test() {
+      this.timeout(5000);
 
       const buffer = Buffer.from('test data');
       const filename = 'test.xlsx';
       const outputLocation = 'reports';
 
       const headersStub = sandbox.stub();
-      headersStub.withArgs('x-error').returns('backend-timeout');
-      headersStub.withArgs('retry-after').returns(null);
       headersStub.returns(null);
 
-      // All calls fail with 503
+      // First call fails with 503 but no x-error with 429
       fetchStub.resolves({
         ok: false,
         status: 503,
@@ -308,11 +268,46 @@ describe('Utils Report Uploader', () => {
         mockContext.log,
       );
 
-      // Should have 5 retry attempts + 1 final attempt = 6 calls for preview
-      expect(fetchStub.callCount).to.equal(6);
-      expect(mockContext.log.warn.callCount).to.equal(5);
+      // Should only be called once (no retries)
+      expect(fetchStub.callCount).to.equal(1);
+      expect(mockContext.log.warn).to.not.have.been.called;
       expect(mockContext.log.error).to.have.been.calledWith(
-        sinon.match(/preview Helix API failed after retries.*x-error: backend-timeout/),
+        sinon.match(/preview Helix API failed after retries/),
+      );
+    });
+
+    it('should log error with x-error header on final failure', async function finalFailureTest() {
+      this.timeout(10000);
+
+      const buffer = Buffer.from('test data');
+      const filename = 'test.xlsx';
+      const outputLocation = 'reports';
+
+      const headersStub = sandbox.stub();
+      headersStub.withArgs('x-error').returns('[admin] Unable to fetch from onedrive: (429) - throttled');
+      headersStub.returns(null);
+
+      // All calls fail with 503 AND x-error containing 429
+      fetchStub.resolves({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: { get: headersStub },
+      });
+
+      await uploadAndPublishFile(
+        buffer,
+        filename,
+        outputLocation,
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      // Should have 3 retry attempts + 1 initial attempt = 4 calls for preview
+      expect(fetchStub.callCount).to.equal(4);
+      expect(mockContext.log.warn.callCount).to.equal(3);
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/preview Helix API failed after retries.*x-error.*429/),
       );
     });
 

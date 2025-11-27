@@ -24,7 +24,7 @@ import {
  * @param {number} [numberOfWeeks=1] - The number of previous weeks to include.
  * @returns {Array<{ year: number, month: number, week: number }>} Array of unique triples.
  */
-function getPreviousWeekTriples(today = new Date(), numberOfWeeks = 1) {
+export function getPreviousWeekTriples(today = new Date(), numberOfWeeks = 1) {
   const triplesSet = new Set();
 
   // Iterate through each of the previous weeks

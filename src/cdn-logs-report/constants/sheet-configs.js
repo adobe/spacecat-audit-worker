@@ -13,6 +13,7 @@
 
 import { classifyTrafficSource } from '@adobe/spacecat-shared-rum-api-client/src/common/traffic.js';
 import { validateCountryCode } from '../utils/report-utils.js';
+import { joinBaseAndPath } from '../../utils/url-utils.js';
 
 const HEADER_COLOR = 'FFE6E6FA';
 
@@ -33,20 +34,40 @@ export const SHEET_CONFIGS = {
       'URL',
       'Product',
       'Category',
+      'Citability Score',
     ],
     headerColor: HEADER_COLOR,
     numberColumns: [2, 3, 4],
-    processData: (data) => data?.map((row) => [
-      row.agent_type || 'Other',
-      row.user_agent_display || 'Unknown',
-      Number(row.status) || 'N/A',
-      Number(row.number_of_hits) || 0,
-      Number(row.avg_ttfb_ms) || 0,
-      validateCountryCode(row.country_code),
-      row.url === '-' ? '/' : (row.url || ''),
-      capitalizeFirstLetter(row.product) || 'Other',
-      row.category || 'Uncategorized',
-    ]) || [],
+    processData: async (data, site, dataAccess) => {
+      if (!data || !site || !dataAccess) return [];
+
+      // Fetch citability scores from database
+      const { PageCitability } = dataAccess;
+      const citabilityScores = await PageCitability.allBySiteId(site.getId());
+      const citabilityMap = citabilityScores.reduce((acc, score) => {
+        acc[score.getUrl()] = score.getCitabilityScore();
+        return acc;
+      }, {});
+
+      return data.map((row) => {
+        const urlPath = row.url === '-' ? '/' : (row.url || '');
+        const fullUrl = joinBaseAndPath(site.getBaseURL(), urlPath);
+        const citabilityScore = citabilityMap[fullUrl] || 'N/A';
+
+        return [
+          row.agent_type || 'Other',
+          row.user_agent_display || 'Unknown',
+          Number(row.status) || 'N/A',
+          Number(row.number_of_hits) || 0,
+          Number(row.avg_ttfb_ms) || 0,
+          validateCountryCode(row.country_code),
+          urlPath,
+          capitalizeFirstLetter(row.product) || 'Other',
+          row.category || 'Uncategorized',
+          citabilityScore,
+        ];
+      });
+    },
   },
   referral: {
     getHeaders: () => [
@@ -134,8 +155,10 @@ export const SHEET_CONFIGS = {
     processData: (data) => data?.map((row) => {
       const name = row.name || '';
       const capitalizedName = name.charAt(0).toUpperCase() + name.slice(1);
+      // Escape apostrophes for SQL compatibility (Athena requires '' for ')
+      const sqlEscapedName = capitalizedName.replace(/'/g, "''");
       return [
-        capitalizedName,
+        sqlEscapedName,
         row.regex || '',
       ];
     }) || [],

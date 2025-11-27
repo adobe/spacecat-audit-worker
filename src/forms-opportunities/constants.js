@@ -23,6 +23,10 @@ export const ORIGINS = {
   ESS_OPS: 'ESS_OPS',
 };
 
+// Opportunity filtering constants
+export const OPPTY_OPTIONS_ALL = 'all';
+export const OPPORTUNITY_LIMIT = 2;
+
 export const successCriteriaLinks = {
   111: {
     name: 'Non-text Content',

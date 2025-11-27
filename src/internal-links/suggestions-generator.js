@@ -13,8 +13,9 @@
 import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
-import { getScrapedDataForSiteId } from '../support/utils.js';
+import { getScrapedDataForSiteId, limitConcurrency } from '../support/utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { filterByAuditScope, extractPathPrefix } from './subpath-filter.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
@@ -23,31 +24,117 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
 
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
   const azureOpenAIOptions = { responseFormat: 'json_object' };
-  const BATCH_SIZE = 300;
+  const BATCH_SIZE = 100;
+  const MAX_CONCURRENT_AI_CALLS = 5;
+
+  // Ensure brokenInternalLinks is an array
+  if (!Array.isArray(brokenInternalLinks)) {
+    log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] brokenInternalLinks is not an array, returning empty array`);
+    return [];
+  }
 
   const data = await getScrapedDataForSiteId(site, context);
   const { siteData, headerLinks } = data;
-  const totalBatches = Math.ceil(siteData.length / BATCH_SIZE);
+
+  // Filter siteData and headerLinks by audit scope (subpath/locale) if baseURL has a subpath
+  // This ensures AI only sees URLs from the same locale as alternatives
+  const baseURL = site.getBaseURL();
+  const filteredSiteData = filterByAuditScope(siteData, baseURL, {}, log);
+  const filteredHeaderLinks = filterByAuditScope(headerLinks, baseURL, {}, log);
+
+  // Also filter per broken link by its locale for more precise suggestions
+  const brokenLinksWithFilteredData = brokenInternalLinks.map((link) => {
+    const linkPathPrefix = extractPathPrefix(link.urlTo) || extractPathPrefix(link.urlFrom);
+
+    // If broken link has a path prefix, further filter alternatives to same prefix
+    let linkFilteredSiteData;
+    let linkFilteredHeaderLinks;
+
+    if (linkPathPrefix) {
+      if (filteredSiteData.length > 0) {
+        const prefixFilteredSiteData = filteredSiteData.filter((item) => {
+          // siteData items can be either strings (URLs) or objects with a 'url' property
+          const url = typeof item === 'string' ? item : item?.url;
+          const urlPathPrefix = extractPathPrefix(url);
+          return urlPathPrefix === linkPathPrefix;
+        });
+
+        // Only use prefix-filtered data if it's not empty,
+        // otherwise fall back to base-filtered data
+        if (prefixFilteredSiteData.length > 0) {
+          linkFilteredSiteData = prefixFilteredSiteData;
+        }
+      }
+
+      if (filteredHeaderLinks.length > 0) {
+        const prefixFilteredHeaderLinks = filteredHeaderLinks.filter((item) => {
+          // headerLinks can be either strings (URLs) or objects with a 'url' property
+          const url = typeof item === 'string' ? item : item?.url;
+          const urlPathPrefix = extractPathPrefix(url);
+          return urlPathPrefix === linkPathPrefix;
+        });
+
+        if (prefixFilteredHeaderLinks.length > 0) {
+          linkFilteredHeaderLinks = prefixFilteredHeaderLinks;
+        }
+      }
+    }
+
+    return {
+      ...link,
+      filteredSiteData: linkFilteredSiteData,
+      filteredHeaderLinks: linkFilteredHeaderLinks,
+    };
+  });
+
+  const totalBatches = Math.ceil(filteredSiteData.length / BATCH_SIZE);
   const dataBatches = Array.from(
     { length: totalBatches },
-    (_, i) => siteData.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE),
+    (_, i) => filteredSiteData.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE),
   );
 
   // return early if site data is not found
-  if (!isNonEmptyArray(siteData)) {
+  if (!isNonEmptyArray(filteredSiteData)) {
     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No site data found, skipping suggestions generation`);
+    // Return broken links as-is (already validated as array above)
     return brokenInternalLinks;
   }
 
   const processBatch = async (batch, urlTo) => {
-    const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
+    // Extract only URLs from batch (items can be strings or objects with url property)
+    const urls = batch.map((item) => (typeof item === 'string' ? item : item.url));
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Processing batch of ${urls.length} URLs for broken URL: ${urlTo}`);
+
+    // Skip if no valid URLs
+    if (urls.length === 0) {
+      log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No valid URLs in batch for ${urlTo}`);
+      return null;
+    }
+
+    const requestBody = await getPrompt({ alternative_urls: urls, broken_url: urlTo }, 'broken-backlinks', log);
+
+    // Check if prompt was loaded successfully
+    if (!requestBody) {
+      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Failed to load prompt for ${urlTo}`);
+      return null;
+    }
+
     const response = await azureOpenAIClient.fetchChatCompletion(requestBody, azureOpenAIOptions);
-    if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
+
+    // Return null if NO choices OR finish_reason is not 'stop'
+    if (!response.choices?.length || response.choices[0].finish_reason !== 'stop') {
       log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No suggestions found for ${urlTo}`);
       return null;
     }
 
-    return JSON.parse(response.choices[0].message.content);
+    // Check for empty content
+    const content = response.choices[0].message?.content;
+    if (!content || content.trim().length === 0) {
+      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Empty response content for ${urlTo}`);
+      return null;
+    }
+
+    return JSON.parse(content);
   };
 
   async function processBatches(batches, urlTo) {
@@ -67,15 +154,25 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
   }
 
   /**
-     * Process a broken internal link to generate URL suggestions
-     * @param {Object} link - The broken internal link object containing urlTo and other properties
-     * @param {Object} headerSuggestions - Suggestions generated from header links
-     * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
-     */
+   * Process a broken internal link to generate URL suggestions
+   * @param {Object} link - The broken internal link object containing urlTo,
+   *   filteredSiteData, filteredHeaderLinks
+   * @param {Object} headerSuggestions - Suggestions generated from header links
+   * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
+   */
   const processLink = async (link, headerSuggestions) => {
-    const suggestions = await processBatches(dataBatches, link.urlTo);
+    // Use link-specific filtered data for this broken link
+    const linkBatches = link.filteredSiteData
+      ? Array.from(
+        { length: Math.ceil(link.filteredSiteData.length / BATCH_SIZE) },
+        (_, i) => link.filteredSiteData.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE),
+      )
+      : dataBatches;
 
-    if (totalBatches > 1) {
+    const linkTotalBatches = linkBatches.length;
+    const suggestions = await processBatches(linkBatches, link.urlTo);
+
+    if (linkTotalBatches > 1) {
       try {
         const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: link.urlTo }, 'broken-backlinks-followup', log);
         const finalResponse = await azureOpenAIClient
@@ -110,10 +207,14 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
   };
 
   const headerSuggestionsResults = [];
-  for (const link of brokenInternalLinks) {
+  for (const link of brokenLinksWithFilteredData) {
     try {
+      // Use link-specific filtered header links
+      const linkHeaderLinks = link.filteredHeaderLinks || filteredHeaderLinks;
+      // Extract only URLs from header links (items can be strings or objects with url property)
+      const headerUrls = linkHeaderLinks.map((item) => (typeof item === 'string' ? item : item.url));
       // eslint-disable-next-line no-await-in-loop
-      const requestBody = await getPrompt({ alternative_urls: headerLinks, broken_url: link.urlTo }, 'broken-backlinks', log);
+      const requestBody = await getPrompt({ alternative_urls: headerUrls, broken_url: link.urlTo }, 'broken-backlinks', log);
       // eslint-disable-next-line no-await-in-loop
       const response = await azureOpenAIClient.fetchChatCompletion(
         requestBody,
@@ -133,15 +234,20 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     }
   }
 
-  const updatedInternalLinks = [];
-  for (let index = 0; index < brokenInternalLinks.length; index += 1) {
-    const link = brokenInternalLinks[index];
-    const headerSuggestions = headerSuggestionsResults[index];
-    // eslint-disable-next-line no-await-in-loop
-    const updatedLink = await processLink(link, headerSuggestions);
-    updatedInternalLinks.push(updatedLink);
-  }
-  return updatedInternalLinks;
+  return limitConcurrency(
+    brokenLinksWithFilteredData.map(
+      (link, index) => async () => {
+        const headerSuggestions = headerSuggestionsResults[index];
+        const updatedLink = await processLink(link, headerSuggestions);
+        // Remove filtered data before returning (not needed in final result)
+        const cleanLink = { ...updatedLink };
+        delete cleanLink.filteredSiteData;
+        delete cleanLink.filteredHeaderLinks;
+        return cleanLink;
+      },
+    ),
+    MAX_CONCURRENT_AI_CALLS,
+  );
 };
 
 export async function syncBrokenInternalLinksSuggestions({

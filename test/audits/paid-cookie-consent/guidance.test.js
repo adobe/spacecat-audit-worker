@@ -19,6 +19,7 @@ import nock from 'nock';
 import { describe } from 'mocha';
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import handler from '../../../src/paid-cookie-consent/guidance-handler.js';
 
 use(sinonChai);
@@ -65,7 +66,11 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       error: sandbox.stub(),
       warn: sandbox.stub(),
     };
-    Suggestion = { create: sandbox.stub().resolves() };
+    Suggestion = { 
+      create: sandbox.stub().resolves(),
+      STATUSES: SuggestionDataAccess.STATUSES,
+      TYPES: SuggestionDataAccess.TYPES,
+    };
     opportunityInstance = {
       getId: () => 'opptyId',
       getSuggestions: async () => [],
@@ -327,5 +332,22 @@ markdown`);
 
     expect(Opportunity.create).not.to.have.been.called;
     expect(result.status).to.equal(ok().status);
+  });
+
+  it('should set suggestion status to PENDING_VALIDATION when site requires validation', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    context.site = { requiresValidation: true };
+
+    const guidance = [{
+      body: { markdown: 'plain\nmarkdown' },
+      insight: 'insight',
+      rationale: 'rationale',
+      recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
+    }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    await handler(message, context);
+    expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'PENDING_VALIDATION'));
   });
 });

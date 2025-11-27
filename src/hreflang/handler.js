@@ -12,8 +12,9 @@
 
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { load as cheerioLoad } from 'cheerio';
 import { isLangCode } from 'is-language-code';
-import { JSDOM } from 'jsdom';
+
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
@@ -72,11 +73,10 @@ export async function validatePageHreflang(url, log) {
     }
 
     const html = await response.text();
-    const dom = new JSDOM(html);
-    const { document } = dom.window;
+    const $ = cheerioLoad(html);
 
     // Extract hreflang links
-    const hreflangLinks = Array.from(document.querySelectorAll('link[rel="alternate"][hreflang]'));
+    const hreflangLinks = $('link[rel="alternate"][hreflang]');
     const checks = [];
 
     // Skip validation if no hreflang tags exist
@@ -92,12 +92,13 @@ export async function validatePageHreflang(url, log) {
       const languageCodes = new Set();
 
       // Validate each hreflang link
-      for (const link of hreflangLinks) {
-        const hreflang = link.getAttribute('hreflang');
-        const href = link.getAttribute('href');
+      hreflangLinks.each((i, link) => {
+        const $link = $(link);
+        const hreflang = $link.attr('hreflang');
+        const href = $link.attr('href');
 
         // Check if hreflang is in head section
-        if (!link.closest('head')) {
+        if ($link.closest('head').length === 0) {
           checks.push({
             check: HREFLANG_CHECKS.HREFLANG_OUTSIDE_HEAD.check,
             success: false,
@@ -110,7 +111,7 @@ export async function validatePageHreflang(url, log) {
         // Check for x-default
         if (hreflang === 'x-default') {
           hasXDefault = true;
-        } else {
+        } else if (hreflang) {
           // Validate language code for non-x-default values
           languageCodes.add(hreflang);
           const validation = isLangCode(hreflang);
@@ -132,7 +133,7 @@ export async function validatePageHreflang(url, log) {
         } catch {
           log.warn(`Invalid hreflang URL: ${href} for page ${url}`);
         }
-      }
+      });
 
       // Check x-default
       if (languageCodes.size > 1 && !hasXDefault) {

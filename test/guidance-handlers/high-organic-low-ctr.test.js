@@ -15,6 +15,7 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import opportunitiesAuditData from '../fixtures/experimentation-opportunities/experimentation-opportunity-audit.json' with { type: 'json' };
 import guidanceMsgFromMystique from '../fixtures/experimentation-opportunities/high-organic-low-ctr-guidance.json' with { type: 'json' };
 import handler from '../../src/experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
@@ -58,6 +59,8 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     };
     Suggestion = {
       create: sandbox.stub().resolves(),
+      STATUSES: SuggestionDataAccess.STATUSES,
+      TYPES: SuggestionDataAccess.TYPES,
     };
     log = {
       info: sandbox.stub(),

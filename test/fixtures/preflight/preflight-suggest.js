@@ -88,6 +88,20 @@ export const suggestionData = [
         ],
       },
       {
+        name: 'headings',
+        type: 'seo',
+        opportunities: [
+          {
+            check: 'heading-multiple-h1',
+            issue: 'Multiple H1 Headings',
+            issueDetails: 'Page has more than one H1 element.',
+            seoImpact: 'High',
+            seoRecommendation: 'Found 2 h1 elements: Pages should have only one H1 element.',
+            suggestion: 'Change additional H1 elements to H2 or appropriate levels.',
+          },
+        ],
+      },
+      {
         name: 'readability',
         type: 'seo',
         opportunities: [],

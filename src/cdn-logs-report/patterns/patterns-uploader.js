@@ -157,7 +157,7 @@ export async function generatePatternsWorkbook(options) {
     };
 
     // Create and upload workbook
-    const workbook = await createExcelReport(reportData, excelConfig, site);
+    const workbook = await createExcelReport(reportData, excelConfig, site, context);
     const llmoFolder = site.getConfig()?.getLlmoDataFolder();
     const outputLocation = `${llmoFolder}/agentic-traffic/patterns`;
     const filename = 'patterns.xlsx';

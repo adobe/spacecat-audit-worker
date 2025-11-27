@@ -41,7 +41,7 @@ SELECT
   ROUND(SUM(avg_ttfb_ms * number_of_hits) / SUM(number_of_hits), 2) as avg_ttfb_ms,
   country_code,
   CASE 
-    WHEN number_of_hits < 10 AND status >= 200 AND status <= 399 THEN 'Other'
+    WHEN number_of_hits < 10 THEN 'Other'
     ELSE url
   END as url,
   product,
@@ -53,7 +53,7 @@ GROUP BY
   status,
   country_code,
   CASE 
-    WHEN number_of_hits < 10 AND status >= 200 AND status <= 399 THEN 'Other'
+    WHEN number_of_hits < 10 THEN 'Other'
     ELSE url
   END,
   product,

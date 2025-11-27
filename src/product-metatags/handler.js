@@ -316,6 +316,24 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
         };
       },
     });
+
+    // Extract Magento-Environment-Id from suggestions (all have same value) as tenantId
+    let tenantId = null;
+    if (suggestions.length > 0) {
+      const firstSuggestionWithConfig = suggestions.find((s) => s.config?.headers?.['Magento-Environment-Id']);
+      tenantId = firstSuggestionWithConfig?.config?.headers?.['Magento-Environment-Id'] || null;
+    }
+
+    // Update opportunity data with tenantId if available
+    if (tenantId) {
+      opportunity.setData({
+        ...opportunity.getData(),
+        tenantId,
+      });
+      await opportunity.save();
+      log.info(`[PRODUCT-METATAGS] Added tenantId to opportunity: ${tenantId}`);
+    }
+
     log.info(`[PRODUCT-METATAGS] Successfully synced ${suggestions.length} suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
   } catch (error) {
     log.error(`[PRODUCT-METATAGS] Error syncing suggestions for site ${auditData.siteId}:`, error);

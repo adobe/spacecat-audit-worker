@@ -19,6 +19,7 @@ import {
 } from '@adobe/spacecat-shared-athena-client';
 import crypto from 'crypto';
 import { fileExists, addResultJsonToCache } from './caching-helper.js';
+import { limitConcurrency } from '../support/utils.js';
 
 const QUERIES = [
   { dimensions: ['utm_campaign', 'path', 'device'], mapper: TrafficDataWithCWVDto },
@@ -78,28 +79,6 @@ function getConfig(env) {
     athenaTemp: `s3://${bucketName}/rum-metrics-compact/temp/out`,
     cacheLocation: `s3://${bucketName}/rum-metrics-compact/cache`,
   };
-}
-
-async function limitConcurrency(tasks, maxConcurrent) {
-  const results = [];
-  const executing = [];
-
-  for (const task of tasks) {
-    const promise = task().then((result) => {
-      executing.splice(executing.indexOf(promise), 1);
-      return result;
-    });
-
-    results.push(promise);
-    executing.push(promise);
-
-    if (executing.length >= maxConcurrent) {
-      // eslint-disable-next-line no-await-in-loop
-      await Promise.race(executing);
-    }
-  }
-
-  return Promise.all(results);
 }
 
 async function checkCacheExists(

@@ -82,29 +82,131 @@ After logging into KLAM, you’ll receive the following credentials required to 
 
 ### Steps to use `nodemon`
 
-#### 1. Create an `.env` File
+#### 1. Configure Local Environment Variables
 
-Create a `.env` file in the root directory with the following environment variables, which are required for all audits.  
-Add any additional environment variables specific to the audit you're working on.
+Both development scripts (`npm start` and `npm run start:unpacked`) require environment variables to be set. The **`start:unpacked`** script uses [dotenv](https://github.com/motdotla/dotenv) to automatically load them from a `.env` file in the project root. For **`npm start`**, you need to manually export the variables in your shell or use a tool to load `.env` before running the command.
 
-```
-AWS_REGION=us-east-1
-DYNAMO_TABLE_NAME_DATA=spacecat-services-data
-AWS_ACCESS_KEY_ID=<acquired from KLAM>
-AWS_SECRET_ACCESS_KEY=<acquired from KLAM>
-AWS_SESSION_TOKEN=<acquired from KLAM>
-# ... other required variables depending on the audit
-```
+The `.env` file should contain:
 
-#### 2. Run/Debug with `npm start`
+1. **AWS Credentials** (from KLAM) for accessing DynamoDB, S3, and other AWS services
+2. **Application Secrets** required by various audits (API keys, service endpoints, etc.)
 
-Once your `.env` file is set up, start the local development server using:
+**Creating your `.env` file:**
+
+Create a `.env` file in the root directory with the following structure:
 
 ```bash
+# AWS Credentials (from KLAM - use DEV profile only)
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=<your-access-key-from-klam>
+AWS_SECRET_ACCESS_KEY=<your-secret-key-from-klam>
+AWS_SESSION_TOKEN=<your-session-token-from-klam>
+
+# Core Spacecat Configuration
+DYNAMO_TABLE_NAME_DATA=spacecat-services-data
+S3_SCRAPER_BUCKET_NAME=spacecat-scraper-results
+
+# Add additional secrets as needed for specific audits
+# Example: AHREFS_API_KEY=your-key-here
+# Example: SLACK_BOT_TOKEN=your-token-here
+```
+
+**Where to get application secrets:**
+
+Application secrets (API keys, tokens, etc.) are stored in AWS Secrets Manager. You can retrieve them using:
+
+```bash
+# Fetch secrets from AWS Secrets Manager and save to .env
+./scripts/populate-env.sh
+```
+
+This script pulls all secrets from `/helix-deploy/spacecat-services/audit-worker/latest` and appends them to your `.env` file.
+
+**Important Notes:**
+- **Never commit `.env` to git** - it's already in `.gitignore`
+- **Use only DEV credentials from KLAM** - never production tokens
+- **Refresh AWS credentials regularly** - KLAM tokens expire after a few hours
+- Only `npm run start:unpacked` automatically loads `.env` via dotenv
+- For `npm start`, either export variables manually or use `source .env` (with proper format)
+
+#### 2. Run/Debug with `npm start` (Source Mode)
+
+Once your `.env` file is set up, you'll need to export the environment variables before starting the dev server.
+
+**Option A: Export variables in your shell**
+```bash
+export AWS_REGION=us-east-1
+export AWS_ACCESS_KEY_ID=<your-key>
+export AWS_SECRET_ACCESS_KEY=<your-secret>
+export AWS_SESSION_TOKEN=<your-token>
+# ... export other variables
 npm start
 ```
 
-To use breakpoints, make sure to use the debugging tools provided by your IDE (e.g., VSCode, WebStorm, etc.).
+**Option B: Use a shell script to source `.env`**
+```bash
+# Make sure your .env file has proper export syntax:
+# export AWS_REGION=us-east-1
+# export AWS_ACCESS_KEY_ID=...
+
+source .env
+npm start
+```
+
+This runs the source code directly with hot-reloading. To use breakpoints, make sure to use the debugging tools provided by your IDE (e.g., VSCode, WebStorm, etc.).
+
+**Note:** `npm start` does **not** automatically load `.env` - you must set environment variables manually. The `test/dev/server.mjs` script relies on `process.env` already being populated.
+
+#### 3. Run/Debug with `npm run start:unpacked` (Bundle Mode)
+
+To test the **actual bundled Lambda artifact** that gets deployed to AWS, use the `start:unpacked` script. This is useful for debugging bundle-specific issues like missing dependencies or runtime module resolution problems.
+
+**Steps:**
+
+1. **Ensure your `.env` file is configured** (see step 1 above)
+   
+   Unlike `npm start`, the `start:unpacked` script (`test/dev/server-unpacked.mjs`) uses `dotenv` to **automatically load** your `.env` file. No manual exports needed! The bundled code will also attempt to fetch additional secrets from AWS Secrets Manager using the path `/helix-deploy/spacecat-services/audit-worker/latest`.
+
+2. **Build the bundle:**
+   ```bash
+   npm run build
+   ```
+
+3. **Prepare the unpacked bundle:**
+   ```bash
+   # Remove old artifacts
+   rm -rf dist/spacecat-services/unpacked
+   
+   # Unzip the bundle into the unpacked directory
+   cd dist/spacecat-services
+   unzip audit-worker@*.zip -d unpacked/
+   cd ../..
+   ```
+
+4. **Start the dev server:**
+   ```bash
+   npm run start:unpacked
+   ```
+   
+   You should see output like:
+   ```
+   ✓ Loaded .env from: /path/to/.env
+   Unpacked bundle loaded successfully (using lambda adapter)
+   loaded 23 package parameter in 408ms
+   loaded 82 package parameter in 5374ms
+   Started development server at http://localhost:3000/
+   ```
+
+5. **Attach the Chrome debugger:**
+   - Open Chrome and navigate to `chrome://inspect`
+   - Click "Configure..." and ensure `localhost:9229` is listed
+   - Under "Remote Target", click "inspect" on the running Node process
+   - Set breakpoints in the bundled code at `dist/spacecat-services/unpacked/index.js`
+
+**Note:** The bundled version reflects the exact production runtime behavior, including:
+- How helix-deploy packages dependencies
+- How secrets are loaded from AWS Secrets Manager
+- How the Lambda adapter processes requests
 
 #### 3. Trigger an Audit
 

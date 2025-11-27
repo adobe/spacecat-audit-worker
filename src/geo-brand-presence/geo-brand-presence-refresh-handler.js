@@ -16,6 +16,7 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 import ExcelJS from 'exceljs';
+import { getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { getSignedUrl } from '../utils/getPresignedUrl.js';
 import { createMystiqueMessage } from './handler.js';
@@ -34,7 +35,43 @@ import {
  */
 
 const AUDIT_NAME = 'GEO_BRAND_PRESENCE_REFRESH';
+const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-(?<year>\d{4})(?:-\d+)?$/;
+
 /* c8 ignore start */
+
+/**
+ * Filters paths to only include those from the last 4 weeks
+ * @param {Array<string>} paths - Array of sheet names to filter
+ * @param {Object} log - Logger instance
+ * @returns {Array<string>} Filtered paths from the last 4 weeks
+ */
+function filterPathsByLastFourWeeks(paths, log) {
+  const last4Weeks = getLastNumberOfWeeks(4);
+  const validWeeks = new Set(last4Weeks.map((w) => `${w.year}-${String(w.week).padStart(2, '0')}`));
+
+  log.debug(`${AUDIT_NAME}: Filtering paths to last 4 weeks: ${Array.from(validWeeks).join(', ')}`);
+
+  const filteredPaths = paths.filter((path) => {
+    const match = RE_SHEET_NAME.exec(path);
+    if (!match) {
+      log.debug(`${AUDIT_NAME}: Skipping invalid path format: ${path}`);
+      return false;
+    }
+
+    const { week, year } = match.groups;
+    const weekKey = `${year}-${week}`;
+    const isValid = validWeeks.has(weekKey);
+
+    if (!isValid) {
+      log.debug(`${AUDIT_NAME}: Excluding path ${path} (${weekKey}) - outside last 4 weeks`);
+    }
+
+    return isValid;
+  });
+
+  log.info(`${AUDIT_NAME}: Filtered ${paths.length} paths to ${filteredPaths.length} paths from last 4 weeks`);
+  return filteredPaths;
+}
 
 /**
  * Fetches the list of paths from the query-index SharePoint file
@@ -120,19 +157,21 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
   });
 
   // Use latest paths if available, otherwise fall back to regular paths
-  const paths = latestPaths.length > 0 ? latestPaths : regularPaths;
+  const allPaths = latestPaths.length > 0 ? latestPaths : regularPaths;
   const brandPresenceFolder = latestPaths.length > 0 ? 'brand-presence/latest' : 'brand-presence';
   const sourceFolder = `${dataFolder}/${brandPresenceFolder}`;
 
-  log.info(`%s: Path extraction complete for siteId: ${siteId}, latest: ${latestPaths.length}, regular: ${regularPaths.length}, using: ${paths.length} from ${brandPresenceFolder}`, AUDIT_NAME);
+  log.info(`%s: Path extraction complete for siteId: ${siteId}, latest: ${latestPaths.length}, regular: ${regularPaths.length}, using: ${allPaths.length} from ${brandPresenceFolder}`, AUDIT_NAME);
 
-  // @todo need to make  sure that we load data starting week
+  // Filter to only include paths from the last 4 weeks
+  const paths = filterPathsByLastFourWeeks(allPaths, log);
+
   if (paths.length > 0) {
     log.info(`%s: Extracted ${paths.length} paths from query-index SharePoint file for siteId: ${siteId}, source: ${sourceFolder}`, AUDIT_NAME);
     log.debug(`%s: Paths for siteId: ${siteId}: ${paths.join(', ')}`, AUDIT_NAME);
     return { paths, sourceFolder };
   }
-  throw new Error(`${AUDIT_NAME} No paths found in query-index file`);
+  throw new Error(`${AUDIT_NAME} No paths found in query-index file for the last 4 weeks`);
 }
 
 export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
@@ -407,5 +446,3 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
 function errorMsg(error) {
   return error instanceof Error ? error.message : String(error);
 }
-
-const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-(?<year>\d{4})(?:-\d+)?$/;

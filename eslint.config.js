@@ -20,6 +20,8 @@ export default defineConfig([
     '.idea/*',
     '.aws-sam/*',
     'coverage/*',
+    'dist/*',
+    'node_modules/*',
     'scripts/*',
     'test/*/fixtures/*',
     'test/audits/**/*.test.js',

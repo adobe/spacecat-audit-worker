@@ -962,7 +962,7 @@ describe('saas extractors - ACCS and ACO', () => {
     expect(ok).to.deep.equal(good);
 
     await expect(extractCommerceConfigFromACCS({ config: { url: 'u', headers: {} } }, log))
-      .to.be.rejectedWith('Missing required commerce config fields for default locale: headers.Magento-Customer-Group, headers.Magento-Environment-Id, headers.Magento-Store-Code, headers.Magento-Store-View-Code, headers.Magento-Website-Code, headers.x-api-key');
+      .to.be.rejectedWith('Missing required commerce config fields for default locale: headers.Magento-Environment-Id');
   });
 
   it('ACO delegates to ACCS (smoke)', async () => {
@@ -1068,6 +1068,22 @@ describe('saas extractors - fallbacks and routing', () => {
       .to.be.rejectedWith('Missing required commerce config fields for default locale: url');
   });
 
+  it('throws when legacy Magento headers are missing required entries', async () => {
+    const incompleteLegacyConfig = {
+      url: 'https://co.example/graphql',
+      headers: {
+        'Magento-Customer-Group': 'cg',
+        'Magento-Environment-Id': 'eid',
+        'Magento-Store-Code': 'sc',
+        'Magento-Website-Code': 'wc',
+        // intentionally omit Magento-Store-View-Code and x-api-key to trigger validation
+      },
+    };
+
+    await expect(extractCommerceConfigFromACCS({ config: incompleteLegacyConfig }, log))
+      .to.be.rejectedWith('Missing required commerce config fields for default locale: headers.Magento-Store-View-Code, headers.x-api-key');
+  });
+
   it("uses empty locale path when locale is 'default' (PAAS)", async () => {
     fetchStub.reset();
     const paasData = {
@@ -1139,5 +1155,236 @@ describe('saas extractors - fallbacks and routing', () => {
     expect(res.url).to.equal('https://co.example/graphql');
   });
 
+  it('logs and rethrows errors when getCommerceConfig fails', async () => {
+    const badDirectConfig = {
+      // Missing headers property entirely to trigger validation error
+      url: 'https://co.example/graphql',
+    };
+
+    const site = {
+      getId: () => 'site-error',
+      getConfig: () => ({
+        getHandlers: () => ({
+          auditACCS: {
+            instanceType: 'ACCS',
+            config: badDirectConfig,
+          },
+        }),
+      }),
+    };
+
+    await expect(
+      getCommerceConfig(site, 'auditACCS', 'https://example.com', log, 'en_US'),
+    ).to.be.rejectedWith('Missing required commerce config fields for en_US locale: headers');
+
+    expect(log.error).to.have.been.calledOnce;
+    expect(log.error.firstCall.args[0]).to.equal(
+      'Error fetching commerce config for site site-error:',
+    );
+  });
+
+});
+
+
+describe('saas extractors - AC-* header support', () => {
+  let fetchStub;
+  let log;
+  beforeEach(() => {
+    fetchStub = sinon.stub(global, 'fetch');
+    log = { debug: sinon.stub(), info: sinon.stub(), warn: sinon.stub(), error: sinon.stub() };
+  });
+  afterEach(() => sinon.restore());
+
+  it('extracts AC-* headers for ACCS config', async () => {
+    const configData = {
+      public: {
+        default: {
+          'commerce-endpoint': 'https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql',
+          headers: {
+            cs: {
+              'AC-Environment-Id': '5Ypntkvni5L5ZiEZdkMFcw',
+              'AC-View-ID': '6081b301-a202-481c-a8b7-6e36b3fe3e92',
+            },
+          },
+        },
+      },
+    };
+    const mockResp = { ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(configData) };
+    fetchStub.resolves(mockResp);
+
+    const res = await extractCommerceConfigFromACCS({ storeUrl: 'https://example.com' }, log);
+
+    expect(res.url).to.equal('https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql');
+    // AC-Environment-Id is used as fallback but not returned in headers
+    expect(res.headers['AC-Environment-Id']).to.be.undefined;
+    expect(res.headers['Magento-Environment-Id']).to.equal('5Ypntkvni5L5ZiEZdkMFcw');
+    expect(res.headers['AC-View-ID']).to.equal('6081b301-a202-481c-a8b7-6e36b3fe3e92');
+  });
+
+  it('extracts AC-* headers for ACO config', async () => {
+    const configData = {
+      public: {
+        default: {
+          'commerce-endpoint': 'https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql',
+          headers: {
+            cs: {
+              'AC-Environment-Id': '5Ypntkvni5L5ZiEZdkMFcw',
+              'AC-View-ID': '6081b301-a202-481c-a8b7-6e36b3fe3e92',
+            },
+          },
+        },
+      },
+    };
+    const mockResp = { ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(configData) };
+    fetchStub.resolves(mockResp);
+
+    const res = await extractCommerceConfigFromACO({ storeUrl: 'https://example.com' }, log);
+
+    expect(res.url).to.equal('https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql');
+    // AC-Environment-Id is used as fallback but not returned in headers
+    expect(res.headers['AC-Environment-Id']).to.be.undefined;
+    expect(res.headers['Magento-Environment-Id']).to.equal('5Ypntkvni5L5ZiEZdkMFcw');
+    expect(res.headers['AC-View-ID']).to.equal('6081b301-a202-481c-a8b7-6e36b3fe3e92');
+  });
+
+  it('supports AC-Environment-Id as alias for Magento-Environment-Id', async () => {
+    const configData = {
+      public: {
+        default: {
+          'commerce-endpoint': 'https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql',
+          headers: {
+            cs: {
+              'AC-Environment-Id': '5Ypntkvni5L5ZiEZdkMFcw',
+            },
+          },
+        },
+      },
+    };
+    const mockResp = { ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(configData) };
+    fetchStub.resolves(mockResp);
+
+    const res = await extractCommerceConfigFromACCS({ storeUrl: 'https://example.com' }, log);
+
+    // AC-Environment-Id is used as fallback but not returned in headers
+    expect(res.headers['AC-Environment-Id']).to.be.undefined;
+    expect(res.headers['Magento-Environment-Id']).to.equal('5Ypntkvni5L5ZiEZdkMFcw');
+  });
+
+  it('accepts direct config with AC-* headers only (no legacy Magento-* headers)', async () => {
+    const directConfig = {
+      url: 'https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql',
+      headers: {
+        'Magento-Environment-Id': '5Ypntkvni5L5ZiEZdkMFcw',
+        'AC-View-ID': '6081b301-a202-481c-a8b7-6e36b3fe3e92',
+      },
+    };
+
+    const res = await extractCommerceConfigFromACCS({ config: directConfig }, log);
+
+    expect(res.url).to.equal('https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql');
+    expect(res.headers['Magento-Environment-Id']).to.equal('5Ypntkvni5L5ZiEZdkMFcw');
+    expect(res.headers['AC-View-ID']).to.equal('6081b301-a202-481c-a8b7-6e36b3fe3e92');
+  });
+
+  it('prefers AC-Environment-Id over Magento-Environment-Id when both present', async () => {
+    const configData = {
+      public: {
+        default: {
+          'commerce-endpoint': 'https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql',
+          headers: {
+            cs: {
+              'Magento-Environment-Id': 'old-env-id',
+              'AC-Environment-Id': 'new-env-id',
+            },
+          },
+        },
+      },
+    };
+    const mockResp = { ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(configData) };
+    fetchStub.resolves(mockResp);
+
+    const res = await extractCommerceConfigFromACCS({ storeUrl: 'https://example.com' }, log);
+
+    // Magento-Environment-Id should take precedence, AC-Environment-Id not returned
+    expect(res.headers['AC-Environment-Id']).to.be.undefined;
+    expect(res.headers['Magento-Environment-Id']).to.equal('old-env-id');
+  });
+
+  it('extracts AC-* headers from different scopes (pdp, plp)', async () => {
+    const configData = {
+      public: {
+        default: {
+          'commerce-endpoint': 'https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql',
+          headers: {
+            pdp: {
+              'AC-Environment-Id': 'pdp-env-id',
+              'AC-View-ID': 'pdp-view-id',
+            },
+          },
+        },
+      },
+    };
+    const mockResp = { ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(configData) };
+    fetchStub.resolves(mockResp);
+
+    const res = await extractCommerceConfigFromACCS({ storeUrl: 'https://example.com', scope: 'pdp' }, log);
+
+    // AC-Environment-Id is used as fallback but not returned
+    expect(res.headers['AC-Environment-Id']).to.be.undefined;
+    expect(res.headers['Magento-Environment-Id']).to.equal('pdp-env-id');
+    expect(res.headers['AC-View-ID']).to.equal('pdp-view-id');
+  });
+
+  it('merges AC-* headers from all and specific scope', async () => {
+    const configData = {
+      public: {
+        default: {
+          'commerce-endpoint': 'https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql',
+          headers: {
+            all: {
+              'AC-Environment-Id': 'all-env-id',
+            },
+            cs: {
+              'AC-View-ID': 'cs-view-id',
+            },
+          },
+        },
+      },
+    };
+    const mockResp = { ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(configData) };
+    fetchStub.resolves(mockResp);
+
+    const res = await extractCommerceConfigFromACCS({ storeUrl: 'https://example.com' }, log);
+
+    // AC-Environment-Id is used as fallback but not returned
+    expect(res.headers['AC-Environment-Id']).to.be.undefined;
+    expect(res.headers['Magento-Environment-Id']).to.equal('all-env-id');
+    expect(res.headers['AC-View-ID']).to.equal('cs-view-id');
+  });
+
+  it('validates AC-* format requires only Magento-Environment-Id', async () => {
+    // Minimal AC format with only Magento-Environment-Id should pass validation
+    const minimalConfig = {
+      url: 'https://na1-sandbox.api.commerce.adobe.com/5Ypntkvni5L5ZiEZdkMFcw/graphql',
+      headers: {
+        'Magento-Environment-Id': '5Ypntkvni5L5ZiEZdkMFcw',
+      },
+    };
+
+    const res = await extractCommerceConfigFromACCS({ config: minimalConfig }, log);
+    expect(res).to.deep.equal(minimalConfig);
+  });
+
+  it('throws when neither Magento-Environment-Id nor AC-Environment-Id present', async () => {
+    const badConfig = {
+      url: 'https://na1-sandbox.api.commerce.adobe.com/graphql',
+      headers: {
+        'AC-View-ID': 'view-id-only',
+      },
+    };
+
+    await expect(extractCommerceConfigFromACCS({ config: badConfig }, log))
+      .to.be.rejectedWith('Missing required commerce config fields for default locale: headers.Magento-Environment-Id');
+  });
 });
 

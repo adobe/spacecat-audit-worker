@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Product MetaTags Audit is a comprehensive **step-based audit** that analyzes product-specific metadata across all pages of a website. It focuses on pages that contain product meta tags (SKU or image meta tags) and performs detailed SEO analysis to identify optimization opportunities.
+The Product MetaTags Audit is a comprehensive **step-based audit** that analyzes product-specific metadata across all pages of a website. It focuses on pages that contain product meta tags (SKU or image meta tags) and performs detailed SEO analysis to identify optimization opportunities
 
 ## Key Features
 

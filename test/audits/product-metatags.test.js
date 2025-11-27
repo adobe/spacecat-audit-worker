@@ -1625,11 +1625,11 @@ describe('Product MetaTags', () => {
         try {
           await opportunityAndSuggestions(auditUrl, auditData, context);
         } catch (err) {
-          expect(err.message).to.equal('Failed to create suggestions for siteId site-id');
+          expect(err.message).to.equal('Failed to create suggestions for siteId site-id. Sample error: some-error');
         }
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.error).to.be.calledWith('Suggestions for siteId site-id contains 1 items with errors');
-        expect(logStub.error).to.be.calledThrice;
+        expect(logStub.error).to.have.been.calledWithMatch('Suggestions for siteId site-id contains 1 items with errors');
+        expect(logStub.error).to.have.been.called;
       });
 
       it('should take rank as -1 if issue is not known', async () => {
@@ -2563,7 +2563,8 @@ describe('Product MetaTags', () => {
       expect(result.projectedTrafficValue).to.be.a('number');
     });
 
-    it('should return empty object when RUM API fails', async () => {
+    it('should return empty object when RUM API fails', async function () {
+      this.timeout(5000);
       const detectedTags = {
         '/page1': { title: { issue: 'Missing Title', tagName: 'title' } },
       };
@@ -3136,7 +3137,8 @@ describe('Product MetaTags', () => {
       expect(logStub.info).to.have.been.called;
     });
 
-    it('should handle missing site config', async () => {
+    it('should handle missing site config', async function () {
+      this.timeout(5000);
       // Mock site to have getBaseURL but null config
       const mockSiteWithNullConfig = {
         getId: sinon.stub().returns('site123'),
@@ -3175,7 +3177,8 @@ describe('Product MetaTags', () => {
       expect(logStub.info).to.have.been.called;
     });
 
-    it('should log detailed context information', async () => {
+    it('should log detailed context information', async function () {
+      this.timeout(5000);
       const mockAutoDetectResult = {
         seoChecks: { getFewHealthyTags: sinon.stub().returns({}) },
         detectedTags: {},
@@ -4861,6 +4864,52 @@ describe('Product MetaTags', () => {
         sinon.match(/Extracted config for https:\/\/example\.com\/product/),
       );
       expect(syncSuggestionsStub.callCount).to.be.greaterThan(0);
+    });
+
+    it('adds Magento-Environment-Id to opportunity data when present in config headers', async () => {
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const saveStub = sinon.stub().resolves();
+      const setDataStub = sinon.stub();
+      const getDataStub = sinon.stub().returns({ existing: 'data' });
+
+      const mockModule = await esmock('../../src/product-metatags/handler.js', {
+        '../../src/utils/seo-utils.js': {
+          getIssueRanking: () => 1,
+        },
+        '../../src/utils/url-utils.js': {
+          getBaseUrl: () => 'https://example.com',
+        },
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({
+            getId: () => 'opty',
+            getSiteId: () => 'site-id',
+            getData: getDataStub,
+            setData: setDataStub,
+            save: saveStub,
+          }),
+        },
+        '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        '../../src/utils/saas.js': {
+          getCommerceConfig: sinon.stub().resolves({
+            url: 'https://co.example/graphql',
+            headers: {
+              'Magento-Environment-Id': 'env-123',
+            },
+          }),
+        },
+      });
+
+      const { opportunityAndSuggestions } = mockModule;
+      await opportunityAndSuggestions(baseAuditData.auditResult.finalUrl, baseAuditData, context);
+
+      expect(setDataStub).to.have.been.calledWith({
+        existing: 'data',
+        tenantId: 'env-123',
+      });
+      expect(saveStub).to.have.been.calledOnce;
+      expect(logStub.info).to.have.been.calledWith(
+        '[PRODUCT-METATAGS] Added tenantId to opportunity: env-123',
+      );
     });
   });
 

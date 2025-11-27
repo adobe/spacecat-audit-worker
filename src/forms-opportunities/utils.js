@@ -21,6 +21,7 @@ import {
 import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
 import { calculateCPCValue } from '../support/utils.js';
 import { getPresignedUrl as getPresignedUrlUtil } from '../utils/getPresignedUrl.js';
+import { isAuditEnabledForSite } from '../common/audit-utils.js';
 
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
@@ -520,17 +521,15 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
   if (opportunity) {
     log.debug(`Received forms opportunity for guidance: ${JSON.stringify(opportunity)}`);
     const opptyData = JSON.parse(JSON.stringify(opportunity));
-    // Normalize type: convert forms-accessibility → forms-a11y
-    const normalizedType = opptyData.type === 'form-accessibility' ? 'forms-a11y' : opptyData.type;
     const mystiqueMessage = {
-      type: `guidance:${normalizedType}`,
+      type: `guidance:${opptyData.type}`,
       siteId: opptyData.siteId,
       auditId: opptyData.auditId,
       deliveryType: site ? site.getDeliveryType() : 'aem_cs',
       time: new Date().toISOString(),
       // keys inside data should follow snake case and outside should follow camel case
       data: {
-        url: opptyData.type === 'form-accessibility' ? opptyData.data?.accessibility?.[0]?.form || '' : opptyData.data?.form || '',
+        url: opptyData.data?.form,
         cr: opptyData.data?.trackedFormKPIValue || 0,
         metrics: opptyData.data?.metrics || [],
         cta_source: opptyData.data?.formNavigation?.source || '',
@@ -594,4 +593,166 @@ export function checkDynamoItem(item, safetyMargin = 0.85) {
   const safeLimitKB = MAX_ITEM_SIZE_KB * safetyMargin;
   const sizeKB = Buffer.byteLength(JSON.stringify(item), 'utf8') / 1024;
   return { safe: sizeKB < safeLimitKB, sizeKB };
+}
+
+/**
+ * Apply filtering and deduplication logic to opportunities.
+ * This function performs three steps:
+ * 1. Filters out opportunities that match existing INVALIDATED opportunities
+ * 2. Deduplicates by formsource, keeping only the entry with highest pageviews
+ * 3. Limits to top N opportunities by pageviews
+ *
+ * @param {Array} newOpportunities - Array of opportunity data objects to filter
+ * @param {Array} existingOpportunities - Array of existing opportunity objects from database
+ * @param {string} opportunityType - The type of opportunity
+ *   (e.g., FORM_OPPORTUNITY_TYPES.LOW_CONVERSION)
+ * @param {Object} log - Logger object
+ * @param {number} maxLimit - Maximum number of opportunities to return (default: 3)
+ * @returns {Array} - Filtered and limited array of opportunity data objects
+ */
+export function applyOpportunityFilters(
+  newOpportunities,
+  existingOpportunities,
+  opportunityType,
+  log,
+  maxLimit = 2,
+) {
+  let opportunities = [...newOpportunities];
+
+  // Only apply filtering steps if we have more than maxLimit opportunities
+  // If we have maxLimit or fewer, return them as-is (sorted by pageviews)
+  if (opportunities.length > maxLimit) {
+    // Step 1: Filter out opportunities that have been marked as IGNORED
+    opportunities = opportunities.filter((opptyData) => {
+      const existingOppty = existingOpportunities.find(
+        (oppty) => oppty.getType() === opportunityType
+          && oppty.getData().form === opptyData.form
+          && oppty.getData().formsource === opptyData.formsource,
+      );
+      if (existingOppty && existingOppty.getStatus() === 'IGNORED') {
+        log.debug(`Filtering out opportunity for form ${opptyData.form} due to IGNORED status`);
+        return false;
+      }
+      return true;
+    });
+
+    // Step 2: Deduplicate by formsource
+    // If different forms have the same formsource, keep only the one
+    // with the highest pageviews. This prevents duplicate opportunities for the same form source.
+    // Only apply if we still have more than maxLimit opportunities after filtering
+    if (opportunities.length > maxLimit) {
+      const formSourceMap = new Map();
+      opportunities.forEach((oppty) => {
+        const key = oppty.formsource;
+        const existing = formSourceMap.get(key);
+        // Replace existing entry only if current entry has higher pageviews
+        if (!existing || (oppty.pageviews > existing.pageviews)) {
+          formSourceMap.set(key, oppty);
+        }
+      });
+      opportunities = Array.from(formSourceMap.values());
+    }
+  }
+
+  // Step 3: Limit to top N opportunities by pageviews
+  // Sort opportunities in descending order by pageviews and keep only the top N.
+  // This ensures we focus on the most impactful forms with highest traffic.
+  opportunities = opportunities
+    .sort((a, b) => (b.pageviews || 0) - (a.pageviews || 0))
+    .slice(0, maxLimit);
+
+  return opportunities;
+}
+
+/**
+ * Groups suggestions by URL, source, and issue type, then sends messages
+ * to the importer worker for code-fix generation
+ *
+ * @param {Object} opportunity - The opportunity object containing suggestions
+ * @param {string} auditId - The audit ID
+ * @param {Object} context - The context object containing log, sqs, env, and site
+ * @param {string} forwardMessageType - The message type to use in the forward object
+ *   (default: 'codefix:accessibility')
+ * @returns {Promise<void>}
+ */
+export async function sendCodeFixMessagesToImporter(opportunity, auditId, context, forwardMessageType = 'codefix:accessibility') {
+  const {
+    log, sqs, env, site,
+  } = context;
+
+  const siteId = opportunity.getSiteId();
+  const baseUrl = site.getBaseURL();
+  try {
+    const isAutoFixEnabled = await isAuditEnabledForSite(`${opportunity.getType()}-auto-fix`, site, context);
+    if (!isAutoFixEnabled) {
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] ${opportunity.getType()}-auto-fix is disabled for site, skipping code-fix generation`);
+      return;
+    }
+
+    // Get all suggestions from the opportunity
+    const suggestions = await opportunity.getSuggestions();
+    if (!suggestions || suggestions.length === 0) {
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] No suggestions found for code-fix generation`);
+      return;
+    }
+
+    // Group suggestions by URL, source, and issueType
+    const groupedSuggestions = new Map();
+
+    suggestions.forEach((suggestion) => {
+      const suggestionData = suggestion.getData();
+      const { url, source = 'default', issues } = suggestionData;
+
+      // By design, data.issues will always have length 1
+      if (issues && issues.length > 0) {
+        const issueType = issues[0].type;
+        const groupKey = `${url}|${source}|${issueType}`;
+        if (!groupedSuggestions.has(groupKey)) {
+          groupedSuggestions.set(groupKey, {
+            url,
+            source,
+            issueType,
+            suggestionIds: [],
+          });
+        }
+
+        // Add the suggestion ID to the group
+        groupedSuggestions.get(groupKey).suggestionIds.push(suggestion.getId());
+      }
+    });
+
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] Grouped suggestions into ${groupedSuggestions.size} groups for code-fix generation`);
+
+    const messagePromises = Array.from(groupedSuggestions.values()).map(async (group) => {
+      const message = {
+        type: 'code',
+        siteId,
+        forward: {
+          queue: env.QUEUE_SPACECAT_TO_MYSTIQUE,
+          payload: {
+            type: forwardMessageType,
+            siteId,
+            auditId,
+            url: baseUrl,
+            data: {
+              opportunityId: opportunity.getId(),
+              suggestionIds: group.suggestionIds,
+            },
+          },
+        },
+      };
+
+      try {
+        await sqs.sendMessage(env.IMPORT_WORKER_QUEUE_URL, message);
+        log.info(`[Form Opportunity] [Site Id: ${siteId}] Sent code-fix message (forward type: ${forwardMessageType}) to importer for URL: ${group.url}, source: ${group.source}, issueType: ${group.issueType}, suggestions: ${group.suggestionIds.length}`);
+      } catch (error) {
+        log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to send code-fix message for URL: ${group.url}, error: ${error.message}`);
+      }
+    });
+
+    await Promise.all(messagePromises);
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] Completed sending ${messagePromises.length} code-fix messages to importer`);
+  } catch (error) {
+    log.error(`[Form Opportunity] [Site Id: ${siteId}] Error in sendCodeFixMessagesToImporter: ${error.message}`);
+  }
 }

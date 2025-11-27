@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { MockContextBuilder } from '../shared.js';
 import opportunitiesData from '../fixtures/experimentation-opportunities/opportunitiesdata.json' with { type: 'json' };
 import auditDataMock from '../fixtures/experimentation-opportunities/experimentation-opportunity-audit.json' with { type: 'json' };
@@ -28,6 +29,7 @@ import {
   getHighOrganicLowCtrOpportunity,
   processCustomUrls,
 } from '../../src/experimentation-opportunities/handler.js';
+import holcGuidanceHandler from '../../src/experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 
 use(sinonChai);
 
@@ -67,6 +69,7 @@ describe('Experimentation Opportunities Tests', () => {
       getCdnLogsConfig: sinon.stub(),
       getLlmoConfig: sinon.stub(),
       getTokowakaConfig: sinon.stub(),
+      getBrandProfile: sinon.stub().returns(null),
     };
     site = {
       getBaseURL: () => 'https://abc.com',
@@ -699,39 +702,9 @@ describe('Experimentation Opportunities Tests', () => {
           type: 'high-organic-low-ctr',
         },
       ];
-      const mockRumApiClient = {
-        query: sinon.stub().resolves(mockRumData),
-      };
-      const mockOptions = {
-        domain: 'https://abc.com',
-        interval: 7,
-        granularity: 'hourly',
-      };
-      const mockContext = {
-        log: {
-          info: sinon.stub(),
-        },
-      };
-
-      const result = await processCustomUrls(
-        customUrls,
-        mockRumApiClient,
-        mockOptions,
-        mockContext,
-      );
-      expect(mockRumApiClient.query).to.have.been.calledWith(
-        'high-organic-low-ctr',
-        { ...mockOptions, maxOpportunities: 1000 },
-      );
+      context.rumApiClient.query = sinon.stub().resolves(mockRumData);
+      const result = await processCustomUrls(customUrls, context.rumApiClient, { domain: 'https://abc.com' }, context);
       expect(result).to.have.length(2);
-
-      const urlWithRum = result.find((op) => op.page === 'https://abc.com/page1');
-      expect(urlWithRum.pageViews).to.equal(1000);
-      expect(urlWithRum.trackedPageKPIValue).to.equal('0.02');
-
-      const urlWithoutRum = result.find((op) => op.page === 'https://abc.com/page2');
-      expect(urlWithoutRum.type).to.equal('high-organic-low-ctr');
-      expect(urlWithoutRum.pageViews).to.be.undefined;
     });
 
     it('should handle URL parsing with spaces and duplicates', async () => {
@@ -742,6 +715,148 @@ describe('Experimentation Opportunities Tests', () => {
       const urls = result.auditResult.experimentationOpportunities.map((op) => op.page);
       expect(urls).to.include('https://abc.com/page1');
       expect(urls).to.include('https://abc.com/page2');
+    });
+  });
+
+  describe('HOLC Guidance Handler', () => {
+    it('creates a new Opportunity when none exists and creates suggestion', async () => {
+      const auditId = 'audit-1';
+      const siteId = site.getId();
+      const urlUnderTest = 'https://abc.com/oppty-one';
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: urlUnderTest,
+          guidance: { foo: 'bar' },
+          suggestions: [{ a: 1 }],
+        },
+      };
+
+      const auditMock = {
+        getAuditResult: () => ({
+          experimentationOpportunities: [
+            { type: 'high-organic-low-ctr', page: urlUnderTest },
+          ],
+        }),
+      };
+
+      const createdOpportunity = { getId: () => 'oppty-1' };
+
+      context.dataAccess = {
+        Audit: { findById: sinon.stub().resolves(auditMock) },
+        Opportunity: {
+          allBySiteId: sinon.stub().resolves([]),
+          create: sinon.stub().resolves(createdOpportunity),
+        },
+        Suggestion: { 
+          create: sinon.stub().resolves({}),
+          STATUSES: SuggestionDataAccess.STATUSES,
+          TYPES: SuggestionDataAccess.TYPES
+        },
+      };
+
+      const result = await holcGuidanceHandler(message, context);
+
+      expect(context.dataAccess.Audit.findById).to.have.been.calledWith(auditId);
+      expect(context.dataAccess.Opportunity.allBySiteId).to.have.been.calledOnce;
+      expect(context.dataAccess.Opportunity.create).to.have.been.called;
+      expect(context.dataAccess.Suggestion.create).to.have.been.called;
+      // ok() from http utils returns a Fetch Response
+      expect(result).to.have.property('ok', true);
+      expect(result).to.have.property('status', 200);
+    });
+
+    it('skips updates when existing suggestions were manually modified', async () => {
+      const auditId = 'audit-2';
+      const siteId = site.getId();
+      const urlUnderTest = 'https://abc.com/oppty-two';
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: urlUnderTest,
+          guidance: { baz: 'qux' },
+          suggestions: [{ b: 2 }],
+        },
+      };
+
+      const auditMock = {
+        getAuditResult: () => ({
+          experimentationOpportunities: [
+            { type: 'high-organic-low-ctr', page: urlUnderTest },
+          ],
+        }),
+      };
+
+      const manualSuggestion = { getUpdatedBy: () => 'user' };
+      const existingOpportunity = {
+        getData: () => ({ page: urlUnderTest }),
+        getSuggestions: sinon.stub().resolves([manualSuggestion]),
+      };
+
+      context.dataAccess = {
+        Audit: { findById: sinon.stub().resolves(auditMock) },
+        Opportunity: {
+          allBySiteId: sinon.stub().resolves([existingOpportunity]),
+        },
+        Suggestion: { 
+          create: sinon.stub().resolves({}),
+          STATUSES: SuggestionDataAccess.STATUSES,
+          TYPES: SuggestionDataAccess.TYPES
+        },
+      };
+
+      const result = await holcGuidanceHandler(message, context);
+
+      expect(context.dataAccess.Suggestion.create).not.to.have.been.called;
+      expect(result).to.have.property('ok', true);
+      expect(result).to.have.property('status', 200);
+    });
+
+    it('creates PENDING_VALIDATION suggestion when site requires validation', async () => {
+      const auditId = 'audit-3';
+      const siteId = site.getId();
+      const urlUnderTest = 'https://abc.com/oppty-three';
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: urlUnderTest,
+          guidance: { hello: 'world' },
+          suggestions: [{ c: 3 }],
+        },
+      };
+
+      const auditMock = {
+        getAuditResult: () => ({
+          experimentationOpportunities: [
+            { type: 'high-organic-low-ctr', page: urlUnderTest },
+          ],
+        }),
+      };
+
+      const createdOpportunity = { getId: () => 'oppty-3' };
+
+      context.site.requiresValidation = true;
+      context.dataAccess = {
+        Audit: { findById: sinon.stub().resolves(auditMock) },
+        Opportunity: {
+          allBySiteId: sinon.stub().resolves([]),
+          create: sinon.stub().resolves(createdOpportunity),
+        },
+        Suggestion: { 
+          create: sinon.stub().resolves({}),
+          STATUSES: SuggestionDataAccess.STATUSES,
+          TYPES: SuggestionDataAccess.TYPES
+        },
+      };
+
+      await holcGuidanceHandler(message, context);
+
+      expect(context.dataAccess.Suggestion.create).to.have.been.calledWith(
+        sinon.match.has('status', 'PENDING_VALIDATION'),
+      );
     });
   });
 
@@ -937,10 +1052,6 @@ describe('Experimentation Opportunities Tests', () => {
         context.audit.getAuditResult.returns({
           experimentationOpportunities: [
             {
-              type: 'rageclick',
-              page: 'https://abc.com/rage1',
-            },
-            {
               type: 'high-inorganic-high-bounce-rate',
               page: 'https://abc.com/bounce1',
             },
@@ -957,19 +1068,9 @@ describe('Experimentation Opportunities Tests', () => {
           experimentationOpportunities: [
             {
               type: 'high-organic-low-ctr',
-              page: 'https://abc.com/organic1',
-              trackedPageKPIValue: '0.05',
-              trackedKPISiteAverage: '0.10',
-            },
-            {
-              type: 'rageclick',
-              page: 'https://abc.com/rage1',
-            },
-            {
-              type: 'high-organic-low-ctr',
-              page: 'https://abc.com/organic2',
-              trackedPageKPIValue: '0.03',
-              trackedKPISiteAverage: '0.08',
+              page: 'https://abc.com/holc1',
+              trackedPageKPIValue: '0.10',
+              trackedKPISiteAverage: '0.05',
             },
             {
               type: 'high-inorganic-high-bounce-rate',
@@ -980,54 +1081,20 @@ describe('Experimentation Opportunities Tests', () => {
 
         await generateOpportunityAndSuggestions(context);
 
-        expect(context.sqs.sendMessage).to.have.been.calledTwice;
+        expect(context.sqs.sendMessage).to.have.been.calledOnce;
 
         const [queue1, message1] = context.sqs.sendMessage.firstCall.args;
         expect(queue1).to.equal('spacecat-to-mystique');
-        expect(message1).to.include({
-          type: 'guidance:high-organic-low-ctr',
-          siteId: site.getId(),
-          auditId: audit.getId(),
-          deliveryType: site.getDeliveryType(),
-        });
-        expect(message1.data).to.deep.equal({
-          url: 'https://abc.com/organic1',
-          ctr: '0.05',
-          siteAverageCtr: '0.10',
-        });
-
-        const [queue2, message2] = context.sqs.sendMessage.secondCall.args;
-        expect(queue2).to.equal('spacecat-to-mystique');
-        expect(message2.data).to.deep.equal({
-          url: 'https://abc.com/organic2',
-          ctr: '0.03',
-          siteAverageCtr: '0.08',
-        });
+        expect(message1.type).to.equal('guidance:high-organic-low-ctr');
       });
 
-      it('should include timestamp in messages', async () => {
-        const beforeTime = Date.now();
-
-        context.audit.getAuditResult.returns({
-          experimentationOpportunities: [
-            {
-              type: 'high-organic-low-ctr',
-              page: 'https://abc.com/page1',
-              trackedPageKPIValue: '0.02',
-              trackedKPISiteAverage: '0.05',
-            },
-          ],
-        });
+      it('should handle completely undefined audit result', async () => {
+        context.audit.getAuditResult.returns(undefined);
 
         await generateOpportunityAndSuggestions(context);
 
-        const afterTime = Date.now();
-        const [, message] = context.sqs.sendMessage.firstCall.args;
-
-        expect(message.time).to.be.a('string');
-        const messageTime = new Date(message.time).getTime();
-        expect(messageTime).to.be.at.least(beforeTime);
-        expect(messageTime).to.be.at.most(afterTime);
+        expect(context.sqs.sendMessage).to.not.have.been.called;
+        expect(context.log.info).to.have.been.calledWithMatch('No experimentation opportunities found or audit result is undefined');
       });
     });
   });

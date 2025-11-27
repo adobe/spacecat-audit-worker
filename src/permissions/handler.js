@@ -148,6 +148,11 @@ export const tooStrongOpportunityStep = async (auditUrl, auditData, context, sit
     return { status: 'complete' };
   }
 
+  // Flatten allPermission arrays by path and principal
+  const flattenedPermissions = permissionsReport.allPermissions
+    // eslint-disable-next-line max-len
+    .flatMap(({ path, details }) => details.map((d) => ({ path, permissions: d.acl, ...d })));
+
   // eslint-disable-next-line max-len
   const tooStrongOpt = strongOpportunities.length > 0 ? strongOpportunities[0] : await convertToOpportunity(
     auditUrl,
@@ -155,13 +160,8 @@ export const tooStrongOpportunityStep = async (auditUrl, auditData, context, sit
     context,
     createTooStrongOpportunityData,
     AUDIT_TYPE,
-    createTooStrongMetrics(permissionsReport.allPermissions),
+    createTooStrongMetrics(flattenedPermissions),
   );
-
-  // Flatten allPermission arrays by path and principal
-  const flattenedPermissions = permissionsReport.allPermissions
-    // eslint-disable-next-line max-len
-    .flatMap(({ path, details }) => details.map((d) => ({ path, permissions: d.acl, ...d })));
 
   const buildTooStrongSuggestionKey = (data) => {
     const s = JSON.stringify(data.permissions);

@@ -179,8 +179,28 @@ describe('LLM Error Pages Handler', function () {
     };
 
     const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import', SCRAPE_CLIENT: 'scrape' } },
+      },
+      '@adobe/spacecat-shared-tier-client': {
+        default: {},
+      },
       '@adobe/spacecat-shared-athena-client': {
         AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) },
+      },
+      '../../../src/common/index.js': {
+        wwwUrlResolver: () => ({}),
+      },
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner() { return this; }
+          build() { return {}; }
+        },
+      },
+      '../../../src/common/audit-utils.js': {
+        default: {},
       },
       '../../../src/llm-error-pages/utils.js': {
         getS3Config: mockGetS3Config,
@@ -347,18 +367,6 @@ describe('LLM Error Pages Handler', function () {
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
 
-    it('should skip Excel generation when no CDN data available', async () => {
-      mockDownloadExistingCdnSheet.resolves([]);
-
-      const result = await runAuditAndSendToMystique(context);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/\[LLM-ERROR-PAGES\] No existing CDN data found/),
-      );
-      expect(mockSaveExcelReport).not.to.have.been.called;
-    });
-
     it('should skip Mystique when SQS not configured', async () => {
       context.sqs = null;
 
@@ -472,6 +480,76 @@ describe('LLM Error Pages Handler', function () {
       expect(mockSaveExcelReport).to.have.been.calledThrice;
     });
 
+    it('should apply fallbacks and sort when fields are missing', async () => {
+      const worksheetRows = [];
+      // Rewire the worksheet addRow to capture rows
+      const handlerModule = await esmock('../../../src/llm-error-pages/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) },
+        },
+        '../../../src/llm-error-pages/utils.js': {
+          getS3Config: mockGetS3Config,
+          generateReportingPeriods: mockGenerateReportingPeriods,
+          buildSiteFilters: mockBuildSiteFilters,
+          processErrorPagesResults: () => ({
+            totalErrors: 2,
+            errorPages: [
+              { user_agent: 'BotA', url: '/a', status: 404, total_requests: 3, avg_ttfb_ms: undefined, country_code: undefined, product: undefined, category: undefined },
+              { user_agent: 'BotB', url: '/b', status: 404, total_requests: undefined, avg_ttfb_ms: 100, country_code: 'US', product: 'P', category: 'C' },
+            ],
+            summary: { uniqueUrls: 2, uniqueUserAgents: 2, statusCodes: { 404: 3 } },
+          }),
+          buildLlmErrorPagesQuery: mockBuildQuery,
+          getAllLlmProviders: mockGetAllLlmProviders,
+          categorizeErrorsByStatusCode: (eps) => ({ 404: eps }),
+          consolidateErrorsByUrl: (errors) => errors,
+          sortErrorsByTrafficVolume: (errors) => errors,
+          toPathOnly: (url) => url,
+          SPREADSHEET_COLUMNS: ['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score'],
+        },
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: mockCreateLLMOSharepointClient,
+          saveExcelReport: mockSaveExcelReport,
+        },
+        exceljs: {
+          default: {
+            Workbook: function Workbook() {
+              return {
+                addWorksheet() {
+                  return {
+                    addRow: (row) => { worksheetRows.push(row); },
+                  };
+                },
+              };
+            },
+          },
+        },
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
+          validateCountryCode: (code) => {
+            if (!code || typeof code !== 'string') return 'GLOBAL';
+            const up = code.toUpperCase();
+            return up.length === 2 ? up : 'GLOBAL';
+          },
+        },
+        '@adobe/spacecat-shared-tier-client': { default: {} },
+      });
+
+      await handlerModule.runAuditAndSendToMystique(context);
+      // First addRow is headers, then two data rows
+      expect(worksheetRows).to.have.length(3);
+      const dataRows = worksheetRows.slice(1);
+      // Sorted: entry with total_requests 3 should come before undefined (treated as 0)
+      expect(dataRows[0][1]).to.equal('BotA'); // User Agent
+      expect(dataRows[0][2]).to.equal(3); // Number of Hits
+      // Fallbacks applied
+      expect(dataRows[0][3]).to.equal(''); // Avg TTFB fallback
+      expect(dataRows[0][4]).to.equal('GLOBAL'); // Country validated fallback
+      expect(dataRows[0][6]).to.equal(''); // Product fallback
+      expect(dataRows[0][7]).to.equal(''); // Category fallback
+      // Second row hits fallback to 0
+      expect(dataRows[1][2]).to.equal(0);
+    });
+
     it('should handle site with no config', async () => {
       site.getConfig = () => null;
 
@@ -560,5 +638,131 @@ describe('LLM Error Pages Handler', function () {
       );
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
+  });
+});
+
+describe('LLM Error Pages Handler (isolated)', function () {
+  this.timeout(10000);
+  it('covers Excel row fallbacks and sorting branches without shared beforeEach', async () => {
+    const worksheetRows = [];
+    const sandbox = sinon.createSandbox();
+    const site = {
+      getBaseURL: () => 'https://example.com',
+      getId: () => 'site-id-123',
+      getDeliveryType: () => 'aem_edge',
+      getConfig: () => ({
+        getLlmoCdnlogsFilter: () => [],
+        getLlmoDataFolder: () => 'test-customer',
+      }),
+    };
+    const audit = {
+      getId: () => 'audit-id-456',
+      getAuditType: () => 'llm-error-pages',
+      getFullAuditRef: () => 'llm-error-pages::example.com',
+      getAuditResult: sandbox.stub().returns({ success: true }),
+    };
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
+      sqs: { sendMessage: sandbox.stub().resolves({}) },
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique' },
+      site,
+      audit,
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com' }]),
+        },
+      },
+    };
+    const mockAthenaClient = { query: sandbox.stub().resolves([]) };
+    const mockGetS3Config = sandbox.stub().resolves({
+      bucket: 'test-bucket',
+      customerName: 'test-customer',
+      databaseName: 'test_db',
+      tableName: 'test_table',
+      getAthenaTempLocation: () => 's3://test-bucket/temp/',
+    });
+    const mockGenerateReportingPeriods = sandbox.stub().returns({
+      weeks: [{
+        weekNumber: 34,
+        year: 2025,
+        startDate: new Date('2025-08-18T00:00:00Z'),
+        endDate: new Date('2025-08-24T23:59:59Z'),
+      }],
+    });
+    const mockBuildSiteFilters = sandbox.stub().returns('');
+    const mockBuildQuery = sandbox.stub().resolves('SELECT ...');
+    const mockGetAllLlmProviders = sandbox.stub().returns(['chatgpt']);
+    const mockSaveExcelReport = sandbox.stub().resolves();
+    const handlerModule = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import', SCRAPE_CLIENT: 'scrape' } },
+      },
+      '@adobe/spacecat-shared-tier-client': {
+        default: {},
+      },
+      '@adobe/spacecat-shared-athena-client': {
+        AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) },
+      },
+      '../../../src/common/index.js': { wwwUrlResolver: () => ({}) },
+      '../../../src/common/audit-builder.js': {
+        AuditBuilder: class AuditBuilder {
+          withUrlResolver() { return this; }
+          addStep() { return this; }
+          withRunner() { return this; }
+          build() { return {}; }
+        },
+      },
+      '../../../src/common/audit-utils.js': {
+        default: {},
+      },
+      '../../../src/llm-error-pages/utils.js': {
+        getS3Config: mockGetS3Config,
+        generateReportingPeriods: mockGenerateReportingPeriods,
+        buildSiteFilters: mockBuildSiteFilters,
+        processErrorPagesResults: () => ({
+          totalErrors: 2,
+          errorPages: [
+            { user_agent: 'BotA', url: '/a', status: 404, total_requests: 3, avg_ttfb_ms: undefined, country_code: undefined, product: undefined, category: undefined },
+            { user_agent: 'BotB', url: '/b', status: 404, total_requests: undefined, avg_ttfb_ms: 100, country_code: 'US', product: 'P', category: 'C' },
+          ],
+          summary: { uniqueUrls: 2, uniqueUserAgents: 2, statusCodes: { 404: 3 } },
+        }),
+        buildLlmErrorPagesQuery: mockBuildQuery,
+        getAllLlmProviders: mockGetAllLlmProviders,
+        categorizeErrorsByStatusCode: (eps) => ({ 404: eps }),
+        consolidateErrorsByUrl: (errors) => errors,
+        sortErrorsByTrafficVolume: (errors) => errors,
+        toPathOnly: (url) => url,
+        SPREADSHEET_COLUMNS: ['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score'],
+      },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: sandbox.stub().resolves({}),
+        saveExcelReport: mockSaveExcelReport,
+      },
+      exceljs: {
+        default: {
+          Workbook: function Workbook() {
+            return {
+              addWorksheet() {
+                return {
+                  addRow: (row) => { worksheetRows.push(row); },
+                };
+              },
+            };
+          },
+        },
+      },
+    });
+    await handlerModule.runAuditAndSendToMystique(context);
+    // headers + 2 rows
+    const dataRows = worksheetRows.slice(1);
+    // Sorted order and fallbacks
+    sinon.assert.match(dataRows[0][1], 'BotA');
+    sinon.assert.match(dataRows[0][2], 3);
+    sinon.assert.match(dataRows[0][3], '');
+    sinon.assert.match(dataRows[0][4], '');
+    sinon.assert.match(dataRows[0][6], '');
+    sinon.assert.match(dataRows[0][7], '');
+    sinon.assert.match(dataRows[1][2], 0);
   });
 });

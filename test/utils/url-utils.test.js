@@ -263,3 +263,24 @@ describe('url-utils.findBestMatchingPath', () => {
     expect(findBestMatchingPath(sectionData, '/de/')).to.equal('default');
   });
 });
+
+describe('joinBaseAndPath', () => {
+  it('should handle dash path by returning base URL with trailing slash', () => {
+    expect(utils.joinBaseAndPath('https://example.com', '-')).to.equal('https://example.com/');
+    expect(utils.joinBaseAndPath('https://example.com/', '-')).to.equal('https://example.com/');
+  });
+
+  it('should join base URL and path correctly', () => {
+    expect(utils.joinBaseAndPath('https://example.com', '/page1')).to.equal('https://example.com/page1');
+    expect(utils.joinBaseAndPath('https://example.com/', '/page1')).to.equal('https://example.com/page1');
+    expect(utils.joinBaseAndPath('https://example.com', 'page1')).to.equal('https://example.com/page1');
+    expect(utils.joinBaseAndPath('https://example.com/', 'page1')).to.equal('https://example.com/page1');
+  });
+
+  it('should handle various base URL and path combinations', () => {
+    expect(utils.joinBaseAndPath('https://example.com', '/products/analytics')).to.equal('https://example.com/products/analytics');
+    expect(utils.joinBaseAndPath('https://example.com/', 'products/analytics')).to.equal('https://example.com/products/analytics');
+    expect(utils.joinBaseAndPath('https://example.com/base', '/page')).to.equal('https://example.com/base/page');
+    expect(utils.joinBaseAndPath('https://example.com/base/', 'page')).to.equal('https://example.com/base/page');
+  });
+});

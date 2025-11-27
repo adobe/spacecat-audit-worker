@@ -145,6 +145,13 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
     return { status: 'complete' };
   }
 
+  // Flatten adminChecks arrays by principal and path and privileges
+  const flattenedPermissions = permissionsReport.adminChecks
+    // eslint-disable-next-line max-len
+    .flatMap(({ principal, details }) => details.map((d) => ({
+      principal, path: d.path, permissions: d.privileges, ...d,
+    })));
+
   // Check if there are existing opportunity or need to create a new one
   // eslint-disable-next-line max-len
   const adminOpt = adminOpportunities.length > 0 ? adminOpportunities[0] : await convertToOpportunity(
@@ -153,15 +160,8 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
     context,
     createAdminOpportunityData,
     AUDIT_TYPE,
-    createAdminMetrics(permissionsReport.adminChecks),
+    createAdminMetrics(flattenedPermissions),
   );
-
-  // Flatten adminChecks arrays by principal and path and privileges
-  const flattenedPermissions = permissionsReport.adminChecks
-  // eslint-disable-next-line max-len
-    .flatMap(({ principal, details }) => details.map((d) => ({
-      principal, path: d.path, permissions: d.privileges, ...d,
-    })));
 
   const buildAdminSuggestionKey = (data) => {
     const s = JSON.stringify(data.permissions);

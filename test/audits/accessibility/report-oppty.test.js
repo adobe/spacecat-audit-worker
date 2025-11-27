@@ -112,7 +112,202 @@ describe('Accessibility Report Opportunity Utils', () => {
   });
 
   describe('createReportOpportunitySuggestionInstance', () => {
-    it('should create correct suggestion instance structure', () => {
+    it('should create correct suggestion instance structure with requiresValidation=true', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      const context = { site: { requiresValidation: true }, dataAccess: {} };
+
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE',
+          rank: 1,
+          status: 'PENDING_VALIDATION',
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should use fallback string literals when Suggestion.STATUSES is undefined', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      // Create a context with dataAccess.Suggestion but no STATUSES property
+      const context = { 
+        site: { requiresValidation: true }, 
+        dataAccess: { 
+          Suggestion: { /* No STATUSES property */ } 
+        } 
+      };
+
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE',
+          rank: 1,
+          status: 'PENDING_VALIDATION', // Should use the fallback string literal
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should create correct suggestion instance structure with requiresValidation=false', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      const context = { site: { requiresValidation: false } };
+
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE',
+          rank: 1,
+          status: 'NEW',
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should use fallback string literals when Suggestion.STATUSES is undefined and requiresValidation=false', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      // Create a context with dataAccess.Suggestion but no STATUSES property
+      const context = { 
+        site: { requiresValidation: false }, 
+        dataAccess: { 
+          Suggestion: { /* No STATUSES property */ } 
+        } 
+      };
+
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE',
+          rank: 1,
+          status: 'NEW', // Should use the fallback string literal
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should use fallback string literals when Suggestion.TYPES is undefined', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      // Create a context with dataAccess.Suggestion with STATUSES but no TYPES property
+      const context = { 
+        site: { requiresValidation: true }, 
+        dataAccess: { 
+          Suggestion: { 
+            STATUSES: { 
+              PENDING_VALIDATION: 'PENDING_VALIDATION',
+              NEW: 'NEW'
+            }
+            /* No TYPES property */ 
+          } 
+        } 
+      };
+
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE', // Should use the fallback string literal
+          rank: 1,
+          status: 'PENDING_VALIDATION',
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should use fallback string literals when Suggestion.TYPES.CODE_CHANGE is undefined', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      // Create a context with dataAccess.Suggestion with STATUSES and TYPES but no CODE_CHANGE property
+      const context = { 
+        site: { requiresValidation: true }, 
+        dataAccess: { 
+          Suggestion: { 
+            STATUSES: { 
+              PENDING_VALIDATION: 'PENDING_VALIDATION',
+              NEW: 'NEW'
+            },
+            TYPES: {
+              // No CODE_CHANGE property
+            }
+          } 
+        } 
+      };
+
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE', // Should use the fallback string literal
+          rank: 1,
+          status: 'PENDING_VALIDATION',
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should handle undefined suggestionValue', () => {
+      const context = { site: { requiresValidation: true } };
+      const suggestion = createReportOpportunitySuggestionInstance(undefined, context);
+
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE',
+          rank: 1,
+          status: 'PENDING_VALIDATION',
+          data: {
+            suggestionValue: undefined,
+          },
+        },
+      ]);
+    });
+    
+    it('should handle null context', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, null);
+      
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE',
+          rank: 1,
+          status: 'NEW', // Default to NEW when no context.site.requiresValidation
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should handle null context.dataAccess', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      const context = { site: { requiresValidation: true }, dataAccess: null };
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+      
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE',
+          rank: 1,
+          status: 'PENDING_VALIDATION',
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should create correct suggestion instance structure with no context', () => {
       const suggestionValue = 'Test accessibility suggestion content';
 
       const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
@@ -131,16 +326,18 @@ describe('Accessibility Report Opportunity Utils', () => {
 
     it('should handle empty suggestion value', () => {
       const suggestionValue = '';
+      const context = { site: { requiresValidation: true } };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
 
       expect(suggestion[0].data.suggestionValue).to.equal('');
     });
 
     it('should handle null suggestion value', () => {
       const suggestionValue = null;
+      const context = { site: { requiresValidation: true } };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
 
       expect(suggestion[0].data.suggestionValue).to.be.null;
     });
@@ -151,8 +348,9 @@ describe('Accessibility Report Opportunity Utils', () => {
         description: 'Ensure text has sufficient contrast ratio',
         priority: 'high',
       };
+      const context = { site: { requiresValidation: true } };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
 
       expect(suggestion[0].data.suggestionValue).to.deep.equal(suggestionValue);
     });
@@ -452,7 +650,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -473,7 +671,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -496,7 +694,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -519,7 +717,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -538,7 +736,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -556,7 +754,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -575,6 +773,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
+        { site: { requiresValidation: true } }
       )).to.not.throw();
     });
 
@@ -589,7 +788,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result[0].data.suggestionValue['accessibility-desktop']).to.equal('# Desktop Content\nImportant desktop info');
@@ -607,7 +806,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -626,7 +825,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -646,7 +845,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result[0].data.suggestionValue['accessibility-desktop']).to.equal(longContent);
@@ -666,7 +865,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -685,7 +884,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -777,6 +976,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         mobileContent,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -797,6 +997,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         mobileContent,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');

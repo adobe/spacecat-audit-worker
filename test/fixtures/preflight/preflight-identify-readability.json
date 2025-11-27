@@ -40,10 +40,39 @@
       {
         "name": "metatags",
         "type": "seo",
-        "opportunities": []
+        "opportunities": [
+          {
+            "issue": "Missing H1",
+            "issueDetails": "H1 tag is missing",
+            "seoImpact": "High",
+            "seoRecommendation": "Should be present",
+            "tagName": "h1"
+          },
+          {
+            "issue": "Title too short",
+            "issueDetails": "19 chars below limit",
+            "seoImpact": "Moderate",
+            "seoRecommendation": "40-60 characters long",
+            "tagContent": "Readability Test Page",
+            "tagName": "title"
+          },
+          {
+            "issue": "Description too short",
+            "issueDetails": "115 chars below limit",
+            "seoImpact": "Moderate",
+            "seoRecommendation": "140-160 characters long",
+            "tagContent": "Test page for readability",
+            "tagName": "description"
+          }
+        ]
       },
       {
         "name": "links",
+        "type": "seo",
+        "opportunities": []
+      },
+      {
+        "name": "headings",
         "type": "seo",
         "opportunities": []
       },
@@ -54,11 +83,11 @@
           {
             "check": "poor-readability",
             "seoRecommendation": "Improve readability by using shorter sentences, simpler words, and clearer structure",
-            "issue": "Text element is difficult to read: \"The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience.\"",
+            "issue": "Text element is difficult to read: \"The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience. Furthermore, the mult...\"",
             "seoImpact": "Moderate",
-            "fleschReadingEase": 10.23,
+            "fleschReadingEase": -10.12,
             "language": "english",
-            "textContent": "The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience."
+            "textContent": "The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience. Furthermore, the multifaceted infrastructure exemplifies sophisticated aesthetic considerations. Such complex arrangements require meticulous coordination."
           }
         ]
       }

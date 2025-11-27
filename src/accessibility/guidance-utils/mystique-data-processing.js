@@ -10,73 +10,121 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import {
+  isNonEmptyArray,
+  isNonEmptyObject,
+  buildAggregationKey,
+  buildKey,
+} from '@adobe/spacecat-shared-utils';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { issueTypesForMystique } from '../utils/constants.js';
 
 /**
+ * Determines if an HTML issue should be sent to Mystique for processing
+ *
+ * Rules:
+ * - Always send if no guidance exists
+ * - If codeFixFlow is enabled: also send if guidance exists but no code fix is available
+ * - If codeFixFlow is disabled: skip issues that already have guidance
+ *
+ * @param {Object} html - The HTML issue object
+ * @param {Object} suggestionData - The suggestion data containing isCodeChangeAvailable flag
+ * @param {boolean} useCodeFixFlow - Whether code fix flow is enabled
+ * @returns {boolean} True if the issue should be sent to Mystique
+ */
+function shouldSendIssueToMystique(html, suggestionData, useCodeFixFlow) {
+  const hasGuidance = isNonEmptyObject(html.guidance);
+
+  // Always send if no guidance exists
+  if (!hasGuidance) {
+    return true;
+  }
+
+  // If codeFixFlow is enabled, also send if code fix is not available
+  if (useCodeFixFlow) {
+    const hasCodeFix = suggestionData.isCodeChangeAvailable === true;
+    return !hasCodeFix;
+  }
+
+  // Has guidance and codeFixFlow not enabled, skip
+  return false;
+}
+
+/**
  * Processes suggestions directly to create Mystique message data
  *
+ * Supports multiple aggregation strategies:
+ * - Code Fix Flow (useCodeFixFlow=true): Uses buildAggregationKey for granular grouping
+ * - Legacy Flow (useCodeFixFlow=false): Groups all issues by URL only
+ *
  * @param {Array} suggestions - Array of suggestion objects from the opportunity
+ * @param {boolean} useCodeFixFlow - Whether to use code fix flow (granular) or legacy flow (by URL)
  * @returns {Array} Array of message data objects ready for SQS sending
  */
-export function processSuggestionsForMystique(suggestions) {
-  if (!suggestions || !Array.isArray(suggestions)) {
+export function processSuggestionsForMystique(suggestions, useCodeFixFlow = true) {
+  if (!Array.isArray(suggestions) || suggestions.length === 0) {
     return [];
   }
 
-  // Group suggestions by url
-  const suggestionsByUrl = {};
-  for (const suggestion of suggestions) {
-    const suggestionData = suggestion.getData();
+  const SKIPPED_STATUSES = [
+    SuggestionDataAccess.STATUSES.FIXED,
+    SuggestionDataAccess.STATUSES.SKIPPED,
+  ];
+
+  // Helper: Extract issue items from a suggestion that need Mystique processing
+  const extractIssueItems = (suggestion) => {
+    const data = suggestion.getData();
     const suggestionId = suggestion.getId();
-    // skip sending to M suggestions that are fixed or skipped
-    if (![SuggestionDataAccess.STATUSES.FIXED, SuggestionDataAccess.STATUSES.SKIPPED]
-      .includes(suggestion.getStatus())
-      && suggestionData.issues
-      && isNonEmptyArray(suggestionData.issues)
-      && isNonEmptyArray(suggestionData.issues[0].htmlWithIssues)) {
-      // Starting with SITES-33832, a suggestion corresponds to a single granular issue,
-      // i.e. target selector and faulty HTML line
-      const singleIssue = suggestionData.issues[0];
-      const singleHtmlWithIssue = singleIssue.htmlWithIssues[0];
-      // skip sending to M suggestions that already have guidance
-      if (issueTypesForMystique.includes(singleIssue.type)
-      && !isNonEmptyObject(singleHtmlWithIssue.guidance)) {
-        const { url } = suggestionData;
-        if (!suggestionsByUrl[url]) {
-          suggestionsByUrl[url] = [];
-        }
-        suggestionsByUrl[url].push({ ...suggestionData, suggestionId });
-      }
-    }
-  }
 
-  const messageData = [];
-  for (const [url, suggestionsForUrl] of Object.entries(suggestionsByUrl)) {
-    const issuesList = [];
-    for (const suggestion of suggestionsForUrl) {
-      if (isNonEmptyArray(suggestion.issues)) {
-        // Starting with SITES-33832, a suggestion corresponds to a single granular issue,
-        // i.e. target selector and faulty HTML line
-        const singleIssue = suggestion.issues[0];
-        if (isNonEmptyArray(singleIssue.htmlWithIssues)) {
-          const singleHtmlWithIssue = singleIssue.htmlWithIssues[0];
-          issuesList.push({
-            issueName: singleIssue.type,
-            faultyLine: singleHtmlWithIssue.update_from || singleHtmlWithIssue.updateFrom || '',
-            targetSelector: singleHtmlWithIssue.target_selector || singleHtmlWithIssue.targetSelector || '',
-            issueDescription: singleIssue.description || '',
-            suggestionId: suggestion.suggestionId,
-          });
-        }
-      }
+    if (!isNonEmptyArray(data.issues)) {
+      return [];
     }
-    messageData.push({
-      url,
-      issuesList,
-    });
-  }
 
-  return messageData;
+    return data.issues
+      .filter((issue) => issueTypesForMystique.includes(issue.type))
+      .filter((issue) => isNonEmptyArray(issue.htmlWithIssues))
+      .flatMap((issue) => issue.htmlWithIssues
+        .filter((html) => shouldSendIssueToMystique(html, data, useCodeFixFlow))
+        .map((html) => {
+          const targetSelector = html.target_selector || html.targetSelector || '';
+          const aggregationKey = useCodeFixFlow
+            ? buildAggregationKey(issue.type, data.url, targetSelector, data.source)
+            : buildKey(data.url);
+
+          return {
+            issueName: issue.type,
+            faultyLine: html.update_from || html.updateFrom || '',
+            targetSelector,
+            issueDescription: issue.description || '',
+            suggestionId,
+            url: data.url,
+            aggregationKey,
+          };
+        }));
+  };
+
+  // Process all suggestions and extract issue items
+  const allIssueItems = suggestions
+    .filter((suggestion) => !SKIPPED_STATUSES.includes(suggestion.getStatus()))
+    .flatMap(extractIssueItems);
+
+  // Group by aggregation key
+  const byAggregationKey = allIssueItems.reduce((acc, item) => {
+    const { aggregationKey, ...issueItem } = item;
+    if (!acc[aggregationKey]) {
+      acc[aggregationKey] = {
+        url: item.url,
+        issuesList: [],
+      };
+    }
+    acc[aggregationKey].issuesList.push(issueItem);
+    return acc;
+  }, {});
+
+  // Convert to final format
+  return Object.entries(byAggregationKey).map(([aggregationKey, data]) => ({
+    url: data.url,
+    aggregationKey,
+    issuesList: data.issuesList,
+  }));
 }

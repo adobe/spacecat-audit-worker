@@ -22,6 +22,8 @@ import {
   getBucketInfo,
   discoverCdnProviders,
   isStandardAdobeCdnBucket,
+  shouldRecreateRawTable,
+  buildSiteFilters,
 } from '../../src/utils/cdn-utils.js';
 
 use(sinonChai);
@@ -258,6 +260,114 @@ describe('CDN Utils', () => {
       expect(isStandardAdobeCdnBucket('logs-test123')).to.be.false;
       expect(isStandardAdobeCdnBucket('')).to.be.false;
       expect(isStandardAdobeCdnBucket('cdn-logs-test@123')).to.be.false;
+    });
+  });
+
+  describe('shouldRecreateRawTable', () => {
+    let athenaClient;
+    const database = 'test-database';
+    const rawTable = 'test-raw-table';
+    const expectedLocation = 's3://test-bucket/raw/';
+
+    beforeEach(() => {
+      athenaClient = { query: sandbox.stub(), execute: sandbox.stub() };
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('returns true if table does not exist', async () => {
+      athenaClient.query.resolves([]);
+
+      const result = await shouldRecreateRawTable(
+        athenaClient,
+        database,
+        rawTable,
+        expectedLocation,
+      );
+
+      expect(result).to.be.true;
+    });
+
+    it('returns true if table exists and location does not match', async () => {
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}/other'` }]);
+
+      const result = await shouldRecreateRawTable(
+        athenaClient,
+        database,
+        rawTable,
+        expectedLocation,
+      );
+
+      expect(result).to.be.true;
+    });
+
+    it('returns false if table exists and location matches', async () => {
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}'` }]);
+
+      const result = await shouldRecreateRawTable(
+        athenaClient,
+        database,
+        rawTable,
+        expectedLocation,
+      );
+
+      expect(result).to.be.false;
+    });
+  });
+
+  describe('buildSiteFilters', () => {
+    it('builds include filters correctly', () => {
+      const result = buildSiteFilters([
+        { key: 'url', value: ['test'], type: 'include' },
+      ]);
+      expect(result).to.include("REGEXP_LIKE(url, '(?i)(test)')");
+    });
+
+    it('builds exclude filters correctly', () => {
+      const result = buildSiteFilters([
+        { key: 'url', value: ['admin'], type: 'exclude' },
+      ]);
+      expect(result).to.include("NOT REGEXP_LIKE(url, '(?i)(admin)')");
+    });
+
+    it('combines multiple filters with AND', () => {
+      const result = buildSiteFilters([
+        { key: 'url', value: ['test'], type: 'include' },
+        { key: 'url', value: ['admin'], type: 'exclude' },
+      ]);
+      expect(result).to.include('AND');
+    });
+
+    it('falls back to baseURL when filters are empty', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://adobe.com',
+      };
+
+      const result = buildSiteFilters([], mockSite);
+
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(adobe.com)')");
+    });
+
+    it('keeps www prefix when already present', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.adobe.com',
+      };
+
+      const result = buildSiteFilters([], mockSite);
+
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(www.adobe.com)')");
+    });
+
+    it('keeps subdomain as-is without adding www', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://business.adobe.com',
+      };
+
+      const result = buildSiteFilters([], mockSite);
+
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(business.adobe.com)')");
     });
   });
 });

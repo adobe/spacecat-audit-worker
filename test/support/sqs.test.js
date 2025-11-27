@@ -68,7 +68,7 @@ describe('sqs', () => {
       .reply(400, errorResponse);
 
     const action = wrap(async (req, ctx) => {
-      await ctx.sqs.sendMessage('queue-url', { key: 'value' });
+      await ctx.sqs.sendMessage('https://sqs.us-east-1.amazonaws.com/123456789/test-queue', { key: 'value' });
     }).with(sqsWrapper);
 
     await expect(action({}, context)).to.be.rejectedWith(errorResponse.message);
@@ -80,7 +80,7 @@ describe('sqs', () => {
   it('initialize and use a new sqs if not initialized before', async () => {
     const messageId = 'message-id';
     const message = { key: 'value' };
-    const queueUrl = 'queue-url';
+    const queueUrl = 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue';
     const logSpy = sandbox.spy(context.log, 'debug');
 
     nock('https://sqs.us-east-1.amazonaws.com')

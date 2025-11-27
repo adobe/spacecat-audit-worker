@@ -1097,11 +1097,12 @@ describe('Meta Tags', () => {
         try {
           await opportunityAndSuggestions(auditUrl, auditData, context);
         } catch (err) {
-          expect(err.message).to.equal('Failed to create suggestions for siteId site-id');
+          expect(err.message).to.include('Failed to create suggestions for siteId site-id');
         }
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.error).to.be.calledWith('Suggestions for siteId site-id contains 1 items with errors');
-        expect(logStub.error).to.be.calledTwice;
+        expect(logStub.error).to.be.calledWith(sinon.match(/contains 1 items with errors/));
+        // Now logs summary + detailed error + failed item data + error items array = 4 calls
+        expect(logStub.error).to.have.callCount(4);
       });
 
       it('should take rank as -1 if issue is not known', async () => {
@@ -1604,6 +1605,47 @@ describe('Meta Tags', () => {
           },
         });
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
+        expect(result).to.deep.equal({ status: 'complete' });
+      });
+
+      it('should return { status: complete } if no valid metatag issues are detected', async () => {
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const mockValidateDetectedIssues = sinon.stub()
+          .resolves({});
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
+        });
+
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+        expect(logStub.info).to.have.been.calledWith(sinon.match(/No valid metatag issues detected/));
+      });
+
+      it('should return { status: complete } if validatedDetectedTags is null', async () => {
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const mockValidateDetectedIssues = sinon.stub()
+          .resolves(null);
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
+        });
+
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
         expect(result).to.deep.equal({ status: 'complete' });
       });
     });

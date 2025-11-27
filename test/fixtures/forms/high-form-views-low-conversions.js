@@ -901,8 +901,8 @@ const testData = {
     {
       url: 'test-base-url',
       form_details: [{
-        form_source: '',
-        url: 'https://www.surest.com/newsletter',
+        form_source: 'form',
+        url: 'https://www.surest.com/info/win',
       }],
     },
   opportunityData: {
@@ -918,48 +918,48 @@ const testData = {
     ],
     data: {
       trackedFormKPIName: 'Conversion Rate',
-      trackedFormKPIValue: 0.031,
+      trackedFormKPIValue: 0.018,
       metrics: [
         {
           type: 'conversionRate',
           device: '*',
           value: {
-            page: 0.031,
+            page: 0.018,
           },
         },
         {
           type: 'formBounceRate',
           device: '*',
           value: {
-            page: 0.906,
+            page: 0.242,
           },
         },
         {
           type: 'dropoffRate',
           device: '*',
           value: {
-            page: 0.667,
+            page: 0.977,
           },
         },
         {
           type: 'conversionRate',
           device: 'desktop',
           value: {
-            page: 0,
+            page: 0.021,
           },
         },
         {
           type: 'formBounceRate',
           device: 'desktop',
           value: {
-            page: 1,
+            page: 0.14300000000000002,
           },
         },
         {
           type: 'dropoffRate',
           device: 'desktop',
           value: {
-            page: null,
+            page: 0.975,
           },
         },
         {
@@ -973,7 +973,7 @@ const testData = {
           type: 'formBounceRate',
           device: 'mobile',
           value: {
-            page: 0.906,
+            page: 0.7,
           },
         },
         {
@@ -994,28 +994,16 @@ const testData = {
           type: 'traffic',
           device: 'mobile',
           value: {
-            page: 4000,
-          },
-        },
-        {
-          type: 'trafficAcquisitionSource',
-          device: '*',
-          value: {
-            page: [
-              {
-                type: 'owned:direct',
-                views: 2400,
-              },
-            ],
+            page: 1000,
           },
         },
       ],
-      form: 'https://www.surest.com/newsletter',
-      formsource: '',
-      formViews: 3200,
-      pageViews: 8670,
+      form: 'https://www.surest.com/info/win',
+      formsource: 'form',
+      formViews: 5670,
+      pageViews: 5670,
       screenshot: '',
-      samples: 8670,
+      samples: 5670,
       scrapedStatus: false,
       projectedConversionValue: null,
       dataSources: [

@@ -10,15 +10,17 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray, isString } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, isString, buildSuggestionKey } from '@adobe/spacecat-shared-utils';
 import { Opportunity as OpportunityDataAccess, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { createAccessibilityAssistiveOpportunity, createAccessibilityColorContrastOpportunity } from './report-oppty.js';
 import {
   syncSuggestions,
   keepSameDataFunction,
 } from '../../utils/data-access.js';
-import { successCriteriaLinks, accessibilityOpportunitiesMap, URL_SOURCE_SEPARATOR } from './constants.js';
-import { getAuditData } from './data-processing.js';
+import {
+  successCriteriaLinks, accessibilityOpportunitiesMap, URL_SOURCE_SEPARATOR, issueTypesForCodeFix,
+} from './constants.js';
+import { getAuditData, getCodeInfo } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 import { saveMystiqueValidationMetricsToS3, saveOpptyWithRetry } from './scrape-utils.js';
@@ -53,10 +55,61 @@ function extractSourceFromUrl(url) {
  * @param {string} params.deliveryType - Delivery type
  * @returns {Object} The message object ready for SQS
  */
-function createMystiqueMessage({
+/**
+ * Creates a message to send directly to Mystique (legacy flow)
+ * Used for issue types not in the code fix list
+ * @param {Object} params - Message parameters
+ * @param {string} params.url - The page URL
+ * @param {Array} params.issuesList - List of accessibility issues
+ * @param {Object} params.opportunity - The opportunity object
+ * @param {string} params.siteId - Site identifier
+ * @param {string} params.auditId - Audit identifier
+ * @param {string} params.deliveryType - Delivery type
+ * @returns {Object} The message to send directly to Mystique
+ */
+function createDirectMystiqueMessage({
   url,
   issuesList,
   opportunity,
+  siteId,
+  auditId,
+  deliveryType,
+  aggregationKey,
+}) {
+  return {
+    type: 'guidance:accessibility-remediation',
+    siteId: siteId || '',
+    auditId: auditId || '',
+    deliveryType,
+    time: new Date().toISOString(),
+    aggregationKey,
+    data: {
+      url,
+      opportunityId: opportunity.getId(),
+      issuesList,
+    },
+  };
+}
+
+/**
+ * Creates a message payload to be forwarded to Mystique for accessibility remediation
+ * with code injection (new flow via import worker)
+ * Note: codeBucket and codePath will be added by spacecat-import-worker based on siteId
+ * @param {Object} params - Message parameters
+ * @param {string} params.url - The page URL
+ * @param {Array} params.issuesList - List of accessibility issues
+ * @param {Object} params.opportunity - The opportunity object
+ * @param {string} params.aggregationKey - Aggregation key that identifies suggestion group
+ * @param {string} params.siteId - Site identifier
+ * @param {string} params.auditId - Audit identifier
+ * @param {string} params.deliveryType - Delivery type
+ * @returns {Object} The message payload for import worker to forward
+ */
+function createMystiqueForwardPayload({
+  url,
+  issuesList,
+  opportunity,
+  aggregationKey,
   siteId,
   auditId,
   deliveryType,
@@ -67,6 +120,7 @@ function createMystiqueMessage({
     auditId: auditId || '',
     deliveryType,
     time: new Date().toISOString(),
+    aggregationKey,
     data: {
       url,
       opportunityId: opportunity.getId(),
@@ -76,7 +130,20 @@ function createMystiqueMessage({
 }
 
 /**
- * Sends a single message to Mystique for a specific issue type
+ * Determines if all issues in the list should use the code fix flow
+ * @param {Array} issuesList - List of issues
+ * @returns {boolean} True if all issues should get code fix
+ */
+export function shouldUseCodeFixFlow(issuesList) {
+  if (!isNonEmptyArray(issuesList)) {
+    return false;
+  }
+  // Check if all issues in the list are in the code fix types
+  return issuesList.every((issue) => issueTypesForCodeFix.includes(issue.issueName));
+}
+
+/**
+ * Sends a message to Mystique for accessibility remediation directly or via import worker
  *
  * @param {Object} params - Parameters for sending the message
  * @param {Object} params.suggestion - The suggestion object
@@ -90,6 +157,9 @@ function createMystiqueMessage({
  * @param {Object} params.sqs - SQS client
  * @param {Object} params.env - Environment variables
  * @param {Object} params.log - Logger instance
+ * @param {Object} params.context - Audit context
+ * @param {boolean} [params.useCodeFixFlow] - Whether to use code fix flow
+ *   (determined automatically if not provided)
  * @returns {Promise<Object>} Result object with success status and details
  */
 async function sendMystiqueMessage({
@@ -99,23 +169,44 @@ async function sendMystiqueMessage({
   siteId,
   auditId,
   deliveryType,
+  aggregationKey,
   sqs,
   env,
   log,
+  context,
+  useCodeFixFlow: useCodeFixFlowParam,
 }) {
-  const message = createMystiqueMessage({
+  // Determine useCodeFixFlow if not provided
+  let useCodeFixFlow = useCodeFixFlowParam;
+  if (useCodeFixFlow === undefined && context) {
+    const autoFixEnabled = await isAuditEnabledForSite('a11y-mystique-auto-fix', context.site, context);
+    useCodeFixFlow = autoFixEnabled && shouldUseCodeFixFlow(issuesList);
+  }
+
+  // Create base message
+  const message = createDirectMystiqueMessage({
     url,
     issuesList,
     opportunity,
     siteId,
     auditId,
     deliveryType,
+    aggregationKey,
   });
+
+  // If code fix flow is enabled, add code info to the message
+  if (useCodeFixFlow && context) {
+    const codeInfo = await getCodeInfo(context.site, 'accessibility', context);
+    if (codeInfo?.codeBucket && codeInfo?.codePath) {
+      message.data.codeBucket = codeInfo.codeBucket;
+      message.data.codePath = codeInfo.codePath;
+    }
+  }
 
   try {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info(
-      `[A11yIndividual] Sent message to Mystique for url ${url}: ${JSON.stringify(message, null, 2)}`,
+      `[A11yIndividual] Sent message to Mystique ${useCodeFixFlow ? '(with code info) ' : ''}for url ${url}`,
     );
     return {
       success: true,
@@ -123,7 +214,7 @@ async function sendMystiqueMessage({
     };
   } catch (error) {
     log.error(
-      `[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url ${url}, message: ${JSON.stringify(message, null, 2)} with error: ${error.message}`,
+      `[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url ${url} with error: ${error.message}`,
     );
     return {
       success: false,
@@ -261,12 +352,15 @@ export function formatIssue(type, issueData, severity) {
  * Only includes issues that are in our tracked categories (from accessibilityOpportunitiesMap)
  * and only includes URLs that have at least one issue.
  *
+ * Uses aggregation strategies to control how HTML elements are grouped into suggestions.
+ *
  * @param {Object} accessibilityData - The accessibility data to process
  * @param {Object} accessibilityData.overall - Site-wide summary data
  * @param {Object} accessibilityData[url] - Per-URL accessibility data
+ * @param {Object} opportunitiesMap - Map of opportunity types to issue types
  * @returns {Object} Object with data array containing URLs and their issues
  */
-export function aggregateAccessibilityIssues(
+export function aggregateA11yIssuesByOppType(
   accessibilityData,
   opportunitiesMap = accessibilityOpportunitiesMap,
 ) {
@@ -397,27 +491,19 @@ export async function createIndividualOpportunitySuggestions(
   aggregatedData,
   context,
   log,
+  scrapedUrls,
 ) {
-  // Build unique key for each suggestion based on URL,
-  // issue type and target - single issue per data item
-  const buildKey = (data) => {
-    const issues = data.issues || [];
-    if (issues.length === 0) {
-      return data.url;
-    }
-    let key = `${data.url}|${issues[0].type}|${issues[0]?.htmlWithIssues[0]?.target_selector || ''}`;
-    if (data.source) {
-      key += `|${data.source}`;
-    }
-    return key;
-  };
+  log.info(`[A11yIndividual] ${aggregatedData.data.length} issues aggregated for opportunity ${opportunity.getId()}`);
+
+  // Convert scraped URLs to a Set for efficient lookup
+  const scrapedUrlsSet = new Set(scrapedUrls);
 
   try {
     await syncSuggestions({
       opportunity,
       newData: aggregatedData.data,
       context,
-      buildKey,
+      buildKey: buildSuggestionKey,
       // Map each URL's data to a suggestion format
       mapNewSuggestion: (urlData) => ({
         opportunityId: opportunity.getId(),
@@ -425,15 +511,13 @@ export async function createIndividualOpportunitySuggestions(
         // Rank by total occurrences across all issues for this URL
         rank: urlData.issues.reduce((total, issue) => total + issue.occurrences, 0),
         data: {
-          url: urlData.url,
-          type: urlData.type,
-          issues: urlData.issues, // Array of formatted accessibility issues
-          ...(urlData.source && { source: urlData.source }),
+          ...urlData,
           jiraLink: '',
         },
       }),
       mergeDataFunction: keepSameDataFunction,
       statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
+      scrapedUrlsSet,
     });
 
     return { success: true };
@@ -491,11 +575,34 @@ export async function sendMessageToMystiqueForRemediation(
       const suggestionData = suggestion.getData();
       const issueTypes = suggestionData.issues
         ? suggestionData.issues.map((issue) => issue.type) : [];
-      log.debug(`[A11yIndividual] Suggestion ${index}: URL=${suggestionData.url}, Issues=[${issueTypes.join(', ')}]`);
+      // Log the database key (INDIVIDUAL level) for each suggestion
+      const databaseKey = buildSuggestionKey(suggestionData);
+      log.debug(`[A11yIndividual] Suggestion ${index}: URL=${suggestionData.url}, DatabaseKey=${databaseKey}, Issues=[${issueTypes.join(', ')}]`);
     });
 
+    // Determine if code fix flow should be used
+    const autoFixEnabled = await isAuditEnabledForSite('a11y-mystique-auto-fix', context.site, context);
+    let hasCodeFixEligibleIssues = false;
+    if (autoFixEnabled) {
+      for (const suggestion of suggestions) {
+        const suggestionData = suggestion.getData();
+        if (isNonEmptyArray(suggestionData.issues)) {
+          const eligibleIssues = suggestionData.issues
+            .filter((issue) => issueTypesForCodeFix.includes(issue.type))
+            .filter((issue) => isNonEmptyArray(issue.htmlWithIssues));
+          if (eligibleIssues.length > 0) {
+            hasCodeFixEligibleIssues = true;
+            break;
+          }
+        }
+      }
+    }
+    const useCodeFixFlow = autoFixEnabled && hasCodeFixEligibleIssues;
+    log.debug(`[A11yIndividual] Code fix flow enabled: ${autoFixEnabled}, has eligible issues: ${hasCodeFixEligibleIssues}, using code fix flow: ${useCodeFixFlow}`);
+
     // Process the suggestions directly to create Mystique messages
-    const mystiqueData = processSuggestionsForMystique(suggestions);
+    // Pass useCodeFixFlow to determine aggregation strategy
+    const mystiqueData = processSuggestionsForMystique(suggestions, useCodeFixFlow);
 
     log.debug(`[A11yIndividual] Mystique data processed: ${mystiqueData.length} messages to send`);
 
@@ -510,10 +617,10 @@ export async function sendMessageToMystiqueForRemediation(
       return { success: false, error: 'Missing SQS context or queue configuration' };
     }
 
-    log.debug(`[A11yIndividual] Sending ${mystiqueData.length} messages to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+    log.info(`[A11yIndividual] Sending ${mystiqueData.length} messages to Mystique (via ${useCodeFixFlow ? 'code fix' : 'legacy'} flow)`);
 
     const messagePromises = mystiqueData.map(({
-      url, issuesList,
+      url, issuesList, aggregationKey,
     }) => sendMystiqueMessage({
       url,
       issuesList,
@@ -521,9 +628,12 @@ export async function sendMessageToMystiqueForRemediation(
       siteId,
       auditId,
       deliveryType,
+      aggregationKey,
       sqs,
       env,
       log,
+      context,
+      useCodeFixFlow,
     }));
     // Wait for all messages to be sent (successfully or with errors)
     const results = await Promise.allSettled(messagePromises);
@@ -638,8 +748,12 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
     site, log,
   } = context;
 
+  log.info(`[A11yIndividual] Creating accessibility opportunities for ${site.getBaseURL()}`);
+  const scrapedUrls = Object.keys(accessibilityData).filter((key) => key !== 'overall');
+  log.info(`[A11yIndividual] ${scrapedUrls.length} URLs scraped in audit.`);
+
   // Step 1: Aggregate accessibility issues by URL
-  const aggregatedData = aggregateAccessibilityIssues(accessibilityData);
+  const aggregatedData = aggregateA11yIssuesByOppType(accessibilityData);
   log.debug(`[A11yIndividual] Aggregated data: ${JSON.stringify(aggregatedData, null, 2)}`);
 
   // Early return if no actionable issues found
@@ -709,6 +823,7 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
             typeSpecificData,
             context,
             log,
+            scrapedUrls,
           );
 
           // Step 4: Send messages to Mystique for remediation
@@ -985,4 +1100,8 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
 }
 
 // Export these for testing
-export { createMystiqueMessage, sendMystiqueMessage };
+export {
+  createDirectMystiqueMessage,
+  sendMystiqueMessage,
+  createMystiqueForwardPayload,
+};
