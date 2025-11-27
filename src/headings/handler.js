@@ -87,6 +87,158 @@ export function getTextContent(element, $) {
   return $(element).text().trim();
 }
 
+/**
+ * Get surrounding text content before and after a heading
+ * @param {Element} heading - The heading element
+ * @param {number} charLimit - Maximum characters to extract in each direction
+ * @returns {Object} Object with before and after text
+ */
+function getSurroundingText(heading, charLimit = 150) {
+  // Text AFTER the heading
+  let afterText = '';
+  let nextSibling = heading.nextElementSibling;
+
+  while (nextSibling && afterText.length < charLimit) {
+    const text = getTextContent(nextSibling);
+    if (text) {
+      afterText += `${text} `;
+      if (afterText.length >= charLimit) break;
+    }
+    nextSibling = nextSibling.nextElementSibling;
+  }
+
+  // Text BEFORE the heading
+  let beforeText = '';
+  let prevSibling = heading.previousElementSibling;
+
+  while (prevSibling && beforeText.length < charLimit) {
+    const text = getTextContent(prevSibling);
+    if (text) {
+      beforeText = `${text} ${beforeText}`;
+      if (beforeText.length >= charLimit) break;
+    }
+    prevSibling = prevSibling.previousElementSibling;
+  }
+
+  return {
+    before: beforeText.trim().slice(-charLimit), // Last N chars
+    after: afterText.trim().slice(0, charLimit), // First N chars
+  };
+}
+
+/**
+ * Get information about the content structure that follows a heading
+ * @param {Element} heading - The heading element
+ * @returns {Object} Information about following content
+ */
+function getFollowingStructure(heading) {
+  const nextElement = heading.nextElementSibling;
+
+  if (!nextElement) {
+    return {
+      isEmpty: true,
+      firstElement: null,
+      firstText: '',
+    };
+  }
+
+  const tagName = nextElement.tagName.toLowerCase();
+
+  return {
+    isEmpty: false,
+    firstElement: tagName,
+    hasImages: nextElement.querySelectorAll('img').length > 0,
+    hasLinks: nextElement.querySelectorAll('a').length > 0,
+    isList: ['ul', 'ol'].includes(tagName),
+    firstText: getTextContent(nextElement).slice(0, 100),
+  };
+}
+
+/**
+ * Find the nearest semantic parent element and preceding heading for context
+ * @param {Element} heading - The heading element
+ * @param {Array<Element>} allHeadings - Array of all heading elements on the page
+ * @param {number} currentIndex - Index of the current heading in allHeadings array
+ * @returns {Object} Parent section context with semantic tag info and preceding heading
+ */
+function getParentSectionContext(heading, allHeadings, currentIndex) {
+  const semanticTags = ['article', 'section', 'aside', 'nav', 'main', 'header', 'footer'];
+  const currentLevel = getHeadingLevel(heading.tagName);
+  let current = heading.parentElement;
+  let parentContext = null;
+  let precedingHeading = null;
+
+  // Find nearest semantic parent
+  while (current && current.tagName.toLowerCase() !== 'body') {
+    const tagName = current.tagName.toLowerCase();
+
+    if (semanticTags.includes(tagName) && !parentContext) {
+      parentContext = {
+        parentTag: tagName,
+        parentClasses: current.className
+          ? current.className.trim().split(/\s+/).filter(Boolean).slice(0, 2)
+          : [],
+        parentId: current.id || null,
+      };
+    }
+
+    current = current.parentElement;
+  }
+
+  // Find preceding higher-level heading (walk backwards using provided array)
+  for (let i = currentIndex - 1; i >= 0; i -= 1) {
+    const prevHeading = allHeadings[i];
+    const level = getHeadingLevel(prevHeading.tagName);
+
+    if (level < currentLevel) {
+      const text = getTextContent(prevHeading);
+      if (text) {
+        precedingHeading = {
+          level: prevHeading.tagName.toLowerCase(),
+          text: text.slice(0, 100), // Limit to 100 chars
+        };
+        break;
+      }
+    }
+  }
+
+  // Fallback if no semantic parent found
+  if (!parentContext && heading.parentElement) {
+    parentContext = {
+      parentTag: heading.parentElement.tagName.toLowerCase(),
+      parentClasses: heading.parentElement.className
+        ? heading.parentElement.className.trim().split(/\s+/).filter(Boolean).slice(0, 2)
+        : [],
+      parentId: heading.parentElement.id || null,
+    };
+  }
+
+  return {
+    ...parentContext,
+    precedingHeading,
+  };
+}
+
+/**
+ * Get comprehensive context for a heading element to enable better AI suggestions
+ * Includes surrounding text, following structure, and parent section context
+ * @param {Element} heading - The heading element
+ * @param {Document} document - The JSDOM document
+ * @param {Array<Element>} allHeadings - Array of all heading elements on the page
+ * @param {number} currentIndex - Index of the current heading in allHeadings array
+ * @returns {Object} Complete heading context
+ */
+function getHeadingContext(heading, document, allHeadings, currentIndex) {
+  return {
+    // Tier 1: Essential context
+    surroundingText: getSurroundingText(heading, 150),
+    followingStructure: getFollowingStructure(heading),
+
+    // Tier 2: Valuable context
+    parentSection: getParentSectionContext(heading, allHeadings, currentIndex),
+  };
+}
+
 function getScrapeJsonPath(url, siteId) {
   const pathname = new URL(url).pathname.replace(/\/$/, '');
   return `scrapes/${siteId}${pathname}/scrape.json`;
@@ -178,18 +330,32 @@ export function getHeadingSelector(heading) {
   return pathParts.join(' > ');
 }
 
-export async function getH1HeadingASuggestion(url, log, pageTags, context, brandGuidelines) {
+export async function getH1HeadingASuggestion(
+  url,
+  log,
+  tagName,
+  pageTags,
+  context,
+  brandGuidelines,
+  headingContext = null,
+) {
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
+  const promptData = {
+    finalUrl: pageTags?.finalUrl || '',
+    title: pageTags?.title || '',
+    h1: pageTags?.h1 || '',
+    description: pageTags?.description || '',
+    lang: pageTags?.lang || 'en',
+    brandGuidelines: brandGuidelines || '',
+    max_char: H1_LENGTH_CHARS,
+    tagName: tagName || 'h1',
+    surroundingText: headingContext?.surroundingText || { before: '', after: '' },
+    followingStructure: headingContext?.followingStructure || {},
+    parentSection: headingContext?.parentSection || {},
+  };
+
   const prompt = await getPrompt(
-    {
-      finalUrl: pageTags?.finalUrl || '',
-      title: pageTags?.title || '',
-      h1: pageTags?.h1 || '',
-      description: pageTags?.description || '',
-      lang: pageTags?.lang || 'en',
-      brandGuidelines: brandGuidelines || '',
-      max_char: H1_LENGTH_CHARS,
-    },
+    promptData,
     'heading-empty-suggestion',
     log,
   );
@@ -322,13 +488,20 @@ export async function validatePageHeadingFromScrapeJson(
       });
     }
 
+<<<<<<< HEAD
     const headingChecks = headings.map(async (heading) => {
       const tagName = $(heading).prop('tagName');
       if (tagName !== 'H1') {
         const text = getTextContent(heading, $);
+=======
+    const headingChecks = headings.map(async (heading, index) => {
+      if (heading.tagName !== 'H1') {
+        const text = getTextContent(heading);
+>>>>>>> d8ab8b8c (fix: adding empty headings)
         if (text.length === 0) {
           log.info(`Empty heading detected (${tagName}) at ${url}`);
           const headingSelector = getHeadingSelector(heading);
+          const headingContext = getHeadingContext(heading, document, headings, index);
           return {
             check: HEADINGS_CHECKS.HEADING_EMPTY.check,
             checkTitle: HEADINGS_CHECKS.HEADING_EMPTY.title,
@@ -344,6 +517,7 @@ export async function validatePageHeadingFromScrapeJson(
             },
             tagName,
             pageTags,
+            headingContext,
           };
         }
       }
@@ -517,9 +691,11 @@ export async function headingsAuditRunner(baseURL, context, site) {
                 aiSuggestion = await getH1HeadingASuggestion(
                   url,
                   log,
+                  check.tagName,
                   check.pageTags,
                   context,
                   brandGuidelines,
+                  check.headingContext || null,
                 );
               } catch (error) {
                 log.error(`[Headings AI Suggestions] Error generating AI suggestion for ${url}: ${error.message}`);
