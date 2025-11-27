@@ -173,7 +173,6 @@ async function addSuggestions(
 
     // If URL is not in sources, should not optimize
     if (!urlInSources) {
-      log.info(`[FAQ] URL ${suggestion.url} not found in sources, will not optimize`);
       return {
         ...suggestion,
         shouldOptimize: false,

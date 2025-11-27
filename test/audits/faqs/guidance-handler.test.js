@@ -884,9 +884,6 @@ describe('FAQs guidance handler', () => {
     
     // Should set shouldOptimize to false because URL is not in sources
     expect(newData[0].shouldOptimize).to.equal(false);
-    expect(log.info).to.have.been.calledWith(
-      sinon.match(/URL https:\/\/www\.adobe\.com\/products\/photoshop not found in sources/),
-    );
   });
 
   it('should proceed with analysis when URL is in sources', async () => {
@@ -942,9 +939,6 @@ describe('FAQs guidance handler', () => {
     // Should proceed with analysis and set shouldOptimize based on FAQ heading check
     expect(newData[0].shouldOptimize).to.equal(true);
     expect(newData[0].transformRules.selector).to.equal('main');
-    expect(log.info).not.to.have.been.calledWith(
-      sinon.match(/not found in sources/),
-    );
   });
 
   it('should handle sources as plain strings', async () => {
@@ -1040,9 +1034,6 @@ describe('FAQs guidance handler', () => {
     
     // Should set shouldOptimize to false because URL is not in empty sources
     expect(newData[0].shouldOptimize).to.equal(false);
-    expect(log.info).to.have.been.calledWith(
-      sinon.match(/URL https:\/\/www\.adobe\.com\/products\/photoshop not found in sources/),
-    );
   });
 
   it('should handle missing item property in suggestion', async () => {
