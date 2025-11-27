@@ -26,7 +26,6 @@ import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
 import lhsDesktop from './lhs/handler-desktop.js';
 import lhsMobile from './lhs/handler-mobile.js';
-import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
 import sitemapProductCoverage from './sitemap-product-coverage/handler.js';
 import redirectChains from './redirect-chains/handler.js';
@@ -36,8 +35,6 @@ import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
 import brokenLinksGuidance from './broken-links-guidance/guidance-handler.js';
 import internalLinks from './internal-links/handler.js';
-import experimentation from './experimentation/handler.js';
-import conversion from './conversion/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
 import experimentationOpportunities from './experimentation-opportunities/handler.js';
@@ -108,7 +105,6 @@ const HANDLERS = {
   cwv,
   'lhs-mobile': lhsMobile,
   'lhs-desktop': lhsDesktop,
-  404: notfound,
   sitemap,
   'sitemap-product-coverage': sitemapProductCoverage,
   'redirect-chains': redirectChains,
@@ -120,8 +116,6 @@ const HANDLERS = {
   canonical,
   'broken-backlinks': backlinks,
   'broken-internal-links': internalLinks,
-  experimentation,
-  conversion,
   'experimentation-ess-daily': essExperimentationDaily,
   'experimentation-ess-all': essExperimentationAll,
   'experimentation-opportunities': experimentationOpportunities,
