@@ -12,8 +12,13 @@
 
 /* eslint-env mocha */
 
-import { expect } from 'chai';
+import { expect, use } from 'chai';
+import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import esmock from 'esmock';
 import { getJsonFaqSuggestion } from '../../../src/faqs/utils.js';
+
+use(sinonChai);
 
 describe('FAQ Utils', () => {
   describe('getJsonFaqSuggestion', () => {
@@ -425,6 +430,224 @@ describe('FAQ Utils', () => {
       // Timestamp should be between before and after
       expect(suggestions[0].item.scrapedAt >= beforeTime).to.be.true;
       expect(suggestions[0].item.scrapedAt <= afterTime).to.be.true;
+    });
+  });
+
+  describe('validateContentAI', () => {
+    let sandbox;
+    let mockContentAIClient;
+    let validateContentAI;
+    let context;
+    let site;
+
+    beforeEach(async () => {
+      sandbox = sinon.createSandbox();
+
+      context = {
+        log: {
+          info: sandbox.stub(),
+          warn: sandbox.stub(),
+          error: sandbox.stub(),
+        },
+        env: {
+          CONTENTAI_ENDPOINT: 'https://contentai-api.adobe.io',
+          CONTENTAI_IMS_HOST: 'ims-na1.adobelogin.com',
+          CONTENTAI_IMS_CLIENT_ID: 'test-client-id',
+          CONTENTAI_IMS_CLIENT_SECRET: 'test-client-secret',
+          CONTENTAI_IMS_TECHNICAL_ACCOUNT_ID: 'test-technical-account-id',
+        },
+      };
+
+      site = {
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+        getId: sandbox.stub().returns('site-123'),
+        getConfig: sandbox.stub().returns(null),
+      };
+
+      mockContentAIClient = {
+        initialize: sandbox.stub().resolves(),
+        getConfigurationForSite: sandbox.stub(),
+        runSemanticSearch: sandbox.stub(),
+      };
+
+      const utils = await esmock('../../../src/faqs/utils.js', {
+        '../../../src/utils/content-ai.js': {
+          ContentAIClient: sandbox.stub().returns(mockContentAIClient),
+        },
+      });
+
+      validateContentAI = utils.validateContentAI;
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('should return valid result when configuration exists and search works', async () => {
+      mockContentAIClient.getConfigurationForSite.resolves({
+        uid: 'config-uid-123',
+        steps: [
+          { type: 'index', name: 'test-index' },
+          { type: 'generative', prompt: 'test-prompt' },
+        ],
+      });
+      mockContentAIClient.runSemanticSearch.resolves({ ok: true, status: 200 });
+
+      const result = await validateContentAI(site, context);
+
+      expect(result).to.deep.equal({
+        uid: 'config-uid-123',
+        indexName: 'test-index',
+        genSearchEnabled: true,
+        isWorking: true,
+      });
+      expect(context.log.info).to.have.been.calledWith('[ContentAI] Found configuration with UID: config-uid-123, index name: test-index');
+      expect(context.log.info).to.have.been.calledWith('[ContentAI] Search endpoint validation: 200 (working)');
+    });
+
+    it('should return false for genSearchEnabled when generative step is empty', async () => {
+      mockContentAIClient.getConfigurationForSite.resolves({
+        uid: 'config-uid-123',
+        steps: [
+          { type: 'index', name: 'test-index' },
+          { type: 'generative' }, // Empty generative step
+        ],
+      });
+      mockContentAIClient.runSemanticSearch.resolves({ ok: true, status: 200 });
+
+      const result = await validateContentAI(site, context);
+
+      expect(result.genSearchEnabled).to.be.false;
+    });
+
+    it('should return false for genSearchEnabled when no generative step exists', async () => {
+      mockContentAIClient.getConfigurationForSite.resolves({
+        uid: 'config-uid-123',
+        steps: [
+          { type: 'index', name: 'test-index' },
+        ],
+      });
+      mockContentAIClient.runSemanticSearch.resolves({ ok: true, status: 200 });
+
+      const result = await validateContentAI(site, context);
+
+      expect(result.genSearchEnabled).to.be.false;
+    });
+
+    it('should return false for isWorking when search fails', async () => {
+      mockContentAIClient.getConfigurationForSite.resolves({
+        uid: 'config-uid-123',
+        steps: [
+          { type: 'index', name: 'test-index' },
+        ],
+      });
+      mockContentAIClient.runSemanticSearch.resolves({ ok: false, status: 500 });
+
+      const result = await validateContentAI(site, context);
+
+      expect(result.isWorking).to.be.false;
+      expect(context.log.info).to.have.been.calledWith('[ContentAI] Search endpoint validation: 500 (not working)');
+    });
+
+    it('should return null values when no configuration exists', async () => {
+      mockContentAIClient.getConfigurationForSite.resolves(null);
+
+      const result = await validateContentAI(site, context);
+
+      expect(result).to.deep.equal({
+        uid: null,
+        indexName: null,
+        genSearchEnabled: false,
+        isWorking: false,
+      });
+      expect(context.log.warn).to.have.been.calledWith('[ContentAI] No configuration found for site https://example.com');
+    });
+
+    it('should return null indexName when no index step exists', async () => {
+      mockContentAIClient.getConfigurationForSite.resolves({
+        uid: 'config-uid-123',
+        steps: [
+          { type: 'generative', prompt: 'test-prompt' },
+        ],
+      });
+
+      const result = await validateContentAI(site, context);
+
+      expect(result).to.deep.equal({
+        uid: 'config-uid-123',
+        indexName: null,
+        genSearchEnabled: false,
+        isWorking: false,
+      });
+      expect(context.log.warn).to.have.been.calledWith('[ContentAI] No index name found in configuration for site https://example.com');
+    });
+
+    it('should handle configuration with no steps array', async () => {
+      mockContentAIClient.getConfigurationForSite.resolves({
+        uid: 'config-uid-123',
+        // No steps
+      });
+
+      const result = await validateContentAI(site, context);
+
+      expect(result).to.deep.equal({
+        uid: 'config-uid-123',
+        indexName: null,
+        genSearchEnabled: false,
+        isWorking: false,
+      });
+    });
+
+    it('should handle errors and return null values', async () => {
+      mockContentAIClient.initialize.rejects(new Error('Initialization failed'));
+
+      const result = await validateContentAI(site, context);
+
+      expect(result).to.deep.equal({
+        uid: null,
+        indexName: null,
+        genSearchEnabled: false,
+        isWorking: false,
+      });
+      expect(context.log.error).to.have.been.calledWith('[ContentAI] Validation failed: Initialization failed');
+    });
+
+    it('should handle configuration with no uid', async () => {
+      mockContentAIClient.getConfigurationForSite.resolves({
+        // No uid
+        steps: [
+          { type: 'index', name: 'test-index' },
+        ],
+      });
+      mockContentAIClient.runSemanticSearch.resolves({ ok: true, status: 200 });
+
+      const result = await validateContentAI(site, context);
+
+      expect(result.uid).to.be.null;
+      expect(result.indexName).to.equal('test-index');
+    });
+
+    it('should call runSemanticSearch with correct parameters', async () => {
+      mockContentAIClient.getConfigurationForSite.resolves({
+        uid: 'config-uid-123',
+        steps: [
+          { type: 'index', name: 'test-index' },
+        ],
+      });
+      mockContentAIClient.runSemanticSearch.resolves({ ok: true, status: 200 });
+
+      await validateContentAI(site, context);
+
+      expect(mockContentAIClient.runSemanticSearch).to.have.been.calledWith(
+        'website',
+        'vector',
+        'test-index',
+        {
+          numCandidates: 3,
+          boost: 1,
+        },
+        1,
+      );
     });
   });
 });
