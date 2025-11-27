@@ -40,6 +40,8 @@ async function addScreenshots(context, siteId, markdown, jobId) {
     { key: 'DESKTOP_BANNER_OFF_URL', variant: 'screenshot-desktop-viewport-withoutBanner' },
     { key: 'MOBILE_BANNER_ON_URL', variant: 'screenshot-iphone-13-viewport-withBanner' },
     { key: 'MOBILE_BANNER_OFF_URL', variant: 'screenshot-iphone-13-viewport-withoutBanner' },
+    { key: 'MOBILE_BANNER_SUGGESTION', variant: 'mobile-suggested' },
+    { key: 'DESKTOP_BANNER_SUGGESTION', variant: 'desktop-suggested' },
   ];
 
   const scrapeClient = ScrapeClient.createFrom(context);
@@ -146,12 +148,22 @@ export async function mapToPaidSuggestion(context, siteId, opportunityId, url, p
           pageUrl: url,
         },
       ],
-      suggestionValue: await addScreenshots(
+      mobile: await addScreenshots(
         context,
         siteId,
-        pageGuidance.body.markdown,
+        pageGuidance.body.data?.mobile, // pageGuidance.body.markdown,
         pageGuidance.metadata.scrape_job_id,
       ),
+      desktop: await addScreenshots(
+        context,
+        siteId,
+        pageGuidance.body.data?.desktop, // pageGuidance.body.markdown,
+        pageGuidance.metadata.scrape_job_id,
+      ),
+      impact: {
+        business: pageGuidance.body.data?.impact?.business,
+        user: pageGuidance.body.data?.impact?.user,
+      },
     },
   };
 }
