@@ -1,3 +1,10 @@
+## [1.258.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.258.1...v1.258.2) (2025-11-28)
+
+
+### Bug Fixes
+
+* handle undefined progress in bulk publish status check ([#1694](https://github.com/adobe/spacecat-audit-worker/issues/1694)) ([1711ead](https://github.com/adobe/spacecat-audit-worker/commit/1711eade5aae6bb404bd3d28a6cc349688d33bbe))
+
 ## [1.258.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.258.0...v1.258.1) (2025-11-28)
 
 
