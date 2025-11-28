@@ -261,7 +261,7 @@ async function runBulkJob(route, operation, paths, log) {
     // eslint-disable-next-line no-await-in-loop
     const status = await statusRes.json();
     const { state, progress } = status;
-    log.info(`%s: ${operation} status: ${state} - ${progress.success} success, ${progress.failed} failed for job URL: ${jobUrl}`, AUDIT_NAME);
+    log.info(`%s: ${operation} status: ${state} - ${progress?.success ?? 0} success, ${progress?.failed ?? 0} failed for job URL: ${jobUrl}`, AUDIT_NAME);
     if (state === 'stopped') return;
   }
   throw new Error(`${operation} timeout for job URL: ${jobUrl}`);
