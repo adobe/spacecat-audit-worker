@@ -41,117 +41,168 @@ describe('Paid Cookie Consent opportunity mapper', () => {
   });
   it('handles plain markdown string with requiresValidation=true', async () => {
     const body = 'Simple markdown';
-    const context = { 
-      env: {}, 
-      dataAccess: { 
-        Suggestion: { 
+    const context = {
+      env: {},
+      dataAccess: {
+        Suggestion: {
           STATUSES: SuggestionDataAccess.STATUSES,
           TYPES: SuggestionDataAccess.TYPES,
-        } 
-      }, 
-      site: { requiresValidation: true } 
+        }
+      },
+      site: { requiresValidation: true }
     };
-    const guidance = { body: { markdown: body }, metadata: { scrape_job_id: 'test-job' } };
+    const guidance = { body: { data: {
+        mobile: 'mobile markdown',
+        desktop: 'desktop markdown',
+        impact: {
+          business: 'business markdown',
+          user: 'user markdown',
+        },
+    }, }, metadata: { scrape_job_id: 'test-job' } };
     const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
-    expect(result.data.suggestionValue).to.include('Simple markdown');
+    expect(result.data.mobile).to.include('mobile markdown');
+    expect(result.data.desktop).to.include('desktop markdown');
+    expect(result.data.impact.business).to.include('business markdown');
+    expect(result.data.impact.user).to.include('user markdown');
     expect(result.status).to.equal('PENDING_VALIDATION');
   });
-  
+
   it('handles plain markdown string with requiresValidation=false', async () => {
     const body = 'Simple markdown';
-    const context = { 
-      env: {}, 
-      dataAccess: { 
-        Suggestion: { 
+    const context = {
+      env: {},
+      dataAccess: {
+        Suggestion: {
           STATUSES: SuggestionDataAccess.STATUSES,
           TYPES: SuggestionDataAccess.TYPES,
-        } 
-      }, 
-      site: { requiresValidation: false } 
+        }
+      },
+      site: { requiresValidation: false }
     };
-    const guidance = { body: { markdown: body }, metadata: { scrape_job_id: 'test-job' } };
+    const guidance = { body: { data: {
+        mobile: 'mobile markdown',
+        desktop: 'desktop markdown',
+        impact: {
+          business: 'business markdown',
+          user: 'user markdown',
+        },
+    }, }, metadata: { scrape_job_id: 'test-job' } };
     const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
-    expect(result.data.suggestionValue).to.include('Simple markdown');
+    expect(result.data.mobile).to.include('mobile markdown');
+    expect(result.data.desktop).to.include('desktop markdown');
+    expect(result.data.impact.business).to.include('business markdown');
+    expect(result.data.impact.user).to.include('user markdown');
     expect(result.status).to.equal('NEW');
   });
 
   it('handles plain markdown string with double-escaped newlines', async () => {
     const body = 'Line1\\nLine2\\nLine3';
-    const context = { 
-      env: {}, 
-      dataAccess: { 
-        Suggestion: { 
+    const context = {
+      env: {},
+      dataAccess: {
+        Suggestion: {
           STATUSES: SuggestionDataAccess.STATUSES,
           TYPES: SuggestionDataAccess.TYPES,
-        } 
-      }, 
-      site: { requiresValidation: true } 
+        }
+      },
+      site: { requiresValidation: true }
     };
-    const guidance = { body: { markdown: body }, metadata: { scrape_job_id: 'test-job' } };
+    const guidance = { body: { data: {
+      mobile: 'mobile markdown',
+      desktop: 'desktop markdown',
+      impact: {
+        business: 'business markdown',
+        user: 'user markdown',
+      },
+    }, }, metadata: { scrape_job_id: 'test-job' } };
     const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
-    expect(result.data.suggestionValue).to.include(`Line1
-Line2
-Line3`);
+    expect(result.data.mobile).to.include('mobile markdown');
+    expect(result.data.desktop).to.include('desktop markdown');
+    expect(result.data.impact.business).to.include('business markdown');
+    expect(result.data.impact.user).to.include('user markdown');
     expect(result.status).to.equal('PENDING_VALIDATION');
   });
 
   it('handles serialized JSON body with markdown', async () => {
     const markdown = 'Markup with\nnewlines';
-    const context = { 
-      env: {}, 
-      dataAccess: { 
-        Suggestion: { 
+    const context = {
+      env: {},
+      dataAccess: {
+        Suggestion: {
           STATUSES: SuggestionDataAccess.STATUSES,
           TYPES: SuggestionDataAccess.TYPES,
-        } 
-      }, 
-      site: { requiresValidation: true } 
+        }
+      },
+      site: { requiresValidation: true }
     };
-    const guidance = { body: { markdown }, metadata: { scrape_job_id: 'test-job' } };
+    const guidance = { body: { data: {
+      mobile: markdown,
+      desktop: 'desktop markdown',
+      impact: {
+        business: 'business markdown',
+        user: 'user markdown',
+      },
+    }, }, metadata: { scrape_job_id: 'test-job' } };
     const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
-    expect(result.data.suggestionValue).to.include('Markup with\nnewlines');
+    expect(result.data.mobile).to.include('Markup with\nnewlines');
     expect(result.status).to.equal('PENDING_VALIDATION');
   });
 
   it('handles serialized JSON body with double-escaped newlines in markdown', async () => {
     const markdown = 'Markup with\\nnewlines';
-    const context = { 
-      env: {}, 
-      dataAccess: { 
-        Suggestion: { 
+    const context = {
+      env: {},
+      dataAccess: {
+        Suggestion: {
           STATUSES: SuggestionDataAccess.STATUSES,
           TYPES: SuggestionDataAccess.TYPES,
-        } 
-      }, 
-      site: { requiresValidation: false } 
+        }
+      },
+      site: { requiresValidation: false }
     };
-    const guidance = { body: { markdown }, metadata: { scrape_job_id: 'test-job' } };
+    const guidance = { body: { data: {
+      mobile: markdown,
+      desktop: 'desktop markdown',
+      impact: {
+        business: 'business markdown',
+        user: 'user markdown',
+      },
+    }, }, metadata: { scrape_job_id: 'test-job' } };
     const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
-    expect(result.data.suggestionValue).to.include(`Markup with
-newlines`);
+    expect(result.data.mobile).to.include('Markup with\nnewlines');
     expect(result.status).to.equal('NEW');
   });
 
   it('handles JSON object body directly', async () => {
-    const context = { 
-      env: {}, 
-      dataAccess: { 
-        Suggestion: { 
+    const context = {
+      env: {},
+      dataAccess: {
+        Suggestion: {
           STATUSES: SuggestionDataAccess.STATUSES,
           TYPES: SuggestionDataAccess.TYPES,
-        } 
-      }, 
-      site: { requiresValidation: true } 
+        }
+      },
+      site: { requiresValidation: true }
     };
     const guidance = {
       body: {
-        markdown: 'Direct JSON object markdown',
+        data: {
+          mobile: 'mobile markdown',
+          desktop: 'desktop markdown',
+          impact: {
+            business: 'business markdown',
+            user: 'user markdown',
+          },
+        },
         issueSeverity: 'high',
       },
       metadata: { scrape_job_id: 'test-job' },
     };
     const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
-    expect(result.data.suggestionValue).to.include('Direct JSON object markdown');
+    expect(result.data.mobile).to.include('mobile markdown');
+    expect(result.data.desktop).to.include('desktop markdown');
+    expect(result.data.impact.business).to.include('business markdown');
+    expect(result.data.impact.user).to.include('user markdown');
     expect(result.status).to.equal('PENDING_VALIDATION');
   });
 
