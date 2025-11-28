@@ -55,7 +55,7 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
       error: errorMsg,
     };
   }
-  log.info(`[A11yAudit] Step 1: Preparing content scrape for ${deviceType} accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
+  log.debug(`[A11yAudit] Step 1: Preparing content scrape for ${deviceType} accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
 
   let urlsToScrape = [];
   urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);

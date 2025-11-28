@@ -271,7 +271,7 @@ describe('Accessibility Audit Handler', () => {
       expect(result.fullAuditRef).to.equal(customFinalUrl);
     });
 
-    it('should log appropriate info message during execution', async () => {
+    it('should log appropriate debug message during execution', async () => {
       // Arrange
       const mockUrls = [
         { url: 'https://example.com/logging-test', urlId: 'example.com/logging-test', traffic: 150 },
@@ -282,7 +282,7 @@ describe('Accessibility Audit Handler', () => {
       await scrapeAccessibilityData(mockContext);
 
       // Assert
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         '[A11yAudit] Step 1: Preparing content scrape for desktop accessibility audit for https://example.com with siteId test-site-id',
       );
     });
