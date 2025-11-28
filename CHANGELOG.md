@@ -1,3 +1,10 @@
+## [1.260.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.260.3...v1.260.4) (2025-11-28)
+
+
+### Bug Fixes
+
+* import worker by explicitly call import worker with allow cache false ([#1705](https://github.com/adobe/spacecat-audit-worker/issues/1705)) ([e88f565](https://github.com/adobe/spacecat-audit-worker/commit/e88f56542b983e4284810782e393bd40bc79ccb4))
+
 ## [1.260.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.260.2...v1.260.3) (2025-11-28)
 
 
