@@ -1,3 +1,10 @@
+# [1.260.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.259.4...v1.260.0) (2025-11-28)
+
+
+### Features
+
+* add sources condition to auto optimize FAQs ([#1687](https://github.com/adobe/spacecat-audit-worker/issues/1687)) ([3788b95](https://github.com/adobe/spacecat-audit-worker/commit/3788b95f601274b72cce034a1636c9f9e88ea9bb))
+
 ## [1.259.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.259.3...v1.259.4) (2025-11-28)
 
 
