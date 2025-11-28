@@ -151,13 +151,13 @@ export async function mapToPaidSuggestion(context, siteId, opportunityId, url, p
       mobile: await addScreenshots(
         context,
         siteId,
-        pageGuidance.body.data?.mobile, // pageGuidance.body.markdown,
+        pageGuidance.body.data?.mobile,
         pageGuidance.metadata.scrape_job_id,
       ),
       desktop: await addScreenshots(
         context,
         siteId,
-        pageGuidance.body.data?.desktop, // pageGuidance.body.markdown,
+        pageGuidance.body.data?.desktop,
         pageGuidance.metadata.scrape_job_id,
       ),
       impact: {
