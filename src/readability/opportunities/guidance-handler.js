@@ -27,8 +27,11 @@ function enrichSuggestionDataForAutoOptimize(data) {
     url: data.pageUrl,
     scrapedAt: new Date(data.scrapedAt).toISOString(),
     transformRules: {
-      action: 'replace',
+      value: data.improvedText,
+      op: 'replace',
       selector: data.selector,
+      target: 'ai-bots',
+      prerenderRequired: true,
     },
   };
 }
