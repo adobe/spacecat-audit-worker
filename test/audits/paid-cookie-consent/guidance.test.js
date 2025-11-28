@@ -66,7 +66,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       error: sandbox.stub(),
       warn: sandbox.stub(),
     };
-    Suggestion = { 
+    Suggestion = {
       create: sandbox.stub().resolves(),
       STATUSES: SuggestionDataAccess.STATUSES,
       TYPES: SuggestionDataAccess.TYPES,
@@ -136,7 +136,16 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
     const guidance = [{
-      body: { markdown: 'plain\nmarkdown' },
+      body: {
+        data: {
+          mobile: 'mobile markdown',
+          desktop: 'desktop markdown',
+          impact: {
+            business: 'business markdown',
+            user: 'user markdown',
+          },
+        },
+      },
       insight: 'insight',
       rationale: 'rationale',
       recommendation: 'rec',
@@ -147,8 +156,10 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     expect(Opportunity.create).to.have.been.called;
     expect(Suggestion.create).to.have.been.called;
     const suggestion = Suggestion.create.getCall(0).args[0];
-    expect(suggestion.data.suggestionValue).include(`plain
-markdown`);
+    expect(suggestion.data.mobile).include(`mobile markdown`);
+    expect(suggestion.data.desktop).include(`desktop markdown`);
+    expect(suggestion.data.impact.business).include(`business markdown`);
+    expect(suggestion.data.impact.user).include(`user markdown`);
     expect(result.status).to.equal(ok().status);
   });
 
@@ -157,7 +168,16 @@ markdown`);
     Opportunity.create.resolves(opportunityInstance);
     const markdown = 'json\nmarkdown';
     const guidance = [{
-      body: { markdown },
+      body: {
+        data: {
+          mobile: 'mobile markdown',
+          desktop: 'desktop markdown',
+          impact: {
+            business: 'business markdown',
+            user: 'user markdown',
+          },
+        },
+      },
       insight: 'insight',
       rationale: 'rationale',
       recommendation: 'rec',
@@ -168,8 +188,10 @@ markdown`);
     expect(Opportunity.create).to.have.been.called;
     expect(Suggestion.create).to.have.been.called;
     const suggestion = Suggestion.create.getCall(0).args[0];
-    expect(suggestion.data.suggestionValue).include(`json
-markdown`);
+    expect(suggestion.data.mobile).include(`mobile markdown`);
+    expect(suggestion.data.desktop).include(`desktop markdown`);
+    expect(suggestion.data.impact.business).include(`business markdown`);
+    expect(suggestion.data.impact.user).include(`user markdown`);
     expect(result.status).to.equal(ok().status);
   });
 
@@ -192,7 +214,16 @@ markdown`);
       ],
     });
     const guidance = [{
-      body: { markdown: 'plain\nmarkdown' },
+      body: {
+        data: {
+          mobile: 'mobile markdown',
+          desktop: 'desktop markdown',
+          impact: {
+            business: 'business markdown',
+            user: 'user markdown',
+          },
+        },
+      },
       insight: 'insight',
       rationale: 'rationale',
       recommendation: 'rec',
@@ -249,7 +280,16 @@ markdown`);
       ],
     });
     const guidance = [{
-      body: { markdown: 'plain\nmarkdown' },
+      body: {
+        data: {
+          mobile: 'mobile markdown',
+          desktop: 'desktop markdown',
+          impact: {
+            business: 'business markdown',
+            user: 'user markdown',
+          },
+        },
+      },
       insight: 'insight',
       rationale: 'rationale',
       recommendation: 'rec',
@@ -280,7 +320,14 @@ markdown`);
     Opportunity.create.resolves(opportunityInstance);
     const guidance = [{
       body: {
-        markdown: 'Direct JSON object markdown',
+        data: {
+          mobile: 'mobile markdown',
+          desktop: 'desktop markdown',
+          impact: {
+            business: 'business markdown',
+            user: 'user markdown',
+          },
+        },
         issueSeverity: 'high',
       },
       insight: 'insight',
@@ -300,7 +347,11 @@ markdown`);
   it('should skip opportunity creation and log for low severity (low)', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
-    const body = { issueSeverity: 'loW', markdown: 'irrelevant' };
+    const body = { issueSeverity: 'loW', data: {
+      mobile: 'mobile markdown',
+      desktop: 'desktop markdown',
+      impact: { business: 'business markdown', user: 'user markdown' },
+    } };
     const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
     const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
     const result = await handler(message, context);
@@ -313,7 +364,11 @@ markdown`);
   it('should create opportunity if severity is medium', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
-    const body = { issueSeverity: 'Medium', markdown: 'irrelevant' };
+    const body = { issueSeverity: 'Medium', data: {
+      mobile: 'mobile markdown',
+      desktop: 'desktop markdown',
+      impact: { business: 'business markdown', user: 'user markdown' },
+    } };
     const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
     const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
     const result = await handler(message, context);
@@ -340,7 +395,13 @@ markdown`);
     context.site = { requiresValidation: true };
 
     const guidance = [{
-      body: { markdown: 'plain\nmarkdown' },
+      body: {
+        data: {
+          mobile: 'mobile markdown',
+          desktop: 'desktop markdown',
+          impact: { business: 'business markdown', user: 'user markdown' },
+        },
+      },
       insight: 'insight',
       rationale: 'rationale',
       recommendation: 'rec',
