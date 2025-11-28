@@ -5,13 +5,14 @@
   "main": "src/index.js",
   "type": "module",
   "engines": {
-    "node": ">=22.0.0 <23.0.0",
+    "node": ">=22.0.0 <25.0.0",
     "npm": ">=10.9.0 <12.0.0"
   },
   "scripts": {
     "start": "nodemon",
     "start:unpacked": "nodemon --exec 'node --inspect ./test/dev/server-unpacked.mjs' --watch dist/spacecat-services/unpacked",
     "test": "c8 mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
+    "test:bundle": "HELIX_TEST_BUNDLE_NAME=dist/spacecat-services/audit-worker@$(npm pkg get version | tr -d \\\")-bundle.mjs mocha --spec=test/index.test.js",
     "test-postdeploy": "mocha -g 'Post-Deploy' --spec=test/**/*.test.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -42,7 +43,7 @@
     },
     "fastlyServiceId!important": "",
     "timeout": 900000,
-    "nodeVersion": 22,
+    "nodeVersion": 24,
     "static": [
       "static/prompts/broken-backlinks.prompt",
       "static/prompts/broken-backlinks-followup.prompt",
@@ -118,7 +119,7 @@
     "text-readability": "1.1.1",
     "urijs": "1.19.11",
     "zod": "4.1.13",
-    "uuid": "^13.0.0"
+    "uuid": "13.0.0"
   },
   "devDependencies": {
     "@adobe/eslint-config-helix": "3.0.14",
