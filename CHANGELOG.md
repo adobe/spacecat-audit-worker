@@ -1,3 +1,10 @@
+# [1.258.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.257.6...v1.258.0) (2025-11-28)
+
+
+### Features
+
+* adding empty suggestion for forms opportunity ([#1595](https://github.com/adobe/spacecat-audit-worker/issues/1595)) ([6778aa9](https://github.com/adobe/spacecat-audit-worker/commit/6778aa974fa6964573b7807d026d2722801743ac))
+
 ## [1.257.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.257.5...v1.257.6) (2025-11-28)
 
 
