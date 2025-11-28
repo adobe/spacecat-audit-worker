@@ -1,3 +1,10 @@
+## [1.260.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.260.0...v1.260.1) (2025-11-28)
+
+
+### Bug Fixes
+
+* use paths instead of full url match ([#1701](https://github.com/adobe/spacecat-audit-worker/issues/1701)) ([edbbe0b](https://github.com/adobe/spacecat-audit-worker/commit/edbbe0b43c9dd979f26fa33605cf3c05fb10680d))
+
 # [1.260.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.259.4...v1.260.0) (2025-11-28)
 
 
