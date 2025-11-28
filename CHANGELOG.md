@@ -1,3 +1,10 @@
+# [1.259.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.258.2...v1.259.0) (2025-11-28)
+
+
+### Features
+
+* ConsentBanner audit - changed suggestion structure ([#1693](https://github.com/adobe/spacecat-audit-worker/issues/1693)) ([55bd359](https://github.com/adobe/spacecat-audit-worker/commit/55bd359ee4f651b7dcfdec72a3e21a010fe79fc9))
+
 ## [1.258.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.258.1...v1.258.2) (2025-11-28)
 
 
