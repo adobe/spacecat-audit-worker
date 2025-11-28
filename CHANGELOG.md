@@ -1,3 +1,59 @@
+## [1.259.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.259.1...v1.259.2) (2025-11-28)
+
+
+### Bug Fixes
+
+* noop url resolver for readability audit ([#1696](https://github.com/adobe/spacecat-audit-worker/issues/1696)) ([1deff3d](https://github.com/adobe/spacecat-audit-worker/commit/1deff3d1265aa7e52f924655279445ecd1d522e5))
+
+## [1.259.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.259.0...v1.259.1) (2025-11-28)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1695](https://github.com/adobe/spacecat-audit-worker/issues/1695)) ([7e912b0](https://github.com/adobe/spacecat-audit-worker/commit/7e912b0cdbb11343e9d8a038e3249a572491fb50))
+
+# [1.259.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.258.2...v1.259.0) (2025-11-28)
+
+
+### Features
+
+* ConsentBanner audit - changed suggestion structure ([#1693](https://github.com/adobe/spacecat-audit-worker/issues/1693)) ([55bd359](https://github.com/adobe/spacecat-audit-worker/commit/55bd359ee4f651b7dcfdec72a3e21a010fe79fc9))
+
+## [1.258.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.258.1...v1.258.2) (2025-11-28)
+
+
+### Bug Fixes
+
+* handle undefined progress in bulk publish status check ([#1694](https://github.com/adobe/spacecat-audit-worker/issues/1694)) ([1711ead](https://github.com/adobe/spacecat-audit-worker/commit/1711eade5aae6bb404bd3d28a6cc349688d33bbe))
+
+## [1.258.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.258.0...v1.258.1) (2025-11-28)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1691](https://github.com/adobe/spacecat-audit-worker/issues/1691)) ([69cc225](https://github.com/adobe/spacecat-audit-worker/commit/69cc225ebcdd575221bb362332edda6c2354cb0d))
+
+# [1.258.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.257.6...v1.258.0) (2025-11-28)
+
+
+### Features
+
+* adding empty suggestion for forms opportunity ([#1595](https://github.com/adobe/spacecat-audit-worker/issues/1595)) ([6778aa9](https://github.com/adobe/spacecat-audit-worker/commit/6778aa974fa6964573b7807d026d2722801743ac))
+
+## [1.257.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.257.5...v1.257.6) (2025-11-28)
+
+
+### Bug Fixes
+
+* set allowCache to false for code import ([#1679](https://github.com/adobe/spacecat-audit-worker/issues/1679)) ([c50d0be](https://github.com/adobe/spacecat-audit-worker/commit/c50d0befd7e04968daf8228066d990e938e483f8))
+
+## [1.257.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.257.4...v1.257.5) (2025-11-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-tier-client to v1.3.3 ([#1686](https://github.com/adobe/spacecat-audit-worker/issues/1686)) ([d9213eb](https://github.com/adobe/spacecat-audit-worker/commit/d9213eb36af178acf42cf343858ea25a171500f5))
+
 ## [1.257.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.257.3...v1.257.4) (2025-11-27)
 
 
