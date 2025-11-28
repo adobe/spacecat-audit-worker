@@ -11,24 +11,28 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { Audit } from '@adobe/spacecat-shared-data-access';
+
+const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES;
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Audit, Suggestion, Site } = dataAccess;
   const { auditId, siteId, data } = message;
   const {
-    opportunityId, patches,
+    opportunityId, patches: patchedSuggestions,
   } = data;
-  const AUDIT_TYPE = 'security-vulnerabilities'; // TODO: don't hardcode this
+
   log.debug(`[${AUDIT_TYPE} Code-Fix] Message received in vulnerabilities code-fix handler: ${JSON.stringify(message, null, 2)}`);
 
+  const { Site } = dataAccess;
   const site = await Site.findById(siteId);
   if (!site) {
     log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Site not found`);
     return notFound('Site not found');
   }
 
-  const audit = await Audit.findById(auditId);
+  const { Audit: AuditModel } = dataAccess;
+  const audit = await AuditModel.findById(auditId);
   if (!audit) {
     log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${site.getId()}] No audit found for auditId: ${auditId}`);
     return notFound('Audit not found');
@@ -48,15 +52,16 @@ export default async function handler(message, context) {
     return badRequest('Site ID mismatch');
   }
 
-  await Promise.all(patches.map(async (patch) => {
-    const suggestion = await Suggestion.findById(patch.suggestionId);
+  const { Suggestion } = dataAccess;
+  await Promise.all(patchedSuggestions.map(async (patchedSuggestion) => {
+    const suggestion = await Suggestion.findById(patchedSuggestion.suggestionId);
     if (!suggestion) {
-      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${site.getId()}] Suggestion not found for ID: ${patch.suggestionId}`);
+      log.error(`[${AUDIT_TYPE} Code-Fix] [Site: ${site.getId()}] Suggestion not found for ID: ${patchedSuggestion.suggestionId}`);
       return {};
     }
     suggestion.setData({
       ...suggestion.getData(),
-      // TODO: add patch content
+      patch: patchedSuggestion.patch,
     });
 
     return suggestion.save();

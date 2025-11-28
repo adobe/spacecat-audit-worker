@@ -113,7 +113,7 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
     const response = await handler(message, context);
 
     expect(response.status).to.equal(404);
-    expect(response.headers['x-error']).to.equal('Site not found');
+    expect(response.headers.get('x-error')).to.equal('Site not found');
     expect(context.log.error).to.have.been.calledWith(sinon.match(/Site not found/));
   });
 
@@ -123,7 +123,7 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
     const response = await handler(message, context);
 
     expect(response.status).to.equal(404);
-    expect(response.headers['x-error']).to.equal('Audit not found');
+    expect(response.headers.get('x-error')).to.equal('Audit not found');
     expect(context.log.warn).to.have.been.calledWith(sinon.match(/No audit found/));
   });
 
@@ -133,7 +133,7 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
     const response = await handler(message, context);
 
     expect(response.status).to.equal(404);
-    expect(response.headers['x-error']).to.equal('Opportunity not found');
+    expect(response.headers.get('x-error')).to.equal('Opportunity not found');
     expect(context.log.error).to.have.been.calledWith(sinon.match(/Opportunity not found/));
   });
 
@@ -143,7 +143,7 @@ describe('Vulnerabilities Code-Fix Handler Tests', function () {
     const response = await handler(message, context);
 
     expect(response.status).to.equal(400);
-    expect(response.headers['x-error']).to.equal('Site ID mismatch');
+    expect(response.headers.get('x-error')).to.equal('Site ID mismatch');
     expect(context.log.error).to.have.been.calledWith(sinon.match(/Site ID mismatch/));
   });
 
