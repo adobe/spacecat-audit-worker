@@ -1,3 +1,10 @@
+## [1.260.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.260.2...v1.260.3) (2025-11-28)
+
+
+### Bug Fixes
+
+* vuln metric ([#1703](https://github.com/adobe/spacecat-audit-worker/issues/1703)) ([5dd5fbf](https://github.com/adobe/spacecat-audit-worker/commit/5dd5fbf623819011a9a98c89502b776c2abcddf3))
+
 ## [1.260.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.260.1...v1.260.2) (2025-11-28)
 
 
