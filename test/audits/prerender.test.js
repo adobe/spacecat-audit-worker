@@ -977,18 +977,19 @@ describe('Prerender Audit', () => {
   });
 
   describe('Athena and Sheet Fetch Coverage', () => {
-    it('should return top agentic URLs from Athena and filter "Other"; uses path fallback when baseUrl invalid (4-week window)', async () => {
+    it('should return top agentic URLs from Athena and filter "Other"; uses path fallback when baseUrl invalid (latest week)', async () => {
       let capturedPeriods;
+      let capturedLimit;
       const mockHandler = await esmock('../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: async () => ([
+            // SQL now excludes 'Other' in WHERE clause
             { url: '/a', number_of_hits: 5 },
-            { url: 'Other', number_of_hits: 100 },
             { url: '/b', number_of_hits: 3 },
           ]) }) },
         },
         '../../src/prerender/utils/shared.js': {
-          // Provide 4 recent weeks so handler can aggregate into a single 4-week window
+          // Provide multiple recent weeks; handler should pick latest week only
           generateReportingPeriods: () => {
             const w1 = { weekNumber: 48, year: 2025, startDate: new Date('2025-11-24'), endDate: new Date('2025-11-30') };
             const w2 = { weekNumber: 47, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') };
@@ -1002,8 +1003,9 @@ describe('Prerender Audit', () => {
             getAthenaTempLocation: () => 's3://tmp/',
           }),
           weeklyBreakdownQueries: {
-            createAgenticReportQuery: async (opts) => {
+            createTopUrlsQueryWithLimit: async (opts) => {
               capturedPeriods = opts?.periods;
+              capturedLimit = opts?.limit;
               return 'SELECT 1';
             },
           },
@@ -1026,12 +1028,13 @@ describe('Prerender Audit', () => {
       expect(urls).to.include('/b');
       // Ensure "Other" excluded and limit respected
       expect(urls).to.have.length(2);
-      // Verify 4-week aggregation window passed to query builder
+      // Verify latest-week window passed to query builder and limit forwarded
       expect(capturedPeriods).to.be.an('object');
       expect(capturedPeriods.weeks).to.have.length(1);
       const win = capturedPeriods.weeks[0];
-      expect(new Date(win.startDate).toISOString()).to.equal(new Date('2025-11-03T00:00:00.000Z').toISOString());
+      expect(new Date(win.startDate).toISOString()).to.equal(new Date('2025-11-24T00:00:00.000Z').toISOString());
       expect(new Date(win.endDate).toISOString()).to.equal(new Date('2025-11-30T00:00:00.000Z').toISOString());
+      expect(capturedLimit).to.equal(TOP_AGENTIC_URLS_LIMIT);
     });
 
     it('should populate agentic traffic for included URLs via Athena (hits-for-urls)', async () => {
@@ -1076,14 +1079,15 @@ describe('Prerender Audit', () => {
       expect(found).to.exist;
     });
 
-    it('should cap agentic URLs to TOP_AGENTIC_URLS_LIMIT (4-week aggregation)', async () => {
+    it('should cap agentic URLs in SQL via LIMIT; handler maps rows returned', async () => {
       let capturedPeriods;
+      let capturedLimit;
       const mockHandler = await esmock('../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({
             query: async () => {
-              // Produce more than the limit; include no "Other"
-              return Array.from({ length: TOP_AGENTIC_URLS_LIMIT + 15 })
+              // Return fewer rows than limit to reflect SQL-side capping
+              return Array.from({ length: 1 })
                 .map((_, i) => ({ url: `/u${i}`, number_of_hits: 1000 - i }));
             },
           }) },
@@ -1091,15 +1095,13 @@ describe('Prerender Audit', () => {
         '../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => {
             const w1 = { weekNumber: 48, year: 2025, startDate: new Date('2025-11-24'), endDate: new Date('2025-11-30') };
-            const w2 = { weekNumber: 47, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') };
-            const w3 = { weekNumber: 46, year: 2025, startDate: new Date('2025-11-10'), endDate: new Date('2025-11-16') };
-            const w4 = { weekNumber: 45, year: 2025, startDate: new Date('2025-11-03'), endDate: new Date('2025-11-09') };
-            return { weeks: [w1, w2, w3, w4] };
+            return { weeks: [w1] };
           },
           getS3Config: async () => ({ databaseName: 'db', tableName: 'tbl', getAthenaTempLocation: () => 's3://tmp/' }),
           weeklyBreakdownQueries: {
-            createAgenticReportQuery: async (opts) => {
+            createTopUrlsQueryWithLimit: async (opts) => {
               capturedPeriods = opts?.periods;
+              capturedLimit = opts?.limit;
               return 'SELECT 1';
             },
           },
@@ -1115,8 +1117,10 @@ describe('Prerender Audit', () => {
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
       };
       const out = await mockHandler.submitForScraping(ctx);
-      expect(out.urls).to.have.length(TOP_AGENTIC_URLS_LIMIT);
-      // Confirm 4-week window was used
+      // Handler returns whatever Athena returns; assert we passed LIMIT and used latest week
+      expect(out.urls).to.have.length(1);
+      expect(capturedLimit).to.equal(TOP_AGENTIC_URLS_LIMIT);
+      // Confirm latest week was used
       expect(capturedPeriods).to.be.an('object');
       expect(capturedPeriods.weeks).to.have.length(1);
     });

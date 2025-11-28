@@ -52,7 +52,7 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
 
 /**
  * Fetch top Agentic URLs using Athena (preferred).
- * Aggregates over the last 4 reporting weeks, filters out pooled 'Other',
+ * Find last week's top agentic URLs, filters out pooled 'Other',
  * groups by URL, and returns the top URLs by total hits.
  * @param {any} site
  * @param {any} context
@@ -64,23 +64,15 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = TOP_AGENTIC_UR
   try {
     const s3Config = await getS3Config(site, context);
     const periods = generateReportingPeriods();
-    // Build a single contiguous date window covering the last up to 4 weeks
-    const recentWeeks = Array.isSame ? periods.weeks : periods.weeks;
-    const windowWeeks = recentWeeks.slice(0, 4);
-    const startBoundary = windowWeeks.length > 0
-      ? windowWeeks[windowWeeks.length - 1].startDate
-      : periods.weeks[periods.weeks.length - 1].startDate;
-    const endBoundary = windowWeeks.length > 0
-      ? windowWeeks[0].endDate
-      : periods.weeks[0].endDate;
-    const fourWeekPeriods = { weeks: [{ startDate: startBoundary, endDate: endBoundary }] };
+    const recentWeeks = periods.weeks;
+    const oneWeekPeriods = { weeks: [recentWeeks[0]] };
     const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
-    // Build query using agentic report query builder (date-range + LLM UA + site filters)
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery({
-      periods: fourWeekPeriods,
+    const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit({
+      periods: oneWeekPeriods,
       databaseName: s3Config.databaseName,
       tableName: s3Config.tableName,
       site,
+      limit,
     });
     log.info(`Prerender - Executing Athena query for top agentic URLs... baseUrl=${site.getBaseURL()}`);
     const results = await athenaClient.query(
@@ -94,22 +86,11 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = TOP_AGENTIC_UR
       return [];
     }
 
-    // Aggregate by URL
-    const byUrl = new Map();
-    for (const row of results) {
-      const url = row?.url || '';
-      const hits = Number(row?.number_of_hits || 0) || 0;
-      if (url && url !== 'Other') {
-        const prev = byUrl.get(url) || 0;
-        byUrl.set(url, prev + hits);
-      }
-    }
-
     const baseUrl = site.getBaseURL?.() || '';
-    const topUrls = Array.from(byUrl.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, limit)
-      .map(([path]) => {
+    const topUrls = (results || [])
+      .map((row) => row?.url)
+      .filter((path) => typeof path === 'string' && path.length > 0)
+      .map((path) => {
         try {
           return {
             url: new URL(path, baseUrl).toString(),
