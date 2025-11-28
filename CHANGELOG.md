@@ -1,3 +1,10 @@
+## [1.259.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.259.1...v1.259.2) (2025-11-28)
+
+
+### Bug Fixes
+
+* noop url resolver for readability audit ([#1696](https://github.com/adobe/spacecat-audit-worker/issues/1696)) ([1deff3d](https://github.com/adobe/spacecat-audit-worker/commit/1deff3d1265aa7e52f924655279445ecd1d522e5))
+
 ## [1.259.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.259.0...v1.259.1) (2025-11-28)
 
 
