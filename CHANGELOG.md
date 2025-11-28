@@ -1,3 +1,10 @@
+## [1.260.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.260.4...v1.260.5) (2025-11-28)
+
+
+### Bug Fixes
+
+* **page-intent:** use base URL override if it exists ([#1704](https://github.com/adobe/spacecat-audit-worker/issues/1704)) ([b98d640](https://github.com/adobe/spacecat-audit-worker/commit/b98d640496a212e94b418ae767451728e9263c58))
+
 ## [1.260.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.260.3...v1.260.4) (2025-11-28)
 
 
