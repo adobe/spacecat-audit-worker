@@ -398,6 +398,7 @@ export async function codeImportStep(context) {
   return {
     type: 'code',
     siteId: site.getId(),
+    allowCache: false,
   };
 }
 

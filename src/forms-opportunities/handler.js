@@ -219,6 +219,7 @@ export async function codeImportStep(context) {
   return {
     type: 'code',
     siteId: site.getId(),
+    allowCache: false,
     ...(auditContext?.data && { auditContext: { data: auditContext.data } }),
   };
 }

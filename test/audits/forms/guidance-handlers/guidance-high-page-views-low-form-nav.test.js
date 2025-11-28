@@ -52,6 +52,7 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
         url: 'https://example.com',
         form_source: '.form',
         guidance: 'Some guidance',
+        suggestions: ['Suggestion 1', 'Suggestion 2'],
       },
     };
   });
@@ -65,7 +66,10 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
       getData: sinon.stub().returns({ form: 'https://example.com', formsource: '.form' }),
       getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION),
       setAuditId: sinon.stub(),
+      addSuggestions: sinon.stub(),
       setGuidance: sinon.stub(),
+      getSuggestions: sinon.stub().resolves([]),
+
       save: sinon.stub().resolvesThis(),
       setUpdatedBy: sinon.stub(),
     };
@@ -104,5 +108,58 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
     } catch (error) {
       expect(error.message).to.deep.equal('fetch error');
     }
+  });
+
+  it('should create empty suggestion object if none found', async () => {
+    const existingOpportunity = {
+      getData: sinon.stub().returns({ form: 'https://example.com', formsource: '.form' }),
+      getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION),
+      setAuditId: sinon.stub(),
+      addSuggestions: sinon.stub(),
+      setGuidance: sinon.stub(),
+      getSuggestions: sinon.stub().resolves([]),
+      save: sinon.stub().resolvesThis(),
+      setUpdatedBy: sinon.stub(),
+    };
+    dataAccessStub.Opportunity.allBySiteId.resolves([existingOpportunity]);
+
+    const messageWithoutSuggestions = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://example.com',
+        form_source: '.form',
+        guidance: 'Some guidance'
+      },
+    };
+    await handler(messageWithoutSuggestions, context);
+    expect(existingOpportunity.addSuggestions).to.be.calledOnce;
+  });
+
+  it('should not create empty suggestion if any suggestion found', async () => {
+    const existingOpportunity = {
+      getData: sinon.stub().returns({ form: 'https://example.com', formsource: '.form' }),
+      getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION),
+      setAuditId: sinon.stub(),
+      addSuggestions: sinon.stub(),
+      setGuidance: sinon.stub(),
+      getSuggestions: sinon.stub().resolves(["existing suggestion"]),
+
+      save: sinon.stub().resolvesThis(),
+      setUpdatedBy: sinon.stub(),
+    };
+    dataAccessStub.Opportunity.allBySiteId.resolves([existingOpportunity]);
+
+    const messageWithoutSuggestions = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://example.com',
+        form_source: '.form',
+        guidance: 'Some guidance'
+      },
+    };
+    await handler(messageWithoutSuggestions, context);
+    expect(existingOpportunity.addSuggestions).to.be.not.called;
   });
 });

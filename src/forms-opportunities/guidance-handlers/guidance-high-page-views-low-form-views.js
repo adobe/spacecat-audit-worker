@@ -12,12 +12,17 @@
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../constants.js';
+import { addSuggestions } from './suggestion-utils.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
   const { auditId, siteId, data } = message;
-  const { url, form_source: formsource, guidance } = data;
+  const {
+    url,
+    form_source: formsource,
+    guidance, suggestions,
+  } = data;
   log.info(`[Form Opportunity] [Site Id: ${siteId}] message received in high-page-views-low-form-views guidance handler: ${JSON.stringify(message, null, 2)}`);
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
@@ -34,9 +39,9 @@ export default async function handler(message, context) {
     const wrappedGuidance = { recommendations: guidance };
     opportunity.setGuidance(wrappedGuidance);
     opportunity.setUpdatedBy('system');
+    await addSuggestions(opportunity, suggestions);
     await opportunity.save();
     log.debug(`[Form Opportunity] [Site Id: ${siteId}] high-page-views-low-form-views guidance updated oppty: ${JSON.stringify(opportunity, null, 2)}`);
   }
-
   return ok();
 }

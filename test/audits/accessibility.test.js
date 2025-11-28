@@ -1458,6 +1458,7 @@ describe('Accessibility Audit Handler', () => {
       expect(result).to.deep.equal({
         type: 'code',
         siteId: 'test-site-id',
+        allowCache: false,
       });
     });
 

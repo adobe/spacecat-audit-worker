@@ -1275,6 +1275,7 @@ describe('codeImportStep', () => {
     expect(result).to.be.an('object');
     expect(result).to.have.property('type', 'code');
     expect(result).to.have.property('siteId', 'test-site-id');
+    expect(result).to.have.property('allowCache', false);
   });
 
   it('should log info message with site ID', async () => {
@@ -1348,9 +1349,10 @@ describe('codeImportStep', () => {
     const result = await codeImportStep(context);
 
     const keys = Object.keys(result);
-    expect(keys).to.have.lengthOf(2);
+    expect(keys).to.have.lengthOf(3);
     expect(keys).to.include('type');
     expect(keys).to.include('siteId');
+    expect(keys).to.include('allowCache');
   });
 
   it('should include auditContext when auditContext.data is provided (line 222)', async () => {
@@ -1417,9 +1419,10 @@ describe('codeImportStep', () => {
     const result = await codeImportStep(contextWithAuditData);
 
     const keys = Object.keys(result);
-    expect(keys).to.have.lengthOf(3); // type, siteId, and auditContext
+    expect(keys).to.have.lengthOf(4); // type, siteId, allowCache, and auditContext
     expect(keys).to.include('type');
     expect(keys).to.include('siteId');
+    expect(keys).to.include('allowCache');
     expect(keys).to.include('auditContext');
   });
 });
