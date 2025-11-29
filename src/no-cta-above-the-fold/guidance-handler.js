@@ -15,6 +15,14 @@ import {
   mapToSuggestion,
 } from './guidance-opportunity-mapper.js';
 
+function isSuggestionFailure(guidanceEntry) {
+  const failureMessage = 'Suggestion generation failed, no opportunity created';
+  const recommendation = guidanceEntry?.recommendation;
+
+  return typeof recommendation === 'string'
+    && recommendation.includes(failureMessage);
+}
+
 function getGuidanceObj(guidance) {
   const body = guidance && guidance[0] && guidance[0].body;
 
@@ -42,6 +50,13 @@ export default async function handler(message, context) {
   log.debug(`Fetched Audit ${JSON.stringify(message)}`);
 
   const guidanceParsed = getGuidanceObj(guidance);
+
+  if (isSuggestionFailure(guidanceParsed)) {
+    log.info(
+      `Skipping opportunity creation for site: ${siteId} page: ${url} audit: ${auditId} due to suggestion generation failure.`,
+    );
+    return ok();
+  }
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   const matchingOpportunity = existingOpportunities
