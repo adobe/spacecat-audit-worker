@@ -52,7 +52,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
 
   const { formVitals } = auditData.auditResult;
   // eslint-disable-next-line max-len
-  const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION]);
+  const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION], opptyOptions);
   log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] forms opportunities high-page-views-low-form-navigations: ${JSON.stringify(formOpportunities, null, 2)}`);
 
   // for opportunity type high page views low form navigation

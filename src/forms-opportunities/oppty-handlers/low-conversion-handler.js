@@ -117,7 +117,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
   const { formVitals } = auditData.auditResult;
   log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] scraped data for form ${JSON.stringify(scrapedData, null, 2)}`);
   // eslint-disable-next-line max-len
-  const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]);
+  const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION], opptyOptions);
   log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
   let filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeForms);
   filteredOpportunities.forEach((oppty) => excludeForms.add(oppty.form + oppty.formsource));
