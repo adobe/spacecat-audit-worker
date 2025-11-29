@@ -211,10 +211,7 @@ export async function getObjectKeysFromSubfolders(
   return { success: true, objectKeys, message: `Found ${objectKeys.length} data files` };
 }
 
-export async function cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log) {
-  // Delete all JSON files with reports per url since we aggregated the data into a single file
-  await deleteOriginalFiles(s3Client, bucketName, objectKeys, log);
-
+export async function cleanupS3Files(s3Client, bucketName, lastWeekObjectKeys, log) {
   // delete oldest final result file if there are more than 2
   if (lastWeekObjectKeys.length > 2) {
     lastWeekObjectKeys.sort((a, b) => {
@@ -334,6 +331,7 @@ export async function aggregateAccessibilityData(
   outputKey,
   auditType,
   version,
+  scrapeResultPaths,
   maxRetries = 2,
 ) {
   if (!s3Client || !bucketName || !siteId || !auditType) {
@@ -362,29 +360,11 @@ export async function aggregateAccessibilityData(
   const { storagePrefix, logIdentifier } = getAuditPrefixes(auditType);
 
   try {
-    // Get object keys from subfolders
-    const objectKeysResult = await getObjectKeysFromSubfolders(
-      s3Client,
-      bucketName,
-      storagePrefix,
-      siteId,
-      version,
-      log,
-    );
-
-    // Check if the call succeeded
-    if (!objectKeysResult.success) {
-      return { success: false, aggregatedData: null, message: objectKeysResult.message };
-    }
-
-    // Combine object keys from both sources
-    const { objectKeys } = objectKeysResult;
-
     // Process files with retry logic
     const { results } = await processFilesWithRetry(
       s3Client,
       bucketName,
-      objectKeys,
+      [...scrapeResultPaths.values()],
       log,
       maxRetries,
     );
@@ -443,7 +423,7 @@ export async function aggregateAccessibilityData(
       log.debug(`[${logIdentifier}] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
     }
 
-    await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
+    await cleanupS3Files(s3Client, bucketName, lastWeekObjectKeys, log);
 
     return {
       success: true,
@@ -451,7 +431,7 @@ export async function aggregateAccessibilityData(
         current: aggregatedData,
         lastWeek: lastWeekFile,
       },
-      message: `Successfully aggregated ${objectKeys.length} files into ${outputKey}`,
+      message: `Successfully aggregated ${scrapeResultPaths.size} files into ${outputKey}`,
     };
   } catch (error) {
     log.error(`[${logIdentifier}][A11yProcessingError] Error aggregating accessibility data for site ${siteId}`, error);
