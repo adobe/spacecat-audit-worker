@@ -5,8 +5,8 @@
   "main": "src/index.js",
   "type": "module",
   "engines": {
-    "node": ">=22.0.0 <25.0.0",
-    "npm": ">=10.9.0 <12.0.0"
+    "node": ">=24.0.0 <25.0.0",
+    "npm": ">=10.9.0"
   },
   "scripts": {
     "start": "nodemon",
