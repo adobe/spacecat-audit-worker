@@ -10,18 +10,15 @@
  * governing permissions and limitations under the License.
  */
 
-import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { analyzeHtmlForPrerender } from './html-comparator-utils.js';
+import { analyzeHtmlForPrerender, getHtmlFilterSelectors } from './html-comparator-utils.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-
 const CONTENT_GAIN_THRESHOLD = 1.1;
 
 /**
@@ -240,148 +237,13 @@ export async function createScrapeForbiddenOpportunity(auditUrl, auditData, cont
 }
 
 /**
- * Processes opportunities and suggestions for prerender audit results
- * @param {string} auditUrl - Audited URL
- * @param {Object} auditData - Audit data with results
- * @param {Object} context - Processing context
- * @returns {Promise<void>}
- */
-export async function processOpportunityAndSuggestions(auditUrl, auditData, context) {
-  const { log } = context;
-
-  const { auditResult } = auditData;
-  const { urlsNeedingPrerender } = auditResult;
-
-  if (urlsNeedingPrerender === 0) {
-    log.info(`Prerender - No prerender opportunities found, skipping opportunity creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-    return;
-  }
-
-  const preRenderSuggestions = auditResult.results
-    .filter((result) => result.needsPrerender);
-
-  if (preRenderSuggestions.length === 0) {
-    log.info(`Prerender - No URLs needing prerender found, skipping opportunity creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-    return;
-  }
-
-  log.debug(`Prerender - Generated ${preRenderSuggestions.length} prerender suggestions for baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-
-  const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
-    context,
-    createOpportunityData,
-    AUDIT_TYPE,
-    auditData, // Pass auditData as props so createOpportunityData receives it
-  );
-
-  const buildKey = (data) => `${data.url}|${AUDIT_TYPE}`;
-
-  // Helper function to extract only the fields we want in suggestions
-  const mapSuggestionData = (suggestion) => ({
-    url: suggestion.url,
-    organicTraffic: suggestion.organicTraffic,
-    contentGainRatio: suggestion.contentGainRatio,
-    wordCountBefore: suggestion.wordCountBefore,
-    wordCountAfter: suggestion.wordCountAfter,
-    // S3 references to stored HTML content for comparison
-    originalHtmlKey: getS3Path(suggestion.url, auditData.siteId, 'server-side.html'),
-    prerenderedHtmlKey: getS3Path(suggestion.url, auditData.siteId, 'client-side.html'),
-  });
-
-  await syncSuggestions({
-    opportunity,
-    newData: preRenderSuggestions,
-    context,
-    buildKey,
-    mapNewSuggestion: (suggestion) => ({
-      opportunityId: opportunity.getId(),
-      type: Suggestion.TYPES.CONFIG_UPDATE,
-      rank: suggestion.organicTraffic,
-      data: mapSuggestionData(suggestion),
-    }),
-    // Custom merge function: preserve existing fields, update with clean new data
-    mergeDataFunction: (existingData, newDataItem) => ({
-      ...existingData,
-      ...mapSuggestionData(newDataItem),
-    }),
-  });
-
-  log.info(`Prerender - Successfully synced suggestions=${preRenderSuggestions.length} for baseUrl: ${auditUrl}, siteId: ${auditData.siteId}`);
-}
-
-/**
- * Post processor to upload a status JSON file to S3 after audit completion
- * @param {string} auditUrl - Audited URL (site base URL)
- * @param {Object} auditData - Audit data with results
- * @param {Object} context - Processing context
- * @returns {Promise<void>}
- */
-export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
-  const { log, s3Client, env } = context;
-  const { auditResult, siteId, auditedAt } = auditData;
-
-  try {
-    if (!auditResult) {
-      log.warn('Prerender - Missing auditResult, skipping status summary upload');
-      return;
-    }
-
-    // Extract status information for all top pages
-    const statusSummary = {
-      baseUrl: auditUrl,
-      siteId,
-      auditType: AUDIT_TYPE,
-      lastUpdated: auditedAt || new Date().toISOString(),
-      totalUrlsChecked: auditResult.totalUrlsChecked || 0,
-      urlsNeedingPrerender: auditResult.urlsNeedingPrerender || 0,
-      scrapeForbidden: auditResult.scrapeForbidden || false,
-      pages: auditResult.results?.map((result) => {
-        const pageStatus = {
-          url: result.url,
-          scrapingStatus: result.error ? 'error' : 'success',
-          needsPrerender: result.needsPrerender || false,
-          wordCountBefore: result.wordCountBefore || 0,
-          wordCountAfter: result.wordCountAfter || 0,
-          contentGainRatio: result.contentGainRatio || 0,
-          organicTraffic: result.organicTraffic || 0,
-        };
-
-        // Include scrape error details if available
-        if (result.scrapeError) {
-          pageStatus.scrapeError = result.scrapeError;
-        }
-
-        return pageStatus;
-      }) || [],
-    };
-
-    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-    const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
-
-    await s3Client.send(new PutObjectCommand({
-      Bucket: bucketName,
-      Key: statusKey,
-      Body: JSON.stringify(statusSummary, null, 2),
-      ContentType: 'application/json',
-    }));
-
-    log.info(`Prerender - Successfully uploaded status summary to S3: ${statusKey}. baseUrl=${auditUrl}, siteId=${siteId}`);
-  } catch (error) {
-    log.error(`Prerender - Failed to upload status summary to S3: ${error.message}. baseUrl=${auditUrl}, siteId=${siteId}`, error);
-    // Don't throw - this is a non-critical post-processing step
-  }
-}
-
-/**
  * Step 3: Process scraped content and compare server-side vs client-side HTML
  * @param {Object} context - Audit context with site, audit, and other dependencies
  * @returns {Promise<Object>} - Audit results with opportunities
  */
-export async function processContentAndGenerateOpportunities(context) {
+export async function processContentAndSendToMystique(context) {
   const {
-    site, audit, log, dataAccess, scrapeResultPaths,
+    site, audit, log, dataAccess, scrapeResultPaths, sqs, env,
   } = context;
 
   const siteId = site.getId();
@@ -456,11 +318,34 @@ export async function processContentAndGenerateOpportunities(context) {
     };
 
     if (urlsNeedingPrerender.length > 0) {
-      await processOpportunityAndSuggestions(site.getBaseURL(), {
-        siteId,
-        auditId: audit.getId(),
-        auditResult,
-      }, context);
+      // Instead of saving suggestions now, send candidate suggestions to Mystique for AI summaries
+      if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
+        log.warn('Prerender - SQS or Mystique queue not configured, skipping Mystique message');
+      } else {
+        const message = {
+          type: 'guidance:prerender',
+          siteId,
+          auditId: audit.getId(),
+          url: site.getBaseURL(),
+          deliveryType: site.getDeliveryType(),
+          time: new Date().toISOString(),
+          data: {
+            // Send candidate suggestions; Mystique will enrich with AI summaries
+            suggestions: urlsNeedingPrerender.map((result) => ({
+              url: result.url,
+              contentGainRatio: result.contentGainRatio,
+              wordCountBefore: result.wordCountBefore,
+              wordCountAfter: result.wordCountAfter,
+              organicTraffic: result.organicTraffic,
+              originalHtmlKey: getS3Path(result.url, siteId, 'server-side.html'),
+              prerenderedHtmlKey: getS3Path(result.url, siteId, 'client-side.html'),
+            })),
+            excludedSelectors: getHtmlFilterSelectors().selectors,
+          },
+        };
+        await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+        log.info(`Prerender - Sent ${urlsNeedingPrerender.length} candidate suggestions to Mystique for siteId=${siteId}`);
+      }
     } else if (scrapeForbidden) {
       // Create a dummy opportunity when scraping is forbidden (403)
       // This allows the UI to display proper messaging without suggestions
@@ -477,16 +362,6 @@ export async function processContentAndGenerateOpportunities(context) {
     const elapsedSeconds = (endTime[0] + endTime[1] / 1e9).toFixed(2);
 
     log.info(`Prerender - Audit completed in ${elapsedSeconds}s. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
-
-    // Upload status summary to S3 (post-processing)
-    const auditData = {
-      siteId,
-      auditId: audit.getId(),
-      auditedAt: new Date().toISOString(),
-      auditType: AUDIT_TYPE,
-      auditResult,
-    };
-    await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
 
     return {
       status: 'complete',
@@ -508,5 +383,5 @@ export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
-  .addStep('process-content-and-generate-opportunities', processContentAndGenerateOpportunities)
+  .addStep('process-scrape-content-and-send-to-mystique', processContentAndSendToMystique)
   .build();
