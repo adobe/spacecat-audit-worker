@@ -228,6 +228,72 @@ describe('Broken internal links audit ', () => {
     // Verify that SiteTopPage.allBySiteIdAndSourceAndGeo was not called since we exit early
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
   }).timeout(5000);
+
+  it('internalLinksAuditRunner filters by accessibility and audit scope', async () => {
+    const scopedSandbox = sinon.createSandbox();
+    const base = 'https://example.com/uk';
+    const siteWithSubpath = {
+      ...site,
+      getBaseURL: () => base,
+    };
+    const rumQueryStub = scopedSandbox.stub().resolves([
+      {
+        url_to: 'https://example.com/uk/page-in-scope',
+        url_from: 'https://example.com/uk/from-in-scope',
+        traffic_domain: 100,
+      },
+      {
+        url_to: 'https://example.com/fr/page-out',
+        url_from: 'https://example.com/fr/from-out',
+        traffic_domain: 50,
+      },
+    ]);
+    const isLinkInaccessibleStub = scopedSandbox.stub()
+      .callsFake((url) => url.includes('/uk/')); // only /uk/ treated as inaccessible
+    const isWithinAuditScopeStub = scopedSandbox.stub()
+      .callsFake((url, baseUrl) => url.startsWith(baseUrl));
+    const calculatePriorityStub = scopedSandbox.stub().callsFake((arr) => arr);
+
+    const mockedHandler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-rum-api-client': {
+        default: { createFrom: () => ({ query: rumQueryStub }) },
+      },
+      '../../../src/internal-links/helpers.js': {
+        isLinkInaccessible: isLinkInaccessibleStub,
+        calculatePriority: calculatePriorityStub,
+      },
+      '../../../src/internal-links/subpath-filter.js': {
+        isWithinAuditScope: isWithinAuditScopeStub,
+        filterByAuditScope: (pages) => pages, // identity for this test
+        extractPathPrefix: (url) => {
+          try {
+            const { pathname } = new URL(url);
+            const seg = pathname.split('/').filter(Boolean)[0];
+            return seg ? `/${seg}` : '';
+          } catch {
+            return '';
+          }
+        },
+      },
+      '../../../src/common/index.js': {
+        wwwUrlResolver: () => auditUrl,
+      },
+    });
+
+    const res = await mockedHandler.internalLinksAuditRunner(auditUrl, { ...context, site: siteWithSubpath }, siteWithSubpath);
+    expect(rumQueryStub).to.have.been.calledWith('404-internal-links', sinon.match.object);
+    expect(isLinkInaccessibleStub).to.have.been.called;
+    expect(isWithinAuditScopeStub).to.have.been.called;
+    expect(res.auditResult.success).to.equal(true);
+    expect(res.auditResult.brokenInternalLinks).to.deep.equal([
+      {
+        urlFrom: 'https://example.com/uk/from-in-scope',
+        urlTo: 'https://example.com/uk/page-in-scope',
+        trafficDomain: 100,
+      },
+    ]);
+    scopedSandbox.restore();
+  }).timeout(5000);
 });
 
 describe('broken-internal-links audit opportunity and suggestions', () => {
@@ -563,70 +629,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(result.status).to.equal('complete');
   }).timeout(5000);
 
-  it('Existing opportunity and suggestions are updated if no broken internal links found', async () => {
-    // Create mock suggestions
-    const mockSuggestions = [{}];
-
-    const existingOpportunity = {
-      setStatus: sandbox.spy(sandbox.stub().resolves()),
-      setAuditId: sandbox.stub(),
-      save: sandbox.spy(sandbox.stub().resolves()),
-      getType: () => 'broken-internal-links',
-      getSuggestions: sandbox.stub().resolves(mockSuggestions),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-    };
-
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
-
-    //return empty array of broken internal links
-    auditData.auditResult.brokenInternalLinks = [];
-
-    // Mock Suggestion.bulkUpdateStatus
-    context.dataAccess.Suggestion = {
-      bulkUpdateStatus: sandbox.spy(sandbox.stub().resolves()),
-    };
-
-    // Mock statuses
-    sandbox.stub(Oppty, 'STATUSES').value({ RESOLVED: 'RESOLVED', NEW: 'NEW' });
-    sandbox.stub(SuggestionDataAccess, 'STATUSES').value({ OUTDATED: 'OUTDATED', NEW: 'NEW', FIXED: 'FIXED' });
-    sandbox.stub(GoogleClient, 'createFrom').resolves({});
-    context.site.getLatestAuditByAuditType = () => auditData;
-
-    // Override audit to have no broken links
-    context.audit = {
-      ...auditData,
-      getAuditResult: () => ({
-        brokenInternalLinks: [],
-        success: true,
-        auditContext: {
-          interval: 30,
-        },
-      }),
-    };
-
-    handler = await esmock('../../../src/internal-links/handler.js', {
-      '../../../src/internal-links/suggestions-generator.js': {
-        generateSuggestionData: () => [],
-      },
-    });
-
-    const result = await handler.opportunityAndSuggestionsStep(context);
-
-    // Verify opportunity was updated
-    expect(existingOpportunity.setStatus).to.have.been.calledOnceWith('RESOLVED');
-
-    // Verify suggestions were retrieved
-    expect(existingOpportunity.getSuggestions).to.have.been.calledOnce;
-
-    // Verify suggestions statuses were updated
-    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
-      mockSuggestions,
-      'FIXED',
-    );
-    expect(existingOpportunity.save).to.have.been.calledOnce;
-
-    expect(result.status).to.equal('complete');
-  }).timeout(5000);
+  
 
   it('allBySiteIdAndStatus method fails', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(

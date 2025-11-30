@@ -131,6 +131,7 @@ export async function getImsOrgId(site, dataAccess, log) {
  */
 export const handleOutdatedSuggestions = async ({
   context,
+  opportunity,
   existingSuggestions,
   newDataKeys,
   buildKey,
@@ -169,6 +170,31 @@ export const handleOutdatedSuggestions = async ({
       existingOutdatedSuggestions,
       statusToSetForOutdated,
     );
+  }
+
+  if (statusToSetForOutdated === SuggestionDataAccess.STATUSES.FIXED && opportunity) {
+    log.debug(`Adding FixEntity items for FIXED suggestions with existingOutdatedSuggestions length: ${existingOutdatedSuggestions.length} and opportunityId: ${opportunity?.getId?.()}`);
+    const { FixEntity: FixEntityModel } = context.dataAccess;
+    const { site } = context;
+    // Create a FixEntity for each suggestion that was marked FIXED
+    await Promise.all(existingOutdatedSuggestions.map(async (s) => {
+      try {
+        await opportunity.addFixEntities([{
+          suggestions: [s.getId()],
+          opportunityId: opportunity.getId(),
+          status: FixEntityModel?.STATUSES?.PUBLISHED,
+          type: s.getType(),
+          executedAt: new Date().toISOString(),
+          changeDetails: {
+            system: site?.getDeliveryType?.(),
+            data: s.getData?.(),
+          },
+          origin: FixEntityModel?.ORIGINS?.SPACECAT,
+        }]);
+      } catch (e) {
+        log?.info?.(`Failed to add FixEntity for the suggestion ${s.getId?.()}: ${e.message}`);
+      }
+    }));
   }
 };
 
@@ -237,6 +263,7 @@ export async function syncSuggestions({
   // Update outdated suggestions
   await handleOutdatedSuggestions({
     existingSuggestions,
+    opportunity,
     newDataKeys,
     buildKey,
     context,
