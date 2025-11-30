@@ -1,3 +1,10 @@
+# [1.261.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.260.6...v1.261.0) (2025-11-30)
+
+
+### Features
+
+* auto-optimize metadata;  remove invalid suggestions ([#1690](https://github.com/adobe/spacecat-audit-worker/issues/1690)) ([54d7846](https://github.com/adobe/spacecat-audit-worker/commit/54d7846c911f9dbc87b27aa6fd67650ee2c38d38))
+
 ## [1.260.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.260.5...v1.260.6) (2025-11-30)
 
 
