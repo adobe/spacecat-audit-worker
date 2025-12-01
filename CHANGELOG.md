@@ -1,3 +1,10 @@
+## [1.262.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.1...v1.262.2) (2025-12-01)
+
+
+### Bug Fixes
+
+* remove unused 'isAco' ([#1724](https://github.com/adobe/spacecat-audit-worker/issues/1724)) ([127598a](https://github.com/adobe/spacecat-audit-worker/commit/127598ac6319a798abaf7a8977efae05990f63c7))
+
 ## [1.262.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.0...v1.262.1) (2025-12-01)
 
 
