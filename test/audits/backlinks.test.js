@@ -16,6 +16,7 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
 import rumTraffic from '../fixtures/broken-backlinks/all-traffic.json' with { type: 'json' };
 import {
@@ -173,7 +174,11 @@ describe('Backlinks Tests', function () {
   });
 
   it('logs a warning when publishing FixEntities for FIXED suggestions fails', async () => {
-    configuration.isHandlerEnabledForSite.returns(true);
+    // Provide configuration for this test scope
+    context.dataAccess.Configuration.findLatest.resolves({
+      isHandlerEnabledForSite: () => true,
+      getHandlers: () => ({}),
+    });
     context.audit.getAuditResult.returns({
       success: true,
       brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
@@ -181,19 +186,42 @@ describe('Backlinks Tests', function () {
     brokenBacklinksOpportunity.getSuggestions.returns([]);
     brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
 
-    // NEW suggestions for message
-    context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(0).resolves(suggestions);
-    // Make FIXED retrieval throw to trigger catch warning
-    context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(1).rejects(new Error('boom'));
-
-    // Minimal FixEntity present (won't be used due to throw)
+    // NEW suggestions for message - ensure alternatives exist by using root URL
+    const suggestionsWithRootUrl = [
+      {
+        getId: () => 'new-1',
+        getData: () => ({
+          url_from: 'https://from.com/from-2',
+          url_to: 'https://example.com', // root-level ensures all alternatives included
+        }),
+      },
+    ];
+    // Provide FIXED suggestion whose url_to returns 200 so publishing path is reached
+    const fixedSuggestionOk = {
+      getId: () => 'fixed-pub',
+      getData: () => ({ url_to: 'https://foo.com/ok-200-pub' }),
+    };
+    // Drive return values by status to avoid call-order fragility
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus.callsFake((opId, status) => {
+      if (status === SuggestionDataAccess.STATUSES.NEW) {
+        return Promise.resolve(suggestionsWithRootUrl);
+      }
+      if (status === SuggestionDataAccess.STATUSES.FIXED) {
+        return Promise.resolve([fixedSuggestionOk]);
+      }
+      return Promise.resolve([]);
+    });
+    // Make FixEntity retrieval throw to trigger publishing catch warning
     context.dataAccess.FixEntity = {
       STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
-      getFixEntitiesBySuggestionId: sandbox.stub().resolves([]),
+      getFixEntitiesBySuggestionId: sandbox.stub().rejects(new Error('boom')),
     };
 
     // Mock top pages to allow message path
     context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+    // OK response for publish validation check
+    nock('https://foo.com').get('/ok-200-pub').reply(200);
 
     const result = await generateSuggestionData(context);
     expect(result.status).to.equal('complete');

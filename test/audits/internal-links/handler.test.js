@@ -105,6 +105,7 @@ const site = {
 
 describe('Broken internal links audit ', () => {
   let context;
+  let handler;
 
   beforeEach(() => {
     context = new MockContextBuilder()
@@ -163,7 +164,11 @@ describe('Broken internal links audit ', () => {
     const existingOpportunity = {
       getType: () => 'broken-internal-links',
     };
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
+    // Ensure Opportunity DA exists in this suite
+    if (!context.dataAccess.Opportunity) {
+      context.dataAccess.Opportunity = {};
+    }
+    context.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().resolves([existingOpportunity]);
     // No broken links
     context.audit = {
       ...context.audit,
@@ -191,6 +196,7 @@ describe('Broken internal links audit ', () => {
     // Ensure there are broken links so we don't return early
     context.audit = {
       ...context.audit,
+      getId: () => 'audit-id-1',
       getAuditResult: () => ({
         brokenInternalLinks: [{ urlFrom: 'a', urlTo: 'b', trafficDomain: 1 }],
         success: true,
@@ -238,6 +244,12 @@ describe('Broken internal links audit ', () => {
       '../../../src/internal-links/suggestions-generator.js': {
         syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
       },
+      '@adobe/spacecat-shared-data-access': {
+        FixEntity: {
+          STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+          getFixEntitiesBySuggestionId: sandbox.stub().resolves([fixEntity]),
+        },
+      },
     });
 
     const result = await handler.opportunityAndSuggestionsStep(context);
@@ -250,6 +262,7 @@ describe('Broken internal links audit ', () => {
     // Ensure there are broken links so we don't return early
     context.audit = {
       ...context.audit,
+      getId: () => 'audit-id-2',
       getAuditResult: () => ({
         brokenInternalLinks: [{ urlFrom: 'a', urlTo: 'b', trafficDomain: 1 }],
         success: true,
