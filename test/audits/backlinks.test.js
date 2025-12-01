@@ -172,6 +172,35 @@ describe('Backlinks Tests', function () {
     });
   });
 
+  it('logs a warning when publishing FixEntities for FIXED suggestions fails', async () => {
+    configuration.isHandlerEnabledForSite.returns(true);
+    context.audit.getAuditResult.returns({
+      success: true,
+      brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+    });
+    brokenBacklinksOpportunity.getSuggestions.returns([]);
+    brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+    // NEW suggestions for message
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(0).resolves(suggestions);
+    // Make FIXED retrieval throw to trigger catch warning
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(1).rejects(new Error('boom'));
+
+    // Minimal FixEntity present (won't be used due to throw)
+    context.dataAccess.FixEntity = {
+      STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+      getFixEntitiesBySuggestionId: sandbox.stub().resolves([]),
+    };
+
+    // Mock top pages to allow message path
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+    const result = await generateSuggestionData(context);
+    expect(result.status).to.equal('complete');
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Failed to publish fix entities for FIXED suggestions/),
+    );
+  });
   it('should submit urls for scraping step', async () => {
     context.audit.getAuditResult.returns({ success: true });
 

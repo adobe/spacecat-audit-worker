@@ -158,6 +158,131 @@ describe('Broken internal links audit ', () => {
     });
   }).timeout(5000);
 
+  it('logs info when opportunity exists but no broken internal links found', async () => {
+    // Arrange: existing opportunity present
+    const existingOpportunity = {
+      getType: () => 'broken-internal-links',
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
+    // No broken links
+    context.audit = {
+      ...context.audit,
+      getAuditResult: () => ({
+        brokenInternalLinks: [],
+        success: true,
+      }),
+    };
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+      },
+    });
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    // Verify we hit the logging branch when opportunity exists
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/updating status to RESOLVED/),
+    );
+  }).timeout(5000);
+
+  it('publishes deployed FixEntities for FIXED suggestions when urlTo is no longer 404', async () => {
+    // Ensure there are broken links so we don't return early
+    context.audit = {
+      ...context.audit,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'a', urlTo: 'b', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+    // Stub convertToOpportunity to a minimal object
+    const convertToOpportunityStub = sandbox.stub().resolves({ getId: () => 'op-1' });
+    // Stubs for isLinkInaccessible=false (not 404)
+    const isLinkInaccessibleStub = sandbox.stub().resolves(false);
+    // FIXED suggestions returned
+    const fixedSuggestion = {
+      getId: () => 's-1',
+      getData: () => ({ urlTo: 'https://example.com/ok' }),
+    };
+    context.dataAccess.Suggestion = {
+      allByOpportunityIdAndStatus: sandbox.stub().resolves([fixedSuggestion]),
+    };
+    // FixEntity with DEPLOYED status to be promoted to PUBLISHED
+    const setStatusStub = sandbox.stub();
+    const saveStub = sandbox.stub().resolves();
+    const fixEntity = {
+      getId: () => 'fe-1',
+      getStatus: sandbox.stub().returns('DEPLOYED'),
+      setStatus: setStatusStub,
+      setUpdatedBy: sandbox.stub(),
+      save: saveStub,
+    };
+    context.dataAccess.FixEntity = {
+      STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+      getFixEntitiesBySuggestionId: sandbox.stub().resolves([fixEntity]),
+    };
+    // Other DA used later
+    context.dataAccess.Configuration = { findLatest: () => ({ isHandlerEnabledForSite: () => false }) };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) };
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/helpers.js': {
+        isLinkInaccessible: isLinkInaccessibleStub,
+        calculatePriority: (x) => x,
+        calculateKpiDeltasForAudit: () => ({}),
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: convertToOpportunityStub,
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    expect(setStatusStub).to.have.been.calledWith('PUBLISHED');
+    expect(saveStub).to.have.been.calledOnce;
+  }).timeout(5000);
+
+  it('logs a warning when FIXED suggestions retrieval throws during publishing', async () => {
+    // Ensure there are broken links so we don't return early
+    context.audit = {
+      ...context.audit,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'a', urlTo: 'b', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+    const convertToOpportunityStub = sandbox.stub().resolves({ getId: () => 'op-2' });
+    // Make retrieval of FIXED suggestions throw to hit the catch block
+    context.dataAccess.Suggestion = {
+      allByOpportunityIdAndStatus: sandbox.stub().rejects(new Error('boom')),
+    };
+    context.dataAccess.Configuration = { findLatest: () => ({ isHandlerEnabledForSite: () => false }) };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) };
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/helpers.js': {
+        isLinkInaccessible: sandbox.stub().resolves(false),
+        calculatePriority: (x) => x,
+        calculateKpiDeltasForAudit: () => ({}),
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: convertToOpportunityStub,
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Failed to publish fix entities for FIXED suggestions/),
+    );
+  }).timeout(5000);
   it('broken-internal-links audit runs ans throws error incase of error in audit', async () => {
     context.rumApiClient.query.rejects(new Error('error'));
     expect(await internalLinksAuditRunner(
