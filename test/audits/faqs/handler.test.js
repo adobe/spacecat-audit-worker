@@ -370,9 +370,9 @@ describe('FAQs Handler', () => {
     });
 
     it('should retry multiple weeks and succeed when data is found in a later week', async () => {
-      // Mock date to ensure consistent week calculations (Nov 18, 2025 = week 47)
+      // Mock date to ensure consistent week calculations (Nov 25, 2025 = week 48)
       // This will make the test look for weeks: w47, w46, w45, w44
-      const clock = sandbox.useFakeTimers(new Date('2025-11-18T10:00:00Z'));
+      const clock = sandbox.useFakeTimers(new Date('2025-11-25T10:00:00Z'));
 
       // getWeekRangeStub will be called with offsets -1, -2, -3, -4
       // The stub will return different weeks for each offset
