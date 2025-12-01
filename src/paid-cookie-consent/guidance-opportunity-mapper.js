@@ -16,7 +16,7 @@ import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-acces
 import { CopyObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { DATA_SOURCES } from '../common/constants.js';
 
-const ESTIMATED_CPC = 0.80;
+// const ESTIMATED_CPC = 0.80;
 
 function formatNumberWithK(num) {
   if (num == null || num === undefined) {
@@ -127,27 +127,15 @@ export function isLowSeverityGuidanceBody(body) {
 export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
   // Get the data from urlConsent segment and filter for 'show' consent
   const stats = audit.getAuditResult();
-  const urlConsentSegment = stats.find((item) => item.key === 'urlConsent');
-  const pagesWithConsent = urlConsentSegment?.value?.filter((item) => item.consent === 'show') || [];
-
-  // Get individual page data for the specific URL
-  const pageData = pagesWithConsent.find((item) => item.url === url) || {};
-  const { pageViews } = pageData;
-  const { bounceRate } = pageData;
-  const { projectedTrafficLost } = pageData;
-
-  // Aggregate data across all pages with consent='show'
-  const pageViewsSum = pagesWithConsent.reduce((sum, page) => sum
-  + page.pageViews, 0);
-  const projectedTrafficLossSum = pagesWithConsent.reduce((sum, page) => {
-    const pageTrafficLoss = page.projectedTrafficLost;
-    return sum + pageTrafficLoss;
-  }, 0);
-
-  // Calculate total aggregate bounce rate
-  const totalAggBounceRate = pageViewsSum > 0 ? projectedTrafficLossSum / pageViewsSum : 0;
-
-  const projectedTrafficValue = projectedTrafficLossSum * ESTIMATED_CPC;
+  /*
+      projectedTrafficLost,
+      projectedTrafficValue,
+      top3Pages: top3Pages.map((item) => item.path),
+      averagePageViewsTop3,
+      averageTrafficLostTop3,
+      averageBounceRateMobileTop3,
+      temporalCondition,
+  */
 
   return {
     siteId,
@@ -156,7 +144,7 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
     type: 'generic-opportunity',
     origin: 'AUTOMATION',
     title: 'Consent Banner covers essential page content',
-    description: `The consent banner hides essential page content. ${(totalAggBounceRate * 100).toFixed(1)}% of total paid traffic (${formatNumberWithK(projectedTrafficLossSum)}) bounces on consent banner without interaction. Most affected page: ${url} (${formatNumberWithK(projectedTrafficLost)})`,
+    description: `The consent banner hides essential page content, resulting in a critical mobile bounce rate. Pages like the following recorded in average ${formatNumberWithK(stats.averagePageViewsTop3)} visits but lost ${formatNumberWithK(stats.averageTrafficLostTop3)} potential customers immediately.`,
     guidance: {
       recommendations: [
         {
@@ -173,14 +161,15 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
         DATA_SOURCES.RUM,
         DATA_SOURCES.PAGE,
       ],
-      projectedTrafficLost: projectedTrafficLossSum,
-      projectedTrafficValue,
+      projectedTrafficLost: stats.projectedTrafficLost,
+      projectedTrafficValue: stats.projectedTrafficValue,
       opportunityType: 'paid-cookie-consent',
       page: url,
-      pageViews,
+      pageViews: stats.totalPageViews,
       ctr: 0,
-      bounceRate,
+      bounceRate: stats.totalAverageBounceRate,
       pageType: 'unknown',
+      temporalCondition: stats.temporalCondition,
     },
     status: 'NEW',
     tags: [
