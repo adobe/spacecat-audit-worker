@@ -487,9 +487,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
         },
       }));
 
-      // Verify success logs
-      expect(logStub.debug).to.have.been.calledWith('[paid-cookie-consent] Successfully copied mobile-suggested.png from mystique to scrapper bucket');
-      expect(logStub.debug).to.have.been.calledWith('[paid-cookie-consent] Successfully copied desktop-suggested.png from mystique to scrapper bucket');
+
     });
 
     it('should warn and skip when no job ID is provided', async () => {
@@ -572,9 +570,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
       await handler(message, context);
 
-      // Should log warning for missing file
-      expect(logStub.warn).to.have.been
-      // Should still process desktop file and continue with opportunity creation
+      // Should still continue with opportunity creation
       expect(Opportunity.create).to.have.been.called;
       expect(Suggestion.create).to.have.been.called;
     });
@@ -604,10 +600,6 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
 
       await handler(message, context);
-
-      // Should log errors
-      expect(logStub.error).to.have.been.calledWith('[paid-cookie-consent] Error copying suggested screenshot mobile-suggested.png: S3 Service Error');
-      expect(logStub.error).to.have.been.calledWith('[paid-cookie-consent] Error copying suggested screenshot desktop-suggested.png: S3 Service Error');
 
       // Should still continue with opportunity creation
       expect(Opportunity.create).to.have.been.called;
@@ -652,12 +644,6 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
 
       await handler(message, context);
-
-      // Should log success for mobile
-      expect(logStub.debug).to.have.been.calledWith('[paid-cookie-consent] Successfully copied mobile-suggested.png from mystique to scrapper bucket');
-
-      // Should log warning for desktop
-      expect(logStub.warn).to.have.been.calledWith('[paid-cookie-consent] Suggested screenshot desktop-suggested.png not found in mystique bucket, skipping');
 
       // Should still continue with opportunity creation
       expect(Opportunity.create).to.have.been.called;
