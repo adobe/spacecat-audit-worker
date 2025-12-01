@@ -52,7 +52,7 @@ describe('Vulnerabilities Opportunity Data Mapper', () => {
 
       expect(result).to.deep.equal({
         mainMetric: {
-          name: 'Vulnerabilities',
+          name: 'Libraries',
           value: 12,
         },
         metrics: {
@@ -110,7 +110,7 @@ describe('Vulnerabilities Opportunity Data Mapper', () => {
   describe('createOpportunityData', () => {
     it('should create opportunity data with correct structure', () => {
       const props = {
-        mainMetric: { name: 'Vulnerabilities', value: 12 },
+        mainMetric: { name: 'Libraries', value: 12 },
         metrics: {
           high_risk_vulnerabilities: 23,
           medium_risk_vulnerabilities: 22,

@@ -170,6 +170,7 @@ export async function extractCodeBucket(context) {
 
   return {
     type: 'code',
+    allowCache: false,
     siteId: site.getId(),
     auditResult: result.auditResult,
     fullAuditRef: result.fullAuditRef,

@@ -58,6 +58,7 @@ describe('Page Citability Handler', () => {
       getBaseURL: sandbox.stub().returns(baseURL),
       getConfig: sandbox.stub().returns({
         getLlmoCdnlogsFilter: sandbox.stub().returns([]),
+        getFetchConfig: sandbox.stub().returns(null),
       }),
     };
 
@@ -113,18 +114,18 @@ describe('Page Citability Handler', () => {
       ]);
       mockPageCitability.allBySiteId.resolves([
         { 
-          getUrl: () => '/page1',
+          getUrl: () => 'https://example.com/page1',
           getUpdatedAt: () => '2025-01-14T10:00:00Z' // Recent (1 day ago)
         },
       ]);
 
       const result = await handler.steps['extract-urls'].handler(context);
 
-      expect(result.urls).to.have.lengthOf(3);
-      expect(result.urls[0].url).to.equal(`${baseURL}/page1`);
-      expect(result.urls[1].url).to.equal(`${baseURL}/page2`);
-      expect(result.urls[2].url).to.equal(`${baseURL}/page3`);
-      expect(result.auditResult.urlCount).to.equal(3);
+      // page1 should be filtered out since it has a recent citability score
+      expect(result.urls).to.have.lengthOf(2);
+      expect(result.urls[0].url).to.equal(`${baseURL}/page2`);
+      expect(result.urls[1].url).to.equal(`${baseURL}/page3`);
+      expect(result.auditResult.urlCount).to.equal(2);
       expect(result.processingType).to.equal('page-citability');
       expect(result.siteId).to.equal(siteId);
       expect(result.fullAuditRef).to.equal(baseURL);
@@ -201,6 +202,23 @@ describe('Page Citability Handler', () => {
       expect(result.urls).to.have.lengthOf(2);
       expect(result.urls[0].url).to.equal(`${baseURL}/`);
       expect(result.urls[1].url).to.equal(`${baseURL}/page1`);
+    });
+
+    it('should return empty result when SCHEMA_NOT_FOUND error occurs', async () => {
+      context.athenaClient.query.rejects(new Error('SCHEMA_NOT_FOUND: Database not found'));
+
+      const result = await handler.steps['extract-urls'].handler(context);
+
+      expect(result.auditResult.urlCount).to.equal(0);
+      expect(result.urls).to.deep.equal([{ url: baseURL }]);
+      expect(result.processingType).to.equal('page-citability');
+    });
+
+    it('should rethrow non-SCHEMA_NOT_FOUND errors', async () => {
+      context.athenaClient.query.rejects(new Error('Some other error'));
+
+      await expect(handler.steps['extract-urls'].handler(context))
+        .to.be.rejectedWith('Some other error');
     });
 
     it('should return empty result when no URLs found or all URLs already analyzed', async () => {

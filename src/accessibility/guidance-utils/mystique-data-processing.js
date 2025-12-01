@@ -10,22 +10,58 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray, isNonEmptyObject, buildAggregationKey } from '@adobe/spacecat-shared-utils';
+import {
+  isNonEmptyArray,
+  isNonEmptyObject,
+  buildAggregationKey,
+  buildKey,
+} from '@adobe/spacecat-shared-utils';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { issueTypesForMystique } from '../utils/constants.js';
+
+/**
+ * Determines if an HTML issue should be sent to Mystique for processing
+ *
+ * Rules:
+ * - Always send if no guidance exists
+ * - If codeFixFlow is enabled: also send if guidance exists but no code fix is available
+ * - If codeFixFlow is disabled: skip issues that already have guidance
+ *
+ * @param {Object} html - The HTML issue object
+ * @param {Object} suggestionData - The suggestion data containing isCodeChangeAvailable flag
+ * @param {boolean} useCodeFixFlow - Whether code fix flow is enabled
+ * @returns {boolean} True if the issue should be sent to Mystique
+ */
+function shouldSendIssueToMystique(html, suggestionData, useCodeFixFlow) {
+  const hasGuidance = isNonEmptyObject(html.guidance);
+
+  // Always send if no guidance exists
+  if (!hasGuidance) {
+    return true;
+  }
+
+  // If codeFixFlow is enabled, also send if code fix is not available
+  if (useCodeFixFlow) {
+    const hasCodeFix = suggestionData.isCodeChangeAvailable === true;
+    return !hasCodeFix;
+  }
+
+  // Has guidance and codeFixFlow not enabled, skip
+  return false;
+}
 
 /**
  * Processes suggestions directly to create Mystique message data
  *
  * Supports multiple aggregation strategies:
- * - PER_ELEMENT: Each suggestion has one issue with one htmlWithIssues element
- * - PER_ISSUE_TYPE_PER_PAGE: Each suggestion has one issue with multiple htmlWithIssues elements
- * - PER_PAGE: Each suggestion has multiple issues with multiple htmlWithIssues elements
+ * - Code Fix Flow (useCodeFixFlow=true): Uses buildAggregationKey for granular grouping
+ * - Legacy Flow (useCodeFixFlow=false): Groups all issues by URL only
  *
  * @param {Array} suggestions - Array of suggestion objects from the opportunity
+ * @param {boolean} useCodeFixFlow - Whether to use code fix flow (granular) or legacy flow (by URL)
  * @returns {Array} Array of message data objects ready for SQS sending
  */
-export function processSuggestionsForMystique(suggestions) {
+export function processSuggestionsForMystique(suggestions, useCodeFixFlow = true) {
   if (!Array.isArray(suggestions) || suggestions.length === 0) {
     return [];
   }
@@ -48,16 +84,12 @@ export function processSuggestionsForMystique(suggestions) {
       .filter((issue) => issueTypesForMystique.includes(issue.type))
       .filter((issue) => isNonEmptyArray(issue.htmlWithIssues))
       .flatMap((issue) => issue.htmlWithIssues
-        .filter((html) => !isNonEmptyObject(html.guidance))
+        .filter((html) => shouldSendIssueToMystique(html, data, useCodeFixFlow))
         .map((html) => {
-          // Build aggregation key based on granularity strategy for this issue type
           const targetSelector = html.target_selector || html.targetSelector || '';
-          const aggregationKey = buildAggregationKey(
-            issue.type,
-            data.url,
-            targetSelector,
-            data.source,
-          );
+          const aggregationKey = useCodeFixFlow
+            ? buildAggregationKey(issue.type, data.url, targetSelector, data.source)
+            : buildKey(data.url);
 
           return {
             issueName: issue.type,

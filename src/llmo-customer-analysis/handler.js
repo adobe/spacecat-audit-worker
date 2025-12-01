@@ -25,7 +25,7 @@ import {
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
 import { sendOnboardingNotification } from './onboarding-notifications.js';
-import { enableContentAI } from './content-ai.js';
+import { ContentAIClient } from '../utils/content-ai.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
@@ -283,6 +283,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     'canonical',
     'hreflang',
     'summarization',
+    'faqs',
     REFERRAL_TRAFFIC_AUDIT,
     'cdn-logs-report',
     'geo-brand-presence',
@@ -290,7 +291,9 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   // Enable ContentAI for the site
   try {
-    await enableContentAI(site, context);
+    const contentAIClient = new ContentAIClient(context);
+    await contentAIClient.initialize();
+    await contentAIClient.createConfiguration(site);
     log.info(`Successfully processed ContentAI for site ${siteId}`);
   } catch (error) {
     log.error(`Failed to process ContentAI for site ${siteId}: ${error.message}`);
