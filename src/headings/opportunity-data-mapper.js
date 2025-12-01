@@ -26,7 +26,7 @@ const OpptyData = {
       'Ensure headings follow brand guidelines and maintain consistent tone across the site.',
     ],
   },
-  tags: ['Accessibility', 'SEO', 'isElmo', 'isASO'],
+  tags: ['Accessibility', 'SEO', 'isElmo', 'isASO', 'tech-seo', 'onsite'],
   data: {
     dataSources: [DATA_SOURCES.SITE],
   },

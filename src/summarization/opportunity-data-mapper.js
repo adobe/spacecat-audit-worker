@@ -23,7 +23,7 @@ export function createOpportunityData(siteId, auditId, guidance) {
     description: 'Content summarization elements such as summary and key points improve content discoverability and user engagement.',
     status: 'NEW',
     guidance,
-    tags: ['isElmo'],
+    tags: ['isElmo', 'optimize@edge', 'onsite', 'content'],
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.PAGE],
     },
