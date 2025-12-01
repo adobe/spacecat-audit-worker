@@ -88,6 +88,41 @@ jobs:
           AWS_REGION: us-east-1
           AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_STAGE}}
 
+  upload-build-artifacts:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: 'false'
+
+      - name: Setup Node & NPM
+        uses: ./.github/actions/setup-node-npm
+
+      - name: Configure AWS for DEV
+        uses: ./.github/actions/configure-aws
+        with:
+          aws_role_to_assume: 'arn:aws:iam::${{secrets.AWS_ACCOUNT_ID_DEV}}:role/spacecat-role-github-actions'
+
+      - name: Create Build Artifacts
+        run: npm run build
+        env:
+          AWS_REGION: us-east-1
+          AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_DEV}}
+
+      - name: Copy Build Artifact
+        run: cp dist/spacecat-services/audit-worker@*.zip spacecat-services--audit-worker-latest.zip
+        env:
+          AWS_REGION: us-east-1
+          AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_DEV}}
+
+      - name: Upload Build Artifact
+        run: aws s3 cp spacecat-services--audit-worker-latest.zip s3://spacecat-artifacts-dev/spacecat-services--audit-worker-latest.zip
+        env:
+          AWS_REGION: us-east-1
+          AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_DEV}}
 
   branch-deploy:
     runs-on: ubuntu-latest

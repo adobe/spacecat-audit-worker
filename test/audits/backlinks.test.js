@@ -52,6 +52,10 @@ describe('Backlinks Tests', function () {
     { getUrl: () => 'https://example.com/blog/page1' },
     { getUrl: () => 'https://example.com/blog/page2' },
   ];
+  const topPagesNoPrefix = [
+    { getUrl: () => 'https://example.com/page1' },
+    { getUrl: () => 'https://example.com/page2' },
+  ];
   const auditUrl = 'https://audit.url';
   const audit = {
     getId: () => auditDataMock.id,
@@ -173,11 +177,37 @@ describe('Backlinks Tests', function () {
 
     const result = await submitForScraping(context);
 
+    // filterByAuditScope returns all items when baseURL has no subpath
     expect(result).to.deep.equal({
       siteId: contextSite.getId(),
       type: 'broken-backlinks',
       urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
     });
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/Found.*top pages.*within audit scope/));
+  });
+
+  it('should filter top pages by audit scope when baseURL has subpath', async () => {
+    context.audit.getAuditResult.returns({ success: true });
+    const siteWithSubpath = {
+      ...contextSite,
+      getBaseURL: () => 'https://example.com/uk',
+    };
+    context.site = siteWithSubpath;
+
+    const topPagesWithSubpaths = [
+      { getUrl: () => 'https://example.com/uk/page1' },
+      { getUrl: () => 'https://example.com/uk/page2' },
+      { getUrl: () => 'https://example.com/fr/page1' }, // Should be filtered out
+    ];
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPagesWithSubpaths);
+
+    const result = await submitForScraping(context);
+
+    // Should only include URLs within /uk subpath
+    expect(result.urls).to.have.length(2);
+    expect(result.urls.map((u) => u.url)).to.include('https://example.com/uk/page1');
+    expect(result.urls.map((u) => u.url)).to.include('https://example.com/uk/page2');
+    expect(result.urls.map((u) => u.url)).to.not.include('https://example.com/fr/page1');
   });
 
   it('should not submit urls for scraping step when audit was not successful', async () => {
@@ -288,6 +318,42 @@ describe('Backlinks Tests', function () {
       }
     });
 
+    it('returns { status: complete } if there are no broken backlinks in audit result', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: [],
+      });
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/No broken backlinks found/));
+    });
+
+    it('returns { status: complete } if brokenBacklinks is null', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: null,
+      });
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+    });
+
+    it('returns { status: complete } if brokenBacklinks is undefined', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+      });
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+    });
+
     it('processes suggestions for broken backlinks and send message to mystique', async () => {
       configuration.isHandlerEnabledForSite.returns(true);
       context.audit.getAuditResult.returns({
@@ -297,26 +363,161 @@ describe('Backlinks Tests', function () {
       brokenBacklinksOpportunity.getSuggestions.returns([]);
       brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
 
+      // Mock calculateKpiMetrics S3 calls (needed for the function to complete)
+      context.s3Client.send.onCall(0).resolves(null); // No RUM traffic data
+      context.s3Client.send.onCall(1).resolves(null); // No organic traffic data
+
+      // Mock suggestions with broken link that has root-level URL (no path prefix)
+      // This ensures alternatives with any prefix or no prefix will be included
+      // IMPORTANT: Match the exact structure from the original test that works
+      const suggestionsWithRootUrl = [
+        {
+          opportunityId: 'test-opportunity-id',
+          getId: () => 'test-suggestion-1',
+          type: 'REDIRECT_UPDATE',
+          rank: 550000,
+          getData: () => ({
+            url_from: 'https://from.com/from-2',
+            url_to: 'https://example.com', // Root-level URL - extractPathPrefix returns ''
+          }),
+        },
+      ];
+      // Create new stub like internal links test does - MUST be set before generateSuggestionData is called
+      // The stub needs to accept opportunityId and status as parameters
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+        .withArgs('opportunity-id', sinon.match.any)
+        .resolves(suggestionsWithRootUrl);
+
+      // Use top pages with any prefix - since broken link has no prefix, all will be included
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+        .resolves(topPages);
+
       const result = await generateSuggestionData(context);
 
-      // 4x for headers + 4x for each page
       expect(result.status).to.deep.equal('complete');
-      expect(context.sqs.sendMessage).to.have.been.calledWithMatch('test-queue', {
-        type: 'guidance:broken-links',
-        siteId: 'site-id',
-        auditId: 'audit-id',
-        deliveryType: 'aem_cs',
-        time: sinon.match.any,
-        data: {
-          opportunityId: 'opportunity-id',
-          alternativeUrls: topPages.map((page) => page.getUrl()),
-          brokenLinks: [{
-            urlFrom: 'https://from.com/from-2',
-            urlTo: 'https://foo.com/redirects-throws-error',
-            suggestionId: 'test-suggestion-1',
-          }],
-        },
+      
+      // Verify no warnings were called (meaning both brokenLinks and alternativeUrls have items)
+      expect(context.log.warn).to.not.have.been.calledWith('No valid broken links to send to Mystique. Skipping message.');
+      expect(context.log.warn).to.not.have.been.calledWith('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
+      
+      // Verify message was sent with correct structure
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.type).to.equal('guidance:broken-links');
+      expect(sentMessage.siteId).to.equal('site-id');
+      expect(sentMessage.auditId).to.equal('audit-id');
+      expect(sentMessage.deliveryType).to.equal('aem_cs');
+      expect(sentMessage.data.opportunityId).to.equal('opportunity-id');
+      expect(sentMessage.data.alternativeUrls).to.deep.equal(topPages.map((page) => page.getUrl()));
+      expect(sentMessage.data.brokenLinks).to.be.an('array');
+      expect(sentMessage.data.brokenLinks.length).to.equal(1);
+      expect(sentMessage.data.brokenLinks[0]).to.deep.include({
+        urlFrom: 'https://from.com/from-2',
+        urlTo: 'https://example.com',
+        suggestionId: 'test-suggestion-1',
       });
+      
+      expect(context.log.debug).to.have.been.calledWith(sinon.match(/Message sent to Mystique/));
+    });
+
+    it('should filter alternative URLs by locale when broken links have locales', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      // Mock suggestions with locale-specific broken links
+      const suggestionsWithLocale = [
+        {
+          getId: () => 'test-suggestion-1',
+          getData: () => ({
+            url_from: 'https://from.com/from-1',
+            url_to: 'https://example.com/uk/en/old-page',
+          }),
+        },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(suggestionsWithLocale);
+
+      // Mock top pages with different locales
+      const topPagesWithLocales = [
+        { getUrl: () => 'https://example.com/uk/en/page1' },
+        { getUrl: () => 'https://example.com/uk/en/page2' },
+        { getUrl: () => 'https://example.com/fr/page1' }, // Should be filtered out
+        { getUrl: () => 'https://example.com/de/page1' }, // Should be filtered out
+      ];
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPagesWithLocales);
+
+      const result = await generateSuggestionData(context);
+
+      expect(result.status).to.deep.equal('complete');
+      const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.alternativeUrls).to.have.length(2);
+      expect(sentMessage.data.alternativeUrls).to.include('https://example.com/uk/en/page1');
+      expect(sentMessage.data.alternativeUrls).to.include('https://example.com/uk/en/page2');
+      expect(sentMessage.data.alternativeUrls).to.not.include('https://example.com/fr/page1');
+      expect(sentMessage.data.alternativeUrls).to.not.include('https://example.com/de/page1');
+    });
+
+    it('should skip sending message when no valid broken links', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      // Mock suggestions with invalid data (missing fields)
+      const invalidSuggestions = [
+        {
+          getId: () => 'test-suggestion-1',
+          getData: () => ({
+            url_from: '', // Invalid - empty
+            url_to: 'https://example.com/page',
+          }),
+        },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(invalidSuggestions);
+
+      const result = await generateSuggestionData(context);
+
+      expect(result.status).to.deep.equal('complete');
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWith('No valid broken links to send to Mystique. Skipping message.');
+    });
+
+    it('should skip sending message when no alternative URLs available', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      // Mock suggestions
+      const validSuggestions = [
+        {
+          getId: () => 'test-suggestion-1',
+          getData: () => ({
+            url_from: 'https://from.com/from-1',
+            url_to: 'https://example.com/uk/en/old-page',
+          }),
+        },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(validSuggestions);
+
+      // Mock empty top pages (after filtering)
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+
+      const result = await generateSuggestionData(context);
+
+      expect(result.status).to.deep.equal('complete');
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWith('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
     });
   });
 

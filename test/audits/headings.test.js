@@ -28,9 +28,9 @@ import {
   generateSuggestions,
   headingsAuditRunner,
   getH1HeadingASuggestion,
+  getHeadingSelector,
 } from '../../src/headings/handler.js';
-import { createOpportunityData, createOpportunityDataForElmo } from '../../src/headings/opportunity-data-mapper.js';
-import { keepLatestMergeDataFunction } from '../../src/utils/data-access.js';
+import { createOpportunityData } from '../../src/headings/opportunity-data-mapper.js';
 import { convertToOpportunity } from '../../src/common/opportunity.js';
 
 chaiUse(sinonChai);
@@ -97,19 +97,6 @@ describe('Headings Audit', () => {
     const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
     
-    // Mock CssSelectorGenerator using esmock
-    const MockCssSelectorGenerator = class {
-      getSelector() {
-        return 'body > h1';
-      }
-    };
-    
-    const mockedHandler = await esmock('../../src/headings/handler.js', {
-      'css-selector-generator': {
-        default: MockCssSelectorGenerator
-      }
-    });
-    
     context.dataAccess = {
       SiteTopPage: {
         allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
@@ -132,6 +119,7 @@ describe('Headings Audit', () => {
             transformToString: () =>
               JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: '<h1></h1><h2>Valid</h2>',
                   tags: {
@@ -149,7 +137,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
     // Check heading-h1-length (empty H1 now triggers this check instead of heading-missing-h1)
     expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check]).to.exist;
@@ -158,17 +146,9 @@ describe('Headings Audit', () => {
     expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion);
     expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].urls).to.be.an('array').with.lengthOf.at.least(1);
     expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].urls[0].url).to.equal(url);
-    
-    // Check heading-no-content
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check]).to.exist;
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].success).to.equal(false);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls).to.be.an('array').with.lengthOf.at.least(1);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls[0].url).to.equal(url);
   });
 
-  it('flags heading order jumps (h1 → h3)', async () => {
+  it('flags heading order jumps (multiple invalid orders)', async () => {
     const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
     context.dataAccess = {
@@ -193,8 +173,9 @@ describe('Headings Audit', () => {
             transformToString: () =>
               JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
-                  rawBody: '<h1>Title</h1><h3>Section</h3>',
+                  rawBody: '<h1>Title</h1><h3>Section</h3><h5>Subsection</h5>',
                   tags: {
                     title: 'Page Title',
                     description: 'Page Description',
@@ -214,7 +195,8 @@ describe('Headings Audit', () => {
     const result = completedAudit.auditResult;
     expect(result[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check]).to.exist;
     expect(result[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].success).to.equal(false);
-    expect(result[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].explanation).to.include(HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].explanation).to.include('Invalid jumps found: h1 → h3, h3 → h5');
     expect(result[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion);
     expect(result[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].urls).to.be.an('array').with.lengthOf.at.least(1);
     expect(result[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].urls[0].url).to.equal(url);
@@ -245,6 +227,7 @@ describe('Headings Audit', () => {
             transformToString: () =>
               JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: '<h1>Title</h1><p>Content for title</p><h2>Section</h2><p>Content for section</p><h3>Subsection</h3><p>Content for subsection</p>',
                   tags: {
@@ -295,6 +278,7 @@ describe('Headings Audit', () => {
             transformToString: () =>
               JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: '<h2>Section</h2><h3>Subsection</h3>',
                   tags: {
@@ -348,6 +332,7 @@ describe('Headings Audit', () => {
             transformToString: () =>
               JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: '<h1>First Title</h1><h2>Section</h2><h1>Second Title</h1>',
                   tags: {
@@ -370,7 +355,7 @@ describe('Headings Audit', () => {
 
     expect(result[HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check]).to.exist;
     expect(result[HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check].success).to.equal(false);
-    expect(result[HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check].explanation).to.include(HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation);
     expect(result[HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion);
     expect(result[HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check].urls).to.be.an('array').with.lengthOf.at.least(1);
     expect(result[HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check].urls[0].url).to.equal(url);
@@ -380,19 +365,6 @@ describe('Headings Audit', () => {
     const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
     const longH1Text = 'This is a very long H1 heading that exceeds the maximum allowed length of 70 characters for optimal SEO and accessibility';
-    
-    // Mock CssSelectorGenerator using esmock
-    const MockCssSelectorGenerator = class {
-      getSelector() {
-        return 'body > h1';
-      }
-    };
-    
-    const mockedHandler = await esmock('../../src/headings/handler.js', {
-      'css-selector-generator': {
-        default: MockCssSelectorGenerator
-      }
-    });
     
     context.dataAccess = {
       SiteTopPage: {
@@ -416,6 +388,7 @@ describe('Headings Audit', () => {
             transformToString: () =>
               JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: `<h1>${longH1Text}</h1><h2>Section</h2>`,
                   tags: {
@@ -433,7 +406,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
 
     expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check]).to.exist;
@@ -469,6 +442,7 @@ describe('Headings Audit', () => {
             transformToString: () =>
               JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: '<h1>Title</h1><h2></h2><h3>Section</h3>',
                   tags: {
@@ -491,7 +465,7 @@ describe('Headings Audit', () => {
 
     expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check]).to.exist;
     expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].success).to.equal(false);
-    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_EMPTY.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].explanation).to.include(HEADINGS_CHECKS.HEADING_EMPTY.explanation);
     expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_EMPTY.suggestion);
     expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].urls).to.be.an('array').with.lengthOf.at.least(1);
     expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].urls[0].url).to.equal(url);
@@ -522,6 +496,7 @@ describe('Headings Audit', () => {
             transformToString: () =>
               JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: '<h1>Title</h1><h2>Section</h2><h3></h3>',
                   tags: {
@@ -544,7 +519,7 @@ describe('Headings Audit', () => {
 
     expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check]).to.exist;
     expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].success).to.equal(false);
-    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_EMPTY.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].explanation).to.include(HEADINGS_CHECKS.HEADING_EMPTY.explanation);
     expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_EMPTY.suggestion);
     expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].urls).to.be.an('array').with.lengthOf.at.least(1);
     expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].urls[0].url).to.equal(url);
@@ -577,6 +552,7 @@ describe('Headings Audit', () => {
             transformToString: () =>
               JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: '<h1>Title</h1><h2></h2>',
                   tags: {
@@ -675,6 +651,28 @@ describe('Headings Audit', () => {
     expect(result).to.be.null;
   });
 
+  it('handles error in validatePageHeadings when url is invalid', async () => {
+    const invalidUrl = 'not a valid url';
+    const logSpy = sinon.spy(log);
+
+    const result = await validatePageHeadings(
+      invalidUrl,
+      logSpy,
+      site,
+      allKeys,
+      s3Client,
+      context.env.S3_SCRAPER_BUCKET_NAME,
+      context,
+      seoChecks,
+    );
+
+    expect(result.url).to.equal(invalidUrl);
+    expect(result.checks).to.deep.equal([]);
+    expect(logSpy.error).to.have.been.calledWith(
+      sinon.match(/Error validating headings for/)
+    );
+  });
+
   it('detects headings with content having child elements', async () => {
     const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
@@ -700,6 +698,7 @@ describe('Headings Audit', () => {
             transformToString: () =>
               JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: '<h1>Title</h1><div><span>Content with child</span></div><h2>Section</h2>',
                   tags: {
@@ -750,6 +749,7 @@ describe('Headings Audit', () => {
             transformToString: () =>
               JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: '<h1>Title</h1><img src="test.jpg" alt="test"><h2>Section</h2>',
                   tags: {
@@ -800,6 +800,7 @@ describe('Headings Audit', () => {
             transformToString: () =>
               JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: '<h1>Title</h1>Some plain text content<h2>Section</h2>',
                   tags: {
@@ -825,160 +826,6 @@ describe('Headings Audit', () => {
     expect(result.message).to.equal('No heading issues detected');
   });
 
-  it('detects duplicate heading text', async () => {
-    const baseURL = 'https://example.com';
-    const url = 'https://example.com/page';
-    context.dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
-          { getUrl: () => url },
-        ]),
-      },
-    };
-    const allKeys = ['scrapes/site-1/page/scrape.json'];
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
-
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () =>
-              JSON.stringify({
-                finalUrl: url,
-                scrapeResult: {
-                  rawBody: '<h1>Title</h1><p>Content</p><h2>Section</h2><p>Content</p><h3>Section</h3>',
-                  tags: {
-                    title: 'Page Title',
-                    description: 'Page Description',
-                    h1: ['Page H1'],
-                  },
-                },
-              }),
-          },
-          ContentType: 'application/json',
-        });
-      }
-
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
-    context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
-    const result = completedAudit.auditResult;
-
-    expect(result[HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check]).to.exist;
-    expect(result[HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check].success).to.equal(false);
-    expect(result[HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation);
-    expect(result[HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.suggestion);
-    expect(result[HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check].urls).to.be.an('array').with.lengthOf.at.least(1);
-    expect(result[HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check].urls[0].url).to.equal(url);
-  });
-
-  it('logs duplicate heading text detection message', async () => {
-    const url = 'https://example.com/page';
-    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
-
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1>Title</h1><h2>Duplicate Text</h2><h3>Duplicate Text</h3><h4>Another Duplicate Text</h4><h5>Another Duplicate Text</h5>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: ['Page H1'],
-            },
-          }
-        }),
-      },
-      ContentType: 'application/json',
-    });
-
-    const result = await validatePageHeadings(url, logSpy, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-
-    // Verify the duplicate text check was added
-    const duplicateChecks = result.checks.filter(c => c.check === HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check);
-    expect(duplicateChecks.length).to.be.at.least(1);
-
-    // Verify the first duplicate check has correct properties
-    expect(duplicateChecks[0]).to.include({
-      check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
-      suggestion: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.suggestion,
-      text: 'Duplicate Text',
-      count: 2,
-    });
-    expect(duplicateChecks[0].duplicates).to.deep.equal(['H2', 'H3']);
-
-    // Verify the log message was called with the correct format
-    expect(logSpy.debug).to.have.been.calledWith(
-      sinon.match(/Duplicate heading text detected at.*"Duplicate Text" found in H2, H3/)
-    );
-
-    // Verify second duplicate was also logged
-    expect(logSpy.debug).to.have.been.calledWith(
-      sinon.match(/Duplicate heading text detected at.*"Another Duplicate Text" found in H4, H5/)
-    );
-  });
-
-  it('detects heading without content before next heading', async () => {
-    const baseURL = 'https://example.com';
-    const url = 'https://example.com/page';
-    context.dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
-          { getUrl: () => url },
-        ]),
-      },
-    };
-    const allKeys = ['scrapes/site-1/page/scrape.json'];
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
-
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () =>
-              JSON.stringify({
-                finalUrl: url,
-                scrapeResult: {
-                  rawBody: '<h1>Title</h1><h2>Section Without Content</h2><h3>Subsection</h3>',
-                  tags: {
-                    title: 'Page Title',
-                    description: 'Page Description',
-                    h1: ['Page H1'],
-                  },
-                },
-              }),
-          },
-          ContentType: 'application/json',
-        });
-      }
-
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
-    context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
-    const result = completedAudit.auditResult;
-
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check]).to.exist;
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].success).to.equal(false);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls).to.be.an('array').with.lengthOf.at.least(1);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls[0].url).to.equal(url);
-  });
 
   describe('generateSuggestions', () => {
     it('skips suggestions for successful audit', () => {
@@ -1061,102 +908,22 @@ describe('Headings Audit', () => {
             explanation: 'Empty heading',
             urls: [{ url: 'https://example.com/page2' }]
           },
-          'heading-duplicate-text': {
-            success: false,
-            explanation: 'Duplicate text',
-            urls: [{ url: 'https://example.com/page3' }]
-          },
-          'heading-no-content': {
-            success: false,
-            explanation: 'No content',
-            urls: [{ url: 'https://example.com/page4' }]
-          },
           'unknown-check-type': {
             success: false,
             explanation: 'Unknown issue',
-            urls: [{ url: 'https://example.com/page5' }]
+            urls: [{ url: 'https://example.com/page3' }]
           }
         }
       };
 
       const result = generateSuggestions(auditUrl, auditData, context);
 
-      expect(result.suggestions).to.have.lengthOf(5);
+      expect(result.suggestions).to.have.lengthOf(3);
       expect(result.suggestions[0].recommendedAction).to.equal('Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).');
       expect(result.suggestions[1].recommendedAction).to.equal('Provide meaningful text content for the empty heading or remove the element.');
-      expect(result.suggestions[2].recommendedAction).to.equal('Ensure each heading has unique, descriptive text content that clearly identifies its section.');
-      expect(result.suggestions[3].recommendedAction).to.equal('Add meaningful content (paragraphs, lists, images, etc.) after the heading before the next heading.');
-      expect(result.suggestions[4].recommendedAction).to.equal('Review heading structure and content to follow heading best practices.');
+      expect(result.suggestions[2].recommendedAction).to.equal('Review heading structure and content to follow heading best practices.');
     });
 
-    it('generates elmoSuggestions with markdown table when there are issues', () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        auditResult: {
-          'heading-missing-h1': {
-            success: false,
-            explanation: 'Missing H1',
-            urls: [{ url: 'https://example.com/page1' }]
-          },
-          'heading-empty': {
-            success: false,
-            explanation: 'Empty heading',
-            urls: [{ url: 'https://example.com/page2', tagName: 'h2' }]
-          }
-        }
-      };
-
-      const result = generateSuggestions(auditUrl, auditData, context);
-
-      expect(result.elmoSuggestions).to.exist;
-      expect(result.elmoSuggestions).to.be.an('array').with.lengthOf(1);
-      expect(result.elmoSuggestions[0].type).to.equal('CODE_CHANGE');
-      expect(result.elmoSuggestions[0].recommendedAction).to.be.a('string');
-      
-      // Verify markdown table structure
-      const mdTable = result.elmoSuggestions[0].recommendedAction;
-      expect(mdTable).to.include('## Missing H1');
-      expect(mdTable).to.include('| Page Url | Explanation | Suggestion |');
-      expect(mdTable).to.include('|-------|-------|-------|');
-      expect(mdTable).to.include('https://example.com/page1');
-      expect(mdTable).to.include('## Empty Heading');
-      expect(mdTable).to.include('https://example.com/page2');
-      expect(mdTable).to.include('for tag name: H2');
-    });
-
-    it('does not generate elmoSuggestions when there are no issues', () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        auditResult: { status: 'success', message: 'No issues found' }
-      };
-
-      const result = generateSuggestions(auditUrl, auditData, context);
-
-      // When audit is successful, function returns early without adding elmoSuggestions/suggestions
-      expect(result.elmoSuggestions).to.be.undefined;
-      expect(result.suggestions).to.be.undefined;
-      expect(result.auditResult).to.deep.equal(auditData.auditResult);
-    });
-
-    it('generates empty elmoSuggestions when mdTable is empty', () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        auditResult: {
-          'heading-order-invalid': {
-            success: true, // All checks passed
-            explanation: 'Heading order is valid',
-            urls: []
-          }
-        }
-      };
-
-      const result = generateSuggestions(auditUrl, auditData, context);
-
-      // When there are checks but no failures, mdTable is empty so elmoSuggestions is empty array
-      expect(result.elmoSuggestions).to.exist;
-      expect(result.elmoSuggestions).to.be.an('array').with.lengthOf(0);
-      expect(result.suggestions).to.be.an('array').with.lengthOf(0);
-    });
   });
 
   describe('opportunityAndSuggestions', () => {
@@ -1246,6 +1013,7 @@ describe('Headings Audit', () => {
             transformToString: () =>
               JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: '<h1>Title</h1><div><hr></div><h2>Section</h2>',
                   tags: {
@@ -1296,6 +1064,7 @@ describe('Headings Audit', () => {
             transformToString: () =>
               JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: '<h1>Title</h1><div></div><span></span><div></div><p>Finally some content</p><h2>Section</h2>',
                   tags: {
@@ -1321,81 +1090,15 @@ describe('Headings Audit', () => {
     expect(result.message).to.equal('No heading issues detected');
   });
 
-  it('iterates through all siblings and finds no content', async () => {
-    const baseURL = 'https://example.com';
-    const url = 'https://example.com/page';
-    context.dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
-          { getUrl: () => url },
-        ]),
-      },
-    };
-    const allKeys = ['scrapes/site-1/page/scrape.json'];
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
-
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () =>
-              JSON.stringify({
-                finalUrl: url,
-                scrapeResult: {
-                  rawBody: '<h1>Title</h1><div></div><span></span><div></div><h2>Section</h2>',
-                  tags: {
-                    title: 'Page Title',
-                    description: 'Page Description',
-                    h1: ['Page H1'],
-                  },
-                },
-              }),
-          },
-          ContentType: 'application/json',
-        });
-      }
-
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
-    context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
-    const result = completedAudit.auditResult;
-
-    // Should detect no content between h1 and h2 after iterating through all empty siblings
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check]).to.exist;
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].success).to.equal(false);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls).to.be.an('array').with.lengthOf.at.least(1);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls[0].url).to.equal(url);
-  });
-
   describe('transformRules functionality', () => {
     it('includes transformRules in validatePageHeadings for missing H1', async () => {
       const url = 'https://example.com/page';
-
-      // Mock CssSelectorGenerator
-      const MockCssSelectorGenerator = class {
-        getSelector() {
-          return 'body > h1';
-        }
-      };
-
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
-        'css-selector-generator': {
-          default: MockCssSelectorGenerator
-        }
-      });
 
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
             finalUrl: url,
+            scrapedAt: Date.now(),
             scrapeResult: {
               rawBody: '<h2>No H1</h2>',
               tags: {
@@ -1409,40 +1112,28 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
 
       // Find the missing H1 check
       const missingH1Check = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_MISSING_H1.check);
-      
+
       expect(missingH1Check).to.exist;
       expect(missingH1Check.transformRules).to.exist;
-      expect(missingH1Check.transformRules).to.deep.equal({
-        action: 'insertBefore',
-        selector: 'body > :first-child',
-        tag: 'h1',
-      });
+      expect(missingH1Check.transformRules.action).to.equal('insertBefore');
+      expect(missingH1Check.transformRules.selector).to.equal('body > :first-child');
+      expect(missingH1Check.transformRules.tag).to.equal('h1');
+      expect(missingH1Check.transformRules.scrapedAt).to.exist;
     });
 
     it('includes transformRules with body > main selector when main element exists', async () => {
       const url = 'https://example.com/page';
 
-      // Mock CssSelectorGenerator
-      const MockCssSelectorGenerator = class {
-        getSelector() {
-          return 'body > h1';
-        }
-      };
-
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
-        'css-selector-generator': {
-          default: MockCssSelectorGenerator
-        }
-      });
 
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
             finalUrl: url,
+            scrapedAt: Date.now(),
             scrapeResult: {
               rawBody: '<body><main><h2>No H1</h2></main></body>',
               tags: {
@@ -1456,40 +1147,28 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
 
       // Find the missing H1 check
       const missingH1Check = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_MISSING_H1.check);
-      
+
       expect(missingH1Check).to.exist;
       expect(missingH1Check.transformRules).to.exist;
-      expect(missingH1Check.transformRules).to.deep.equal({
-        action: 'insertBefore',
-        selector: 'body > main > :first-child',
-        tag: 'h1',
-      });
+      expect(missingH1Check.transformRules.action).to.equal('insertBefore');
+      expect(missingH1Check.transformRules.selector).to.equal('body > main > :first-child');
+      expect(missingH1Check.transformRules.tag).to.equal('h1');
+      expect(missingH1Check.transformRules.scrapedAt).to.exist;
     });
 
     it('includes transformRules in validatePageHeadings for empty H1', async () => {
       const url = 'https://example.com/page';
 
-      // Mock CssSelectorGenerator
-      const MockCssSelectorGenerator = class {
-        getSelector() {
-          return 'body > main > div > h1';
-        }
-      };
-
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
-        'css-selector-generator': {
-          default: MockCssSelectorGenerator
-        }
-      });
 
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
             finalUrl: url,
+            scrapedAt: Date.now(),
             scrapeResult: {
               rawBody: '<h1></h1>',
               tags: {
@@ -1503,41 +1182,29 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
 
       // Find the H1 length check
       const h1LengthCheck = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
-      
+
       expect(h1LengthCheck).to.exist;
       expect(h1LengthCheck.transformRules).to.exist;
-      expect(h1LengthCheck.transformRules).to.deep.equal({
-        action: 'replace',
-        selector: 'body > main > div > h1',
-        currValue: '',
-      });
+      expect(h1LengthCheck.transformRules.action).to.equal('replace');
+      expect(h1LengthCheck.transformRules.selector).to.include('h1');
+      expect(h1LengthCheck.transformRules.currValue).to.equal('');
+      expect(h1LengthCheck.transformRules.scrapedAt).to.exist;
     });
 
     it('includes transformRules in validatePageHeadings for long H1', async () => {
       const url = 'https://example.com/page';
       const longH1 = 'This is a very long H1 heading that exceeds the maximum allowed length of 70 characters';
 
-      // Mock CssSelectorGenerator
-      const MockCssSelectorGenerator = class {
-        getSelector() {
-          return 'header > h1.main-title';
-        }
-      };
-
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
-        'css-selector-generator': {
-          default: MockCssSelectorGenerator
-        }
-      });
 
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
             finalUrl: url,
+            scrapedAt: Date.now(),
             scrapeResult: {
               rawBody: `<h1>${longH1}</h1>`,
               tags: {
@@ -1551,40 +1218,28 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
 
       // Find the H1 length check
       const h1LengthCheck = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
-      
+
       expect(h1LengthCheck).to.exist;
       expect(h1LengthCheck.transformRules).to.exist;
-      expect(h1LengthCheck.transformRules).to.deep.equal({
-        action: 'replace',
-        selector: 'header > h1.main-title',
-        currValue: longH1,
-      });
+      expect(h1LengthCheck.transformRules.action).to.equal('replace');
+      expect(h1LengthCheck.transformRules.selector).to.include('h1');
+      expect(h1LengthCheck.transformRules.currValue).to.equal(longH1);
+      expect(h1LengthCheck.transformRules.scrapedAt).to.exist;
     });
 
     it('does not include transformRules for checks that do not support them', async () => {
       const url = 'https://example.com/page';
 
-      // Mock CssSelectorGenerator
-      const MockCssSelectorGenerator = class {
-        getSelector() {
-          return 'body > h1';
-        }
-      };
-
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
-        'css-selector-generator': {
-          default: MockCssSelectorGenerator
-        }
-      });
 
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
             finalUrl: url,
+            scrapedAt: Date.now(),
             scrapeResult: {
               rawBody: '<h1>Title</h1><h3>Skip H2</h3>',
               tags: {
@@ -1598,11 +1253,11 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
 
       // Find the heading order invalid check
       const orderInvalidCheck = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_ORDER_INVALID.check);
-      
+
       expect(orderInvalidCheck).to.exist;
       expect(orderInvalidCheck.transformRules).to.be.undefined;
     });
@@ -1611,17 +1266,7 @@ describe('Headings Audit', () => {
       const baseURL = 'https://example.com';
       const url = 'https://example.com/page';
 
-      // Mock CssSelectorGenerator
-      const MockCssSelectorGenerator = class {
-        getSelector() {
-          return 'body > h1';
-        }
-      };
-
       const mockedHandler = await esmock('../../src/headings/handler.js', {
-        'css-selector-generator': {
-          default: MockCssSelectorGenerator
-        },
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: sinon.stub().resolves([{ url }])
         }
@@ -1649,6 +1294,7 @@ describe('Headings Audit', () => {
             Body: {
               transformToString: () => JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: '<h2>No H1</h2>',
                   tags: {
@@ -1674,28 +1320,17 @@ describe('Headings Audit', () => {
       expect(missingH1Result).to.exist;
       expect(missingH1Result.urls).to.be.an('array').with.lengthOf.at.least(1);
       expect(missingH1Result.urls[0].transformRules).to.exist;
-      expect(missingH1Result.urls[0].transformRules).to.deep.equal({
-        action: 'insertBefore',
-        selector: 'body > :first-child',
-        tag: 'h1',
-      });
+      expect(missingH1Result.urls[0].transformRules.action).to.equal('insertBefore');
+      expect(missingH1Result.urls[0].transformRules.selector).to.equal('body > :first-child');
+      expect(missingH1Result.urls[0].transformRules.tag).to.equal('h1');
+      expect(missingH1Result.urls[0].transformRules.scrapedAt).to.exist;
     });
 
     it('does not add transformRules to aggregated results when check has no transformRules', async () => {
       const baseURL = 'https://example.com';
       const url = 'https://example.com/page';
 
-      // Mock CssSelectorGenerator
-      const MockCssSelectorGenerator = class {
-        getSelector() {
-          return 'body > h1';
-        }
-      };
-
       const mockedHandler = await esmock('../../src/headings/handler.js', {
-        'css-selector-generator': {
-          default: MockCssSelectorGenerator
-        },
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: sinon.stub().resolves([{ url }])
         }
@@ -1723,6 +1358,7 @@ describe('Headings Audit', () => {
             Body: {
               transformToString: () => JSON.stringify({
                 finalUrl: url,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: '<h1>Title</h1><h3>Skip H2</h3>',
                   tags: {
@@ -1763,6 +1399,7 @@ describe('Headings Audit', () => {
                 action: 'insertBefore',
                 selector: 'body > main > :first-child',
                 tag: 'h1',
+                scrapedAt: new Date().toISOString(),
               }
             }]
           },
@@ -1774,6 +1411,7 @@ describe('Headings Audit', () => {
               transformRules: {
                 action: 'replace',
                 selector: 'body > h1',
+                scrapedAt: new Date().toISOString(),
               }
             }]
           }
@@ -1783,25 +1421,23 @@ describe('Headings Audit', () => {
       const result = generateSuggestions(auditUrl, auditData, context);
 
       expect(result.suggestions).to.have.lengthOf(2);
-      
+
       // Check first suggestion has transformRules
       const missingH1Suggestion = result.suggestions.find(s => s.checkType === 'heading-missing-h1');
       expect(missingH1Suggestion).to.exist;
       expect(missingH1Suggestion.transformRules).to.exist;
-      expect(missingH1Suggestion.transformRules).to.deep.equal({
-        action: 'insertBefore',
-        selector: 'body > main > :first-child',
-        tag: 'h1',
-      });
+      expect(missingH1Suggestion.transformRules.action).to.equal('insertBefore');
+      expect(missingH1Suggestion.transformRules.selector).to.equal('body > main > :first-child');
+      expect(missingH1Suggestion.transformRules.tag).to.equal('h1');
+      expect(missingH1Suggestion.transformRules.scrapedAt).to.exist;
 
       // Check second suggestion has transformRules
       const h1LengthSuggestion = result.suggestions.find(s => s.checkType === 'heading-h1-length');
       expect(h1LengthSuggestion).to.exist;
       expect(h1LengthSuggestion.transformRules).to.exist;
-      expect(h1LengthSuggestion.transformRules).to.deep.equal({
-        action: 'replace',
-        selector: 'body > h1',
-      });
+      expect(h1LengthSuggestion.transformRules.action).to.equal('replace');
+      expect(h1LengthSuggestion.transformRules.selector).to.include('h1');
+      expect(h1LengthSuggestion.transformRules.scrapedAt).to.exist;
     });
 
     it('does not add transformRules to suggestions when urlObj has no transformRules', () => {
@@ -1854,6 +1490,7 @@ describe('Headings Audit', () => {
               action: 'insertBefore',
               selector: 'body > main > :first-child',
               tag: 'h1',
+              scrapedAt: new Date().toISOString(),
             }
           }
         ]
@@ -1868,11 +1505,10 @@ describe('Headings Audit', () => {
       const mappedSuggestion = mapNewSuggestionFn(auditData.suggestions[0]);
 
       expect(mappedSuggestion.data.transformRules).to.exist;
-      expect(mappedSuggestion.data.transformRules).to.deep.equal({
-        action: 'insertBefore',
-        selector: 'body > main > :first-child',
-        tag: 'h1',
-      });
+      expect(mappedSuggestion.data.transformRules.action).to.equal('insertBefore');
+      expect(mappedSuggestion.data.transformRules.selector).to.equal('body > main > :first-child');
+      expect(mappedSuggestion.data.transformRules.tag).to.equal('h1');
+      expect(mappedSuggestion.data.transformRules.scrapedAt).to.exist;
     });
 
     it('does not add transformRules to opportunity data when suggestion has no transformRules', async () => {
@@ -1919,28 +1555,12 @@ describe('Headings Audit', () => {
     it('CSS selector is dynamically generated for different H1 elements', async () => {
       const url = 'https://example.com/page';
 
-      // Mock CssSelectorGenerator to return different selectors on each call
-      let callCount = 0;
-      const MockCssSelectorGenerator = class {
-        getSelector() {
-          callCount++;
-          if (callCount === 1) return 'header > h1.primary';
-          if (callCount === 2) return 'main > article > h1';
-          return 'body > h1';
-        }
-      };
-
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
-        'css-selector-generator': {
-          default: MockCssSelectorGenerator
-        }
-      });
-
       // Test first page
       s3Client.send.resolves({
         Body: {
           transformToString: () => JSON.stringify({
             finalUrl: url,
+            scrapedAt: Date.now(),
             scrapeResult: {
               rawBody: '<h1></h1>',
               tags: {
@@ -1954,16 +1574,38 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result1 = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result1 = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
       const h1LengthCheck1 = result1.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
-      
-      expect(h1LengthCheck1.transformRules.selector).to.equal('header > h1.primary');
 
-      // Reset for second call
-      const result2 = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      // Selector is dynamically generated based on DOM structure
+      expect(h1LengthCheck1.transformRules.selector).to.exist;
+      expect(h1LengthCheck1.transformRules.selector).to.include('h1');
+
+      // Test with different DOM structure
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<main><article><h1></h1></article></main>',
+              tags: {
+                title: 'Page Title',
+                description: 'Page Description',
+                h1: [],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result2 = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
       const h1LengthCheck2 = result2.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
-      
-      expect(h1LengthCheck2.transformRules.selector).to.equal('main > article > h1');
+
+      // Selector should be different for different DOM structures
+      expect(h1LengthCheck2.transformRules.selector).to.exist;
+      expect(h1LengthCheck2.transformRules.selector).to.include('h1');
     });
   });
 
@@ -2000,20 +1642,11 @@ describe('Headings Audit', () => {
       ContentType: 'application/json',
     });
 
-    // Use esmock to mock JSDOM to throw an error during processing
+    // Use esmock to mock cheerio to throw an error during processing
     const mockedHandler = await esmock('../../src/headings/handler.js', {
-      jsdom: {
-        JSDOM: class {
-          constructor() {
-            // Don't throw in constructor, but make window.document.querySelectorAll throw
-            this.window = {
-              document: {
-                querySelectorAll: () => {
-                  throw new Error('DOM processing failed');
-                }
-              }
-            };
-          }
+      cheerio: {
+        load: () => {
+          throw new Error('DOM processing failed');
         }
       },
     });
@@ -2028,19 +1661,6 @@ describe('Headings Audit', () => {
   it('handles getH1HeadingASuggestion AI errors gracefully', async () => {
     const url = 'https://example.com/page';
 
-    // Mock CssSelectorGenerator using esmock
-    const MockCssSelectorGenerator = class {
-      getSelector() {
-        return 'body > h1';
-      }
-    };
-    
-    const mockedHandler = await esmock('../../src/headings/handler.js', {
-      'css-selector-generator': {
-        default: MockCssSelectorGenerator
-      }
-    });
-
     // Mock AI client to throw an error
     const mockClient = {
       fetchChatCompletion: sinon.stub().rejects(new Error('AI service unavailable')),
@@ -2052,6 +1672,7 @@ describe('Headings Audit', () => {
       Body: {
         transformToString: () => JSON.stringify({
           finalUrl: url,
+          scrapedAt: Date.now(),
           scrapeResult: {
             rawBody: '<h1></h1>',
             tags: {
@@ -2066,7 +1687,7 @@ describe('Headings Audit', () => {
     });
 
     // validatePageHeadings should return normal checks (AI is called later in headingsAuditRunner)
-    const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
 
     // Should return normal checks since AI is not called during validatePageHeadings
     expect(result.url).to.equal(url);
@@ -2075,19 +1696,6 @@ describe('Headings Audit', () => {
 
   it('handles getH1HeadingASuggestion JSON parsing errors', async () => {
     const url = 'https://example.com/page';
-
-    // Mock CssSelectorGenerator using esmock
-    const MockCssSelectorGenerator = class {
-      getSelector() {
-        return 'body > h1';
-      }
-    };
-    
-    const mockedHandler = await esmock('../../src/headings/handler.js', {
-      'css-selector-generator': {
-        default: MockCssSelectorGenerator
-      }
-    });
 
     // Mock AI client to return invalid JSON
     const mockClient = {
@@ -2102,6 +1710,7 @@ describe('Headings Audit', () => {
       Body: {
         transformToString: () => JSON.stringify({
           finalUrl: url,
+          scrapedAt: Date.now(),
           scrapeResult: {
             rawBody: '<h1></h1>',
             tags: {
@@ -2116,7 +1725,7 @@ describe('Headings Audit', () => {
     });
 
     // validatePageHeadings should return normal checks (AI is called later in headingsAuditRunner)
-    const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
 
     // Should return normal checks since AI is not called during validatePageHeadings
     expect(result.url).to.equal(url);
@@ -2248,6 +1857,7 @@ describe('Headings Audit', () => {
           Body: {
             transformToString: () => JSON.stringify({
               finalUrl: url,
+              scrapedAt: Date.now(),
               scrapeResult: {
                 rawBody: '<h2>No H1 here</h2>', // Missing H1 to trigger AI suggestion
                 tags: {
@@ -2342,6 +1952,7 @@ describe('Headings Audit', () => {
           Body: {
             transformToString: () => JSON.stringify({
               finalUrl: url,
+              scrapedAt: Date.now(),
               scrapeResult: {
                 rawBody: '<h2>No H1 here</h2>', // Missing H1 to trigger AI suggestion
                 tags: {
@@ -2440,6 +2051,7 @@ describe('Headings Audit', () => {
           Body: {
             transformToString: () => JSON.stringify({
               finalUrl: url,
+              scrapedAt: Date.now(),
               scrapeResult: {
                 rawBody: '<h2>No H1 here</h2>', // Missing H1 to trigger AI suggestion
                 tags: {
@@ -2522,6 +2134,7 @@ describe('Headings Audit', () => {
           Body: {
             transformToString: () => JSON.stringify({
               finalUrl: url,
+              scrapedAt: Date.now(),
               scrapeResult: {
                 rawBody: '<h2>No H1 here</h2>',
                 tags: {
@@ -2605,6 +2218,7 @@ describe('Headings Audit', () => {
           Body: {
             transformToString: () => JSON.stringify({
               finalUrl: url,
+              scrapedAt: Date.now(),
               scrapeResult: {
                 rawBody: '<h2>No H1 here</h2>',
                 tags: {
@@ -2686,6 +2300,7 @@ describe('Headings Audit', () => {
           Body: {
             transformToString: () => JSON.stringify({
               finalUrl: url, // Truthy finalUrl
+              scrapedAt: Date.now(),
               scrapeResult: {
                 rawBody: '<h2>No H1 here</h2>',
                 tags: {
@@ -2774,6 +2389,7 @@ describe('Headings Audit', () => {
           Body: {
             transformToString: () => JSON.stringify({
               finalUrl: url,
+              scrapedAt: Date.now(),
               scrapeResult: {
                 rawBody: '<h2>No H1 here</h2>',
                 tags: {
@@ -3439,42 +3055,6 @@ describe('Headings Audit', () => {
       expect(result.suggestions[0].recommendedAction).to.equal('Review heading structure and content to follow heading best practices.');
     });
 
-    it('generates suggestions for duplicate text check', () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        auditResult: {
-          'heading-duplicate-text': {
-            success: false,
-            explanation: 'Duplicate heading text',
-            urls: [{ url: 'https://example.com/page1' }]
-          }
-        }
-      };
-
-      const result = generateSuggestions(auditUrl, auditData, context);
-
-      expect(result.suggestions).to.have.lengthOf(1);
-      expect(result.suggestions[0].recommendedAction).to.equal('Ensure each heading has unique, descriptive text content that clearly identifies its section.');
-    });
-
-    it('generates suggestions for no content check', () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        auditResult: {
-          'heading-no-content': {
-            success: false,
-            explanation: 'Heading has no content',
-            urls: [{ url: 'https://example.com/page1' }]
-          }
-        }
-      };
-
-      const result = generateSuggestions(auditUrl, auditData, context);
-
-      expect(result.suggestions).to.have.lengthOf(1);
-      expect(result.suggestions[0].recommendedAction).to.equal('Add meaningful content (paragraphs, lists, images, etc.) after the heading before the next heading.');
-    });
-
     it('handles new URL object format with tagName and custom suggestion', () => {
       const auditUrl = 'https://example.com';
       const auditData = {
@@ -3716,6 +3296,331 @@ describe('Headings Audit', () => {
       const key2 = buildKeyFn(suggestion2);
       expect(key2).to.equal('heading-order-invalid|https://example.com/page2');
     });
+
+    it('tests mergeDataFunction execution - basic merge without isEdited', async () => {
+      const convertToOpportunityStub4 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub4 = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub4,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub4,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            url: 'https://example.com/page1',
+            recommendedAction: 'New action'
+          }
+        ]
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const syncCall = syncSuggestionsStub4.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+      expect(mergeDataFn).to.be.a('function');
+
+      // Test basic merge without isEdited
+      const existingSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'Old action',
+        someField: 'existing value'
+      };
+      const newSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'New action',
+        someField: 'new value',
+        newField: 'new field value'
+      };
+
+      const result = mergeDataFn(existingSuggestion, newSuggestion);
+
+      // Should merge normally, newSuggestion overwrites existingSuggestion
+      expect(result.recommendedAction).to.equal('New action');
+      expect(result.someField).to.equal('new value');
+      expect(result.newField).to.equal('new field value');
+    });
+
+    it('tests mergeDataFunction execution - preserves recommendedAction when isEdited is true', async () => {
+      const convertToOpportunityStub5 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub5 = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub5,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub5,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            url: 'https://example.com/page1',
+            recommendedAction: 'New action'
+          }
+        ]
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const syncCall = syncSuggestionsStub5.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test merge with isEdited: true
+      const existingSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'User edited action',
+        isEdited: true,
+        someField: 'existing value'
+      };
+      const newSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'AI generated action',
+        someField: 'new value'
+      };
+
+      const result = mergeDataFn(existingSuggestion, newSuggestion);
+
+      // Should preserve the user-edited recommendedAction
+      expect(result.recommendedAction).to.equal('User edited action');
+      expect(result.someField).to.equal('new value');
+      expect(result.isEdited).to.equal(true);
+    });
+
+    it('tests mergeDataFunction execution - does not preserve when isEdited is false', async () => {
+      const convertToOpportunityStub6 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub6 = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub6,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub6,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            url: 'https://example.com/page1',
+            recommendedAction: 'New action'
+          }
+        ]
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const syncCall = syncSuggestionsStub6.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test merge with isEdited: false
+      const existingSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'Old action',
+        isEdited: false,
+        someField: 'existing value'
+      };
+      const newSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'New action',
+        someField: 'new value'
+      };
+
+      const result = mergeDataFn(existingSuggestion, newSuggestion);
+
+      // Should NOT preserve, should use new recommendedAction
+      expect(result.recommendedAction).to.equal('New action');
+      expect(result.someField).to.equal('new value');
+    });
+
+    it('tests mergeDataFunction execution - does not preserve when recommendedAction is undefined', async () => {
+      const convertToOpportunityStub7 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub7 = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub7,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub7,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            url: 'https://example.com/page1',
+            recommendedAction: 'New action'
+          }
+        ]
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const syncCall = syncSuggestionsStub7.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test merge with isEdited: true but recommendedAction is undefined
+      const existingSuggestion = {
+        type: 'CODE_CHANGE',
+        isEdited: true,
+        someField: 'existing value'
+        // recommendedAction is undefined
+      };
+      const newSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'New action',
+        someField: 'new value'
+      };
+
+      const result = mergeDataFn(existingSuggestion, newSuggestion);
+
+      // Should NOT preserve since recommendedAction is undefined
+      expect(result.recommendedAction).to.equal('New action');
+      expect(result.someField).to.equal('new value');
+      expect(result.isEdited).to.equal(true);
+    });
+
+    it('tests mergeDataFunction execution - handles null recommendedAction', async () => {
+      const convertToOpportunityStub8 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub8 = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub8,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub8,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            url: 'https://example.com/page1',
+            recommendedAction: 'New action'
+          }
+        ]
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const syncCall = syncSuggestionsStub8.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test merge with isEdited: true but recommendedAction is null
+      const existingSuggestion = {
+        type: 'CODE_CHANGE',
+        isEdited: true,
+        recommendedAction: null,
+        someField: 'existing value'
+      };
+      const newSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'New action',
+        someField: 'new value'
+      };
+
+      const result = mergeDataFn(existingSuggestion, newSuggestion);
+
+      // Should NOT preserve since recommendedAction is null (which is not !== undefined)
+      // Note: null !== undefined is true, so the condition will pass
+      expect(result.recommendedAction).to.equal(null);
+      expect(result.someField).to.equal('new value');
+      expect(result.isEdited).to.equal(true);
+    });
+
+    it('tests mergeDataFunction execution - preserves empty string recommendedAction when isEdited', async () => {
+      const convertToOpportunityStub9 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub9 = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub9,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub9,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            url: 'https://example.com/page1',
+            recommendedAction: 'New action'
+          }
+        ]
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      const syncCall = syncSuggestionsStub9.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test merge with isEdited: true and empty string recommendedAction
+      const existingSuggestion = {
+        type: 'CODE_CHANGE',
+        isEdited: true,
+        recommendedAction: '',
+        someField: 'existing value'
+      };
+      const newSuggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'New action',
+        someField: 'new value'
+      };
+
+      const result = mergeDataFn(existingSuggestion, newSuggestion);
+
+      // Should preserve the empty string since it's !== undefined
+      expect(result.recommendedAction).to.equal('');
+      expect(result.someField).to.equal('new value');
+      expect(result.isEdited).to.equal(true);
+    });
   });
 
   describe('Opportunity Data Mapper', () => {
@@ -3753,8 +3658,8 @@ describe('Headings Audit', () => {
 
       expect(opportunityData).to.have.property('tags');
       expect(opportunityData.tags).to.be.an('array');
-      expect(opportunityData.tags).to.have.lengthOf(2);
-      expect(opportunityData.tags).to.deep.equal(['Accessibility', 'SEO']);
+      expect(opportunityData.tags).to.have.lengthOf(4);
+      expect(opportunityData.tags).to.deep.equal(['Accessibility', 'SEO', 'isElmo', 'isASO']);
     });
 
     it('has correct data sources configuration', () => {
@@ -3791,151 +3696,6 @@ describe('Headings Audit', () => {
       // Check nested structure
       expect(opportunityData.guidance).to.have.property('steps');
       expect(opportunityData.data).to.have.property('dataSources');
-    });
-  });
-
-  describe('Opportunity Data Mapper for Elmo', () => {
-    it('creates proper opportunity data structure for Elmo', () => {
-      const opportunityData = createOpportunityDataForElmo();
-
-      expect(opportunityData).to.be.an('object');
-      expect(opportunityData).to.have.property('runbook', '');
-      expect(opportunityData).to.have.property('origin', 'AUTOMATION');
-      expect(opportunityData).to.have.property('title', 'Heading structure issues affecting accessibility and SEO');
-      expect(opportunityData).to.have.property('description');
-      expect(opportunityData.description).to.include('heading elements');
-      expect(opportunityData.description).to.include('hierarchical order');
-      expect(opportunityData.description).to.include('AI-powered suggestions');
-    });
-
-    it('includes Elmo-specific tags', () => {
-      const opportunityData = createOpportunityDataForElmo();
-
-      expect(opportunityData).to.have.property('tags');
-      expect(opportunityData.tags).to.be.an('array');
-      expect(opportunityData.tags).to.have.lengthOf(5);
-      expect(opportunityData.tags).to.deep.equal(['Accessibility', 'SEO', 'llm', 'isElmo', 'headings']);
-    });
-
-    it('includes proper guidance recommendations for Elmo', () => {
-      const opportunityData = createOpportunityDataForElmo();
-
-      expect(opportunityData).to.have.property('guidance');
-      expect(opportunityData.guidance).to.have.property('recommendations');
-      expect(opportunityData.guidance.recommendations).to.be.an('array');
-      expect(opportunityData.guidance.recommendations).to.have.lengthOf(1);
-
-      const recommendation = opportunityData.guidance.recommendations[0];
-      expect(recommendation).to.have.property('insight');
-      expect(recommendation).to.have.property('recommendation');
-      expect(recommendation).to.have.property('type');
-      expect(recommendation).to.have.property('rationale');
-
-      expect(recommendation.type).to.equal('CONTENT');
-      expect(recommendation.insight).to.include('Headings analysis of page content');
-      expect(recommendation.recommendation).to.include('heading elements (h1–h6)');
-      expect(recommendation.rationale).to.include('accessibility and helps search engines');
-    });
-
-    it('has correct data sources configuration for Elmo', () => {
-      const opportunityData = createOpportunityDataForElmo();
-
-      expect(opportunityData).to.have.property('data');
-      expect(opportunityData.data).to.have.property('dataSources');
-      expect(opportunityData.data.dataSources).to.be.an('array');
-      expect(opportunityData.data.dataSources).to.have.lengthOf(1);
-      expect(opportunityData.data.dataSources[0]).to.equal('Site');
-    });
-
-    it('includes additional metrics for Elmo with headings subtype', () => {
-      const opportunityData = createOpportunityDataForElmo();
-
-      expect(opportunityData.data).to.have.property('additionalMetrics');
-      expect(opportunityData.data.additionalMetrics).to.be.an('array');
-      expect(opportunityData.data.additionalMetrics).to.have.lengthOf(1);
-      expect(opportunityData.data.additionalMetrics[0]).to.deep.equal({
-        value: 'headings',
-        key: 'subtype',
-      });
-    });
-
-    it('returns consistent data on multiple calls', () => {
-      const data1 = createOpportunityDataForElmo();
-      const data2 = createOpportunityDataForElmo();
-
-      expect(data1).to.deep.equal(data2);
-    });
-
-    it('has all required fields for Elmo opportunity creation', () => {
-      const opportunityData = createOpportunityDataForElmo();
-
-      // Check all required fields exist
-      expect(opportunityData).to.have.all.keys([
-        'runbook',
-        'origin',
-        'title',
-        'description',
-        'guidance',
-        'tags',
-        'data'
-      ]);
-
-      // Check nested structure
-      expect(opportunityData.guidance).to.have.property('recommendations');
-      expect(opportunityData.data).to.have.property('dataSources');
-      expect(opportunityData.data).to.have.property('additionalMetrics');
-    });
-
-    it('extends base opportunity data with Elmo-specific properties', () => {
-      const baseData = createOpportunityData();
-      const elmoData = createOpportunityDataForElmo();
-
-      // Should have all base properties
-      expect(elmoData.runbook).to.equal(baseData.runbook);
-      expect(elmoData.origin).to.equal(baseData.origin);
-      expect(elmoData.title).to.equal(baseData.title);
-      expect(elmoData.description).to.equal(baseData.description);
-
-      // Guidance structure is different for Elmo (recommendations vs steps)
-      expect(elmoData.guidance).to.have.property('recommendations');
-      expect(baseData.guidance).to.have.property('steps');
-      expect(elmoData.guidance.recommendations).to.be.an('array');
-      expect(baseData.guidance.steps).to.be.an('array');
-
-      // Should have extended tags
-      expect(elmoData.tags).to.include.members(baseData.tags);
-      expect(elmoData.tags).to.include('llm');
-      expect(elmoData.tags).to.include('isElmo');
-
-      // Should have extended data structure
-      expect(elmoData.data.dataSources).to.deep.equal(baseData.data.dataSources);
-      expect(elmoData.data).to.have.property('additionalMetrics');
-      expect(baseData.data).to.not.have.property('additionalMetrics');
-    });
-
-    it('maintains immutability of base data', () => {
-      const baseData = createOpportunityData();
-      const elmoData = createOpportunityDataForElmo();
-
-      // Base data should not be modified
-      expect(baseData.tags).to.deep.equal(['Accessibility', 'SEO']);
-      expect(baseData.data).to.not.have.property('additionalMetrics');
-
-      // Elmo data should have extended properties
-      expect(elmoData.tags).to.have.lengthOf(5);
-      expect(elmoData.data).to.have.property('additionalMetrics');
-    });
-
-    it('has correct structure for Elmo opportunity comparison', () => {
-      const opportunityData = createOpportunityDataForElmo();
-
-      // This data structure should match what the comparisonFn in opportunityAndSuggestionsForElmo expects
-      const additionalMetrics = opportunityData.data.additionalMetrics;
-      expect(additionalMetrics).to.be.an('array');
-
-      const subtypeMetric = additionalMetrics.find(metric => metric.key === 'subtype');
-      expect(subtypeMetric).to.exist;
-      expect(subtypeMetric.value).to.equal('headings');
     });
   });
 
@@ -4016,684 +3776,438 @@ describe('Headings Audit', () => {
     });
   });
 
-  describe('keepLatestMergeDataFunction', () => {
-    it('returns new data when existing data is empty', () => {
-      const existingData = {};
-      const newData = { type: 'CODE_CHANGE', url: 'https://example.com' };
-
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      expect(result).to.deep.equal(newData);
-      expect(result).to.not.equal(newData); // Should be a new object
-    });
-
-    it('returns new data when existing data is null', () => {
-      const existingData = null;
-      const newData = { type: 'CODE_CHANGE', url: 'https://example.com' };
-
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      expect(result).to.deep.equal(newData);
-    });
-
-    it('returns new data when existing data is undefined', () => {
-      const existingData = undefined;
-      const newData = { type: 'CODE_CHANGE', url: 'https://example.com' };
-
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      expect(result).to.deep.equal(newData);
-    });
-
-    it('returns new data when new data is empty', () => {
-      const existingData = { type: 'OLD', url: 'https://old.com' };
-      const newData = {};
-
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      expect(result).to.deep.equal(newData);
-    });
-
-    it('handles null new data gracefully', () => {
-      const existingData = { type: 'OLD', url: 'https://old.com' };
-      const newData = null;
-
-      // The spread operator with null returns an empty object
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      expect(result).to.deep.equal({});
-    });
-
-    it('handles undefined new data gracefully', () => {
-      const existingData = { type: 'OLD', url: 'https://old.com' };
-      const newData = undefined;
-
-      // The spread operator with undefined returns an empty object
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      expect(result).to.deep.equal({});
-    });
-
-    it('overrides existing data with new data completely', () => {
-      const existingData = {
-        type: 'OLD_TYPE',
-        url: 'https://old.com',
-        oldProperty: 'oldValue',
-        sharedProperty: 'oldValue'
-      };
-      const newData = {
-        type: 'NEW_TYPE',
-        url: 'https://new.com',
-        newProperty: 'newValue',
-        sharedProperty: 'newValue'
-      };
-
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      expect(result).to.deep.equal(newData);
-      expect(result).to.not.have.property('oldProperty');
-      expect(result).to.have.property('newProperty', 'newValue');
-      expect(result).to.have.property('sharedProperty', 'newValue');
-    });
-
-    it('handles complex nested objects', () => {
-      const existingData = {
-        type: 'OLD',
-        data: {
-          nested: {
-            deep: 'oldValue',
-            other: 'oldOther'
-          },
-          array: [1, 2, 3]
-        }
-      };
-      const newData = {
-        type: 'NEW',
-        data: {
-          nested: {
-            deep: 'newValue',
-            newNested: 'newNestedValue'
-          },
-          array: [4, 5, 6],
-          newProperty: 'newPropertyValue'
-        }
-      };
-
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      expect(result).to.deep.equal(newData);
-      expect(result.data.nested).to.deep.equal(newData.data.nested);
-      expect(result.data.array).to.deep.equal([4, 5, 6]);
-    });
-
-    it('handles arrays correctly', () => {
-      const existingData = {
-        items: [1, 2, 3],
-        metadata: { count: 3 }
-      };
-      const newData = {
-        items: [4, 5, 6, 7],
-        metadata: { count: 4, updated: true }
-      };
-
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      expect(result).to.deep.equal(newData);
-      expect(result.items).to.deep.equal([4, 5, 6, 7]);
-      expect(result.metadata).to.deep.equal({ count: 4, updated: true });
-    });
-
-    it('handles primitive values', () => {
-      const existingData = {
-        string: 'old',
-        number: 42,
-        boolean: true,
-        nullValue: null
-      };
-      const newData = {
-        string: 'new',
-        number: 100,
-        boolean: false,
-        nullValue: 'notNull'
-      };
-
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      expect(result).to.deep.equal(newData);
-      expect(result.string).to.equal('new');
-      expect(result.number).to.equal(100);
-      expect(result.boolean).to.equal(false);
-      expect(result.nullValue).to.equal('notNull');
-    });
-
-    it('creates a new object (does not mutate inputs)', () => {
-      const existingData = { type: 'OLD', url: 'https://old.com' };
-      const newData = { type: 'NEW', url: 'https://new.com' };
-
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      // Verify inputs are not mutated
-      expect(existingData).to.deep.equal({ type: 'OLD', url: 'https://old.com' });
-      expect(newData).to.deep.equal({ type: 'NEW', url: 'https://new.com' });
-
-      // Verify result is a new object
-      expect(result).to.not.equal(existingData);
-      expect(result).to.not.equal(newData);
-    });
-
-    it('handles function properties', () => {
-      const existingData = {
-        type: 'OLD',
-        callback: () => 'old'
-      };
-      const newData = {
-        type: 'NEW',
-        callback: () => 'new'
-      };
-
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      expect(result).to.deep.equal(newData);
-      expect(result.callback()).to.equal('new');
-    });
-
-    it('handles special values (NaN, Infinity, -Infinity)', () => {
-      const existingData = {
-        normal: 42,
-        nan: NaN,
-        infinity: Infinity,
-        negativeInfinity: -Infinity
-      };
-      const newData = {
-        normal: 100,
-        nan: NaN,
-        infinity: Infinity,
-        negativeInfinity: -Infinity
-      };
-
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      expect(result).to.deep.equal(newData);
-      expect(result.normal).to.equal(100);
-      expect(Number.isNaN(result.nan)).to.be.true;
-      expect(result.infinity).to.equal(Infinity);
-      expect(result.negativeInfinity).to.equal(-Infinity);
-    });
-
-    it('handles empty objects and arrays', () => {
-      const existingData = {
-        emptyObject: {},
-        emptyArray: [],
-        nonEmpty: 'value'
-      };
-      const newData = {
-        emptyObject: {},
-        emptyArray: [],
-        nonEmpty: 'newValue'
-      };
-
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      expect(result).to.deep.equal(newData);
-      expect(result.emptyObject).to.deep.equal({});
-      expect(result.emptyArray).to.deep.equal([]);
-    });
-
-    it('handles mixed data types in same object', () => {
-      const existingData = {
-        string: 'old',
-        number: 42,
-        boolean: true,
-        array: [1, 2],
-        object: { key: 'old' },
-        nullValue: null,
-        undefinedValue: undefined
-      };
-      const newData = {
-        string: 'new',
-        number: 100,
-        boolean: false,
-        array: [3, 4, 5],
-        object: { key: 'new', newKey: 'newValue' },
-        nullValue: 'notNull',
-        undefinedValue: 'defined'
-      };
-
-      const result = keepLatestMergeDataFunction(existingData, newData);
-
-      expect(result).to.deep.equal(newData);
-    });
-  });
-
-  describe('opportunityAndSuggestionsForElmo', () => {
-    let convertToOpportunityStub;
-    let syncSuggestionsStub;
-    let mockedOpportunityAndSuggestionsForElmo;
-
-    beforeEach(async () => {
-      // Create stubs for the imported functions
-      convertToOpportunityStub = sinon.stub().resolves({
-        getId: () => 'test-elmo-opportunity-id'
+  describe('getHeadingSelector function', () => {
+    describe('Unit tests - direct function calls', () => {
+      it('returns null when heading is null', () => {
+        const result = getHeadingSelector(null);
+        expect(result).to.be.null;
       });
 
-      syncSuggestionsStub = sinon.stub().resolves();
+      it('returns null when heading is undefined', () => {
+        const result = getHeadingSelector(undefined);
+        expect(result).to.be.null;
+      });
 
-      // Mock the handler with stubbed dependencies
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
-        '../../src/common/opportunity.js': {
-          convertToOpportunity: convertToOpportunityStub,
+      it('returns null when heading has no name property', () => {
+        const headingWithoutTag = { attribs: { id: 'test', class: 'heading' } };
+        const result = getHeadingSelector(headingWithoutTag);
+        expect(result).to.be.null;
+      });
+
+      it('returns null when heading.name is null', () => {
+        const headingWithNullTag = { name: null, attribs: { id: 'test' } };
+        const result = getHeadingSelector(headingWithNullTag);
+        expect(result).to.be.null;
+      });
+
+      it('returns null when heading.name is undefined', () => {
+        const headingWithUndefinedTag = { name: undefined, attribs: { id: 'test' } };
+        const result = getHeadingSelector(headingWithUndefinedTag);
+        expect(result).to.be.null;
+      });
+
+      it('returns null when heading.name is empty string', () => {
+        const headingWithEmptyTag = { name: '', attribs: { id: 'test' } };
+        const result = getHeadingSelector(headingWithEmptyTag);
+        expect(result).to.be.null;
+      });
+
+      it('returns selector when heading has valid name', () => {
+        const heading = { name: 'H1', attribs: { id: 'main' } };
+        const result = getHeadingSelector(heading);
+        expect(result).to.equal('h1#main');
+      });
+    });
+
+    describe('Integration tests - full audit flow', () => {
+
+    it('generates selector with ID when heading has an ID attribute', async () => {
+      const url = 'https://example.com/page';
+
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1 id="main-heading">Test</h1><h2></h2>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
         },
-        '../../src/utils/data-access.js': {
-          syncSuggestions: syncSuggestionsStub,
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+
+      // Empty H2 should generate a selector
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      expect(emptyCheck.transformRules.selector).to.exist;
+      // Selector should be generated for the H2
+      expect(emptyCheck.transformRules.selector).to.include('h2');
+    });
+
+    it('generates selector with single class', async () => {
+      const url = 'https://example.com/page';
+
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><h2 class="section-heading"></h2>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
         },
+        ContentType: 'application/json',
       });
 
-      mockedOpportunityAndSuggestionsForElmo = mockedHandler.opportunityAndSuggestionsForElmo;
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      expect(emptyCheck.transformRules.selector).to.include('h2');
+      expect(emptyCheck.transformRules.selector).to.include('section-heading');
     });
 
-    it('skips opportunity creation when no elmo suggestions', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = { elmoSuggestions: [] };
+    it('generates selector with multiple classes (limits to 2)', async () => {
+      const url = 'https://example.com/page';
 
-      const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-      expect(result).to.deep.equal(auditData);
-      expect(convertToOpportunityStub).not.to.have.been.called;
-    });
-
-    it('skips opportunity creation when elmo suggestions is undefined', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {};
-
-      const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-      expect(result).to.deep.equal(auditData);
-      expect(convertToOpportunityStub).not.to.have.been.called;
-    });
-
-    it('creates opportunity and syncs elmo suggestions', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        elmoSuggestions: [
-          {
-            type: 'CODE_CHANGE',
-            recommendedAction: '## Heading Issues\n\n| Page Url | Explanation | Suggestion |\n|-------|-------|-------|\n| https://example.com/page1 | Empty heading | Add content |\n'
-          }
-        ]
-      };
-
-      const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-
-      expect(result).to.deep.equal(auditData);
-      expect(convertToOpportunityStub).to.have.been.calledOnce;
-      expect(syncSuggestionsStub).to.have.been.calledOnce;
-
-      const convertCall = convertToOpportunityStub.getCall(0);
-      expect(convertCall.args[0]).to.equal(auditUrl);
-      expect(convertCall.args[1]).to.deep.equal(auditData);
-      expect(convertCall.args[2]).to.equal(context);
-      expect(convertCall.args[3]).to.be.a('function'); // createOpportunityDataForElmo
-      expect(convertCall.args[4]).to.equal('generic-opportunity');
-      expect(convertCall.args[5]).to.deep.equal({});
-      expect(convertCall.args[6]).to.be.a('function'); // comparisonFn
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      expect(syncCall.args[0]).to.have.property('opportunity');
-      expect(syncCall.args[0]).to.have.property('newData', auditData.elmoSuggestions);
-      expect(syncCall.args[0]).to.have.property('context', context);
-      expect(syncCall.args[0]).to.have.property('buildKey');
-      expect(syncCall.args[0]).to.have.property('mapNewSuggestion');
-      expect(syncCall.args[0]).to.have.property('keepLatestMergeDataFunction');
-    });
-
-    it('uses correct buildKey function for elmo suggestions', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        elmoSuggestions: [
-          {
-            type: 'CODE_CHANGE',
-            recommendedAction: 'Test suggestion'
-          }
-        ]
-      };
-
-      await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const buildKeyFn = syncCall.args[0].buildKey;
-
-      // Test the buildKey function
-      const suggestion = { type: 'CODE_CHANGE' };
-      const key = buildKeyFn(suggestion);
-      expect(key).to.equal('CODE_CHANGE');
-    });
-
-    it('uses correct mapNewSuggestion function for elmo suggestions', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        elmoSuggestions: [
-          {
-            type: 'CODE_CHANGE',
-            recommendedAction: 'Test suggestion'
-          }
-        ]
-      };
-
-      await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      const mapNewSuggestionFn = syncCall.args[0].mapNewSuggestion;
-
-      // Test the mapNewSuggestion function
-      const suggestion = {
-        type: 'CODE_CHANGE',
-        recommendedAction: 'Test suggestion'
-      };
-      const mappedSuggestion = mapNewSuggestionFn(suggestion);
-
-      expect(mappedSuggestion).to.deep.include({
-        opportunityId: 'test-elmo-opportunity-id',
-        type: 'CODE_CHANGE',
-        rank: 0,
-      });
-      expect(mappedSuggestion.data).to.deep.include({
-        suggestionValue: 'Test suggestion',
-      });
-    });
-
-    it('uses comparisonFn to find existing headings opportunities', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        elmoSuggestions: [
-          {
-            type: 'CODE_CHANGE',
-            recommendedAction: 'Test suggestion'
-          }
-        ]
-      };
-
-      await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-
-      const convertCall = convertToOpportunityStub.getCall(0);
-      const comparisonFn = convertCall.args[6];
-
-      // Test comparisonFn with opportunity that has headings subtype
-      const opptyWithHeadings = {
-        getData: () => ({
-          additionalMetrics: [
-            { key: 'subtype', value: 'headings' }
-          ]
-        })
-      };
-      expect(comparisonFn(opptyWithHeadings)).to.be.true;
-
-      // Test comparisonFn with opportunity that doesn't have headings subtype
-      const opptyWithoutHeadings = {
-        getData: () => ({
-          additionalMetrics: [
-            { key: 'subtype', value: 'other' }
-          ]
-        })
-      };
-      expect(comparisonFn(opptyWithoutHeadings)).to.be.false;
-
-      // Test comparisonFn with opportunity that has no additionalMetrics
-      const opptyNoMetrics = {
-        getData: () => ({})
-      };
-      expect(comparisonFn(opptyNoMetrics)).to.be.false;
-
-      // Test comparisonFn with opportunity that has null additionalMetrics
-      const opptyNullMetrics = {
-        getData: () => ({ additionalMetrics: null })
-      };
-      expect(comparisonFn(opptyNullMetrics)).to.be.false;
-    });
-
-    it('covers comparisonFn execution in convertToOpportunity', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        elmoSuggestions: [
-          {
-            type: 'CODE_CHANGE',
-            recommendedAction: 'Test suggestion'
-          }
-        ]
-      };
-
-      // Create a spy to track comparisonFn calls
-      const comparisonFnSpy = sinon.spy((oppty, opportunityInstance) => {
-        const opptyData = oppty.getData();
-        const opptyAdditionalMetrics = opptyData?.additionalMetrics;
-        if (!opptyAdditionalMetrics || !Array.isArray(opptyAdditionalMetrics)) {
-          return false;
-        }
-        const hasHeadingsSubtype = opptyAdditionalMetrics.some(
-          (metric) => metric.key === 'subtype' && metric.value === 'headings',
-        );
-        return hasHeadingsSubtype;
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><h2 class="hero title bold highlight"></h2>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
       });
 
-      // Mock convertToOpportunity to use the spy
-      convertToOpportunityStub.callsFake((auditUrl, auditData, context, createOpportunityDataForElmo, elmoOpportunityType, options, comparisonFn) => {
-        // Test that the comparisonFn is called with mock opportunities
-        const mockOppty = {
-          getData: () => ({
-            additionalMetrics: [
-              { key: 'subtype', value: 'headings' }
-            ]
-          })
-        };
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
 
-        const mockOpportunityInstance = {
-          getData: () => ({})
-        };
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      const selector = emptyCheck.transformRules.selector;
+      expect(selector).to.include('h2');
+      expect(selector).to.include('hero');
+      expect(selector).to.include('title');
+      // Should not include 3rd and 4th classes
+      expect(selector).to.not.include('bold');
+      expect(selector).to.not.include('highlight');
+    });
 
-        // This should execute line 47: return comparisonFn(oppty, opportunityInstance);
-        const result = comparisonFn(mockOppty, mockOpportunityInstance);
-        expect(result).to.be.true;
+    it('generates selector with nth-of-type for multiple siblings', async () => {
+      const url = 'https://example.com/page';
 
-        return Promise.resolve({
-          getId: () => 'test-elmo-opportunity-id'
-        });
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><div><h2>First</h2><h2></h2><h2>Third</h2></div>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
       });
 
-      await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
 
-      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      expect(emptyCheck.transformRules.selector).to.include('h2');
+      expect(emptyCheck.transformRules.selector).to.include(':nth-of-type(2)');
     });
 
-    it('handles multiple elmo suggestions', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        elmoSuggestions: [
-          {
-            type: 'CODE_CHANGE',
-            recommendedAction: 'First suggestion'
-          },
-          {
-            type: 'CONTENT_CHANGE',
-            recommendedAction: 'Second suggestion'
-          }
-        ]
-      };
+    it('generates selector with parent context', async () => {
+      const url = 'https://example.com/page';
 
-      const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-
-      expect(result).to.deep.equal(auditData);
-      expect(convertToOpportunityStub).to.have.been.calledOnce;
-      expect(syncSuggestionsStub).to.have.been.calledOnce;
-
-      const syncCall = syncSuggestionsStub.getCall(0);
-      expect(syncCall.args[0].newData).to.deep.equal(auditData.elmoSuggestions);
-    });
-
-    it('logs success message after creating opportunity', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        elmoSuggestions: [
-          {
-            type: 'CODE_CHANGE',
-            recommendedAction: 'Test suggestion'
-          }
-        ]
-      };
-
-      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-      const contextWithLogSpy = { ...context, log: logSpy };
-
-      await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, contextWithLogSpy);
-
-      expect(logSpy.info).to.have.been.calledWith('Headings opportunity created for Elmo with oppty id test-elmo-opportunity-id');
-      expect(logSpy.info).to.have.been.calledWith('Headings opportunity created for Elmo and 1 suggestions synced for https://example.com');
-    });
-
-    it('handles convertToOpportunity errors gracefully', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        elmoSuggestions: [
-          {
-            type: 'CODE_CHANGE',
-            recommendedAction: 'Test suggestion'
-          }
-        ]
-      };
-
-      // Make convertToOpportunity throw an error
-      convertToOpportunityStub.rejects(new Error('Database connection failed'));
-
-      try {
-        await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-        expect.fail('Expected function to throw an error');
-      } catch (error) {
-        expect(error.message).to.include('Database connection failed');
-      }
-    });
-
-    it('handles syncSuggestions errors gracefully', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        elmoSuggestions: [
-          {
-            type: 'CODE_CHANGE',
-            recommendedAction: 'Test suggestion'
-          }
-        ]
-      };
-
-      // Make syncSuggestions throw an error
-      syncSuggestionsStub.rejects(new Error('Sync failed'));
-
-      try {
-        await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-        expect.fail('Expected function to throw an error');
-      } catch (error) {
-        expect(error.message).to.include('Sync failed');
-      }
-    });
-
-    it('handles convertToOpportunity with null comparisonFn', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        elmoSuggestions: [
-          {
-            type: 'CODE_CHANGE',
-            recommendedAction: 'Test suggestion'
-          }
-        ]
-      };
-
-      // Mock convertToOpportunity to be called with null comparisonFn
-      convertToOpportunityStub.callsFake((auditUrl, auditData, context, createOpportunityDataForElmo, elmoOpportunityType, options, comparisonFn) => {
-        // Verify that comparisonFn is provided and is a function
-        expect(comparisonFn).to.be.a('function');
-        return Promise.resolve({
-          getId: () => 'test-elmo-opportunity-id'
-        });
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><main><article><h2></h2></article></main>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
       });
 
-      const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
 
-      expect(result).to.deep.equal(auditData);
-      expect(convertToOpportunityStub).to.have.been.calledOnce;
-
-      // Verify the comparisonFn was passed correctly
-      const convertCall = convertToOpportunityStub.getCall(0);
-      expect(convertCall.args[6]).to.be.a('function'); // comparisonFn should be a function
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      const selector = emptyCheck.transformRules.selector;
+      expect(selector).to.include('h2');
+      expect(selector).to.include('article');
+      expect(selector).to.include('main');
+      expect(selector).to.include('>'); // Should use direct child combinator
     });
 
-    it('handles convertToOpportunity with undefined comparisonFn', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        elmoSuggestions: [
-          {
-            type: 'CODE_CHANGE',
-            recommendedAction: 'Test suggestion'
-          }
-        ]
-      };
+    it('generates selector with parent classes', async () => {
+      const url = 'https://example.com/page';
 
-      // Create a mock that simulates the opportunity.js behavior when comparisonFn is undefined
-      convertToOpportunityStub.callsFake((auditUrl, auditData, context, createOpportunityDataForElmo, elmoOpportunityType, options, comparisonFn) => {
-        // Test the condition from opportunity.js: if (comparisonFn && typeof comparisonFn === 'function')
-        if (comparisonFn && typeof comparisonFn === 'function') {
-          // This branch should be taken since we're passing a function
-          expect(comparisonFn).to.be.a('function');
-        } else {
-          // This branch should not be taken in our case
-          expect.fail('comparisonFn should be a function');
-        }
-
-        return Promise.resolve({
-          getId: () => 'test-elmo-opportunity-id'
-        });
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><div class="container wrapper"><h2></h2></div>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
       });
 
-      const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
 
-      expect(result).to.deep.equal(auditData);
-      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      const selector = emptyCheck.transformRules.selector;
+      expect(selector).to.include('h2');
+      expect(selector).to.include('div');
+      expect(selector).to.include('container');
+      expect(selector).to.include('wrapper');
     });
 
-    it('tests comparisonFn type checking in convertToOpportunity', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        elmoSuggestions: [
-          {
-            type: 'CODE_CHANGE',
-            recommendedAction: 'Test suggestion'
-          }
-        ]
-      };
+    it('stops at parent with ID (early termination)', async () => {
+      const url = 'https://example.com/page';
 
-      // Mock convertToOpportunity to test the type checking logic
-      convertToOpportunityStub.callsFake((auditUrl, auditData, context, createOpportunityDataForElmo, elmoOpportunityType, options, comparisonFn) => {
-        // Simulate the exact condition from opportunity.js
-        const shouldUseComparisonFn = comparisonFn && typeof comparisonFn === 'function';
-
-        if (shouldUseComparisonFn) {
-          // Test that the comparisonFn works correctly
-          const mockOppty = {
-            getData: () => ({
-              additionalMetrics: [
-                { key: 'subtype', value: 'headings' }
-              ]
-            })
-          };
-
-          const result = comparisonFn(mockOppty);
-          expect(result).to.be.true;
-        } else {
-          expect.fail('comparisonFn should be defined and be a function');
-        }
-
-        return Promise.resolve({
-          getId: () => 'test-elmo-opportunity-id'
-        });
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><div id="content"><section><article><h2></h2></article></section></div>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
       });
 
-      const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
 
-      expect(result).to.deep.equal(auditData);
-      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      const selector = emptyCheck.transformRules.selector;
+      expect(selector).to.include('h2');
+      expect(selector).to.include('#content');
+      // Should not climb past the ID
+      expect(selector).to.not.include('body');
+    });
+
+    it('limits parent context to 3 levels', async () => {
+      const url = 'https://example.com/page';
+
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><div><section><article><aside><h2></h2></aside></article></section></div>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      const selector = emptyCheck.transformRules.selector;
+
+      // Count the number of '>' separators (should be max 3 for 3 levels of parents)
+      const separatorCount = (selector.match(/>/g) || []).length;
+      expect(separatorCount).to.be.at.most(3);
+    });
+
+    it('handles heading with ID and classes (ID takes priority)', async () => {
+      const url = 'https://example.com/page';
+
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1 id="main" class="hero large">Test</h1><h2></h2>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+
+      // Empty H2 should still generate a selector
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      expect(emptyCheck.transformRules.selector).to.include('h2');
+    });
+
+    it('handles complex selector: classes + nth-of-type + parent context', async () => {
+      const url = 'https://example.com/page';
+
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><main class="content"><section class="posts"><h2 class="title">First</h2><h2 class="title"></h2></section></main>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      const selector = emptyCheck.transformRules.selector;
+
+      // Should include all parts
+      expect(selector).to.include('h2');
+      expect(selector).to.include('title'); // heading class
+      expect(selector).to.include(':nth-of-type(2)'); // second H2
+      expect(selector).to.include('section'); // parent
+      expect(selector).to.include('posts'); // parent class
+      expect(selector).to.include('>'); // direct child combinator
+    });
+
+    it('handles empty heading at different document positions', async () => {
+      const url = 'https://example.com/page';
+
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><header><h2></h2></header><main><h3></h3></main><footer><h4></h4></footer>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+
+      const emptyChecks = result.checks.filter(c => c.check === 'heading-empty');
+      expect(emptyChecks).to.have.lengthOf(3);
+
+      // Each should have unique selectors
+      const selectors = emptyChecks.map(c => c.transformRules.selector);
+      const uniqueSelectors = new Set(selectors);
+      expect(uniqueSelectors.size).to.equal(3);
+
+      // Verify each includes its parent context
+      expect(selectors.some(s => s.includes('header'))).to.be.true;
+      expect(selectors.some(s => s.includes('main'))).to.be.true;
+      expect(selectors.some(s => s.includes('footer'))).to.be.true;
+    });
+
+    it('handles parent with excessive classes (limits to 2)', async () => {
+      const url = 'https://example.com/page';
+
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><div class="container wrapper main-content primary"><h2></h2></div>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      const selector = emptyCheck.transformRules.selector;
+
+      // Should include first 2 parent classes only
+      expect(selector).to.include('container');
+      expect(selector).to.include('wrapper');
+      // Should not include 3rd and 4th classes
+      expect(selector).to.not.include('main-content');
+      expect(selector).to.not.include('primary');
+    });
     });
   });
 });

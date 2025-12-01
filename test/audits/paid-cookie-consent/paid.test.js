@@ -71,10 +71,10 @@ describe('Paid Cookie Consent Audit', () => {
     const mockAthenaClient = {
       query: sandbox.stub().resolves([
         {
-          path: '/page1', utm_source: 'google', pageviews: 1000, bounce_rate: 0.8, consent: 'show', referrer: 'google.com',
+          path: '/page1', device: 'mobile', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800, utm_source: 'google', click_rate: 0.1, engagement_rate: 0.2, engaged_scroll_rate: 0.15, referrer: 'google.com',
         },
         {
-          path: '/page2', utm_source: 'facebook', pageviews: 500, bounce_rate: 0.7, consent: 'show', referrer: 'facebook.com',
+          path: '/page2', device: 'desktop', pageviews: 500, bounce_rate: 0.7, traffic_loss: 350, utm_source: 'facebook', click_rate: 0.15, engagement_rate: 0.3, engaged_scroll_rate: 0.25, referrer: 'facebook.com',
         },
       ]),
     };
@@ -113,53 +113,55 @@ describe('Paid Cookie Consent Audit', () => {
     sandbox.restore();
   });
 
-  const expectedSegments = ['urlTrafficSource', 'urlConsent'];
-
-  it('should submit expected segments from Athena query', async () => {
+  it('should return audit result with expected structure', async () => {
     const result = await paidAuditRunner(auditUrl, context, site);
-    const submittedSegments = (result.auditResult.map((entry) => (entry.key)));
-    submittedSegments.forEach((key) => {
-      expect(expectedSegments).to.include(key);
-    });
-    result.auditResult.forEach((resultItem) => expect(resultItem.value?.length)
-      .to.be.greaterThanOrEqual(1));
-    expect(result.auditResult.length).to.be.greaterThan(0);
+    expect(result.auditResult).to.be.an('object');
+    expect(result.auditResult).to.have.property('totalPageViews');
+    expect(result.auditResult).to.have.property('totalAverageBounceRate');
+    expect(result.auditResult).to.have.property('projectedTrafficLost');
+    expect(result.auditResult).to.have.property('projectedTrafficValue');
+    expect(result.auditResult).to.have.property('top3Pages');
+    expect(result.auditResult).to.have.property('averagePageViewsTop3');
+    expect(result.auditResult).to.have.property('averageTrafficLostTop3');
+    expect(result.auditResult).to.have.property('averageBounceRateMobileTop3');
+    expect(result.auditResult).to.have.property('temporalCondition');
+    expect(result.auditResult.top3Pages).to.be.an('array');
   });
 
-  it('should submit expected result to mistique with bounce rate >= 0.7 filtering', async () => {
+  it('should submit expected result to mistique with bounce rate >= 0.3 filtering', async () => {
     const auditData = {
       fullAuditRef: 'https://example.com',
       id: 'test-audit-id',
-      auditResult:
-        [
+      auditResult: {
+        totalPageViews: 10000,
+        totalAverageBounceRate: 0.8,
+        projectedTrafficLost: 8000,
+        projectedTrafficValue: 6400,
+        top3Pages: [
           {
-            key: 'urlConsent',
-            value: [
-              {
-                url: 'https://example.com/page1',
-                pageViews: 100,
-                bounceRate: 0.2, // Below 0.7 threshold - should be filtered out
-                consent: 'show',
-                projectedTrafficLost: 20,
-              },
-              {
-                url: 'https://example.com/page2',
-                pageViews: 50,
-                bounceRate: 0.9, // Above 0.7 threshold - projected 45 (highest)
-                consent: 'show',
-                projectedTrafficLost: 45,
-              },
-              {
-                url: 'https://example.com/page3',
-                pageViews: 30,
-                bounceRate: 0.8, // Above 0.7 threshold - projected 24
-                consent: 'show',
-                projectedTrafficLost: 24,
-              },
-            ],
+            url: 'https://example.com/page2',
+            pageViews: 5000,
+            bounceRate: 0.9, // Above 0.3 threshold - highest traffic loss
+            trafficLoss: 4500,
           },
-        ]
-      ,
+          {
+            url: 'https://example.com/page3',
+            pageViews: 3000,
+            bounceRate: 0.8, // Above 0.3 threshold
+            trafficLoss: 2400,
+          },
+          {
+            url: 'https://example.com/page1',
+            pageViews: 2000,
+            bounceRate: 0.2, // Below 0.3 threshold - would be skipped if first
+            trafficLoss: 400,
+          },
+        ],
+        averagePageViewsTop3: 3333,
+        averageTrafficLostTop3: 2433,
+        averageBounceRateMobileTop3: 0.85,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      },
     };
 
     const expectedSubmitedMsg = {
@@ -181,35 +183,21 @@ describe('Paid Cookie Consent Audit', () => {
     expect(sentMessage).to.deep.include(expectedSubmitedMsg);
   });
 
-  it('should throw exception if no urlConsent segment found', async () => {
+  it('should warn and not send when no top3Pages found', async () => {
     const auditData = {
       fullAuditRef: 'https://example.com',
       id: 'test-audit-id',
-      auditResult: [
-        { key: 'urlTrafficSource', value: [] },
-        // No urlConsent segment
-      ],
-    };
-
-    await expect(paidConsentBannerCheck(auditUrl, auditData, context, site))
-      .to.be.rejectedWith(Error, `Failed to find urlConsent segment for consent banner audit for AuditUrl ${auditUrl}`);
-
-    expect(context.sqs.sendMessage.called).to.be.false;
-  });
-
-  it('should warn and not send when no eligible pages found (no consent=show or bounce rate < 0.7)', async () => {
-    const auditData = {
-      fullAuditRef: 'https://example.com',
-      id: 'test-audit-id',
-      auditResult: [
-        {
-          key: 'urlConsent',
-          value: [
-            { url: 'https://example.com/page1', bounceRate: 0.2, consent: 'show' }, // bounce rate too low
-            { url: 'https://example.com/page2', bounceRate: 0.8, consent: 'hide' }, // wrong consent
-          ],
-        },
-      ],
+      auditResult: {
+        totalPageViews: 0,
+        totalAverageBounceRate: 0,
+        projectedTrafficLost: 0,
+        projectedTrafficValue: 0,
+        top3Pages: [], // No pages
+        averagePageViewsTop3: 0,
+        averageTrafficLostTop3: 0,
+        averageBounceRateMobileTop3: 0,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      },
     };
 
     await paidConsentBannerCheck(auditUrl, auditData, context, site);
@@ -218,30 +206,70 @@ describe('Paid Cookie Consent Audit', () => {
     expect(context.log.warn).to.have.been.calledWithMatch(/No pages with consent='show' found/);
   });
 
-  it('should select highest projected loss from filtered pages', async () => {
+  it('should warn and not send when first page has bounce rate < 0.3', async () => {
     const auditData = {
       fullAuditRef: 'https://example.com',
       id: 'test-audit-id',
-      auditResult: [
-        {
-          key: 'urlConsent',
-          value: [
-            {
-              url: 'https://example.com/p100', pageViews: 100, bounceRate: 0.8, consent: 'show', projectedTrafficLost: 80,
-            },
-            {
-              url: 'https://example.com/p90', pageViews: 90, bounceRate: 0.9, consent: 'show', projectedTrafficLost: 81,
-            },
-            {
-              url: 'https://example.com/p110', pageViews: 110, bounceRate: 0.7, consent: 'show', projectedTrafficLost: 77,
-            },
-            // This should be selected due to highest projectedTrafficLost
-            {
-              url: 'https://example.com/winner', pageViews: 50, bounceRate: 1.0, consent: 'show', projectedTrafficLost: 100,
-            },
-          ],
-        },
-      ],
+      auditResult: {
+        totalPageViews: 5000,
+        totalAverageBounceRate: 0.2,
+        projectedTrafficLost: 1000,
+        projectedTrafficValue: 800,
+        top3Pages: [
+          {
+            url: 'https://example.com/page1',
+            pageViews: 5000,
+            bounceRate: 0.2, // Below 0.3 threshold
+            trafficLoss: 1000,
+          },
+        ],
+        averagePageViewsTop3: 5000,
+        averageTrafficLostTop3: 1000,
+        averageBounceRateMobileTop3: 0.25,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      },
+    };
+
+    await paidConsentBannerCheck(auditUrl, auditData, context, site);
+
+    expect(context.sqs.sendMessage.called).to.be.false;
+    expect(context.log.debug).to.have.been.calledWithMatch(/Skipping mystique evaluation step for page/);
+  });
+
+  it('should select first page from top3Pages (highest traffic loss)', async () => {
+    const auditData = {
+      fullAuditRef: 'https://example.com',
+      id: 'test-audit-id',
+      auditResult: {
+        totalPageViews: 10000,
+        totalAverageBounceRate: 0.8,
+        projectedTrafficLost: 8000,
+        projectedTrafficValue: 6400,
+        top3Pages: [
+          {
+            url: 'https://example.com/winner',
+            pageViews: 5000,
+            bounceRate: 1.0, // Highest traffic loss - should be first
+            trafficLoss: 5000,
+          },
+          {
+            url: 'https://example.com/p90',
+            pageViews: 3000,
+            bounceRate: 0.9,
+            trafficLoss: 2700,
+          },
+          {
+            url: 'https://example.com/p80',
+            pageViews: 2000,
+            bounceRate: 0.8,
+            trafficLoss: 1600,
+          },
+        ],
+        averagePageViewsTop3: 3333,
+        averageTrafficLostTop3: 3100,
+        averageBounceRateMobileTop3: 0.9,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      },
     };
 
     await paidConsentBannerCheck(auditUrl, auditData, context, site);
@@ -251,23 +279,28 @@ describe('Paid Cookie Consent Audit', () => {
     expect(sentMessage.url).to.equal('https://example.com/winner');
   });
 
-  it('should handle fewer than 3 eligible pages without error', async () => {
+  it('should handle fewer than 3 pages without error', async () => {
     const auditData = {
       fullAuditRef: 'https://example.com',
       id: 'test-audit-id',
-      auditResult: [
-        {
-          key: 'urlConsent',
-          value: [
-            {
-              url: 'https://example.com/high', pageViews: 50, bounceRate: 0.9, consent: 'show', projectedTrafficLost: 45,
-            },
-            {
-              url: 'https://example.com/low', pageViews: 10, bounceRate: 0.1, consent: 'show',
-            }, // Below 0.7 threshold - filtered out
-          ],
-        },
-      ],
+      auditResult: {
+        totalPageViews: 1000,
+        totalAverageBounceRate: 0.9,
+        projectedTrafficLost: 900,
+        projectedTrafficValue: 720,
+        top3Pages: [
+          {
+            url: 'https://example.com/high',
+            pageViews: 1000,
+            bounceRate: 0.9, // Above 0.3 threshold
+            trafficLoss: 900,
+          },
+        ],
+        averagePageViewsTop3: 1000,
+        averageTrafficLostTop3: 900,
+        averageBounceRateMobileTop3: 0.95,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      },
     };
 
     await paidConsentBannerCheck(auditUrl, auditData, context, site);
@@ -277,26 +310,34 @@ describe('Paid Cookie Consent Audit', () => {
     expect(sentMessage.url).to.equal('https://example.com/high');
   });
 
-  it('should filter out pages with low bounce rate', async () => {
+  it('should send message when first page has bounce rate >= 0.3', async () => {
     const auditData = {
       fullAuditRef: 'https://example.com',
       id: 'test-audit-id',
-      auditResult: [
-        {
-          key: 'urlConsent',
-          value: [
-            {
-              url: 'https://example.com/low-bounce', pageViews: 1000, bounceRate: 0.2, consent: 'show',
-            }, // Below 0.7 - filtered
-            {
-              url: 'https://example.com/zero-bounce', pageViews: 500, bounceRate: 0, consent: 'show',
-            }, // Below 0.7 - filtered
-            {
-              url: 'https://example.com/winner', pageViews: 40, bounceRate: 0.8, consent: 'show', projectedTrafficLost: 32,
-            }, // Above 0.7 - selected
-          ],
-        },
-      ],
+      auditResult: {
+        totalPageViews: 5000,
+        totalAverageBounceRate: 0.8,
+        projectedTrafficLost: 4000,
+        projectedTrafficValue: 3200,
+        top3Pages: [
+          {
+            url: 'https://example.com/winner',
+            pageViews: 3000,
+            bounceRate: 0.8, // Above 0.3 - should send
+            trafficLoss: 2400,
+          },
+          {
+            url: 'https://example.com/low-bounce',
+            pageViews: 2000,
+            bounceRate: 0.2, // Below 0.3 but not first
+            trafficLoss: 400,
+          },
+        ],
+        averagePageViewsTop3: 2500,
+        averageTrafficLostTop3: 1400,
+        averageBounceRateMobileTop3: 0.5,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      },
     };
 
     await paidConsentBannerCheck(auditUrl, auditData, context, site);
@@ -331,22 +372,25 @@ describe('Paid Cookie Consent Audit', () => {
     const result = await paidAuditRunner(auditUrl, contextWithDefaults, site);
 
     // Should still work with default values
-    expect(result.auditResult).to.have.length(2);
-    expect(context.athenaClient.query).to.have.been.calledTwice;
+    expect(result.auditResult).to.be.an('object');
+    expect(result.auditResult).to.have.property('top3Pages');
+    // Should call athena query 3 times (lostTrafficSummary, top3PagesTrafficLost, top3PagesTrafficLostByDevice)
+    expect(context.athenaClient.query).to.have.been.calledThrice;
   });
 
   it('should handle query results with missing fields', async () => {
     const incompleteData = [
       {
         path: '/test-page',
+        device: 'mobile',
         // Missing most fields to test fallback values
         utm_source: 'google',
         pageviews: '100',
       },
       {
         path: '/direct-url',
+        device: 'desktop',
         bounce_rate: '0.5',
-        consent: 'show',
       },
     ];
 
@@ -359,17 +403,11 @@ describe('Paid Cookie Consent Audit', () => {
 
     const result = await paidAuditRunner(auditUrl, contextWithIncompleteData, site);
 
-    expect(result.auditResult).to.have.length(2);
-    const urlTrafficSourceSegment = result.auditResult.find((s) => s.key === 'urlTrafficSource');
-
-    // First item should have utm_source as URL for urlTrafficSource segment
-    expect(urlTrafficSourceSegment.value[0].url).to.equal('google');
-    expect(urlTrafficSourceSegment.value[0].ctr).to.equal(0); // Default fallback
-    expect(urlTrafficSourceSegment.value[0].consent).to.equal(''); // Default fallback
-
-    // Second item should use provided URL directly
-    expect(urlTrafficSourceSegment.value[1].bounceRate).to.equal(0.5);
-    expect(urlTrafficSourceSegment.value[1].consent).to.equal('show');
+    expect(result.auditResult).to.be.an('object');
+    expect(result.auditResult.top3Pages).to.be.an('array');
+    // The transformation should handle missing fields with defaults
+    expect(result.auditResult.projectedTrafficLost).to.be.a('number');
+    expect(result.auditResult.projectedTrafficValue).to.be.a('number');
   });
 
   it('should handle athena query failures and log error', async () => {
@@ -386,23 +424,151 @@ describe('Paid Cookie Consent Audit', () => {
     expect(logStub.error).to.have.been.calledWith(sinon.match(/Paid traffic Athena query failed: Athena connection failed/));
   });
 
-  it('should throw error when audit result is invalid for consent banner check', async () => {
+  it('should not send message when audit result has no top3Pages', async () => {
     const invalidAuditData = {
       id: 'test-audit-id',
-      auditResult: null, // Invalid audit result
+      auditResult: {
+        totalPageViews: 0,
+        totalAverageBounceRate: 0,
+        projectedTrafficLost: 0,
+        projectedTrafficValue: 0,
+        top3Pages: null, // Invalid top3Pages
+        averagePageViewsTop3: 0,
+        averageTrafficLostTop3: 0,
+        averageBounceRateMobileTop3: 0,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      },
     };
 
-    await expect(paidConsentBannerCheck(auditUrl, invalidAuditData, context, site))
-      .to.be.rejectedWith(/Failed to find valid page for consent banner audit/);
+    await paidConsentBannerCheck(auditUrl, invalidAuditData, context, site);
+    expect(context.sqs.sendMessage.called).to.be.false;
   });
 
-  it('should throw error when audit result is empty array for consent banner check', async () => {
+  it('should not send message when top3Pages is undefined', async () => {
     const emptyAuditData = {
       id: 'test-audit-id',
-      auditResult: [], // Empty audit result
+      auditResult: {
+        totalPageViews: 0,
+        totalAverageBounceRate: 0,
+        projectedTrafficLost: 0,
+        projectedTrafficValue: 0,
+        // top3Pages is undefined
+        averagePageViewsTop3: 0,
+        averageTrafficLostTop3: 0,
+        averageBounceRateMobileTop3: 0,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      },
     };
 
-    await expect(paidConsentBannerCheck(auditUrl, emptyAuditData, context, site))
-      .to.be.rejectedWith(/Failed to find urlConsent segment/);
+    await paidConsentBannerCheck(auditUrl, emptyAuditData, context, site);
+    expect(context.sqs.sendMessage.called).to.be.false;
+  });
+
+  it('should calculate projectedTrafficValue as 80% of projectedTrafficLost', async () => {
+    const result = await paidAuditRunner(auditUrl, context, site);
+    expect(result.auditResult.projectedTrafficValue).to.equal(result.auditResult.projectedTrafficLost * 0.8);
+  });
+
+  it('should calculate averages correctly for top3Pages', async () => {
+    const mockData = [
+      { path: '/page1', device: 'mobile', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800, utm_source: 'google', click_rate: 0.1, engagement_rate: 0.2, engaged_scroll_rate: 0.15, referrer: 'google.com' },
+      { path: '/page2', device: 'mobile', pageviews: 2000, bounce_rate: 0.9, traffic_loss: 1800, utm_source: 'facebook', click_rate: 0.15, engagement_rate: 0.1, engaged_scroll_rate: 0.25, referrer: 'facebook.com' },
+      { path: '/page3', device: 'mobile', pageviews: 3000, bounce_rate: 0.7, traffic_loss: 2100, utm_source: 'twitter', click_rate: 0.2, engagement_rate: 0.3, engaged_scroll_rate: 0.35, referrer: 'twitter.com' },
+    ];
+
+    const customContext = {
+      ...context,
+      athenaClient: {
+        query: sandbox.stub().resolves(mockData),
+      },
+    };
+
+    const result = await paidAuditRunner(auditUrl, customContext, site);
+
+    expect(result.auditResult.averagePageViewsTop3).to.equal(2000); // (1000 + 2000 + 3000) / 3
+    expect(result.auditResult.averageTrafficLostTop3).to.be.closeTo(1566.67, 0.01); // (800 + 1800 + 2100) / 3
+    expect(result.auditResult.averageBounceRateMobileTop3).to.be.closeTo(0.8, 0.01); // (0.8 + 0.9 + 0.7) / 3
+  });
+
+  it('should include time field in mystique message', async () => {
+    const auditData = {
+      fullAuditRef: 'https://example.com',
+      id: 'test-audit-id',
+      auditResult: {
+        totalPageViews: 10000,
+        totalAverageBounceRate: 0.8,
+        projectedTrafficLost: 8000,
+        projectedTrafficValue: 6400,
+        top3Pages: [
+          {
+            url: 'https://example.com/page1',
+            pageViews: 5000,
+            bounceRate: 0.9,
+            trafficLoss: 4500,
+          },
+        ],
+        averagePageViewsTop3: 5000,
+        averageTrafficLostTop3: 4500,
+        averageBounceRateMobileTop3: 0.95,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      },
+    };
+
+    await paidConsentBannerCheck(auditUrl, auditData, context, site);
+
+    expect(context.sqs.sendMessage.called).to.be.true;
+    const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
+    expect(sentMessage).to.have.property('time');
+    expect(sentMessage.time).to.be.a('string');
+  });
+
+  it('should log debug message with projected traffic loss', async () => {
+    const auditData = {
+      fullAuditRef: 'https://example.com',
+      id: 'test-audit-id',
+      auditResult: {
+        totalPageViews: 10000,
+        totalAverageBounceRate: 0.8,
+        projectedTrafficLost: 8000,
+        projectedTrafficValue: 6400,
+        top3Pages: [
+          {
+            url: 'https://example.com/page1',
+            pageViews: 5000,
+            bounceRate: 0.9,
+            trafficLoss: 4500,
+          },
+        ],
+        averagePageViewsTop3: 5000,
+        averageTrafficLostTop3: 4500,
+        averageBounceRateMobileTop3: 0.95,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      },
+    };
+
+    await paidConsentBannerCheck(auditUrl, auditData, context, site);
+
+    expect(context.log.debug).to.have.been.calledWithMatch(/projectedTrafficLoss: 4500/);
+    expect(context.log.debug).to.have.been.calledWithMatch(/Completed mystique evaluation step/);
+  });
+
+  it('should handle zero totalPageViews and calculate totalAverageBounceRate as 0', async () => {
+    const mockData = [
+      { path: '/page1', device: 'mobile', pageviews: 0, bounce_rate: 0, traffic_loss: 0, utm_source: 'google', click_rate: 0, engagement_rate: 0, engaged_scroll_rate: 0, referrer: '' },
+    ];
+
+    const customContext = {
+      ...context,
+      athenaClient: {
+        query: sandbox.stub().resolves(mockData),
+      },
+    };
+
+    const result = await paidAuditRunner(auditUrl, customContext, site);
+
+    // When totalPageViews is 0, totalAverageBounceRate should default to 0
+    expect(result.auditResult.totalPageViews).to.equal(0);
+    expect(result.auditResult.totalAverageBounceRate).to.equal(0);
+    expect(result.auditResult.projectedTrafficLost).to.equal(0);
   });
 });

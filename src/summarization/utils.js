@@ -10,19 +10,42 @@
  * governing permissions and limitations under the License.
  */
 
+function joinKeyPoints(keyPoints) {
+  return keyPoints.map((keyPoint) => `  * ${keyPoint}`).join('\n');
+}
+
 export function getJsonSummarySuggestion(suggestions) {
   const suggestionValues = [];
   suggestions.forEach((suggestion) => {
+    // Get scrapedAt once for all suggestion values from this suggestion
+    const scrapedAt = suggestion.scrapedAt || new Date().toISOString();
+
     // handle page level summary
     suggestionValues.push({
       summarizationText: suggestion.pageSummary?.formatted_summary,
       fullPage: true,
+      keyPoints: false,
       url: suggestion.pageUrl,
       title: suggestion.pageSummary?.title,
       transformRules: {
         selector: suggestion.pageSummary?.heading_selector || 'body',
         action: suggestion.pageSummary?.insertion_method || 'appendChild',
       },
+      scrapedAt,
+    });
+
+    // handle key points summary
+    suggestionValues.push({
+      summarizationText: `${joinKeyPoints(suggestion.keyPoints?.formatted_items)}`,
+      fullPage: true,
+      keyPoints: true,
+      url: suggestion.pageUrl,
+      title: suggestion.pageSummary?.title,
+      transformRules: {
+        selector: suggestion.pageSummary?.heading_selector || 'body',
+        action: suggestion.pageSummary?.insertion_method || 'appendChild',
+      },
+      scrapedAt,
     });
 
     // handle paragraph level summary
@@ -30,12 +53,14 @@ export function getJsonSummarySuggestion(suggestions) {
       suggestionValues.push({
         summarizationText: section.formatted_summary,
         fullPage: false,
+        keyPoints: false,
         url: suggestion.pageUrl,
         title: section.title,
         transformRules: {
           selector: section.heading_selector,
           action: section.insertion_method || 'insertAfter',
         },
+        scrapedAt,
       });
     });
   });

@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import handler from '../../../src/paid-traffic-analysis/guidance-handler.js';
 
 use(sinonChai);
@@ -79,6 +80,8 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     Suggestion = {
       create: sandbox.stub().resolves(),
+      STATUSES: SuggestionDataAccess.STATUSES,
+      TYPES: SuggestionDataAccess.TYPES,
     };
 
     context = {
@@ -89,6 +92,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
         error: sandbox.stub(),
       },
       dataAccess: { Audit, Opportunity, Suggestion },
+      site: { requiresValidation: true },
     };
   });
 
@@ -136,7 +140,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     const firstSug = Suggestion.create.getCall(0).args[0];
     expect(firstSug).to.include({
-      opportunityId: newOpportunityId, type: 'AI_INSIGHTS', rank: 1, status: 'NEW',
+      opportunityId: newOpportunityId, type: 'AI_INSIGHTS', rank: 1, status: 'PENDING_VALIDATION',
     });
     expect(firstSug.data.parentReport).to.equal('PAID_CAMPAIGN_PERFORMANCE');
     expect(firstSug.data.recommendations).to.have.length(2);
@@ -344,5 +348,23 @@ describe('Paid-traffic-analysis guidance handler', () => {
     await expect(handler(message, context)).to.be.rejected;
 
     expect(old.setStatus).to.not.have.been.called;
+  });
+
+  it('creates suggestions with status NEW when site does not require validation', async () => {
+    // Set requiresValidation to false
+    context.site = { requiresValidation: false };
+    const message = {
+      auditId,
+      siteId,
+      data: {
+        url: 'https://example.com', guidance: guidancePayload,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(Suggestion.create).to.have.been.called;
+    const firstCall = Suggestion.create.getCall(0).args[0];
+    expect(firstCall).to.have.property('status', 'NEW');
   });
 });

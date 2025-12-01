@@ -73,6 +73,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
+          getId: () => 'test-site-id',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             // keep legacy for code paths that still read it
@@ -98,6 +99,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       dataAccess,
       s3Client: {
         send: sandbox.stub().resolves(),
+      },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
       },
     };
 
@@ -129,6 +134,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: { error: sandbox.stub(), info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -145,6 +154,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
+          getId: () => 'test-site-id',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
@@ -162,6 +172,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: { error: sandbox.stub(), info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -180,6 +194,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
+          getId: () => 'test-site-id',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
@@ -205,6 +220,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       s3Client: {
         send: sandbox.stub().resolves(),
       },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -228,6 +247,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
+          getId: () => 'test-site-id',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
@@ -245,6 +265,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -276,6 +300,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
+          getId: () => 'test-site-id',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
@@ -293,6 +318,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -325,6 +354,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
+          getId: () => 'test-site-id',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
@@ -348,6 +378,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: logMock,
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -382,6 +416,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
+          getId: () => 'test-site-id',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
@@ -405,6 +440,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: logMock,
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -439,6 +478,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
+          getId: () => 'test-site-id',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
@@ -462,6 +502,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: logMock,
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -486,6 +530,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
+          getId: () => 'test-site-id',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
@@ -503,6 +548,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -530,6 +579,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
+          getId: () => 'site-1',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
@@ -546,6 +596,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -578,6 +632,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
+          getId: () => 'test-site-id',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
@@ -595,6 +650,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -627,6 +686,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
+          getId: () => 'site-1',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
@@ -643,6 +703,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -675,6 +739,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
+          getId: () => 'site-1',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
@@ -691,6 +756,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -722,6 +791,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
+          getId: () => 'site-1',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
@@ -738,6 +808,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -762,6 +836,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
+          getId: () => 'site-1',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => null, // This will trigger the || s3Config.customerName fallback
@@ -778,6 +853,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -810,6 +889,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
+          getId: () => 'site-1',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
@@ -826,6 +906,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -852,6 +936,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
+          getId: () => 'site-1',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
@@ -868,6 +953,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -905,6 +994,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
             // Return valid URL for first call (utils.js), empty string for subsequent calls (toPathOnly)
             return getBaseURLCallCount === 1 ? 'https://example.com' : '';
           },
+          getId: () => 'site-1',
           getConfig: () => ({
             getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
@@ -921,6 +1011,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);

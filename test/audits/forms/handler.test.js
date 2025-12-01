@@ -18,6 +18,7 @@ import esmock from 'esmock';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import {
+  codeImportStep,
   formsAuditRunner,
   processOpportunityStep,
   runAuditAndSendUrlsForScrapingStep,
@@ -93,7 +94,7 @@ describe('audit and send scraping step', () => {
       },
       dataAccessStub: {
         Opportunity: {
-          allBySiteIdAndStatus: sinon.stub().resolves([]),
+          allBySiteId: sinon.stub().resolves([]),
           create: sinon.stub(),
         },
       },
@@ -482,6 +483,95 @@ describe('audit and send scraping step', () => {
     expect(form3).to.exist;
     expect(form3.formSources).to.be.undefined;
   });
+
+  it('should include auditContext with data when data is provided (line 151)', async () => {
+    const formVitals = {
+      'form-vitals': [
+        {
+          url: 'https://example.com/form1',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { 'desktop:windows': 1000 },
+        },
+      ],
+    };
+
+    const testData = { opportunityId: 'test-oppty-123', metadata: 'test-metadata' };
+    const contextWithData = {
+      ...context,
+      data: testData,
+    };
+
+    contextWithData.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    contextWithData.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves([]);
+
+    const result = await runAuditAndSendUrlsForScrapingStep(contextWithData);
+
+    // Should include auditContext with data
+    expect(result).to.have.property('auditContext');
+    expect(result.auditContext).to.deep.equal({ data: testData });
+    expect(contextWithData.log.info).to.have.been.calledWith(
+      sinon.match(/starting audit with option:.*test-oppty-123/),
+    );
+  });
+
+  it('should exclude auditContext when data is not provided (line 151)', async () => {
+    const formVitals = {
+      'form-vitals': [
+        {
+          url: 'https://example.com/form1',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { 'desktop:windows': 1000 },
+        },
+      ],
+    };
+
+    const contextWithoutData = {
+      ...context,
+      data: undefined,
+    };
+
+    contextWithoutData.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    contextWithoutData.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves([]);
+
+    const result = await runAuditAndSendUrlsForScrapingStep(contextWithoutData);
+
+    // Should NOT include auditContext property at all
+    expect(result).to.not.have.property('auditContext');
+    expect(contextWithoutData.log.info).to.have.been.calledWith(
+      sinon.match(/starting audit$/),
+    );
+  });
+
+  it('should exclude auditContext when data is null (line 151)', async () => {
+    const formVitals = {
+      'form-vitals': [
+        {
+          url: 'https://example.com/form1',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { 'desktop:windows': 1000 },
+        },
+      ],
+    };
+
+    const contextWithNullData = {
+      ...context,
+      data: null,
+    };
+
+    contextWithNullData.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    contextWithNullData.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves([]);
+
+    const result = await runAuditAndSendUrlsForScrapingStep(contextWithNullData);
+
+    // Should NOT include auditContext property at all
+    expect(result).to.not.have.property('auditContext');
+  });
 });
 
 describe('send a11y urls for scraping step', () => {
@@ -863,6 +953,158 @@ describe('send a11y urls for scraping step', () => {
     const emptyFormSource = result.urls.find((url) => url.url === 'https://example.com/empty-form-source');
     expect(emptyFormSource).to.not.exist;
   });
+
+  it('should include auditContext when auditContext.data is provided (line 205)', async () => {
+    // Reset and setup fresh mocks for this test
+    context.s3Client.send.reset();
+    context.dataAccess.SiteTopForm.allBySiteId.reset();
+
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/forms/scrape.json' },
+      ],
+      IsTruncated: false,
+    });
+
+    const mockFormResponseData = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          finalUrl: 'https://www.business.adobe.com/newsletter',
+          scrapeResult: [
+            {
+              id: 'form1',
+              formType: 'newsletter',
+              visibleATF: true,
+              fieldCount: 3,
+              formSource: '#container-1 form.newsletter',
+            },
+          ],
+        })),
+      },
+    };
+
+    context.s3Client.send.onCall(1).resolves(mockFormResponseData);
+    context.s3Client.send.resolves(mockFormResponseData);
+    context.dataAccess.SiteTopForm.allBySiteId.resolves([]);
+
+    const testData = { opportunityId: 'test-oppty-456', type: 'a11y' };
+    const contextWithAuditData = {
+      ...context,
+      auditContext: { data: testData },
+      s3Client: context.s3Client,
+      dataAccess: context.dataAccess,
+      site: context.site,
+      log: context.log,
+      env: context.env,
+    };
+
+    const result = await sendA11yUrlsForScrapingStep(contextWithAuditData);
+
+    // Should include auditContext with data
+    expect(result).to.have.property('auditContext');
+    expect(result.auditContext).to.deep.equal({ data: testData });
+  });
+
+  it('should exclude auditContext when auditContext.data is undefined (line 205)', async () => {
+    // Reset and setup fresh mocks for this test
+    context.s3Client.send.reset();
+    context.dataAccess.SiteTopForm.allBySiteId.reset();
+
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/forms/scrape.json' },
+      ],
+      IsTruncated: false,
+    });
+
+    const mockFormResponseData = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          finalUrl: 'https://www.business.adobe.com/newsletter',
+          scrapeResult: [
+            {
+              id: 'form1',
+              formType: 'newsletter',
+              visibleATF: true,
+              fieldCount: 3,
+              formSource: '#container-1 form.newsletter',
+            },
+          ],
+        })),
+      },
+    };
+
+    context.s3Client.send.onCall(1).resolves(mockFormResponseData);
+    context.s3Client.send.resolves(mockFormResponseData);
+    context.dataAccess.SiteTopForm.allBySiteId.resolves([]);
+
+    const contextWithoutAuditData = {
+      ...context,
+      auditContext: {},
+      s3Client: context.s3Client,
+      dataAccess: context.dataAccess,
+      site: context.site,
+      log: context.log,
+      env: context.env,
+    };
+
+    const result = await sendA11yUrlsForScrapingStep(contextWithoutAuditData);
+
+    // Should NOT include auditContext property at all
+    expect(result).to.not.have.property('auditContext');
+  });
+
+  it('should exclude auditContext when auditContext is null (line 205)', async () => {
+    // Reset and setup fresh mocks for this test
+    context.s3Client.send.reset();
+    context.dataAccess.SiteTopForm.allBySiteId.reset();
+
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site-id/forms/scrape.json' },
+      ],
+      IsTruncated: false,
+    });
+
+    const mockFormResponseData = {
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sandbox.stub().resolves(JSON.stringify({
+          finalUrl: 'https://www.business.adobe.com/newsletter',
+          scrapeResult: [
+            {
+              id: 'form1',
+              formType: 'newsletter',
+              visibleATF: true,
+              fieldCount: 3,
+              formSource: '#container-1 form.newsletter',
+            },
+          ],
+        })),
+      },
+    };
+
+    context.s3Client.send.onCall(1).resolves(mockFormResponseData);
+    context.s3Client.send.resolves(mockFormResponseData);
+    context.dataAccess.SiteTopForm.allBySiteId.resolves([]);
+
+    const contextWithNullAuditContext = {
+      ...context,
+      auditContext: null,
+      s3Client: context.s3Client,
+      dataAccess: context.dataAccess,
+      site: context.site,
+      log: context.log,
+      env: context.env,
+    };
+
+    const result = await sendA11yUrlsForScrapingStep(contextWithNullAuditContext);
+
+    // Should NOT include auditContext property at all
+    expect(result).to.not.have.property('auditContext');
+  });
 });
 
 describe('process opportunity step', () => {
@@ -878,7 +1120,7 @@ describe('process opportunity step', () => {
 
   let dataAccessStub = {
     Opportunity: {
-      allBySiteIdAndStatus: sinon.stub().resolves([]),
+      allBySiteId: sinon.stub().resolves([]),
       create: sinon.stub().returns(formsOppty),
     },
   };
@@ -893,7 +1135,7 @@ describe('process opportunity step', () => {
 
     dataAccessStub = {
       Opportunity: {
-        allBySiteIdAndStatus: sinon.stub().resolves([]),
+        allBySiteId: sinon.stub().resolves([]),
         create: sinon.stub().returns(formsOppty),
       },
     };
@@ -995,5 +1237,192 @@ describe('process opportunity step', () => {
     expect(result).to.deep.equal({
       status: 'complete',
     });
+  });
+});
+
+describe('codeImportStep', () => {
+  let sandbox;
+  let context;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+
+    context = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        runtime: { name: 'aws-lambda', region: 'us-east-1' },
+        func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+        site: {
+          getId: sandbox.stub().returns('test-site-id'),
+        },
+        log: {
+          info: sandbox.spy(),
+          debug: sandbox.spy(),
+          warn: sandbox.spy(),
+          error: sandbox.spy(),
+        },
+      })
+      .build();
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should return correct code import step structure', async () => {
+    const result = await codeImportStep(context);
+
+    expect(result).to.be.an('object');
+    expect(result).to.have.property('type', 'code');
+    expect(result).to.have.property('siteId', 'test-site-id');
+    expect(result).to.have.property('allowCache', false);
+  });
+
+  it('should log info message with site ID', async () => {
+    await codeImportStep(context);
+
+    expect(context.log.info).to.have.been.calledOnce;
+    expect(context.log.info).to.have.been.calledWith(
+      '[Form Opportunity] [Site Id: test-site-id] starting code import step',
+    );
+  });
+
+  it('should call site.getId() to get siteId', async () => {
+    await codeImportStep(context);
+
+    expect(context.site.getId).to.have.been.called;
+  });
+
+  it('should handle different site IDs correctly', async () => {
+    context.site.getId.returns('different-site-id');
+
+    const result = await codeImportStep(context);
+
+    expect(result.siteId).to.equal('different-site-id');
+    expect(context.log.info).to.have.been.calledWith(
+      '[Form Opportunity] [Site Id: different-site-id] starting code import step',
+    );
+  });
+
+  it('should return type as code', async () => {
+    const result = await codeImportStep(context);
+
+    expect(result.type).to.equal('code');
+  });
+
+  it('should handle numeric site ID', async () => {
+    context.site.getId.returns(12345);
+
+    const result = await codeImportStep(context);
+
+    expect(result.siteId).to.equal(12345);
+    expect(context.log.info).to.have.been.calledWith(
+      '[Form Opportunity] [Site Id: 12345] starting code import step',
+    );
+  });
+
+  it('should handle empty string site ID', async () => {
+    context.site.getId.returns('');
+
+    const result = await codeImportStep(context);
+
+    expect(result.siteId).to.equal('');
+    expect(result.type).to.equal('code');
+  });
+
+  it('should handle null site ID', async () => {
+    context.site.getId.returns(null);
+
+    const result = await codeImportStep(context);
+
+    expect(result.siteId).to.be.null;
+    expect(result.type).to.equal('code');
+  });
+
+  it('should call site.getId twice (for logging and return value)', async () => {
+    await codeImportStep(context);
+
+    expect(context.site.getId).to.have.been.calledTwice;
+  });
+
+  it('should return only type and siteId properties when no auditContext data', async () => {
+    const result = await codeImportStep(context);
+
+    const keys = Object.keys(result);
+    expect(keys).to.have.lengthOf(3);
+    expect(keys).to.include('type');
+    expect(keys).to.include('siteId');
+    expect(keys).to.include('allowCache');
+  });
+
+  it('should include auditContext when auditContext.data is provided (line 222)', async () => {
+    const testData = { opportunityId: 'test-oppty-789', source: 'code-import' };
+    const contextWithAuditData = {
+      ...context,
+      auditContext: { data: testData },
+    };
+
+    const result = await codeImportStep(contextWithAuditData);
+
+    expect(result).to.have.property('auditContext');
+    expect(result.auditContext).to.deep.equal({ data: testData });
+    expect(result.type).to.equal('code');
+    expect(result.siteId).to.equal('test-site-id');
+  });
+
+  it('should exclude auditContext when auditContext.data is undefined (line 222)', async () => {
+    const contextWithoutAuditData = {
+      ...context,
+      auditContext: {},
+    };
+
+    const result = await codeImportStep(contextWithoutAuditData);
+
+    expect(result).to.not.have.property('auditContext');
+    expect(result.type).to.equal('code');
+    expect(result.siteId).to.equal('test-site-id');
+  });
+
+  it('should exclude auditContext when auditContext is null (line 222)', async () => {
+    const contextWithNullAuditContext = {
+      ...context,
+      auditContext: null,
+    };
+
+    const result = await codeImportStep(contextWithNullAuditContext);
+
+    expect(result).to.not.have.property('auditContext');
+    expect(result.type).to.equal('code');
+    expect(result.siteId).to.equal('test-site-id');
+  });
+
+  it('should exclude auditContext when auditContext is undefined (line 222)', async () => {
+    const contextWithUndefinedAuditContext = {
+      ...context,
+      auditContext: undefined,
+    };
+
+    const result = await codeImportStep(contextWithUndefinedAuditContext);
+
+    expect(result).to.not.have.property('auditContext');
+    expect(result.type).to.equal('code');
+    expect(result.siteId).to.equal('test-site-id');
+  });
+
+  it('should have correct number of properties when auditContext.data is provided', async () => {
+    const testData = { key: 'value' };
+    const contextWithAuditData = {
+      ...context,
+      auditContext: { data: testData },
+    };
+
+    const result = await codeImportStep(contextWithAuditData);
+
+    const keys = Object.keys(result);
+    expect(keys).to.have.lengthOf(4); // type, siteId, allowCache, and auditContext
+    expect(keys).to.include('type');
+    expect(keys).to.include('siteId');
+    expect(keys).to.include('allowCache');
+    expect(keys).to.include('auditContext');
   });
 });

@@ -31,6 +31,23 @@ describe('CDN Logs Sheet Configs', () => {
   });
 
   describe('agentic sheet config', () => {
+    let mockSite;
+    let mockDataAccess;
+
+    beforeEach(() => {
+      mockSite = {
+        getId: () => 'test-site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({ getFetchConfig: () => null }),
+      };
+
+      mockDataAccess = {
+        PageCitability: {
+          allBySiteId: sandbox.stub().resolves([]),
+        },
+      };
+    });
+
     it('generates correct headers', () => {
       const headers = SHEET_CONFIGS.agentic.getHeaders();
       expect(headers)
@@ -46,10 +63,11 @@ describe('CDN Logs Sheet Configs', () => {
           'URL',
           'Product',
           'Category',
+          'Citability Score',
         ]);
     });
 
-    it('processes agentic flat data correctly', () => {
+    it('processes agentic flat data correctly', async () => {
       const testData = [
         {
           agent_type: 'Chatbots',
@@ -58,7 +76,7 @@ describe('CDN Logs Sheet Configs', () => {
           number_of_hits: 100,
           avg_ttfb_ms: 250.5,
           country_code: 'US',
-          url: 'https://example.com/test',
+          url: '/test',
           product: 'firefly',
           category: 'Products',
         },
@@ -75,12 +93,20 @@ describe('CDN Logs Sheet Configs', () => {
         },
       ];
 
-      const result = SHEET_CONFIGS.agentic.processData(testData);
+      // Setup specific citability data for this test
+      mockDataAccess.PageCitability.allBySiteId.resolves([
+        {
+          getUrl: () => 'https://example.com/test',
+          getCitabilityScore: () => 85,
+        },
+      ]);
+
+      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
 
       expect(result)
         .to
         .have
-        .length(2);
+        .lengthOf(2);
       expect(result[0])
         .to
         .deep
@@ -91,9 +117,10 @@ describe('CDN Logs Sheet Configs', () => {
           100,
           250.5,
           'US',
-          'https://example.com/test',
+          '/test',
           'Firefly',
           'Products',
+          85,
         ]);
       expect(result[1])
         .to
@@ -108,18 +135,19 @@ describe('CDN Logs Sheet Configs', () => {
           '/',
           'Other',
           'Uncategorized',
+          'N/A',
         ]);
     });
 
-    it('handles null data gracefully', () => {
-      const result = SHEET_CONFIGS.agentic.processData(null);
+    it('handles null data gracefully', async () => {
+      const result = await SHEET_CONFIGS.agentic.processData(null);
       expect(result)
         .to
         .deep
         .equal([]);
     });
 
-    it('handles data with missing fields', () => {
+    it('handles data with missing fields', async () => {
       const testData = [
         {
           // Missing agent_type, user_agent_display, etc.
@@ -133,7 +161,7 @@ describe('CDN Logs Sheet Configs', () => {
         },
       ];
 
-      const result = SHEET_CONFIGS.agentic.processData(testData);
+      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
 
       expect(result)
         .to
@@ -152,11 +180,12 @@ describe('CDN Logs Sheet Configs', () => {
           '',
           'Other',
           'Uncategorized',
+          'N/A',
         ]);
     });
 
-    it('handles empty array data', () => {
-      const result = SHEET_CONFIGS.agentic.processData([]);
+    it('handles empty array data', async () => {
+      const result = await SHEET_CONFIGS.agentic.processData([], mockSite, mockDataAccess);
       expect(result)
         .to
         .deep

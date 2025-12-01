@@ -12,13 +12,19 @@
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../constants.js';
+import { addSuggestions } from './suggestion-utils.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
   const { auditId, siteId, data } = message;
-  const { url, guidance, form_source: formsource } = data;
-  log.debug(`Message received in high-form-views-low-conversions guidance handler: ${JSON.stringify(message, null, 2)}`);
+  const {
+    url,
+    guidance,
+    form_source: formsource,
+    suggestions,
+  } = data;
+  log.info(`[Form Opportunity] [Site Id: ${siteId}] message received in high-form-views-low-conversions guidance handler: ${JSON.stringify(message, null, 2)}`);
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   const opportunity = existingOpportunities
@@ -28,14 +34,15 @@ export default async function handler(message, context) {
       && oppty.getData()?.origin !== ORIGINS.ESS_OPS);
 
   if (opportunity) {
-    log.debug(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
+    log.debug(`[Form Opportunity] [Site Id: ${siteId}] existing opportunity found for page: ${url}. Updating it with new data.`);
     opportunity.setAuditId(auditId);
     // Wrap the guidance data under the recommendation key
     const wrappedGuidance = { recommendations: guidance };
     opportunity.setGuidance(wrappedGuidance);
     opportunity.setUpdatedBy('system');
+    await addSuggestions(opportunity, suggestions);
     await opportunity.save();
-    log.debug(`high-form-views-low-conversions guidance updated oppty : ${JSON.stringify(opportunity, null, 2)}`);
+    log.debug(`[Form Opportunity] [Site Id: ${siteId}] high-form-views-low-conversions guidance updated oppty : ${JSON.stringify(opportunity, null, 2)}`);
   }
 
   return ok();

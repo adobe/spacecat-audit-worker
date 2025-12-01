@@ -12,6 +12,8 @@
 import { DATA_SOURCES } from '../common/constants.js';
 
 export function createOpportunityData(props = {}) {
+  const { magentoEnvironmentId, ...restProps } = props;
+
   return {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7B27CF48AA-5492-435D-B17C-01E38332A5CA%7D&file=Experience_Success_Studio_Metatags_Runbook.docx&action=default&mobileredirect=true',
     origin: 'AUTOMATION',
@@ -28,7 +30,8 @@ export function createOpportunityData(props = {}) {
     },
     tags: ['Commerce', 'Product SEO', 'Traffic acquisition'],
     data: {
-      ...props,
+      ...restProps,
+      ...(magentoEnvironmentId ? { magentoEnvironmentId } : {}),
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
     },
   };
