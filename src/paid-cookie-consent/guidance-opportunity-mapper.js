@@ -13,6 +13,7 @@
 import { randomUUID } from 'crypto';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { CopyObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { DATA_SOURCES } from '../common/constants.js';
 
 const ESTIMATED_CPC = 0.80;
@@ -34,6 +35,56 @@ function sanitizeMarkdown(markdown) {
   return markdown;
 }
 
+/**
+ * Copy suggested screenshots from mystique bucket to scrapper bucket
+ * @param {Object} context - The context object
+ * @param {string} jobId - The scrape job ID
+ * @param {string} resultPath - The scrape result path to determine destination
+ */
+async function copySuggestedScreenshots(context, jobId, resultPath) {
+  const { log, s3Client } = context;
+
+  const mystiqueBucket = context.env?.S3_MYSTIQUE_BUCKET_NAME;
+  const scraperBucket = context.env?.S3_SCRAPER_BUCKET_NAME;
+
+  if (!mystiqueBucket || !scraperBucket) {
+    log.warn('[paid-cookie-consent] S3 bucket configuration missing, skipping screenshot copying');
+    return;
+  }
+
+  const screenshots = ['mobile-suggested.png', 'desktop-suggested.png'];
+
+  // Use Promise.all to copy both files in parallel
+  await Promise.all(screenshots.map(async (screenshot) => {
+    const sourceKey = `temp/consent-banner/${jobId}/${screenshot}`;
+    // Use the same path structure as scrape results
+    const destinationKey = resultPath.replace('scrape.json', screenshot);
+
+    try {
+      // Check if the file exists in mystique bucket
+      await s3Client.send(new HeadObjectCommand({
+        Bucket: mystiqueBucket,
+        Key: sourceKey,
+      }));
+
+      // Copy the file to scrapper bucket
+      await s3Client.send(new CopyObjectCommand({
+        CopySource: `${mystiqueBucket}/${sourceKey}`,
+        Bucket: scraperBucket,
+        Key: destinationKey,
+      }));
+
+      log.debug(`[paid-cookie-consent] Successfully copied ${screenshot} from mystique to scrapper bucket`);
+    } catch (error) {
+      if (error.name === 'NotFound' || error.name === 'NoSuchKey') {
+        log.warn(`[paid-cookie-consent] Suggested screenshot ${screenshot} not found in mystique bucket, skipping`);
+      } else {
+        log.error(`[paid-cookie-consent] Error copying suggested screenshot ${screenshot}: ${error.message}`);
+      }
+    }
+  }));
+}
+
 async function addScreenshots(context, siteId, markdown, jobId) {
   const fileVariants = [
     { key: 'DESKTOP_BANNER_ON_URL', variant: 'screenshot-desktop-viewport-withBanner' },
@@ -47,6 +98,10 @@ async function addScreenshots(context, siteId, markdown, jobId) {
   const scrapeClient = ScrapeClient.createFrom(context);
   const scrapeResults = await scrapeClient.getScrapeJobUrlResults(jobId);
   const result = scrapeResults?.[0];
+
+  // Copy suggested screenshots from mystique to scrapper bucket before processing
+  await copySuggestedScreenshots(context, jobId, result.path);
+
   let markdownWithScreenshots = markdown;
 
   const apiBase = context.env?.SPACECAT_API_URI || 'https://spacecat.experiencecloud.live/api/v1';

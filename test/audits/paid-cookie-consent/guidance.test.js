@@ -476,14 +476,14 @@ describe('Paid Cookie Consent Guidance Handler', () => {
         input: {
           CopySource: `test-mystique-bucket/temp/consent-banner/${jobId}/mobile-suggested.png`,
           Bucket: 'test-scraper-bucket',
-          Key: `temp/consent-banner/${jobId}/mobile-suggested.png`,
+          Key: 'path/to/mobile-suggested.png',
         },
       }));
       expect(s3ClientMock.send).to.have.been.calledWith(sinon.match({
         input: {
           CopySource: `test-mystique-bucket/temp/consent-banner/${jobId}/desktop-suggested.png`,
           Bucket: 'test-scraper-bucket',
-          Key: `temp/consent-banner/${jobId}/desktop-suggested.png`,
+          Key: 'path/to/desktop-suggested.png',
         },
       }));
 

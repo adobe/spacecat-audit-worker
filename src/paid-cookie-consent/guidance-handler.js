@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-import { CopyObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+
 import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
 
 function getGuidanceObj(guidance) {
@@ -20,64 +20,6 @@ function getGuidanceObj(guidance) {
     ...guidance[0],
     body,
   };
-}
-
-/**
- * Copies suggested screenshots from mystique bucket to scrapper bucket
- * @param {Object} context - The context object containing s3Client, env, and log
- * @param {string} jobId - The job ID for the temp folder path
- * @returns {Promise<void>}
- */
-async function copySuggestedScreenshots(context, jobId) {
-  const { s3Client, env, log } = context;
-
-  if (!jobId) {
-    log.warn('[paid-cookie-consent] No job ID provided, skipping suggested screenshots copy');
-    return;
-  }
-
-  const mystiqueBucket = env.S3_MYSTIQUE_BUCKET_NAME;
-  const scraperBucket = env.S3_SCRAPER_BUCKET_NAME;
-
-  if (!mystiqueBucket || !scraperBucket) {
-    log.warn('[paid-cookie-consent] Missing bucket configuration for suggested screenshots copy');
-    return;
-  }
-
-  const suggestedScreenshots = [
-    'mobile-suggested.png',
-    'desktop-suggested.png',
-  ];
-
-  const copyPromises = suggestedScreenshots.map(async (screenshot) => {
-    const sourceKey = `temp/consent-banner/${jobId}/${screenshot}`;
-    const destinationKey = `temp/consent-banner/${jobId}/${screenshot}`;
-
-    try {
-      // Check if the file exists in mystique bucket
-      await s3Client.send(new HeadObjectCommand({
-        Bucket: mystiqueBucket,
-        Key: sourceKey,
-      }));
-
-      // Copy the file to scrapper bucket
-      await s3Client.send(new CopyObjectCommand({
-        CopySource: `${mystiqueBucket}/${sourceKey}`,
-        Bucket: scraperBucket,
-        Key: destinationKey,
-      }));
-
-      log.debug(`[paid-cookie-consent] Successfully copied ${screenshot} from mystique to scrapper bucket`);
-    } catch (error) {
-      if (error.name === 'NotFound' || error.name === 'NoSuchKey') {
-        log.warn(`[paid-cookie-consent] Suggested screenshot ${screenshot} not found in mystique bucket, skipping`);
-      } else {
-        log.error(`[paid-cookie-consent] Error copying suggested screenshot ${screenshot}: ${error.message}`);
-      }
-    }
-  });
-
-  await Promise.all(copyPromises);
 }
 
 export default async function handler(message, context) {
@@ -117,8 +59,6 @@ export default async function handler(message, context) {
       body: 'Job ID is required for paid cookie consent guidance processing',
     };
   }
-
-  await copySuggestedScreenshots(context, jobId);
 
   // Create suggestion for the new opportunity first
   const suggestionData = await mapToPaidSuggestion(
