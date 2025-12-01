@@ -46,7 +46,7 @@ async function addScreenshots(context, siteId, markdown, jobId) {
 
   const scrapeClient = ScrapeClient.createFrom(context);
   const scrapeResults = await scrapeClient.getScrapeJobUrlResults(jobId);
-  const result = scrapeResults[0];
+  const result = scrapeResults?.[0];
   let markdownWithScreenshots = markdown;
 
   const apiBase = context.env?.SPACECAT_API_URI || 'https://spacecat.experiencecloud.live/api/v1';

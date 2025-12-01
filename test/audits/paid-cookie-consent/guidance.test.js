@@ -20,6 +20,7 @@ import { describe } from 'mocha';
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import { CopyObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import handler from '../../../src/paid-cookie-consent/guidance-handler.js';
 
 use(sinonChai);
@@ -57,6 +58,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
   let Opportunity;
   let Audit;
   let opportunityInstance;
+  let s3ClientMock;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -92,10 +94,21 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       create: sandbox.stub(),
     };
     Audit = { findById: sandbox.stub() };
+
+    // Mock S3 client
+    s3ClientMock = {
+      send: sandbox.stub(),
+    };
+
     context = {
       log: logStub,
       dataAccess: { Audit, Opportunity, Suggestion },
-      env: { SPACECAT_API_URI: 'https://example-space-cat-api' },
+      env: {
+        SPACECAT_API_URI: 'https://example-space-cat-api',
+        S3_MYSTIQUE_BUCKET_NAME: 'test-mystique-bucket',
+        S3_SCRAPER_BUCKET_NAME: 'test-scraper-bucket',
+      },
+      s3Client: s3ClientMock,
     };
 
     Audit.findById.resolves({
@@ -410,5 +423,245 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
     await handler(message, context);
     expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'PENDING_VALIDATION'));
+  });
+
+  describe('Screenshot Copying Functionality', () => {
+    beforeEach(() => {
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      // Default: S3 operations succeed
+      s3ClientMock.send.resolves();
+    });
+
+    it('should successfully copy both mobile and desktop suggested screenshots', async () => {
+      const jobId = 'test-job-123';
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown with MOBILE_BANNER_SUGGESTION',
+            desktop: 'desktop markdown with DESKTOP_BANNER_SUGGESTION',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: jobId },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+
+      await handler(message, context);
+
+      // Verify HeadObjectCommand calls to check file existence
+      expect(s3ClientMock.send).to.have.been.calledWith(sinon.match.instanceOf(HeadObjectCommand));
+      expect(s3ClientMock.send).to.have.been.calledWith(sinon.match({
+        input: {
+          Bucket: 'test-mystique-bucket',
+          Key: `temp/consent-banner/${jobId}/mobile-suggested.png`,
+        },
+      }));
+      expect(s3ClientMock.send).to.have.been.calledWith(sinon.match({
+        input: {
+          Bucket: 'test-mystique-bucket',
+          Key: `temp/consent-banner/${jobId}/desktop-suggested.png`,
+        },
+      }));
+
+      // Verify CopyObjectCommand calls
+      expect(s3ClientMock.send).to.have.been.calledWith(sinon.match.instanceOf(CopyObjectCommand));
+      expect(s3ClientMock.send).to.have.been.calledWith(sinon.match({
+        input: {
+          CopySource: `test-mystique-bucket/temp/consent-banner/${jobId}/mobile-suggested.png`,
+          Bucket: 'test-scraper-bucket',
+          Key: `temp/consent-banner/${jobId}/mobile-suggested.png`,
+        },
+      }));
+      expect(s3ClientMock.send).to.have.been.calledWith(sinon.match({
+        input: {
+          CopySource: `test-mystique-bucket/temp/consent-banner/${jobId}/desktop-suggested.png`,
+          Bucket: 'test-scraper-bucket',
+          Key: `temp/consent-banner/${jobId}/desktop-suggested.png`,
+        },
+      }));
+
+      // Verify success logs
+      expect(logStub.debug).to.have.been.calledWith('[paid-cookie-consent] Successfully copied mobile-suggested.png from mystique to scrapper bucket');
+      expect(logStub.debug).to.have.been.calledWith('[paid-cookie-consent] Successfully copied desktop-suggested.png from mystique to scrapper bucket');
+    });
+
+    it('should warn and skip when no job ID is provided', async () => {
+      const guidance = [{
+        body: { markdown: 'test markdown' },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: {}, // No scrape_job_id
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+
+      await handler(message, context);
+
+      // Should not make any S3 calls
+      expect(s3ClientMock.send).to.not.have.been.called;
+
+      });
+
+    it('should warn and skip when bucket configuration is missing', async () => {
+      // Remove bucket configuration
+      delete context.env.S3_MYSTIQUE_BUCKET_NAME;
+      delete context.env.S3_SCRAPER_BUCKET_NAME;
+
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown with MOBILE_BANNER_SUGGESTION',
+            desktop: 'desktop markdown with DESKTOP_BANNER_SUGGESTION',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-123' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+
+      await handler(message, context);
+
+      // Should not make any S3 calls
+      expect(s3ClientMock.send).to.not.have.been.called;
+
+    });
+
+    it('should handle file not found gracefully and continue processing', async () => {
+      const jobId = 'test-job-123';
+
+      // Mock HeadObjectCommand to throw NotFound for mobile file
+      s3ClientMock.send.callsFake((command) => {
+        if (command instanceof HeadObjectCommand && command.input.Key.includes('mobile-suggested.png')) {
+          const error = new Error('Not Found');
+          error.name = 'NotFound';
+          throw error;
+        }
+        return Promise.resolve();
+      });
+
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown with MOBILE_BANNER_SUGGESTION',
+            desktop: 'desktop markdown with DESKTOP_BANNER_SUGGESTION',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: jobId },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+
+      await handler(message, context);
+
+      // Should log warning for missing file
+      expect(logStub.warn).to.have.been
+      // Should still process desktop file and continue with opportunity creation
+      expect(Opportunity.create).to.have.been.called;
+      expect(Suggestion.create).to.have.been.called;
+    });
+
+    it('should handle S3 errors gracefully and continue processing', async () => {
+      const jobId = 'test-job-123';
+
+      // Mock S3 to throw an error
+      s3ClientMock.send.rejects(new Error('S3 Service Error'));
+
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown with MOBILE_BANNER_SUGGESTION',
+            desktop: 'desktop markdown with DESKTOP_BANNER_SUGGESTION',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: jobId },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+
+      await handler(message, context);
+
+      // Should log errors
+      expect(logStub.error).to.have.been.calledWith('[paid-cookie-consent] Error copying suggested screenshot mobile-suggested.png: S3 Service Error');
+      expect(logStub.error).to.have.been.calledWith('[paid-cookie-consent] Error copying suggested screenshot desktop-suggested.png: S3 Service Error');
+
+      // Should still continue with opportunity creation
+      expect(Opportunity.create).to.have.been.called;
+      expect(Suggestion.create).to.have.been.called;
+    });
+
+    it('should handle mixed success and failure scenarios', async () => {
+      const jobId = 'test-job-123';
+
+      // Mock: mobile file exists and copies successfully, desktop file not found
+      s3ClientMock.send.callsFake((command) => {
+        if (command instanceof HeadObjectCommand) {
+          if (command.input.Key.includes('desktop-suggested.png')) {
+            const error = new Error('Not Found');
+            error.name = 'NoSuchKey';
+            throw error;
+          }
+          return Promise.resolve(); // mobile file exists
+        }
+        if (command instanceof CopyObjectCommand) {
+          return Promise.resolve(); // copy succeeds
+        }
+        return Promise.resolve();
+      });
+
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown with MOBILE_BANNER_SUGGESTION',
+            desktop: 'desktop markdown with DESKTOP_BANNER_SUGGESTION',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: jobId },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+
+      await handler(message, context);
+
+      // Should log success for mobile
+      expect(logStub.debug).to.have.been.calledWith('[paid-cookie-consent] Successfully copied mobile-suggested.png from mystique to scrapper bucket');
+
+      // Should log warning for desktop
+      expect(logStub.warn).to.have.been.calledWith('[paid-cookie-consent] Suggested screenshot desktop-suggested.png not found in mystique bucket, skipping');
+
+      // Should still continue with opportunity creation
+      expect(Opportunity.create).to.have.been.called;
+      expect(Suggestion.create).to.have.been.called;
+    });
   });
 });
