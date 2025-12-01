@@ -21,6 +21,7 @@ import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-acce
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
+import { limitConcurrency } from '../support/utils.js';
 
 const auditType = Audit.AUDIT_TYPES.HREFLANG;
 
@@ -160,6 +161,7 @@ export async function validatePageHreflang(url, log) {
  * @returns {Promise<Object>} Audit results
  */
 export async function hreflangAuditRunner(baseURL, context, site) {
+  const MAX_CONCURRENT_FETCH_CALLS = 10;
   const siteId = site.getId();
   const { log, dataAccess } = context;
   log.debug(`Starting Hreflang Audit with siteId: ${siteId}`);
@@ -184,9 +186,9 @@ export async function hreflangAuditRunner(baseURL, context, site) {
     }
 
     // Validate hreflang for each page
-    const auditPromises = topPages.map(async (page) => validatePageHreflang(page.url, log));
+    const tasks = topPages.map((page) => () => validatePageHreflang(page.url, log));
 
-    const auditResultsArray = await Promise.allSettled(auditPromises);
+    const auditResultsArray = await limitConcurrency(tasks, MAX_CONCURRENT_FETCH_CALLS);
     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
       if (result.status === 'fulfilled') {
         const { url, checks } = result.value;
