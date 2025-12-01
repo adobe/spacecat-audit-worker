@@ -255,7 +255,9 @@ export async function limitConcurrencyAllSettled(tasks, maxConcurrent) {
 
     if (executing.length >= maxConcurrent) {
       // eslint-disable-next-line no-await-in-loop
-      await Promise.race(executing);
+      await Promise.race(executing).catch(() => {
+        // Ignore errors in race, they will be handled by allSettled
+      });
     }
   }
 
