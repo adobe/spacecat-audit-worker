@@ -22,7 +22,7 @@ import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-acce
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { CANONICAL_CHECKS } from './constants.js';
-import { limitConcurrency } from '../support/utils.js';
+import { limitConcurrencyAllSettled } from '../support/utils.js';
 
 /**
  * @import {type RequestOptions} from "@adobe/fetch"
@@ -543,7 +543,8 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       }
     });
 
-    const statusCheckResults = await limitConcurrency(
+    // Using AllSettled variant to continue processing other pages even if some fail
+    const statusCheckResults = await limitConcurrencyAllSettled(
       statusCheckPromises,
       MAX_CONCURRENT_FETCH_CALLS,
     );
@@ -602,7 +603,11 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       return { url, checks };
     });
 
-    const auditResultsArray = await limitConcurrency(auditPromises, MAX_CONCURRENT_FETCH_CALLS);
+    // Using AllSettled variant to continue processing other pages even if some fail
+    const auditResultsArray = await limitConcurrencyAllSettled(
+      auditPromises,
+      MAX_CONCURRENT_FETCH_CALLS,
+    );
     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
       const { url, checks } = result;
       checks.forEach((check) => {
