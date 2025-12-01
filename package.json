@@ -86,7 +86,7 @@
     "@adobe/spacecat-shared-data-access": "2.88.8",
     "@adobe/spacecat-shared-google-client": "1.4.62",
     "@adobe/spacecat-shared-gpt-client": "1.6.14",
-    "@adobe/spacecat-shared-html-analyzer": "1.0.7",
+    "@adobe/spacecat-shared-html-analyzer": "1.1.0",
     "@adobe/spacecat-shared-http-utils": "1.19.4",
     "@adobe/spacecat-shared-ims-client": "1.11.7",
     "@adobe/spacecat-shared-rum-api-client": "2.40.0",
