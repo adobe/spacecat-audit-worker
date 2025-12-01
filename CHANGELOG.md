@@ -1,3 +1,10 @@
+## [1.261.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.261.1...v1.261.2) (2025-12-01)
+
+
+### Bug Fixes
+
+* dedupe data-access ([#1714](https://github.com/adobe/spacecat-audit-worker/issues/1714)) ([d3ed027](https://github.com/adobe/spacecat-audit-worker/commit/d3ed0270fe2b78cb9e5e1a295cf00caf37f8a690))
+
 ## [1.261.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.261.0...v1.261.1) (2025-11-30)
 
 
