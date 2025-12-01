@@ -16,6 +16,7 @@ import { AuditBuilder } from '../../common/audit-builder.js';
 import { convertToOpportunity } from '../../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../../utils/data-access.js';
+import { noopUrlResolver } from '../../common/base-audit.js';
 import { analyzePageReadability, sendReadabilityToMystique } from '../shared/analysis-utils.js';
 import {
   TOP_PAGES_LIMIT,
@@ -146,8 +147,8 @@ export async function processReadabilityOpportunities(context) {
       },
     );
 
-    // Prepare suggestions data for database
-    const suggestions = readabilityIssues.map((issue, index) => {
+    // Prepare suggestions data for database (raw data format for syncSuggestions)
+    const suggestionsData = readabilityIssues.map((issue, index) => {
       // Extract only the fields needed for display (exclude full textContent)
       const {
         textContent,
@@ -155,14 +156,10 @@ export async function processReadabilityOpportunities(context) {
       } = issue;
 
       return {
-        opportunityId: opportunity.getId(),
-        type: SuggestionModel.TYPES.CONTENT_UPDATE,
-        rank: issue.rank, // Use the rank already calculated in analysis
-        data: {
-          ...issueWithoutFullText,
-          id: `readability-${siteId}-${index}`,
-          textPreview: textContent?.substring(0, 500),
-        },
+        ...issueWithoutFullText,
+        scrapedAt: new Date(issue.scrapedAt).toISOString(),
+        id: `readability-${siteId}-${index}`,
+        textPreview: textContent?.substring(0, 500),
       };
     });
 
@@ -171,10 +168,15 @@ export async function processReadabilityOpportunities(context) {
 
     await syncSuggestions({
       opportunity,
-      newData: suggestions,
+      newData: suggestionsData,
       context,
       buildKey,
-      mapNewSuggestion: (suggestion) => suggestion,
+      mapNewSuggestion: (data) => ({
+        opportunityId: opportunity.getId(),
+        type: SuggestionModel.TYPES.CONTENT_UPDATE,
+        rank: data.rank,
+        data,
+      }),
     });
 
     // Send to Mystique for AI-powered readability improvements
@@ -213,6 +215,7 @@ export async function processReadabilityOpportunities(context) {
 }
 
 export default new AuditBuilder()
+  .withUrlResolver(noopUrlResolver)
   .addStep(
     'processImport',
     processImportStep,
