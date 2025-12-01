@@ -42,7 +42,7 @@ async function filterOutValidBacklinks(backlinks, log) {
   const isStillBrokenBacklink = async (backlink) => {
     const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
     if (!response.ok && response.status !== 404
-        && response.status >= 400 && response.status < 500) {
+      && response.status >= 400 && response.status < 500) {
       log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
     }
     return !response.ok;
@@ -219,7 +219,7 @@ export const generateSuggestionData = async (context) => {
     }
   });
 
-  log.info(`[Broken Backlinks] Filtered locales from broken links: ${Array.from(brokenLinkLocales).join(', ') || '(none - no subpaths found)'}`);
+  log.info(`[brokbacklinks] Filtered locales from broken links: ${Array.from(brokenLinkLocales).join(', ') || '(none - no subpaths found)'}`);
 
   // Filter alternatives to only include URLs matching broken links' locales
   // If no locales found (no subpath), include all alternatives
@@ -231,11 +231,11 @@ export const generateSuggestionData = async (context) => {
       // Include if URL matches one of the broken links' locales, or has no locale
       return !urlLocale || brokenLinkLocales.has(urlLocale);
     });
-    log.info(`[Broken Backlinks] Filtered alternatives: ${alternativeUrls.length} URLs match locales ${Array.from(brokenLinkLocales).join(', ')} out of ${allTopPageUrls.length} total alternatives`);
+    log.info(`[brokbacklinks] Filtered alternatives: ${alternativeUrls.length} URLs match locales ${Array.from(brokenLinkLocales).join(', ')} out of ${allTopPageUrls.length} total alternatives`);
   } else {
     // No locale prefixes found, include all alternatives
     alternativeUrls = allTopPageUrls;
-    log.info(`[Broken Backlinks] No locale filtering: using all ${allTopPageUrls.length} alternatives (no subpaths in broken links)`);
+    log.info(`[brokbacklinks] No locale filtering: using all ${allTopPageUrls.length} alternatives (no subpaths in broken links)`);
   }
 
   // Validate before sending to Mystique
