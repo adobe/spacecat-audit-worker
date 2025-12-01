@@ -272,6 +272,8 @@ export const opportunityAndSuggestionsStep = async (context) => {
       }
     });
 
+    log.info(`[Internal Links] Filtered locales from broken links: ${Array.from(brokenLinkLocales).join(', ') || '(none - no subpaths found)'}`);
+
     // Filter alternatives to only include URLs matching broken links' locales
     // If no locales found (no subpath), include all alternatives
     // Always ensure alternativeUrls is an array (even if empty)
@@ -282,9 +284,11 @@ export const opportunityAndSuggestionsStep = async (context) => {
         // Include if URL matches one of the broken links' locales, or has no locale
         return !urlLocale || brokenLinkLocales.has(urlLocale);
       });
+      log.info(`[Internal Links] Filtered alternatives: ${alternativeUrls.length} URLs match locales ${Array.from(brokenLinkLocales).join(', ')} out of ${allTopPageUrls.length} total alternatives`);
     } else {
       // No locale prefixes found, include all alternatives
       alternativeUrls = allTopPageUrls;
+      log.info(`[Internal Links] No locale filtering: using all ${allTopPageUrls.length} alternatives (no subpaths in broken links)`);
     }
 
     // Validate before sending to Mystique
