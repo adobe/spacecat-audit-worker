@@ -190,24 +190,21 @@ export async function hreflangAuditRunner(baseURL, context, site) {
 
     const auditResultsArray = await limitConcurrency(tasks, MAX_CONCURRENT_FETCH_CALLS);
     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
-      if (result.status === 'fulfilled') {
-        const { url, checks } = result.value;
-        checks.forEach((check) => {
-          const { check: checkType, success, explanation } = check;
-
-          // Only process failed checks
-          if (success === false) {
-            if (!acc[checkType]) {
-              acc[checkType] = {
-                success: false,
-                explanation,
-                urls: [],
-              };
-            }
-            acc[checkType].urls.push(url);
+      const { url, checks } = result;
+      checks.forEach((check) => {
+        const { check: checkType, success, explanation } = check;
+        // Only process failed checks
+        if (success === false) {
+          if (!acc[checkType]) {
+            acc[checkType] = {
+              success: false,
+              explanation,
+              urls: [],
+            };
           }
-        });
-      }
+          acc[checkType].urls.push(url);
+        }
+      });
       return acc;
     }, {});
 
