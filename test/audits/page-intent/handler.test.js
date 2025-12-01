@@ -51,6 +51,9 @@ describe('Page Intent Handler', () => {
       getId: sandbox.stub().returns(siteId),
       getBaseURL: sandbox.stub().returns(baseURL),
       getPageIntents: sandbox.stub().resolves([]),
+      getConfig: sandbox.stub().returns({
+        getFetchConfig: sandbox.stub().returns({}),
+      }),
     };
 
     // Mock audit
