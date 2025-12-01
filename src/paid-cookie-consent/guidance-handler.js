@@ -57,14 +57,14 @@ export default async function handler(message, context) {
     guidanceParsed,
   );
   await Suggestion.create(suggestionData);
+  log.info(`Created suggestion for opportunity ${opportunity.getId()}: ${JSON.stringify(suggestionData, null, 2)}`);
   log.debug(`Created suggestion for opportunity ${opportunity.getId()}`);
 
   // Only after suggestion is successfully created,
   // find and mark existing NEW system opportunities as IGNORED
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   const existingMatches = existingOpportunities
-    .filter((oppty) => oppty.getType() === 'generic-opportunity')
-    .filter((oppty) => oppty.getData()?.page === url && oppty.getData().opportunityType === 'paid-cookie-consent')
+    .filter((oppty) => oppty.getType() === 'consent-banner')
     .filter((oppty) => oppty.getStatus() === 'NEW' && oppty.getUpdatedBy() === 'system')
     .filter((oppty) => oppty.getId() !== opportunity.getId()); // Exclude the newly created one
 
