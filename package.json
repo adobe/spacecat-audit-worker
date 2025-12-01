@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.261.1",
+  "version": "1.261.3",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -80,10 +80,10 @@
     "@adobe/helix-shared-wrap": "2.0.2",
     "@adobe/helix-status": "10.1.5",
     "@adobe/helix-universal-logger": "3.0.28",
-    "@adobe/spacecat-helix-content-sdk": "1.4.30",
+    "@adobe/spacecat-helix-content-sdk": "1.4.31",
     "@adobe/spacecat-shared-ahrefs-client": "1.10.3",
     "@adobe/spacecat-shared-athena-client": "1.7.6",
-    "@adobe/spacecat-shared-data-access": "2.88.7",
+    "@adobe/spacecat-shared-data-access": "2.88.8",
     "@adobe/spacecat-shared-google-client": "1.4.62",
     "@adobe/spacecat-shared-gpt-client": "1.6.14",
     "@adobe/spacecat-shared-html-analyzer": "1.0.7",
@@ -158,6 +158,10 @@
     "sinon-chai": "4.0.1",
     "typescript": "5.9.3",
     "yaml": "2.8.1"
+  },
+  "overrides": {
+    "@adobe/fetch": "4.2.3",
+    "@adobe/spacecat-shared-data-access": "2.88.8"
   },
   "lint-staged": {
     "*.js": "eslint",
