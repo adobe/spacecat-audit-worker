@@ -1,3 +1,10 @@
+## [1.264.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.2...v1.264.3) (2025-12-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-athena-client to v1.8.0 ([#1738](https://github.com/adobe/spacecat-audit-worker/issues/1738)) ([5504442](https://github.com/adobe/spacecat-audit-worker/commit/5504442fdca233a61a062c27e905d93713d12b00))
+
 ## [1.264.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.1...v1.264.2) (2025-12-02)
 
 
