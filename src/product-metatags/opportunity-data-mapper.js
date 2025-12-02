@@ -28,7 +28,7 @@ export function createOpportunityData(props = {}) {
         'Publish the changes to apply the updates to your live product pages.',
       ],
     },
-    tags: ['Commerce', 'Product SEO', 'Traffic acquisition', 'isAco'],
+    tags: ['Commerce', 'Product SEO', 'Traffic acquisition'],
     data: {
       ...restProps,
       ...(magentoEnvironmentId ? { magentoEnvironmentId } : {}),

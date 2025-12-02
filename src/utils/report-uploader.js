@@ -251,8 +251,8 @@ async function runBulkJob(route, operation, paths, log) {
   if (!jobUrl) throw new Error(`No job URL from ${operation}`);
   log.info(`%s: ${operation} job started for ${paths.length} paths: ${paths.join(', ')}, job URL: ${jobUrl}`, AUDIT_NAME);
 
-  // Poll until complete for 5 minutes
-  for (let i = 0; i < 60; i += 1) {
+  // Poll until complete for 10 minutes
+  for (let i = 0; i < 120; i += 1) {
     // eslint-disable-next-line no-await-in-loop
     await sleep(5000);
     // eslint-disable-next-line no-await-in-loop
@@ -261,7 +261,7 @@ async function runBulkJob(route, operation, paths, log) {
     // eslint-disable-next-line no-await-in-loop
     const status = await statusRes.json();
     const { state, progress } = status;
-    log.info(`%s: ${operation} status: ${state} - ${progress.success} success, ${progress.failed} failed for job URL: ${jobUrl}`, AUDIT_NAME);
+    log.info(`%s: ${operation} status: ${state} - ${progress?.success ?? 0} success, ${progress?.failed ?? 0} failed for job URL: ${jobUrl}`, AUDIT_NAME);
     if (state === 'stopped') return;
   }
   throw new Error(`${operation} timeout for job URL: ${jobUrl}`);
