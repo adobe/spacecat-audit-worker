@@ -29,7 +29,7 @@ export const OPPORTUNITY_LIMIT = 2;
 
 // Page view threshold constants
 export const DAILY_PAGEVIEW_THRESHOLD_DEFAULT = 200;
-export const DAILY_PAGEVIEW_THRESHOLD_ALL = 100;
+export const DAILY_PAGEVIEW_THRESHOLD_ALL = 7;
 
 export const successCriteriaLinks = {
   111: {
