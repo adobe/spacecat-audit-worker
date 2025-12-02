@@ -561,8 +561,6 @@ describe('Paid Cookie Consent Guidance Handler', () => {
           Key: 'path/to/desktop-suggested.png',
         },
       }));
-
-
     });
 
 
