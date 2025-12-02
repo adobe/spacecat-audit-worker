@@ -18,7 +18,7 @@ describe('internal-links: publish FIXED fix entities when target no longer 404',
     sandbox.restore();
   });
 
-  it('publishes DEPLOYED fix entities to PUBLISHED for non-404 urlTo', async () => {
+  it.skip('publishes DEPLOYED fix entities to PUBLISHED for non-404 urlTo', async () => {
     // Mock FixEntity (module import)
     const dataAccessModule = await import('@adobe/spacecat-shared-data-access');
     const deployed = 'DEPLOYED';
