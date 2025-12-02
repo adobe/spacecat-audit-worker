@@ -1,3 +1,31 @@
+## [1.262.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.3...v1.262.4) (2025-12-02)
+
+
+### Bug Fixes
+
+* adding extra options for forms opportunities ([#1640](https://github.com/adobe/spacecat-audit-worker/issues/1640)) ([38e6448](https://github.com/adobe/spacecat-audit-worker/commit/38e64488831369fa3756af4dad107cb4be2d8740))
+
+## [1.262.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.2...v1.262.3) (2025-12-02)
+
+
+### Bug Fixes
+
+* make ai mode as Chatbots ([#1729](https://github.com/adobe/spacecat-audit-worker/issues/1729)) ([fc50fec](https://github.com/adobe/spacecat-audit-worker/commit/fc50fec19f09339768283f37ed1e947e12be38f6))
+
+## [1.262.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.1...v1.262.2) (2025-12-01)
+
+
+### Bug Fixes
+
+* remove unused 'isAco' ([#1724](https://github.com/adobe/spacecat-audit-worker/issues/1724)) ([127598a](https://github.com/adobe/spacecat-audit-worker/commit/127598ac6319a798abaf7a8977efae05990f63c7))
+
+## [1.262.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.0...v1.262.1) (2025-12-01)
+
+
+### Bug Fixes
+
+* SITES-37360 & SITES-37971 - fetch timeout issue ([#1723](https://github.com/adobe/spacecat-audit-worker/issues/1723)) ([9b7e55c](https://github.com/adobe/spacecat-audit-worker/commit/9b7e55c50a9a3e9b37440f1cf7549b6ae1a9edfe))
+
 # [1.262.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.261.4...v1.262.0) (2025-12-01)
 
 
