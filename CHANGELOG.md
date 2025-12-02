@@ -1,3 +1,10 @@
+# [1.264.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.263.2...v1.264.0) (2025-12-02)
+
+
+### Features
+
+* verify scraped pages before Mystique summarization ([#1733](https://github.com/adobe/spacecat-audit-worker/issues/1733)) ([fa52fed](https://github.com/adobe/spacecat-audit-worker/commit/fa52fedbef40a81f120787ba09890118912ed104))
+
 ## [1.263.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.263.1...v1.263.2) (2025-12-02)
 
 
