@@ -89,7 +89,7 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
     type: 'generic-opportunity',
     origin: 'AUTOMATION',
     title: 'Consent Banner covers essential page content',
-    description: `The consent banner hides essential page content, resulting in a critical mobile bounce rate. Pages like the following recorded in average ${formatNumberWithK(stats.averagePageViewsTop3)} visits but lost ${formatNumberWithK(stats.averageTrafficLostTop3)} potential customers immediately.`,
+    description: `The consent banner hides essential page content, resulting in a critical mobile bounce rate. Pages like the following recorded in average ${formatNumberWithK(stats.averagePageViewsTop3)} visits but lost ${formatNumberWithK(stats.averageTrafficLostTop3)} potential customers immediately: ${stats.top3Pages.map((page) => `${page.path}`).join(', ')}`,
     guidance: {
       recommendations: [
         {
