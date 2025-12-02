@@ -5,6 +5,7 @@ FROM {{databaseName}}.{{tableName}}
 WHERE 
   {{userAgentFilter}}
   AND url IS NOT NULL
+  AND url NOT LIKE '%.pdf'
   AND status BETWEEN 200 AND 399 
   AND ({{dateFilter}})
   AND {{siteFilters}}

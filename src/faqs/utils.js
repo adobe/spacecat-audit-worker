@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { ContentAIClient } from '../utils/content-ai.js';
+
 /**
  * Column indices for the brand presence spreadsheet.
  * Excel uses 1-based indexing for columns.
@@ -107,4 +109,81 @@ export function getJsonFaqSuggestion(suggestions) {
   });
 
   return suggestionValues;
+}
+
+/**
+ * Validates if Content AI configuration exists and is working for a site
+ * by checking for the configuration and testing the search endpoint
+ * @param {Object} site - The site object
+ * @param {Object} context - The context object with env and log
+ * @returns {Promise<{uid: string|null, indexName: string|null,
+ *   genSearchEnabled: boolean, isWorking: boolean}>}
+ */
+export async function validateContentAI(site, context) {
+  const { log } = context;
+
+  try {
+    // Initialize Content AI client once (token generated once)
+    const client = new ContentAIClient(context);
+    await client.initialize();
+
+    const existingConf = await client.getConfigurationForSite(site);
+    const baseURL = site.getBaseURL();
+
+    if (!existingConf) {
+      log.warn(`[ContentAI] No configuration found for site ${baseURL}`);
+      return {
+        uid: null,
+        indexName: null,
+        genSearchEnabled: false,
+        isWorking: false,
+      };
+    }
+
+    // Extract UID and index name from configuration
+    const uid = existingConf.uid || null;
+    const indexStep = existingConf.steps?.find((step) => step.type === 'index');
+    const indexName = indexStep?.name;
+
+    if (!indexName) {
+      log.warn(`[ContentAI] No index name found in configuration for site ${baseURL}`);
+      return {
+        uid,
+        indexName: null,
+        genSearchEnabled: false,
+        isWorking: false,
+      };
+    }
+
+    log.info(`[ContentAI] Found configuration with UID: ${uid}, index name: ${indexName}`);
+
+    // Check if generative search is enabled (generative step exists and is not empty)
+    const generativeStep = existingConf.steps?.find((step) => step.type === 'generative');
+    const genSearchEnabled = !!(generativeStep && Object.keys(generativeStep).length > 1);
+
+    // Test the search endpoint with a simple query (reuses token from client)
+    const searchOptions = {
+      numCandidates: 3,
+      boost: 1,
+    };
+    const searchResponse = await client.runSemanticSearch('website', 'vector', indexName, searchOptions, 1);
+
+    const isWorking = searchResponse.ok;
+    log.info(`[ContentAI] Search endpoint validation: ${searchResponse.status} (${isWorking ? 'working' : 'not working'})`);
+
+    return {
+      uid,
+      indexName,
+      genSearchEnabled,
+      isWorking,
+    };
+  } catch (error) {
+    log.error(`[ContentAI] Validation failed: ${error.message}`);
+    return {
+      uid: null,
+      indexName: null,
+      genSearchEnabled: false,
+      isWorking: false,
+    };
+  }
 }

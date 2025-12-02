@@ -30,6 +30,7 @@ describe('Accessibility Audit Handler', () => {
   let processAccessibilityOpportunities;
   let createProcessAccessibilityOpportunitiesWithDevice;
   let processImportStep;
+  let codeImportStep;
   let getUrlsForAuditStub;
   let aggregateAccessibilityDataStub;
   let generateReportOpportunitiesStub;
@@ -106,6 +107,7 @@ describe('Accessibility Audit Handler', () => {
     processAccessibilityOpportunities = accessibilityModule.processAccessibilityOpportunities;
     createProcessAccessibilityOpportunitiesWithDevice = accessibilityModule.createProcessAccessibilityOpportunitiesWithDevice;
     processImportStep = accessibilityModule.processImportStep;
+    codeImportStep = accessibilityModule.codeImportStep;
   });
 
   afterEach(() => {
@@ -141,7 +143,7 @@ describe('Accessibility Audit Handler', () => {
 
       expect(getExistingUrlsFromFailedAuditsStub).to.have.been.calledOnce;
 
-      expect(mockContext.log.debug).to.have.been.calledWith(
+      expect(mockContext.log.info).to.have.been.calledWith(
         '[A11yAudit] Step 1: Preparing content scrape for desktop accessibility audit for https://example.com with siteId test-site-id',
       );
 
@@ -292,7 +294,7 @@ describe('Accessibility Audit Handler', () => {
       await scrapeAccessibilityData(mockContext);
 
       // Assert
-      expect(mockContext.log.debug).to.have.been.calledWith(
+      expect(mockContext.log.info).to.have.been.calledWith(
         '[A11yAudit] Step 1: Preparing content scrape for desktop accessibility audit for https://example.com with siteId test-site-id',
       );
     });
@@ -1480,6 +1482,84 @@ describe('Accessibility Audit Handler', () => {
       );
     });
 
+  });
+
+  describe('codeImportStep', () => {
+    it('should return correct step result with type and siteId', async () => {
+      // Arrange
+      const context = {
+        log: mockContext.log,
+        site: mockSite,
+      };
+
+      // Act
+      const result = await codeImportStep(context);
+
+      // Assert
+      expect(result).to.deep.equal({
+        type: 'code',
+        siteId: 'test-site-id',
+        allowCache: false,
+      });
+    });
+
+    it('should log the correct info message', async () => {
+      // Arrange
+      const context = {
+        log: mockContext.log,
+        site: mockSite,
+      };
+
+      // Act
+      await codeImportStep(context);
+
+      // Assert
+      expect(mockContext.log.info).to.have.been.calledWith(
+        '[A11yAudit] [Site Id: test-site-id] starting code import step',
+      );
+    });
+
+    it('should call site.getId() twice', async () => {
+      // Arrange
+      const context = {
+        log: mockContext.log,
+        site: mockSite,
+      };
+
+      // Reset the stub to track calls
+      mockSite.getId.resetHistory();
+
+      // Act
+      await codeImportStep(context);
+
+      // Assert
+      expect(mockSite.getId).to.have.been.calledTwice;
+    });
+
+    it('should handle different site IDs correctly', async () => {
+      // Arrange
+      const customSiteId = 'different-site-id';
+      const customMockSite = {
+        getId: sandbox.stub().returns(customSiteId),
+        getBaseURL: sandbox.stub().returns('https://different.com'),
+      };
+      const context = {
+        log: mockContext.log,
+        site: customMockSite,
+      };
+
+      // Reset log history to check specific calls
+      mockContext.log.info.resetHistory();
+
+      // Act
+      const result = await codeImportStep(context);
+
+      // Assert
+      expect(result.siteId).to.equal(customSiteId);
+      expect(mockContext.log.info).to.have.been.calledWith(
+        `[A11yAudit] [Site Id: ${customSiteId}] starting code import step`,
+      );
+    });
   });
 
   describe('createProcessAccessibilityOpportunitiesWithDevice', () => {

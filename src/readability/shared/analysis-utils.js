@@ -11,7 +11,7 @@
  */
 
 import rs from 'text-readability';
-import { JSDOM } from 'jsdom';
+import { load as cheerioLoad } from 'cheerio';
 import { franc } from 'franc-min';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../../utils/s3-utils.js';
 import {
@@ -24,6 +24,7 @@ import {
   MIN_TEXT_LENGTH,
   MAX_CHARACTERS_DISPLAY,
 } from './constants.js';
+import { getElementSelector } from './selector-utils.js';
 
 /**
  * Categorizes readability issues by severity and traffic impact
@@ -71,6 +72,7 @@ async function analyzeTextReadability(
   detectedLanguages,
   getSupportedLanguage,
   log,
+  scrapedAt,
 ) {
   try {
     // Check if text is in a supported language
@@ -106,6 +108,7 @@ async function analyzeTextReadability(
 
       return {
         pageUrl,
+        scrapedAt,
         selector,
         textContent: text,
         displayText,
@@ -128,16 +131,50 @@ async function analyzeTextReadability(
 }
 
 /**
+ * Returns an array of meaningful text elements from the provided document.
+ * Selects <p>, <blockquote>, and <li> elements, but excludes <li> elements
+ * that are descendants of <header> or <footer>.
+ * Also filters out elements with insufficient text content length.
+ *
+ * @param {Cheerio} $ - The Cheerio object to search for text elements.
+ * @returns {Element[]} Array of meaningful text elements for readability analysis and enhancement.
+ */
+const getMeaningfulElementsForReadability = ($) => {
+  $('header, footer').remove();
+  return $('p, blockquote, li').toArray().filter((el) => {
+    const text = $(el).text()?.trim();
+    return text && text.length >= MIN_TEXT_LENGTH;
+  });
+};
+
+/**
  * Analyzes readability for a single page's content
  */
-export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
+/**
+ * Analyzes the readability of HTML page content and returns an array of readability issue objects
+ * for text elements with poor readability.
+ *
+ * - Extracts meaningful text elements from the HTML.
+ * - Detects each element's language and filters for supported languages.
+ * - Handles elements containing <br> tags as multiple paragraphs.
+ * - Uses `analyzeTextReadability` to evaluate readability and collect issues.
+ * - Logs summary information about the analysis.
+ *
+ * @param {string} rawBody - Raw HTML content of the page.
+ * @param {string} pageUrl - The URL of the analyzed page.
+ * @param {number} traffic - Estimated traffic or popularity metric for the page.
+ * @param {object} log - Logger utility (must support .debug and .error).
+ * @returns {Promise<Array>} Array of readability issue objects for text elements
+ *  with poor readability.
+ */
+export async function analyzePageContent(rawBody, pageUrl, traffic, log, scrapedAt) {
   const readabilityIssues = [];
 
   try {
-    const doc = new JSDOM(rawBody).window.document;
+    const $ = cheerioLoad(rawBody);
 
-    // Get all paragraph, div, and list item elements (same as preflight)
-    const textElements = Array.from(doc.querySelectorAll('p, div, li'));
+    // Get all paragraph, div, and list item element selectors (same as preflight)
+    const textElements = getMeaningfulElementsForReadability($);
 
     const detectedLanguages = new Set();
 
@@ -155,19 +192,21 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
       .map((element) => ({ element }))
       .filter(({ element }) => {
         // Check if element has child elements (avoid duplicate analysis)
-        const hasBlockChildren = element.children.length > 0
-          && !Array.from(element.children).every((child) => {
+        const $el = $(element);
+        const children = $el.children().toArray();
+        const hasBlockChildren = children.length > 0
+          && !children.every((child) => {
             const inlineTags = [
               'strong', 'b', 'em', 'i', 'span', 'a', 'mark',
               'small', 'sub', 'sup', 'u', 'code', 'br',
             ];
-            return inlineTags.includes(child.tagName.toLowerCase());
+            return inlineTags.includes($(child).prop('tagName').toLowerCase());
           });
 
         return !hasBlockChildren;
       })
       .filter(({ element }) => {
-        const textContent = element.textContent?.trim();
+        const textContent = $(element).text()?.trim();
         return textContent && textContent.length >= MIN_TEXT_LENGTH && /\s/.test(textContent);
       });
 
@@ -175,17 +214,17 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
     const analysisPromises = [];
 
     elementsToProcess.forEach(({ element }) => {
-      const textContent = element.textContent?.trim();
-      const selector = '.dummy-selector';
+      const $el = $(element);
+      const textContent = $el.text()?.trim();
+      const selector = getElementSelector(element);
 
       // Handle elements with <br> tags (multiple paragraphs)
-      if (element.innerHTML.includes('<br')) {
-        const paragraphs = element.innerHTML
+      if ($el.html().includes('<br')) {
+        const paragraphs = $el.html()
           .split(/<br\s*\/?>/gi)
           .map((p) => {
-            const tempDiv = doc.createElement('div');
-            tempDiv.innerHTML = p;
-            return tempDiv.textContent;
+            const tempDiv = cheerioLoad(`<div>${p}</div>`)('div');
+            return tempDiv.text();
           })
           .map((p) => p.trim())
           .filter((p) => p.length >= MIN_TEXT_LENGTH && /\s/.test(p));
@@ -199,6 +238,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
             detectedLanguages,
             getSupportedLanguage,
             log,
+            scrapedAt,
           );
           analysisPromises.push(analysisPromise);
         });
@@ -211,6 +251,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
           detectedLanguages,
           getSupportedLanguage,
           log,
+          scrapedAt,
         );
         analysisPromises.push(analysisPromise);
       }
@@ -242,7 +283,18 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
 }
 
 /**
- * Analyzes readability for all scraped pages from S3
+/**
+ * Analyzes readability for all scraped pages from S3.
+ *
+ * Fetches all scraped page objects for the specified site from S3, analyzes the readability
+ * of each page's content, and returns the combined list of readability issues found as well
+ * as the number of processed URLs.
+ *
+ * @param {AWS.S3} s3Client - The AWS S3 client instance.
+ * @param {string} bucketName - The name of the S3 bucket containing scraped pages.
+ * @param {string} siteId - The site ID whose pages should be analyzed.
+ * @param {Object} log - Logger instance for info, warn, and error messages.
+ * @returns {Promise<Object>} The analysis result.
  */
 export async function analyzePageReadability(s3Client, bucketName, siteId, log) {
   try {
@@ -270,12 +322,12 @@ export async function analyzePageReadability(s3Client, bucketName, siteId, log) 
           return { issues: [], processed: false };
         }
 
-        const { finalUrl, scrapeResult: { rawBody } } = scrapedData;
+        const { finalUrl, scrapeResult: { rawBody }, scrapedAt } = scrapedData;
 
         // Extract page traffic data if available
         const traffic = extractTrafficFromKey(key) || 0;
 
-        const pageIssues = await analyzePageContent(rawBody, finalUrl, traffic, log);
+        const pageIssues = await analyzePageContent(rawBody, finalUrl, traffic, log, scrapedAt);
 
         return {
           issues: pageIssues,

@@ -14,7 +14,8 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   chatgpt: '(?i)ChatGPT|GPTBot|OAI-SearchBot',
   perplexity: '(?i)Perplexity',
   claude: '(?i)Claude(?!-web)',
-  google: '(?i)(^Google$|Gemini-Deep-Research)',
+  google: '(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|GoogleAgent)',
+  mistralai: '(?i)MistralAI-User',
   copilot: '(?i)Copilot',
   bing: '(?i)Bingbot',
 };
@@ -38,10 +39,17 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   // Google
   { pattern: '%gemini-deep-research%', displayName: 'Gemini-Deep-Research' },
   { pattern: 'google', displayName: 'Google-ai-mode' },
+  { pattern: '%googleagent-urlcontext%', displayName: 'GoogleAgent-URLContext' },
+  { pattern: '%googleagent-chrome%', displayName: 'GoogleAgent-Chrome' },
+  { pattern: '%googleagent-shopping%', displayName: 'GoogleAgent-Shopping' },
+  { pattern: '%googleagent-mariner%', displayName: 'GoogleAgent-Mariner' },
+  { pattern: '%google-notebooklm%', displayName: 'Google-NotebookLM' },
   // Claude
   { pattern: '%claude-user%', displayName: 'Claude-User' },
   { pattern: '%claudebot%', displayName: 'ClaudeBot' },
   { pattern: '%claude-searchbot%', displayName: 'Claude-SearchBot' },
+  // MistralAI
+  { pattern: '%mistralai-user%', displayName: 'MistralAI-User' },
 ];
 
 /**
@@ -71,11 +79,18 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%perplexity%', result: 'Chatbots' },
     // Google
     { pattern: '%gemini-deep-research%', result: 'Research' },
-    { pattern: 'google', result: 'Web search crawlers' },
+    { pattern: 'google', result: 'Chatbots' },
+    { pattern: '%googleagent-urlcontext%', result: 'Chatbots' },
+    { pattern: '%googleagent-chrome%', result: 'Action agents' },
+    { pattern: '%googleagent-shopping%', result: 'Shopping agents' },
+    { pattern: '%googleagent-mariner%', result: 'Action agents' },
+    { pattern: '%google-notebooklm%', result: 'Research' },
     // Claude
     { pattern: '%claudebot%', result: 'Training bots' },
     { pattern: '%claude-searchbot%', result: 'Web search crawlers' },
     { pattern: '%claude-user%', result: 'Chatbots' },
+    // MistralAI
+    { pattern: '%mistralai-user%', result: 'Chatbots' },
   ];
 
   const cases = patterns.map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.result}'`).join('\n          ');

@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { ESTIMATED_CPC } from './guidance-opportunity-mapper.js';
+
 /**
  * @param {Object} params - Template parameters
  * @param {string} params.siteId - Site ID
@@ -75,7 +77,7 @@ top_bounces AS (
         CAST(h.bounces AS DOUBLE) / NULLIF(ss.channel_bounces, 0) AS bounce_share,
         CAST(h.bounces AS DOUBLE) / NULLIF(ss.channel_bounces, 0) * 100 AS bounce_share_pct
     FROM highest_pageviews h
-    JOIN source_stats ss USING (trf_channel)
+    JOIN source_stats ss ON h.trf_channel = ss.trf_channel
     WHERE h.bounce_rate >= ss.channel_bounce_rate
       AND CAST(h.bounces AS DOUBLE) / NULLIF(ss.channel_bounces, 0) >= 0.10
 ),
@@ -98,7 +100,8 @@ SELECT
     bounces,
     channel_bounces,
     bounce_share_pct,
-    CAST(pageviews AS DOUBLE) * bounce_rate AS projected_traffic_lost
+    CAST(pageviews AS DOUBLE) * bounce_rate AS projected_traffic_lost,
+    CAST(pageviews AS DOUBLE) * bounce_rate * ${ESTIMATED_CPC} AS projected_traffic_value
 FROM deduped
 WHERE path_rank = 1
 ORDER BY bounce_share_pct DESC

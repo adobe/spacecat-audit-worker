@@ -14,10 +14,11 @@ import ExcelJS from 'exceljs';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
-import { generateReportingPeriods } from '../llm-error-pages/utils.js';
-import { SPREADSHEET_COLUMNS } from './utils.js';
+import { getPreviousWeekTriples } from '../utils/date-utils.js';
+import { SPREADSHEET_COLUMNS, validateContentAI } from './utils.js';
 
 const MAX_ROWS_TO_READ = 200;
+const WEEKS_TO_LOOK_BACK = 4;
 
 /**
  * Groups prompts by URL and topic
@@ -90,7 +91,13 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
     log.info(`[FAQ] Extracted ${prompts.length} prompts from ${maxRows} rows`);
     return prompts;
   } catch (error) {
-    log.error(`[FAQ] Failed to read brand presence spreadsheet: ${error.message}`);
+    // File not found is expected when trying multiple weeks
+    if (error.message?.includes('resource could not be found') || error.message?.includes('itemNotFound')) {
+      log.info(`[FAQ] Brand presence file not found: ${filename}`);
+    } else {
+      // Unexpected error
+      log.error(`[FAQ] Failed to read brand presence spreadsheet: ${error.message}`);
+    }
     return [];
   }
 }
@@ -136,35 +143,92 @@ async function runFaqsAudit(url, context, site) {
   log.info('[FAQ] Running FAQs audit');
 
   try {
-    const week = generateReportingPeriods().weeks[0];
-    const periodIdentifier = `w${week.weekNumber}-${week.year}`;
-    log.info(`[FAQ] Running weekly audit for ${periodIdentifier}`);
+    const contentAIStatus = await validateContentAI(site, context);
+
+    // Check if Content AI is properly configured and working
+    if (!contentAIStatus.uid || !contentAIStatus.genSearchEnabled || !contentAIStatus.isWorking) {
+      let errorMessage;
+      if (!contentAIStatus.uid) {
+        errorMessage = 'Content AI configuration not found';
+        log.warn('[FAQ] Content AI configuration does not exist for this site, skipping audit');
+      } else if (!contentAIStatus.genSearchEnabled) {
+        errorMessage = 'Content AI generative search not enabled';
+        log.warn(`[FAQ] Content AI generative search not enabled for index ${contentAIStatus.indexName}, skipping audit`);
+      } else {
+        errorMessage = 'Content AI search endpoint validation failed';
+        log.warn(`[FAQ] Content AI search endpoint is not working for index ${contentAIStatus.indexName}, skipping audit`);
+      }
+
+      return {
+        auditResult: {
+          success: false,
+          error: errorMessage,
+          promptsByUrl: [],
+        },
+        fullAuditRef: url,
+      };
+    }
+
+    log.info(`[FAQ] Content AI validation successful - UID: ${contentAIStatus.uid}, Index: ${contentAIStatus.indexName}, GenSearch: ${contentAIStatus.genSearchEnabled}`);
 
     // Prepare SharePoint client and file location
     const sharepointClient = await createLLMOSharepointClient(context);
     const outputLocation = getOutputLocation
       ? getOutputLocation(site)
       : `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
-    const brandPresenceFilename = `brandpresence-all-${periodIdentifier}.xlsx`;
 
-    // Read brand presence spreadsheet
-    const topPrompts = await readBrandPresenceSpreadsheet(
-      brandPresenceFilename,
-      outputLocation,
-      sharepointClient,
-      log,
-    );
+    // Try to find brand presence spreadsheet from the last weeks (most recent first)
+    const weekTriples = getPreviousWeekTriples(new Date(), WEEKS_TO_LOOK_BACK);
+    // Convert to unique weeks since triples may contain multiple entries per week
+    const uniqueWeeks = new Map();
+    weekTriples.forEach(({ year, week }) => {
+      const key = `${year}-${week}`;
+      if (!uniqueWeeks.has(key)) {
+        uniqueWeeks.set(key, { weekNumber: week, year });
+      }
+    });
+    const weeks = Array.from(uniqueWeeks.values());
+
+    let topPrompts = [];
+    let usedPeriodIdentifier = null;
+
+    for (const week of weeks) {
+      const periodIdentifier = `w${week.weekNumber}-${week.year}`;
+      const brandPresenceFilename = `brandpresence-all-${periodIdentifier}.xlsx`;
+
+      log.info(`[FAQ] Attempting to read brand presence file for ${periodIdentifier}`);
+
+      // eslint-disable-next-line no-await-in-loop
+      const prompts = await readBrandPresenceSpreadsheet(
+        brandPresenceFilename,
+        outputLocation,
+        sharepointClient,
+        log,
+      );
+
+      if (prompts.length > 0) {
+        topPrompts = prompts;
+        usedPeriodIdentifier = periodIdentifier;
+        log.info(`[FAQ] Successfully found brand presence data for ${periodIdentifier} with ${prompts.length} prompts`);
+        break;
+      }
+
+      log.info(`[FAQ] No data found for ${periodIdentifier}, will try next week`);
+    }
 
     if (topPrompts.length === 0) {
-      log.warn('[FAQ] No prompts found in brand presence spreadsheet');
+      log.warn(`[FAQ] No prompts found in brand presence spreadsheet from the last ${WEEKS_TO_LOOK_BACK} weeks`);
       return {
         auditResult: {
           success: false,
+          error: `No brand presence data found in the last ${WEEKS_TO_LOOK_BACK} weeks`,
           promptsByUrl: [],
         },
         fullAuditRef: url,
       };
     }
+
+    log.info(`[FAQ] Using brand presence data from ${usedPeriodIdentifier}`);
 
     // Deduplicate prompts before grouping
     const uniquePrompts = deduplicatePrompts(topPrompts);
