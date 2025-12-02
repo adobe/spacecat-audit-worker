@@ -519,6 +519,35 @@ describe('Backlinks Tests', function () {
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(context.log.warn).to.have.been.calledWith('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
     });
+
+    it('should warn when publishing FIXED suggestions fails', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      // First call (FIXED) throws to trigger warn branch, second call (NEW) returns 1 valid entry
+      const stub = sandbox.stub()
+        .onFirstCall().rejects(new Error('boom'))
+        .onSecondCall().resolves([{
+          getId: () => 'new-1',
+          getData: () => ({ url_from: 'https://test-example.com/from', url_to: 'https://test-example.com/' }),
+        }]);
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = stub;
+
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+        .resolves([{ getUrl: () => 'https://test-example.com/page1' }]);
+
+      const result = await generateSuggestionData(context);
+
+      expect(result.status).to.deep.equal('complete');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to publish fix entities for FIXED suggestions: boom/),
+      );
+    });
   });
 
   describe('calculateKpiMetrics', () => {

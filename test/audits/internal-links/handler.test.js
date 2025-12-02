@@ -965,4 +965,86 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       sinon.match(/No alternative URLs available/),
     );
   }).timeout(5000);
+
+  it('logs info when opportunity exists and no broken internal links', async () => {
+    // Arrange: existing opportunity and no broken links
+    const existingOpportunity = {
+      getType: () => 'broken-internal-links',
+      getSuggestions: sandbox.stub().resolves([]),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      setStatus: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
+    // No broken links
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [],
+        success: true,
+        auditContext: { interval: 30 },
+      }),
+    };
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+      },
+    });
+
+    // Act
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    // Assert
+    expect(result.status).to.equal('complete');
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/no broken internal\s*links found, but found opportunity, updating status to RESOLVED/),
+    );
+  }).timeout(5000);
+
+  it('warns when publishing FIXED suggestions fails', async () => {
+    // Arrange to trigger the catch branch for publishing fixed suggestions
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => false, // skip Mystique block entirely
+      }),
+    };
+    // Provide one broken link to enter main flow
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{
+          urlFrom: 'https://example.com/a',
+          urlTo: 'https://example.com/b',
+          trafficDomain: 1,
+        }],
+        success: true,
+      }),
+    };
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub().rejects(new Error('boom'));
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-1',
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+    });
+
+    // Act
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    // Assert
+    expect(result.status).to.equal('complete');
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Failed to publish fix entities for FIXED suggestions: boom/),
+    );
+  }).timeout(5000);
 });

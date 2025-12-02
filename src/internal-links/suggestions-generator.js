@@ -262,7 +262,7 @@ export async function syncBrokenInternalLinksSuggestions({
     newData: brokenInternalLinks,
     context,
     buildKey,
-    statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
+    statusToSetForOutdated: SuggestionDataAccess.STATUSES.OUDATED,
     mapNewSuggestion: (entry) => ({
       opportunityId,
       type: 'CONTENT_UPDATE',

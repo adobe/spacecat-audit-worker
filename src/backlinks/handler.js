@@ -169,7 +169,7 @@ export const generateSuggestionData = async (context) => {
     kpiDeltas,
   );
 
-  // For suggestions already marked as FIXED, if their urlTo is no longer 404,
+  // For suggestions already marked as FIXED, if their url_to is no longer 404,
   // publish any deployed fixes for those suggestions.
   try {
     const fixedSuggestions = await Suggestion.allByOpportunityIdAndStatus(
