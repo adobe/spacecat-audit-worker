@@ -79,7 +79,7 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%perplexity%', result: 'Chatbots' },
     // Google
     { pattern: '%gemini-deep-research%', result: 'Research' },
-    { pattern: 'google', result: 'Web search crawlers' },
+    { pattern: 'google', result: 'Chatbots' },
     { pattern: '%googleagent-urlcontext%', result: 'Chatbots' },
     { pattern: '%googleagent-chrome%', result: 'Action agents' },
     { pattern: '%googleagent-shopping%', result: 'Shopping agents' },
