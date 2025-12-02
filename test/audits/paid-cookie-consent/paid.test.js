@@ -28,6 +28,7 @@ function getSite(sandbox, overrides = {}) {
     getId: () => 'test-site-id',
     getSiteId: () => 'test-site-id',
     getDeliveryType: () => 'aem-edge',
+    getBaseURL: () => 'https://example.com',
     ...overrides,
   };
 }
@@ -139,18 +140,21 @@ describe('Paid Cookie Consent Audit', () => {
         projectedTrafficValue: 6400,
         top3Pages: [
           {
+            path: '/page2',
             url: 'https://example.com/page2',
             pageViews: 5000,
             bounceRate: 0.9, // Above 0.3 threshold - highest traffic loss
             trafficLoss: 4500,
           },
           {
+            path: '/page3',
             url: 'https://example.com/page3',
             pageViews: 3000,
             bounceRate: 0.8, // Above 0.3 threshold
             trafficLoss: 2400,
           },
           {
+            path: '/page1',
             url: 'https://example.com/page1',
             pageViews: 2000,
             bounceRate: 0.2, // Below 0.3 threshold - would be skipped if first
@@ -501,6 +505,7 @@ describe('Paid Cookie Consent Audit', () => {
         projectedTrafficValue: 6400,
         top3Pages: [
           {
+            path: '/page1',
             url: 'https://example.com/page1',
             pageViews: 5000,
             bounceRate: 0.9,
