@@ -52,13 +52,16 @@ async function copySuggestedScreenshots(context, jobId, resultPath) {
     return;
   }
 
+  log.debug(`[paid-cookie-consent] Starting screenshot copy for jobId: ${jobId}, resultPath: ${resultPath}`);
   const screenshots = ['mobile-suggested.png', 'desktop-suggested.png'];
 
   // Use Promise.all to copy both files in parallel
   await Promise.all(screenshots.map(async (screenshot) => {
     const sourceKey = `temp/consent-banner/${jobId}/${screenshot}`;
     // Use the same path structure as scrape results
-    const destinationKey = resultPath.replace('scrape.json', screenshot);
+    const destinationKey = `${resultPath}/${screenshot}`;
+
+    log.debug(`[paid-cookie-consent] Attempting to copy ${screenshot}: ${mystiqueBucket}/${sourceKey} -> ${scraperBucket}/${destinationKey}`);
 
     try {
       // Check if the file exists in mystique bucket
@@ -74,12 +77,12 @@ async function copySuggestedScreenshots(context, jobId, resultPath) {
         Key: destinationKey,
       }));
 
-      log.debug(`[paid-cookie-consent] Successfully copied ${screenshot} from mystique to scrapper bucket`);
+      log.debug(`[paid-cookie-consent] Successfully copied ${screenshot}: ${mystiqueBucket}/${sourceKey} -> ${scraperBucket}/${destinationKey}`);
     } catch (error) {
       if (error.name === 'NotFound' || error.name === 'NoSuchKey') {
-        log.warn(`[paid-cookie-consent] Suggested screenshot ${screenshot} not found in mystique bucket, skipping`);
+        log.warn(`[paid-cookie-consent] Suggested screenshot ${screenshot} not found at ${mystiqueBucket}/${sourceKey}, skipping`);
       } else {
-        log.error(`[paid-cookie-consent] Error copying suggested screenshot ${screenshot}: ${error.message}`);
+        log.error(`[paid-cookie-consent] Error copying suggested screenshot ${screenshot} from ${mystiqueBucket}/${sourceKey} to ${scraperBucket}/${destinationKey}: ${error.message}`);
       }
     }
   }));
@@ -100,7 +103,8 @@ async function addScreenshots(context, siteId, markdown, jobId) {
   const result = scrapeResults[0];
 
   // Copy suggested screenshots from mystique to scrapper bucket before processing
-  await copySuggestedScreenshots(context, jobId, result.path);
+  const basePath = result.path.replace('/scrape.json', '');
+  await copySuggestedScreenshots(context, jobId, basePath);
 
   let markdownWithScreenshots = markdown;
 
