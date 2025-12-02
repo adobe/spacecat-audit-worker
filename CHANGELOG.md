@@ -1,3 +1,31 @@
+## [1.263.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.263.0...v1.263.1) (2025-12-02)
+
+
+### Bug Fixes
+
+* prerender audit adding agentic urls ([#1598](https://github.com/adobe/spacecat-audit-worker/issues/1598)) ([a03d01d](https://github.com/adobe/spacecat-audit-worker/commit/a03d01dcd3f2d8168d76d81b4a81d3d71f47edd7))
+
+# [1.263.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.4...v1.263.0) (2025-12-02)
+
+
+### Features
+
+*  add suggested image ([#1721](https://github.com/adobe/spacecat-audit-worker/issues/1721)) ([55f2aae](https://github.com/adobe/spacecat-audit-worker/commit/55f2aae1040a8a97d87eb489b991b05010e064ff))
+
+## [1.262.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.3...v1.262.4) (2025-12-02)
+
+
+### Bug Fixes
+
+* adding extra options for forms opportunities ([#1640](https://github.com/adobe/spacecat-audit-worker/issues/1640)) ([38e6448](https://github.com/adobe/spacecat-audit-worker/commit/38e64488831369fa3756af4dad107cb4be2d8740))
+
+## [1.262.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.2...v1.262.3) (2025-12-02)
+
+
+### Bug Fixes
+
+* make ai mode as Chatbots ([#1729](https://github.com/adobe/spacecat-audit-worker/issues/1729)) ([fc50fec](https://github.com/adobe/spacecat-audit-worker/commit/fc50fec19f09339768283f37ed1e947e12be38f6))
+
 ## [1.262.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.1...v1.262.2) (2025-12-01)
 
 
