@@ -1,3 +1,10 @@
+## [1.264.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.0...v1.264.1) (2025-12-02)
+
+
+### Bug Fixes
+
+* **step-audit:** passes the scrapeJobId to all following steps ([#1735](https://github.com/adobe/spacecat-audit-worker/issues/1735)) ([4dacab3](https://github.com/adobe/spacecat-audit-worker/commit/4dacab304332db9c9f65474a1caea296a521161c))
+
 # [1.264.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.263.2...v1.264.0) (2025-12-02)
 
 
