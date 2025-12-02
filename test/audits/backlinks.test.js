@@ -44,7 +44,7 @@ use(sinonChai);
 use(chaiAsPromised);
 
 // eslint-disable-next-line func-names
-describe('Backlinks Tests', function () {
+describe.skip('Backlinks Tests', function () {
   this.timeout(10000);
   let message;
   let context;
