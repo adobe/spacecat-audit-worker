@@ -91,7 +91,7 @@ describe('Hreflang Audit', () => {
       const html = `
         <html lang="">
           <head>
-            <link rel="alternate" hreflang="invalid-code" href="https://example.com/invalid">
+            <link rel="alternate" hreflang="en_US" href="https://example.com/invalid">
           </head>
         </html>
       `;
@@ -271,7 +271,7 @@ describe('Hreflang Audit', () => {
     });
 
     it('should handle invalid hreflang URLs and log warnings', async () => {
-      const invalidHref = 'http://\x00invalid';
+      const invalidHref = 'http://%zz';
       const html = `
         <html>
           <head>
@@ -389,7 +389,7 @@ describe('Hreflang Audit', () => {
       const htmlWithIssues = `
         <html>
           <head>
-            <link rel="alternate" hreflang="invalid-code" href="https://example.com/invalid">
+            <link rel="alternate" hreflang="en_US" href="https://example.com/invalid">
           </head>
         </html>
       `;
