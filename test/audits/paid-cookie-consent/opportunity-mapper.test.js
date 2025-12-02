@@ -348,7 +348,7 @@ describe('Paid Cookie Consent opportunity mapper', () => {
         }),
       };
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
-      expect(result.type).to.equal('generic-opportunity');
+      expect(result.type).to.equal('consent-banner');
       expect(result.data.opportunityType).to.equal('paid-cookie-consent');
       expect(result.title).to.equal('Consent Banner covers essential page content');
       expect(result.origin).to.equal('AUTOMATION');
