@@ -124,6 +124,27 @@ describe('generateSuggestionData', async function test() {
     sandbox.restore();
   });
 
+  it('returns empty array when brokenInternalLinks is not an array', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        { Key: 'scrapes/site1/scrape.json' },
+      ],
+      IsTruncated: false,
+      NextContinuationToken: 'token',
+    });
+    context.s3Client.send.resolves(mockFileResponse);
+    configuration.isHandlerEnabledForSite.returns(true);
+
+    const notArrayInputs = [null, undefined, {}, 'string', 123];
+    // eslint-disable-next-line no-restricted-syntax
+    for (const input of notArrayInputs) {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await generateSuggestionData('https://example.com', input, context, site);
+      expect(result).to.deep.equal([]);
+    }
+    expect(context.log.warn).to.have.been.called;
+  });
+
   it('if sitedata is not found, return audit object as is', async () => {
     context.s3Client.send.onCall(0).resolves({
       Contents: [
@@ -1228,7 +1249,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     expect(callArgs.opportunity).to.equal(testOpportunity);
     expect(callArgs.newData).to.deep.equal(brokenInternalLinks);
     expect(callArgs.context).to.equal(testContext);
-    expect(callArgs.statusToSetForOutdated).to.equal(SuggestionDataAccess.STATUSES.FIXED);
+    expect(callArgs.statusToSetForOutdated).to.equal(SuggestionDataAccess.STATUSES.OUTDATED);
     expect(callArgs.buildKey(brokenInternalLinks[0])).to.equal('https://example.com/from1-https://example.com/to1');
 
     const mappedSuggestion = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
