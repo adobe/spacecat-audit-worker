@@ -24,9 +24,24 @@ const TEST_SITE = 'https://sample-page';
 
 describe('Paid Cookie Consent opportunity mapper', () => {
   let sandbox;
+  let mockLog;
+  let mockS3Client;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+
+    // Mock logger
+    mockLog = {
+      debug: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    // Mock S3 client
+    mockS3Client = {
+      send: sandbox.stub().resolves(),
+    };
+
     // Mock ScrapeClient
     const mockScrapeClient = {
       getScrapeJobUrlResults: sandbox.stub().resolves([{
@@ -61,9 +76,10 @@ describe('Paid Cookie Consent opportunity mapper', () => {
     expect(result.description).to.include('0');
   });
   it('handles plain markdown string with requiresValidation=true', async () => {
-    const body = 'Simple markdown';
     const context = {
       env: {},
+      log: mockLog,
+      s3Client: mockS3Client,
       dataAccess: {
         Suggestion: {
           STATUSES: SuggestionDataAccess.STATUSES,
@@ -89,9 +105,10 @@ describe('Paid Cookie Consent opportunity mapper', () => {
   });
 
   it('handles plain markdown string with requiresValidation=false', async () => {
-    const body = 'Simple markdown';
     const context = {
       env: {},
+      log: mockLog,
+      s3Client: mockS3Client,
       dataAccess: {
         Suggestion: {
           STATUSES: SuggestionDataAccess.STATUSES,
@@ -117,9 +134,10 @@ describe('Paid Cookie Consent opportunity mapper', () => {
   });
 
   it('handles plain markdown string with double-escaped newlines', async () => {
-    const body = 'Line1\\nLine2\\nLine3';
     const context = {
       env: {},
+      log: mockLog,
+      s3Client: mockS3Client,
       dataAccess: {
         Suggestion: {
           STATUSES: SuggestionDataAccess.STATUSES,
@@ -148,6 +166,8 @@ describe('Paid Cookie Consent opportunity mapper', () => {
     const markdown = 'Markup with\nnewlines';
     const context = {
       env: {},
+      log: mockLog,
+      s3Client: mockS3Client,
       dataAccess: {
         Suggestion: {
           STATUSES: SuggestionDataAccess.STATUSES,
@@ -173,6 +193,8 @@ describe('Paid Cookie Consent opportunity mapper', () => {
     const markdown = 'Markup with\\nnewlines';
     const context = {
       env: {},
+      log: mockLog,
+      s3Client: mockS3Client,
       dataAccess: {
         Suggestion: {
           STATUSES: SuggestionDataAccess.STATUSES,
@@ -197,6 +219,8 @@ describe('Paid Cookie Consent opportunity mapper', () => {
   it('handles JSON object body directly', async () => {
     const context = {
       env: {},
+      log: mockLog,
+      s3Client: mockS3Client,
       dataAccess: {
         Suggestion: {
           STATUSES: SuggestionDataAccess.STATUSES,
@@ -324,7 +348,7 @@ describe('Paid Cookie Consent opportunity mapper', () => {
         }),
       };
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
-      expect(result.type).to.equal('generic-opportunity');
+      expect(result.type).to.equal('consent-banner');
       expect(result.data.opportunityType).to.equal('paid-cookie-consent');
       expect(result.title).to.equal('Consent Banner covers essential page content');
       expect(result.origin).to.equal('AUTOMATION');

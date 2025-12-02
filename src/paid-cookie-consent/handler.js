@@ -49,9 +49,10 @@ function getConfig(env) {
   };
 }
 
-function transformResultItem(item) {
+function transformResultItem(item, baseURL) {
   return {
-    url: item.path,
+    path: item.path,
+    url: item.path ? new URL(item.path, baseURL).toString() : undefined,
     device: item.device,
     trafficLoss: parseFloat(item.traffic_loss || 0),
     pageViews: parseInt(item.pageviews || 0, 10),
@@ -75,6 +76,7 @@ async function executeTop3TrafficLostPagesQuery(
   limit,
   config,
   log,
+  baseURL,
 ) {
   const dimensionColumns = dimensions.join(', ');
   const groupBy = dimensions.join(', ');
@@ -98,7 +100,7 @@ async function executeTop3TrafficLostPagesQuery(
   log.debug(`[DEBUG] ${segmentName} Query:`, query);
 
   const result = await athenaClient.query(query, config.rumMetricsDatabase, description);
-  return result.map(transformResultItem);
+  return result.map((item) => transformResultItem(item, baseURL));
 }
 
 // const hasValues = (segment) => segment?.value?.length > 0;
@@ -122,6 +124,7 @@ export async function paidAuditRunner(auditUrl, context, site) {
   const { log, env } = context;
   const config = getConfig(env);
   const siteId = site.getId();
+  const baseURL = site.getBaseURL();
 
   log.debug(
     `[paid-audit] [Site: ${auditUrl}] Querying paid Athena metrics with consent and referrer data (siteId: ${siteId})`,
@@ -136,10 +139,9 @@ export async function paidAuditRunner(auditUrl, context, site) {
   try {
     log.debug(`[paid-audit] [Site: ${auditUrl}] Executing three separate Athena queries for paid traffic segments`);
 
-    // pull all the data
-    const lostTrafficSummary = await executeTop3TrafficLostPagesQuery(athenaClient, ['device'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition, 0, null, config, log);
-    const top3PagesTrafficLost = await executeTop3TrafficLostPagesQuery(athenaClient, ['path'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition, 0, 3, config, log);
-    const top3PagesTrafficLostByDevice = await executeTop3TrafficLostPagesQuery(athenaClient, ['path', 'device'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition, 0, null, config, log);
+    const lostTrafficSummary = await executeTop3TrafficLostPagesQuery(athenaClient, ['device'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition, 0, null, config, log, baseURL);
+    const top3PagesTrafficLost = await executeTop3TrafficLostPagesQuery(athenaClient, ['path'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition, 0, 3, config, log, baseURL);
+    const top3PagesTrafficLostByDevice = await executeTop3TrafficLostPagesQuery(athenaClient, ['path', 'device'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition, 0, null, config, log, baseURL);
     // const top3PagesTrafficLostByType =
     // await executeTop3TrafficLostPagesQuery(athenaClient,
     // ['path', 'trf_type'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition,
@@ -199,20 +201,19 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
 
   // // take first page which has highest projectedTrafficLost
   const selected = auditResult.top3Pages?.length > 0 ? auditResult.top3Pages[0] : null;
-  const selectedPage = selected?.url;
-  if (!selectedPage) {
+  const selectedPageUrl = selected?.url;
+  if (!selectedPageUrl) {
     log.warn(
       `[paid-audit] [Site: ${auditUrl}] No pages with consent='show' found for consent banner audit; skipping`,
     );
     return;
   }
 
-  const baseURL = await site.getBaseURL();
-  const mystiqueMessage = buildMystiqueMessage(site, id, `${baseURL}${selectedPage}`);
+  const mystiqueMessage = buildMystiqueMessage(site, id, selectedPageUrl);
 
   const projected = selected?.trafficLoss;
   log.debug(
-    `[paid-audit] [Site: ${auditUrl}] Sending consent-seen page ${selectedPage} with message `
+    `[paid-audit] [Site: ${auditUrl}] Sending consent-seen page ${selectedPageUrl} with message `
     + `(projectedTrafficLoss: ${projected}) ${JSON.stringify(mystiqueMessage, 2)} `
     + 'evaluation to mystique',
   );
@@ -220,7 +221,7 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
     log.debug(`[paid-audit] [Site: ${auditUrl}] Completed mystique evaluation step`);
   } else {
-    log.debug(`[paid-audit] [Site: ${auditUrl}] Skipping mystique evaluation step for page ${selectedPage} with bounce rate ${selected?.bounceRate}`);
+    log.debug(`[paid-audit] [Site: ${auditUrl}] Skipping mystique evaluation step for page ${selectedPageUrl} with bounce rate ${selected?.bounceRate}`);
   }
 }
 
