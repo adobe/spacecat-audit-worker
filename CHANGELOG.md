@@ -1,3 +1,10 @@
+# [1.263.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.4...v1.263.0) (2025-12-02)
+
+
+### Features
+
+*  add suggested image ([#1721](https://github.com/adobe/spacecat-audit-worker/issues/1721)) ([55f2aae](https://github.com/adobe/spacecat-audit-worker/commit/55f2aae1040a8a97d87eb489b991b05010e064ff))
+
 ## [1.262.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.3...v1.262.4) (2025-12-02)
 
 
