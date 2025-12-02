@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-
 import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
 
 function getGuidanceObj(guidance) {
@@ -49,7 +48,6 @@ export default async function handler(message, context) {
   log.debug(`Creating new paid-cookie-consent opportunity for ${siteId} page: ${url}`);
 
   const opportunity = await Opportunity.create(entity);
-
   // Create suggestion for the new opportunity first
   const suggestionData = await mapToPaidSuggestion(
     context,
