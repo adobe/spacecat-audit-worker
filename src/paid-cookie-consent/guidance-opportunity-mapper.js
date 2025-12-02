@@ -97,7 +97,7 @@ async function addScreenshots(context, siteId, markdown, jobId) {
 
   const scrapeClient = ScrapeClient.createFrom(context);
   const scrapeResults = await scrapeClient.getScrapeJobUrlResults(jobId);
-  const result = scrapeResults?.[0];
+  const result = scrapeResults[0];
 
   // Copy suggested screenshots from mystique to scrapper bucket before processing
   await copySuggestedScreenshots(context, jobId, result.path);

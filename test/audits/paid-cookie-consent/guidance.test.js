@@ -565,22 +565,9 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
     });
 
-    it('should warn and skip when no job ID is provided', async () => {
-      const guidance = [{
-        body: { markdown: 'test markdown' },
-        insight: 'insight',
-        rationale: 'rationale',
-        recommendation: 'rec',
-        metadata: {}, // No scrape_job_id
-      }];
-      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
 
-      await handler(message, context);
 
-      // Should not make any S3 calls
-      expect(s3ClientMock.send).to.not.have.been.called;
 
-      });
 
     it('should warn and skip when bucket configuration is missing', async () => {
       // Remove bucket configuration
@@ -611,7 +598,6 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       expect(s3ClientMock.send).to.not.have.been.called;
 
     });
-
     it('should handle file not found gracefully and continue processing', async () => {
       const jobId = 'test-job-123';
 

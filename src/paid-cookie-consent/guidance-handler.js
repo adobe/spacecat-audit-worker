@@ -50,16 +50,6 @@ export default async function handler(message, context) {
 
   const opportunity = await Opportunity.create(entity);
 
-  // Copy suggested screenshots from mystique bucket to scrapper bucket before creating suggestion
-  const jobId = guidanceParsed?.metadata?.scrape_job_id;
-  if (!jobId) {
-    log.error('[paid-cookie-consent] No job ID found in guidance metadata, cannot process screenshots');
-    return {
-      status: 400,
-      body: 'Job ID is required for paid cookie consent guidance processing',
-    };
-  }
-
   // Create suggestion for the new opportunity first
   const suggestionData = await mapToPaidSuggestion(
     context,
