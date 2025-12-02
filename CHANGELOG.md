@@ -1,3 +1,10 @@
+## [1.262.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.3...v1.262.4) (2025-12-02)
+
+
+### Bug Fixes
+
+* adding extra options for forms opportunities ([#1640](https://github.com/adobe/spacecat-audit-worker/issues/1640)) ([38e6448](https://github.com/adobe/spacecat-audit-worker/commit/38e64488831369fa3756af4dad107cb4be2d8740))
+
 ## [1.262.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.2...v1.262.3) (2025-12-02)
 
 
