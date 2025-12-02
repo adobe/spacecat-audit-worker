@@ -245,25 +245,26 @@ async function runBulkJob(route, operation, paths, log) {
   const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}`, 'Content-Type': 'application/json' };
   const url = `https://admin.hlx.page/${route}/adobe/project-elmo-ui-data/main/*`;
   const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ paths }) });
+  if (!res.ok) throw new Error(`${operation} request failed: ${res.status} for url: ${url}`);
   const data = await res.json();
   const jobUrl = data.links?.self;
   if (!jobUrl) throw new Error(`No job URL from ${operation}`);
+  log.info(`%s: ${operation} job started for ${paths.length} paths: ${paths.join(', ')}, job URL: ${jobUrl}`, AUDIT_NAME);
 
-  // Poll until complete for 5 minutes
-  for (let i = 0; i < 300; i += 1) {
+  // Poll until complete for 10 minutes
+  for (let i = 0; i < 120; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(5000);
     // eslint-disable-next-line no-await-in-loop
     const statusRes = await fetch(jobUrl, { method: 'GET', headers });
+    if (!statusRes.ok) throw new Error(`${operation} status check failed: ${statusRes.status} for job URL: ${jobUrl}`);
     // eslint-disable-next-line no-await-in-loop
     const status = await statusRes.json();
     const { state, progress } = status;
-    if (state === 'stopped') {
-      log.info(`%s: ${operation} done - ${progress.success} success, ${progress.failed} failed`, AUDIT_NAME);
-      return;
-    }
-    // eslint-disable-next-line no-await-in-loop
-    await sleep(1000);
+    log.info(`%s: ${operation} status: ${state} - ${progress?.success ?? 0} success, ${progress?.failed ?? 0} failed for job URL: ${jobUrl}`, AUDIT_NAME);
+    if (state === 'stopped') return;
   }
-  throw new Error(`${operation} timeout`);
+  throw new Error(`${operation} timeout for job URL: ${jobUrl}`);
 }
 
 /**
@@ -282,7 +283,7 @@ export async function bulkPublishToAdminHlx(reports, log) {
     await runBulkJob('live', 'publish', paths, log);
     log.info(`%s: Bulk publish completed for ${paths.length} files`, AUDIT_NAME);
   } catch (error) {
-    log.error(`%s: Bulk publish failed: ${error.message}`, AUDIT_NAME);
+    log.error(`%s: Bulk publish failed for paths [${paths.join(', ')}]: ${error.message}`, AUDIT_NAME);
     throw error;
   }
 }

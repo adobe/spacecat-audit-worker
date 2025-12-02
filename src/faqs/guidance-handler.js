@@ -10,11 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import { JSDOM } from 'jsdom';
 import {
   badRequest, notFound, ok, noContent,
 } from '@adobe/spacecat-shared-http-utils';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { load as cheerioLoad } from 'cheerio';
+
 import { syncSuggestions } from '../utils/data-access.js';
 import { getJsonFaqSuggestion } from './utils.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
@@ -79,10 +80,10 @@ async function analyzeScrapeData(url, siteId, allKeys, s3Client, bucketName, log
       return defaultResult;
     }
 
-    const { document } = new JSDOM(scrapeJsonObject.scrapeResult.rawBody).window;
+    const $ = cheerioLoad(scrapeJsonObject.scrapeResult.rawBody);
 
     // Check if main element exists
-    const hasMain = document.querySelector('main') !== null;
+    const hasMain = $('main').length > 0;
     const selector = hasMain ? 'main' : 'body';
 
     // Check all heading tags for FAQ-related content
@@ -90,16 +91,21 @@ async function analyzeScrapeData(url, siteId, allKeys, s3Client, bucketName, log
     let hasFaqHeading = false;
 
     for (const tag of headingTags) {
-      const headings = document.querySelectorAll(tag);
-      for (const heading of headings) {
-        const text = (heading.textContent || '').trim();
+      const headings = $(tag);
+      let foundInThisTag = false;
+      headings.each((i, heading) => {
+        const text = ($(heading).text() || '').trim();
         if (isFaqHeading(text)) {
-          hasFaqHeading = true;
+          foundInThisTag = true;
           log.info(`[FAQ] Found FAQ heading in ${tag}: "${text}" on ${url}`);
-          break;
+          return false; // Break out of .each()
         }
+        return true;
+      });
+      if (foundInThisTag) {
+        hasFaqHeading = true;
+        break;
       }
-      if (hasFaqHeading) break;
     }
 
     return {
@@ -161,6 +167,19 @@ async function addSuggestions(
       };
     }
 
+    // Check if URL is in the sources
+    const sources = suggestion.item?.sources || [];
+    const urlInSources = sources.some((source) => source === suggestion.url);
+
+    // If URL is not in sources, should not optimize
+    if (!urlInSources) {
+      return {
+        ...suggestion,
+        shouldOptimize: false,
+      };
+    }
+
+    // URL is in sources, proceed with scrape data analysis
     const analysis = await analyzeScrapeData(
       suggestion.url,
       siteId,

@@ -12,14 +12,16 @@
 
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { load as cheerioLoad } from 'cheerio';
 import { isLangCode } from 'is-language-code';
-import { JSDOM } from 'jsdom';
+
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
+import { limitConcurrencyAllSettled } from '../support/utils.js';
 
 const auditType = Audit.AUDIT_TYPES.HREFLANG;
 
@@ -72,11 +74,10 @@ export async function validatePageHreflang(url, log) {
     }
 
     const html = await response.text();
-    const dom = new JSDOM(html);
-    const { document } = dom.window;
+    const $ = cheerioLoad(html);
 
     // Extract hreflang links
-    const hreflangLinks = Array.from(document.querySelectorAll('link[rel="alternate"][hreflang]'));
+    const hreflangLinks = $('link[rel="alternate"][hreflang]');
     const checks = [];
 
     // Skip validation if no hreflang tags exist
@@ -92,12 +93,13 @@ export async function validatePageHreflang(url, log) {
       const languageCodes = new Set();
 
       // Validate each hreflang link
-      for (const link of hreflangLinks) {
-        const hreflang = link.getAttribute('hreflang');
-        const href = link.getAttribute('href');
+      hreflangLinks.each((i, link) => {
+        const $link = $(link);
+        const hreflang = $link.attr('hreflang');
+        const href = $link.attr('href');
 
         // Check if hreflang is in head section
-        if (!link.closest('head')) {
+        if ($link.closest('head').length === 0) {
           checks.push({
             check: HREFLANG_CHECKS.HREFLANG_OUTSIDE_HEAD.check,
             success: false,
@@ -110,7 +112,7 @@ export async function validatePageHreflang(url, log) {
         // Check for x-default
         if (hreflang === 'x-default') {
           hasXDefault = true;
-        } else {
+        } else if (hreflang) {
           // Validate language code for non-x-default values
           languageCodes.add(hreflang);
           const validation = isLangCode(hreflang);
@@ -132,7 +134,7 @@ export async function validatePageHreflang(url, log) {
         } catch {
           log.warn(`Invalid hreflang URL: ${href} for page ${url}`);
         }
-      }
+      });
 
       // Check x-default
       if (languageCodes.size > 1 && !hasXDefault) {
@@ -159,6 +161,7 @@ export async function validatePageHreflang(url, log) {
  * @returns {Promise<Object>} Audit results
  */
 export async function hreflangAuditRunner(baseURL, context, site) {
+  const MAX_CONCURRENT_FETCH_CALLS = 10;
   const siteId = site.getId();
   const { log, dataAccess } = context;
   log.debug(`Starting Hreflang Audit with siteId: ${siteId}`);
@@ -183,28 +186,26 @@ export async function hreflangAuditRunner(baseURL, context, site) {
     }
 
     // Validate hreflang for each page
-    const auditPromises = topPages.map(async (page) => validatePageHreflang(page.url, log));
+    const tasks = topPages.map((page) => () => validatePageHreflang(page.url, log));
 
-    const auditResultsArray = await Promise.allSettled(auditPromises);
+    // Using AllSettled variant to continue processing other pages even if some fail
+    const auditResultsArray = await limitConcurrencyAllSettled(tasks, MAX_CONCURRENT_FETCH_CALLS);
     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
-      if (result.status === 'fulfilled') {
-        const { url, checks } = result.value;
-        checks.forEach((check) => {
-          const { check: checkType, success, explanation } = check;
-
-          // Only process failed checks
-          if (success === false) {
-            if (!acc[checkType]) {
-              acc[checkType] = {
-                success: false,
-                explanation,
-                urls: [],
-              };
-            }
-            acc[checkType].urls.push(url);
+      const { url, checks } = result;
+      checks.forEach((check) => {
+        const { check: checkType, success, explanation } = check;
+        // Only process failed checks
+        if (success === false) {
+          if (!acc[checkType]) {
+            acc[checkType] = {
+              success: false,
+              explanation,
+              urls: [],
+            };
           }
-        });
-      }
+          acc[checkType].urls.push(url);
+        }
+      });
       return acc;
     }, {});
 

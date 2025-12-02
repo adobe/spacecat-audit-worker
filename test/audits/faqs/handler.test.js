@@ -32,7 +32,7 @@ describe('FAQs Handler', () => {
   let sendMystiqueMessagePostProcessor;
   let createLLMOSharepointClientStub;
   let readFromSharePointStub;
-  let generateReportingPeriodsStub;
+  let validateContentAIStub;
   let ExcelJSStub;
 
   beforeEach(async function () {
@@ -42,8 +42,11 @@ describe('FAQs Handler', () => {
     // Setup stubs
     createLLMOSharepointClientStub = sandbox.stub().resolves({ client: 'mock' });
     readFromSharePointStub = sandbox.stub();
-    generateReportingPeriodsStub = sandbox.stub().returns({
-      weeks: [{ weekNumber: 10, year: 2025 }],
+    validateContentAIStub = sandbox.stub().resolves({
+      uid: 'test-uid-123',
+      indexName: 'test-index',
+      genSearchEnabled: true,
+      isWorking: true,
     });
 
     // Mock Excel workbook structure
@@ -67,8 +70,8 @@ describe('FAQs Handler', () => {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
         readFromSharePoint: readFromSharePointStub,
       },
-      '../../../src/llm-error-pages/utils.js': {
-        generateReportingPeriods: generateReportingPeriodsStub,
+      '../../../src/faqs/utils.js': {
+        validateContentAI: validateContentAIStub,
       },
       exceljs: ExcelJSStub,
     });
@@ -171,8 +174,8 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
         },
         exceljs: {
           Workbook: class {
@@ -198,6 +201,84 @@ describe('FAQs Handler', () => {
       expect(result.fullAuditRef).to.equal('https://adobe.com');
     });
 
+    it('should return failure when Content AI configuration does not exist', async () => {
+      validateContentAIStub.resolves({
+        uid: null,
+        indexName: null,
+        genSearchEnabled: false,
+        isWorking: false,
+      });
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.equal(false);
+      expect(result.auditResult.error).to.equal('Content AI configuration not found');
+      expect(log.warn).to.have.been.calledWith('[FAQ] Content AI configuration does not exist for this site, skipping audit');
+    });
+
+    it('should return failure when Content AI search endpoint is not working', async () => {
+      validateContentAIStub.resolves({
+        uid: 'test-uid-123',
+        indexName: 'test-index',
+        genSearchEnabled: true,
+        isWorking: false,
+      });
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.equal(false);
+      expect(result.auditResult.error).to.equal('Content AI search endpoint validation failed');
+      expect(log.warn).to.have.been.calledWith('[FAQ] Content AI search endpoint is not working for index test-index, skipping audit');
+    });
+
+    it('should return failure when Content AI generative search is not enabled', async () => {
+      validateContentAIStub.resolves({
+        uid: 'test-uid-123',
+        indexName: 'test-index',
+        genSearchEnabled: false,
+        isWorking: true,
+      });
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.equal(false);
+      expect(result.auditResult.error).to.equal('Content AI generative search not enabled');
+      expect(log.warn).to.have.been.calledWith('[FAQ] Content AI generative search not enabled for index test-index, skipping audit');
+    });
+
     it('should return failure when no prompts are found', async () => {
       const mockWorkbook = {
         worksheets: [
@@ -215,8 +296,8 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
         },
         exceljs: {
           Workbook: class {
@@ -239,19 +320,19 @@ describe('FAQs Handler', () => {
 
       expect(result.auditResult.success).to.equal(false);
       expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(0);
-      expect(log.warn).to.have.been.calledWith('[FAQ] No prompts found in brand presence spreadsheet');
+      expect(log.warn).to.have.been.calledWith('[FAQ] No prompts found in brand presence spreadsheet from the last 4 weeks');
     });
 
-    it('should handle spreadsheet read errors gracefully', async () => {
-      readFromSharePointStub.rejects(new Error('SharePoint connection failed'));
+    it('should handle file not found errors gracefully (expected when trying multiple weeks)', async () => {
+      readFromSharePointStub.rejects(new Error('The resource could not be found.'));
 
       const excelJsMock = await esmock('../../../src/faqs/handler.js', {
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
         },
       });
 
@@ -260,9 +341,100 @@ describe('FAQs Handler', () => {
 
       expect(result.auditResult.success).to.equal(false);
       expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(0);
-      // The readBrandPresenceSpreadsheet catches the error and returns empty array
-      // So the handler sees no prompts and logs the warning
-      expect(log.warn).to.have.been.calledWith('[FAQ] No prompts found in brand presence spreadsheet');
+      // File not found should log as INFO (not ERROR) since it's expected when trying multiple weeks
+      expect(log.info).to.have.been.calledWith(sinon.match(/Brand presence file not found/));
+      expect(log.warn).to.have.been.calledWith('[FAQ] No prompts found in brand presence spreadsheet from the last 4 weeks');
+    });
+
+    it('should handle unexpected spreadsheet read errors and log as ERROR', async () => {
+      readFromSharePointStub.rejects(new Error('SharePoint connection failed'));
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.equal(false);
+      expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(0);
+      // Unexpected errors should log as ERROR
+      expect(log.error).to.have.been.calledWith(sinon.match(/Failed to read brand presence spreadsheet.*SharePoint connection failed/));
+      expect(log.warn).to.have.been.calledWith('[FAQ] No prompts found in brand presence spreadsheet from the last 4 weeks');
+    });
+
+    it('should retry multiple weeks and succeed when data is found in a later week', async () => {
+      // Mock date to ensure consistent week calculations (Nov 25, 2025 = week 48)
+      // This will make the test look for weeks: w47, w46, w45, w44
+      const clock = sandbox.useFakeTimers(new Date('2025-11-25T10:00:00Z'));
+
+      // getWeekRangeStub will be called with offsets -1, -2, -3, -4
+      // The stub will return different weeks for each offset
+
+      const mockWorkbook = {
+        worksheets: [
+          {
+            rowCount: 2,
+            getRows: () => [
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'test-topic' };
+                  if (col === 3) return { value: 'test question' };
+                  if (col === 7) return { value: 'https://adobe.com/test' };
+                  return { value: '' };
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      // First two weeks: file not found, third week: success
+      readFromSharePointStub.onCall(0).rejects(new Error('The resource could not be found.'));
+      readFromSharePointStub.onCall(1).rejects(new Error('The resource could not be found.'));
+      readFromSharePointStub.onCall(2).resolves(Buffer.from('mock-buffer'));
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
+        },
+        exceljs: {
+          Workbook: class {
+            constructor() {}
+
+            get xlsx() {
+              const self = this;
+              return {
+                load: async () => {
+                  Object.assign(self, mockWorkbook);
+                },
+              };
+            }
+          },
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.equal(true);
+      expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(1);
+      // Should have tried 3 times (2 failures + 1 success)
+      expect(readFromSharePointStub).to.have.been.calledThrice;
+      // Should log that it found data for w45-2025 (the third week)
+      expect(log.info).to.have.been.calledWith(sinon.match(/Successfully found brand presence data for w45-2025/));
+
+      clock.restore();
     });
 
     it('should use custom output location when getOutputLocation is provided', async () => {
@@ -294,8 +466,8 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
         },
         exceljs: {
           Workbook: class {
@@ -331,8 +503,8 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
         },
         exceljs: {
           Workbook: class {
@@ -374,8 +546,8 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
         },
         exceljs: {
           Workbook: class {
@@ -398,7 +570,7 @@ describe('FAQs Handler', () => {
 
       expect(result.auditResult.success).to.equal(false);
       expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(0);
-      expect(log.warn).to.have.been.calledWith('[FAQ] No prompts found in brand presence spreadsheet');
+      expect(log.warn).to.have.been.calledWith('[FAQ] No prompts found in brand presence spreadsheet from the last 4 weeks');
     });
 
     it('should handle general errors during audit execution', async () => {
@@ -409,8 +581,8 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
         },
       });
 
@@ -466,8 +638,8 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
         },
         exceljs: {
           Workbook: class {
@@ -529,8 +701,8 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
         },
         exceljs: {
           Workbook: class {
@@ -594,8 +766,8 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
         },
         exceljs: {
           Workbook: class {
@@ -659,8 +831,8 @@ describe('FAQs Handler', () => {
           createLLMOSharepointClient: createLLMOSharepointClientStub,
           readFromSharePoint: readFromSharePointStub,
         },
-        '../../../src/llm-error-pages/utils.js': {
-          generateReportingPeriods: generateReportingPeriodsStub,
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
         },
         exceljs: {
           Workbook: class {

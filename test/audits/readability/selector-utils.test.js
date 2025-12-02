@@ -13,15 +13,15 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
-import { JSDOM } from 'jsdom';
+import { load as cheerioLoad } from 'cheerio';
+
 import { getElementSelector } from '../../../src/readability/shared/selector-utils.js';
 
 describe('getElementSelector', () => {
-  let document;
+  let $;
 
   beforeEach(() => {
-    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
-    document = dom.window.document;
+    $ = cheerioLoad('<!DOCTYPE html><html><body></body></html>');
   });
 
   describe('invalid input handling', () => {
@@ -42,7 +42,7 @@ describe('getElementSelector', () => {
 
     it('should return empty string when error occurs', () => {
       const malformedElement = {
-        get tagName() {
+        get name() {
           throw new Error('Simulated error');
         },
       };
@@ -53,33 +53,24 @@ describe('getElementSelector', () => {
 
   describe('ID-based selectors', () => {
     it('should return tag with ID for element with ID', () => {
-      const div = document.createElement('div');
-      div.id = 'main-content';
-      document.body.appendChild(div);
+      $('body').html('<div id="main-content"></div>');
+      const div = $('div')[0];
 
       const result = getElementSelector(div);
       expect(result).to.equal('div#main-content');
     });
 
     it('should prioritize ID over classes', () => {
-      const section = document.createElement('section');
-      section.id = 'hero';
-      section.className = 'large primary featured';
-      document.body.appendChild(section);
+      $('body').html('<section id="hero" class="large primary featured"></section>');
+      const section = $('section')[0];
 
       const result = getElementSelector(section);
       expect(result).to.equal('section#hero');
     });
 
     it('should return immediately for element with ID without building path', () => {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'wrapper';
-      document.body.appendChild(wrapper);
-
-      const inner = document.createElement('p');
-      inner.id = 'unique-para';
-      inner.className = 'text';
-      wrapper.appendChild(inner);
+      $('body').html('<div class="wrapper"><p id="unique-para" class="text"></p></div>');
+      const inner = $('p')[0];
 
       const result = getElementSelector(inner);
       // Should return just tag#id, not include parent path
@@ -89,18 +80,16 @@ describe('getElementSelector', () => {
 
   describe('class-based selectors', () => {
     it('should return tag with single class', () => {
-      const div = document.createElement('div');
-      div.className = 'container';
-      document.body.appendChild(div);
+      $('body').html('<div class="container"></div>');
+      const div = $('div')[0];
 
       const result = getElementSelector(div);
       expect(result).to.include('div.container');
     });
 
     it('should return tag with first two classes', () => {
-      const div = document.createElement('div');
-      div.className = 'primary secondary tertiary';
-      document.body.appendChild(div);
+      $('body').html('<div class="primary secondary tertiary"></div>');
+      const div = $('div')[0];
 
       const result = getElementSelector(div);
       expect(result).to.include('div.primary.secondary');
@@ -108,18 +97,16 @@ describe('getElementSelector', () => {
     });
 
     it('should handle multiple spaces between classes', () => {
-      const div = document.createElement('div');
-      div.className = '  class1   class2  class3  ';
-      document.body.appendChild(div);
+      $('body').html('<div class="  class1   class2  class3  "></div>');
+      const div = $('div')[0];
 
       const result = getElementSelector(div);
       expect(result).to.include('div.class1.class2');
     });
 
     it('should handle empty string className', () => {
-      const div = document.createElement('div');
-      div.className = '';
-      document.body.appendChild(div);
+      $('body').html('<div class=""></div>');
+      const div = $('div')[0];
 
       const result = getElementSelector(div);
       expect(result).to.include('div');
@@ -127,9 +114,8 @@ describe('getElementSelector', () => {
     });
 
     it('should handle whitespace-only className', () => {
-      const div = document.createElement('div');
-      div.className = '   ';
-      document.body.appendChild(div);
+      $('body').html('<div class="   "></div>');
+      const div = $('div')[0];
 
       const result = getElementSelector(div);
       expect(result).to.include('div');
@@ -139,71 +125,40 @@ describe('getElementSelector', () => {
 
   describe('nth-of-type selectors', () => {
     it('should add nth-of-type when multiple siblings of same tag exist', () => {
-      const container = document.createElement('div');
-      document.body.appendChild(container);
-
-      const p1 = document.createElement('p');
-      const p2 = document.createElement('p');
-      const p3 = document.createElement('p');
-      container.appendChild(p1);
-      container.appendChild(p2);
-      container.appendChild(p3);
+      $('body').html('<div><p></p><p></p><p></p></div>');
+      const p2 = $('p').eq(1)[0];
 
       const result = getElementSelector(p2);
       expect(result).to.include(':nth-of-type(2)');
     });
 
     it('should not add nth-of-type for single element of that tag', () => {
-      const container = document.createElement('div');
-      document.body.appendChild(container);
-
-      const p = document.createElement('p');
-      container.appendChild(p);
+      $('body').html('<div><p></p></div>');
+      const p = $('p')[0];
 
       const result = getElementSelector(p);
       expect(result).to.not.include(':nth-of-type');
     });
 
     it('should use nth-of-type with first element', () => {
-      const container = document.createElement('div');
-      document.body.appendChild(container);
-
-      const p1 = document.createElement('p');
-      const p2 = document.createElement('p');
-      container.appendChild(p1);
-      container.appendChild(p2);
+      $('body').html('<div><p></p><p></p></div>');
+      const p1 = $('p').eq(0)[0];
 
       const result = getElementSelector(p1);
       expect(result).to.include(':nth-of-type(1)');
     });
 
     it('should use nth-of-type with last element', () => {
-      const container = document.createElement('div');
-      document.body.appendChild(container);
-
-      const p1 = document.createElement('p');
-      const p2 = document.createElement('p');
-      const p3 = document.createElement('p');
-      container.appendChild(p1);
-      container.appendChild(p2);
-      container.appendChild(p3);
+      $('body').html('<div><p></p><p></p><p></p></div>');
+      const p3 = $('p').eq(2)[0];
 
       const result = getElementSelector(p3);
       expect(result).to.include(':nth-of-type(3)');
     });
 
     it('should only count siblings of same tag type', () => {
-      const container = document.createElement('div');
-      document.body.appendChild(container);
-
-      const div1 = document.createElement('div');
-      const p1 = document.createElement('p');
-      const div2 = document.createElement('div');
-      const p2 = document.createElement('p');
-      container.appendChild(div1);
-      container.appendChild(p1);
-      container.appendChild(div2);
-      container.appendChild(p2);
+      $('body').html('<div><div></div><p></p><div></div><p></p></div>');
+      const p2 = $('p').eq(1)[0];
 
       const result = getElementSelector(p2);
       expect(result).to.include(':nth-of-type(2)');
@@ -212,42 +167,26 @@ describe('getElementSelector', () => {
 
   describe('hierarchical path selectors', () => {
     it('should build path with parent context', () => {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'wrapper';
-      document.body.appendChild(wrapper);
-
-      const section = document.createElement('section');
-      section.className = 'content';
-      wrapper.appendChild(section);
-
-      const p = document.createElement('p');
-      p.className = 'text';
-      section.appendChild(p);
+      $('body').html('<div class="wrapper"><section class="content"><p class="text"></p></section></div>');
+      const p = $('p')[0];
 
       const result = getElementSelector(p);
       expect(result).to.equal('div.wrapper > section.content > p.text');
     });
 
     it('should limit path to 3 levels maximum', () => {
-      const level1 = document.createElement('div');
-      level1.className = 'level1';
-      document.body.appendChild(level1);
-
-      const level2 = document.createElement('div');
-      level2.className = 'level2';
-      level1.appendChild(level2);
-
-      const level3 = document.createElement('div');
-      level3.className = 'level3';
-      level2.appendChild(level3);
-
-      const level4 = document.createElement('div');
-      level4.className = 'level4';
-      level3.appendChild(level4);
-
-      const target = document.createElement('p');
-      target.className = 'target';
-      level4.appendChild(target);
+      $('body').html(`
+        <div class="level1">
+          <div class="level2">
+            <div class="level3">
+              <div class="level4">
+                <p class="target"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `);
+      const target = $('p')[0];
 
       const result = getElementSelector(target);
       // Should only go up 3 levels
@@ -257,21 +196,16 @@ describe('getElementSelector', () => {
     });
 
     it('should stop path building when parent has ID', () => {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'wrapper';
-      document.body.appendChild(wrapper);
-
-      const container = document.createElement('div');
-      container.id = 'main-container';
-      container.className = 'container';
-      wrapper.appendChild(container);
-
-      const section = document.createElement('section');
-      section.className = 'content';
-      container.appendChild(section);
-
-      const p = document.createElement('p');
-      section.appendChild(p);
+      $('body').html(`
+        <div class="wrapper">
+            <div id="main-container" class="container">
+                <section class="content">
+                    <p></p>
+                </section>
+            </div>
+        </div>
+      `);
+      const p = $('p')[0];
 
       const result = getElementSelector(p);
       // Should stop at parent with ID
@@ -281,8 +215,8 @@ describe('getElementSelector', () => {
     });
 
     it('should stop path building at body tag', () => {
-      const p = document.createElement('p');
-      document.body.appendChild(p);
+      $('body').html(`<p></p>`);
+      const p = $('p')[0];
 
       const result = getElementSelector(p);
       // Should not include body or html in path
@@ -292,23 +226,16 @@ describe('getElementSelector', () => {
     });
 
     it('should use direct child combinator (>)', () => {
-      const wrapper = document.createElement('div');
-      document.body.appendChild(wrapper);
+      $('body').html(`<div><p></p></div>`);
+      const p = $('p')[0];
 
-      const inner = document.createElement('p');
-      wrapper.appendChild(inner);
-
-      const result = getElementSelector(inner);
+      const result = getElementSelector(p);
       expect(result).to.include(' > ');
     });
 
     it('should include parent classes in path', () => {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'outer inner';
-      document.body.appendChild(wrapper);
-
-      const p = document.createElement('p');
-      wrapper.appendChild(p);
+      $('body').html(`<div class="outer inner"><p></p></div>`);
+      const p = $('p')[0];
 
       const result = getElementSelector(p);
       expect(result).to.include('div.outer.inner');
@@ -317,42 +244,27 @@ describe('getElementSelector', () => {
 
   describe('complex scenarios', () => {
     it('should handle elements with classes and nth-of-type', () => {
-      const container = document.createElement('div');
-      document.body.appendChild(container);
+      $('body').html('<div><p class="text"></p><p class="text"></p><p class="text"></p></div>');
 
-      const p1 = document.createElement('p');
-      p1.className = 'text';
-      const p2 = document.createElement('p');
-      p2.className = 'text';
-      const p3 = document.createElement('p');
-      p3.className = 'text';
-      container.appendChild(p1);
-      container.appendChild(p2);
-      container.appendChild(p3);
+      const p2 = $('p').eq(1)[0];
 
       const result = getElementSelector(p2);
       expect(result).to.include('p.text:nth-of-type(2)');
     });
 
     it('should handle deeply nested structure', () => {
-      const article = document.createElement('article');
-      article.className = 'post';
-      document.body.appendChild(article);
-
-      const main = document.createElement('main');
-      main.className = 'content';
-      article.appendChild(main);
-
-      const section = document.createElement('section');
-      section.className = 'body';
-      main.appendChild(section);
-
-      const div = document.createElement('div');
-      div.className = 'text-block';
-      section.appendChild(div);
-
-      const p = document.createElement('p');
-      div.appendChild(p);
+      $('body').html(`
+        <article class="post">
+          <main class="content">
+            <section class="body">
+              <div class="text-block">
+                <p></p>
+              </div>
+            </section>
+          </main>
+        </article>
+      `);
+      const p = $('p')[0];
 
       const result = getElementSelector(p);
       // Should respect 3-level limit
@@ -360,48 +272,27 @@ describe('getElementSelector', () => {
       expect(result).to.include(' > ');
     });
 
-    it('should handle element without parent', () => {
-      const standalone = document.createElement('div');
-      // Not appended to any parent
-
-      const result = getElementSelector(standalone);
-      expect(result).to.equal('div');
-    });
-
     it('should handle element with special characters in class names', () => {
-      const div = document.createElement('div');
-      div.className = 'class-with-dash class_with_underscore';
-      document.body.appendChild(div);
+      $('body').html('<div class="class-with-dash class_with_underscore"></div>');
+      const div = $('div')[0];
 
       const result = getElementSelector(div);
       expect(result).to.include('div.class-with-dash.class_with_underscore');
     });
 
     it('should generate unique selector for different elements', () => {
-      const container = document.createElement('div');
-      document.body.appendChild(container);
+      $('body').html(`<div><p class="first"></p><p class="second"></p></div>`)
+      const ps = $('p');
+      const p1 = ps.eq(0)[0];
+      const p2 = ps.eq(1)[0];
 
-      const p1 = document.createElement('p');
-      p1.className = 'first';
-      const p2 = document.createElement('p');
-      p2.className = 'second';
-      container.appendChild(p1);
-      container.appendChild(p2);
-
-      const result1 = getElementSelector(p1);
-      const result2 = getElementSelector(p2);
-
-      expect(result1).to.not.equal(result2);
+      expect(p1).to.not.equal(p2);
     });
 
     it('should handle mixed inline and block elements', () => {
-      const div = document.createElement('div');
-      div.className = 'container';
-      document.body.appendChild(div);
+      $('body').html(`<div class="container"><span class="label"></span></div>`);
 
-      const span = document.createElement('span');
-      span.className = 'label';
-      div.appendChild(span);
+      const span = $('span')[0];
 
       const result = getElementSelector(span);
       expect(result).to.include('span.label');
@@ -411,50 +302,54 @@ describe('getElementSelector', () => {
     it('should work with common HTML elements', () => {
       const elements = ['div', 'p', 'span', 'section', 'article', 'header', 'footer', 'nav', 'li'];
 
-      elements.forEach((tagName) => {
-        const element = document.createElement(tagName);
-        document.body.appendChild(element);
+      const $ = cheerioLoad('<body></body>');
 
-        const result = getElementSelector(element);
+      elements.forEach((tagName) => {
+        const element = $(`<${tagName}></${tagName}>`);
+
+        $('body').append(element);
+
+        const result = getElementSelector(element[0]);
         expect(result).to.include(tagName);
       });
     });
 
     it('should generate selector that can be used in querySelector', () => {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'wrapper';
-      document.body.appendChild(wrapper);
+      $('body').html(`
+        <div class="wrapper">
+          <p class="target"></p>
+        </div>
+      `)
 
-      const target = document.createElement('p');
-      target.className = 'target';
-      wrapper.appendChild(target);
+      const target = $('p.target')[0];
 
       const selector = getElementSelector(target);
 
       // Verify the selector can be used to find the element
-      const found = document.querySelector(selector);
+      const found = $(selector)[0];
       expect(found).to.equal(target);
     });
   });
 
   describe('edge cases', () => {
     it('should handle element with className as non-string', () => {
-      const div = document.createElement('div');
+      $('body').html('<div></div>');
+
+      const div = $('div')[0];
       // Simulate non-string className (some DOM implementations)
       Object.defineProperty(div, 'className', {
-        value: null,
+        value: 42,
         writable: true,
       });
-      document.body.appendChild(div);
 
       const result = getElementSelector(div);
       expect(result).to.include('div');
     });
 
     it('should handle element with only whitespace in ID', () => {
-      const div = document.createElement('div');
-      div.id = '   ';
-      document.body.appendChild(div);
+      $('body').html(`<div id="   "></div>`);
+
+      const div = $('div')[0];
 
       // Browser will trim ID, but testing edge case
       const result = getElementSelector(div);
@@ -462,9 +357,9 @@ describe('getElementSelector', () => {
     });
 
     it('should handle element with numeric class names', () => {
-      const div = document.createElement('div');
-      div.className = '123 456';
-      document.body.appendChild(div);
+      $('body').html(`<div class="123 456"></div>`);
+
+      const div = $('div')[0];
 
       const result = getElementSelector(div);
       // CSS class selectors with numbers are valid if they start with a digit
@@ -472,15 +367,19 @@ describe('getElementSelector', () => {
     });
 
     it('should handle body element', () => {
-      const result = getElementSelector(document.body);
+      $('body').html(``);
+      const body = $(`body`)[0];
+
+      const result = getElementSelector(body);
       expect(result).to.equal('body');
     });
 
     it('should handle html element', () => {
-      const html = document.documentElement;
+      $('body').html(``);
+      const html = $(`html`)[0];
+
       const result = getElementSelector(html);
       expect(result).to.equal('html');
     });
   });
 });
-

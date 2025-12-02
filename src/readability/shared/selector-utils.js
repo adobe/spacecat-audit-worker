@@ -12,17 +12,23 @@
 
 /**
  * Generates a CSS selector for a single element (without parent context).
+ * Works with cheerio elements.
  *
- * @param {Element} element - The DOM element to generate a selector for
+ * @param {Element} element - The cheerio element to generate a selector for
  * @param {boolean} includeTag - Whether to include tag name with ID (for target element vs parent)
  * @returns {string} A CSS selector string for the element
  */
 function getSingleElementSelector(element, includeTag = true) {
-  const tag = element.tagName.toLowerCase();
+  const {
+    name, attribs, parent,
+  } = element;
+  const tag = name.toLowerCase();
+  const id = attribs?.id;
+  const className = attribs?.class;
 
   // 1. Check for ID (highest priority)
-  if (element.id) {
-    return includeTag ? `${tag}#${element.id}` : `#${element.id}`;
+  if (id) {
+    return includeTag ? `${tag}#${id}` : `#${id}`;
   }
 
   // 2. Handle body element
@@ -34,8 +40,8 @@ function getSingleElementSelector(element, includeTag = true) {
   let selector = tag;
 
   // 4. Add classes if available (limit to first 2 for readability)
-  if (element.className && typeof element.className === 'string') {
-    const classes = element.className.trim().split(/\s+/).filter(Boolean);
+  if (className && typeof className === 'string') {
+    const classes = className.trim().split(/\s+/).filter(Boolean);
     if (classes.length > 0) {
       const classSelector = classes.slice(0, 2).join('.');
       selector = `${tag}.${classSelector}`;
@@ -43,14 +49,13 @@ function getSingleElementSelector(element, includeTag = true) {
   }
 
   // 5. Add position information based on siblings of the same type (nth-of-type)
-  const parent = element.parentElement;
   if (!parent) {
     return selector;
   }
 
   // Get all sibling elements of the same tag type
-  const siblingsOfSameTag = Array.from(parent.children).filter(
-    (child) => child.tagName === element.tagName,
+  const siblingsOfSameTag = parent.children.filter(
+    (child) => child.type === 'tag' && child.name === name,
   );
 
   // Only one element of this type, no position needed
@@ -65,18 +70,20 @@ function getSingleElementSelector(element, includeTag = true) {
 
 /**
  * Recursively builds a CSS selector path by traversing up the DOM tree.
+ * Works with cheerio elements.
  *
- * @param {Element} element - The DOM element to generate a selector path for
+ * @param {Element} element - The cheerio element to generate a selector path for
  * @param {number} depth - Current depth level (for limiting path length)
  * @param {boolean} isTarget - Whether this is the target element (affects ID format)
  * @returns {string} A CSS selector path string
  */
 function buildSelectorPath(element, depth = 0, isTarget = true) {
-  if (!element || !element.tagName) {
+  if (!element || !element.name) {
     return '';
   }
 
-  const tag = element.tagName.toLowerCase();
+  const { name, attribs, parent } = element;
+  const tag = name.toLowerCase();
 
   // Base case: reached html element
   if (tag === 'html') {
@@ -92,25 +99,25 @@ function buildSelectorPath(element, depth = 0, isTarget = true) {
   const selector = getSingleElementSelector(element, isTarget);
 
   // Stop condition: element with ID (stop after including it in path)
-  if (element.id) {
+  if (attribs?.id) {
     return selector;
   }
 
   // Check parent
-  const parent = element.parentElement;
-  if (!parent || !parent.tagName) {
+  if (!parent || !parent.name) {
     return selector;
   }
 
-  const parentTag = parent.tagName.toLowerCase();
+  const parentTag = parent.name.toLowerCase();
 
   // Stop before html or at body element
   if (parentTag === 'html' || parentTag === 'body') {
     return selector;
   }
 
-  // Limit path depth to 3 levels
-  if (depth >= 3) {
+  // Limit path depth to 3 total elements
+  // (depth 0 = target, depth 1 = 1st parent, depth 2 = 2nd parent)
+  if (depth >= 2) {
     return selector;
   }
 
@@ -127,15 +134,15 @@ function buildSelectorPath(element, depth = 0, isTarget = true) {
 }
 
 /**
- * Generates a CSS selector for a given DOM element with optimal specificity.
+ * Generates a CSS selector for a given cheerio element with optimal specificity.
  * Uses recursion to build a path that includes parent context for better element identification.
  *
- * @param {Element} element - The DOM element to generate a selector for
+ * @param {Element} element - The cheerio element to generate a selector for
  * @returns {string} A CSS selector string, or empty string if element is invalid or error occurs
  */
 export function getElementSelector(element) {
   try {
-    if (!element || !element.tagName) {
+    if (!element || !element.name) {
       return '';
     }
 

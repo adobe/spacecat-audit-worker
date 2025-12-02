@@ -10,11 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-import { JSDOM } from 'jsdom';
-import * as cheerio from 'cheerio';
 import { composeBaseURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
+import { load as cheerioLoad } from 'cheerio';
+
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { isPreviewPage } from '../utils/url-utils.js';
@@ -22,6 +22,7 @@ import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-acce
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { CANONICAL_CHECKS } from './constants.js';
+import { limitConcurrencyAllSettled } from '../support/utils.js';
 
 /**
  * @import {type RequestOptions} from "@adobe/fetch"
@@ -87,19 +88,14 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
     const finalUrl = response.url;
     const html = await response.text();
 
-    // Use Cheerio to check if canonical is in <head> (more reliable than JSDOM for large HTML).
+    // Use Cheerio for all parsing (more reliable than JSDOM for large HTML).
     // This is the same approach used in the MetaTags audit (ssr-meta-validator.js).
-    const $ = cheerio.load(html);
+    const $ = cheerioLoad(html);
     const cheerioCanonicalInHead = $('head link[rel="canonical"]').length > 0;
-    const cheerioCanonicalCount = $('link[rel="canonical"]').length;
+    const canonicalLinks = $('link[rel="canonical"]');
 
-    log.info(`Cheerio found ${cheerioCanonicalCount} canonical link(s), ${cheerioCanonicalInHead ? 'IN <head>' : 'NOT in <head>'}`);
+    log.info(`Cheerio found ${canonicalLinks.length} canonical link(s), ${cheerioCanonicalInHead ? 'IN <head>' : 'NOT in <head>'}`);
 
-    // Still use JSDOM for the rest of the parsing and checks
-    const dom = new JSDOM(html);
-    const { document } = dom.window;
-
-    const canonicalLinks = document.querySelectorAll('link[rel="canonical"]');
     const checks = [];
     let canonicalUrl = null;
 
@@ -129,8 +125,8 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
         });
         log.info(`Multiple canonical tags found for URL: ${url}`);
       } else {
-        const canonicalLink = canonicalLinks[0];
-        const href = canonicalLink.getAttribute('href');
+        const canonicalLink = canonicalLinks.first();
+        const href = canonicalLink.attr('href');
         if (!href) {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
@@ -198,8 +194,7 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
         }
 
         // Check if canonical link is in the <head> section.
-        // Use Cheerio result instead of JSDOM's closest('head') because JSDOM can fail
-        // to parse large HTML correctly and may incorrectly place tags in <body>
+        // Using Cheerio result which is more reliable for large HTML parsing
         if (!cheerioCanonicalInHead) {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
@@ -447,6 +442,7 @@ export function generateCanonicalSuggestion(checkType) {
  * @returns {Promise<Object>} An object containing the audit results.
  */
 export async function canonicalAuditRunner(baseURL, context, site) {
+  const MAX_CONCURRENT_FETCH_CALLS = 10;
   const siteId = site.getId();
   const { log, dataAccess } = context;
   log.info(`Starting Canonical Audit with siteId: ${JSON.stringify(siteId)}`);
@@ -525,7 +521,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
 
     // Check which pages return 200 status
     log.info('Checking HTTP status for top pages...');
-    const statusCheckPromises = filteredTopPages.map(async ({ url }) => {
+    const statusCheckPromises = filteredTopPages.map(({ url }) => async () => {
       try {
         const response = await fetch(url, options);
         const { status } = response;
@@ -547,7 +543,11 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       }
     });
 
-    const statusCheckResults = await Promise.all(statusCheckPromises);
+    // Using AllSettled variant to continue processing other pages even if some fail
+    const statusCheckResults = await limitConcurrencyAllSettled(
+      statusCheckPromises,
+      MAX_CONCURRENT_FETCH_CALLS,
+    );
     const pagesWithOkStatus = statusCheckResults.filter(({ isOk }) => isOk);
 
     if (pagesWithOkStatus.length === 0) {
@@ -563,7 +563,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
 
     log.info(`Found ${pagesWithOkStatus.length} pages with 200 status out of ${filteredTopPages.length} filtered pages`);
 
-    const auditPromises = pagesWithOkStatus.map(async ({ url }) => {
+    const auditPromises = pagesWithOkStatus.map(({ url }) => async () => {
       const checks = [];
 
       const {
@@ -603,25 +603,27 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       return { url, checks };
     });
 
-    const auditResultsArray = await Promise.allSettled(auditPromises);
+    // Using AllSettled variant to continue processing other pages even if some fail
+    const auditResultsArray = await limitConcurrencyAllSettled(
+      auditPromises,
+      MAX_CONCURRENT_FETCH_CALLS,
+    );
     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
-      if (result.status === 'fulfilled') {
-        const { url, checks } = result.value;
-        checks.forEach((check) => {
-          const { check: checkType, success, explanation } = check;
+      const { url, checks } = result;
+      checks.forEach((check) => {
+        const { check: checkType, success, explanation } = check;
 
-          // only process failed checks
-          if (success === false) {
-            if (!acc[checkType]) {
-              acc[checkType] = {
-                explanation,
-                urls: [],
-              };
-            }
-            acc[checkType].urls.push(url);
+        // only process failed checks
+        if (success === false) {
+          if (!acc[checkType]) {
+            acc[checkType] = {
+              explanation,
+              urls: [],
+            };
           }
-        });
-      }
+          acc[checkType].urls.push(url);
+        }
+      });
       return acc;
     }, {});
 
