@@ -135,7 +135,12 @@ export const generateSuggestionData = async (context) => {
   const {
     site, audit, dataAccess, log, sqs, env, finalUrl,
   } = context;
-  const { Configuration, Suggestion, SiteTopPage } = dataAccess;
+  const {
+    Configuration,
+    Suggestion,
+    SiteTopPage,
+    FixEntity,
+  } = dataAccess;
 
   const auditResult = audit.getAuditResult();
   if (auditResult.success === false) {
@@ -168,6 +173,47 @@ export const generateSuggestionData = async (context) => {
     Audit.AUDIT_TYPES.BROKEN_BACKLINKS,
     kpiDeltas,
   );
+
+  // For suggestions already marked as FIXED, if their url_to is no longer broken,
+  // publish any deployed fixes for those suggestions.
+  try {
+    const fixedSuggestions = await Suggestion.allByOpportunityIdAndStatus(
+      opportunity.getId(),
+      SuggestionModel.STATUSES.FIXED,
+    );
+
+    for (const fixedSuggestion of fixedSuggestions) {
+      const urlTo = fixedSuggestion?.getData()?.url_to;
+      if (urlTo) {
+        // Reuse existing backlink validation logic; if none returned, URL is not broken
+        // eslint-disable-next-line no-await-in-loop
+        const stillBroken = (await filterOutValidBacklinks([{ url_to: urlTo }], log)).length > 0;
+        if (!stillBroken) {
+          if (FixEntity && typeof FixEntity.getFixEntitiesBySuggestionId === 'function') {
+            // eslint-disable-next-line no-await-in-loop
+            const fixEntities = await FixEntity.getFixEntitiesBySuggestionId(
+              fixedSuggestion.getId(),
+            );
+            // eslint-disable-next-line no-restricted-syntax
+            for (const fixEntity of fixEntities) {
+              const deployed = FixEntity?.STATUSES?.DEPLOYED;
+              const published = FixEntity?.STATUSES?.PUBLISHED;
+              if (deployed && published && typeof fixEntity.getStatus === 'function'
+                && fixEntity.getStatus() === deployed) {
+                fixEntity.setStatus(published);
+                fixEntity.setUpdatedBy?.('system');
+                // eslint-disable-next-line no-await-in-loop
+                await fixEntity.save();
+                log.debug(`Published fix entity ${fixEntity.getId?.()} for suggestion ${fixedSuggestion.getId()}`);
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    log.warn(`Failed to publish fix entities for FIXED suggestions: ${err.message}`);
+  }
 
   const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
   await syncSuggestions({
