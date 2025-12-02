@@ -67,7 +67,9 @@ export async function extractUrls(context) {
   const {
     site, finalUrl, log, auditContext,
   } = context;
-  const baseURL = site.getBaseURL();
+  /* c8 ignore next */
+  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+  const baseURL = overrideBaseURL || site.getBaseURL();
   const siteId = site.getId();
 
   log.info(`${LOG_PREFIX} Extracting URLs for ${baseURL}`);
@@ -95,7 +97,16 @@ export async function extractUrls(context) {
     };
 
     const query = await getStaticContent(variables, './src/page-citability/sql/top-urls.sql');
-    const urls = await athenaClient.query(query, s3Config.databaseName, '[Athena] Bot URLs');
+    let urls;
+    try {
+      urls = await athenaClient.query(query, s3Config.databaseName, '[Athena] Bot URLs');
+    } catch (error) {
+      if (error.message?.includes('SCHEMA_NOT_FOUND')) {
+        log.info(`${LOG_PREFIX} No CDN logs database for site ${baseURL} - skipping`);
+        return createEmptyResult(baseURL, siteId);
+      }
+      throw error;
+    }
 
     if (urls.length === 0) {
       log.info(`${LOG_PREFIX} No URLs found for site in Athena ${baseURL} with site id ${siteId}`);
@@ -107,20 +118,23 @@ export async function extractUrls(context) {
     const existingScores = await PageCitability.allBySiteId(siteId);
     const sevenDaysAgo = subDays(new Date(), 7);
 
-    const recentUrls = new Set(
+    const recentPaths = new Set(
       existingScores
         .filter((score) => new Date(score.getUpdatedAt()) > sevenDaysAgo)
-        .map((score) => score.getUrl()),
+        .map((score) => new URL(score.getUrl()).pathname),
     );
 
-    urlsToAnalyze = urls.filter(({ url }) => !recentUrls.has(joinBaseAndPath(baseURL, url)));
+    urlsToAnalyze = urls.filter(({ url }) => {
+      const path = new URL(joinBaseAndPath(baseURL, url)).pathname;
+      return !recentPaths.has(path);
+    });
 
     if (urlsToAnalyze.length === 0) {
       log.info(`${LOG_PREFIX} No URLs to analyze for site ${baseURL} with site id ${siteId}`);
       return createEmptyResult(baseURL, siteId);
     }
 
-    log.info(`${LOG_PREFIX} Found ${urlsToAnalyze.length} URLs (${existingScores.length - recentUrls.size} stale/new)`);
+    log.info(`${LOG_PREFIX} Found ${urlsToAnalyze.length} URLs (${existingScores.length - recentPaths.size} stale/new)`);
   }
 
   // Apply batch size limit

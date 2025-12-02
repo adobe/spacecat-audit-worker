@@ -197,7 +197,7 @@ export function getUrlWithoutPath(url) {
 }
 
 /**
- * Limits the concurrency of async tasks
+ * Limits the concurrency of async tasks (throws on first error)
  * @param {Array<Function>} tasks - Array of async functions to execute
  * @param {number} maxConcurrent - Maximum number of concurrent tasks
  * @returns {Promise<Array>} - Array of results from all tasks
@@ -207,10 +207,15 @@ export async function limitConcurrency(tasks, maxConcurrent) {
   const executing = [];
 
   for (const task of tasks) {
-    const promise = task().then((result) => {
-      executing.splice(executing.indexOf(promise), 1);
-      return result;
-    });
+    const promise = task()
+      .then((result) => {
+        executing.splice(executing.indexOf(promise), 1);
+        return result;
+      })
+      .catch((error) => {
+        executing.splice(executing.indexOf(promise), 1);
+        throw error;
+      });
 
     results.push(promise);
     executing.push(promise);
@@ -222,6 +227,43 @@ export async function limitConcurrency(tasks, maxConcurrent) {
   }
 
   return Promise.all(results);
+}
+
+/**
+ * Limits the concurrency of async tasks (continues on errors, returns only successful results)
+ * @param {Array<Function>} tasks - Array of async functions to execute
+ * @param {number} maxConcurrent - Maximum number of concurrent tasks
+ * @returns {Promise<Array>} - Array of successful results (failed tasks are filtered out)
+ */
+export async function limitConcurrencyAllSettled(tasks, maxConcurrent) {
+  const results = [];
+  const executing = [];
+
+  for (const task of tasks) {
+    const promise = task()
+      .then((result) => {
+        executing.splice(executing.indexOf(promise), 1);
+        return result;
+      })
+      .catch((error) => {
+        executing.splice(executing.indexOf(promise), 1);
+        throw error;
+      });
+
+    results.push(promise);
+    executing.push(promise);
+
+    if (executing.length >= maxConcurrent) {
+      // eslint-disable-next-line no-await-in-loop
+      await Promise.race(executing).catch(() => {
+        // Ignore errors in race, they will be handled by allSettled checking status later
+      });
+    }
+  }
+
+  return Promise.allSettled(results).then((settled) => settled
+    .filter((result) => result.status === 'fulfilled')
+    .map((result) => result.value));
 }
 
 const extractScrapedMetadataFromJson = (data, log) => {

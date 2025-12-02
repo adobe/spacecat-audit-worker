@@ -22,6 +22,7 @@ import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-acce
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { CANONICAL_CHECKS } from './constants.js';
+import { limitConcurrencyAllSettled } from '../support/utils.js';
 
 /**
  * @import {type RequestOptions} from "@adobe/fetch"
@@ -441,6 +442,7 @@ export function generateCanonicalSuggestion(checkType) {
  * @returns {Promise<Object>} An object containing the audit results.
  */
 export async function canonicalAuditRunner(baseURL, context, site) {
+  const MAX_CONCURRENT_FETCH_CALLS = 10;
   const siteId = site.getId();
   const { log, dataAccess } = context;
   log.info(`Starting Canonical Audit with siteId: ${JSON.stringify(siteId)}`);
@@ -519,7 +521,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
 
     // Check which pages return 200 status
     log.info('Checking HTTP status for top pages...');
-    const statusCheckPromises = filteredTopPages.map(async ({ url }) => {
+    const statusCheckPromises = filteredTopPages.map(({ url }) => async () => {
       try {
         const response = await fetch(url, options);
         const { status } = response;
@@ -541,7 +543,11 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       }
     });
 
-    const statusCheckResults = await Promise.all(statusCheckPromises);
+    // Using AllSettled variant to continue processing other pages even if some fail
+    const statusCheckResults = await limitConcurrencyAllSettled(
+      statusCheckPromises,
+      MAX_CONCURRENT_FETCH_CALLS,
+    );
     const pagesWithOkStatus = statusCheckResults.filter(({ isOk }) => isOk);
 
     if (pagesWithOkStatus.length === 0) {
@@ -557,7 +563,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
 
     log.info(`Found ${pagesWithOkStatus.length} pages with 200 status out of ${filteredTopPages.length} filtered pages`);
 
-    const auditPromises = pagesWithOkStatus.map(async ({ url }) => {
+    const auditPromises = pagesWithOkStatus.map(({ url }) => async () => {
       const checks = [];
 
       const {
@@ -597,25 +603,27 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       return { url, checks };
     });
 
-    const auditResultsArray = await Promise.allSettled(auditPromises);
+    // Using AllSettled variant to continue processing other pages even if some fail
+    const auditResultsArray = await limitConcurrencyAllSettled(
+      auditPromises,
+      MAX_CONCURRENT_FETCH_CALLS,
+    );
     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
-      if (result.status === 'fulfilled') {
-        const { url, checks } = result.value;
-        checks.forEach((check) => {
-          const { check: checkType, success, explanation } = check;
+      const { url, checks } = result;
+      checks.forEach((check) => {
+        const { check: checkType, success, explanation } = check;
 
-          // only process failed checks
-          if (success === false) {
-            if (!acc[checkType]) {
-              acc[checkType] = {
-                explanation,
-                urls: [],
-              };
-            }
-            acc[checkType].urls.push(url);
+        // only process failed checks
+        if (success === false) {
+          if (!acc[checkType]) {
+            acc[checkType] = {
+              explanation,
+              urls: [],
+            };
           }
-        });
-      }
+          acc[checkType].urls.push(url);
+        }
+      });
       return acc;
     }, {});
 

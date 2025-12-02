@@ -160,6 +160,37 @@ describe("No CTA above the fold guidance handler", () => {
     context.site = { requiresValidation: false };
   });
 
+  it("skips opportunity creation when Mystique fails to generate a suggestion", async () => {
+    Audit.findById.resolves({});
+    const failureGuidance = [
+      {
+        insight: "Suggestion generation failed, no opportunity created",
+        rationale: "Suggestion generation failed, no opportunity created",
+        recommendation: "Suggestion generation failed, no opportunity created",
+        body: {
+          markdown: "Suggestion generation failed, no opportunity created",
+        },
+      },
+    ];
+
+    const result = await handler(
+      {
+        auditId: "audit-id",
+        siteId,
+        data: { url: pageUrl, guidance: failureGuidance },
+      },
+      context
+    );
+
+    expect(result.status).to.equal(ok().status);
+    expect(Opportunity.allBySiteId).not.to.have.been.called;
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
+    expect(logStub.info).to.have.been.calledWith(
+      "Skipping opportunity creation for site: site-id page: https://example.com/testpage audit: audit-id due to suggestion generation failure."
+    );
+  });
+
   it("skips opportunity creation when matching opportunity already exists", async () => {
     const audit = {
       getAuditId: () => "audit-id",

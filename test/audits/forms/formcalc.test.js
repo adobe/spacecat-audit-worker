@@ -36,6 +36,87 @@ describe('Form Calc functions', () => {
     ]);
   });
 
+  it('getHighFormViewsLowConversion with all options', () => {
+    const result = getHighFormViewsLowConversionMetrics(formVitalsCollection, 'all');
+    expect(result).to.eql([
+      {
+        "url": "https://www.surest.com/info/win",
+        "formview": {
+          "total": 300,
+          "desktop": 0,
+          "mobile": 300
+        },
+        "formengagement": {
+          "total": 4300,
+          "desktop": 4000,
+          "mobile": 300
+        },
+        "pageview": {
+          "total": 8670,
+          "desktop": 4670,
+          "mobile": 4000
+        },
+        "formsubmit": {
+          "total": 0,
+          "desktop": 0,
+          "mobile": 0
+        },
+        "trafficacquisition": {},
+        "formsource": ".myform"
+      },
+      {
+        "url": "https://www.surest.com/info/win-2",
+        "formview": {
+          "total": 3200,
+          "desktop": 0,
+          "mobile": 3200
+        },
+        "formengagement": {
+          "total": 4300,
+          "desktop": 4000,
+          "mobile": 300
+        },
+        "pageview": {
+          "total": 12670,
+          "desktop": 4670,
+          "mobile": 8000
+        },
+        "formsubmit": {
+          "total": 0,
+          "desktop": 0,
+          "mobile": 0
+        },
+        "trafficacquisition": {},
+        "formsource": ".myform"
+      },
+      {
+        "url": "https://www.surest.com/newsletter",
+        "formview": {
+          "total": 300,
+          "desktop": 0,
+          "mobile": 300
+        },
+        "formengagement": {
+          "total": 300,
+          "desktop": 0,
+          "mobile": 300
+        },
+        "pageview": {
+          "total": 8670,
+          "desktop": 4670,
+          "mobile": 4000
+        },
+        "formsubmit": {
+          "total": 0,
+          "desktop": 0,
+          "mobile": 0
+        },
+        "trafficacquisition": {},
+        "formsource": ""
+      }
+    ]);
+  });
+
   it('getHighPageViewsLowFormViews', () => {
     const result = getHighPageViewsLowFormViewsMetrics(formVitalsCollection);
     expect(result).to.eql([

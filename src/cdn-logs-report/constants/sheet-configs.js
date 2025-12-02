@@ -45,14 +45,17 @@ export const SHEET_CONFIGS = {
       const { PageCitability } = dataAccess;
       const citabilityScores = await PageCitability.allBySiteId(site.getId());
       const citabilityMap = citabilityScores.reduce((acc, score) => {
-        acc[score.getUrl()] = score.getCitabilityScore();
+        acc[new URL(score.getUrl()).pathname] = score.getCitabilityScore();
         return acc;
       }, {});
 
+      /* c8 ignore next */
+      const baseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL || site.getBaseURL();
+
       return data.map((row) => {
         const urlPath = row.url === '-' ? '/' : (row.url || '');
-        const fullUrl = joinBaseAndPath(site.getBaseURL(), urlPath);
-        const citabilityScore = citabilityMap[fullUrl] || 'N/A';
+        const path = new URL(joinBaseAndPath(baseURL, urlPath)).pathname;
+        const citabilityScore = citabilityMap[path] || 'N/A';
 
         return [
           row.agent_type || 'Other',

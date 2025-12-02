@@ -40,7 +40,7 @@ describe('Summarization Handler', () => {
     { getUrl: () => 'https://adobe.com/page3' },
   ];
 
-  beforeEach(async () => {
+  beforeEach(() => {
     sandbox = sinon.createSandbox();
 
     site = {
@@ -86,6 +86,13 @@ describe('Summarization Handler', () => {
       site,
       audit,
       dataAccess,
+      // Default: all 3 URLs have scrape results (100% availability)
+      // scrapeResultPaths is a Map<URL, S3Path>
+      scrapeResultPaths: new Map([
+        ['https://adobe.com/page1', 'scrapes/site-id-123/page1/scrape.json'],
+        ['https://adobe.com/page2', 'scrapes/site-id-123/page2/scrape.json'],
+        ['https://adobe.com/page3', 'scrapes/site-id-123/page3/scrape.json'],
+      ]),
     };
   });
 
@@ -176,17 +183,17 @@ describe('Summarization Handler', () => {
       expect(log.info).to.have.been.calledWith('[SUMMARIZATION] Submitting 3 pages for scraping');
     });
 
-    it('should limit to 100 pages when submitting for scraping', async () => {
+    it('should limit to 200 pages when submitting for scraping', async () => {
       audit.getAuditResult.returns({ success: true });
-      const manyPages = Array.from({ length: 150 }, (_, i) => ({
+      const manyPages = Array.from({ length: 250 }, (_, i) => ({
         getUrl: () => `https://adobe.com/page${i}`,
       }));
       dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyPages);
 
       const result = await submitForScraping(context);
 
-      expect(result.urls).to.have.lengthOf(100);
-      expect(log.info).to.have.been.calledWith('[SUMMARIZATION] Submitting 150 pages for scraping');
+      expect(result.urls).to.have.lengthOf(200);
+      expect(log.info).to.have.been.calledWith('[SUMMARIZATION] Submitting 200 pages for scraping');
     });
 
     it('should throw error when audit failed', async () => {
@@ -218,21 +225,23 @@ describe('Summarization Handler', () => {
       const result = await sendToMystique(context);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      expect(sqs.sendMessage).to.have.been.calledWithMatch('spacecat-to-mystique', {
-        type: 'guidance:summarization',
-        siteId: 'site-id-123',
-        url: 'https://adobe.com',
-        auditId: 'audit-id-456',
-        deliveryType: 'aem',
-        time: sinon.match.string,
-        data: {
-          pages: [
-            { page_url: 'https://adobe.com/page1', keyword: '', questions: [] },
-            { page_url: 'https://adobe.com/page2', keyword: '', questions: [] },
-            { page_url: 'https://adobe.com/page3', keyword: '', questions: [] },
-          ],
-        },
-      });
+      
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.type).to.equal('guidance:summarization');
+      expect(sentMessage.siteId).to.equal('site-id-123');
+      expect(sentMessage.url).to.equal('https://adobe.com');
+      expect(sentMessage.auditId).to.equal('audit-id-456');
+      expect(sentMessage.deliveryType).to.equal('aem');
+      expect(sentMessage.data.pages).to.have.lengthOf(3);
+      
+      // Check that all pages are from the scraped URLs
+      const pageUrls = sentMessage.data.pages.map((p) => p.page_url);
+      expect(pageUrls).to.include.members([
+        'https://adobe.com/page1',
+        'https://adobe.com/page2',
+        'https://adobe.com/page3',
+      ]);
+      
       expect(log.info).to.have.been.calledWith(
         '[SUMMARIZATION] Sent 3 pages to Mystique for site site-id-123',
       );
@@ -243,6 +252,13 @@ describe('Summarization Handler', () => {
         getUrl: () => `https://adobe.com/page${i}`,
       }));
       dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyPages);
+      
+      // Provide scrape results for 120 pages (80% availability, exceeds 100 page limit)
+      const scrapeMap = new Map();
+      for (let i = 0; i < 120; i += 1) {
+        scrapeMap.set(`https://adobe.com/page${i}`, `scrapes/site-id-123/page${i}/scrape.json`);
+      }
+      context.scrapeResultPaths = scrapeMap;
 
       const result = await sendToMystique(context);
 
@@ -308,6 +324,93 @@ describe('Summarization Handler', () => {
         expect(page.questions).to.deep.equal([]);
         expect(page.page_url).to.be.a('string');
       });
+    });
+
+    it('should verify scrape availability before sending to Mystique', async () => {
+      await sendToMystique(context);
+
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] Scrape availability: 3/3 (100.0%)',
+      );
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+    });
+
+    it('should throw error when scrape availability is below 50%', async () => {
+      // Only 1 out of 3 URLs has scrape data (33%)
+      context.scrapeResultPaths = new Map([
+        ['https://adobe.com/page1', 'scrapes/site-id-123/page1/scrape.json'],
+      ]);
+
+      await expect(sendToMystique(context)).to.be.rejectedWith(
+        'Insufficient scrape data: only 1/3 URLs have scrape data available',
+      );
+      expect(sqs.sendMessage).not.to.have.been.called;
+    });
+
+    it('should succeed when scrape availability is exactly 50%', async () => {
+      // Add one more page to have 4 total, with exactly 2 available (50%)
+      const fourPages = [
+        ...topPages,
+        { getUrl: () => 'https://adobe.com/page4' },
+      ];
+      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(fourPages);
+      
+      context.scrapeResultPaths = new Map([
+        ['https://adobe.com/page1', 'scrapes/site-id-123/page1/scrape.json'],
+        ['https://adobe.com/page2', 'scrapes/site-id-123/page2/scrape.json'],
+      ]);
+
+      const result = await sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] Scrape availability: 2/4 (50.0%)',
+      );
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+    });
+
+    it('should throw error when no scrape results available', async () => {
+      context.scrapeResultPaths = new Map();
+
+      await expect(sendToMystique(context)).to.be.rejectedWith(
+        'No scrape results available',
+      );
+      expect(log.warn).to.have.been.calledWith(
+        '[SUMMARIZATION] No scrape results available',
+      );
+      expect(sqs.sendMessage).not.to.have.been.called;
+    });
+
+    it('should throw error when scrapeResultPaths is null', async () => {
+      context.scrapeResultPaths = null;
+
+      await expect(sendToMystique(context)).to.be.rejectedWith(
+        'No scrape results available',
+      );
+      expect(log.warn).to.have.been.calledWith(
+        '[SUMMARIZATION] No scrape results available',
+      );
+      expect(sqs.sendMessage).not.to.have.been.called;
+    });
+
+    it('should handle more scrape results than requested pages', async () => {
+      // 5 scrape results for 3 pages
+      context.scrapeResultPaths = new Map([
+        ['https://adobe.com/page1', 'scrapes/site-id-123/page1/scrape.json'],
+        ['https://adobe.com/page2', 'scrapes/site-id-123/page2/scrape.json'],
+        ['https://adobe.com/page3', 'scrapes/site-id-123/page3/scrape.json'],
+        ['https://adobe.com/page4', 'scrapes/site-id-123/page4/scrape.json'],
+        ['https://adobe.com/page5', 'scrapes/site-id-123/page5/scrape.json'],
+      ]);
+
+      const result = await sendToMystique(context);
+
+      // 5/3 = 166.7% - should pass easily
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] Scrape availability: 5/3 (166.7%)',
+      );
+      expect(sqs.sendMessage).to.have.been.calledOnce;
     });
   });
 });

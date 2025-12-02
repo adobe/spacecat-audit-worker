@@ -38,6 +38,7 @@ describe('CDN Logs Sheet Configs', () => {
       mockSite = {
         getId: () => 'test-site-id',
         getBaseURL: () => 'https://example.com',
+        getConfig: () => ({ getFetchConfig: () => null }),
       };
 
       mockDataAccess = {

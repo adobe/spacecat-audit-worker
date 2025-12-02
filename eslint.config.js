@@ -56,5 +56,9 @@ export default defineConfig([
   {
     ...test,
     files: [...test.files],
+    rules: {
+      'no-console': 'off',
+      'func-names': 'off',
+    },
   }
 ]);

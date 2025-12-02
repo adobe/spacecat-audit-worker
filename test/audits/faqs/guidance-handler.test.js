@@ -53,6 +53,7 @@ describe('FAQs guidance handler', () => {
             question: 'How to use Photoshop?',
             answer: 'Photoshop is a powerful image editing tool...',
             sources: [
+              { url: 'https://www.adobe.com/products/photoshop' },
               { url: 'https://www.adobe.com/products/photoshop/guides' },
             ],
           },
@@ -64,6 +65,7 @@ describe('FAQs guidance handler', () => {
             question: 'Is Photoshop good for beginners?',
             answer: 'Photoshop offers several features suitable for beginners...',
             sources: [
+              { title: 'Getting Started with Photoshop', url: 'https://www.adobe.com/products/photoshop' },
               { title: 'Getting Started with Photoshop', url: 'https://www.adobe.com/products/photoshop/tutorials' },
             ],
           },
@@ -839,5 +841,264 @@ describe('FAQs guidance handler', () => {
     expect(newData[0].transformRules.selector).to.equal('body');
     expect(newData[0].shouldOptimize).to.equal(true);
     expect(log.error).to.have.been.calledWith(sinon.match(/Error analyzing scrape data/));
+  });
+
+  it('should set shouldOptimize to false when URL is not in sources', async () => {
+    // Mock FAQ data where the suggestion URL is NOT in the sources
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        suggestions: [
+          {
+            url: 'https://www.adobe.com/products/photoshop',
+            topic: 'photoshop',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'How to use Photoshop?',
+                answer: 'Photoshop is a powerful tool...',
+                sources: [
+                  { url: 'https://www.adobe.com/products/photoshop/guides' },
+                  { url: 'https://www.adobe.com/tutorials/photoshop' },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    // Should set shouldOptimize to false because URL is not in sources
+    expect(newData[0].shouldOptimize).to.equal(false);
+  });
+
+  it('should proceed with analysis when URL is in sources', async () => {
+    // Mock FAQ data where the suggestion URL IS in the sources
+    const mockScrapeData = {
+      scrapeResult: {
+        rawBody: '<html><body><main><h1>Product Information</h1></main></body></html>',
+      },
+    };
+
+    getObjectKeysUsingPrefixStub.resolves([
+      'scrapes/site-123/products/photoshop/scrape.json',
+    ]);
+    getObjectFromKeyStub.resolves(mockScrapeData);
+
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        suggestions: [
+          {
+            url: 'https://www.adobe.com/products/photoshop',
+            topic: 'photoshop',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'How to use Photoshop?',
+                answer: 'Photoshop is a powerful tool...',
+                sources: [
+                  { url: 'https://www.adobe.com/products/photoshop' }, // URL matches!
+                  { url: 'https://www.adobe.com/tutorials/photoshop' },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    // Should proceed with analysis and set shouldOptimize based on FAQ heading check
+    expect(newData[0].shouldOptimize).to.equal(true);
+    expect(newData[0].transformRules.selector).to.equal('main');
+  });
+
+  it('should handle sources as plain strings', async () => {
+    // Mock FAQ data with sources as plain string URLs (not objects)
+    const mockScrapeData = {
+      scrapeResult: {
+        rawBody: '<html><body><main><h1>Product Information</h1></main></body></html>',
+      },
+    };
+
+    getObjectKeysUsingPrefixStub.resolves([
+      'scrapes/site-123/products/photoshop/scrape.json',
+    ]);
+    getObjectFromKeyStub.resolves(mockScrapeData);
+
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        suggestions: [
+          {
+            url: 'https://www.adobe.com/products/photoshop',
+            topic: 'photoshop',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'How to use Photoshop?',
+                answer: 'Photoshop is a powerful tool...',
+                sources: [
+                  'https://www.adobe.com/products/photoshop', // Plain string
+                  'https://www.adobe.com/tutorials/photoshop',
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    // Should find URL in sources and proceed with analysis
+    expect(newData[0].shouldOptimize).to.equal(true);
+    expect(newData[0].transformRules.selector).to.equal('main');
+  });
+
+  it('should handle empty sources array', async () => {
+    // Mock FAQ data with empty sources array
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        suggestions: [
+          {
+            url: 'https://www.adobe.com/products/photoshop',
+            topic: 'photoshop',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'How to use Photoshop?',
+                answer: 'Photoshop is a powerful tool...',
+                sources: [], // Empty sources
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    // Should set shouldOptimize to false because URL is not in empty sources
+    expect(newData[0].shouldOptimize).to.equal(false);
+  });
+
+  it('should handle missing item property in suggestion', async () => {
+    // This tests the edge case where getJsonFaqSuggestion returns malformed data
+    const getJsonFaqSuggestionStub = sinon.stub().returns([
+      {
+        url: 'https://www.adobe.com/products/photoshop',
+        topic: 'photoshop',
+        // item property is missing
+      },
+    ]);
+
+    const mockedHandlerWithStub = await esmock('../../../src/faqs/guidance-handler.js', {
+      '../../../src/utils/data-access.js': {
+        syncSuggestions: syncSuggestionsStub,
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: convertToOpportunityStub,
+      },
+      '../../../src/utils/s3-utils.js': {
+        getObjectKeysUsingPrefix: getObjectKeysUsingPrefixStub,
+        getObjectFromKey: getObjectFromKeyStub,
+      },
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: fetchStub,
+      },
+      '../../../src/faqs/utils.js': {
+        getJsonFaqSuggestion: getJsonFaqSuggestionStub,
+      },
+    });
+
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        suggestions: [
+          {
+            url: 'https://www.adobe.com/products/photoshop',
+            topic: 'photoshop',
+            faqs: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'Test?',
+                answer: 'Test answer',
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await mockedHandlerWithStub.default(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    // Should set shouldOptimize to false because sources are undefined
+    expect(newData[0].shouldOptimize).to.equal(false);
   });
 });

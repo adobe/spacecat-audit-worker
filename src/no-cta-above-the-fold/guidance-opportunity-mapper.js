@@ -13,7 +13,7 @@
 import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 
-const ESTIMATED_CPC = 0.8;
+export const ESTIMATED_CPC = 0.8;
 
 function sanitizeMarkdown(markdown) {
   if (typeof markdown !== 'string') {
@@ -33,8 +33,9 @@ export function mapToOpportunity(siteId, url, audit, pageGuidance) {
   const pageViews = Number(pageData.pageviews ?? 0);
   const bounceRate = Number(pageData.bounce_rate ?? 0);
   const projectedTrafficLost = Number(pageData.projected_traffic_lost ?? 0);
-
-  const projectedTrafficValue = projectedTrafficLost * ESTIMATED_CPC;
+  const projectedTrafficValue = Number(
+    pageData.projected_traffic_value ?? projectedTrafficLost * ESTIMATED_CPC,
+  );
 
   return {
     siteId,

@@ -14,7 +14,7 @@
 
 import { expect } from 'chai';
 import { describe } from 'mocha';
-import { getPaidTrafficAnalysisTemplate } from '../../../src/paid-cookie-consent/queries.js';
+import { getPaidTrafficAnalysisTemplate, getTop3PagesWithTrafficLostTemplate } from '../../../src/paid-cookie-consent/queries.js';
 
 describe('Paid Cookie Consent Queries', () => {
   const defaultParams = {
@@ -62,6 +62,92 @@ describe('Paid Cookie Consent Queries', () => {
 
       expect(query.trim()).to.equal(query);
       expect(query).to.match(/ORDER BY.*DESC$/);
+    });
+  });
+
+  describe('getTop3PagesWithTrafficLostTemplate', () => {
+    const top3Params = {
+      siteId: 'test-site',
+      tableName: 'rum_metrics.compact_metrics',
+      temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      dimensionColumns: 'path, device',
+      groupBy: 'path, device',
+      dimensionColumnsPrefixed: 'a.path, a.device',
+      pageViewThreshold: 0,
+      limit: 3,
+    };
+
+    it('should generate valid SQL with required components', () => {
+      const query = getTop3PagesWithTrafficLostTemplate(top3Params);
+
+      expect(query).to.be.a('string');
+      expect(query.length).to.be.greaterThan(100);
+      expect(query).to.include('WITH min_totals AS');
+      expect(query).to.include('raw AS');
+      expect(query).to.include('agg AS');
+      expect(query).to.include('grand_total AS');
+    });
+
+    it('should use provided parameters', () => {
+      const params = { ...top3Params, siteId: 'custom-site-id', pageViewThreshold: 500 };
+      const query = getTop3PagesWithTrafficLostTemplate(params);
+
+      expect(query).to.include('custom-site-id');
+      expect(query).to.include('500');
+    });
+
+    it('should filter by consent=show', () => {
+      const query = getTop3PagesWithTrafficLostTemplate(top3Params);
+      expect(query).to.include("consent='show'");
+    });
+
+    it('should order by traffic_loss DESC', () => {
+      const query = getTop3PagesWithTrafficLostTemplate(top3Params);
+      expect(query).to.include('ORDER BY traffic_loss DESC');
+    });
+
+    it('should include LIMIT when provided', () => {
+      const query = getTop3PagesWithTrafficLostTemplate(top3Params);
+      expect(query).to.include('LIMIT 3');
+    });
+
+    it('should not include LIMIT when null', () => {
+      const params = { ...top3Params, limit: null };
+      const query = getTop3PagesWithTrafficLostTemplate(params);
+      expect(query).to.not.include('LIMIT');
+    });
+
+    it('should calculate traffic_loss as pageviews * bounce_rate', () => {
+      const query = getTop3PagesWithTrafficLostTemplate(top3Params);
+      expect(query).to.include('CAST(a.pageviews AS DOUBLE) * (1 - CAST(a.engagements AS DOUBLE) / NULLIF(a.row_count, 0)) AS traffic_loss');
+    });
+
+    it('should handle different dimension combinations', () => {
+      const params = {
+        ...top3Params,
+        dimensionColumns: 'path',
+        groupBy: 'path',
+        dimensionColumnsPrefixed: 'a.path',
+      };
+
+      const query = getTop3PagesWithTrafficLostTemplate(params);
+      expect(query).to.include('SELECT\n        path,');
+      expect(query).to.include('GROUP BY path');
+    });
+
+    it('should use temporal condition correctly', () => {
+      const params = {
+        ...top3Params,
+        temporalCondition: '(year=2024 AND week=52)',
+      };
+
+      const query = getTop3PagesWithTrafficLostTemplate(params);
+      expect(query).to.include('(year=2024 AND week=52)');
+    });
+
+    it('should be properly formatted with trimmed output', () => {
+      const query = getTop3PagesWithTrafficLostTemplate(top3Params);
+      expect(query.trim()).to.equal(query);
     });
   });
 });

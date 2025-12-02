@@ -298,7 +298,7 @@ const productTestData = {
         'Publish the changes to apply the updates to your live product pages.',
       ],
     },
-    tags: ['Commerce', 'Product SEO', 'Traffic acquisition', 'isAco'],
+    tags: ['Commerce', 'Product SEO', 'Traffic acquisition'],
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
       projectedTrafficLost: 150,

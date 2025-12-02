@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { ESTIMATED_CPC } from './guidance-opportunity-mapper.js';
+
 /**
  * @param {Object} params - Template parameters
  * @param {string} params.siteId - Site ID
@@ -98,7 +100,8 @@ SELECT
     bounces,
     channel_bounces,
     bounce_share_pct,
-    CAST(pageviews AS DOUBLE) * bounce_rate AS projected_traffic_lost
+    CAST(pageviews AS DOUBLE) * bounce_rate AS projected_traffic_lost,
+    CAST(pageviews AS DOUBLE) * bounce_rate * ${ESTIMATED_CPC} AS projected_traffic_value
 FROM deduped
 WHERE path_rank = 1
 ORDER BY bounce_share_pct DESC

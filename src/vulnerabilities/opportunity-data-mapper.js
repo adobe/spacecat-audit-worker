@@ -31,7 +31,7 @@ export function createOpportunityProps(vulnReport) {
 
   return {
     mainMetric: {
-      name: 'Vulnerabilities',
+      name: 'Libraries',
       value: total,
     },
     metrics: {
