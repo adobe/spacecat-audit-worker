@@ -139,19 +139,19 @@ describe('Paid Cookie Consent Audit', () => {
         projectedTrafficValue: 6400,
         top3Pages: [
           {
-            url: 'https://example.com/page2',
+            url: '/page2',
             pageViews: 5000,
             bounceRate: 0.9, // Above 0.3 threshold - highest traffic loss
             trafficLoss: 4500,
           },
           {
-            url: 'https://example.com/page3',
+            url: '/page3',
             pageViews: 3000,
             bounceRate: 0.8, // Above 0.3 threshold
             trafficLoss: 2400,
           },
           {
-            url: 'https://example.com/page1',
+            url: '/page1',
             pageViews: 2000,
             bounceRate: 0.2, // Below 0.3 threshold - would be skipped if first
             trafficLoss: 400,
@@ -217,7 +217,7 @@ describe('Paid Cookie Consent Audit', () => {
         projectedTrafficValue: 800,
         top3Pages: [
           {
-            url: 'https://example.com/page1',
+            url: '/page1',
             pageViews: 5000,
             bounceRate: 0.2, // Below 0.3 threshold
             trafficLoss: 1000,
@@ -247,19 +247,19 @@ describe('Paid Cookie Consent Audit', () => {
         projectedTrafficValue: 6400,
         top3Pages: [
           {
-            url: 'https://example.com/winner',
+            url: '/winner',
             pageViews: 5000,
             bounceRate: 1.0, // Highest traffic loss - should be first
             trafficLoss: 5000,
           },
           {
-            url: 'https://example.com/p90',
+            url: '/p90',
             pageViews: 3000,
             bounceRate: 0.9,
             trafficLoss: 2700,
           },
           {
-            url: 'https://example.com/p80',
+            url: '/p80',
             pageViews: 2000,
             bounceRate: 0.8,
             trafficLoss: 1600,
@@ -290,7 +290,7 @@ describe('Paid Cookie Consent Audit', () => {
         projectedTrafficValue: 720,
         top3Pages: [
           {
-            url: 'https://example.com/high',
+            url: '/high',
             pageViews: 1000,
             bounceRate: 0.9, // Above 0.3 threshold
             trafficLoss: 900,
@@ -321,13 +321,13 @@ describe('Paid Cookie Consent Audit', () => {
         projectedTrafficValue: 3200,
         top3Pages: [
           {
-            url: 'https://example.com/winner',
+            url: '/winner',
             pageViews: 3000,
             bounceRate: 0.8, // Above 0.3 - should send
             trafficLoss: 2400,
           },
           {
-            url: 'https://example.com/low-bounce',
+            url: '/low-bounce',
             pageViews: 2000,
             bounceRate: 0.2, // Below 0.3 but not first
             trafficLoss: 400,
