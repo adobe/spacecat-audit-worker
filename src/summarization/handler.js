@@ -15,6 +15,9 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+const SCRAPE_AVAILABILITY_THRESHOLD = 0.5; // 50%
+const MAX_TOP_PAGES = 200;
+const MAX_TOP_PAGES_TO_SEND = 100;
 
 /**
  * Step 1: Import top pages from Ahrefs
@@ -46,7 +49,7 @@ export async function importTopPages(context) {
       siteId: site.getId(),
       auditResult: {
         success: true,
-        topPages: topPages.map((page) => page.getUrl()),
+        topPages: topPages.slice(0, MAX_TOP_PAGES).map((page) => page.getUrl()),
       },
       fullAuditRef: site.getBaseURL(),
     };
@@ -86,11 +89,12 @@ export async function submitForScraping(context) {
     log.warn('[SUMMARIZATION] No top pages to submit for scraping');
     throw new Error('No top pages to submit for scraping');
   }
+  const topPagesToScrape = topPages.slice(0, MAX_TOP_PAGES_TO_SEND);
 
-  log.info(`[SUMMARIZATION] Submitting ${topPages.length} pages for scraping`);
+  log.info(`[SUMMARIZATION] Submitting ${topPagesToScrape.length} pages for scraping`);
 
   return {
-    urls: topPages.slice(0, 100).map((topPage) => ({ url: topPage.getUrl() })),
+    urls: topPagesToScrape.map((topPage) => ({ url: topPage.getUrl() })),
     siteId: site.getId(),
     type: 'summarization',
   };
@@ -101,7 +105,7 @@ export async function submitForScraping(context) {
  */
 export async function sendToMystique(context) {
   const {
-    site, audit, dataAccess, log, sqs, env,
+    site, audit, dataAccess, log, sqs, env, scrapeResultPaths,
   } = context;
   const { SiteTopPage } = dataAccess;
 
@@ -122,9 +126,34 @@ export async function sendToMystique(context) {
     log.warn('[SUMMARIZATION] No top pages found, skipping Mystique message');
     throw new Error('No top pages found');
   }
+  const topPagesScraped = topPages.slice(0, MAX_TOP_PAGES);
 
-  const topPagesPayload = topPages.slice(0, 100).map((page) => ({
-    page_url: page.getUrl(),
+  // Verify scrape availability before sending to Mystique
+  if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
+    log.warn('[SUMMARIZATION] No scrape results available');
+    throw new Error('No scrape results available');
+  }
+
+  const availableCount = scrapeResultPaths.size;
+  const totalCount = topPagesScraped.length;
+  const availabilityPercentage = availableCount / totalCount;
+
+  log.info(
+    `[SUMMARIZATION] Scrape availability: ${availableCount}/${totalCount} `
+    + `(${(availabilityPercentage * 100).toFixed(1)}%)`,
+  );
+
+  if (availabilityPercentage < SCRAPE_AVAILABILITY_THRESHOLD) {
+    throw new Error(
+      `Insufficient scrape data: only ${availableCount}/${totalCount} URLs have scrape data available`,
+    );
+  }
+
+  // Use URLs from scrapeResultPaths Map (these are the URLs that actually have scrape data)
+  const scrapedUrls = Array.from(scrapeResultPaths.keys());
+  const scrapedUrlsToSend = scrapedUrls.slice(0, MAX_TOP_PAGES_TO_SEND);
+  const topPagesPayload = scrapedUrlsToSend.map((url) => ({
+    page_url: url,
     keyword: '',
     questions: [],
   }));
