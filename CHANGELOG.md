@@ -1,3 +1,10 @@
+## [1.263.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.263.1...v1.263.2) (2025-12-02)
+
+
+### Bug Fixes
+
+* consent-banner - send full url ([#1732](https://github.com/adobe/spacecat-audit-worker/issues/1732)) ([5a1baff](https://github.com/adobe/spacecat-audit-worker/commit/5a1baffca6ffa7d1cf805c8dc19e32d9f3318a49))
+
 ## [1.263.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.263.0...v1.263.1) (2025-12-02)
 
 
