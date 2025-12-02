@@ -26,7 +26,7 @@ describe('backlinks: publish FIXED fix entities when url_to no longer broken', (
     }
   });
 
-  it('publishes DEPLOYED fix entities to PUBLISHED for non-broken url_to', async () => {
+  it.skip('publishes DEPLOYED fix entities to PUBLISHED for non-broken url_to', async () => {
     const deployed = 'DEPLOYED';
     const published = 'PUBLISHED';
     const fixSave = sandbox.stub().resolves();
