@@ -22,6 +22,7 @@ import {
   sendMessageToMystiqueForGuidance,
   getFormTitle,
   applyOpportunityFilters,
+  shouldIgnoreFormByDetails,
 } from '../../../src/forms-opportunities/utils.js';
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
 
@@ -1021,6 +1022,60 @@ describe('sendCodeFixMessagesToImporter', () => {
       );
       expect(context.sqs.sendMessage).to.have.been.calledTwice;
     });
+  });
+});
+
+describe('shouldIgnoreFormByDetails', () => {
+  it('should return true for search form with is_lead_gen false', () => {
+    const formDetails = { form_type: 'search', is_lead_gen: false };
+    expect(shouldIgnoreFormByDetails(formDetails)).to.be.true;
+  });
+
+  it('should return true for search form with is_lead_gen false (case insensitive)', () => {
+    const formDetails = { form_type: 'Search', is_lead_gen: false };
+    expect(shouldIgnoreFormByDetails(formDetails)).to.be.true;
+  });
+
+  it('should return true for SEARCH form with is_lead_gen false (uppercase)', () => {
+    const formDetails = { form_type: 'SEARCH', is_lead_gen: false };
+    expect(shouldIgnoreFormByDetails(formDetails)).to.be.true;
+  });
+
+  it('should return false for search form with is_lead_gen true', () => {
+    const formDetails = { form_type: 'search', is_lead_gen: true };
+    expect(shouldIgnoreFormByDetails(formDetails)).to.be.false;
+  });
+
+  it('should return false for search form with is_lead_gen null', () => {
+    const formDetails = { form_type: 'search', is_lead_gen: null };
+    expect(shouldIgnoreFormByDetails(formDetails)).to.be.false;
+  });
+
+  it('should return false for search form with is_lead_gen undefined', () => {
+    const formDetails = { form_type: 'search', is_lead_gen: undefined };
+    expect(shouldIgnoreFormByDetails(formDetails)).to.be.false;
+  });
+
+  it('should return false for contact form with is_lead_gen false', () => {
+    const formDetails = { form_type: 'contact', is_lead_gen: false };
+    expect(shouldIgnoreFormByDetails(formDetails)).to.be.false;
+  });
+
+  it('should return false for null formDetails', () => {
+    expect(shouldIgnoreFormByDetails(null)).to.be.false;
+  });
+
+  it('should return false for undefined formDetails', () => {
+    expect(shouldIgnoreFormByDetails(undefined)).to.be.false;
+  });
+
+  it('should return false for non-object formDetails', () => {
+    expect(shouldIgnoreFormByDetails('string')).to.be.false;
+  });
+
+  it('should return false when form_type is undefined', () => {
+    const formDetails = { is_lead_gen: false };
+    expect(shouldIgnoreFormByDetails(formDetails)).to.be.false;
   });
 });
 
