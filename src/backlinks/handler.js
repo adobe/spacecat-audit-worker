@@ -124,6 +124,14 @@ export async function submitForScraping(context) {
 
   log.info(`Found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope`);
 
+  if (filteredTopPages.length === 0) {
+    if (topPages.length === 0) {
+      throw new Error(`No top pages found in database for site ${site.getId()}. Ahrefs import required.`);
+    } else {
+      throw new Error(`All ${topPages.length} top pages filtered out by audit scope. BaseURL: ${baseURL} requires subpath match but no pages match scope.`);
+    }
+  }
+
   return {
     urls: filteredTopPages.map((topPage) => ({ url: topPage.getUrl() })),
     siteId: site.getId(),
