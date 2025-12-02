@@ -122,7 +122,6 @@ export async function paidAuditRunner(auditUrl, context, site) {
   const { log, env } = context;
   const config = getConfig(env);
   const siteId = site.getId();
-  // const baseURL = await site.getBaseURL();
 
   log.debug(
     `[paid-audit] [Site: ${auditUrl}] Querying paid Athena metrics with consent and referrer data (siteId: ${siteId})`,
@@ -208,7 +207,8 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
     return;
   }
 
-  const mystiqueMessage = buildMystiqueMessage(site, id, selectedPage);
+  const baseURL = await site.getBaseURL();
+  const mystiqueMessage = buildMystiqueMessage(site, id, `${baseURL}${selectedPage}`);
 
   const projected = selected?.trafficLoss;
   log.debug(
