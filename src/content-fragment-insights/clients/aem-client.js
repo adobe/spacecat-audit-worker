@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
 /**
@@ -21,17 +22,19 @@ export class AemClient {
 
   static API_SITES_FRAGMENTS = `${AemClient.API_SITES_BASE}/cf/fragments`;
 
-  constructor(baseUrl, authToken, log = console) {
+  constructor(baseUrl, imsClient, log = console) {
     if (!baseUrl) {
       throw new Error('baseUrl is required for AEM client');
     }
 
-    if (!authToken) {
-      throw new Error('authToken is required for AEM client');
+    if (!imsClient) {
+      throw new Error('imsClient is required for AEM client');
     }
 
     this.baseUrl = baseUrl;
-    this.authToken = authToken;
+    this.imsClient = imsClient;
+    this.accessToken = null;
+    this.tokenObtainedAt = null;
     this.log = log;
   }
 
@@ -41,9 +44,9 @@ export class AemClient {
    * @param {Object} context.site - The site object
    * @param {Object} context.env - Environment variables
    * @param {Object} context.log - Logger instance
-   * @returns {AemClient}
+   * @returns {Promise<AemClient>}
    */
-  static createFrom(context) {
+  static async createFrom(context) {
     const { site, env, log } = context;
 
     const authorUrl = site.getDeliveryConfig().authorURL;
@@ -51,12 +54,57 @@ export class AemClient {
       throw new Error('AEM Author configuration missing: AEM Author URL required');
     }
 
-    const authToken = env.AEM_AUTHOR_TOKEN;
-    if (!authToken) {
-      throw new Error('AEM Author configuration missing: AEM_AUTHOR_TOKEN required');
+    const imsClient = ImsClient.createFrom({
+      log,
+      env: {
+        IMS_HOST: env.IMS_HOST,
+        IMS_CLIENT_ID: env.IMS_CLIENT_ID,
+        IMS_CLIENT_CODE: env.IMS_CLIENT_CODE,
+        IMS_CLIENT_SECRET: env.IMS_CLIENT_SECRET,
+        IMS_SCOPE: env.IMS_SCOPE,
+      },
+    });
+
+    return new AemClient(authorUrl, imsClient, log);
+  }
+
+  /**
+   * Gets a valid service access token, fetching a new one if expired or missing.
+   * @returns {Promise<string>} The access token string
+   */
+  async getAccessToken() {
+    if (this.isTokenExpired()) {
+      this.accessToken = await this.imsClient.getServiceAccessToken();
+      this.tokenObtainedAt = Date.now();
+    }
+    return this.accessToken.access_token;
+  }
+
+  /**
+   * Checks if the current access token is expired.
+   * @returns {boolean} True if the access token is expired, false otherwise.
+   */
+  isTokenExpired() {
+    if (!this.accessToken || !this.tokenObtainedAt) {
+      this.invalidateAccessToken();
+      return true;
     }
 
-    return new AemClient(authorUrl, authToken, log);
+    const expiresAt = this.tokenObtainedAt + (this.accessToken.expires_in * 1000);
+    const isExpired = Date.now() >= expiresAt;
+    if (isExpired) {
+      this.invalidateAccessToken();
+    }
+
+    return isExpired;
+  }
+
+  /**
+   * Invalidates the current access token, forcing a refresh on next request.
+   */
+  invalidateAccessToken() {
+    this.accessToken = null;
+    this.tokenObtainedAt = null;
   }
 
   /**
@@ -69,9 +117,10 @@ export class AemClient {
    */
   async request(method, path, options = {}) {
     const url = `${this.baseUrl}${path}`;
+    const token = await this.getAccessToken();
 
     const headers = {
-      Authorization: `Bearer ${this.authToken}`,
+      Authorization: `Bearer ${token}`,
       Accept: 'application/json',
       ...options.headers,
     };

@@ -78,7 +78,7 @@ export async function contentFragmentUnusedAuditRunner(baseURL, context, site) {
     throw new Error('[Content Fragment Unused] Missing AWS environment in environment variables');
   }
 
-  const analyzer = new AemAnalyzer(auditContext);
+  const analyzer = await AemAnalyzer.createFrom(auditContext);
   const unusedFragmentsReport = await analyzer.findUnusedFragments();
 
   const statusSummary = createStatusSummary(

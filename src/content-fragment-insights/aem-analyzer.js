@@ -20,16 +20,18 @@ export class AemAnalyzer {
 
   static ERROR_CODE_TIMEOUT = 'ETIMEOUT';
 
-  constructor(context) {
-    const { log } = context;
-
+  constructor(aemClient, log) {
     this.log = log;
-
-    this.aemClient = AemClient.createFrom(context);
+    this.aemClient = aemClient;
     this.fragmentAnalyzer = new FragmentAnalyzer(log);
-
     this.rootPath = AemAnalyzer.DEFAULT_FRAGMENT_ROOT_PATH;
     this.fragments = [];
+  }
+
+  static async createFrom(context) {
+    const { log } = context;
+    const aemClient = await AemClient.createFrom(context);
+    return new AemAnalyzer(aemClient, log);
   }
 
   static parseFragment(fragment) {
@@ -114,15 +116,21 @@ export class AemAnalyzer {
         break;
       } catch (error) {
         const isTimeout = error?.code === AemAnalyzer.ERROR_CODE_TIMEOUT;
+        const isTokenExpired = this.aemClient.isTokenExpired();
 
-        if (!isTimeout) {
+        if (!isTimeout && !isTokenExpired) {
           throw error;
         }
 
-        this.log.warn(
-          `[Content Fragment Insights] Timeout while fetching fragment page. Retrying... attempt ${attempt + 1}/${AemAnalyzer.MAX_FETCH_ATTEMPTS}`,
-          error,
-        );
+        if (isTimeout) {
+          this.log.warn(
+            `[Content Fragment Insights] Timeout while fetching fragment page. Retrying... attempt ${attempt + 1}/${AemAnalyzer.MAX_FETCH_ATTEMPTS}`,
+          );
+        } else if (isTokenExpired) {
+          this.log.warn(
+            `[Content Fragment Insights] Token expired. Refreshing and retrying... attempt ${attempt + 1}/${AemAnalyzer.MAX_FETCH_ATTEMPTS}`,
+          );
+        }
       }
     }
 
