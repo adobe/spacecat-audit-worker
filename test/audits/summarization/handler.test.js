@@ -183,17 +183,17 @@ describe('Summarization Handler', () => {
       expect(log.info).to.have.been.calledWith('[SUMMARIZATION] Submitting 3 pages for scraping');
     });
 
-    it('should limit to 100 pages when submitting for scraping', async () => {
+    it('should limit to 200 pages when submitting for scraping', async () => {
       audit.getAuditResult.returns({ success: true });
-      const manyPages = Array.from({ length: 150 }, (_, i) => ({
+      const manyPages = Array.from({ length: 250 }, (_, i) => ({
         getUrl: () => `https://adobe.com/page${i}`,
       }));
       dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyPages);
 
       const result = await submitForScraping(context);
 
-      expect(result.urls).to.have.lengthOf(100);
-      expect(log.info).to.have.been.calledWith('[SUMMARIZATION] Submitting 100 pages for scraping');
+      expect(result.urls).to.have.lengthOf(200);
+      expect(log.info).to.have.been.calledWith('[SUMMARIZATION] Submitting 200 pages for scraping');
     });
 
     it('should throw error when audit failed', async () => {

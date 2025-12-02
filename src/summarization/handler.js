@@ -17,7 +17,7 @@ import { wwwUrlResolver } from '../common/index.js';
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const SCRAPE_AVAILABILITY_THRESHOLD = 0.5; // 50%
 const MAX_TOP_PAGES = 200;
-const MAX_TOP_PAGES_TO_SEND = 100;
+const MAX_PAGES_TO_MYSTIQUE = 100;
 
 /**
  * Step 1: Import top pages from Ahrefs
@@ -89,7 +89,7 @@ export async function submitForScraping(context) {
     log.warn('[SUMMARIZATION] No top pages to submit for scraping');
     throw new Error('No top pages to submit for scraping');
   }
-  const topPagesToScrape = topPages.slice(0, MAX_TOP_PAGES_TO_SEND);
+  const topPagesToScrape = topPages.slice(0, MAX_TOP_PAGES);
 
   log.info(`[SUMMARIZATION] Submitting ${topPagesToScrape.length} pages for scraping`);
 
@@ -151,7 +151,7 @@ export async function sendToMystique(context) {
 
   // Use URLs from scrapeResultPaths Map (these are the URLs that actually have scrape data)
   const scrapedUrls = Array.from(scrapeResultPaths.keys());
-  const scrapedUrlsToSend = scrapedUrls.slice(0, MAX_TOP_PAGES_TO_SEND);
+  const scrapedUrlsToSend = scrapedUrls.slice(0, MAX_PAGES_TO_MYSTIQUE);
   const topPagesPayload = scrapedUrlsToSend.map((url) => ({
     page_url: url,
     keyword: '',
