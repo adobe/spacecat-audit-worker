@@ -145,7 +145,7 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
     siteId,
     id: randomUUID(),
     auditId: audit.getAuditId(),
-    type: 'generic-opportunity',
+    type: 'consent-banner',
     origin: 'AUTOMATION',
     title: 'Consent Banner covers essential page content',
     description: `The consent banner hides essential page content, resulting in a critical mobile bounce rate. Pages like the following recorded in average ${formatNumberWithK(stats.averagePageViewsTop3)} visits but lost ${formatNumberWithK(stats.averageTrafficLostTop3)} potential customers immediately.`,
