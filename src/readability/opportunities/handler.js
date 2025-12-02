@@ -225,14 +225,14 @@ export async function processReadabilityOpportunities(context) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .addStep(
-    'processImport',
+    'import-top-pages',
     processImportStep,
     AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
   )
   .addStep(
-    'scrapeReadabilityData',
+    'submit-for-scraping',
     scrapeReadabilityData,
-    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+    AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT,
   )
-  .addStep('processReadabilityOpportunities', processReadabilityOpportunities)
+  .addStep('build-suggestions', processReadabilityOpportunities)
   .build();
