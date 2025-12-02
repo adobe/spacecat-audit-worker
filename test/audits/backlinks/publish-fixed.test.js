@@ -21,7 +21,7 @@ describe('backlinks: publish FIXED fix entities when url_to no longer broken', (
 
   after(async () => {
     if (handler) {
-      await esmock.purge(handler);
+      esmock.purge(handler);
       handler = undefined;
     }
   });
@@ -59,10 +59,10 @@ describe('backlinks: publish FIXED fix entities when url_to no longer broken', (
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
-        finalUrl: 'https://example.com',
+        finalUrl: 'https://internallinks-example.com',
         site: {
           getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
+          getBaseURL: () => 'https://internallinks-example.com',
           getDeliveryType: () => 'aem_edge',
         },
         dataAccess: {
@@ -75,20 +75,20 @@ describe('backlinks: publish FIXED fix entities when url_to no longer broken', (
             // First: return FIXED suggestions for publish branch
             allByOpportunityIdAndStatus: sandbox.stub()
               .onFirstCall().resolves([
-                { getId: () => 'sug-1', getData: () => ({ url_to: 'https://example.com/ok' }) },
+                { getId: () => 'sug-1', getData: () => ({ url_to: 'https://internallinks-example.com/ok' }) },
               ])
               // Then: return NEW suggestions for message build; keep minimal valid entry
               .onSecondCall().resolves([
                 {
                   getId: () => 'new-1',
-                  getData: () => ({ url_from: 'https://example.com/from', url_to: 'https://example.com/ok' }),
+                  getData: () => ({ url_from: 'https://internallinks-example.com/from', url_to: 'https://internallinks-example.com/ok' }),
                 },
               ]),
           },
           SiteTopPage: {
             allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
               // Include URL with '/ok' prefix so alternativeUrls filtering keeps it
-              { getUrl: () => 'https://example.com/ok/page1' },
+              { getUrl: () => 'https://internallinks-example.com/ok/page1' },
             ]),
           },
           FixEntity: {
