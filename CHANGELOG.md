@@ -1,3 +1,31 @@
+# [1.264.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.263.2...v1.264.0) (2025-12-02)
+
+
+### Features
+
+* verify scraped pages before Mystique summarization ([#1733](https://github.com/adobe/spacecat-audit-worker/issues/1733)) ([fa52fed](https://github.com/adobe/spacecat-audit-worker/commit/fa52fedbef40a81f120787ba09890118912ed104))
+
+## [1.263.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.263.1...v1.263.2) (2025-12-02)
+
+
+### Bug Fixes
+
+* consent-banner - send full url ([#1732](https://github.com/adobe/spacecat-audit-worker/issues/1732)) ([5a1baff](https://github.com/adobe/spacecat-audit-worker/commit/5a1baffca6ffa7d1cf805c8dc19e32d9f3318a49))
+
+## [1.263.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.263.0...v1.263.1) (2025-12-02)
+
+
+### Bug Fixes
+
+* prerender audit adding agentic urls ([#1598](https://github.com/adobe/spacecat-audit-worker/issues/1598)) ([a03d01d](https://github.com/adobe/spacecat-audit-worker/commit/a03d01dcd3f2d8168d76d81b4a81d3d71f47edd7))
+
+# [1.263.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.4...v1.263.0) (2025-12-02)
+
+
+### Features
+
+*  add suggested image ([#1721](https://github.com/adobe/spacecat-audit-worker/issues/1721)) ([55f2aae](https://github.com/adobe/spacecat-audit-worker/commit/55f2aae1040a8a97d87eb489b991b05010e064ff))
+
 ## [1.262.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.262.3...v1.262.4) (2025-12-02)
 
 
