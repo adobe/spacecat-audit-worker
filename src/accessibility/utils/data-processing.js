@@ -315,6 +315,120 @@ export function getAuditPrefixes(auditType) {
 }
 
 /**
+ * Gets S3 object last modified timestamp
+ * @param {import('@aws-sdk/client-s3').S3Client} s3Client - an S3 client
+ * @param {string} bucketName - the name of the S3 bucket
+ * @param {string} key - the key of the S3 object
+ * @returns {Promise<Date|null>} last modified date or null if not found
+ */
+async function getObjectLastModifiedTimestamp(s3Client, bucketName, key, log) {
+  try {
+    const response = await s3Client.send(new HeadObjectCommand({ Bucket: bucketName, Key: key }));
+    log.info(`[A11yMerge] Object last modified timestamp: ${response.LastModified}`);
+    log.info(`[A11yMerge] Object key: ${key}`);
+    return response.LastModified;
+  } catch (error) {
+    return null; // File doesn't exist
+  }
+}
+
+/**
+ * Merges two accessibility data objects, preserving data from both
+ * @param {object} existingData - the existing aggregated data
+ * @param {object} newData - the new aggregated data to merge
+ * @param {import('@azure/logger').Logger} log - a logger instance
+ * @param {string} logIdentifier - identifier for log messages
+ * @returns {object} merged data
+ */
+export function mergeAccessibilityData(existingData, newData, log, logIdentifier = 'A11yMerge') {
+  const merged = JSON.parse(JSON.stringify(existingData));
+  log.info(`[${logIdentifier}] Merging accessibility data: existingData: ${JSON.stringify(existingData, null, 2)}`);
+  log.info(`[${logIdentifier}] Merging accessibility data: newData: ${JSON.stringify(newData, null, 2)}`);
+  Object.entries(newData).forEach(([key, value]) => {
+    if (key === 'overall') {
+      return; // Skip overall, we'll recalculate it
+    }
+
+    if (!merged[key]) {
+      // New URL not in existing data, add it
+      merged[key] = value;
+      log.debug(`[${logIdentifier}] Added new URL data for: ${key}`);
+    }
+  });
+
+  // Recalculate overall statistics from all merged data
+  const recalculatedOverall = {
+    violations: {
+      total: 0,
+      critical: { count: 0, items: {} },
+      serious: { count: 0, items: {} },
+    },
+  };
+
+  // Process each URL's violations
+  Object.entries(merged).forEach(([key, urlData]) => {
+    if (key === 'overall' || !urlData || !urlData.violations) return;
+
+    // Add to total violations count
+    const totalViolations = Number(urlData.violations.total) || 0;
+    recalculatedOverall.violations.total += totalViolations;
+
+    // Process critical and serious violations
+    ['critical', 'serious'].forEach((severity) => {
+      const severityData = urlData.violations[severity];
+      if (!severityData?.items) return;
+
+      // Merge each rule's data
+      Object.entries(severityData.items).forEach(([ruleId, ruleData]) => {
+        if (!ruleId || !ruleData || typeof ruleData !== 'object') return;
+
+        const overallItems = recalculatedOverall.violations[severity].items;
+
+        if (!overallItems[ruleId]) {
+          // If first time seeing this rule, copy it with all required fields
+          overallItems[ruleId] = {
+            count: ruleData.count || 0,
+            description: ruleData.description || '',
+            level: ruleData.level || severity,
+            understandingUrl: ruleData.understandingUrl || '',
+            successCriteriaNumber: ruleData.successCriteriaNumber || '',
+            ...ruleData, // Include any additional fields
+          };
+          if (ruleData.htmlData) {
+            overallItems[ruleId].htmlData = [...ruleData.htmlData];
+          }
+        } else {
+          // If rule already exists, merge the data
+          overallItems[ruleId].count = (overallItems[ruleId].count || 0) + (ruleData.count || 0);
+
+          if (ruleData.htmlData?.length) {
+            if (!overallItems[ruleId].htmlData) overallItems[ruleId].htmlData = [];
+            overallItems[ruleId].htmlData.push(...ruleData.htmlData);
+          }
+        }
+      });
+    });
+  });
+
+  // Calculate final severity counts (after all URLs processed)
+  ['critical', 'serious'].forEach((severity) => {
+    recalculatedOverall.violations[severity].count = Object.values(
+      recalculatedOverall.violations[severity].items,
+    ).reduce((sum, rule) => sum + (rule.count || 0), 0);
+  });
+
+  merged.overall = recalculatedOverall;
+
+  const existingUrlCount = Object.keys(existingData).length - 1; // -1 for 'overall'
+  const newUrlCount = Object.keys(newData).length - 1;
+  const mergedUrlCount = Object.keys(merged).length - 1;
+
+  log.info(`[${logIdentifier}] Merged accessibility data: existing=${existingUrlCount} URLs, new=${newUrlCount} URLs, final=${mergedUrlCount} URLs`);
+
+  return merged;
+}
+
+/**
  * Aggregates accessibility audit data from multiple JSON files in S3 and creates a summary
  * @param {import('@aws-sdk/client-s3').S3Client} s3Client - an S3 client
  * @param {string} bucketName - the name of the S3 bucket
@@ -415,11 +529,23 @@ export async function aggregateAccessibilityData(
       }
     });
 
-    // Save aggregated data to S3
+    // Check if file already exists and merge if it's recent (within 10 minutes)
+    let finalData = aggregatedData;
+    const lastModified = await getObjectLastModifiedTimestamp(s3Client, bucketName, outputKey);
+
+    if (lastModified && (new Date() - lastModified) <= 10 * 60 * 1000) {
+      const existingData = await getObjectFromKey(s3Client, bucketName, outputKey, log);
+      if (existingData) {
+        log.info(`[${logIdentifier}] Merging with existing file (age: ${Math.round((new Date() - lastModified) / 1000)}s)`);
+        finalData = mergeAccessibilityData(existingData, aggregatedData, log, logIdentifier);
+      }
+    }
+
+    // Save final data to S3
     await s3Client.send(new PutObjectCommand({
       Bucket: bucketName,
       Key: outputKey,
-      Body: JSON.stringify(aggregatedData, null, 2),
+      Body: JSON.stringify(finalData, null, 2),
       ContentType: 'application/json',
     }));
 
@@ -448,7 +574,7 @@ export async function aggregateAccessibilityData(
     return {
       success: true,
       finalResultFiles: {
-        current: aggregatedData,
+        current: finalData,
         lastWeek: lastWeekFile,
       },
       message: `Successfully aggregated ${objectKeys.length} files into ${outputKey}`,
