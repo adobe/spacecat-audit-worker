@@ -1,3 +1,38 @@
+## [1.264.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.4...v1.264.5) (2025-12-03)
+
+
+### Bug Fixes
+
+* reverting page views checks for forms opportunity ([#1741](https://github.com/adobe/spacecat-audit-worker/issues/1741)) ([67e507c](https://github.com/adobe/spacecat-audit-worker/commit/67e507c719aaa440fe926a086279adc415fa166a))
+
+## [1.264.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.3...v1.264.4) (2025-12-03)
+
+
+### Bug Fixes
+
+* filter forms which are not lead gen and is not critical ([#1734](https://github.com/adobe/spacecat-audit-worker/issues/1734)) ([6d42674](https://github.com/adobe/spacecat-audit-worker/commit/6d42674324e0ca98768a188459d74c830380dc62))
+
+## [1.264.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.2...v1.264.3) (2025-12-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-athena-client to v1.8.0 ([#1738](https://github.com/adobe/spacecat-audit-worker/issues/1738)) ([5504442](https://github.com/adobe/spacecat-audit-worker/commit/5504442fdca233a61a062c27e905d93713d12b00))
+
+## [1.264.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.1...v1.264.2) (2025-12-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-helix-content-sdk to v1.4.32 ([#1736](https://github.com/adobe/spacecat-audit-worker/issues/1736)) ([0884128](https://github.com/adobe/spacecat-audit-worker/commit/088412807eae4b67bf435f62df6ef85ed8d603cc))
+
+## [1.264.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.0...v1.264.1) (2025-12-02)
+
+
+### Bug Fixes
+
+* **step-audit:** passes the scrapeJobId to all following steps ([#1735](https://github.com/adobe/spacecat-audit-worker/issues/1735)) ([4dacab3](https://github.com/adobe/spacecat-audit-worker/commit/4dacab304332db9c9f65474a1caea296a521161c))
+
 # [1.264.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.263.2...v1.264.0) (2025-12-02)
 
 
