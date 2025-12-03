@@ -67,18 +67,8 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
 
   if (urlsToScrape.length === 0) {
     const { SiteTopPage } = dataAccess;
-    log.info(`[A11yAudit] Querying top pages for siteId: ${site.getId()}, source: 'ahrefs', geo: 'global'`);
-    let topPages;
-    try {
-      topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-      log.info(`[A11yAudit] Query successful. Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}`);
-      if (topPages && topPages.length > 0) {
-        log.debug(`[A11yAudit] Top pages details: ${JSON.stringify(topPages.slice(0, 5).map((p) => ({ url: p.getUrl(), traffic: p.getTraffic() })), null, 2)}`);
-      }
-    } catch (error) {
-      log.error(`[A11yAudit] Error querying top pages: ${error.message}`, error);
-      topPages = [];
-    }
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    log.debug(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
     if (!isNonEmptyArray(topPages)) {
       log.info(`[A11yAudit] No top pages found for site ${siteId} (${site.getBaseURL()}), skipping audit`);
       return {
@@ -91,8 +81,7 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
       .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
       .sort((a, b) => b.traffic - a.traffic)
       .slice(0, 100);
-    log.info(`[A11yAudit] Prepared ${urlsToScrape.length} URLs from top 100 pages for site ${siteId} (${site.getBaseURL()})`);
-    log.info(`[A11yAudit] Top 100 pages for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(urlsToScrape.slice(0, 5), null, 2)}`);
+    log.debug(`[A11yAudit] Top 100 pages for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(urlsToScrape, null, 2)}`);
   }
 
   const existingObjectKeys = await getExistingObjectKeysFromFailedAudits(
@@ -110,7 +99,6 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
   );
 
   const remainingUrls = getRemainingUrls(urlsToScrape, existingUrls);
-  log.info(`[A11yAudit] After filtering existing URLs: ${remainingUrls.length} remaining URLs to scrape for site ${siteId}`);
 
   // get scraping config from site
   const scrapingConfig = await site.getConfig();
@@ -121,7 +109,6 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
   const storagePrefix = deviceType === 'mobile' ? 'accessibility-mobile' : 'accessibility';
-  log.info(`[A11yAudit] Returning scraping request with ${remainingUrls.length} URLs for processing type: ${AUDIT_TYPE_ACCESSIBILITY}`);
   return {
     auditResult: {
       status: 'SCRAPING_REQUESTED',
