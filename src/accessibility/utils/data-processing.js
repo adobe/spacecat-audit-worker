@@ -184,7 +184,20 @@ export async function getObjectKeysFromSubfolders(
   // TODO: Also include form-accessibility folders until both audits run together
   const getCurrentSubfolders = subfolders.filter((timestamp) => {
     const timestampValue = timestamp.split('/').filter((item) => item !== '').pop();
-    return new Date(parseInt(timestampValue, 10)).toISOString().split('T')[0] === version;
+    const parsedTimestamp = parseInt(timestampValue, 10);
+
+    // Check if the timestamp is a valid number because dev S3 have a folder like en-US/
+    if (Number.isNaN(parsedTimestamp) || parsedTimestamp <= 0) {
+      log.debug(`[A11yAudit] Skipping invalid timestamp folder: ${timestamp}`);
+      return false;
+    }
+
+    try {
+      return new Date(parsedTimestamp).toISOString().split('T')[0] === version;
+    } catch (error) {
+      log.debug(`[A11yAudit] Error parsing timestamp for folder ${timestamp}: ${error.message}`);
+      return false;
+    }
   });
   if (getCurrentSubfolders.length === 0) {
     const message = `No accessibility data found for today's date in bucket ${bucketName} at prefix ${prefix} for site ${siteId} with delimiter ${delimiter}`;
