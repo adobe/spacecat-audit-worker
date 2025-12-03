@@ -11,7 +11,7 @@
  */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
-import { getFormTitle, sendMessageToMystiqueForGuidance } from '../utils.js';
+import { getFormTitle, sendMessageToMystiqueForGuidance, shouldIgnoreFormByDetails } from '../utils.js';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 
 export default async function handler(message, context) {
@@ -24,6 +24,8 @@ export default async function handler(message, context) {
 
   const opportunity = await Opportunity.findById(id);
   if (opportunity) {
+    let shouldIgnore = false;
+
     if (opportunity.getType() === FORM_OPPORTUNITY_TYPES.FORM_A11Y) {
       const opportunityData = opportunity.getData();
       const updatedAccessibility = opportunityData.accessibility.map((item) => {
@@ -49,6 +51,14 @@ export default async function handler(message, context) {
         // eslint-disable-next-line
         const { form, form_source, ...cleanedFormDetail } = matchingFormDetail;
         const formTitle = getFormTitle(cleanedFormDetail, opportunity);
+
+        // Check if this form should be ignored
+        if (shouldIgnoreFormByDetails(cleanedFormDetail)) {
+          shouldIgnore = true;
+          // Mark as ignored if it's a search form that's not lead generation
+          opportunity.setStatus('IGNORED');
+        }
+
         opportunity.setTitle(formTitle);
         opportunity.setData({
           ...opportunityData,
@@ -59,7 +69,11 @@ export default async function handler(message, context) {
 
     opportunity.setUpdatedBy('system');
     await opportunity.save();
-    await sendMessageToMystiqueForGuidance(context, opportunity);
+
+    // Only send message to queue if not ignored
+    if (!shouldIgnore) {
+      await sendMessageToMystiqueForGuidance(context, opportunity);
+    }
   }
   return ok();
 }
