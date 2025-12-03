@@ -171,7 +171,14 @@ export default async function headings(context, auditContext) {
 
           // Include transform rules (selectors/actions) when available so UI can apply fixes
           if (check.transformRules) {
+            log.debug(`[preflight-headings] Adding transformRules for ${check.check} at ${url}: ${JSON.stringify({
+              selector: check.transformRules.selector,
+              action: check.transformRules.action,
+              tag: check.transformRules.tag,
+            })}`);
             opportunity.transformRules = check.transformRules;
+          } else {
+            log.debug(`[preflight-headings] No transformRules for ${check.check} at ${url}`);
           }
 
           // Add AI suggestion if available

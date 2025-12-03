@@ -267,6 +267,8 @@ export async function validatePageHeadingFromScrapeJson(
 
     if (h1Elements.length === 0) {
       log.debug(`Missing h1 element detected at ${url}`);
+      const insertionSelector = document.querySelector('body > main') ? 'body > main > :first-child' : 'body > :first-child';
+      log.debug(`[Headings] Adding transformRules for missing H1 at ${url} with selector: ${insertionSelector}`);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
         checkTitle: HEADINGS_CHECKS.HEADING_MISSING_H1.title,
@@ -299,6 +301,7 @@ export async function validatePageHeadingFromScrapeJson(
       const h1Length = h1Elements[0].textContent.length;
       const lengthIssue = h1Length === 0 ? 'empty' : 'too long';
       log.info(`H1 length ${lengthIssue} detected at ${url}: ${h1Length} characters using selector: ${h1Selector}`);
+      log.debug(`[Headings] Adding transformRules for H1 length at ${url} with selector: ${h1Selector}`);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_H1_LENGTH.check,
         checkTitle: HEADINGS_CHECKS.HEADING_H1_LENGTH.title,
@@ -322,6 +325,7 @@ export async function validatePageHeadingFromScrapeJson(
         if (text.length === 0) {
           log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
           const headingSelector = getHeadingSelector(heading);
+          log.debug(`[Headings] Adding transformRules for empty ${heading.tagName} at ${url} with selector: ${headingSelector}`);
           return {
             check: HEADINGS_CHECKS.HEADING_EMPTY.check,
             checkTitle: HEADINGS_CHECKS.HEADING_EMPTY.title,
