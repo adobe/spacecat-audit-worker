@@ -2556,23 +2556,23 @@ describe('Prerender Audit', () => {
         await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
         expect(context.log.info).to.have.been.called;
-        // Verify that syncSuggestions was called
-        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        // Verify that syncSuggestions was called twice (once for individual suggestions, once for master)
+        expect(syncSuggestionsStub).to.have.been.calledTwice;
         // Verify that suggestion syncing was logged
         expect(context.log.info.args.some(call => call[0].includes('Successfully synced suggestions'))).to.be.true;
 
-        // Verify the syncSuggestions was called with the correct structure including S3 keys
-        const syncCall = syncSuggestionsStub.getCall(0);
-        expect(syncCall.args[0]).to.have.property('mapNewSuggestion');
-        const mappedSuggestion = syncCall.args[0].mapNewSuggestion(auditData.auditResult.results[0]);
+        // First call: Verify the individual URL suggestions
+        const individualSyncCall = syncSuggestionsStub.getCall(0);
+        expect(individualSyncCall.args[0]).to.have.property('mapNewSuggestion');
+        const mappedSuggestion = individualSyncCall.args[0].mapNewSuggestion(auditData.auditResult.results[0]);
         expect(mappedSuggestion.data).to.have.property('originalHtmlKey');
         expect(mappedSuggestion.data).to.have.property('prerenderedHtmlKey');
         expect(mappedSuggestion.data.originalHtmlKey).to.include('server-side.html');
         expect(mappedSuggestion.data.prerenderedHtmlKey).to.include('client-side.html');
         expect(mappedSuggestion.data).to.not.have.property('needsPrerender');
         
-        // Test mergeDataFunction (lines 283-284)
-        const mergeDataFn = syncCall.args[0].mergeDataFunction;
+        // Test mergeDataFunction for individual suggestions
+        const mergeDataFn = individualSyncCall.args[0].mergeDataFunction;
         const existingData = { url: 'https://example.com/page1', customField: 'preserved' };
         const newDataItem = {
           url: 'https://example.com/page1',
@@ -2586,6 +2586,15 @@ describe('Prerender Audit', () => {
         expect(mergedData).to.have.property('url', 'https://example.com/page1');
         expect(mergedData).to.not.have.property('agenticTraffic');
         expect(mergedData).to.not.have.property('needsPrerender'); // Filtered out by mapSuggestionData
+
+        // Second call: Verify the domain-wide master suggestion
+        const masterSyncCall = syncSuggestionsStub.getCall(1);
+        expect(masterSyncCall.args[0]).to.have.property('newData');
+        expect(masterSyncCall.args[0].newData).to.be.an('array').with.lengthOf(1);
+        expect(masterSyncCall.args[0].newData[0]).to.have.property('key', 'domain-wide-master|prerender');
+        expect(masterSyncCall.args[0].newData[0].data).to.have.property('isDomainWideMaster', true);
+        expect(masterSyncCall.args[0].newData[0].data).to.have.property('regex');
+        expect(masterSyncCall.args[0].newData[0].data.url).to.include('All Domain URLs');
       });
 
       it('should update existing PRERENDER opportunity with all data fields', async () => {
