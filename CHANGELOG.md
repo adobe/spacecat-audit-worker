@@ -1,3 +1,10 @@
+## [1.264.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.6...v1.264.7) (2025-12-03)
+
+
+### Bug Fixes
+
+* Move aggregation key to data in Mystique message ([#1740](https://github.com/adobe/spacecat-audit-worker/issues/1740)) ([964236a](https://github.com/adobe/spacecat-audit-worker/commit/964236a6a94799c5202da7c0782ca36f14e02e4b))
+
 ## [1.264.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.5...v1.264.6) (2025-12-03)
 
 
