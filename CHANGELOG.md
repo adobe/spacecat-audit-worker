@@ -1,3 +1,15 @@
+# [1.265.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.7...v1.265.0) (2025-12-03)
+
+
+### Bug Fixes
+
+* sites-38017  ([#1739](https://github.com/adobe/spacecat-audit-worker/issues/1739)) ([5981377](https://github.com/adobe/spacecat-audit-worker/commit/598137763361af2e24b18ee33b322311b437c5f1))
+
+
+### Features
+
+* add vulnerabilities code-fix handler ([#1700](https://github.com/adobe/spacecat-audit-worker/issues/1700)) ([4a3fdc4](https://github.com/adobe/spacecat-audit-worker/commit/4a3fdc40836c9417c2cd791d3d6180ac155da1cc))
+
 ## [1.264.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.6...v1.264.7) (2025-12-03)
 
 
