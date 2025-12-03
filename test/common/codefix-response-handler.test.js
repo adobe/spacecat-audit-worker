@@ -102,7 +102,7 @@ describe('CodeFixResponseHandler', () => {
 
       expect(result.status).to.equal(500);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Configuration error for codefix:test: Custom configuration error message/),
+        sinon.match(/Unexpected error for codefix:test: Custom configuration error message/),
       );
 
       // Restore the stub
