@@ -1196,6 +1196,81 @@ describe('Prerender Audit', () => {
           expect(domainWideSuggestionLog).to.include('regex');
         }
       });
+
+      it('should properly execute syncSuggestions with master suggestion mapper and merge functions', async () => {
+        // This test specifically ensures lines 460-466 are covered (mapNewSuggestion and mergeDataFunction)
+        const mockOpportunity = { getId: () => 'test-opp-id' };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          auditResult: {
+            urlsNeedingPrerender: 2,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.5,
+                wordCountBefore: 100,
+                wordCountAfter: 250,
+              },
+              {
+                url: 'https://example.com/page2',
+                needsPrerender: true,
+                contentGainRatio: 3.0,
+                wordCountBefore: 150,
+                wordCountAfter: 450,
+              },
+            ],
+          },
+        };
+
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+          },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+        // Verify syncSuggestions was called twice (individual + master)
+        expect(syncSuggestionsStub).to.have.been.calledTwice;
+
+        // Get the second call (master suggestion)
+        const masterCall = syncSuggestionsStub.getCall(1);
+        expect(masterCall).to.exist;
+
+        // Extract and test the mapNewSuggestion function (covers lines 460-465)
+        const { mapNewSuggestion, mergeDataFunction, newData } = masterCall.args[0];
+
+        // Test mapNewSuggestion function execution
+        const testSuggestion = newData[0];
+        const mappedSuggestion = mapNewSuggestion(testSuggestion);
+
+        expect(mappedSuggestion).to.have.property('opportunityId', 'test-opp-id');
+        expect(mappedSuggestion).to.have.property('type', 'CONFIG_UPDATE');
+        expect(mappedSuggestion).to.have.property('rank', 999999);
+        expect(mappedSuggestion).to.have.property('data');
+        expect(mappedSuggestion.data).to.have.property('isDomainWideMaster', true);
+
+        // Test mergeDataFunction execution (covers line 466)
+        const existingData = { oldField: 'preserved' };
+        const newDataItem = { key: 'domain-wide-master|prerender', data: { newField: 'value' } };
+        const mergedData = mergeDataFunction(existingData, newDataItem);
+
+        expect(mergedData).to.deep.equal({ newField: 'value' });
+      });
     });
   });
 
