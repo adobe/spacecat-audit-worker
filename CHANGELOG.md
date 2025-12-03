@@ -1,3 +1,10 @@
+## [1.264.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.4...v1.264.5) (2025-12-03)
+
+
+### Bug Fixes
+
+* reverting page views checks for forms opportunity ([#1741](https://github.com/adobe/spacecat-audit-worker/issues/1741)) ([67e507c](https://github.com/adobe/spacecat-audit-worker/commit/67e507c719aaa440fe926a086279adc415fa166a))
+
 ## [1.264.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.3...v1.264.4) (2025-12-03)
 
 
