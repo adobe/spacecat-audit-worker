@@ -1,3 +1,10 @@
+## [1.264.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.3...v1.264.4) (2025-12-03)
+
+
+### Bug Fixes
+
+* filter forms which are not lead gen and is not critical ([#1734](https://github.com/adobe/spacecat-audit-worker/issues/1734)) ([6d42674](https://github.com/adobe/spacecat-audit-worker/commit/6d42674324e0ca98768a188459d74c830380dc62))
+
 ## [1.264.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.2...v1.264.3) (2025-12-02)
 
 
