@@ -492,6 +492,70 @@ describe('audit and send scraping step', () => {
     expect(form3.formSources).to.be.undefined;
   });
 
+  it('should add formSources array when existingItem has no formSources (line 151)', async () => {
+    const formVitals = {
+      'form-vitals': [
+        {
+          url: 'https://example.com/form1',
+          // No formsource - this creates URL without formSources property
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { 'desktop:windows': 1000 },
+        },
+      ],
+    };
+
+    const mockTopForms = [
+      {
+        getUrl: () => 'https://example.com/form1', // Same URL as above
+        getFormSource: () => 'form.imported-contact', // Has form source
+      },
+    ];
+
+    context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    context.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves(mockTopForms);
+
+    const result = await runAuditAndSendUrlsForScrapingStep(context);
+
+    const form1 = result.urls.find((url) => url.url === 'https://example.com/form1');
+    expect(form1).to.exist;
+    expect(form1.formSources).to.deep.equal(['form.imported-contact']);
+  });
+
+  it('should push formSource when existingItem has formSources but not the new one (line 153)', async () => {
+    const formVitals = {
+      'form-vitals': [
+        {
+          url: 'https://example.com/form1',
+          formsource: 'form.existing-source',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { 'desktop:windows': 1000 },
+        },
+      ],
+    };
+
+    const mockTopForms = [
+      {
+        getUrl: () => 'https://example.com/form1', // Same URL as above
+        getFormSource: () => 'form.new-source', // Different form source
+      },
+    ];
+
+    context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    context.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves(mockTopForms);
+
+    const result = await runAuditAndSendUrlsForScrapingStep(context);
+
+    const form1 = result.urls.find((url) => url.url === 'https://example.com/form1');
+    expect(form1).to.exist;
+    expect(form1.formSources).to.include('form.existing-source');
+    expect(form1.formSources).to.include('form.new-source');
+    expect(form1.formSources.length).to.equal(2);
+  });
+
   it('should include auditContext with data when data is provided (line 151)', async () => {
     const formVitals = {
       'form-vitals': [
