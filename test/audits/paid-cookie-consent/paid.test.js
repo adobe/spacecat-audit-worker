@@ -582,4 +582,31 @@ describe('Paid Cookie Consent Audit', () => {
     expect(result.auditResult.totalAverageBounceRate).to.equal(0);
     expect(result.auditResult.projectedTrafficLost).to.equal(0);
   });
+
+  it('should handle items with null or undefined path', async () => {
+    const mockData = [
+      { path: null, device: 'mobile', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800, utm_source: 'google', click_rate: 0.1, engagement_rate: 0.2, engaged_scroll_rate: 0.15, referrer: 'google.com' },
+      { device: 'desktop', pageviews: 500, bounce_rate: 0.7, traffic_loss: 350, utm_source: 'facebook', click_rate: 0.15, engagement_rate: 0.3, engaged_scroll_rate: 0.25, referrer: 'facebook.com' }, // path is undefined
+    ];
+
+    const customContext = {
+      ...context,
+      athenaClient: {
+        query: sandbox.stub().resolves(mockData),
+      },
+    };
+
+    const result = await paidAuditRunner(auditUrl, customContext, site);
+
+    expect(result.auditResult).to.be.an('object');
+    expect(result.auditResult.top3Pages).to.be.an('array');
+    expect(result.auditResult.top3Pages.length).to.equal(2);
+
+    // Check that items with null/undefined path have undefined url
+    const itemWithNullPath = result.auditResult.top3Pages.find(item => item.path === null);
+    const itemWithUndefinedPath = result.auditResult.top3Pages.find(item => item.path === undefined);
+
+    expect(itemWithNullPath.url).to.be.undefined;
+    expect(itemWithUndefinedPath.url).to.be.undefined;
+  });
 });
