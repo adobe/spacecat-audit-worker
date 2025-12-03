@@ -72,6 +72,13 @@ export const HEADINGS_CHECKS = Object.freeze({
   },
 });
 
+export const TOC_CHECK = {
+  check: 'toc',
+  title: 'Table of Contents',
+  description: 'Table of Contents is not present on the page',
+  explanation: 'Table of Contents should be present on the page',
+  suggestion: 'Add a Table of Contents to the page',
+};
 function getHeadingLevel(tagName) {
   return Number(tagName.charAt(1));
 }
@@ -396,6 +403,299 @@ export async function getBrandGuidelines(healthyTagsObject, log, context) {
 }
 
 /**
+ * Generate Table of Contents in HAST (Hypertext Abstract Syntax Tree) format
+ * @param {Document} document - The JSDOM document
+ * @returns {Object} HAST representation of the TOC
+ */
+function generateTocHast(document) {
+  // Get all h1, h2, h3 headings
+  const headings = Array.from(document.querySelectorAll('h1, h2, h3'));
+  
+  if (headings.length === 0) {
+    return {
+      type: 'root',
+      children: [
+        {
+          type: 'element',
+          tagName: 'p',
+          properties: {},
+          children: [{ type: 'text', value: 'No headings found to generate TOC' }]
+        }
+      ]
+    };
+  }
+
+  // Generate TOC items with proper nesting
+  const tocItems = [];
+  
+  headings.forEach((heading, index) => {
+    const headingText = getTextContent(heading);
+    if (!headingText) return; // Skip empty headings
+    
+    const headingLevel = getHeadingLevel(heading.tagName);
+    const selector = getHeadingSelector(heading);
+    
+    // Generate or use existing ID for the heading
+    let headingId = heading.id;
+    if (!headingId) {
+      // Create a slug from the heading text for the ID
+      headingId = `heading-${headingText.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${index}`;
+    }
+    
+    // Create the TOC item
+    const tocItem = {
+      type: 'element',
+      tagName: 'li',
+      properties: { className: [`toc-level-${headingLevel}`] },
+      children: [
+        {
+          type: 'element',
+          tagName: 'a',
+          properties: {
+            href: `#${headingId}`,
+            'data-selector': selector,
+            className: ['toc-link']
+          },
+          children: [{ type: 'text', value: headingText }]
+        }
+      ]
+    };
+    
+    // Add nested list for sub-headings if needed
+    if (headingLevel < 3) {
+      const nextHeadings = headings.slice(index + 1);
+      const subHeadings = [];
+      
+      for (const nextHeading of nextHeadings) {
+        const nextLevel = getHeadingLevel(nextHeading.tagName);
+        if (nextLevel <= headingLevel) break; // Stop when we reach same or higher level
+        if (nextLevel === headingLevel + 1) {
+          subHeadings.push(nextHeading);
+        }
+      }
+      
+      if (subHeadings.length > 0) {
+        const subList = {
+          type: 'element',
+          tagName: 'ul',
+          properties: { className: ['toc-sublist'] },
+          children: []
+        };
+        
+        subHeadings.forEach((subHeading, subIndex) => {
+          const subText = getTextContent(subHeading);
+          if (!subText) return;
+          
+          const subSelector = getHeadingSelector(subHeading);
+          let subId = subHeading.id;
+          if (!subId) {
+            subId = `heading-${subText.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${index}-${subIndex}`;
+          }
+          
+          subList.children.push({
+            type: 'element',
+            tagName: 'li',
+            properties: { className: [`toc-level-${getHeadingLevel(subHeading.tagName)}`] },
+            children: [
+              {
+                type: 'element',
+                tagName: 'a',
+                properties: {
+                  href: `#${subId}`,
+                  'data-selector': subSelector,
+                  className: ['toc-link']
+                },
+                children: [{ type: 'text', value: subText }]
+              }
+            ]
+          });
+        });
+        
+        tocItem.children.push(subList);
+      }
+    }
+    
+    tocItems.push(tocItem);
+  });
+  
+  // Build the complete TOC structure in HAST format
+  return {
+    type: 'root',
+    children: [
+      {
+        type: 'element',
+        tagName: 'nav',
+        properties: {
+          className: ['table-of-contents'],
+          'aria-label': 'Table of Contents'
+        },
+        children: [
+          {
+            type: 'element',
+            tagName: 'h2',
+            properties: { className: ['toc-title'] },
+            children: [{ type: 'text', value: 'Table of Contents' }]
+          },
+          {
+            type: 'element',
+            tagName: 'ul',
+            properties: { className: ['toc-list'] },
+            children: tocItems
+          }
+        ]
+      }
+    ]
+  };
+}
+
+/**
+ * Determine optimal placement for a Table of Contents based on page structure
+ * @param {Document} document - The JSDOM document
+ * @returns {Object} Object with action, selector, and reasoning for TOC placement
+ */
+function determineTocPlacement(document) {
+  const h1Element = document.querySelector('h1');
+  const mainElement = document.querySelector('body > main');
+  
+  // Strategy 1: After H1 if present
+  if (h1Element) {
+    return {
+      action: 'insertAfter',
+      selector: getHeadingSelector(h1Element),
+      placement: 'after-h1',
+      reasoning: 'TOC placed immediately after H1 heading',
+    };
+  }
+  
+  // Strategy 2: At the beginning of main content area (direct child of body)
+  if (mainElement) {
+    return {
+      action: 'insertBefore',
+      selector: 'body > main > :first-child',
+      placement: 'main-start',
+      reasoning: 'TOC placed at the start of main content area',
+    };
+  }
+  
+  // Fallback: Beginning of body content
+  return {
+    action: 'insertBefore',
+    selector: 'body > :first-child',
+    placement: 'body-start',
+    reasoning: 'TOC placed at the beginning of body (fallback)',
+  };
+}
+
+/**
+ * Detect if a Table of Contents (TOC) is present in the document using LLM analysis
+ * @param {Document} document - The JSDOM document
+ * @param {string} url - The page URL
+ * @param {Object} pageTags - Page metadata (title, lang, etc.)
+ * @param {Object} log - Logger instance
+ * @param {Object} context - Audit context containing environment and clients
+ * @returns {Promise<Object>} Object with tocPresent, TOCCSSSelector, confidence (1-10), and reasoning
+ */
+async function getTocDetails(document, url, pageTags, log, context) {
+  try {
+    // Extract first 3000 characters from body
+    const bodyElement = document.querySelector('body');
+    if (!bodyElement) {
+      log.warn(`[TOC Detection] No body element found for ${url}`);
+      return {
+        tocPresent: false,
+        TOCCSSSelector: null,
+        confidence: 10,
+        reasoning: 'No body element found in document',
+      };
+    }
+
+    const bodyHTML = bodyElement.innerHTML || '';
+    const bodyContent = bodyHTML.substring(0, 3000);
+
+    // Prepare prompt data
+    const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
+    const promptData = {
+      finalUrl: url,
+      title: pageTags?.title || '',
+      lang: pageTags?.lang || 'en',
+      bodyContent,
+    };
+
+    // Load and execute prompt
+    const prompt = await getPrompt(
+      promptData,
+      'toc-detection',
+      log,
+    );
+
+    const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
+      responseFormat: 'json_object',
+    });
+
+    const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
+
+    // Validate response structure
+    if (typeof aiResponseContent.tocPresent !== 'boolean') {
+      log.error(`[TOC Detection] Invalid response structure for ${url}. Expected tocPresent as boolean`);
+      return {
+        tocPresent: false,
+        TOCCSSSelector: null,
+        confidence: 1,
+        reasoning: 'Invalid AI response structure',
+      };
+    }
+
+    // Validate and normalize confidence score (should be 1-10)
+    let confidenceScore = aiResponseContent.confidence || 5;
+    if (typeof confidenceScore !== 'number' || confidenceScore < 1 || confidenceScore > 10) {
+      log.warn(`[TOC Detection] Invalid confidence score ${confidenceScore} for ${url}, defaulting to 5`);
+      confidenceScore = 5;
+    }
+
+    log.debug(`[TOC Detection] TOC ${aiResponseContent.tocPresent ? 'found' : 'not found'} for ${url}. Selector: ${aiResponseContent.TOCCSSSelector || 'N/A'}, Confidence: ${confidenceScore}/10`);
+
+    const result = {
+      tocPresent: aiResponseContent.tocPresent,
+      TOCCSSSelector: aiResponseContent.TOCCSSSelector || null,
+      confidence: confidenceScore,
+      reasoning: aiResponseContent.reasoning || '',
+    };
+
+    // If TOC is not present, determine where it should be placed
+    if (!aiResponseContent.tocPresent) {
+      const placement = determineTocPlacement(document);
+      const tocHast = generateTocHast(document);
+      
+      result.suggestedPlacement = placement;
+      result.transformRules = {
+        action: placement.action,
+        selector: placement.selector,
+        tag: 'nav',
+        attributes: {
+          class: 'table-of-contents',
+          'aria-label': 'Table of Contents',
+        },
+        placement: placement.placement,
+        value: tocHast,
+        valueFormat: 'hast',
+        scrapedAt: new Date().toISOString(),
+      };
+      log.debug(`[TOC Detection] Suggested TOC placement for ${url}: ${placement.reasoning}`);
+    }
+
+    return result;
+  } catch (error) {
+    log.error(`[TOC Detection] Error detecting TOC for ${url}: ${error.message}`);
+    return {
+      tocPresent: false,
+      TOCCSSSelector: null,
+      confidence: 1,
+      reasoning: `Error during detection: ${error.message}`,
+    };
+  }
+}
+
+/**
  * Validate heading semantics for a single page from a scrapeJsonObject.
  * - Ensure heading level increases by at most 1 when going deeper (no jumps, e.g., h1 → h3)
  * - Ensure headings are not empty
@@ -403,15 +703,16 @@ export async function getBrandGuidelines(healthyTagsObject, log, context) {
  * @param {string} url - The URL being validated
  * @param {Object} scrapeJsonObject - The scraped page data from S3
  * @param {Object} log - Logger instance
- * @param {Object} context - Audit context
  * @param {Object} seoChecks - SeoChecks instance for tracking healthy tags
- * @returns {Promise<{url: string, checks: Array}>}
+ * @param {Object} context - Audit context
+ * @returns {Promise<{url: string, checks: Array, tocDetails: Object}>}
  */
 export async function validatePageHeadingFromScrapeJson(
   url,
   scrapeJsonObject,
   log,
   seoChecks,
+  context,
 ) {
   try {
     let $;
@@ -554,7 +855,9 @@ export async function validatePageHeadingFromScrapeJson(
       }
     }
 
-    return { url, checks };
+    const tocDetails = await getTocDetails(document, url, pageTags, log, context);
+
+    return { url, checks, tocDetails };
   } catch (error) {
     log.error(`Error validating headings for ${url}: ${error.message}`);
     return {
@@ -600,7 +903,7 @@ export async function validatePageHeadings(
       return null;
     } else {
       scrapeJsonObject = await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, s3Key, log);
-      return validatePageHeadingFromScrapeJson(url, scrapeJsonObject, log, seoChecks);
+      return validatePageHeadingFromScrapeJson(url, scrapeJsonObject, log, seoChecks, context);
     }
   } catch (error) {
     log.error(`Error validating headings for ${url}: ${error.message}`);
@@ -661,7 +964,10 @@ export async function headingsAuditRunner(baseURL, context, site) {
     const auditResults = await Promise.allSettled(auditPromises);
 
     // Aggregate results by check type
-    const aggregatedResults = {};
+    const aggregatedResults = {
+      headings: {},
+      toc: {},
+    };
     let totalIssuesFound = 0;
 
     const healthyTags = seoChecks.getFewHealthyTags();
@@ -677,7 +983,9 @@ export async function headingsAuditRunner(baseURL, context, site) {
     const brandGuidelines = await getBrandGuidelines(healthyTagsObject, log, context);
     const auditResultsPromises = auditResults.map(async (result) => {
       if (result.status === 'fulfilled' && result.value) {
-        const { url, checks } = result.value;
+        const { url, checks, tocDetails } = result.value;
+        const aggregatedResultsHeadings = aggregatedResults.headings;
+        const aggregatedResultsToc = aggregatedResults.toc;
         const checkPromises = checks.map(async (check) => {
           if (!check.success) {
             totalIssuesFound += 1;
@@ -702,8 +1010,8 @@ export async function headingsAuditRunner(baseURL, context, site) {
                 aiSuggestion = null;
               }
             }
-            if (!aggregatedResults[checkType]) {
-              aggregatedResults[checkType] = {
+            if (!aggregatedResultsHeadings[checkType]) {
+              aggregatedResultsHeadings[checkType] = {
                 success: false,
                 explanation: check.explanation,
                 suggestion: check.suggestion,
@@ -712,7 +1020,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
             }
 
             // Add URL if not already present
-            if (!aggregatedResults[checkType].urls.includes(url)) {
+            if (!aggregatedResultsHeadings[checkType].urls.includes(url)) {
               const urlObject = { url };
               urlObject.explanation = check.explanation;
               urlObject.suggestion = aiSuggestion || check.suggestion;
@@ -724,11 +1032,35 @@ export async function headingsAuditRunner(baseURL, context, site) {
               if (check.transformRules) {
                 urlObject.transformRules = check.transformRules;
               }
-              aggregatedResults[checkType].urls.push(urlObject);
+              aggregatedResultsHeadings[checkType].urls.push(urlObject);
             }
           }
         });
         await Promise.all(checkPromises);
+        // Handle TOC detection - only add to results if TOC is missing
+        if (tocDetails && !tocDetails.tocPresent && tocDetails.transformRules) {
+          if (!aggregatedResultsToc[TOC_CHECK.check]) {
+            aggregatedResultsToc[TOC_CHECK.check] = {
+              success: false,
+              explanation: TOC_CHECK.explanation,
+              suggestion: TOC_CHECK.suggestion,
+              urls: [],
+            };
+          }
+          if (!aggregatedResultsToc[TOC_CHECK.check].urls.find((urlObj) => urlObj.url === url)) {
+            aggregatedResultsToc[TOC_CHECK.check].urls.push({
+              url,
+              explanation: `${TOC_CHECK.explanation} (Confidence: ${tocDetails.confidence}/10)`,
+              suggestion: TOC_CHECK.suggestion,
+              isAISuggested: true,
+              checkTitle: TOC_CHECK.title,
+              tagName: 'nav',
+              transformRules: tocDetails.transformRules,
+              tocConfidence: tocDetails.confidence,
+              tocReasoning: tocDetails.reasoning,
+            });
+          } 
+        }
       }
     });
 
