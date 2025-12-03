@@ -141,6 +141,14 @@ export async function prepareScrapingStep(context) {
 
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope`);
 
+  if (filteredTopPages.length === 0) {
+    if (topPages.length === 0) {
+      throw new Error(`No top pages found in database for site ${site.getId()}. Ahrefs import required.`);
+    } else {
+      throw new Error(`All ${topPages.length} top pages filtered out by audit scope. BaseURL: ${baseURL} requires subpath match but no pages match scope.`);
+    }
+  }
+
   const urls = filteredTopPages.map((page) => ({ url: page.getUrl() }));
   return {
     urls,
