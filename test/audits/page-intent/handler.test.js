@@ -34,6 +34,8 @@ describe('Page Intent Handler', () => {
   let getObjectFromKeyStub;
   let promptStub;
   let handlerModule;
+  let scrapeClientStub;
+  let scrapeClientCreateFromStub;
 
   const baseURL = 'https://example.com';
   const siteId = 'test-site-id';
@@ -88,6 +90,11 @@ describe('Page Intent Handler', () => {
       },
     });
 
+    scrapeClientStub = {
+      getScrapeJobUrlResults: sandbox.stub().resolves(null),
+    };
+    scrapeClientCreateFromStub = sandbox.stub().returns(scrapeClientStub);
+
     // Setup context
     context = new MockContextBuilder()
       .withSandbox(sandbox)
@@ -115,6 +122,11 @@ describe('Page Intent Handler', () => {
       '@adobe/spacecat-shared-athena-client': {
         AWSAthenaClient: {
           fromContext: sandbox.stub().returns(mockAthenaClient),
+        },
+      },
+      '@adobe/spacecat-shared-scrape-client': {
+        ScrapeClient: {
+          createFrom: scrapeClientCreateFromStub,
         },
       },
       '../../../src/utils/s3-utils.js': {
@@ -227,9 +239,25 @@ describe('Page Intent Handler', () => {
 
   describe('generatePageIntent', () => {
     beforeEach(() => {
+      context.auditContext = { scrapeJobId: 'job-default' };
       context.scrapeResultPaths = new Map([
         [`${baseURL}/page1`, 's3-key-1'],
         [`${baseURL}/page2`, 's3-key-2'],
+      ]);
+
+      scrapeClientStub.getScrapeJobUrlResults.resolves([
+        {
+          url: `${baseURL}/page1`,
+          status: 'COMPLETE',
+          reason: null,
+          path: 's3-key-1',
+        },
+        {
+          url: `${baseURL}/page2`,
+          status: 'COMPLETE',
+          reason: null,
+          path: 's3-key-2',
+        },
       ]);
     });
 
@@ -515,7 +543,14 @@ describe('Page Intent Handler', () => {
           content: `{"pageIntent":"${intent}","topic":"Test"}`,
         });
 
-        context.scrapeResultPaths = new Map([[`${baseURL}/page`, 's3-key']]);
+        scrapeClientStub.getScrapeJobUrlResults.resolves([
+          {
+            url: `${baseURL}/page`,
+            status: 'COMPLETE',
+            reason: null,
+            path: 's3-key',
+          },
+        ]);
 
         await handlerModule.generatePageIntent(context);
 
@@ -528,7 +563,7 @@ describe('Page Intent Handler', () => {
     });
 
     it('should handle empty scrapeResultPaths', async () => {
-      context.scrapeResultPaths = new Map();
+      scrapeClientStub.getScrapeJobUrlResults.resolves([]);
 
       const result = await handlerModule.generatePageIntent(context);
 
@@ -539,13 +574,9 @@ describe('Page Intent Handler', () => {
     it('should return early when fullAuditRef is NOTHING_TO_PROCESS', async () => {
       mockAudit.getFullAuditRef.returns('NOTHING TO PROCESS');
 
-      context.scrapeResultPaths = new Map([
-        [`${baseURL}/page1`, 's3-key-1'],
-        [`${baseURL}/page2`, 's3-key-2'],
-      ]);
-
       const result = await handlerModule.generatePageIntent(context);
 
+      expect(scrapeClientStub.getScrapeJobUrlResults).to.not.have.been.called;
       expect(getObjectFromKeyStub).to.not.have.been.called;
       expect(promptStub).to.not.have.been.called;
       expect(mockPageIntent.create).to.not.have.been.called;
@@ -557,12 +588,87 @@ describe('Page Intent Handler', () => {
         fullAuditRef: 'NOTHING TO PROCESS',
       });
     });
+
+    it('should use scrape job results and track failed scrapes', async () => {
+      const successUrl = `${baseURL}/page-success`;
+      const failedUrl = `${baseURL}/page-failed`;
+
+      context.auditContext = { scrapeJobId: 'job-123' };
+      context.scrapeResultPaths = new Map();
+
+      scrapeClientStub.getScrapeJobUrlResults.resolves([
+        {
+          url: successUrl,
+          status: 'COMPLETE',
+          reason: null,
+          path: 's3-success',
+        },
+        {
+          url: failedUrl,
+          status: 'FAILED',
+          reason: 'Timeout',
+          path: null,
+        },
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          minimalContent: 'Test content for page',
+        },
+      });
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      expect(scrapeClientStub.getScrapeJobUrlResults).to.have.been.calledOnceWith('job-123');
+      expect(getObjectFromKeyStub).to.have.been.calledOnce;
+      expect(promptStub).to.have.been.calledTwice;
+      expect(mockPageIntent.create).to.have.been.calledTwice;
+      expect(result.auditResult.successfulPages).to.equal(2);
+      expect(result.auditResult.failedPages).to.equal(0);
+    });
+
+    it('should fall back to URL-only analysis when all scrapes fail', async () => {
+      const failedUrl1 = `${baseURL}/page1`;
+      const failedUrl2 = `${baseURL}/page2`;
+
+      context.auditContext = { scrapeJobId: 'job-456' };
+      context.scrapeResultPaths = new Map();
+
+      scrapeClientStub.getScrapeJobUrlResults.resolves([
+        {
+          url: failedUrl1,
+          status: 'FAILED',
+          reason: 'Timeout',
+          path: null,
+        },
+        {
+          url: failedUrl2,
+          status: 'FAILED',
+          reason: '500',
+          path: null,
+        },
+      ]);
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      expect(getObjectFromKeyStub).to.not.have.been.called;
+      expect(promptStub).to.have.been.calledTwice;
+      expect(mockPageIntent.create).to.have.been.calledTwice;
+      expect(result.auditResult.successfulPages).to.equal(2);
+      expect(result.auditResult.failedPages).to.equal(0);
+    });
+
   });
 
   describe('Edge Cases', () => {
     it('should handle missing topic in LLM response', async () => {
-      context.scrapeResultPaths = new Map([
-        [`${baseURL}/page1`, 's3-key-1'],
+      scrapeClientStub.getScrapeJobUrlResults.resolves([
+        {
+          url: `${baseURL}/page1`,
+          status: 'COMPLETE',
+          reason: null,
+          path: 's3-key-1',
+        },
       ]);
 
       getObjectFromKeyStub.resolves({
@@ -586,8 +692,13 @@ describe('Page Intent Handler', () => {
     });
 
     it('should handle very long minimal content', async () => {
-      context.scrapeResultPaths = new Map([
-        [`${baseURL}/page1`, 's3-key-1'],
+      scrapeClientStub.getScrapeJobUrlResults.resolves([
+        {
+          url: `${baseURL}/page1`,
+          status: 'COMPLETE',
+          reason: null,
+          path: 's3-key-1',
+        },
       ]);
 
       const longContent = 'a'.repeat(50000);
