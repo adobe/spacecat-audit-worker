@@ -410,7 +410,7 @@ describe('audit and send scraping step', () => {
       },
       {
         getUrl: () => 'https://example.com/top-form2',
-        getFormSource: () => 'form.signup', // Has form source - should not be included
+        getFormSource: () => 'form.signup', // Has form source - should be included
       },
     ];
 
@@ -419,9 +419,17 @@ describe('audit and send scraping step', () => {
 
     const result = await runAuditAndSendUrlsForScrapingStep(context);
 
-    expect(result.urls.length).to.equal(1);
-    expect(result.urls[0].url).to.equal('https://example.com/top-form1');
-    expect(result.urls[0].formSources).to.be.undefined;
+    expect(result.urls.length).to.equal(2);
+    
+    // Check first URL (without form source)
+    const topForm1 = result.urls.find((url) => url.url === 'https://example.com/top-form1');
+    expect(topForm1).to.exist;
+    expect(topForm1.formSources).to.be.undefined;
+    
+    // Check second URL (with form source)
+    const topForm2 = result.urls.find((url) => url.url === 'https://example.com/top-form2');
+    expect(topForm2).to.exist;
+    expect(topForm2.formSources).to.deep.equal(['form.signup']);
   });
 
   it('should properly handle form sources filtering from formVitals', async () => {
