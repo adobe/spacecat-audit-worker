@@ -1,3 +1,10 @@
+# [1.267.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.266.4...v1.267.0) (2025-12-04)
+
+
+### Features
+
+* Sitemap support for onboarded subpaths ([#1758](https://github.com/adobe/spacecat-audit-worker/issues/1758)) ([1d3b21b](https://github.com/adobe/spacecat-audit-worker/commit/1d3b21b442ca12e7949f36806da4a00453866355))
+
 ## [1.266.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.266.3...v1.266.4) (2025-12-04)
 
 
