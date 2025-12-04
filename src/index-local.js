@@ -13,16 +13,33 @@
 import { main as universalMain } from './index.js';
 
 export const main = async () => {
-  const messageBody = {
-    type: 'llm-blocked',
-    siteId: 'b1555a54-48b4-47ee-97c1-438257bd3839',
-    auditContext: {
-      next: 'check-llm-blocked',
-      auditId: 'a263123c-9f9a-44a8-9531-955884563472',
-      type: 'llm-blocked',
-      fullAuditRef: 'llm-blocked::cisco.com',
-    },
-  };
+  if (!process.env.AZURE_OPENAI_ENDPOINT) {
+    process.env.AZURE_OPENAI_ENDPOINT = 'https://aem-sites-1-genai-us-east-2.openai.azure.com';
+  }
+  if (!process.env.S3_SCRAPER_BUCKET_NAME) {
+    process.env.S3_SCRAPER_BUCKET_NAME = 'spacecat-dev-scraper';
+  }
+  if (!process.env.AZURE_OPENAI_KEY) {
+    process.env.AZURE_OPENAI_KEY = 'a32a817592b34f5198295e80367efdd3';
+  }
+  if (!process.env.AZURE_API_VERSION) {
+    process.env.AZURE_API_VERSION = '2024-02-01';
+  }
+  if (!process.env.AZURE_COMPLETION_DEPLOYMENT) {
+    process.env.AZURE_COMPLETION_DEPLOYMENT = 'gpt-4o';
+  }
+
+  const messageBody = { type: 'headings', siteId: 'c2473d89-e997-458d-a86d-b4096649c12b' };
+  // const messageBody = {
+  //   type: 'llm-blocked',
+  //   siteId: 'b1555a54-48b4-47ee-97c1-438257bd3839',
+  //   auditContext: {
+  //     next: 'check-llm-blocked',
+  //     auditId: 'a263123c-9f9a-44a8-9531-955884563472',
+  //     type: 'llm-blocked',
+  //     fullAuditRef: 'llm-blocked::cisco.com',
+  //   },
+  // };
 
   const message = {
     Records: [

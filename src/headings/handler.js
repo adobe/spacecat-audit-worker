@@ -26,7 +26,7 @@ import SeoChecks from '../metatags/seo-checks.js';
 
 const auditType = Audit.AUDIT_TYPES.HEADINGS;
 
-const tocAuditType = 'toc';
+const tocAuditType = Audit.AUDIT_TYPES.TOC;
 
 
 const H1_LENGTH_CHARS = 70;
@@ -82,6 +82,7 @@ export const TOC_CHECK = {
   explanation: 'Table of Contents should be present on the page',
   suggestion: 'Add a Table of Contents to the page',
 };
+
 function getHeadingLevel(tagName) {
   return Number(tagName.charAt(1));
 }
@@ -405,149 +406,60 @@ export async function getBrandGuidelines(healthyTagsObject, log, context) {
   return aiResponseContent;
 }
 
-/**
- * Generate Table of Contents in HAST (Hypertext Abstract Syntax Tree) format
- * @param {Document} document - The JSDOM document
- * @returns {Object} HAST representation of the TOC
- */
-function generateTocHast(document) {
-  // Get all h1, h2, h3 headings
-  const headings = Array.from(document.querySelectorAll('h1, h2, h3'));
-  
-  if (headings.length === 0) {
-    return {
-      type: 'root',
-      children: [
-        {
-          type: 'element',
-          tagName: 'p',
-          properties: {},
-          children: [{ type: 'text', value: 'No headings found to generate TOC' }]
-        }
-      ]
-    };
-  }
+function extractTocData(document) {
+  const headings = Array.from(document.querySelectorAll("h1, h2"));
 
-  // Generate TOC items with proper nesting
-  const tocItems = [];
-  
-  headings.forEach((heading, index) => {
-    const headingText = getTextContent(heading);
-    if (!headingText) return; // Skip empty headings
+  return headings.map((h) => {
+    const text = getTextContent(h);
+    const level = getHeadingLevel(h.tagName);
+
     
-    const headingLevel = getHeadingLevel(heading.tagName);
-    const selector = getHeadingSelector(heading);
-    
-    // Generate or use existing ID for the heading
-    let headingId = heading.id;
-    if (!headingId) {
-      // Create a slug from the heading text for the ID
-      headingId = `heading-${headingText.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${index}`;
-    }
-    
-    // Create the TOC item
-    const tocItem = {
+    const selector = getHeadingSelector(h);
+
+    return { text, level, selector };
+  });
+}
+
+function tocArrayToHast(tocData) {
+  // children for <ul>
+  const liNodes = tocData.map(item => {
+    const isSub = Number(item.level) === 2;
+
+    return {
       type: 'element',
       tagName: 'li',
-      properties: { className: [`toc-level-${headingLevel}`] },
+      properties: isSub ? { className: ['toc-sub'] } : {},
       children: [
         {
           type: 'element',
           tagName: 'a',
           properties: {
-            href: `#${headingId}`,
-            'data-selector': selector,
-            className: ['toc-link']
+            href: '#',
+            'data-selector': item.selector
           },
-          children: [{ type: 'text', value: headingText }]
+          children: [{ type: 'text', value: item.text }]
         }
       ]
     };
-    
-    // Add nested list for sub-headings if needed
-    if (headingLevel < 3) {
-      const nextHeadings = headings.slice(index + 1);
-      const subHeadings = [];
-      
-      for (const nextHeading of nextHeadings) {
-        const nextLevel = getHeadingLevel(nextHeading.tagName);
-        if (nextLevel <= headingLevel) break; // Stop when we reach same or higher level
-        if (nextLevel === headingLevel + 1) {
-          subHeadings.push(nextHeading);
-        }
-      }
-      
-      if (subHeadings.length > 0) {
-        const subList = {
-          type: 'element',
-          tagName: 'ul',
-          properties: { className: ['toc-sublist'] },
-          children: []
-        };
-        
-        subHeadings.forEach((subHeading, subIndex) => {
-          const subText = getTextContent(subHeading);
-          if (!subText) return;
-          
-          const subSelector = getHeadingSelector(subHeading);
-          let subId = subHeading.id;
-          if (!subId) {
-            subId = `heading-${subText.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${index}-${subIndex}`;
-          }
-          
-          subList.children.push({
-            type: 'element',
-            tagName: 'li',
-            properties: { className: [`toc-level-${getHeadingLevel(subHeading.tagName)}`] },
-            children: [
-              {
-                type: 'element',
-                tagName: 'a',
-                properties: {
-                  href: `#${subId}`,
-                  'data-selector': subSelector,
-                  className: ['toc-link']
-                },
-                children: [{ type: 'text', value: subText }]
-              }
-            ]
-          });
-        });
-        
-        tocItem.children.push(subList);
-      }
-    }
-    
-    tocItems.push(tocItem);
   });
-  
-  // Build the complete TOC structure in HAST format
+
+  const ul = {
+    type: 'element',
+    tagName: 'ul',
+    properties: {},
+    children: liNodes
+  };
+
+  const nav = {
+    type: 'element',
+    tagName: 'nav',
+    properties: { className: ['toc'] },
+    children: [ul]
+  };
+
   return {
     type: 'root',
-    children: [
-      {
-        type: 'element',
-        tagName: 'nav',
-        properties: {
-          className: ['table-of-contents'],
-          'aria-label': 'Table of Contents'
-        },
-        children: [
-          {
-            type: 'element',
-            tagName: 'h2',
-            properties: { className: ['toc-title'] },
-            children: [{ type: 'text', value: 'Table of Contents' }]
-          },
-          {
-            type: 'element',
-            tagName: 'ul',
-            properties: { className: ['toc-list'] },
-            children: tocItems
-          }
-        ]
-      }
-    ]
+    children: [nav]
   };
 }
 
@@ -630,12 +542,15 @@ async function getTocDetails(document, url, pageTags, log, context, scrapedAt) {
       'toc-detection',
       log,
     );
+    log.info(`[TOC Detection] Prompt for ${url}: ${prompt}`);
+  
 
     const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
       responseFormat: 'json_object',
     });
 
     const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
+    log.info(`[TOC Detection] AI response for ${url}: ${JSON.stringify(aiResponseContent)}`);
 
     // Validate response structure
     if (typeof aiResponseContent.tocPresent !== 'boolean') {
@@ -667,15 +582,15 @@ async function getTocDetails(document, url, pageTags, log, context, scrapedAt) {
     // If TOC is not present, determine where it should be placed
     if (!aiResponseContent.tocPresent) {
       const placement = determineTocPlacement(document);
-      const tocHast = generateTocHast(document);
+      // const tocHtml = generateTocHtml(document);
+      const headingsData = extractTocData(document);
       
       result.suggestedPlacement = placement;
       result.transformRules = {
         action: placement.action,
         selector: placement.selector,
-        tag: 'nav',
-        value: tocHast,
-        valueFormat: 'hast',
+        value: headingsData,
+        valueFormat: 'html',
         scrapedAt: new Date(scrapedAt).toISOString()
       };
       log.debug(`[TOC Detection] Suggested TOC placement for ${url}: ${placement.reasoning}`);
@@ -1160,7 +1075,7 @@ export function generateSuggestions(auditUrl, auditData, context) {
   suggestions.headings = [...allSuggestions];
   suggestions.toc = [...allTocSuggestions];
 
-  log.debug(`Generated ${suggestions.length} headings suggestions for ${auditUrl}`);
+  log.debug(`Generated ${suggestions.headings.length} headings suggestions and ${suggestions.toc.length} TOC suggestions for ${auditUrl}`);
   return { ...auditData, suggestions };
 }
 
@@ -1219,7 +1134,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     log,
   });
 
-  log.info(`Headings opportunity created for Site Optimizer and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
+  log.info(`Headings opportunity created for Site Optimizer and ${auditData.suggestions.headings.length} suggestions synced for ${auditUrl}`);
   return { ...auditData };
 }
 
@@ -1229,6 +1144,7 @@ export async function opportunityAndSuggestionsForToc(auditUrl, auditData, conte
     log.info('Headings audit has no toc issues, skipping opportunity creation');
     return { ...auditData };
   }
+  
   const opportunity = await convertToOpportunity(
     auditUrl,
     { ...auditData, suggestions: auditData.suggestions.toc },
@@ -1257,7 +1173,11 @@ export async function opportunityAndSuggestionsForToc(auditUrl, auditData, conte
         checkTitle: suggestion.checkTitle,
         isAISuggested: suggestion.isAISuggested,
         ...(suggestion.transformRules && {
-          transformRules: { ...suggestion.transformRules },
+          transformRules: { 
+            ...suggestion.transformRules,
+            value: tocArrayToHast(suggestion.transformRules.value),
+            valueFormat: 'hast'
+          },
         }),
       },
     })
