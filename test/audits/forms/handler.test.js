@@ -410,7 +410,7 @@ describe('audit and send scraping step', () => {
       },
       {
         getUrl: () => 'https://example.com/top-form2',
-        getFormSource: () => 'form.signup', // Has form source - should not be included
+        getFormSource: () => 'form.signup', // Has form source - should be included
       },
     ];
 
@@ -419,9 +419,17 @@ describe('audit and send scraping step', () => {
 
     const result = await runAuditAndSendUrlsForScrapingStep(context);
 
-    expect(result.urls.length).to.equal(1);
-    expect(result.urls[0].url).to.equal('https://example.com/top-form1');
-    expect(result.urls[0].formSources).to.be.undefined;
+    expect(result.urls.length).to.equal(2);
+    
+    // Check first URL (without form source)
+    const topForm1 = result.urls.find((url) => url.url === 'https://example.com/top-form1');
+    expect(topForm1).to.exist;
+    expect(topForm1.formSources).to.be.undefined;
+    
+    // Check second URL (with form source)
+    const topForm2 = result.urls.find((url) => url.url === 'https://example.com/top-form2');
+    expect(topForm2).to.exist;
+    expect(topForm2.formSources).to.deep.equal(['form.signup']);
   });
 
   it('should properly handle form sources filtering from formVitals', async () => {
@@ -484,7 +492,71 @@ describe('audit and send scraping step', () => {
     expect(form3.formSources).to.be.undefined;
   });
 
-  it('should include auditContext with data when data is provided (line 151)', async () => {
+  it('should add formSources array when existingItem has no formSources ', async () => {
+    const formVitals = {
+      'form-vitals': [
+        {
+          url: 'https://example.com/form1',
+          // No formsource - this creates URL without formSources property
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { 'desktop:windows': 1000 },
+        },
+      ],
+    };
+
+    const mockTopForms = [
+      {
+        getUrl: () => 'https://example.com/form1', // Same URL as above
+        getFormSource: () => 'form.imported-contact', // Has form source
+      },
+    ];
+
+    context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    context.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves(mockTopForms);
+
+    const result = await runAuditAndSendUrlsForScrapingStep(context);
+
+    const form1 = result.urls.find((url) => url.url === 'https://example.com/form1');
+    expect(form1).to.exist;
+    expect(form1.formSources).to.deep.equal(['form.imported-contact']);
+  });
+
+  it('should push formSource when existingItem has formSources but not the new one ', async () => {
+    const formVitals = {
+      'form-vitals': [
+        {
+          url: 'https://example.com/form1',
+          formsource: 'form.existing-source',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { 'desktop:windows': 1000 },
+        },
+      ],
+    };
+
+    const mockTopForms = [
+      {
+        getUrl: () => 'https://example.com/form1', // Same URL as above
+        getFormSource: () => 'form.new-source', // Different form source
+      },
+    ];
+
+    context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    context.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves(mockTopForms);
+
+    const result = await runAuditAndSendUrlsForScrapingStep(context);
+
+    const form1 = result.urls.find((url) => url.url === 'https://example.com/form1');
+    expect(form1).to.exist;
+    expect(form1.formSources).to.include('form.existing-source');
+    expect(form1.formSources).to.include('form.new-source');
+    expect(form1.formSources.length).to.equal(2);
+  });
+
+  it('should include auditContext with data when data is provided ', async () => {
     const formVitals = {
       'form-vitals': [
         {
@@ -516,7 +588,7 @@ describe('audit and send scraping step', () => {
     );
   });
 
-  it('should exclude auditContext when data is not provided (line 151)', async () => {
+  it('should exclude auditContext when data is not provided ', async () => {
     const formVitals = {
       'form-vitals': [
         {
@@ -546,7 +618,7 @@ describe('audit and send scraping step', () => {
     );
   });
 
-  it('should exclude auditContext when data is null (line 151)', async () => {
+  it('should exclude auditContext when data is null ', async () => {
     const formVitals = {
       'form-vitals': [
         {
@@ -954,7 +1026,7 @@ describe('send a11y urls for scraping step', () => {
     expect(emptyFormSource).to.not.exist;
   });
 
-  it('should include auditContext when auditContext.data is provided (line 205)', async () => {
+  it('should include auditContext when auditContext.data is provided ', async () => {
     // Reset and setup fresh mocks for this test
     context.s3Client.send.reset();
     context.dataAccess.SiteTopForm.allBySiteId.reset();
@@ -1006,7 +1078,7 @@ describe('send a11y urls for scraping step', () => {
     expect(result.auditContext).to.deep.equal({ data: testData });
   });
 
-  it('should exclude auditContext when auditContext.data is undefined (line 205)', async () => {
+  it('should exclude auditContext when auditContext.data is undefined ', async () => {
     // Reset and setup fresh mocks for this test
     context.s3Client.send.reset();
     context.dataAccess.SiteTopForm.allBySiteId.reset();
@@ -1056,7 +1128,7 @@ describe('send a11y urls for scraping step', () => {
     expect(result).to.not.have.property('auditContext');
   });
 
-  it('should exclude auditContext when auditContext is null (line 205)', async () => {
+  it('should exclude auditContext when auditContext is null ', async () => {
     // Reset and setup fresh mocks for this test
     context.s3Client.send.reset();
     context.dataAccess.SiteTopForm.allBySiteId.reset();
@@ -1355,7 +1427,7 @@ describe('codeImportStep', () => {
     expect(keys).to.include('allowCache');
   });
 
-  it('should include auditContext when auditContext.data is provided (line 222)', async () => {
+  it('should include auditContext when auditContext.data is provided ', async () => {
     const testData = { opportunityId: 'test-oppty-789', source: 'code-import' };
     const contextWithAuditData = {
       ...context,
@@ -1370,7 +1442,7 @@ describe('codeImportStep', () => {
     expect(result.siteId).to.equal('test-site-id');
   });
 
-  it('should exclude auditContext when auditContext.data is undefined (line 222)', async () => {
+  it('should exclude auditContext when auditContext.data is undefined ', async () => {
     const contextWithoutAuditData = {
       ...context,
       auditContext: {},
@@ -1383,7 +1455,7 @@ describe('codeImportStep', () => {
     expect(result.siteId).to.equal('test-site-id');
   });
 
-  it('should exclude auditContext when auditContext is null (line 222)', async () => {
+  it('should exclude auditContext when auditContext is null ', async () => {
     const contextWithNullAuditContext = {
       ...context,
       auditContext: null,
@@ -1396,7 +1468,7 @@ describe('codeImportStep', () => {
     expect(result.siteId).to.equal('test-site-id');
   });
 
-  it('should exclude auditContext when auditContext is undefined (line 222)', async () => {
+  it('should exclude auditContext when auditContext is undefined ', async () => {
     const contextWithUndefinedAuditContext = {
       ...context,
       auditContext: undefined,

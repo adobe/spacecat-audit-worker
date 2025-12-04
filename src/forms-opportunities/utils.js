@@ -18,7 +18,11 @@ import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
   getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
-import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
+import {
+  FORM_OPPORTUNITY_TYPES,
+  successCriteriaLinks,
+  FORM_TYPES_TO_IGNORE,
+} from './constants.js';
 import { calculateCPCValue } from '../support/utils.js';
 import { getPresignedUrl as getPresignedUrlUtil } from '../utils/getPresignedUrl.js';
 import { isAuditEnabledForSite } from '../common/audit-utils.js';
@@ -266,10 +270,12 @@ export async function generateOpptyData(
   context,
   opportunityTypes = [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
     FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION, FORM_OPPORTUNITY_TYPES.LOW_VIEWS],
+  opptyOptions = null,
 ) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
+
   return Promise.all(
     Object.entries({
       [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]: getHighFormViewsLowConversionMetrics,
@@ -277,7 +283,10 @@ export async function generateOpptyData(
       [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]: getHighPageViewsLowFormViewsMetrics,
     })
       .filter(([opportunityType]) => opportunityTypes.includes(opportunityType))
-      .flatMap(([opportunityType, metricsMethod]) => metricsMethod(formVitalsCollection)
+      .flatMap(([opportunityType, metricsMethod]) => metricsMethod(
+        formVitalsCollection,
+        opptyOptions,
+      )
         .map((metric) => convertToOpportunityData(opportunityType, metric, context))),
   );
 }
@@ -297,6 +306,24 @@ export function shouldExcludeForm(scrapedFormData) {
     || containsOnlyNumericInputField
     || containsNoInputField
     || doesNotHaveButton;
+}
+
+/**
+ * Check if a form should be ignored based on form details criteria.
+ * Forms are ignored if they match certain form types (defined in FORM_TYPES_TO_IGNORE)
+ * and are not lead generation forms.
+ *
+ * @param {Object} formDetails - The form details object containing form_type and is_lead_gen
+ * @returns {boolean} - True if the form should be ignored, false otherwise
+ */
+export function shouldIgnoreFormByDetails(formDetails) {
+  if (!formDetails || typeof formDetails !== 'object') {
+    return false;
+  }
+  // Normalize form_type to lowercase for case-insensitive comparison
+  const formType = formDetails.form_type?.toLowerCase();
+  // Ignore forms that match specified types and are not lead generation (boolean check)
+  return FORM_TYPES_TO_IGNORE.includes(formType) && formDetails.is_lead_gen === false;
 }
 
 /**

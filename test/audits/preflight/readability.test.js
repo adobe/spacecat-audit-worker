@@ -1545,8 +1545,7 @@ describe('Preflight Readability Audit', () => {
       expect(auditContext.timeExecutionBreakdown[0].duration).to.include('seconds');
     });
 
-    it('should use fallback originalFleschScore when recommendation score is missing' +
-      ' (line 89)', async () => {
+    it('should use fallback originalFleschScore when recommendation score is missing', async () => {
       const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
         + 'words and intricate grammatical constructions, making it extremely difficult for '
         + 'the average reader to comprehend without considerable effort and '
@@ -1602,7 +1601,7 @@ describe('Preflight Readability Audit', () => {
     });
 
     it('should use fallback timestamp when lastMystiqueResponse is missing' +
-      ' (line 103)', async () => {
+      ' ', async () => {
       const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
         + 'words and intricate grammatical constructions, making it extremely difficult for '
         + 'the average reader to comprehend without considerable effort and '

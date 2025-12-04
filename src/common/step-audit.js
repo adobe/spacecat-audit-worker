@@ -73,6 +73,7 @@ export class StepAudit extends BaseAudit {
       auditId: audit.getId(),
       auditType: audit.getAuditType(),
       fullAuditRef: audit.getFullAuditRef(),
+      scrapeJobId: context.scrapeJobId,
     };
 
     const auditContext = isNonEmptyObject(stepResult.auditContext)
@@ -133,6 +134,7 @@ export class StepAudit extends BaseAudit {
       }
       // If there are scrape results, load the paths
       if (hasScrapeJobId) {
+        stepContext.scrapeJobId = auditContext.scrapeJobId;
         const scrapeClient = ScrapeClient.createFrom(context);
         stepContext.scrapeResultPaths = await scrapeClient
           .getScrapeResultPaths(auditContext.scrapeJobId);
