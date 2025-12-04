@@ -1140,12 +1140,11 @@ describe('data-access', () => {
       const newData = [{ key: '2' }];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
-      // createdItems is undefined (not present in response)
-      // When createdItems is undefined, !createdItems?.length is true (since !undefined is true)
-      // Return array-like object with errorItems but no createdItems
+      // Return array-like object with errorItems and empty createdItems
+      // When createdItems.length is 0, the condition `createdItems?.length <= 0` is true
       const mockSuggestions = [];
       mockSuggestions.errorItems = [{ item: { key: '2' }, error: 'some error' }];
-      // createdItems is undefined
+      mockSuggestions.createdItems = [];
       mockOpportunity.addSuggestions.resolves(mockSuggestions);
 
       // Should throw because no items were created
