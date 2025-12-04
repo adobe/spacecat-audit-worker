@@ -29,6 +29,7 @@ import {
   headingsAuditRunner,
   getH1HeadingASuggestion,
   getHeadingSelector,
+  getTextContent,
 } from '../../src/headings/handler.js';
 import { createOpportunityData } from '../../src/headings/opportunity-data-mapper.js';
 import { convertToOpportunity } from '../../src/common/opportunity.js';
@@ -3773,6 +3774,39 @@ describe('Headings Audit', () => {
 
       expect(result).to.exist;
       expect(result.getId()).to.equal('test-existing-opportunity-id');
+    });
+  });
+
+  describe('getTextContent function', () => {
+    it('returns empty string when element is null', () => {
+      const $ = () => ({ text: () => ({ trim: () => 'test' }) });
+      const result = getTextContent(null, $);
+      expect(result).to.equal('');
+    });
+
+    it('returns empty string when element is undefined', () => {
+      const $ = () => ({ text: () => ({ trim: () => 'test' }) });
+      const result = getTextContent(undefined, $);
+      expect(result).to.equal('');
+    });
+
+    it('returns empty string when $ is null', () => {
+      const element = { tagName: 'H1' };
+      const result = getTextContent(element, null);
+      expect(result).to.equal('');
+    });
+
+    it('returns empty string when $ is undefined', () => {
+      const element = { tagName: 'H1' };
+      const result = getTextContent(element, undefined);
+      expect(result).to.equal('');
+    });
+
+    it('returns trimmed text content when both element and $ are valid', () => {
+      const element = { tagName: 'H1' };
+      const $ = () => ({ text: () => ({ trim: () => 'Test Heading' }) });
+      const result = getTextContent(element, $);
+      expect(result).to.equal('Test Heading');
     });
   });
 
