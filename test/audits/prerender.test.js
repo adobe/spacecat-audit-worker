@@ -1055,21 +1055,35 @@ describe('Prerender Audit', () => {
           expect(domainWideSuggestion.data.pathPattern).to.equal('/*');
           expect(domainWideSuggestion.data.scope).to.equal('domain-wide');
 
-          // Verify aggregate metrics (averages)
-          // Average contentGainRatio: (3.0 + 2.0 + 1.0) / 3 = 2.0
-          expect(domainWideSuggestion.data.contentGainRatio).to.equal(2.0);
+          // Verify minimum baseline metrics (not averages)
+          // Minimum contentGainRatio: min(3.0, 2.0, 1.0) = 1.0
+          expect(domainWideSuggestion.data.contentGainRatio).to.equal(1.0);
 
-          // Average wordCountBefore: (100 + 200 + 150) / 3 = 150
-          expect(domainWideSuggestion.data.wordCountBefore).to.equal(150);
+          // Minimum wordCountBefore: min(100, 200, 150) = 100
+          expect(domainWideSuggestion.data.wordCountBefore).to.equal(100);
 
-          // Average wordCountAfter: (300 + 400 + 150) / 3 ≈ 283
-          expect(domainWideSuggestion.data.wordCountAfter).to.equal(283);
+          // Minimum wordCountAfter: min(300, 400, 150) = 150
+          expect(domainWideSuggestion.data.wordCountAfter).to.equal(150);
 
           // Verify metadata
-          expect(domainWideSuggestion.data.sampleSize).to.equal(3);
-          expect(domainWideSuggestion.data.sampleUrls).to.have.length(3);
+          expect(domainWideSuggestion.data.auditedUrlCount).to.equal(3);
+          expect(domainWideSuggestion.data.auditedUrls).to.have.length(3);
           expect(domainWideSuggestion.data.description).to.include('entire domain');
           expect(domainWideSuggestion.data.note).to.include('ALL URLs in the domain');
+          expect(domainWideSuggestion.data.note).to.include('minimum baseline');
+
+          // Verify UI display annotations with "+" suffix for baseline values
+          expect(domainWideSuggestion.data).to.have.property('displayAnnotations');
+          expect(domainWideSuggestion.data.displayAnnotations).to.have.property('agenticTraffic', 'N/A');
+          expect(domainWideSuggestion.data.displayAnnotations.contentGainRatio).to.equal('1×+');
+          expect(domainWideSuggestion.data.displayAnnotations.aiReadableContent).to.include('%+');
+          expect(domainWideSuggestion.data.displayAnnotations.wordCountBefore).to.equal('100+');
+          expect(domainWideSuggestion.data.displayAnnotations.wordCountAfter).to.equal('150+');
+
+          // Verify calculated AI-readable percentage based on minimums
+          // (100 / 150) * 100 ≈ 67%
+          expect(domainWideSuggestion.data).to.have.property('aiReadablePercent');
+          expect(domainWideSuggestion.data.aiReadablePercent).to.be.a('number');
 
           // Verify high rank for appearing first
           expect(domainWideSuggestion.rank).to.equal(999999);
@@ -1136,7 +1150,7 @@ describe('Prerender Audit', () => {
         if (domainWideSuggestion) {
           // Should create domain-wide suggestion even with single URL
           expect(domainWideSuggestion.data.url).to.equal('https://example.com/* (All Domain URLs)');
-          expect(domainWideSuggestion.data.sampleSize).to.equal(1);
+          expect(domainWideSuggestion.data.auditedUrlCount).to.equal(1);
           expect(domainWideSuggestion.data.contentGainRatio).to.equal(5.0);
         }
       });

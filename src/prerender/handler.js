@@ -401,34 +401,21 @@ async function syncDomainWideAggregateSuggestion(
 ) {
   const { log } = context;
 
-  const sampleUrls = preRenderSuggestions.map((s) => s.url);
-  const sampleCount = sampleUrls.length;
+  const auditedUrls = preRenderSuggestions.map((s) => s.url);
+  const auditedUrlCount = auditedUrls.length;
 
-  // Calculate aggregate metrics from the audited sample
-  // These represent the expected impact across the domain based on the sample
-  const avgContentGainRatio = preRenderSuggestions.length > 0
-    ? preRenderSuggestions.reduce(
-      (sum, s) => sum + (s.contentGainRatio || 0),
-      0,
-    ) / preRenderSuggestions.length
+  // Calculate minimum metrics from qualified & prioritized URLs to show baseline impact
+  // Using minimum values with "+" suffix shows "at least this much" for domain-wide
+  const minContentGainRatio = preRenderSuggestions.length > 0
+    ? Math.min(...preRenderSuggestions.map((s) => s.contentGainRatio || 0))
     : 0;
 
-  const avgWordCountBefore = preRenderSuggestions.length > 0
-    ? Math.round(
-      preRenderSuggestions.reduce(
-        (sum, s) => sum + (s.wordCountBefore || 0),
-        0,
-      ) / preRenderSuggestions.length,
-    )
+  const minWordCountBefore = preRenderSuggestions.length > 0
+    ? Math.min(...preRenderSuggestions.map((s) => s.wordCountBefore || 0))
     : 0;
 
-  const avgWordCountAfter = preRenderSuggestions.length > 0
-    ? Math.round(
-      preRenderSuggestions.reduce(
-        (sum, s) => sum + (s.wordCountAfter || 0),
-        0,
-      ) / preRenderSuggestions.length,
-    )
+  const minWordCountAfter = preRenderSuggestions.length > 0
+    ? Math.min(...preRenderSuggestions.map((s) => s.wordCountAfter || 0))
     : 0;
 
   // Create domain-wide regex pattern
@@ -436,23 +423,57 @@ async function syncDomainWideAggregateSuggestion(
   const escapedBaseUrl = baseUrlObj.origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const domainRegex = `${escapedBaseUrl}/.*`;
 
+  // Calculate % AI-readable content (percentage of content visible before JS execution)
+  const minAiReadablePercent = minWordCountAfter > 0
+    ? Math.round((minWordCountBefore / minWordCountAfter) * 100)
+    : 0;
+
+  // Format helper: show "N/A" for 0 values, otherwise show value with "+" suffix
+  const formatNumber = (num) => {
+    if (num === 0 || num === null || num === undefined) {
+      return 'N/A';
+    }
+    if (num >= 1000000) {
+      return `${(num / 1000000).toFixed(1)}M+`;
+    }
+    if (num >= 1000) {
+      return `${(num / 1000).toFixed(1)}K+`;
+    }
+    return `${num}+`;
+  };
+
   // Domain-wide suggestion data matching the schema of individual suggestions
-  // This applies to ALL URLs in the domain, not just the audited sample
+  // This applies to ALL URLs in the domain, including the qualified & prioritized URLs
   const domainWideSuggestionData = {
     // Special marker to indicate this covers the entire domain
     url: `${baseUrl}/* (All Domain URLs)`,
-    contentGainRatio: Number(avgContentGainRatio.toFixed(2)),
-    wordCountBefore: avgWordCountBefore, // Average from sample
-    wordCountAfter: avgWordCountAfter, // Average from sample
+    contentGainRatio: minContentGainRatio > 0 ? Number(minContentGainRatio.toFixed(2)) : 0,
+    wordCountBefore: minWordCountBefore, // Minimum from audited URLs
+    wordCountAfter: minWordCountAfter, // Minimum from audited URLs
     // Additional metadata for domain-wide configuration
     isDomainWide: true,
     regex: domainRegex,
     pathPattern: '/*',
     scope: 'domain-wide',
     description: `Apply pre-rendering to all URLs across the entire domain (${baseUrlObj.origin})`,
-    sampleSize: sampleCount,
-    sampleUrls, // Just for reference - these are example URLs from the audit
-    note: `This configuration applies to ALL URLs in the domain, not just the ${sampleCount} audited URL${sampleCount > 1 ? 's' : ''}. Metrics shown are based on the audited sample.`,
+    auditedUrlCount,
+    auditedUrls, // URLs that were audited and generated individual suggestions
+    note: 'This configuration applies to ALL URLs in the domain. Metrics represent minimum baseline from qualified & prioritized URLs.',
+    // UI display annotations to show baseline/minimum values with "+" suffix
+    displayAnnotations: {
+      agenticTraffic: formatNumber(0), // Will show "N/A" until we have domain-wide data
+      contentGainRatio: minContentGainRatio > 0
+        ? `${Number(minContentGainRatio.toFixed(2))}×+`
+        : 'N/A',
+      aiReadableContent: minAiReadablePercent > 0
+        ? `${minAiReadablePercent}%+`
+        : 'N/A',
+      wordCountBefore: formatNumber(minWordCountBefore),
+      wordCountAfter: formatNumber(minWordCountAfter),
+      note: `Baseline metrics from ${auditedUrlCount} audited URL${auditedUrlCount > 1 ? 's' : ''}. Actual domain-wide impact may be higher.`,
+    },
+    // Store calculated percentage for UI
+    aiReadablePercent: minAiReadablePercent,
   };
 
   // Use a constant key to ensure only one domain-wide suggestion exists
@@ -474,7 +495,7 @@ async function syncDomainWideAggregateSuggestion(
     mergeDataFunction: (existingData, newDataItem) => newDataItem.data,
   });
 
-  log.info(`Prerender - Synced domain-wide aggregate suggestion for entire domain with regex: ${domainRegex}. Based on ${sampleCount} audited URL(s).`);
+  log.info(`Prerender - Synced domain-wide aggregate suggestion for entire domain with regex: ${domainRegex}. Based on ${auditedUrlCount} audited URL(s).`);
 }
 
 /**
