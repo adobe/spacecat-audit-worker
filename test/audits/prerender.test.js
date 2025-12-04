@@ -1408,8 +1408,8 @@ describe('Prerender Audit', () => {
         expect(mergedData).to.deep.equal({ newField: 'value' });
       });
 
-      it('should format large numbers with M+ suffix in displayAnnotations', async () => {
-        // Test to cover formatNumber with million+ values (lines 439-441)
+      it('should store raw numeric values for domain-wide suggestions', async () => {
+        // Test to verify raw numeric values are stored (formatting is now done in UI)
         const auditData = {
           siteId: 'test-site',
           auditId: 'test-audit-id',
@@ -1420,8 +1420,8 @@ describe('Prerender Audit', () => {
                 url: 'https://example.com/page1',
                 needsPrerender: true,
                 contentGainRatio: 2.0,
-                wordCountBefore: 2500000, // 2.5M - will trigger M+ format
-                wordCountAfter: 5000000, // 5M - will trigger M+ format
+                wordCountBefore: 2500000, // 2.5M
+                wordCountAfter: 5000000, // 5M
               },
             ],
           },
@@ -1449,7 +1449,7 @@ describe('Prerender Audit', () => {
           },
         };
 
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context, new Map());
 
         // Verify syncSuggestions was called twice (individual + domain-wide)
         expect(syncSuggestionsStub).to.have.been.calledTwice;
@@ -1458,13 +1458,14 @@ describe('Prerender Audit', () => {
         const domainWideCall = syncSuggestionsStub.getCall(1);
         const { newData } = domainWideCall.args[0];
 
-        // Verify M+ formatting is applied
-        expect(newData[0].data.displayAnnotations.wordCountBefore).to.equal('2.5M+');
-        expect(newData[0].data.displayAnnotations.wordCountAfter).to.equal('5.0M+');
+        // Verify raw numeric values are stored (UI will format with M+ suffix)
+        expect(newData[0].data.wordCountBefore).to.equal(2500000);
+        expect(newData[0].data.wordCountAfter).to.equal(5000000);
+        expect(newData[0].data.contentGainRatio).to.equal(2.0);
       });
 
-      it('should handle zero values with N/A in displayAnnotations', async () => {
-        // Test to cover formatNumber with zero/null values (lines 436-438)
+      it('should handle zero values as raw numbers (UI handles N/A display)', async () => {
+        // Test to verify zero values are stored as raw numbers (UI will display as "N/A")
         const auditData = {
           siteId: 'test-site',
           auditId: 'test-audit-id',
@@ -1504,17 +1505,17 @@ describe('Prerender Audit', () => {
           },
         };
 
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context, new Map());
 
         // Get the domain-wide suggestion call
         const domainWideCall = syncSuggestionsStub.getCall(1);
         const { newData } = domainWideCall.args[0];
 
-        // Verify N/A is shown for zero values
-        expect(newData[0].data.displayAnnotations.contentGainRatio).to.equal('N/A');
-        expect(newData[0].data.displayAnnotations.wordCountBefore).to.equal('N/A');
-        expect(newData[0].data.displayAnnotations.wordCountAfter).to.equal('N/A');
-        expect(newData[0].data.displayAnnotations.agenticTraffic).to.equal('N/A');
+        // Verify raw zero values are stored (UI will format as "N/A")
+        expect(newData[0].data.contentGainRatio).to.equal(0);
+        expect(newData[0].data.wordCountBefore).to.equal(0);
+        expect(newData[0].data.wordCountAfter).to.equal(0);
+        expect(newData[0].data.agenticTraffic).to.equal(0);
       });
     });
   });

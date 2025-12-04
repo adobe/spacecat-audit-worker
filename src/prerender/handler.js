@@ -58,7 +58,7 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
  * @param {any} site
  * @param {any} context
  * @param {number} limit
- * @returns {Promise<Array<{url:string}>>}
+ * @returns {Promise<Array<{url:string, hits:number}>>}
  */
 async function getTopAgenticUrlsFromAthena(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
   const { log } = context;
@@ -89,16 +89,19 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = TOP_AGENTIC_UR
 
     const baseUrl = site.getBaseURL?.() || '';
     const topUrls = results
-      .map((row) => row?.url)
-      .filter((path) => typeof path === 'string' && path.length > 0)
-      .map((path) => {
+      .filter((row) => typeof row?.url === 'string' && row.url.length > 0)
+      .map((row) => {
+        const path = row.url;
+        const hits = Number(row?.hits || 0);
         try {
           return {
             url: new URL(path, baseUrl).toString(),
+            hits,
           };
         } catch {
           return {
             url: path,
+            hits,
           };
         }
       });
@@ -117,7 +120,7 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = TOP_AGENTIC_UR
  * @param {any} site
  * @param {any} context
  * @param {number} limit
- * @returns {Promise<Array<{url:string}>>}
+ * @returns {Promise<Array<{url:string, hits:number}>>}
  */
 async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
   const { log } = context;
@@ -133,14 +136,16 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
     const top = Array.from(byUrl.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, limit)
-      .map(([path]) => {
+      .map(([path, hits]) => {
         try {
           return {
             url: new URL(path, baseUrl).toString(),
+            hits,
           };
         } catch {
           return {
             url: path,
+            hits,
           };
         }
       });
@@ -159,7 +164,7 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
  * @param {any} site
  * @param {any} context
  * @param {number} limit
- * @returns {Promise<string[]>}
+ * @returns {Promise<Array<{url:string, hits:number}>>}
  */
 async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
   const fromAthena = await getTopAgenticUrlsFromAthena(site, context, limit);
@@ -168,6 +173,31 @@ async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) 
   }
   context?.log?.info?.(`Prerender - No agentic URLs from Athena; attempting Sheet fallback. baseUrl=${site.getBaseURL()}`);
   return getTopAgenticUrlsFromSheet(site, context, limit);
+}
+
+/**
+ * Builds a traffic map from agentic stats array
+ * @param {Array<{url:string, hits:number}>} agenticStats - Array of URL stats with hits
+ * @param {Object} log - Logger instance
+ * @returns {Map<string, number>} Map of normalized URL paths to traffic counts
+ */
+function buildTrafficMapFromStats(agenticStats, log) {
+  const trafficMap = new Map();
+
+  agenticStats.forEach((stat) => {
+    try {
+      const urlObj = new URL(stat.url);
+      const normalizedPath = urlObj.pathname === '/' ? '/' : urlObj.pathname.replace(/\/$/, '');
+      const hits = Number(stat.hits || 0);
+      if (hits > 0) {
+        trafficMap.set(normalizedPath, (trafficMap.get(normalizedPath) || 0) + hits);
+      }
+    } catch (e) {
+      log?.debug?.(`Prerender - Could not parse URL for traffic map: ${stat.url} - ${e.message}`);
+    }
+  });
+
+  return trafficMap;
 }
 
 /**
@@ -391,6 +421,7 @@ export async function createScrapeForbiddenOpportunity(auditUrl, auditData, cont
  * @param {Array} preRenderSuggestions - Array of individual suggestions
  * @param {string} baseUrl - Base URL of the site
  * @param {Object} context - Processing context
+ * @param {Map<string, number>} agenticTrafficMap - Map of URL paths to traffic counts
  * @returns {Promise<void>}
  */
 async function syncDomainWideAggregateSuggestion(
@@ -398,14 +429,14 @@ async function syncDomainWideAggregateSuggestion(
   preRenderSuggestions,
   baseUrl,
   context,
+  agenticTrafficMap = new Map(),
 ) {
   const { log } = context;
 
   const auditedUrls = preRenderSuggestions.map((s) => s.url);
   const auditedUrlCount = auditedUrls.length;
 
-  // Calculate minimum metrics from qualified & prioritized URLs to show baseline impact
-  // Using minimum values with "+" suffix shows "at least this much" for domain-wide
+  // Calculate aggregated metrics from audited URLs
   const minContentGainRatio = preRenderSuggestions.length > 0
     ? Math.min(...preRenderSuggestions.map((s) => s.contentGainRatio || 0))
     : 0;
@@ -417,6 +448,19 @@ async function syncDomainWideAggregateSuggestion(
   const minWordCountAfter = preRenderSuggestions.length > 0
     ? Math.min(...preRenderSuggestions.map((s) => s.wordCountAfter || 0))
     : 0;
+
+  // Calculate total agentic traffic for all audited URLs
+  let totalAgenticTraffic = 0;
+  auditedUrls.forEach((url) => {
+    try {
+      const urlObj = new URL(url);
+      const normalizedPath = urlObj.pathname === '/' ? '/' : urlObj.pathname.replace(/\/$/, '');
+      const traffic = agenticTrafficMap.get(normalizedPath) || 0;
+      totalAgenticTraffic += traffic;
+    } catch (e) {
+      log.debug(`Prerender - Could not parse URL for traffic lookup: ${url}`);
+    }
+  });
 
   // Create domain-wide regex patterns
   const baseUrlObj = new URL(baseUrl);
@@ -431,28 +475,15 @@ async function syncDomainWideAggregateSuggestion(
     ? Math.round((minWordCountBefore / minWordCountAfter) * 100)
     : 0;
 
-  // Format helper: show "N/A" for 0 values, otherwise show value with "+" suffix
-  const formatNumber = (num) => {
-    if (num === 0 || num === null || num === undefined) {
-      return 'N/A';
-    }
-    if (num >= 1000000) {
-      return `${(num / 1000000).toFixed(1)}M+`;
-    }
-    if (num >= 1000) {
-      return `${(num / 1000).toFixed(1)}K+`;
-    }
-    return `${num}+`;
-  };
-
   // Domain-wide suggestion data matching the schema of individual suggestions
   // This applies to ALL URLs in the domain, including the qualified & prioritized URLs
   const domainWideSuggestionData = {
     // Special marker to indicate this covers the entire domain
     url: `${baseUrl}/* (All Domain URLs)`,
     contentGainRatio: minContentGainRatio > 0 ? Number(minContentGainRatio.toFixed(2)) : 0,
-    wordCountBefore: minWordCountBefore, // Minimum from audited URLs
-    wordCountAfter: minWordCountAfter, // Minimum from audited URLs
+    wordCountBefore: minWordCountBefore,
+    wordCountAfter: minWordCountAfter,
+    agenticTraffic: totalAgenticTraffic, // Aggregated traffic from all audited URLs
     // Additional metadata for domain-wide configuration
     isDomainWide: true,
     allowedRegexPatterns, // Array of regex patterns to match URLs for pre-rendering
@@ -462,19 +493,6 @@ async function syncDomainWideAggregateSuggestion(
     auditedUrlCount,
     auditedUrls, // URLs that were audited and generated individual suggestions
     note: 'This configuration applies to ALL URLs in the domain. Metrics represent minimum baseline from qualified & prioritized URLs.',
-    // UI display annotations to show baseline/minimum values with "+" suffix
-    displayAnnotations: {
-      agenticTraffic: formatNumber(0), // Will show "N/A" until we have domain-wide data
-      contentGainRatio: minContentGainRatio > 0
-        ? `${Number(minContentGainRatio.toFixed(2))}×+`
-        : 'N/A',
-      aiReadableContent: minAiReadablePercent > 0
-        ? `${minAiReadablePercent}%+`
-        : 'N/A',
-      wordCountBefore: formatNumber(minWordCountBefore),
-      wordCountAfter: formatNumber(minWordCountAfter),
-      note: `Baseline metrics from ${auditedUrlCount} audited URL${auditedUrlCount > 1 ? 's' : ''}. Actual domain-wide impact may be higher.`,
-    },
     // Store calculated percentage for UI
     aiReadablePercent: minAiReadablePercent,
   };
@@ -511,7 +529,7 @@ async function syncDomainWideAggregateSuggestion(
     },
   });
 
-  log.info(`Prerender - Synced domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s).`);
+  log.info(`Prerender - Synced domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s). Total agentic traffic: ${totalAgenticTraffic}`);
 }
 
 /**
@@ -519,9 +537,15 @@ async function syncDomainWideAggregateSuggestion(
  * @param {string} auditUrl - Audited URL
  * @param {Object} auditData - Audit data with results
  * @param {Object} context - Processing context
+ * @param {Map<string, number>} agenticTrafficMap - Map of URL paths to traffic counts
  * @returns {Promise<void>}
  */
-export async function processOpportunityAndSuggestions(auditUrl, auditData, context) {
+export async function processOpportunityAndSuggestions(
+  auditUrl,
+  auditData,
+  context,
+  agenticTrafficMap = new Map(),
+) {
   const { log } = context;
 
   const { auditResult } = auditData;
@@ -585,7 +609,13 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
   log.info(`Prerender - Successfully synced suggestions=${preRenderSuggestions.length} for baseUrl: ${auditUrl}, siteId: ${auditData.siteId}`);
 
   // Create additional domain-wide aggregate suggestion (n+1) that covers all URLs
-  await syncDomainWideAggregateSuggestion(opportunity, preRenderSuggestions, auditUrl, context);
+  await syncDomainWideAggregateSuggestion(
+    opportunity,
+    preRenderSuggestions,
+    auditUrl,
+    context,
+    agenticTrafficMap,
+  );
 }
 
 /**
@@ -737,11 +767,15 @@ export async function processContentAndGenerateOpportunities(context) {
     };
 
     if (urlsNeedingPrerender.length > 0) {
+      // Build agentic traffic map from already-fetched agenticStats
+      const agenticTrafficMap = buildTrafficMapFromStats(agenticStats, log);
+      log.info(`Prerender - Built traffic map from ${agenticStats.length} agentic URLs. baseUrl=${site.getBaseURL()}`);
+
       await processOpportunityAndSuggestions(site.getBaseURL(), {
         siteId,
         auditId: audit.getId(),
         auditResult,
-      }, context);
+      }, context, agenticTrafficMap);
     } else if (scrapeForbidden) {
       // Create a dummy opportunity when scraping is forbidden (403)
       // This allows the UI to display proper messaging without suggestions
