@@ -78,10 +78,14 @@ export default async function handler(message, context) {
 
     // Filter and validate suggested URLs
     const validSuggestedUrls = Array.isArray(suggestedUrls) ? suggestedUrls : [];
-    log.info(`[Broken Links Guidance] Processing suggestion ${brokenLink.suggestionId} with ${validSuggestedUrls.length} URLs: ${JSON.stringify(validSuggestedUrls)}`);
+
+    // Use overrideBaseURL if configured
+    const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+    const baseURL = overrideBaseURL || site.getBaseURL();
+
     const filteredSuggestedUrls = await filterBrokenSuggestedUrls(
       validSuggestedUrls,
-      site.getBaseURL(),
+      baseURL,
       log,
     );
 
@@ -96,11 +100,7 @@ export default async function handler(message, context) {
       // No URLs were provided by Mystique, clear rationale
       log.info(`[Broken Links Guidance] No suggested URLs provided by Mystique for suggestion ${brokenLink.suggestionId}`);
       aiRationale = '';
-    } else {
-      log.info(`[Broken Links Guidance] Keeping ${filteredSuggestedUrls.length} URLs and AI rationale for suggestion ${brokenLink.suggestionId}`);
     }
-
-    log.info(`[Broken Links Guidance] Final data for suggestion ${brokenLink.suggestionId}: urlsSuggested=${JSON.stringify(filteredSuggestedUrls)}, aiRationale="${aiRationale}"`);
 
     suggestion.setData({
       ...suggestion.getData(),

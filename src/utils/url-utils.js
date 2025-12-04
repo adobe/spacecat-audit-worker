@@ -28,6 +28,20 @@ export function isPreviewPage(url) {
   return urlObj.hostname.endsWith('.page');
 }
 
+/**
+ * Checks if a URL points to a PDF file
+ * @param {string} url - The URL to check
+ * @returns {boolean} - True if the URL points to a PDF file
+ */
+export function isPdfUrl(url) {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    return pathname.endsWith('.pdf');
+  } catch {
+    return false;
+  }
+}
+
 export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL, log = console) {
   const baseDomain = new URL(baseURL).hostname;
 
@@ -35,6 +49,13 @@ export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL, log = co
     try {
       const schemaPrependedUrl = prependSchema(stripWWW(suggestedUrl));
       const suggestedURLObj = new URL(schemaPrependedUrl);
+
+      // Check if it's a PDF URL
+      if (isPdfUrl(schemaPrependedUrl)) {
+        log.warn(`[URL Filter] REJECTED ${suggestedUrl} - URL is a PDF`);
+        return null;
+      }
+
       if (suggestedURLObj.hostname === baseDomain) {
         const response = await fetch(schemaPrependedUrl);
         if (response.ok) {

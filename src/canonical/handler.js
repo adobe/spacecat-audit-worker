@@ -17,7 +17,7 @@ import { load as cheerioLoad } from 'cheerio';
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import { isPreviewPage } from '../utils/url-utils.js';
+import { isPreviewPage, isPdfUrl } from '../utils/url-utils.js';
 import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
@@ -169,7 +169,7 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
 
             // Check if canonical points to same page (query params are ignored)
             if ((isPreview && canonicalPath === finalPath)
-                || normalizedCanonical === normalizedFinal) {
+              || normalizedCanonical === normalizedFinal) {
               checks.push({
                 check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
                 success: true,
@@ -493,16 +493,6 @@ export async function canonicalAuditRunner(baseURL, context, site) {
           || pathname.startsWith('/auth/');
       } catch {
         // If URL is malformed, don't skip it (return false)
-        return false;
-      }
-    };
-
-    // Exclude PDF files from canonical checks
-    const isPdfUrl = (u) => {
-      try {
-        const pathname = new URL(u).pathname.toLowerCase();
-        return pathname.endsWith('.pdf');
-      } catch {
         return false;
       }
     };

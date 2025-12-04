@@ -54,6 +54,9 @@ describe('guidance-broken-links-remediation handler', () => {
     mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
       getId: () => mockMessage.siteId,
       getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({
+        getFetchConfig: () => ({}),
+      }),
     });
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
       getId: () => auditDataMock.id,
@@ -148,7 +151,7 @@ describe('guidance-broken-links-remediation handler', () => {
 
   it('should return 404 if Suggestion is not found', async () => {
     mockContext.dataAccess.Site.findById = sandbox.stub().resolves(
-      { getId: () => mockMessage.siteId },
+      { getId: () => mockMessage.siteId, getConfig: () => ({}) },
     );
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({});
     mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves(
@@ -179,6 +182,9 @@ describe('guidance-broken-links-remediation handler', () => {
     mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
       getId: () => mockMessage.siteId,
       getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({
+        getFetchConfig: () => ({}),
+      }),
     });
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
       getId: () => auditDataMock.id,
@@ -233,6 +239,9 @@ describe('guidance-broken-links-remediation handler', () => {
     mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
       getId: () => mockMessage.siteId,
       getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({
+        getFetchConfig: () => ({}),
+      }),
     });
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
       getId: () => auditDataMock.id,
@@ -357,6 +366,9 @@ describe('guidance-broken-links-remediation handler', () => {
     mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
       getId: () => mockMessage.siteId,
       getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({
+        getFetchConfig: () => ({}),
+      }),
     });
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
       getId: () => auditDataMock.id,
@@ -407,6 +419,9 @@ describe('guidance-broken-links-remediation handler', () => {
     mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
       getId: () => mockMessage.siteId,
       getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({
+        getFetchConfig: () => ({}),
+      }),
     });
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
       getId: () => auditDataMock.id,
@@ -454,6 +469,9 @@ describe('guidance-broken-links-remediation handler', () => {
     mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
       getId: () => mockMessage.siteId,
       getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({
+        getFetchConfig: () => ({}),
+      }),
     });
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
       getId: () => auditDataMock.id,

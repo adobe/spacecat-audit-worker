@@ -21,7 +21,7 @@ import { wwwUrlResolver } from '../common/index.js';
 import productMetatagsAutoSuggest from './product-metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getIssueRanking, trimTagValue, normalizeTagValue } from '../utils/seo-utils.js';
-import { getBaseUrl } from '../utils/url-utils.js';
+import { getBaseUrl, isPdfUrl } from '../utils/url-utils.js';
 import {
   DESCRIPTION,
   H1,
@@ -815,15 +815,6 @@ export async function submitForScraping(context) {
   }
 
   // Filter out PDF files
-  const isPdfUrl = (url) => {
-    try {
-      const pathname = new URL(url).pathname.toLowerCase();
-      return pathname.endsWith('.pdf');
-    } catch {
-      return false;
-    }
-  };
-
   const filteredUrls = finalUrls.filter((url) => {
     if (isPdfUrl(url)) {
       log.info(`[PRODUCT-METATAGS] Skipping PDF file from scraping: ${url}`);
