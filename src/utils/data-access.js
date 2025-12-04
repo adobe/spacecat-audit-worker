@@ -140,12 +140,6 @@ export const handleOutdatedSuggestions = async ({
   const { Suggestion } = context.dataAccess;
   const { log } = context;
 
-  // LOG: All existing suggestions before filtering
-  const existingSuggestionsData = existingSuggestions.map((s) => ({
-    key: buildKey(s.getData()), status: s.getStatus(),
-  }));
-  log.debug('[TRACKING1] Existing suggestions:', JSON.stringify(existingSuggestionsData, null, 2));
-
   const existingOutdatedSuggestions = existingSuggestions
     .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
     .filter((existing) => ![
@@ -162,12 +156,6 @@ export const handleOutdatedSuggestions = async ({
       }
       return true;
     });
-
-  // LOG: Filtered suggestions that will be marked as outdated
-  const outdatedSuggestionsData = existingOutdatedSuggestions.map((s) => ({
-    key: buildKey(s.getData()), status: s.getStatus(),
-  }));
-  log.debug('[TRACKING1.1] ToBeOutdated suggestions:', JSON.stringify(outdatedSuggestionsData, null, 2));
 
   // prevents JSON.stringify overflow
   log.info(`[SuggestionSync] Final count of suggestions to mark as ${statusToSetForOutdated}: ${existingOutdatedSuggestions.length}`);
@@ -260,26 +248,12 @@ export async function syncSuggestions({
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
   // Update existing suggestions
-  // LOG: Existing suggestions before update filtering
-  const beforeUpdateFilterData = existingSuggestions.map((s) => ({
-    key: buildKey(s.getData()), status: s.getStatus(),
-  }));
-  log.debug('[TRACKING2] BeforeUpdateFilter suggestions:', JSON.stringify(beforeUpdateFilterData, null, 2));
-
-  const existingSuggestionsToUpdate = existingSuggestions
-    .filter((existing) => {
-      const existingKey = buildKey(existing.getData());
-      return newDataKeys.has(existingKey);
-    });
-
-  // LOG: Existing suggestions after update filtering
-  const toBeUpdatedData = existingSuggestionsToUpdate.map((s) => ({
-    key: buildKey(s.getData()), status: s.getStatus(),
-  }));
-  log.debug('[TRACKING2.1] ToBeUpdated suggestionss:', JSON.stringify(toBeUpdatedData, null, 2));
-
   await Promise.all(
-    existingSuggestionsToUpdate
+    existingSuggestions
+      .filter((existing) => {
+        const existingKey = buildKey(existing.getData());
+        return newDataKeys.has(existingKey);
+      })
       .map((existing) => {
         const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
         existing.setData(mergeDataFunction(existing.getData(), newDataItem));
@@ -300,16 +274,6 @@ export async function syncSuggestions({
   // Prepare new suggestions
   const { site } = context;
   const requiresValidation = Boolean(site?.requiresValidation);
-
-  // LOG: Before new suggestions filtering
-  const newDataForLogging = newData.map((data) => ({ key: buildKey(data) }));
-  log.debug('[TRACKING3] NewData:', JSON.stringify(newDataForLogging, null, 2));
-
-  const existingForBlockingData = existingSuggestions.map((s) => ({
-    key: buildKey(s.getData()), status: s.getStatus(),
-  }));
-  log.debug('[TRACKING3] ExistingForBlocking:', JSON.stringify(existingForBlockingData, null, 2));
-
   const newSuggestions = newData
     .filter((data) => !existingSuggestions.some(
       (existing) => buildKey(existing.getData()) === buildKey(data),
@@ -322,12 +286,6 @@ export async function syncSuggestions({
           : SuggestionDataAccess.STATUSES.NEW,
       };
     });
-
-  // LOG: After new suggestions filtering
-  const finalNewSuggestionsData = newSuggestions.map((s) => ({
-    key: buildKey(s.data), status: s.status,
-  }));
-  log.debug('[TRACKING3.1] FinalNewSuggestions:', JSON.stringify(finalNewSuggestionsData, null, 2));
 
   // Add new suggestions if any
   if (newSuggestions.length > 0) {
