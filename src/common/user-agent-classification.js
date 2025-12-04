@@ -11,7 +11,7 @@
  */
 
 export const PROVIDER_USER_AGENT_PATTERNS = {
-  chatgpt: '(?i)ChatGPT|GPTBot|OAI-SearchBot',
+  chatgpt: '(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))',
   perplexity: '(?i)Perplexity',
   claude: '(?i)Claude(?!-web)',
   google: '(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|GoogleAgent)',
@@ -35,6 +35,7 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   // Perplexity
   { pattern: '%perplexitybot%', displayName: 'PerplexityBot' },
   { pattern: '%perplexity-user%', displayName: 'Perplexity-User' },
+  { pattern: '%perplexity/%', displayName: 'Perplexity Clients' },
 
   // Google
   { pattern: '%gemini-deep-research%', displayName: 'Gemini-Deep-Research' },
@@ -76,7 +77,7 @@ export function buildAgentTypeClassificationSQL() {
     // Perplexity
     { pattern: '%perplexitybot%', result: 'Web search crawlers' },
     { pattern: '%perplexity-user%', result: 'Chatbots' },
-    { pattern: '%perplexity%', result: 'Chatbots' },
+    { pattern: '%perplexity/%', result: 'Media fetchers' },
     // Google
     { pattern: '%gemini-deep-research%', result: 'Research' },
     { pattern: 'google', result: 'Chatbots' },
