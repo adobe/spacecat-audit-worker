@@ -1,3 +1,10 @@
+## [1.266.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.266.0...v1.266.1) (2025-12-04)
+
+
+### Bug Fixes
+
+* updated handler.js to ensure all imported URLs are sent for scra… ([#1749](https://github.com/adobe/spacecat-audit-worker/issues/1749)) ([e9b3803](https://github.com/adobe/spacecat-audit-worker/commit/e9b38038e161391db0ceb357e56f3f4e05ad79dd))
+
 # [1.266.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.265.4...v1.266.0) (2025-12-04)
 
 
