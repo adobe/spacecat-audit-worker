@@ -1,0 +1,23 @@
+---
+alwaysApply: true
+---
+
+# Running Tests
+
+To run specific spec, use the following command:
+
+```bash
+npm run test:spec -- <test file>
+```
+
+## Examples
+
+- To run a specific test file:
+  ```bash
+  npm run test:spec -- test/audits/forms/handler.test.js
+  ```
+
+- To run multiple specific test files:
+  ```bash
+  npm run test:spec -- test/audits/forms/handler.test.js test/audits/forms/utils.test.js
+  ```
