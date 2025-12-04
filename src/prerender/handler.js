@@ -415,17 +415,15 @@ export async function createScrapeForbiddenOpportunity(auditUrl, auditData, cont
 }
 
 /**
- * Creates a domain-wide aggregate suggestion that covers all URLs
+ * Prepares domain-wide aggregate suggestion data that covers all URLs
  * This is an additional suggestion (n+1) that acts as a superset
- * @param {Object} opportunity - The opportunity object
  * @param {Array} preRenderSuggestions - Array of individual suggestions
  * @param {string} baseUrl - Base URL of the site
  * @param {Object} context - Processing context
  * @param {Map<string, number>} agenticTrafficMap - Map of URL paths to traffic counts
- * @returns {Promise<void>}
+ * @returns {Promise<Object>} Domain-wide suggestion object with key and data
  */
-async function syncDomainWideAggregateSuggestion(
-  opportunity,
+async function prepareDomainWideAggregateSuggestion(
   preRenderSuggestions,
   baseUrl,
   context,
@@ -498,38 +496,15 @@ async function syncDomainWideAggregateSuggestion(
   };
 
   // Use a constant key to ensure only ONE domain-wide suggestion exists per opportunity
-  // This key-based approach guarantees uniqueness through syncSuggestions:
-  // - If a suggestion with this key exists, it gets updated
-  // - If it doesn't exist, it gets created
-  // - No duplicates are possible because the key is constant
   const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
 
-  // Sync domain-wide suggestion using the same pattern as individual suggestions
-  // syncSuggestions ensures only one domain-wide suggestion exists
-  // and gets updated on subsequent runs
-  await syncSuggestions({
-    opportunity,
-    newData: [{ key: DOMAIN_WIDE_SUGGESTION_KEY, data: domainWideSuggestionData }],
-    context,
-    buildKey: (data) => data.key, // Always returns the same key for domain-wide suggestion
-    mapNewSuggestion: (suggestion) => ({
-      opportunityId: opportunity.getId(),
-      type: Suggestion.TYPES.CONFIG_UPDATE,
-      rank: 999999, // High rank to appear first in the list
-      data: suggestion.data,
-    }),
-    // Merge function: completely replace with new data (including regexPatterns array)
-    mergeDataFunction: (existingData, newDataItem) => {
-      const merged = { ...newDataItem.data };
-      // Preserve any additional fields that might have been added externally
-      if (existingData.customFields) {
-        merged.customFields = existingData.customFields;
-      }
-      return merged;
-    },
-  });
+  log.info(`Prerender - Prepared domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s). Total agentic traffic: ${totalAgenticTraffic}`);
 
-  log.info(`Prerender - Synced domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s). Total agentic traffic: ${totalAgenticTraffic}`);
+  // Return the domain-wide suggestion object (will be synced together with individual suggestions)
+  return {
+    key: DOMAIN_WIDE_SUGGESTION_KEY,
+    data: domainWideSuggestionData,
+  };
 }
 
 /**
@@ -575,7 +550,23 @@ export async function processOpportunityAndSuggestions(
     auditData, // Pass auditData as props so createOpportunityData receives it
   );
 
-  const buildKey = (data) => `${data.url}|${AUDIT_TYPE}`;
+  // Prepare domain-wide suggestion data first
+  const domainWideSuggestion = await prepareDomainWideAggregateSuggestion(
+    preRenderSuggestions,
+    auditUrl,
+    context,
+    agenticTrafficMap,
+  );
+
+  // Build key function that handles both individual and domain-wide suggestions
+  const buildKey = (data) => {
+    // Domain-wide suggestion has a special key field
+    if (data.key) {
+      return data.key;
+    }
+    // Individual suggestions use URL-based key
+    return `${data.url}|${AUDIT_TYPE}`;
+  };
 
   // Helper function to extract only the fields we want in suggestions
   const mapSuggestionData = (suggestion) => ({
@@ -588,34 +579,52 @@ export async function processOpportunityAndSuggestions(
     prerenderedHtmlKey: getS3Path(suggestion.url, auditData.siteId, 'client-side.html'),
   });
 
+  // Combine individual suggestions with domain-wide suggestion for a single sync call
+  // This prevents the second call from marking the first batch as OUTDATED
+  const allSuggestions = [...preRenderSuggestions, domainWideSuggestion];
+
   await syncSuggestions({
     opportunity,
-    newData: preRenderSuggestions,
+    newData: allSuggestions,
     context,
     buildKey,
-    mapNewSuggestion: (suggestion) => ({
-      opportunityId: opportunity.getId(),
-      type: Suggestion.TYPES.CONFIG_UPDATE,
-      rank: 0,
-      data: mapSuggestionData(suggestion),
-    }),
-    // Custom merge function: preserve existing fields, update with clean new data
-    mergeDataFunction: (existingData, newDataItem) => ({
-      ...existingData,
-      ...mapSuggestionData(newDataItem),
-    }),
+    mapNewSuggestion: (suggestion) => {
+      // Handle domain-wide suggestion differently
+      if (suggestion.key) {
+        return {
+          opportunityId: opportunity.getId(),
+          type: Suggestion.TYPES.CONFIG_UPDATE,
+          rank: 999999, // High rank to appear first
+          data: suggestion.data,
+        };
+      }
+      // Handle individual suggestions
+      return {
+        opportunityId: opportunity.getId(),
+        type: Suggestion.TYPES.CONFIG_UPDATE,
+        rank: 0,
+        data: mapSuggestionData(suggestion),
+      };
+    },
+    // Custom merge function: handle both types
+    mergeDataFunction: (existingData, newDataItem) => {
+      // Domain-wide suggestion: replace with new data
+      if (newDataItem.key) {
+        const merged = { ...newDataItem.data };
+        if (existingData.customFields) {
+          merged.customFields = existingData.customFields;
+        }
+        return merged;
+      }
+      // Individual suggestions: merge with existing
+      return {
+        ...existingData,
+        ...mapSuggestionData(newDataItem),
+      };
+    },
   });
 
-  log.info(`Prerender - Successfully synced suggestions=${preRenderSuggestions.length} for baseUrl: ${auditUrl}, siteId: ${auditData.siteId}`);
-
-  // Create additional domain-wide aggregate suggestion (n+1) that covers all URLs
-  await syncDomainWideAggregateSuggestion(
-    opportunity,
-    preRenderSuggestions,
-    auditUrl,
-    context,
-    agenticTrafficMap,
-  );
+  log.info(`Prerender - Successfully synced ${preRenderSuggestions.length} individual + 1 domain-wide suggestion for baseUrl: ${auditUrl}, siteId: ${auditData.siteId}`);
 }
 
 /**

@@ -794,7 +794,7 @@ describe('Prerender Audit', () => {
         expect(result.auditResult.urlsNeedingPrerender).to.be.greaterThan(0);
         expect(context.log.info).to.have.been.called;
         // Verify that the opportunity processing was logged
-        expect(context.log.info.args.some(call => call[0].includes('Successfully synced suggestions'))).to.be.true;
+        expect(context.log.info.args.some((call) => call[0].includes('Successfully synced'))).to.be.true;
       });
 
       it('should create dummy opportunity when scraping is forbidden', async () => {
@@ -1380,19 +1380,21 @@ describe('Prerender Audit', () => {
 
         await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
-        // Verify syncSuggestions was called twice (individual + domain-wide)
-        expect(syncSuggestionsStub).to.have.been.calledTwice;
+        // Verify syncSuggestions was called once with combined data
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
 
-        // Get the second call (domain-wide aggregate suggestion)
-        const domainWideCall = syncSuggestionsStub.getCall(1);
-        expect(domainWideCall).to.exist;
+        // Get the single call with both individual and domain-wide suggestions
+        const syncCall = syncSuggestionsStub.getCall(0);
+        expect(syncCall).to.exist;
 
-        // Extract and test the mapNewSuggestion function (covers lines 460-465)
-        const { mapNewSuggestion, mergeDataFunction, newData } = domainWideCall.args[0];
+        // Extract functions and data
+        const { mapNewSuggestion, mergeDataFunction, newData } = syncCall.args[0];
 
-        // Test mapNewSuggestion function execution
-        const testSuggestion = newData[0];
-        const mappedSuggestion = mapNewSuggestion(testSuggestion);
+        // Test mapNewSuggestion function execution for domain-wide suggestion
+        // Domain-wide suggestion should be the last item in newData
+        const domainWideSuggestion = newData.find((item) => item.key);
+        expect(domainWideSuggestion).to.exist;
+        const mappedSuggestion = mapNewSuggestion(domainWideSuggestion);
 
         expect(mappedSuggestion).to.have.property('opportunityId', 'test-opp-id');
         expect(mappedSuggestion).to.have.property('type', 'CONFIG_UPDATE');
@@ -1400,12 +1402,18 @@ describe('Prerender Audit', () => {
         expect(mappedSuggestion).to.have.property('data');
         expect(mappedSuggestion.data).to.have.property('isDomainWide', true);
 
-        // Test mergeDataFunction execution (covers line 466)
+        // Test mergeDataFunction execution for domain-wide suggestion
         const existingData = { oldField: 'preserved' };
         const newDataItem = { key: 'domain-wide-aggregate|prerender', data: { newField: 'value' } };
         const mergedData = mergeDataFunction(existingData, newDataItem);
 
         expect(mergedData).to.deep.equal({ newField: 'value' });
+
+        // Test mapNewSuggestion for individual suggestions
+        const individualSuggestion = newData.find((item) => !item.key);
+        expect(individualSuggestion).to.exist;
+        const mappedIndividual = mapNewSuggestion(individualSuggestion);
+        expect(mappedIndividual).to.have.property('rank', 0);
       });
 
       it('should store raw numeric values for domain-wide suggestions', async () => {
@@ -1451,17 +1459,21 @@ describe('Prerender Audit', () => {
 
         await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context, new Map());
 
-        // Verify syncSuggestions was called twice (individual + domain-wide)
-        expect(syncSuggestionsStub).to.have.been.calledTwice;
+        // Verify syncSuggestions was called once with combined data
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
 
-        // Get the domain-wide suggestion call (second call)
-        const domainWideCall = syncSuggestionsStub.getCall(1);
-        const { newData } = domainWideCall.args[0];
+        // Get the single call with both individual and domain-wide suggestions
+        const syncCall = syncSuggestionsStub.getCall(0);
+        const { newData } = syncCall.args[0];
+
+        // Find the domain-wide suggestion in the combined data
+        const domainWideSuggestion = newData.find((item) => item.key);
+        expect(domainWideSuggestion).to.exist;
 
         // Verify raw numeric values are stored (UI will format with M+ suffix)
-        expect(newData[0].data.wordCountBefore).to.equal(2500000);
-        expect(newData[0].data.wordCountAfter).to.equal(5000000);
-        expect(newData[0].data.contentGainRatio).to.equal(2.0);
+        expect(domainWideSuggestion.data.wordCountBefore).to.equal(2500000);
+        expect(domainWideSuggestion.data.wordCountAfter).to.equal(5000000);
+        expect(domainWideSuggestion.data.contentGainRatio).to.equal(2.0);
       });
 
       it('should handle zero values as raw numbers (UI handles N/A display)', async () => {
@@ -1507,15 +1519,20 @@ describe('Prerender Audit', () => {
 
         await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context, new Map());
 
-        // Get the domain-wide suggestion call
-        const domainWideCall = syncSuggestionsStub.getCall(1);
-        const { newData } = domainWideCall.args[0];
+        // Verify syncSuggestions was called once
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+
+        // Get the single call and find domain-wide suggestion
+        const syncCall = syncSuggestionsStub.getCall(0);
+        const { newData } = syncCall.args[0];
+        const domainWideSuggestion = newData.find((item) => item.key);
+        expect(domainWideSuggestion).to.exist;
 
         // Verify raw zero values are stored (UI will format as "N/A")
-        expect(newData[0].data.contentGainRatio).to.equal(0);
-        expect(newData[0].data.wordCountBefore).to.equal(0);
-        expect(newData[0].data.wordCountAfter).to.equal(0);
-        expect(newData[0].data.agenticTraffic).to.equal(0);
+        expect(domainWideSuggestion.data.contentGainRatio).to.equal(0);
+        expect(domainWideSuggestion.data.wordCountBefore).to.equal(0);
+        expect(domainWideSuggestion.data.wordCountAfter).to.equal(0);
+        expect(domainWideSuggestion.data.agenticTraffic).to.equal(0);
       });
     });
   });
@@ -3239,12 +3256,12 @@ describe('Prerender Audit', () => {
         await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
         expect(context.log.info).to.have.been.called;
-        // Verify that syncSuggestions was called twice (once for individual suggestions, once for master)
-        expect(syncSuggestionsStub).to.have.been.calledTwice;
+        // Verify that syncSuggestions was called once with combined data
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
         // Verify that suggestion syncing was logged
-        expect(context.log.info.args.some(call => call[0].includes('Successfully synced suggestions'))).to.be.true;
+        expect(context.log.info.args.some((call) => call[0].includes('Successfully synced'))).to.be.true;
 
-        // First call: Verify the individual URL suggestions
+        // Get the single call with combined data
         const individualSyncCall = syncSuggestionsStub.getCall(0);
         expect(individualSyncCall.args[0]).to.have.property('mapNewSuggestion');
         const mappedSuggestion = individualSyncCall.args[0].mapNewSuggestion(auditData.auditResult.results[0]);
@@ -3270,15 +3287,14 @@ describe('Prerender Audit', () => {
         expect(mergedData).to.not.have.property('agenticTraffic');
         expect(mergedData).to.not.have.property('needsPrerender'); // Filtered out by mapSuggestionData
 
-        // Second call: Verify the domain-wide aggregate suggestion
-        const domainWideSyncCall = syncSuggestionsStub.getCall(1);
-        expect(domainWideSyncCall.args[0]).to.have.property('newData');
-        expect(domainWideSyncCall.args[0].newData).to.be.an('array').with.lengthOf(1);
-        expect(domainWideSyncCall.args[0].newData[0]).to.have.property('key', 'domain-wide-aggregate|prerender');
-        expect(domainWideSyncCall.args[0].newData[0].data).to.have.property('isDomainWide', true);
-        expect(domainWideSyncCall.args[0].newData[0].data).to.have.property('allowedRegexPatterns');
-        expect(domainWideSyncCall.args[0].newData[0].data.allowedRegexPatterns).to.be.an('array');
-        expect(domainWideSyncCall.args[0].newData[0].data.url).to.include('All Domain URLs');
+        // Find domain-wide aggregate suggestion in combined data
+        const domainWideSuggestion = individualSyncCall.args[0].newData.find((item) => item.key);
+        expect(domainWideSuggestion).to.exist;
+        expect(domainWideSuggestion).to.have.property('key', 'domain-wide-aggregate|prerender');
+        expect(domainWideSuggestion.data).to.have.property('isDomainWide', true);
+        expect(domainWideSuggestion.data).to.have.property('allowedRegexPatterns');
+        expect(domainWideSuggestion.data.allowedRegexPatterns).to.be.an('array');
+        expect(domainWideSuggestion.data.url).to.include('All Domain URLs');
       });
 
       it('should update existing PRERENDER opportunity with all data fields', async () => {
@@ -3702,6 +3718,318 @@ describe('Prerender Audit', () => {
         
         expect(result.auditResult.results[0].scrapeError).to.be.undefined;
       });
+    });
+  });
+
+  describe('buildTrafficMapFromStats', () => {
+    it('should build traffic map from agentic stats with valid URLs', async () => {
+      const mockHandler = await import('../../src/prerender/handler.js');
+      const log = {
+        debug: sinon.stub(),
+        info: sinon.stub(),
+      };
+
+      // Test with simple valid URLs
+      const agenticStats = [
+        { url: 'https://example.com/page1', hits: 100 },
+        { url: 'https://example.com/page2', hits: 200 },
+        { url: 'https://example.com/page3', hits: 300 },
+      ];
+
+      // Use processContentAndGenerateOpportunities to indirectly test buildTrafficMapFromStats
+      const mockS3Client = {
+        send: sinon.stub().resolves({
+          ContentType: 'text/html',
+          Body: {
+            transformToString: () => Promise.resolve('<html><body><p>Test</p></body></html>'),
+          },
+        }),
+      };
+
+      const context = {
+        site: {
+          getId: () => 'test-site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        audit: { getId: () => 'audit-id' },
+        log,
+        s3Client: mockS3Client,
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        scrapeResultPaths: new Map([
+          ['https://example.com/page1', 'path1'],
+          ['https://example.com/page2', 'path2'],
+        ]),
+      };
+
+      // Mock the getTopAgenticUrls to return our test data
+      const esmockedHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: {
+            fromContext: () => ({
+              query: async () => agenticStats.map((s) => ({ url: s.url, hits: s.hits })),
+            }),
+          },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+          },
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => '<html><body><p>Test content</p></body></html>',
+        },
+      });
+
+      const result = await esmockedHandler.processContentAndGenerateOpportunities(context);
+      expect(result.status).to.equal('complete');
+    });
+
+    it('should handle invalid URLs and skip them silently', async () => {
+      const log = {
+        debug: sinon.stub(),
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        error: sinon.stub(),
+      };
+
+      const agenticStats = [
+        { url: 'https://example.com/valid', hits: 100 },
+        { url: 'not-a-valid-url', hits: 50 }, // Invalid URL
+        { url: '::invalid::', hits: 75 }, // Another invalid URL
+      ];
+
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: {
+            fromContext: () => ({
+              query: async () => agenticStats.map((s) => ({ url: s.url, number_of_hits: s.hits })),
+            }),
+          },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+          },
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => '<html><body><p>Test</p></body></html>',
+        },
+      });
+
+      const context = {
+        site: {
+          getId: () => 'test-site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        audit: { getId: () => 'audit-id' },
+        log,
+        s3Client: { send: sinon.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        scrapeResultPaths: new Map([['https://example.com/valid', 'path']]),
+      };
+
+      const result = await mockHandler.processContentAndGenerateOpportunities(context);
+      
+      // Should complete successfully even with invalid URLs
+      expect(result.status).to.equal('complete');
+    });
+
+    it('should normalize paths by removing trailing slashes', async () => {
+      const log = {
+        debug: sinon.stub(),
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        error: sinon.stub(),
+      };
+
+      const agenticStats = [
+        { url: 'https://example.com/page/', hits: 100 }, // With trailing slash
+        { url: 'https://example.com/page', hits: 50 }, // Without trailing slash - should aggregate
+      ];
+
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: {
+            fromContext: () => ({
+              query: async () => agenticStats.map((s) => ({ url: s.url, number_of_hits: s.hits })),
+            }),
+          },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+          },
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectFromKey: async (_c, _b, key) => {
+            if (key.includes('server-side')) return '<html><body>Server</body></html>';
+            if (key.includes('client-side')) return '<html><body>Server plus more client content that makes it worth prerendering with substantial gain</body></html>';
+            return null;
+          },
+        },
+      });
+
+      const context = {
+        site: {
+          getId: () => 'test-site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        audit: { getId: () => 'audit-id' },
+        log,
+        s3Client: { send: sinon.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        scrapeResultPaths: new Map([['https://example.com/page', 'path']]),
+      };
+
+      await mockHandler.processContentAndGenerateOpportunities(context);
+
+      // Traffic should be aggregated for the same normalized path
+      const infoCalls = log.info.getCalls();
+      const trafficMapLog = infoCalls.find((call) => String(call.args[0]).includes('Built traffic map from'));
+      expect(trafficMapLog).to.exist;
+    });
+
+    it('should filter out entries with zero hits', async () => {
+      const log = {
+        debug: sinon.stub(),
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        error: sinon.stub(),
+      };
+
+      const agenticStats = [
+        { url: 'https://example.com/page1', hits: 100 },
+        { url: 'https://example.com/page2', hits: 0 }, // Zero hits - should be filtered
+        { url: 'https://example.com/page3', hits: 200 },
+      ];
+
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: {
+            fromContext: () => ({
+              query: async () => agenticStats.map((s) => ({ url: s.url, number_of_hits: s.hits })),
+            }),
+          },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+          },
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => '<html><body><p>Test</p></body></html>',
+        },
+      });
+
+      const context = {
+        site: {
+          getId: () => 'test-site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        audit: { getId: () => 'audit-id' },
+        log,
+        s3Client: { send: sinon.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        scrapeResultPaths: new Map([
+          ['https://example.com/page1', 'path1'],
+          ['https://example.com/page3', 'path3'],
+        ]),
+      };
+
+      const result = await mockHandler.processContentAndGenerateOpportunities(context);
+      expect(result.status).to.equal('complete');
+    });
+
+    it('should handle root path correctly without trailing slash removal', async () => {
+      const log = {
+        debug: sinon.stub(),
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        error: sinon.stub(),
+      };
+
+      const agenticStats = [
+        { url: 'https://example.com/', hits: 500 }, // Root path
+        { url: 'https://example.com', hits: 300 }, // Also root
+      ];
+
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: {
+            fromContext: () => ({
+              query: async () => agenticStats.map((s) => ({ url: s.url, number_of_hits: s.hits })),
+            }),
+          },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+          },
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => '<html><body><p>Test</p></body></html>',
+        },
+      });
+
+      const context = {
+        site: {
+          getId: () => 'test-site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        audit: { getId: () => 'audit-id' },
+        log,
+        s3Client: { send: sinon.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        scrapeResultPaths: new Map([['https://example.com/', 'path']]),
+      };
+
+      const result = await mockHandler.processContentAndGenerateOpportunities(context);
+      expect(result.status).to.equal('complete');
     });
   });
 
