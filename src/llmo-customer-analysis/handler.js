@@ -116,21 +116,6 @@ export async function triggerCdnLogsReport(context, site) {
     },
   });
 
-  // then trigger cdn-logs-report for last 3 weeks
-  for (const weekOffset of [-2, -3, -4]) {
-    // eslint-disable-next-line no-await-in-loop
-    await sqs.sendMessage(
-      configuration.getQueues().audits,
-      {
-        type: 'cdn-logs-report',
-        siteId,
-        auditContext: { weekOffset },
-      },
-      null,
-      300,
-    );
-  }
-
   log.info('Successfully triggered cdn-logs-report audit');
 }
 
