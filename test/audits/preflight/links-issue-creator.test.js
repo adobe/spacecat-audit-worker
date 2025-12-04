@@ -19,7 +19,7 @@ describe('createBrokenLinkIssue - Lines 86-96 Coverage', () => {
   const baseURLOrigin = 'https://test-site.com';
 
   describe('line 95 - aiSuggestion with non-empty urlsSuggested', () => {
-    it('should set aiSuggestion to first URL when urlsSuggested has items (line 95)', () => {
+    it('should set aiSuggestion to first URL when urlsSuggested has items', () => {
       const issue = createBrokenLinkIssue(
         'https://test-site.com/broken-page',
         404,
@@ -45,7 +45,7 @@ describe('createBrokenLinkIssue - Lines 86-96 Coverage', () => {
       expect(issue.aiSuggestion).to.equal('https://test-site.com/suggested-page-with-trailing-slash/');
     });
 
-    it('should replace origin in aiSuggestion URLs (line 88)', () => {
+    it('should replace origin in aiSuggestion URLs', () => {
       const issue = createBrokenLinkIssue(
         'https://preview-site.com/broken-page',
         404,
@@ -59,7 +59,7 @@ describe('createBrokenLinkIssue - Lines 86-96 Coverage', () => {
   });
 
   describe('line 89 - aiSuggestion else branch (empty urlsSuggested)', () => {
-    it('should set aiSuggestion to undefined when urlsSuggested is empty (line 89)', () => {
+    it('should set aiSuggestion to undefined when urlsSuggested is empty', () => {
       const issue = createBrokenLinkIssue(
         'https://test-site.com/broken-page',
         404,
@@ -71,7 +71,7 @@ describe('createBrokenLinkIssue - Lines 86-96 Coverage', () => {
       expect(issue.aiSuggestion).to.be.undefined;
     });
 
-    it('should set aiSuggestion to undefined when urlsSuggested is undefined (line 86)', () => {
+    it('should set aiSuggestion to undefined when urlsSuggested is undefined', () => {
       const issue = createBrokenLinkIssue(
         'https://test-site.com/broken-page',
         404,
@@ -83,7 +83,7 @@ describe('createBrokenLinkIssue - Lines 86-96 Coverage', () => {
       expect(issue.aiSuggestion).to.be.undefined;
     });
 
-    it('should set aiSuggestion to undefined when urlsSuggested is null (line 86)', () => {
+    it('should set aiSuggestion to undefined when urlsSuggested is null', () => {
       const issue = createBrokenLinkIssue(
         'https://test-site.com/broken-page',
         404,
@@ -96,8 +96,8 @@ describe('createBrokenLinkIssue - Lines 86-96 Coverage', () => {
     });
   });
 
-  describe('complete issue object structure (lines 90-96)', () => {
-    it('should create complete issue object with all fields (lines 90-96)', () => {
+  describe('complete issue object structure', () => {
+    it('should create complete issue object with all fields', () => {
       const issue = createBrokenLinkIssue(
         'https://test-site.com/broken-page',
         404,
@@ -125,7 +125,7 @@ describe('createBrokenLinkIssue - Lines 86-96 Coverage', () => {
       expect(issue.aiRationale).to.equal('Complete test');
     });
 
-    it('should handle URL with trailing slash and replace origin (lines 87-91)', () => {
+    it('should handle URL with trailing slash and replace origin', () => {
       const issue = createBrokenLinkIssue(
         'https://preview-site.com/broken-page/',
         404,
@@ -139,7 +139,7 @@ describe('createBrokenLinkIssue - Lines 86-96 Coverage', () => {
       expect(issue.aiSuggestion).to.equal('https://test-site.com/suggested-page/');
     });
 
-    it('should handle multiple suggestions but only use first one (line 95)', () => {
+    it('should handle multiple suggestions but only use first one', () => {
       const issue = createBrokenLinkIssue(
         'https://test-site.com/broken-page',
         404,
