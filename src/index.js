@@ -27,7 +27,6 @@ import contentFragmentUnused from './content-fragment-unused/handler.js';
 import cwv from './cwv/handler.js';
 import lhsDesktop from './lhs/handler-desktop.js';
 import lhsMobile from './lhs/handler-mobile.js';
-import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
 import sitemapProductCoverage from './sitemap-product-coverage/handler.js';
 import redirectChains from './redirect-chains/handler.js';
@@ -37,8 +36,6 @@ import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
 import brokenLinksGuidance from './broken-links-guidance/guidance-handler.js';
 import internalLinks from './internal-links/handler.js';
-import experimentation from './experimentation/handler.js';
-import conversion from './conversion/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
 import experimentationOpportunities from './experimentation-opportunities/handler.js';
@@ -86,6 +83,7 @@ import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
+import vulnerabilitiesCodeFix from './vulnerabilities-code-fix/handler.js';
 import prerender from './prerender/handler.js';
 import productMetatags from './product-metatags/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
@@ -97,6 +95,7 @@ import permissionsRedundant from './permissions/handler.redundant.js';
 import faqs from './faqs/handler.js';
 import faqsGuidance from './faqs/guidance-handler.js';
 import pageCitability from './page-citability/handler.js';
+import healthCheck from './health-check/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -107,7 +106,6 @@ const HANDLERS = {
   'content-fragment-unused': contentFragmentUnused,
   'lhs-mobile': lhsMobile,
   'lhs-desktop': lhsDesktop,
-  404: notfound,
   sitemap,
   'sitemap-product-coverage': sitemapProductCoverage,
   'redirect-chains': redirectChains,
@@ -119,8 +117,6 @@ const HANDLERS = {
   canonical,
   'broken-backlinks': backlinks,
   'broken-internal-links': internalLinks,
-  experimentation,
-  conversion,
   'experimentation-ess-daily': essExperimentationDaily,
   'experimentation-ess-all': essExperimentationAll,
   'experimentation-opportunities': experimentationOpportunities,
@@ -175,12 +171,14 @@ const HANDLERS = {
   prerender,
   'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,
+  'codefix:security-vulnerabilities': vulnerabilitiesCodeFix,
   'codefix:form-accessibility': accessibilityCodeFixHandler,
   'security-permissions': permissions,
   'security-permissions-redundant': permissionsRedundant,
   faqs,
   'guidance:faqs': faqsGuidance,
   'page-citability': pageCitability,
+  'health-check': healthCheck,
   dummy: (message) => ok(message),
 };
 

@@ -16,14 +16,13 @@ import { AuditBuilder } from '../../common/audit-builder.js';
 import { convertToOpportunity } from '../../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../../utils/data-access.js';
+import { noopUrlResolver } from '../../common/base-audit.js';
 import { analyzePageReadability, sendReadabilityToMystique } from '../shared/analysis-utils.js';
 import {
   TOP_PAGES_LIMIT,
 } from '../shared/constants.js';
 
-const { AUDIT_STEP_DESTINATIONS } = Audit;
-// Use existing audit type or create new one if needed
-const AUDIT_TYPE_READABILITY = Audit.AUDIT_TYPES.READABILITY || 'readability';
+const { AUDIT_STEP_DESTINATIONS, AUDIT_TYPES } = Audit;
 
 export async function processImportStep(context) {
   const { site, finalUrl } = context;
@@ -98,7 +97,7 @@ export async function scrapeReadabilityData(context) {
 // Second step: processes scraped data to create readability opportunities
 export async function processReadabilityOpportunities(context) {
   const {
-    site, log, s3Client, env, audit,
+    site, log, s3Client, env, audit, scrapeResultPaths,
   } = context;
   const siteId = site.getId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -112,14 +111,22 @@ export async function processReadabilityOpportunities(context) {
     };
   }
 
+  if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
+    log.info(`[ReadabilityAudit] No scrape result paths found for site ${siteId} (${site.getBaseURL()}), skipping audit`);
+    return {
+      status: 'NO_OPPORTUNITIES',
+      message: 'No scrape result paths available',
+    };
+  }
+
   log.info(`[ReadabilityAudit] Step 2: Processing scraped data for readability analysis for site ${siteId} (${site.getBaseURL()})`);
 
   try {
-    // Analyze readability for all scraped pages
+    // Analyze readability for all scraped pages using scrapeResultPaths from context
     const readabilityAnalysisResult = await analyzePageReadability(
       s3Client,
       bucketName,
-      siteId,
+      scrapeResultPaths,
       log,
     );
 
@@ -139,15 +146,15 @@ export async function processReadabilityOpportunities(context) {
       { siteId, id: audit.getId() },
       context,
       createOpportunityData,
-      AUDIT_TYPE_READABILITY,
+      AUDIT_TYPES.READABILITY,
       {
         totalIssues: readabilityIssues.length,
         urlsProcessed,
       },
     );
 
-    // Prepare suggestions data for database
-    const suggestions = readabilityIssues.map((issue, index) => {
+    // Prepare suggestions data for database (raw data format for syncSuggestions)
+    const suggestionsData = readabilityIssues.map((issue, index) => {
       // Extract only the fields needed for display (exclude full textContent)
       const {
         textContent,
@@ -155,14 +162,10 @@ export async function processReadabilityOpportunities(context) {
       } = issue;
 
       return {
-        opportunityId: opportunity.getId(),
-        type: SuggestionModel.TYPES.CONTENT_UPDATE,
-        rank: issue.rank, // Use the rank already calculated in analysis
-        data: {
-          ...issueWithoutFullText,
-          id: `readability-${siteId}-${index}`,
-          textPreview: textContent?.substring(0, 500),
-        },
+        ...issueWithoutFullText,
+        scrapedAt: new Date(issue.scrapedAt).toISOString(),
+        id: `readability-${siteId}-${index}`,
+        textPreview: textContent?.substring(0, 500),
       };
     });
 
@@ -171,10 +174,15 @@ export async function processReadabilityOpportunities(context) {
 
     await syncSuggestions({
       opportunity,
-      newData: suggestions,
+      newData: suggestionsData,
       context,
       buildKey,
-      mapNewSuggestion: (suggestion) => suggestion,
+      mapNewSuggestion: (data) => ({
+        opportunityId: opportunity.getId(),
+        type: SuggestionModel.TYPES.CONTENT_UPDATE,
+        rank: data.rank,
+        data,
+      }),
     });
 
     // Send to Mystique for AI-powered readability improvements
@@ -213,15 +221,16 @@ export async function processReadabilityOpportunities(context) {
 }
 
 export default new AuditBuilder()
+  .withUrlResolver(noopUrlResolver)
   .addStep(
-    'processImport',
+    'import-top-pages',
     processImportStep,
     AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
   )
   .addStep(
-    'scrapeReadabilityData',
+    'submit-for-scraping',
     scrapeReadabilityData,
-    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+    AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT,
   )
-  .addStep('processReadabilityOpportunities', processReadabilityOpportunities)
+  .addStep('build-suggestions', processReadabilityOpportunities)
   .build();

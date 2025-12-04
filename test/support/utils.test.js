@@ -25,6 +25,7 @@ import {
   getUrlWithoutPath, sleep,
   generatePlainHtml,
   limitConcurrency,
+  limitConcurrencyAllSettled,
 } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -54,6 +55,93 @@ describe('getUrlWithoutPath', () => {
     const url = 'https://www.example.com/path/to/resource#fragment';
     const expected = 'https://www.example.com';
     expect(getUrlWithoutPath(url)).to.deep.equal(expected);
+  });
+});
+
+describe('getRUMUrl', () => {
+  let utils;
+  let fetchStub;
+
+  beforeEach(async () => {
+    sinon.restore();
+    fetchStub = sinon.stub();
+    utils = await esmock('../../src/support/utils.js', {
+      '@adobe/spacecat-shared-utils': {
+        hasText: (str) => typeof str === 'string' && str.trim().length > 0,
+        isNonEmptyArray: (arr) => Array.isArray(arr) && arr.length > 0,
+        isNonEmptyObject: (obj) => obj && typeof obj === 'object' && Object.keys(obj).length > 0,
+        prependSchema: (url) => (url.startsWith('http') ? url : `https://${url}`),
+        tracingFetch: fetchStub,
+      },
+    });
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should return the domain from a successful fetch response', async () => {
+    fetchStub.resolves({
+      url: 'https://www.example.com/some/path',
+    });
+
+    const result = await utils.getRUMUrl('example.com');
+
+    expect(result).to.equal('www.example.com');
+    expect(fetchStub).to.have.been.calledOnce;
+    expect(fetchStub).to.have.been.calledWith(
+      'https://example.com',
+      sinon.match({
+        method: 'GET',
+        headers: { 'User-Agent': 'curl/7.88.1' },
+      }),
+    );
+  });
+
+  it('should handle URLs that already have a schema', async () => {
+    fetchStub.resolves({
+      url: 'https://www.example.com/',
+    });
+
+    const result = await utils.getRUMUrl('https://example.com');
+
+    expect(result).to.equal('www.example.com');
+  });
+
+  it('should return the domain without path or trailing slash', async () => {
+    fetchStub.resolves({
+      url: 'https://example.com/',
+    });
+
+    const result = await utils.getRUMUrl('example.com');
+
+    expect(result).to.equal('example.com');
+  });
+
+  it('should handle redirect to a different domain', async () => {
+    fetchStub.resolves({
+      url: 'https://www.redirected-domain.com/landing',
+    });
+
+    const result = await utils.getRUMUrl('original.com');
+
+    expect(result).to.equal('www.redirected-domain.com');
+  });
+
+  it('should return the original URL when fetch fails', async () => {
+    fetchStub.rejects(new Error('Network error'));
+
+    const result = await utils.getRUMUrl('example.com');
+
+    expect(result).to.equal('example.com');
+  });
+
+  it('should return the original URL when fetch times out', async () => {
+    fetchStub.rejects(new Error('AbortError'));
+
+    const result = await utils.getRUMUrl('example.com');
+
+    expect(result).to.equal('example.com');
   });
 });
 
@@ -972,5 +1060,133 @@ describe('limitConcurrency', () => {
     const output = await limitConcurrency(taskFunctions, 100);
 
     expect(output).to.deep.equal(['result1', 'result2', 'result3']);
+  });
+});
+
+describe('limitConcurrencyAllSettled', () => {
+  it('should execute all tasks and return results in order', async () => {
+    const results = [];
+    const tasks = [
+      async () => {
+        results.push('task1-start');
+        return 'result1';
+      },
+      async () => {
+        results.push('task2-start');
+        return 'result2';
+      },
+      async () => {
+        results.push('task3-start');
+        return 'result3';
+      },
+    ];
+
+    const taskFunctions = tasks.map((task) => () => task());
+    const output = await limitConcurrencyAllSettled(taskFunctions, 2);
+
+    expect(output).to.deep.equal(['result1', 'result2', 'result3']);
+    expect(results.length).to.equal(3);
+  });
+
+  it('should respect max concurrent limit', async () => {
+    let currentConcurrent = 0;
+    let maxConcurrentSeen = 0;
+
+    const tasks = Array.from({ length: 10 }, (_, i) => async () => {
+      currentConcurrent += 1;
+      if (currentConcurrent > maxConcurrentSeen) {
+        maxConcurrentSeen = currentConcurrent;
+      }
+      // Simulate some async work
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10);
+      });
+      currentConcurrent -= 1;
+      return i;
+    });
+
+    const output = await limitConcurrencyAllSettled(tasks, 3);
+
+    expect(output).to.deep.equal([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(maxConcurrentSeen).to.be.lte(3);
+  });
+
+  it('should handle tasks that throw errors and continue with other tasks', async () => {
+    const tasks = [
+      async () => 'success1',
+      async () => {
+        throw new Error('task2 failed');
+      },
+      async () => 'success3',
+    ];
+
+    const taskFunctions = tasks.map((task) => () => task());
+    const output = await limitConcurrencyAllSettled(taskFunctions, 2);
+
+    // Should return only successful results
+    expect(output).to.deep.equal(['success1', 'success3']);
+  });
+
+  it('should handle all tasks throwing errors', async () => {
+    const tasks = [
+      async () => {
+        throw new Error('task1 failed');
+      },
+      async () => {
+        throw new Error('task2 failed');
+      },
+      async () => {
+        throw new Error('task3 failed');
+      },
+    ];
+
+    const taskFunctions = tasks.map((task) => () => task());
+    const output = await limitConcurrencyAllSettled(taskFunctions, 2);
+
+    // Should return empty array when all tasks fail
+    expect(output).to.deep.equal([]);
+  });
+
+  it('should handle empty task array', async () => {
+    const output = await limitConcurrencyAllSettled([], 5);
+    expect(output).to.deep.equal([]);
+  });
+
+  it('should handle single task', async () => {
+    const tasks = [async () => 'single-result'];
+    const output = await limitConcurrencyAllSettled(tasks, 5);
+    expect(output).to.deep.equal(['single-result']);
+  });
+
+  it('should handle max concurrent greater than task count', async () => {
+    const tasks = [
+      async () => 'result1',
+      async () => 'result2',
+      async () => 'result3',
+    ];
+
+    const taskFunctions = tasks.map((task) => () => task());
+    const output = await limitConcurrencyAllSettled(taskFunctions, 100);
+
+    expect(output).to.deep.equal(['result1', 'result2', 'result3']);
+  });
+
+  it('should handle mix of successful and failed tasks', async () => {
+    const tasks = [
+      async () => 'success1',
+      async () => {
+        throw new Error('task2 failed');
+      },
+      async () => 'success3',
+      async () => {
+        throw new Error('task4 failed');
+      },
+      async () => 'success5',
+    ];
+
+    const taskFunctions = tasks.map((task) => () => task());
+    const output = await limitConcurrencyAllSettled(taskFunctions, 2);
+
+    expect(output).to.deep.equal(['success1', 'success3', 'success5']);
   });
 });

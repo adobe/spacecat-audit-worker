@@ -13,7 +13,7 @@
 import rs from 'text-readability';
 import { load as cheerioLoad } from 'cheerio';
 import { franc } from 'franc-min';
-import { getObjectKeysUsingPrefix, getObjectFromKey } from '../../utils/s3-utils.js';
+import { getObjectFromKey } from '../../utils/s3-utils.js';
 import {
   calculateReadabilityScore,
   isSupportedLanguage,
@@ -72,6 +72,7 @@ async function analyzeTextReadability(
   detectedLanguages,
   getSupportedLanguage,
   log,
+  scrapedAt,
 ) {
   try {
     // Check if text is in a supported language
@@ -107,6 +108,7 @@ async function analyzeTextReadability(
 
       return {
         pageUrl,
+        scrapedAt,
         selector,
         textContent: text,
         displayText,
@@ -165,7 +167,7 @@ const getMeaningfulElementsForReadability = ($) => {
  * @returns {Promise<Array>} Array of readability issue objects for text elements
  *  with poor readability.
  */
-export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
+export async function analyzePageContent(rawBody, pageUrl, traffic, log, scrapedAt) {
   const readabilityIssues = [];
 
   try {
@@ -236,6 +238,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
             detectedLanguages,
             getSupportedLanguage,
             log,
+            scrapedAt,
           );
           analysisPromises.push(analysisPromise);
         });
@@ -248,6 +251,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
           detectedLanguages,
           getSupportedLanguage,
           log,
+          scrapedAt,
         );
         analysisPromises.push(analysisPromise);
       }
@@ -279,14 +283,20 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
 }
 
 /**
- * Analyzes readability for all scraped pages from S3
+ * Analyzes readability for all scraped pages from S3.
+ *
+ * Uses scrapeResultPaths (Map of URL -> S3 path) from the scrape step context
+ * to directly fetch scraped content without traversing the bucket.
+ *
+ * @param {AWS.S3} s3Client - The AWS S3 client instance.
+ * @param {string} bucketName - The name of the S3 bucket containing scraped pages.
+ * @param {Map<string, string>} scrapeResultPaths - Map of URL to S3 path from scrape step.
+ * @param {Object} log - Logger instance for info, warn, and error messages.
+ * @returns {Promise<Object>} The analysis result.
  */
-export async function analyzePageReadability(s3Client, bucketName, siteId, log) {
+export async function analyzePageReadability(s3Client, bucketName, scrapeResultPaths, log) {
   try {
-    const prefix = `scrapes/${siteId}/`;
-    const objectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
-
-    if (!objectKeys || objectKeys.length === 0) {
+    if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
       return {
         success: false,
         message: 'No scraped content found for readability analysis',
@@ -295,34 +305,42 @@ export async function analyzePageReadability(s3Client, bucketName, siteId, log) 
       };
     }
 
-    log.info(`[ReadabilityAnalysis] Found ${objectKeys.length} scraped objects for analysis`);
+    log.info(`[ReadabilityAnalysis] Found ${scrapeResultPaths.size} scraped objects for analysis`);
 
-    // Process each scraped page and collect promises
-    const pageAnalysisPromises = objectKeys.map(async (key) => {
-      try {
-        const scrapedData = await getObjectFromKey(s3Client, bucketName, key, log);
+    // Process each scraped page using the paths from context
+    const pageAnalysisPromises = Array.from(scrapeResultPaths.entries()).map(
+      async ([url, s3Path]) => {
+        try {
+          const scrapedData = await getObjectFromKey(s3Client, bucketName, s3Path, log);
 
-        if (!scrapedData?.scrapeResult?.rawBody) {
-          log.warn(`[ReadabilityAnalysis] No rawBody found in scraped data for key: ${key}`);
+          if (!scrapedData?.scrapeResult?.rawBody) {
+            log.warn(`[ReadabilityAnalysis] No rawBody found in scraped data for URL: ${url}`);
+            return { issues: [], processed: false };
+          }
+
+          const { finalUrl, scrapeResult: { rawBody }, scrapedAt } = scrapedData;
+
+          // Extract page traffic data if available
+          const traffic = extractTrafficFromKey() || 0;
+
+          const pageIssues = await analyzePageContent(
+            rawBody,
+            finalUrl || url,
+            traffic,
+            log,
+            scrapedAt,
+          );
+
+          return {
+            issues: pageIssues,
+            processed: pageIssues.length > 0,
+          };
+        } catch (error) {
+          log.error(`[ReadabilityAnalysis] Error processing scraped data for URL ${url}: ${error.message}`);
           return { issues: [], processed: false };
         }
-
-        const { finalUrl, scrapeResult: { rawBody } } = scrapedData;
-
-        // Extract page traffic data if available
-        const traffic = extractTrafficFromKey(key) || 0;
-
-        const pageIssues = await analyzePageContent(rawBody, finalUrl, traffic, log);
-
-        return {
-          issues: pageIssues,
-          processed: pageIssues.length > 0,
-        };
-      } catch (error) {
-        log.error(`[ReadabilityAnalysis] Error processing scraped data for key ${key}: ${error.message}`);
-        return { issues: [], processed: false };
-      }
-    });
+      },
+    );
 
     // Execute all page analyses in parallel
     const pageResults = await Promise.all(pageAnalysisPromises);
