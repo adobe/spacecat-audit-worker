@@ -169,6 +169,74 @@ describe('AemClient', () => {
     });
   });
 
+  describe('isTokenExpired', () => {
+    let client;
+
+    beforeEach(() => {
+      client = new AemClient(baseUrl, mockImsClient, log);
+    });
+
+    it('should return true when accessToken is null', () => {
+      client.accessToken = null;
+      client.tokenObtainedAt = Date.now();
+
+      expect(client.isTokenExpired()).to.be.true;
+    });
+
+    it('should return true when tokenObtainedAt is null', () => {
+      client.accessToken = { access_token: 'token', expires_in: 3600 };
+      client.tokenObtainedAt = null;
+
+      expect(client.isTokenExpired()).to.be.true;
+    });
+
+    it('should return false when token is valid and not expired', () => {
+      client.accessToken = { access_token: 'token', expires_in: 3600 };
+      client.tokenObtainedAt = Date.now();
+
+      expect(client.isTokenExpired()).to.be.false;
+    });
+
+    it('should return true when token has expired', () => {
+      client.accessToken = { access_token: 'token', expires_in: 3600 };
+      // Set tokenObtainedAt to 2 hours ago (token expires in 1 hour)
+      client.tokenObtainedAt = Date.now() - (2 * 60 * 60 * 1000);
+
+      expect(client.isTokenExpired()).to.be.true;
+    });
+
+    it('should invalidate token when expired', () => {
+      client.accessToken = { access_token: 'token', expires_in: 3600 };
+      // Set tokenObtainedAt to 2 hours ago (token expires in 1 hour)
+      client.tokenObtainedAt = Date.now() - (2 * 60 * 60 * 1000);
+
+      client.isTokenExpired();
+
+      expect(client.accessToken).to.be.null;
+      expect(client.tokenObtainedAt).to.be.null;
+    });
+
+    it('should not invalidate token when not expired', () => {
+      const originalToken = { access_token: 'token', expires_in: 3600 };
+      const originalObtainedAt = Date.now();
+      client.accessToken = originalToken;
+      client.tokenObtainedAt = originalObtainedAt;
+
+      client.isTokenExpired();
+
+      expect(client.accessToken).to.equal(originalToken);
+      expect(client.tokenObtainedAt).to.equal(originalObtainedAt);
+    });
+
+    it('should return true when token expires exactly at current time', () => {
+      client.accessToken = { access_token: 'token', expires_in: 3600 };
+      // Set tokenObtainedAt to exactly 1 hour ago
+      client.tokenObtainedAt = Date.now() - (3600 * 1000);
+
+      expect(client.isTokenExpired()).to.be.true;
+    });
+  });
+
   describe('request', () => {
     let client;
 
