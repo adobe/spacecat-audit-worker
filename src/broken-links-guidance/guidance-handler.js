@@ -90,7 +90,7 @@ export default async function handler(message, context) {
     let aiRationale = brokenLink.aiRationale || '';
     if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length > 0) {
       // All URLs were filtered out (likely invalid/broken), clear rationale
-      log.warn(`[Broken Links Guidance] All ${validSuggestedUrls.length} URLs were filtered out for suggestion ${brokenLink.suggestionId}. Clearing AI rationale.`);
+      log.info(`[Broken Links Guidance] All ${validSuggestedUrls.length} suggested URLs were filtered out for suggestion ${brokenLink.suggestionId}. Clearing AI rationale.`);
       aiRationale = '';
     } else if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length === 0) {
       // No URLs were provided by Mystique, clear rationale
