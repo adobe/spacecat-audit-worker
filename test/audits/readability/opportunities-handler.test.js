@@ -95,7 +95,7 @@ describe('Readability Opportunities Handler', () => {
     sinon.restore();
   });
 
-  describe('processImportStep (lines 30-41)', () => {
+  describe('processImportStep ', () => {
     it('should return import step data with correct structure', async () => {
       const context = {
         site: mockSite,
@@ -127,8 +127,8 @@ describe('Readability Opportunities Handler', () => {
     });
   });
 
-  describe('scrapeReadabilityData (lines 45-97)', () => {
-    it('should return error when S3 bucket is not configured (lines 51-58)', async () => {
+  describe('scrapeReadabilityData ', () => {
+    it('should return error when S3 bucket is not configured ', async () => {
       const context = {
         site: mockSite,
         log: mockLog,
@@ -148,7 +148,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should return NO_OPPORTUNITIES when no top pages found (lines 68-74)', async () => {
+    it('should return NO_OPPORTUNITIES when no top pages found ', async () => {
       mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
 
       const context = {
@@ -170,7 +170,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should return NO_OPPORTUNITIES when top pages is null (lines 68-74)', async () => {
+    it('should return NO_OPPORTUNITIES when top pages is null ', async () => {
       mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(null);
 
       const context = {
@@ -186,7 +186,7 @@ describe('Readability Opportunities Handler', () => {
       expect(result.status).to.equal('NO_OPPORTUNITIES');
     });
 
-    it('should return scrape request with sorted top pages (lines 77-96)', async () => {
+    it('should return scrape request with sorted top pages ', async () => {
       const topPages = [
         { getUrl: () => 'https://example.com/page1', getTraffic: () => 100, getId: () => 'page-1' },
         { getUrl: () => 'https://example.com/page2', getTraffic: () => 500, getId: () => 'page-2' },
@@ -217,7 +217,7 @@ describe('Readability Opportunities Handler', () => {
       expect(result.fullAuditRef).to.equal('https://example.com');
     });
 
-    it('should call SiteTopPage with correct parameters (line 64)', async () => {
+    it('should call SiteTopPage with correct parameters ', async () => {
       mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
 
       const context = {
@@ -237,7 +237,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should log found top pages count (line 66)', async () => {
+    it('should log found top pages count ', async () => {
       const topPages = [
         { getUrl: () => 'https://example.com/page1', getTraffic: () => 100, getId: () => 'page-1' },
       ];
@@ -259,14 +259,14 @@ describe('Readability Opportunities Handler', () => {
     });
   });
 
-  describe('processReadabilityOpportunities (lines 101-215)', () => {
+  describe('processReadabilityOpportunities ', () => {
     // Sample scrapeResultPaths to use in tests
     const mockScrapeResultPaths = new Map([
       ['https://example.com/page1', 'scrapes/site-123/page1.json'],
       ['https://example.com/page2', 'scrapes/site-123/page2.json'],
     ]);
 
-    it('should return error when S3 bucket is not configured (lines 107-114)', async () => {
+    it('should return error when S3 bucket is not configured ', async () => {
       const context = {
         site: mockSite,
         log: mockLog,
@@ -287,7 +287,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should return NO_OPPORTUNITIES when readability analysis fails (lines 127-133)', async () => {
+    it('should return NO_OPPORTUNITIES when readability analysis fails ', async () => {
       mockAnalyzePageReadability.resolves({
         success: false,
         message: 'No scraped content found',
@@ -313,7 +313,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should process readability issues and create opportunity (lines 135-180)', async () => {
+    it('should process readability issues and create opportunity ', async () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
@@ -368,7 +368,7 @@ describe('Readability Opportunities Handler', () => {
       expect(syncCall.newData[0].textPreview).to.equal('This is some long text content for testing purposes.');
     });
 
-    it('should handle Mystique error gracefully and continue (lines 194-197)', async () => {
+    it('should handle Mystique error gracefully and continue ', async () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
@@ -411,7 +411,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should return NO_OPPORTUNITIES when no issues found (line 203)', async () => {
+    it('should return NO_OPPORTUNITIES when no issues found ', async () => {
       mockAnalyzePageReadability.resolves({
         success: true,
         readabilityIssues: [],
@@ -442,7 +442,7 @@ describe('Readability Opportunities Handler', () => {
       expect(mockSendReadabilityToMystique).not.to.have.been.called;
     });
 
-    it('should handle processing errors with catch block (lines 208-214)', async () => {
+    it('should handle processing errors with catch block ', async () => {
       mockAnalyzePageReadability.rejects(new Error('S3 connection failed'));
 
       const context = {
@@ -466,7 +466,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should truncate textContent in textPreview to 500 chars (line 162)', async () => {
+    it('should truncate textContent in textPreview to 500 chars ', async () => {
       const longText = 'A'.repeat(600);
       const readabilityIssues = [
         {
@@ -512,7 +512,7 @@ describe('Readability Opportunities Handler', () => {
       expect(syncCall.newData[0]).to.not.have.property('textContent');
     });
 
-    it('should pass correct mode to sendReadabilityToMystique (line 191)', async () => {
+    it('should pass correct mode to sendReadabilityToMystique ', async () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
@@ -561,7 +561,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should call analyzePageReadability with correct params (lines 120-125)', async () => {
+    it('should call analyzePageReadability with correct params ', async () => {
       mockAnalyzePageReadability.resolves({
         success: false,
         message: 'No content',
@@ -590,7 +590,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should log success message after sending to Mystique (line 193)', async () => {
+    it('should log success message after sending to Mystique ', async () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
@@ -642,7 +642,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should generate correct suggestion IDs and buildKey (lines 161, 167)', async () => {
+    it('should generate correct suggestion IDs and buildKey ', async () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
@@ -690,7 +690,7 @@ describe('Readability Opportunities Handler', () => {
       expect(buildKey(testData)).to.equal('https://test.com|preview text');
     });
 
-    it('should call convertToOpportunity with correct parameters (lines 138-148)', async () => {
+    it('should call convertToOpportunity with correct parameters ', async () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
@@ -739,7 +739,7 @@ describe('Readability Opportunities Handler', () => {
       );
     });
 
-    it('should format scrapedAt as ISO string (line 160)', async () => {
+    it('should format scrapedAt as ISO string ', async () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
@@ -782,7 +782,7 @@ describe('Readability Opportunities Handler', () => {
       expect(syncCall.newData[0].scrapedAt).to.equal('2025-06-15T10:30:00.000Z');
     });
 
-    it('should pass mapNewSuggestion that returns correct suggestion DTO structure (lines 174-179)', async () => {
+    it('should pass mapNewSuggestion that returns correct suggestion DTO structure ', async () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
@@ -847,7 +847,7 @@ describe('Readability Opportunities Handler', () => {
       });
     });
 
-    it('should mapNewSuggestion use rank from data object (lines 175-178)', async () => {
+    it('should mapNewSuggestion use rank from data object ', async () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',
@@ -899,7 +899,7 @@ describe('Readability Opportunities Handler', () => {
       expect(mapNewSuggestion(dataWithUndefinedRank).rank).to.be.undefined;
     });
 
-    it('should mapNewSuggestion include entire data object in data field (line 178)', async () => {
+    it('should mapNewSuggestion include entire data object in data field ', async () => {
       const readabilityIssues = [
         {
           pageUrl: 'https://example.com/page1',

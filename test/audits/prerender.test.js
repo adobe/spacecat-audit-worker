@@ -3189,7 +3189,7 @@ describe('Prerender Audit', () => {
         expect(result.auditResult).to.be.an('object');
       });
 
-      it('should handle invalid JSON in scrape.json metadata (lines 83-85)', async () => {
+      it('should handle invalid JSON in scrape.json metadata ', async () => {
         // Test when scrape.json contains invalid JSON
         // Note: getObjectFromKey returns null when JSON parsing fails (handled in s3-utils.js)
         const getObjectFromKeyStub = sinon.stub();

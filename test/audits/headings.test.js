@@ -2470,7 +2470,7 @@ describe('Headings Audit', () => {
     }
   });
 
-  it('covers h1 fallback branch in validatePageHeadings (line 249)', async () => {
+  it('covers h1 fallback branch in validatePageHeadings ', async () => {
     const url = 'https://example.com/page';
 
     s3Client.send.resolves({

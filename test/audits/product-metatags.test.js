@@ -1343,7 +1343,7 @@ describe('Product MetaTags', () => {
         });
       });
 
-      it('should fall back to root when S3 key has no path parts (line 294)', async () => {
+      it('should fall back to root when S3 key has no path parts ', async () => {
         const mockScrapeResult = {
           scrapeResult: {
             tags: {
@@ -3212,7 +3212,7 @@ describe('Product MetaTags', () => {
 
     // Test for lines 88-89: Product tags assignment
     it(
-      'should handle product tags assignment in detectedTags (lines 88-89)',
+      'should handle product tags assignment in detectedTags ',
       async () => {
         const mockAutoDetectResult = {
           seoChecks: { getFewHealthyTags: sinon.stub().returns({}) },
@@ -3297,7 +3297,7 @@ describe('Product MetaTags', () => {
 
     // Test for lines 323-324: Null check in Promise.all processing
     it(
-      'should handle null metadata in Promise.all processing (lines 323-324)',
+      'should handle null metadata in Promise.all processing ',
       async () => {
         const mockS3Objects = ['scrapes/site123/page1/scrape.json'];
 
@@ -3341,7 +3341,7 @@ describe('Product MetaTags', () => {
     );
 
     // Test for lines 341-359: Processing loop scenarios
-    it('should handle processing loop with mixed product and non-product pages (lines 341-359)', async () => {
+    it('should handle processing loop with mixed product and non-product pages ', async () => {
       const mockS3Objects = [
         'scrapes/site123/product1/scrape.json',
         'scrapes/site123/regular1/scrape.json',
@@ -3409,7 +3409,7 @@ describe('Product MetaTags', () => {
     });
 
     // Test for product-metatags-auto-suggest.js line 82: Branch coverage
-    it('should handle error in presigned URL generation (line 82 branch coverage)', () => {
+    it('should handle error in presigned URL generation', () => {
       // Test the ternary operator on line 82 directly
       const mockEnv1 = {
         GENVAR_PRODUCT_METATAGS_API_ENDPOINT: 'https://custom.endpoint/api',
@@ -3432,7 +3432,7 @@ describe('Product MetaTags', () => {
     });
 
     // Test for seo-checks.js line 211: Branch coverage
-    it('should handle branch coverage in seo-checks.js (line 211)', () => {
+    it('should handle branch coverage in seo-checks.js ', () => {
       // Test both branches of the ternary operator on line 211
       // First test: Array case (left side of ternary)
       const arrayPageTags = {
@@ -3464,7 +3464,7 @@ describe('Product MetaTags', () => {
 
     // Test for handler.js lines 460-461:
     // Branch coverage for projectedTrafficLost and projectedTrafficValue
-    it('should handle branch coverage for projected traffic values (lines 460-461)', async () => {
+    it('should handle branch coverage for projected traffic values ', async () => {
       const mockAutoDetectResult = {
         seoChecks: { getFewHealthyTags: sinon.stub().returns({}) },
         detectedTags: { '/page1': { title: { issue: 'Title too short' } } },
@@ -3605,7 +3605,7 @@ describe('Product MetaTags', () => {
     // Test for product-metatags-auto-suggest.js line 82:
     // Branch coverage for GENVAR_PRODUCT_METATAGS_API_ENDPOINT
     it(
-      'should handle branch coverage for GENVAR_PRODUCT_METATAGS_API_ENDPOINT (line 82)',
+      'should handle branch coverage for GENVAR_PRODUCT_METATAGS_API_ENDPOINT ',
       async () => {
         const testLogStub = {
           info: sinon.stub(),
@@ -3658,7 +3658,7 @@ describe('Product MetaTags', () => {
     );
 
     // Test to cover lines 465-466 conditional spread operators
-    it('should include projectedTrafficLost and projectedTrafficValue when they are truthy (lines 465-466)', async () => {
+    it('should include projectedTrafficLost and projectedTrafficValue when they are truthy ', async () => {
       // This test verifies that the audit completes successfully when traffic data is available
       // The actual conditional spread logic (lines 561-562) is tested via the "exclude" test below
       const site = {
@@ -3718,7 +3718,7 @@ describe('Product MetaTags', () => {
       expect(result).to.deep.equal({ status: 'complete' });
     });
 
-    it('should exclude projectedTrafficLost and projectedTrafficValue when they are falsy (lines 465-466)', async () => {
+    it('should exclude projectedTrafficLost and projectedTrafficValue when they are falsy ', async () => {
       const { runAuditAndGenerateSuggestions } = await esmock('../../src/product-metatags/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: sinon.stub().resolves([{ url: 'https://example.com/' }]),
@@ -3781,7 +3781,7 @@ describe('Product MetaTags', () => {
       expect(result).to.deep.equal({ status: 'complete' });
     });
 
-    it('should handle auto-suggest returning undefined and use empty detectedTags (lines 465-468)', async () => {
+    it('should handle auto-suggest returning undefined and use empty detectedTags ', async () => {
       const stubOpportunityAndSuggestions = sinon.stub().resolves();
 
       const mockAutoDetectResult = {
@@ -3948,7 +3948,7 @@ describe('Product MetaTags', () => {
       );
     });
 
-    it('should use custom endpoint when GENVAR_PRODUCT_METATAGS_API_ENDPOINT is set (line 82)', async () => {
+    it('should use custom endpoint when GENVAR_PRODUCT_METATAGS_API_ENDPOINT is set ', async () => {
       // Test the environment variable when it IS set
       const customEndpoint = '/custom/endpoint';
       // eslint-disable-next-line no-shadow
@@ -3994,7 +3994,7 @@ describe('Product MetaTags', () => {
     });
 
     // Test to cover line 229: Ternary operator branch in storeAllTags
-    it('should cover ternary operator branch for array vs string handling (line 229)', async () => {
+    it('should cover ternary operator branch for array vs string handling ', async () => {
       // eslint-disable-next-line no-shadow
       const ProductSeoChecks = (await import('../../src/product-metatags/seo-checks.js')).default;
       const seoChecks = new ProductSeoChecks();

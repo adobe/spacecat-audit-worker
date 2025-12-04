@@ -143,7 +143,7 @@ describe('Readability Analysis Utils', () => {
       expect(result.length).to.equal(0);
     });
 
-    it('should return null in getSupportedLanguage when isSupportedLanguage returns false (line 187)', async () => {
+    it('should return null in getSupportedLanguage when isSupportedLanguage returns false', async () => {
       const text = makeLongText('Some text in an unsupported language that should be skipped by the analyzer.');
       const html = createHtmlWithParagraph(text);
 
@@ -164,7 +164,7 @@ describe('Readability Analysis Utils', () => {
       expect(mockIsSupportedLanguage).to.have.been.called;
     });
 
-    it('should handle non-English supported languages with poor readability (lines 92-93)', async () => {
+    it('should handle non-English supported languages with poor readability', async () => {
       const germanText = makeLongText('Dies ist ein deutscher Satz mit komplexer Grammatik und schwieriger Lesbarkeit für viele Leser.');
       const html = createHtmlWithParagraph(germanText);
 
@@ -190,7 +190,7 @@ describe('Readability Analysis Utils', () => {
       expect(result[0]).to.have.property('seoImpact');
     });
 
-    it('should use calculateReadabilityScore for non-English and return issue (lines 92-93 full path)', async () => {
+    it('should use calculateReadabilityScore for non-English and return issue', async () => {
       const frenchText = makeLongText('Ce texte français contient des phrases complexes avec une grammaire difficile pour les lecteurs.');
       const html = createHtmlWithParagraph(frenchText);
 
@@ -215,7 +215,7 @@ describe('Readability Analysis Utils', () => {
       expect(result[0].seoImpact).to.equal('High');
     });
 
-    it('should handle elements with br tags as multiple paragraphs (lines 223-244)', async () => {
+    it('should handle elements with br tags as multiple paragraphs', async () => {
       // Each paragraph must be >= 150 chars
       const para1 = 'This is the first paragraph with enough text content for analysis and multiple words that meets the minimum character length requirement for readability testing purposes.';
       const para2 = 'This is the second paragraph after the br tag with sufficient text for testing that also meets the minimum character length requirement for analysis.';
@@ -246,7 +246,7 @@ describe('Readability Analysis Utils', () => {
       expect(result.length).to.be.greaterThanOrEqual(1);
     });
 
-    it('should handle br tags and process each paragraph via forEach loop (lines 232-244)', async () => {
+    it('should handle br tags and process each paragraph via forEach loop', async () => {
       // Each paragraph must be >= 150 chars individually
       const para1 = 'This is the first paragraph with complex vocabulary and difficult grammatical structures that need significant improvement for better readability scores overall and meets minimum length.';
       const para2 = 'This is the second paragraph also containing complex vocabulary and difficult grammatical structures requiring substantial simplification for readers to understand properly.';
@@ -284,7 +284,7 @@ describe('Readability Analysis Utils', () => {
       });
     });
 
-    it('should handle br tags with self-closing syntax (lines 223-244)', async () => {
+    it('should handle br tags with self-closing syntax', async () => {
       const para1 = 'First paragraph content with enough words for proper analysis and complex structure that meets the minimum character length requirement for readability analysis testing.';
       const para2 = 'Second paragraph content with enough words for analysis and complex structure too that also meets the minimum character length for proper testing purposes.';
       const html = `
@@ -313,7 +313,7 @@ describe('Readability Analysis Utils', () => {
       expect(result.length).to.be.greaterThanOrEqual(1);
     });
 
-    it('should filter out elements with block children (lines 199-203)', async () => {
+    it('should filter out elements with block children', async () => {
       // Create HTML with a paragraph that has a div child (block element, not inline)
       const longSimplePara = makeLongText('Simple paragraph without block children that should be analyzed properly for readability issues.');
       const html = `
@@ -345,7 +345,7 @@ describe('Readability Analysis Utils', () => {
       // The paragraph with div child should be filtered out, only simple paragraph analyzed
     });
 
-    it('should include elements with only inline children (lines 199-203)', async () => {
+    it('should include elements with only inline children', async () => {
       // Create HTML with inline children that ARE in the inlineTags list - text must be >= 150 chars
       const html = `
         <!DOCTYPE html>
@@ -402,7 +402,7 @@ describe('Readability Analysis Utils', () => {
       expect(result).to.be.an('array');
     });
 
-    it('should handle errors in analyzeTextReadability gracefully (lines 127-130)', async () => {
+    it('should handle errors in analyzeTextReadability gracefully', async () => {
       const text = makeLongText('Some text content for testing error handling in readability analysis functions.');
       const html = createHtmlWithParagraph(text);
 
@@ -425,7 +425,7 @@ describe('Readability Analysis Utils', () => {
       expect(mockLog.error).to.have.been.calledWithMatch(/Error analyzing text readability/);
     });
 
-    it('should handle errors from cheerioLoad in analyzePageContent (lines 279-280)', async () => {
+    it('should handle errors from cheerioLoad in analyzePageContent', async () => {
       // Pass invalid HTML that causes cheerio to throw
       const invalidHtml = null;
 
@@ -441,7 +441,7 @@ describe('Readability Analysis Utils', () => {
       expect(mockLog.error).to.have.been.calledWithMatch(/Error analyzing page content/);
     });
 
-    it('should categorize issues as Critical (line 34) - score < 20 AND traffic > 1000', async () => {
+    it('should categorize issues as Critical - score < 20 AND traffic > 1000', async () => {
       const text = makeLongText('This is a complex sentence with difficult vocabulary and intricate grammatical structures.');
       const html = createHtmlWithParagraph(text);
 
@@ -463,7 +463,7 @@ describe('Readability Analysis Utils', () => {
       expect(result[0].category).to.equal('Critical');
     });
 
-    it('should return seoImpact High (line 48) - score < 15', async () => {
+    it('should return seoImpact High - score < 15', async () => {
       const text = makeLongText('This is a very complex sentence with extremely difficult vocabulary and intricate structures.');
       const html = createHtmlWithParagraph(text);
 
@@ -485,7 +485,7 @@ describe('Readability Analysis Utils', () => {
       expect(result[0].seoImpact).to.equal('High');
     });
 
-    it('should categorize issues as Moderate (lines 38-39) - score 25-29 with low traffic', async () => {
+    it('should categorize issues as Moderate - score 25-29 with low traffic', async () => {
       const text = makeLongText('This is a moderately complex sentence with some vocabulary that could be simplified for readers.');
       const html = createHtmlWithParagraph(text);
 
@@ -507,7 +507,7 @@ describe('Readability Analysis Utils', () => {
       expect(result[0].category).to.equal('Moderate');
     });
 
-    it('should return seoImpact Low (line 52) - score 25-29', async () => {
+    it('should return seoImpact Low - score 25-29', async () => {
       const text = makeLongText('This is a sentence with moderate complexity that could still be improved for better reading.');
       const html = createHtmlWithParagraph(text);
 
@@ -530,7 +530,7 @@ describe('Readability Analysis Utils', () => {
       expect(result[0].category).to.equal('Moderate'); // Score 25-29 with low traffic
     });
 
-    it('should return seoImpact High (line 48) - score < 15 second test', async () => {
+    it('should return seoImpact High - score < 15 second test', async () => {
       const text = makeLongText('This is extremely complex text with very difficult vocabulary and intricate grammatical structures.');
       const html = createHtmlWithParagraph(text);
 
@@ -552,7 +552,7 @@ describe('Readability Analysis Utils', () => {
       expect(result[0].seoImpact).to.equal('High');
     });
 
-    it('should return null for good readability (lines 125-126)', async () => {
+    it('should return null for good readability', async () => {
       const text = makeLongText('This is a simple clear sentence that reads well and has good readability scores overall.');
       const html = createHtmlWithParagraph(text);
 
@@ -573,7 +573,7 @@ describe('Readability Analysis Utils', () => {
       expect(result.length).to.equal(0); // No issues when readability is good
     });
 
-    it('should return null for unsupported language (lines 81-82 and 187)', async () => {
+    it('should return null for unsupported language', async () => {
       const text = makeLongText('Some text in a language that is not supported by the readability analysis system.');
       const html = createHtmlWithParagraph(text);
 
@@ -789,7 +789,7 @@ describe('Readability Analysis Utils', () => {
       expect(mockLog.debug).to.have.been.called;
     });
 
-    it('should categorize issues as Low (line 40) - score >= 30 with mocked TARGET_READABILITY_SCORE', async () => {
+    it('should categorize issues as Low - score >= 30 with mocked TARGET_READABILITY_SCORE', async () => {
       // To reach line 40 (return 'Low'), the readability score must be >= 30.
       // However, issues are only created when score < TARGET_READABILITY_SCORE (30).
       // We need to mock the constant to allow a score >= 30 to still create an issue.

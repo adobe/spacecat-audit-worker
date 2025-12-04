@@ -18,7 +18,7 @@ import { createOpportunityData } from '../../../src/readability/opportunities/op
 
 describe('Readability Opportunities - Opportunity Data Mapper', () => {
   describe('createOpportunityData', () => {
-    it('should return opportunity data with all required properties (lines 16-36)', () => {
+    it('should return opportunity data with all required properties ', () => {
       const result = createOpportunityData();
 
       // Verify the complete structure (lines 16-36)

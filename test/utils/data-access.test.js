@@ -1091,7 +1091,7 @@ describe('data-access', () => {
       expect(hasUnavailableStringify).to.be.true;
     });
 
-    it('should handle unstringifiable non-array data via safeStringify (line 36 N/A branch)', async () => {
+    it('should handle unstringifiable non-array data via safeStringify', async () => {
       // Test safeStringify catch block with non-array data to cover the 'N/A' branch
       const suggestionsData = [{ key: '1' }];
       const existingSuggestions = [{
@@ -1128,7 +1128,7 @@ describe('data-access', () => {
       expect(hasNAStringify).to.be.true;
     });
 
-    it('should handle undefined createdItems (line 312 optional chaining branch)', async () => {
+    it('should handle undefined createdItems', async () => {
       const suggestionsData = [{ key: '1' }];
       const existingSuggestions = [{
         id: '1',

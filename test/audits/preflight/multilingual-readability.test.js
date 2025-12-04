@@ -667,7 +667,7 @@ describe('Multilingual Readability Module', () => {
   });
 
   describe('Error handling and edge case coverage', () => {
-    it('should handle module export variations (line 76)', async () => {
+    it('should handle module export variations ', async () => {
       // This tests the `?? mod?.hyphenate ?? null` fallback
       // We can test this by checking that getHyphenator handles different module structures
       const hyphenator = await getHyphenator('german');
@@ -675,7 +675,7 @@ describe('Multilingual Readability Module', () => {
       expect(typeof hyphenator).to.equal('function');
     });
 
-    it('should handle syllable counting errors (lines 220-222)', async () => {
+    it('should handle syllable counting errors ', async () => {
       // Create a text that might cause syllable counting to fail
       // Test with unusual characters that might cause the hyphen library to throw
       const textWithUnusualChars = '🎉💯🚀 test with emojis and symbols ※※※';
@@ -692,7 +692,7 @@ describe('Multilingual Readability Module', () => {
       }
     });
 
-    it('should handle missing coefficient properties (lines 247-249)', async () => {
+    it('should handle missing coefficient properties ', async () => {
       // Test the `: 0` fallbacks in unified scoring
       // We can test this by analyzing with a text and ensuring the formula works
       // even when some coefficient properties might be missing
@@ -713,7 +713,7 @@ describe('Multilingual Readability Module', () => {
       expect(italianResult.score).to.be.within(0, 100);
     });
 
-    it('should handle import failures gracefully (lines 77-79)', async () => {
+    it('should handle import failures gracefully ', async () => {
       // Test the catch block when dynamic import fails
       // This is hard to test directly, but we can test that the system is resilient
 
@@ -789,7 +789,7 @@ describe('Multilingual Readability Module', () => {
       expect(results.length).to.equal(3);
     });
 
-    it('should force syllable counting error catch block (lines 220-222)', async () => {
+    it('should force syllable counting error catch block ', async () => {
       // This tests the Promise.catch() error handling in syllable counting
       // Since this is very hard to trigger naturally, we test that the system
       // gracefully handles edge cases that might cause syllable counting issues
@@ -820,7 +820,7 @@ describe('Multilingual Readability Module', () => {
       }
     });
 
-    it('should handle hyphenator dynamic import failures (lines 78-80)', async () => {
+    it('should handle hyphenator dynamic import failures ', async () => {
       // This tests the catch block in getHyphenator when import fails
       // Since all our hyphen modules should exist, this is hard to trigger naturally
       // But we can test that the system handles various edge cases
@@ -852,7 +852,7 @@ describe('Multilingual Readability Module', () => {
       expect(normalHyphenator).to.not.be.null;
     });
 
-    it('should test all coefficient fallback paths (lines 247-249)', async () => {
+    it('should test all coefficient fallback paths ', async () => {
       // Create a custom test by temporarily modifying the COEFFS behavior
       // Test each branch of the ternary operators
 
@@ -883,7 +883,7 @@ describe('Multilingual Readability Module', () => {
       expect(dutchResult.score).to.be.within(0, 100);
     });
 
-    it('should test hyphenator import edge cases (lines 76-79)', async () => {
+    it('should test hyphenator import edge cases ', async () => {
       // Test the fallback paths in getHyphenator
 
       // Test with a valid language to ensure the normal path works
@@ -1070,7 +1070,7 @@ describe('Multilingual Readability Module', () => {
   });
 
   describe('Coverage for uncovered lines', () => {
-    it('should use fallback when Intl.Segmenter is not available (lines 90-95, 107)', async () => {
+    it('should use fallback when Intl.Segmenter is not available ', async () => {
       // Mock Intl.Segmenter to be undefined to test fallback paths
       const originalSegmenter = global.Intl.Segmenter;
       delete global.Intl.Segmenter;
@@ -1087,7 +1087,7 @@ describe('Multilingual Readability Module', () => {
       }
     });
 
-    it('should trigger cache eviction when cache limit is exceeded (lines 120-122)', async () => {
+    it('should trigger cache eviction when cache limit is exceeded ', async () => {
       // Create many unique words to trigger cache eviction
       const words = [];
       for (let i = 0; i < 2100; i += 1) { // Exceed default cache limit of 2000
@@ -1100,7 +1100,7 @@ describe('Multilingual Readability Module', () => {
       expect(score).to.be.within(0, 100);
     });
 
-    it('should use hyphenation path for non-English languages (lines 145-147)', async () => {
+    it('should use hyphenation path for non-English languages ', async () => {
       // Test that hyphenation is used for non-English languages
       const germanText = 'Dies ist ein Test für die Silbenzählung mit Bindestrichen.';
       const score = await calculateReadabilityScore(germanText, 'german');
@@ -1139,7 +1139,7 @@ describe('Multilingual Readability Module', () => {
       expect(score).to.be.within(0, 100);
     });
 
-    it('should clean words with special characters in hyphenation path (lines 145-147)', async () => {
+    it('should clean words with special characters in hyphenation path ', async () => {
       // Test words with special characters that need cleaning in hyphenation path
       const germanTextWithSpecials = 'Test123! Wörter@# mit$% verschiedenen&* Zeichen.';
       const score = await calculateReadabilityScore(germanTextWithSpecials, 'german');
@@ -1330,7 +1330,7 @@ describe('Multilingual Readability Module', () => {
   });
 
   describe('100% Coverage - Cache corruption and error handling', () => {
-    it('should handle syllable calculation failures in cache corruption fix (lines 294-298)', async () => {
+    it('should handle syllable calculation failures in cache corruption fix ', async () => {
       // We can't easily mock the internal function, but we can trigger edge cases
       // that might cause syllable calculation to fail
       const module = await import('../../../src/readability/shared/multilingual-readability.js');
@@ -1438,7 +1438,7 @@ describe('Multilingual Readability Module', () => {
       });
     });
 
-    it('should handle hyphenation import failures (lines 104-107)', async () => {
+    it('should handle hyphenation import failures ', async () => {
       // Test the catch block in getHyphenator when import fails
       const module = await import('../../../src/readability/shared/multilingual-readability.js');
 
@@ -1455,7 +1455,7 @@ describe('Multilingual Readability Module', () => {
       }
     });
 
-    it('should trigger syllable calculation error catch block (lines 282-286)', async () => {
+    it('should trigger syllable calculation error catch block ', async () => {
       // Since we can't directly mock the module functions, let's create scenarios
       // that might naturally trigger error conditions in syllable calculation
       const module = await import('../../../src/readability/shared/multilingual-readability.js');
@@ -1587,7 +1587,7 @@ describe('Multilingual Readability Module', () => {
       const result = await module.getHyphenator('../../../invalid-path');
       expect(result).to.be.null;
     });
-    it('should cover hyphenation test failure catch block (lines 94-96)', async () => {
+    it('should cover hyphenation test failure catch block ', async () => {
       // This test targets the catch block when hyphenation test fails
       const module = await import('../../../src/readability/shared/multilingual-readability.js');
 
@@ -1620,7 +1620,7 @@ describe('Multilingual Readability Module', () => {
       }
     });
 
-    it('should cover no hyphenate function found branch (lines 98-100)', async () => {
+    it('should cover no hyphenate function found branch ', async () => {
       // This test targets the case where module loads but has no hyphenate function
       const module = await import('../../../src/readability/shared/multilingual-readability.js');
 
@@ -1630,7 +1630,7 @@ describe('Multilingual Readability Module', () => {
       expect(result).to.be.null;
     });
 
-    it('should cover main getHyphenator catch block (lines 103-106)', async () => {
+    it('should cover main getHyphenator catch block ', async () => {
       // This test targets the main catch block when import completely fails
       const module = await import('../../../src/readability/shared/multilingual-readability.js');
 
@@ -1640,7 +1640,7 @@ describe('Multilingual Readability Module', () => {
       expect(result).to.be.null;
     });
 
-    it('should cover syllable calculation error in cache fix (lines 279-283)', async () => {
+    it('should cover syllable calculation error in cache fix ', async () => {
       // This test covers the error handling in cache corruption fix
       // Since ES modules are not extensible, we'll test with extreme edge cases
       // that might naturally trigger the error conditions
@@ -1676,7 +1676,7 @@ describe('Multilingual Readability Module', () => {
       expect(results.length).to.be.greaterThan(0);
     });
 
-    it('should test emergency fallback logic for short vs long words (lines 282)', async () => {
+    it('should test emergency fallback logic for short vs long words ', async () => {
       // Test emergency fallback calculation logic indirectly
       const module = await import('../../../src/readability/shared/multilingual-readability.js');
 
