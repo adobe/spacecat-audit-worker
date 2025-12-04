@@ -79,9 +79,10 @@ function getHeadingLevel(tagName) {
 /**
  * Safely extract text content from an element
  * @param {Element} element - The DOM element
+ * @param {CheerioAPI} $ - The cheerio instance
  * @returns {string} - The trimmed text content, or empty string if null/undefined
  */
-function getTextContent(element, $) {
+export function getTextContent(element, $) {
   if (!element || !$) return '';
   return $(element).text().trim();
 }
