@@ -585,6 +585,7 @@ export async function aggregateAccessibilityData(
       ContentType: 'application/json',
     }));
 
+    log.debug(`[${logIdentifier}] Saved aggregated accessibility data to ${outputKey}`);
     log.info(`[${logIdentifier}] SAVING COMPLETE: Saved aggregated accessibility data to ${outputKey}`);
 
     // check if there are any other final-result files in the {storagePrefix}/siteId folder
