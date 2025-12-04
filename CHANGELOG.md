@@ -1,3 +1,10 @@
+## [1.266.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.266.2...v1.266.3) (2025-12-04)
+
+
+### Bug Fixes
+
+* add minor improvements for agentic ([#1753](https://github.com/adobe/spacecat-audit-worker/issues/1753)) ([592998d](https://github.com/adobe/spacecat-audit-worker/commit/592998d1cb361676fbd0b478eb7ef981b0681fa7))
+
 ## [1.266.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.266.1...v1.266.2) (2025-12-04)
 
 
