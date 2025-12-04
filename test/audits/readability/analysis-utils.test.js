@@ -26,7 +26,6 @@ describe('Readability Analysis Utils', () => {
   let analyzePageReadability;
   let mockLog;
   let mockS3Client;
-  let mockGetObjectKeysUsingPrefix;
   let mockGetObjectFromKey;
   let mockRs;
   let mockFranc;
@@ -44,7 +43,6 @@ describe('Readability Analysis Utils', () => {
 
     mockS3Client = {};
 
-    mockGetObjectKeysUsingPrefix = sinon.stub();
     mockGetObjectFromKey = sinon.stub();
 
     mockRs = {
@@ -60,7 +58,6 @@ describe('Readability Analysis Utils', () => {
       '../../../src/readability/shared/analysis-utils.js',
       {
         '../../../src/utils/s3-utils.js': {
-          getObjectKeysUsingPrefix: mockGetObjectKeysUsingPrefix,
           getObjectFromKey: mockGetObjectFromKey,
         },
         'text-readability': mockRs,
@@ -800,7 +797,6 @@ describe('Readability Analysis Utils', () => {
         '../../../src/readability/shared/analysis-utils.js',
         {
           '../../../src/utils/s3-utils.js': {
-            getObjectKeysUsingPrefix: mockGetObjectKeysUsingPrefix,
             getObjectFromKey: mockGetObjectFromKey,
           },
           'text-readability': mockRs,
@@ -843,265 +839,308 @@ describe('Readability Analysis Utils', () => {
   });
 
   describe('analyzePageReadability', () => {
-    it('should return no issues when no scraped content found', async () => {
-      mockGetObjectKeysUsingPrefix.resolves([]);
+    describe('empty scrapeResultPaths handling', () => {
+      it('should return failure when scrapeResultPaths is undefined', async () => {
+        const result = await analyzePageReadability(mockS3Client, 'test-bucket', undefined, mockLog);
 
-      const result = await analyzePageReadability(
-        mockS3Client,
-        'test-bucket',
-        'site-123',
-        mockLog,
-      );
-
-      expect(result.success).to.be.false;
-      expect(result.message).to.equal('No scraped content found for readability analysis');
-      expect(result.readabilityIssues).to.deep.equal([]);
-      expect(result.urlsProcessed).to.equal(0);
-    });
-
-    it('should return no issues when objectKeys is null', async () => {
-      mockGetObjectKeysUsingPrefix.resolves(null);
-
-      const result = await analyzePageReadability(
-        mockS3Client,
-        'test-bucket',
-        'site-123',
-        mockLog,
-      );
-
-      expect(result.success).to.be.false;
-      expect(result.readabilityIssues).to.deep.equal([]);
-    });
-
-    it('should process scraped pages and find readability issues', async () => {
-      const longText = 'This is complex text with difficult vocabulary and intricate grammatical structures that meets the minimum character length requirement for readability analysis testing purposes.';
-      mockGetObjectKeysUsingPrefix.resolves(['scrapes/site-123/page1.json']);
-      mockGetObjectFromKey.resolves({
-        finalUrl: 'https://example.com/page1',
-        scrapeResult: {
-          rawBody: `<html><body><p>${longText}</p></body></html>`,
-        },
-        scrapedAt: '2025-01-01T00:00:00.000Z',
-      });
-
-      mockFranc.returns('eng');
-      mockIsSupportedLanguage.returns(true);
-      mockGetLanguageName.returns('english');
-      mockRs.fleschReadingEase.returns(25);
-
-      const result = await analyzePageReadability(
-        mockS3Client,
-        'test-bucket',
-        'site-123',
-        mockLog,
-      );
-
-      expect(result).to.have.property('readabilityIssues');
-      expect(result).to.have.property('urlsProcessed');
-      expect(mockLog.info).to.have.been.calledWithMatch(/Found \d+ scraped objects/);
-    });
-
-    it('should warn when scraped data has no rawBody', async () => {
-      mockGetObjectKeysUsingPrefix.resolves(['scrapes/site-123/page1.json']);
-      mockGetObjectFromKey.resolves({
-        finalUrl: 'https://example.com/page1',
-        scrapeResult: {},
-      });
-
-      const result = await analyzePageReadability(
-        mockS3Client,
-        'test-bucket',
-        'site-123',
-        mockLog,
-      );
-
-      expect(mockLog.warn).to.have.been.calledWithMatch(/No rawBody found/);
-      expect(result.urlsProcessed).to.equal(0);
-    });
-
-    it('should handle errors processing individual pages', async () => {
-      mockGetObjectKeysUsingPrefix.resolves(['scrapes/site-123/page1.json']);
-      mockGetObjectFromKey.rejects(new Error('S3 error'));
-
-      const result = await analyzePageReadability(
-        mockS3Client,
-        'test-bucket',
-        'site-123',
-        mockLog,
-      );
-
-      expect(mockLog.error).to.have.been.calledWithMatch(/Error processing scraped data/);
-      expect(result.urlsProcessed).to.equal(0);
-    });
-
-    it('should handle top-level errors', async () => {
-      mockGetObjectKeysUsingPrefix.rejects(new Error('S3 connection error'));
-
-      const result = await analyzePageReadability(
-        mockS3Client,
-        'test-bucket',
-        'site-123',
-        mockLog,
-      );
-
-      expect(result.success).to.be.false;
-      expect(result.message).to.include('Analysis failed');
-      expect(mockLog.error).to.have.been.calledWithMatch(/Error analyzing readability/);
-    });
-
-    it('should limit issues to top 50 and sort by rank', async () => {
-      // Create 60 pages to test the 50 limit
-      const objectKeys = Array.from({ length: 60 }, (_, i) => `scrapes/site-123/page${i}.json`);
-      mockGetObjectKeysUsingPrefix.resolves(objectKeys);
-
-      mockGetObjectFromKey.callsFake((client, bucket, key) => {
-        const pageNum = parseInt(key.match(/page(\d+)/)[1], 10);
-        const longText = `This is complex text number ${pageNum} with difficult vocabulary and structures that meets the minimum character length requirement for readability analysis testing and contains enough content.`;
-        return Promise.resolve({
-          finalUrl: `https://example.com/page${pageNum}`,
-          scrapeResult: {
-            rawBody: `<html><body><p>${longText}</p></body></html>`,
-          },
-          scrapedAt: '2025-01-01T00:00:00.000Z',
+        expect(result).to.deep.equal({
+          success: false,
+          message: 'No scraped content found for readability analysis',
+          readabilityIssues: [],
+          urlsProcessed: 0,
         });
       });
 
-      mockFranc.returns('eng');
-      mockIsSupportedLanguage.returns(true);
-      mockGetLanguageName.returns('english');
-      mockRs.fleschReadingEase.returns(25);
+      it('should return failure when scrapeResultPaths is null', async () => {
+        const result = await analyzePageReadability(mockS3Client, 'test-bucket', null, mockLog);
 
-      const result = await analyzePageReadability(
-        mockS3Client,
-        'test-bucket',
-        'site-123',
-        mockLog,
-      );
+        expect(result).to.deep.equal({
+          success: false,
+          message: 'No scraped content found for readability analysis',
+          readabilityIssues: [],
+          urlsProcessed: 0,
+        });
+      });
 
-      expect(result.readabilityIssues.length).to.be.at.most(50);
+      it('should return failure when scrapeResultPaths is empty', async () => {
+        const result = await analyzePageReadability(mockS3Client, 'test-bucket', new Map(), mockLog);
+
+        expect(result).to.deep.equal({
+          success: false,
+          message: 'No scraped content found for readability analysis',
+          readabilityIssues: [],
+          urlsProcessed: 0,
+        });
+      });
     });
 
-    it('should return success false when no issues found', async () => {
-      mockGetObjectKeysUsingPrefix.resolves(['scrapes/site-123/page1.json']);
-      mockGetObjectFromKey.resolves({
-        finalUrl: 'https://example.com/page1',
-        scrapeResult: {
-          rawBody: '<html><body><p>Simple clear text that reads well.</p></body></html>',
-        },
-        scrapedAt: '2025-01-01T00:00:00.000Z',
+    describe('processing scraped pages', () => {
+      it('should warn and skip when rawBody is missing in scraped data', async () => {
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'scraped/page1.json'],
+        ]);
+
+        mockGetObjectFromKey.resolves({
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {},
+          scrapedAt: '2025-01-01T00:00:00Z',
+        });
+
+        const result = await analyzePageReadability(mockS3Client, 'test-bucket', scrapeResultPaths, mockLog);
+
+        expect(mockLog.warn).to.have.been.calledWith(
+          '[ReadabilityAnalysis] No rawBody found in scraped data for URL: https://example.com/page1',
+        );
+        expect(result.urlsProcessed).to.equal(0);
       });
 
-      mockFranc.returns('eng');
-      mockIsSupportedLanguage.returns(true);
-      mockGetLanguageName.returns('english');
-      mockRs.fleschReadingEase.returns(80); // Good readability
+      it('should warn and skip when scrapeResult is missing', async () => {
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'scraped/page1.json'],
+        ]);
 
-      const result = await analyzePageReadability(
-        mockS3Client,
-        'test-bucket',
-        'site-123',
-        mockLog,
-      );
+        mockGetObjectFromKey.resolves({
+          finalUrl: 'https://example.com/page1',
+          scrapedAt: '2025-01-01T00:00:00Z',
+        });
 
-      expect(result.success).to.be.false;
-      expect(result.message).to.equal('No readability issues found');
+        const result = await analyzePageReadability(mockS3Client, 'test-bucket', scrapeResultPaths, mockLog);
+
+        expect(mockLog.warn).to.have.been.calledWith(
+          '[ReadabilityAnalysis] No rawBody found in scraped data for URL: https://example.com/page1',
+        );
+        expect(result.urlsProcessed).to.equal(0);
+      });
+
+      it('should handle errors when processing scraped data fails', async () => {
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'scraped/page1.json'],
+        ]);
+
+        mockGetObjectFromKey.rejects(new Error('S3 connection failed'));
+
+        const result = await analyzePageReadability(mockS3Client, 'test-bucket', scrapeResultPaths, mockLog);
+
+        expect(mockLog.error).to.have.been.calledWith(
+          '[ReadabilityAnalysis] Error processing scraped data for URL https://example.com/page1: S3 connection failed',
+        );
+        expect(result.urlsProcessed).to.equal(0);
+        expect(result.readabilityIssues).to.deep.equal([]);
+      });
+
+      it('should process valid scraped data and use finalUrl when available', async () => {
+        const scrapeResultPaths = new Map([
+          ['https://example.com/original', 'scraped/page1.json'],
+        ]);
+
+        // HTML with content that has good readability (won't be flagged)
+        const htmlContent = '<html><body><p>Short text here</p></body></html>';
+
+        mockGetObjectFromKey.resolves({
+          finalUrl: 'https://example.com/redirected',
+          scrapeResult: { rawBody: htmlContent },
+          scrapedAt: '2025-01-01T00:00:00Z',
+        });
+
+        const result = await analyzePageReadability(mockS3Client, 'test-bucket', scrapeResultPaths, mockLog);
+
+        expect(mockLog.info).to.have.been.calledWith(
+          '[ReadabilityAnalysis] Found 1 scraped objects for analysis',
+        );
+        expect(result.success).to.equal(false); // No issues found (good readability)
+        expect(result.message).to.equal('No readability issues found');
+      });
+
+      it('should use original URL when finalUrl is not available', async () => {
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page', 'scraped/page.json'],
+        ]);
+
+        const htmlContent = '<html><body><p>Short text</p></body></html>';
+
+        mockGetObjectFromKey.resolves({
+          scrapeResult: { rawBody: htmlContent },
+          scrapedAt: '2025-01-01T00:00:00Z',
+        });
+
+        const result = await analyzePageReadability(mockS3Client, 'test-bucket', scrapeResultPaths, mockLog);
+
+        expect(result).to.have.property('urlsProcessed');
+        expect(result).to.have.property('readabilityIssues');
+      });
+
+      it('should process multiple pages in parallel', async () => {
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'scraped/page1.json'],
+          ['https://example.com/page2', 'scraped/page2.json'],
+          ['https://example.com/page3', 'scraped/page3.json'],
+        ]);
+
+        const htmlContent = '<html><body><p>Short simple text</p></body></html>';
+
+        mockGetObjectFromKey.resolves({
+          scrapeResult: { rawBody: htmlContent },
+          scrapedAt: '2025-01-01T00:00:00Z',
+        });
+
+        const result = await analyzePageReadability(mockS3Client, 'test-bucket', scrapeResultPaths, mockLog);
+
+        expect(mockGetObjectFromKey.callCount).to.equal(3);
+        expect(mockLog.info).to.have.been.calledWith(
+          '[ReadabilityAnalysis] Found 3 scraped objects for analysis',
+        );
+      });
+
+      it('should handle mixed success and failure when processing pages', async () => {
+        const scrapeResultPaths = new Map([
+          ['https://example.com/success', 'scraped/success.json'],
+          ['https://example.com/failure', 'scraped/failure.json'],
+        ]);
+
+        const htmlContent = '<html><body><p>Short text</p></body></html>';
+
+        mockGetObjectFromKey
+          .onFirstCall()
+          .resolves({
+            finalUrl: 'https://example.com/success',
+            scrapeResult: { rawBody: htmlContent },
+            scrapedAt: '2025-01-01T00:00:00Z',
+          })
+          .onSecondCall()
+          .rejects(new Error('Network error'));
+
+        const result = await analyzePageReadability(mockS3Client, 'test-bucket', scrapeResultPaths, mockLog);
+
+        expect(mockLog.error).to.have.been.calledWith(
+          '[ReadabilityAnalysis] Error processing scraped data for URL https://example.com/failure: Network error',
+        );
+        expect(result).to.have.property('readabilityIssues');
+      });
     });
 
-    it('should return success true when issues found', async () => {
-      const longText = 'This is complex text with difficult vocabulary and intricate grammatical structures that meets the minimum character length requirement for readability analysis testing purposes.';
-      mockGetObjectKeysUsingPrefix.resolves(['scrapes/site-123/page1.json']);
-      mockGetObjectFromKey.resolves({
-        finalUrl: 'https://example.com/page1',
-        scrapeResult: {
-          rawBody: `<html><body><p>${longText}</p></body></html>`,
-        },
-        scrapedAt: '2025-01-01T00:00:00.000Z',
+    describe('readability issues detection', () => {
+      it('should detect and return pages with poor readability', async () => {
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page', 'scraped/page.json'],
+        ]);
+
+        // Complex, hard-to-read English text that should trigger poor readability score
+        const hardToReadText = `
+        The epistemological ramifications of the aforementioned poststructuralist 
+        conceptualizations necessitate a comprehensive reevaluation of the 
+        phenomenological underpinnings that have heretofore characterized the 
+        methodological frameworks employed in the operationalization of said 
+        theoretical constructs within the interdisciplinary discourse.
+      `;
+        const htmlContent = `<html><body><p>${hardToReadText}</p></body></html>`;
+
+        mockGetObjectFromKey.resolves({
+          finalUrl: 'https://example.com/page',
+          scrapeResult: { rawBody: htmlContent },
+          scrapedAt: '2025-01-01T00:00:00Z',
+        });
+
+        mockFranc.returns('eng');
+        mockIsSupportedLanguage.returns(true);
+        mockGetLanguageName.returns('english');
+        mockRs.fleschReadingEase.returns(10); // Very poor readability
+
+        const result = await analyzePageReadability(mockS3Client, 'test-bucket', scrapeResultPaths, mockLog);
+
+        expect(result.readabilityIssues.length).to.be.greaterThan(0);
+        expect(result.success).to.equal(true);
       });
 
-      mockFranc.returns('eng');
-      mockIsSupportedLanguage.returns(true);
-      mockGetLanguageName.returns('english');
-      mockRs.fleschReadingEase.returns(25);
+      it('should limit results to top 50 issues', async () => {
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page', 'scraped/page.json'],
+        ]);
 
-      const result = await analyzePageReadability(
-        mockS3Client,
-        'test-bucket',
-        'site-123',
-        mockLog,
-      );
+        // Create HTML with many paragraphs of hard-to-read text
+        const hardToReadText = `The epistemological ramifications of the poststructuralist 
+        conceptualizations necessitate comprehensive reevaluation of phenomenological 
+        underpinnings characterizing methodological frameworks employed operationalization.`;
 
-      expect(result.success).to.be.true;
-      expect(result.message).to.include('Found');
+        const paragraphs = Array(60).fill(`<p>${hardToReadText}</p>`).join('');
+        const htmlContent = `<html><body>${paragraphs}</body></html>`;
+
+        mockGetObjectFromKey.resolves({
+          finalUrl: 'https://example.com/page',
+          scrapeResult: { rawBody: htmlContent },
+          scrapedAt: '2025-01-01T00:00:00Z',
+        });
+
+        mockFranc.returns('eng');
+        mockIsSupportedLanguage.returns(true);
+        mockGetLanguageName.returns('english');
+        mockRs.fleschReadingEase.returns(10); // Very poor readability
+
+        const result = await analyzePageReadability(mockS3Client, 'test-bucket', scrapeResultPaths, mockLog);
+
+        expect(result.readabilityIssues.length).to.be.at.most(50);
+      });
+
+      it('should sort issues by rank in descending order', async () => {
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page', 'scraped/page.json'],
+        ]);
+
+        const hardToReadText1 = `The epistemological ramifications of poststructuralist conceptualizations 
+        necessitate comprehensive reevaluation of phenomenological underpinnings.`;
+        const hardToReadText2 = `Interdisciplinary methodological frameworks employed in operationalization 
+        of theoretical constructs require systematic analysis of paradigmatic shifts.`;
+
+        const htmlContent = `<html><body>
+        <p>${hardToReadText1}</p>
+        <p>${hardToReadText2}</p>
+      </body></html>`;
+
+        mockGetObjectFromKey.resolves({
+          finalUrl: 'https://example.com/page',
+          scrapeResult: { rawBody: htmlContent },
+          scrapedAt: '2025-01-01T00:00:00Z',
+        });
+
+        mockFranc.returns('eng');
+        mockIsSupportedLanguage.returns(true);
+        mockGetLanguageName.returns('english');
+        mockRs.fleschReadingEase.returns(10); // Very poor readability
+
+        const result = await analyzePageReadability(mockS3Client, 'test-bucket', scrapeResultPaths, mockLog);
+
+        if (result.readabilityIssues.length > 1) {
+          for (let i = 0; i < result.readabilityIssues.length - 1; i += 1) {
+            expect(result.readabilityIssues[i].rank).to.be.at.least(
+              result.readabilityIssues[i + 1].rank,
+            );
+          }
+        }
+      });
     });
 
-    it('should increment urlsProcessed when pages have issues (lines 352-353)', async () => {
-      const longText1 = 'This is complex text with difficult vocabulary and intricate grammatical structures that are hard to read and meets the minimum character length requirement for analysis.';
-      const longText2 = 'Another complex paragraph with difficult vocabulary and challenging grammatical structures for analysis that also meets the minimum character length requirement for testing.';
+    describe('error handling', () => {
+      it('should handle unexpected errors and return failure result', async () => {
+        // Create a map-like object that throws on entries()
+        const faultyMap = {
+          size: 1,
+          entries: () => {
+            throw new Error('Unexpected map iteration error');
+          },
+        };
 
-      mockGetObjectKeysUsingPrefix.resolves([
-        'scrapes/site-123/page1.json',
-        'scrapes/site-123/page2.json',
-      ]);
+        const result = await analyzePageReadability(mockS3Client, 'test-bucket', faultyMap, mockLog);
 
-      // Both pages have content that will produce readability issues
-      mockGetObjectFromKey.onFirstCall().resolves({
-        finalUrl: 'https://example.com/page1',
-        scrapeResult: {
-          rawBody: `<html><body><p>${longText1}</p></body></html>`,
-        },
-        scrapedAt: '2025-01-01T00:00:00.000Z',
+        expect(mockLog.error).to.have.been.calledWith(
+          '[ReadabilityAnalysis] Error analyzing readability: Unexpected map iteration error',
+          sinon.match.instanceOf(Error),
+        );
+        expect(result).to.deep.equal({
+          success: false,
+          message: 'Analysis failed: Unexpected map iteration error',
+          readabilityIssues: [],
+          urlsProcessed: 0,
+        });
       });
-
-      mockGetObjectFromKey.onSecondCall().resolves({
-        finalUrl: 'https://example.com/page2',
-        scrapeResult: {
-          rawBody: `<html><body><p>${longText2}</p></body></html>`,
-        },
-        scrapedAt: '2025-01-01T00:00:00.000Z',
-      });
-
-      mockFranc.returns('eng');
-      mockIsSupportedLanguage.returns(true);
-      mockGetLanguageName.returns('english');
-      mockRs.fleschReadingEase.returns(25); // Poor readability to ensure issues are found
-
-      const result = await analyzePageReadability(
-        mockS3Client,
-        'test-bucket',
-        'site-123',
-        mockLog,
-      );
-
-      // urlsProcessed should be incremented for each page with issues
-      expect(result.urlsProcessed).to.be.greaterThan(0);
-      expect(result.readabilityIssues.length).to.be.greaterThan(0);
-    });
-
-    it('should not increment urlsProcessed when pages have no issues (lines 352-353)', async () => {
-      mockGetObjectKeysUsingPrefix.resolves(['scrapes/site-123/page1.json']);
-
-      mockGetObjectFromKey.resolves({
-        finalUrl: 'https://example.com/page1',
-        scrapeResult: {
-          rawBody: '<html><body><p>Simple clear text that reads well and has good readability.</p></body></html>',
-        },
-        scrapedAt: '2025-01-01T00:00:00.000Z',
-      });
-
-      mockFranc.returns('eng');
-      mockIsSupportedLanguage.returns(true);
-      mockGetLanguageName.returns('english');
-      mockRs.fleschReadingEase.returns(80); // Good readability - no issues
-
-      const result = await analyzePageReadability(
-        mockS3Client,
-        'test-bucket',
-        'site-123',
-        mockLog,
-      );
-
-      // urlsProcessed should be 0 since no issues were found
-      expect(result.urlsProcessed).to.equal(0);
     });
   });
 });

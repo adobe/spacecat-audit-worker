@@ -260,6 +260,12 @@ describe('Readability Opportunities Handler', () => {
   });
 
   describe('processReadabilityOpportunities (lines 101-215)', () => {
+    // Sample scrapeResultPaths to use in tests
+    const mockScrapeResultPaths = new Map([
+      ['https://example.com/page1', 'scrapes/site-123/page1.json'],
+      ['https://example.com/page2', 'scrapes/site-123/page2.json'],
+    ]);
+
     it('should return error when S3 bucket is not configured (lines 107-114)', async () => {
       const context = {
         site: mockSite,
@@ -267,6 +273,7 @@ describe('Readability Opportunities Handler', () => {
         s3Client: mockS3Client,
         env: {}, // No bucket name
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       const result = await processReadabilityOpportunities(context);
@@ -292,6 +299,7 @@ describe('Readability Opportunities Handler', () => {
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       const result = await processReadabilityOpportunities(context);
@@ -342,6 +350,7 @@ describe('Readability Opportunities Handler', () => {
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       const result = await processReadabilityOpportunities(context);
@@ -389,6 +398,7 @@ describe('Readability Opportunities Handler', () => {
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       const result = await processReadabilityOpportunities(context);
@@ -420,6 +430,7 @@ describe('Readability Opportunities Handler', () => {
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       const result = await processReadabilityOpportunities(context);
@@ -440,6 +451,7 @@ describe('Readability Opportunities Handler', () => {
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       const result = await processReadabilityOpportunities(context);
@@ -479,12 +491,17 @@ describe('Readability Opportunities Handler', () => {
       mockSyncSuggestions.resolves();
       mockSendReadabilityToMystique.resolves();
 
+      const mockScrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scraped/page1.json'],
+      ]);
+
       const context = {
         site: mockSite,
         log: mockLog,
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       await processReadabilityOpportunities(context);
@@ -519,12 +536,17 @@ describe('Readability Opportunities Handler', () => {
       mockSyncSuggestions.resolves();
       mockSendReadabilityToMystique.resolves();
 
+      const mockScrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scraped/page1.json'],
+      ]);
+
       const context = {
         site: mockSite,
         log: mockLog,
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       await processReadabilityOpportunities(context);
@@ -545,12 +567,17 @@ describe('Readability Opportunities Handler', () => {
         message: 'No content',
       });
 
+      const mockScrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scraped/page1.json'],
+      ]);
+
       const context = {
         site: mockSite,
         log: mockLog,
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       await processReadabilityOpportunities(context);
@@ -558,7 +585,7 @@ describe('Readability Opportunities Handler', () => {
       expect(mockAnalyzePageReadability).to.have.been.calledWith(
         mockS3Client,
         'test-bucket',
-        'site-123',
+        mockScrapeResultPaths,
         mockLog,
       );
     });
@@ -594,12 +621,18 @@ describe('Readability Opportunities Handler', () => {
       mockSyncSuggestions.resolves();
       mockSendReadabilityToMystique.resolves();
 
+      const mockScrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scraped/page1.json'],
+        ['https://example.com/page2', 'scraped/page2.json'],
+      ]);
+
       const context = {
         site: mockSite,
         log: mockLog,
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       await processReadabilityOpportunities(context);
@@ -633,12 +666,17 @@ describe('Readability Opportunities Handler', () => {
       mockSyncSuggestions.resolves();
       mockSendReadabilityToMystique.resolves();
 
+      const mockScrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scraped/page1.json'],
+      ]);
+
       const context = {
         site: mockSite,
         log: mockLog,
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       await processReadabilityOpportunities(context);
@@ -676,12 +714,17 @@ describe('Readability Opportunities Handler', () => {
       mockSyncSuggestions.resolves();
       mockSendReadabilityToMystique.resolves();
 
+      const mockScrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scraped/page1.json'],
+      ]);
+
       const context = {
         site: mockSite,
         log: mockLog,
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       await processReadabilityOpportunities(context);
@@ -720,12 +763,17 @@ describe('Readability Opportunities Handler', () => {
       mockSyncSuggestions.resolves();
       mockSendReadabilityToMystique.resolves();
 
+      const mockScrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scraped/page1.json'],
+      ]);
+
       const context = {
         site: mockSite,
         log: mockLog,
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       await processReadabilityOpportunities(context);
@@ -760,12 +808,17 @@ describe('Readability Opportunities Handler', () => {
       mockSyncSuggestions.resolves();
       mockSendReadabilityToMystique.resolves();
 
+      const mockScrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scraped/page1.json'],
+      ]);
+
       const context = {
         site: mockSite,
         log: mockLog,
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       await processReadabilityOpportunities(context);
@@ -818,12 +871,17 @@ describe('Readability Opportunities Handler', () => {
       mockSyncSuggestions.resolves();
       mockSendReadabilityToMystique.resolves();
 
+      const mockScrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scraped/page1.json'],
+      ]);
+
       const context = {
         site: mockSite,
         log: mockLog,
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       await processReadabilityOpportunities(context);
@@ -865,12 +923,17 @@ describe('Readability Opportunities Handler', () => {
       mockSyncSuggestions.resolves();
       mockSendReadabilityToMystique.resolves();
 
+      const mockScrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scraped/page1.json'],
+      ]);
+
       const context = {
         site: mockSite,
         log: mockLog,
         s3Client: mockS3Client,
         env: mockEnv,
         audit: mockAudit,
+        scrapeResultPaths: mockScrapeResultPaths,
       };
 
       await processReadabilityOpportunities(context);
