@@ -4145,9 +4145,9 @@ describe('createMystiqueForwardPayload', () => {
       siteId: 'site-456',
       auditId: 'audit-789',
       deliveryType: 'aem-sites',
-      aggregationKey: 'aggregation-key-123',
     });
     expect(result.data).to.deep.equal({
+      aggregationKey: 'aggregation-key-123',
       url: 'https://example.com/page',
       opportunityId: 'opportunity-123',
       issuesList: [{ issueName: 'aria-allowed-attr' }],

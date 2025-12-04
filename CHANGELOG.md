@@ -1,3 +1,29 @@
+## [1.265.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.265.0...v1.265.1) (2025-12-03)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1744](https://github.com/adobe/spacecat-audit-worker/issues/1744)) ([c41f23d](https://github.com/adobe/spacecat-audit-worker/commit/c41f23d5546746481bc8be0fa388a1588ecc82e7))
+
+# [1.265.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.7...v1.265.0) (2025-12-03)
+
+
+### Bug Fixes
+
+* sites-38017  ([#1739](https://github.com/adobe/spacecat-audit-worker/issues/1739)) ([5981377](https://github.com/adobe/spacecat-audit-worker/commit/598137763361af2e24b18ee33b322311b437c5f1))
+
+
+### Features
+
+* add vulnerabilities code-fix handler ([#1700](https://github.com/adobe/spacecat-audit-worker/issues/1700)) ([4a3fdc4](https://github.com/adobe/spacecat-audit-worker/commit/4a3fdc40836c9417c2cd791d3d6180ac155da1cc))
+
+## [1.264.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.6...v1.264.7) (2025-12-03)
+
+
+### Bug Fixes
+
+* Move aggregation key to data in Mystique message ([#1740](https://github.com/adobe/spacecat-audit-worker/issues/1740)) ([964236a](https://github.com/adobe/spacecat-audit-worker/commit/964236a6a94799c5202da7c0782ca36f14e02e4b))
+
 ## [1.264.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.5...v1.264.6) (2025-12-03)
 
 
