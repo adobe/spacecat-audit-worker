@@ -1,3 +1,10 @@
+# [1.266.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.265.4...v1.266.0) (2025-12-04)
+
+
+### Features
+
+* **health-check:** add health check audit ([#1685](https://github.com/adobe/spacecat-audit-worker/issues/1685)) ([60cbbea](https://github.com/adobe/spacecat-audit-worker/commit/60cbbeace9bc7c3007edcacab02f5c581764b5a2))
+
 ## [1.265.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.265.3...v1.265.4) (2025-12-04)
 
 
