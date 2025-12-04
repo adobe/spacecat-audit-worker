@@ -434,18 +434,23 @@ async function prepareDomainWideAggregateSuggestion(
   const auditedUrls = preRenderSuggestions.map((s) => s.url);
   const auditedUrlCount = auditedUrls.length;
 
-  // Calculate aggregated metrics from audited URLs
-  const minContentGainRatio = preRenderSuggestions.length > 0
-    ? Math.min(...preRenderSuggestions.map((s) => s.contentGainRatio || 0))
-    : 0;
+  // Calculate totals (sum) from all audited URLs
+  // Sum up contentGainRatio from all suggestions
+  const totalContentGainRatio = preRenderSuggestions.reduce(
+    (sum, s) => sum + (s.contentGainRatio || 0),
+    0,
+  );
 
-  const minWordCountBefore = preRenderSuggestions.length > 0
-    ? Math.min(...preRenderSuggestions.map((s) => s.wordCountBefore || 0))
-    : 0;
+  // Sum up word counts from all suggestions
+  const totalWordCountBefore = preRenderSuggestions.reduce(
+    (sum, s) => sum + (s.wordCountBefore || 0),
+    0,
+  );
 
-  const minWordCountAfter = preRenderSuggestions.length > 0
-    ? Math.min(...preRenderSuggestions.map((s) => s.wordCountAfter || 0))
-    : 0;
+  const totalWordCountAfter = preRenderSuggestions.reduce(
+    (sum, s) => sum + (s.wordCountAfter || 0),
+    0,
+  );
 
   // Calculate total agentic traffic for all audited URLs
   let totalAgenticTraffic = 0;
@@ -468,9 +473,9 @@ async function prepareDomainWideAggregateSuggestion(
   // Array of allowed regex patterns (prepares for future blockedRegexPatterns)
   const allowedRegexPatterns = [domainRegex];
 
-  // Calculate % AI-readable content (percentage of content visible before JS execution)
-  const minAiReadablePercent = minWordCountAfter > 0
-    ? Math.round((minWordCountBefore / minWordCountAfter) * 100)
+  // Calculate % AI-readable content based on total word counts
+  const totalAiReadablePercent = totalWordCountAfter > 0
+    ? Math.round((totalWordCountBefore / totalWordCountAfter) * 100)
     : 0;
 
   // Domain-wide suggestion data matching the schema of individual suggestions
@@ -478,9 +483,9 @@ async function prepareDomainWideAggregateSuggestion(
   const domainWideSuggestionData = {
     // Special marker to indicate this covers the entire domain
     url: `${baseUrl}/* (All Domain URLs)`,
-    contentGainRatio: minContentGainRatio > 0 ? Number(minContentGainRatio.toFixed(2)) : 0,
-    wordCountBefore: minWordCountBefore,
-    wordCountAfter: minWordCountAfter,
+    contentGainRatio: totalContentGainRatio > 0 ? Number(totalContentGainRatio.toFixed(2)) : 0,
+    wordCountBefore: totalWordCountBefore,
+    wordCountAfter: totalWordCountAfter,
     agenticTraffic: totalAgenticTraffic, // Aggregated traffic from all audited URLs
     // Additional metadata for domain-wide configuration
     isDomainWide: true,
@@ -490,9 +495,9 @@ async function prepareDomainWideAggregateSuggestion(
     description: `Apply pre-rendering to all URLs across the entire domain (${baseUrlObj.origin})`,
     auditedUrlCount,
     auditedUrls, // URLs that were audited and generated individual suggestions
-    note: 'This configuration applies to ALL URLs in the domain. Metrics represent minimum baseline from qualified & prioritized URLs.',
+    note: 'This configuration applies to ALL URLs in the domain. Metrics represent total aggregated values from qualified & prioritized URLs.',
     // Store calculated percentage for UI
-    aiReadablePercent: minAiReadablePercent,
+    aiReadablePercent: totalAiReadablePercent,
   };
 
   // Use a constant key to ensure only ONE domain-wide suggestion exists per opportunity

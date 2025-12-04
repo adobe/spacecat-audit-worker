@@ -1175,22 +1175,22 @@ describe('Prerender Audit', () => {
           expect(domainWideSuggestion.data.pathPattern).to.equal('/*');
           expect(domainWideSuggestion.data.scope).to.equal('domain-wide');
 
-          // Verify minimum baseline metrics (not averages)
-          // Minimum contentGainRatio: min(3.0, 2.0, 1.0) = 1.0
-          expect(domainWideSuggestion.data.contentGainRatio).to.equal(1.0);
+          // Verify aggregated (summed) metrics
+          // Total contentGainRatio: 3.0 + 2.0 + 1.0 = 6.0
+          expect(domainWideSuggestion.data.contentGainRatio).to.equal(6.0);
 
-          // Minimum wordCountBefore: min(100, 200, 150) = 100
-          expect(domainWideSuggestion.data.wordCountBefore).to.equal(100);
+          // Total wordCountBefore: 100 + 200 + 150 = 450
+          expect(domainWideSuggestion.data.wordCountBefore).to.equal(450);
 
-          // Minimum wordCountAfter: min(300, 400, 150) = 150
-          expect(domainWideSuggestion.data.wordCountAfter).to.equal(150);
+          // Total wordCountAfter: 300 + 400 + 150 = 850
+          expect(domainWideSuggestion.data.wordCountAfter).to.equal(850);
 
           // Verify metadata
           expect(domainWideSuggestion.data.auditedUrlCount).to.equal(3);
           expect(domainWideSuggestion.data.auditedUrls).to.have.length(3);
           expect(domainWideSuggestion.data.description).to.include('entire domain');
           expect(domainWideSuggestion.data.note).to.include('ALL URLs in the domain');
-          expect(domainWideSuggestion.data.note).to.include('minimum baseline');
+          expect(domainWideSuggestion.data.note).to.include('total aggregated values');
 
           // Verify UI display annotations with "+" suffix for baseline values
           expect(domainWideSuggestion.data).to.have.property('displayAnnotations');
@@ -1200,10 +1200,11 @@ describe('Prerender Audit', () => {
           expect(domainWideSuggestion.data.displayAnnotations.wordCountBefore).to.equal('100+');
           expect(domainWideSuggestion.data.displayAnnotations.wordCountAfter).to.equal('150+');
 
-          // Verify calculated AI-readable percentage based on minimums
-          // (100 / 150) * 100 ≈ 67%
+          // Verify calculated AI-readable percentage based on totals
+          // (450 / 850) * 100 ≈ 53%
           expect(domainWideSuggestion.data).to.have.property('aiReadablePercent');
           expect(domainWideSuggestion.data.aiReadablePercent).to.be.a('number');
+          expect(domainWideSuggestion.data.aiReadablePercent).to.equal(53);
 
           // Verify high rank for appearing first
           expect(domainWideSuggestion.rank).to.equal(999999);
@@ -1416,20 +1417,27 @@ describe('Prerender Audit', () => {
         expect(mappedIndividual).to.have.property('rank', 0);
       });
 
-      it('should store raw numeric values for domain-wide suggestions', async () => {
-        // Test to verify raw numeric values are stored (formatting is now done in UI)
+      it('should store raw numeric values (totals) for domain-wide suggestions', async () => {
+        // Test to verify raw total/summed numeric values are stored (formatting is done in UI)
         const auditData = {
           siteId: 'test-site',
           auditId: 'test-audit-id',
           auditResult: {
-            urlsNeedingPrerender: 1,
+            urlsNeedingPrerender: 2,
             results: [
               {
                 url: 'https://example.com/page1',
                 needsPrerender: true,
                 contentGainRatio: 2.0,
-                wordCountBefore: 2500000, // 2.5M
-                wordCountAfter: 5000000, // 5M
+                wordCountBefore: 2000000, // 2M
+                wordCountAfter: 4000000, // 4M
+              },
+              {
+                url: 'https://example.com/page2',
+                needsPrerender: true,
+                contentGainRatio: 3.0,
+                wordCountBefore: 3000000, // 3M
+                wordCountAfter: 6000000, // 6M
               },
             ],
           },
@@ -1470,10 +1478,13 @@ describe('Prerender Audit', () => {
         const domainWideSuggestion = newData.find((item) => item.key);
         expect(domainWideSuggestion).to.exist;
 
-        // Verify raw numeric values are stored (UI will format with M+ suffix)
-        expect(domainWideSuggestion.data.wordCountBefore).to.equal(2500000);
-        expect(domainWideSuggestion.data.wordCountAfter).to.equal(5000000);
-        expect(domainWideSuggestion.data.contentGainRatio).to.equal(2.0);
+        // Verify raw total/summed values are stored (UI will format with M+ suffix)
+        // Total wordCountBefore: 2000000 + 3000000 = 5000000 (5M)
+        // Total wordCountAfter: 4000000 + 6000000 = 10000000 (10M)
+        // Total contentGainRatio: 2.0 + 3.0 = 5.0
+        expect(domainWideSuggestion.data.wordCountBefore).to.equal(5000000);
+        expect(domainWideSuggestion.data.wordCountAfter).to.equal(10000000);
+        expect(domainWideSuggestion.data.contentGainRatio).to.equal(5.0);
       });
 
       it('should handle zero values as raw numbers (UI handles N/A display)', async () => {
@@ -1533,6 +1544,220 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion.data.wordCountBefore).to.equal(0);
         expect(domainWideSuggestion.data.wordCountAfter).to.equal(0);
         expect(domainWideSuggestion.data.agenticTraffic).to.equal(0);
+      });
+
+      it('should aggregate agentic traffic from traffic map for domain-wide suggestion', async () => {
+        // Test to cover traffic aggregation logic (lines 452-461)
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'test-audit-id',
+          auditResult: {
+            urlsNeedingPrerender: 3,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.0,
+                wordCountBefore: 100,
+                wordCountAfter: 200,
+              },
+              {
+                url: 'https://example.com/page2',
+                needsPrerender: true,
+                contentGainRatio: 3.0,
+                wordCountBefore: 150,
+                wordCountAfter: 450,
+              },
+              {
+                url: 'https://example.com/page3/',  // With trailing slash
+                needsPrerender: true,
+                contentGainRatio: 1.5,
+                wordCountBefore: 200,
+                wordCountAfter: 300,
+              },
+            ],
+          },
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sandbox.stub().resolves([]),
+        };
+
+        const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
+        const syncSuggestionsStub = sandbox.stub().resolves();
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+          '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        });
+
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+        };
+
+        // Create traffic map with traffic for the audited URLs
+        const agenticTrafficMap = new Map([
+          ['/page1', 1000],  // Matches https://example.com/page1
+          ['/page2', 2500],  // Matches https://example.com/page2
+          ['/page3', 1500],  // Matches https://example.com/page3/ (trailing slash normalized)
+        ]);
+
+        await mockHandler.processOpportunityAndSuggestions(
+          'https://example.com',
+          auditData,
+          context,
+          agenticTrafficMap,
+        );
+
+        // Verify syncSuggestions was called once
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+
+        // Get the call and find domain-wide suggestion
+        const syncCall = syncSuggestionsStub.getCall(0);
+        const { newData } = syncCall.args[0];
+        const domainWideSuggestion = newData.find((item) => item.key);
+        expect(domainWideSuggestion).to.exist;
+
+        // Verify traffic was aggregated correctly: 1000 + 2500 + 1500 = 5000
+        expect(domainWideSuggestion.data.agenticTraffic).to.equal(5000);
+      });
+
+      it('should handle invalid URLs gracefully when looking up traffic', async () => {
+        // Test to cover error handling in traffic lookup (lines 458-460)
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'test-audit-id',
+          auditResult: {
+            urlsNeedingPrerender: 2,
+            results: [
+              {
+                url: 'not-a-valid-url',  // Invalid URL
+                needsPrerender: true,
+                contentGainRatio: 2.0,
+                wordCountBefore: 100,
+                wordCountAfter: 200,
+              },
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 3.0,
+                wordCountBefore: 150,
+                wordCountAfter: 450,
+              },
+            ],
+          },
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sandbox.stub().resolves([]),
+        };
+
+        const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
+        const syncSuggestionsStub = sandbox.stub().resolves();
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+          '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        });
+
+        const debugStub = sandbox.stub();
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            debug: debugStub,
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+        };
+
+        const agenticTrafficMap = new Map([['/page1', 1000]]);
+
+        await mockHandler.processOpportunityAndSuggestions(
+          'https://example.com',
+          auditData,
+          context,
+          agenticTrafficMap,
+        );
+
+        // Verify debug log was called for invalid URL
+        expect(debugStub).to.have.been.called;
+        const debugCalls = debugStub.getCalls().map((call) => call.args[0]);
+        const trafficLookupDebug = debugCalls.find((msg) => msg.includes('Could not parse URL for traffic lookup'));
+        expect(trafficLookupDebug).to.exist;
+
+        // Verify suggestion was still created (only valid URL's traffic counted)
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const syncCall = syncSuggestionsStub.getCall(0);
+        const { newData } = syncCall.args[0];
+        const domainWideSuggestion = newData.find((item) => item.key);
+        expect(domainWideSuggestion).to.exist;
+        // Only page1's traffic should be counted
+        expect(domainWideSuggestion.data.agenticTraffic).to.equal(1000);
+      });
+
+      it('should handle zero totalWordCountAfter when calculating aiReadablePercent', async () => {
+        // Test to cover edge case when total word count after is zero
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'test-audit-id',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 0,
+                wordCountBefore: 0,
+                wordCountAfter: 0,  // Zero after count - should result in 0 percent
+              },
+            ],
+          },
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sandbox.stub().resolves([]),
+        };
+
+        const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
+        const syncSuggestionsStub = sandbox.stub().resolves();
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+          '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        });
+
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions(
+          'https://example.com',
+          auditData,
+          context,
+          new Map(),
+        );
+
+        // Get domain-wide suggestion
+        const syncCall = syncSuggestionsStub.getCall(0);
+        const { newData } = syncCall.args[0];
+        const domainWideSuggestion = newData.find((item) => item.key);
+        expect(domainWideSuggestion).to.exist;
+
+        // aiReadablePercent should be 0 when wordCountAfter is 0
+        expect(domainWideSuggestion.data.aiReadablePercent).to.equal(0);
       });
     });
   });
