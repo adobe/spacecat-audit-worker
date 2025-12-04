@@ -99,7 +99,7 @@ export async function scrapeReadabilityData(context) {
 // Second step: processes scraped data to create readability opportunities
 export async function processReadabilityOpportunities(context) {
   const {
-    site, log, s3Client, env, audit,
+    site, log, s3Client, env, audit, scrapeResultPaths,
   } = context;
   const siteId = site.getId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -113,14 +113,22 @@ export async function processReadabilityOpportunities(context) {
     };
   }
 
+  if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
+    log.info(`[ReadabilityAudit] No scrape result paths found for site ${siteId} (${site.getBaseURL()}), skipping audit`);
+    return {
+      status: 'NO_OPPORTUNITIES',
+      message: 'No scrape result paths available',
+    };
+  }
+
   log.info(`[ReadabilityAudit] Step 2: Processing scraped data for readability analysis for site ${siteId} (${site.getBaseURL()})`);
 
   try {
-    // Analyze readability for all scraped pages
+    // Analyze readability for all scraped pages using scrapeResultPaths from context
     const readabilityAnalysisResult = await analyzePageReadability(
       s3Client,
       bucketName,
-      siteId,
+      scrapeResultPaths,
       log,
     );
 
@@ -217,14 +225,14 @@ export async function processReadabilityOpportunities(context) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .addStep(
-    'processImport',
+    'import-top-pages',
     processImportStep,
     AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
   )
   .addStep(
-    'scrapeReadabilityData',
+    'submit-for-scraping',
     scrapeReadabilityData,
-    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+    AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT,
   )
-  .addStep('processReadabilityOpportunities', processReadabilityOpportunities)
+  .addStep('build-suggestions', processReadabilityOpportunities)
   .build();
