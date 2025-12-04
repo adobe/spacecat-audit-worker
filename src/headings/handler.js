@@ -26,6 +26,9 @@ import SeoChecks from '../metatags/seo-checks.js';
 
 const auditType = Audit.AUDIT_TYPES.HEADINGS;
 
+const tocAuditType = 'toc';
+
+
 const H1_LENGTH_CHARS = 70;
 
 export const HEADINGS_CHECKS = Object.freeze({
@@ -595,7 +598,7 @@ function determineTocPlacement(document) {
  * @param {Object} context - Audit context containing environment and clients
  * @returns {Promise<Object>} Object with tocPresent, TOCCSSSelector, confidence (1-10), and reasoning
  */
-async function getTocDetails(document, url, pageTags, log, context) {
+async function getTocDetails(document, url, pageTags, log, context, scrapedAt) {
   try {
     // Extract first 3000 characters from body
     const bodyElement = document.querySelector('body');
@@ -671,14 +674,9 @@ async function getTocDetails(document, url, pageTags, log, context) {
         action: placement.action,
         selector: placement.selector,
         tag: 'nav',
-        attributes: {
-          class: 'table-of-contents',
-          'aria-label': 'Table of Contents',
-        },
-        placement: placement.placement,
         value: tocHast,
         valueFormat: 'hast',
-        scrapedAt: new Date().toISOString(),
+        scrapedAt: new Date(scrapedAt).toISOString()
       };
       log.debug(`[TOC Detection] Suggested TOC placement for ${url}: ${placement.reasoning}`);
     }
@@ -855,7 +853,7 @@ export async function validatePageHeadingFromScrapeJson(
       }
     }
 
-    const tocDetails = await getTocDetails(document, url, pageTags, log, context);
+    const tocDetails = await getTocDetails(document, url, pageTags, log, context, scrapeJsonObject.scrapedAt);
 
     return { url, checks, tocDetails };
   } catch (error) {
@@ -1040,6 +1038,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
         // Handle TOC detection - only add to results if TOC is missing
         if (tocDetails && !tocDetails.tocPresent && tocDetails.transformRules) {
           if (!aggregatedResultsToc[TOC_CHECK.check]) {
+            totalIssuesFound += 1;
             aggregatedResultsToc[TOC_CHECK.check] = {
               success: false,
               explanation: TOC_CHECK.explanation,
@@ -1113,7 +1112,7 @@ export function generateSuggestions(auditUrl, auditData, context) {
   const allSuggestions = [];
 
   // Process all audit results and group by type
-  Object.entries(auditData.auditResult).forEach(([checkType, checkResult]) => {
+  Object.entries(auditData.auditResult.headings).forEach(([checkType, checkResult]) => {
     if (checkResult.success === false && Array.isArray(checkResult.urls)) {
       if (!suggestionsByType[checkType]) {
         suggestionsByType[checkType] = [];
@@ -1135,8 +1134,31 @@ export function generateSuggestions(auditUrl, auditData, context) {
       });
     }
   });
+  const allTocSuggestions = [];
+  Object.entries(auditData.auditResult.toc).forEach(([checkType, checkResult]) => {
+    if (checkResult.success === false && Array.isArray(checkResult.urls)) {
+      checkResult.urls.forEach((urlObj) => {
+        const suggestion = {
+          type: 'CODE_CHANGE',
+          checkType,
+          url: urlObj.url,
+          explanation: urlObj.explanation ?? checkResult.explanation,
+          recommendedAction: urlObj.suggestion ?? generateRecommendedAction(checkType),
+          checkTitle: urlObj.checkTitle,
+          isAISuggested: urlObj.isAISuggested,
+          ...(urlObj.transformRules && { transformRules: urlObj.transformRules }),
+        };
+        allTocSuggestions.push(suggestion);
+      });
+    }
+  });
 
-  const suggestions = [...allSuggestions];
+  const suggestions = {
+    headings: {},
+    toc: {},
+  };
+  suggestions.headings = [...allSuggestions];
+  suggestions.toc = [...allTocSuggestions];
 
   log.debug(`Generated ${suggestions.length} headings suggestions for ${auditUrl}`);
   return { ...auditData, suggestions };
@@ -1144,14 +1166,14 @@ export function generateSuggestions(auditUrl, auditData, context) {
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
-  if (!auditData.suggestions?.length) {
-    log.info('Headings audit has no issues, skipping opportunity creation');
+  if (!auditData.suggestions?.headings?.length) {
+    log.info('Headings audit has no headings issues, skipping opportunity creation');
     return { ...auditData };
   }
 
   const opportunity = await convertToOpportunity(
     auditUrl,
-    auditData,
+    { ...auditData, suggestions: auditData.suggestions.headings },
     context,
     createOpportunityData,
     auditType,
@@ -1173,7 +1195,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 
   await syncSuggestions({
     opportunity,
-    newData: auditData.suggestions,
+    newData: auditData.suggestions.headings,
     context,
     buildKey,
     mapNewSuggestion: (suggestion) => ({
@@ -1201,11 +1223,56 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   return { ...auditData };
 }
 
+export async function opportunityAndSuggestionsForToc(auditUrl, auditData, context) {
+  const { log } = context;
+  if (!auditData.suggestions?.toc?.length) {
+    log.info('Headings audit has no toc issues, skipping opportunity creation');
+    return { ...auditData };
+  }
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    { ...auditData, suggestions: auditData.suggestions.toc },
+    context,
+    createOpportunityData,
+    tocAuditType,
+  );
+
+  const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
+
+  await syncSuggestions({
+    opportunity,
+    newData: auditData.suggestions.toc,
+    context,
+    buildKey,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: suggestion.type,
+      rank: 0,
+      data: {
+        type: 'url',
+        url: suggestion.url,
+        checkType: suggestion.checkType,
+        explanation: suggestion.explanation,
+        recommendedAction: suggestion.recommendedAction,
+        checkTitle: suggestion.checkTitle,
+        isAISuggested: suggestion.isAISuggested,
+        ...(suggestion.transformRules && {
+          transformRules: { ...suggestion.transformRules },
+        }),
+      },
+    })
+  });
+
+  log.info(`TOC opportunity created for Site Optimizer and ${auditData.suggestions.toc.length} suggestions synced for ${auditUrl}`);
+  return { ...auditData };
+}
+
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(headingsAuditRunner)
   .withPostProcessors([
     generateSuggestions,
     opportunityAndSuggestions,
+    opportunityAndSuggestionsForToc,
   ])
   .build();
