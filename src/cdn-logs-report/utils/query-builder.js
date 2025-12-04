@@ -11,9 +11,9 @@
  */
 
 import { DEFAULT_COUNTRY_PATTERNS } from '../../common/country-patterns.js';
-import { loadSql, fetchRemotePatterns, buildSiteFilters } from './report-utils.js';
+import { loadSql, fetchRemotePatterns } from './report-utils.js';
 import { buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL } from '../../common/user-agent-classification.js';
-import { buildDateFilter, buildUserAgentFilter } from '../../utils/cdn-utils.js';
+import { buildDateFilter, buildUserAgentFilter, buildSiteFilters } from '../../utils/cdn-utils.js';
 
 function buildWhereClause(conditions = [], siteFilters = []) {
   const allConditions = [...conditions];
@@ -161,8 +161,30 @@ async function createTopUrlsQuery(options) {
   });
 }
 
+async function createTopUrlsQueryWithLimit(options) {
+  const {
+    periods, databaseName, tableName, site, limit,
+  } = options;
+
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
+  const siteFilters = buildSiteFilters(filters, site);
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClause(
+    [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
+    siteFilters,
+  );
+
+  return loadSql('top-agentic-urls-by-limit', {
+    databaseName,
+    tableName,
+    whereClause,
+    limit,
+  });
+}
+
 export const weeklyBreakdownQueries = {
   createAgenticReportQuery,
   createReferralReportQuery,
   createTopUrlsQuery,
+  createTopUrlsQueryWithLimit,
 };

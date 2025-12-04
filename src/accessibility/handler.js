@@ -60,12 +60,13 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
       error: errorMsg,
     };
   }
-  log.debug(`[A11yAudit] Step 1: Preparing content scrape for ${deviceType} accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
+  log.info(`[A11yAudit] Step 1: Preparing content scrape for ${deviceType} accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
 
   let urlsToScrape = [];
   urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
 
   if (urlsToScrape.length === 0) {
+    log.info(`[A11yAudit] No URLs found in latest final-result.json for site ${siteId}, falling back to Ahrefs top pages`);
     const { SiteTopPage } = dataAccess;
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
     log.debug(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
@@ -99,6 +100,8 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
   );
 
   const remainingUrls = getRemainingUrls(urlsToScrape, existingUrls);
+
+  log.info(`[A11yAudit] Will scrape ${remainingUrls.length} remaining URLs for site ${siteId} (${urlsToScrape.length} total - ${existingUrls.length} already scraped = ${remainingUrls.length} remaining)`);
 
   // get scraping config from site
   const scrapingConfig = await site.getConfig();
@@ -410,6 +413,20 @@ export function createProcessAccessibilityOpportunitiesWithDevice(deviceType) {
   };
 }
 
+export async function codeImportStep(context) {
+  const {
+    log, site,
+  } = context;
+
+  log.info(`[A11yAudit] [Site Id: ${site.getId()}] starting code import step`);
+
+  return {
+    type: 'code',
+    siteId: site.getId(),
+    allowCache: false,
+  };
+}
+
 export default new AuditBuilder()
   .withUrlResolver((site) => site.resolveFinalURL())
   .addStep(
@@ -422,5 +439,6 @@ export default new AuditBuilder()
     scrapeAccessibilityData,
     AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
   )
+  .addStep('codeImport', codeImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('processAccessibilityOpportunities', processAccessibilityOpportunities)
   .build();

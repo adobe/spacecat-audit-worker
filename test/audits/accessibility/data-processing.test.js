@@ -610,7 +610,7 @@ describe('data-processing utility functions', () => {
       expect(result.success).to.be.true;
       expect(result.objectKeys).to.deep.equal(['file1.json', 'file2.json']);
       expect(result.message).to.equal('Found 2 data files');
-      expect(mockLog.debug.calledWith('Found 2 data files for site site123')).to.be.true;
+      expect(mockLog.info.calledWith('[A11yAudit] Found 2 data files for site site123 for date 2024-01-15')).to.be.true;
     });
 
     it('should filter subfolders by exact date match', async () => {
@@ -736,7 +736,7 @@ describe('data-processing utility functions', () => {
         mockLog,
       );
 
-      expect(mockLog.debug.calledWith('Found 1 data files for site site123')).to.be.true;
+      expect(mockLog.info.calledWith('[A11yAudit] Found 1 data files for site site123 for date 2024-01-15')).to.be.true;
     });
 
     it('should handle complex subfolder filtering with multiple dates', async () => {

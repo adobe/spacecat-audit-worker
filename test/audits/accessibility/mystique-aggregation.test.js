@@ -278,7 +278,7 @@ describe('Mystique Integration with Aggregation Strategies', () => {
       expect(result).to.have.lengthOf(0);
     });
 
-    it('should skip issues that already have guidance', () => {
+    it('should skip issues that already have guidance in legacy flow', () => {
       const suggestions = [
         {
           getId: () => 'sugg-1',
@@ -300,11 +300,40 @@ describe('Mystique Integration with Aggregation Strategies', () => {
         },
       ];
 
-      const result = processSuggestionsForMystique(suggestions);
+      // Use legacy flow (useCodeFixFlow = false) to skip issues with guidance
+      const result = processSuggestionsForMystique(suggestions, false);
       expect(result).to.have.lengthOf(0);
     });
 
-    it('should include only issues without guidance from grouped suggestion', () => {
+    it('should resend issues with guidance but no codefix when useCodeFixFlow is true', () => {
+      const suggestions = [
+        {
+          getId: () => 'sugg-1',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            isCodeChangeAvailable: false, // No code fix available
+            issues: [{
+              type: 'button-name',
+              htmlWithIssues: [{
+                target_selector: 'button',
+                guidance: {
+                  generalSuggestion: 'Add aria-label',
+                  updateTo: '<button aria-label="Submit">',
+                  userImpact: 'Screen readers will announce button purpose',
+                },
+              }],
+            }],
+          }),
+        },
+      ];
+
+      // In code fix flow, should resend because code fix is not available
+      const result = processSuggestionsForMystique(suggestions, true);
+      expect(result).to.have.lengthOf(1);
+    });
+
+    it('should include only issues without guidance from grouped suggestion in legacy flow', () => {
       const suggestions = [
         {
           getId: () => 'sugg-1',
@@ -323,7 +352,7 @@ describe('Mystique Integration with Aggregation Strategies', () => {
                   target_selector: 'button.cancel',
                   update_from: '<button class="cancel">',
                   guidance: { generalSuggestion: 'Already has guidance' },
-                  // Has guidance - should be skipped
+                  // Has guidance - should be skipped in legacy flow
                 },
               ],
             }],
@@ -331,9 +360,43 @@ describe('Mystique Integration with Aggregation Strategies', () => {
         },
       ];
 
-      const result = processSuggestionsForMystique(suggestions);
+      // Use legacy flow (useCodeFixFlow = false)
+      const result = processSuggestionsForMystique(suggestions, false);
       expect(result[0].issuesList).to.have.lengthOf(1);
       expect(result[0].issuesList[0].targetSelector).to.equal('button.submit');
+    });
+
+    it('should include issues with guidance but no codefix in code fix flow', () => {
+      const suggestions = [
+        {
+          getId: () => 'sugg-1',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            isCodeChangeAvailable: false, // No code fix available
+            issues: [{
+              type: 'button-name',
+              htmlWithIssues: [
+                {
+                  target_selector: 'button.submit',
+                  update_from: '<button class="submit">',
+                  // No guidance - should be included
+                },
+                {
+                  target_selector: 'button.cancel',
+                  update_from: '<button class="cancel">',
+                  guidance: { generalSuggestion: 'Already has guidance' },
+                  // Has guidance but no code fix - should be included in code fix flow
+                },
+              ],
+            }],
+          }),
+        },
+      ];
+
+      // In code fix flow, both should be included (no code fix)
+      const result = processSuggestionsForMystique(suggestions, true);
+      expect(result[0].issuesList).to.have.lengthOf(2);
     });
   });
 

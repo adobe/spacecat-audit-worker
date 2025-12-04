@@ -207,7 +207,7 @@ export async function getObjectKeysFromSubfolders(
   }
 
   // return the object keys for the JSON files that have the reports per url
-  log.debug(`Found ${objectKeys.length} data files for site ${siteId}`);
+  log.info(`[A11yAudit] Found ${objectKeys.length} data files for site ${siteId} for date ${version}`);
   return { success: true, objectKeys, message: `Found ${objectKeys.length} data files` };
 }
 
@@ -1093,7 +1093,7 @@ export async function sendRunImportMessage(
  * @param {Object} context - The context object containing log, s3Client, env
  * @returns {Promise<Object|null>} Object containing codeBucket and codePath, or null if should skip
  */
-async function getCodeInfo(site, opportunityType, context) {
+export async function getCodeInfo(site, opportunityType, context) {
   const { log, s3Client, env } = context;
   const siteId = site.getId();
   const deliveryType = site.getDeliveryType();
@@ -1190,10 +1190,12 @@ export async function sendCodeFixMessagesToMystique(opportunity, auditId, site, 
 
     suggestions.forEach((suggestion) => {
       const suggestionData = suggestion.getData();
-      const { url, source: formSource = 'default', issues } = suggestionData;
+      const {
+        url, source: formSource = 'default', issues, aiGenerated,
+      } = suggestionData;
 
       // By design, data.issues will always have length 1
-      if (issues && issues.length > 0) {
+      if (issues && issues.length > 0 && !aiGenerated) {
         const issueType = issues[0].type;
         const groupKey = `${url}|${formSource}|${issueType}`;
         if (!groupedSuggestions.has(groupKey)) {

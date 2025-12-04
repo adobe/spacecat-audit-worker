@@ -73,6 +73,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
       save: sinon.stub().resolvesThis(),
       getId: sinon.stub().resolves('testId'),
       getSuggestions: sinon.stub().resolves([]),
+      addSuggestions: sinon.stub(),
       setUpdatedBy: sinon.stub(),
     };
     dataAccessStub.Opportunity.allBySiteId.resolves([existingOpportunity]);
@@ -112,5 +113,59 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
     } catch (error) {
       expect(error.message).to.deep.equal('fetch error');
     }
+  });
+
+  it('should create empty suggestion object if none found', async () => {
+    const existingOpportunity = {
+      getData: sinon.stub().returns({ form: 'https://example.com', formsource: '.form' }),
+      getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.LOW_CONVERSION),
+      setAuditId: sinon.stub(),
+      setGuidance: sinon.stub(),
+      addSuggestions: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+      getId: sinon.stub().resolves('testId'),
+      getSuggestions: sinon.stub().resolves([]),
+      setUpdatedBy: sinon.stub(),
+    };
+    dataAccessStub.Opportunity.allBySiteId.resolves([existingOpportunity]);
+
+    const messageWithoutSuggestions = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://example.com',
+        form_source: '.form',
+        guidance: 'Some guidance'
+      },
+    };
+    await handler(messageWithoutSuggestions, context);
+    expect(existingOpportunity.addSuggestions).to.be.calledOnce;
+  });
+
+  it('should not create empty suggestion if any suggestion found', async () => {
+    const existingOpportunity = {
+      getData: sinon.stub().returns({ form: 'https://example.com', formsource: '.form' }),
+      getType: sinon.stub().returns(FORM_OPPORTUNITY_TYPES.LOW_CONVERSION),
+      setAuditId: sinon.stub(),
+      setGuidance: sinon.stub(),
+      addSuggestions: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+      getId: sinon.stub().resolves('testId'),
+      getSuggestions: sinon.stub().resolves(["existing suggestion"]),
+      setUpdatedBy: sinon.stub(),
+    };
+    dataAccessStub.Opportunity.allBySiteId.resolves([existingOpportunity]);
+
+    const messageWithoutSuggestions = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://example.com',
+        form_source: '.form',
+        guidance: 'Some guidance'
+      },
+    };
+    await handler(messageWithoutSuggestions, context);
+    expect(existingOpportunity.addSuggestions).to.be.not.called;
   });
 });

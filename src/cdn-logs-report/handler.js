@@ -24,7 +24,7 @@ import {
 import { pathHasData } from '../utils/cdn-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
-import { createLLMOSharepointClient } from '../utils/report-uploader.js';
+import { createLLMOSharepointClient, bulkPublishToAdminHlx } from '../utils/report-uploader.js';
 import { getConfigs } from './constants/report-configs.js';
 import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
 
@@ -45,6 +45,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain, siteId);
 
   const results = [];
+  const reportsToPublish = [];
   for (const reportConfig of reportConfigs) {
     // eslint-disable-next-line no-await-in-loop
     if (!(await pathHasData(context.s3Client, reportConfig.aggregatedLocation))) {
@@ -69,7 +70,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     if (auditContext?.weekOffset !== undefined) {
       weekOffsets = [auditContext.weekOffset];
     } else if (isMonday) {
-      weekOffsets = [0, -1];
+      weekOffsets = [-1, 0];
     } else {
       weekOffsets = [0];
     }
@@ -113,6 +114,10 @@ async function runCdnLogsReport(url, context, site, auditContext) {
         context,
       });
 
+      if (result.success && result.uploadResult) {
+        reportsToPublish.push(result.uploadResult);
+      }
+
       results.push({
         name: reportConfig.name,
         table: reportConfig.tableName,
@@ -121,6 +126,15 @@ async function runCdnLogsReport(url, context, site, auditContext) {
         success: result.success,
         weekOffset,
       });
+    }
+  }
+
+  // Batch publish all uploaded reports using bulk API
+  if (reportsToPublish.length > 0) {
+    try {
+      await bulkPublishToAdminHlx(reportsToPublish, log);
+    } catch (error) {
+      log.error('Failed to bulk publish reports:', error);
     }
   }
 

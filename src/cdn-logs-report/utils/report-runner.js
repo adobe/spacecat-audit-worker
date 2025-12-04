@@ -10,8 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { generateReportingPeriods } from './report-utils.js';
-import { saveExcelReport } from '../../utils/report-uploader.js';
+import { generateReportingPeriods, saveExcelReportForBatch } from './report-utils.js';
 import { createExcelReport } from './excel-generator.js';
 
 export async function runReport(reportConfig, athenaClient, s3Config, log, options = {}) {
@@ -54,7 +53,7 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
     // Check if results are empty
     if (!results || results.length === 0) {
       log.warn(`No data returned from Athena query for ${reportConfig.name} report (${periodIdentifier}).`);
-      return;
+      return { uploadResult: null };
     }
 
     const reportData = { [reportConfig.sheetName]: results };
@@ -71,13 +70,15 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
 
     const workbook = await createExcelReport(reportData, excelConfig, site, context);
 
-    await saveExcelReport({
+    const uploadResult = await saveExcelReportForBatch({
       workbook,
       outputLocation,
       log,
       sharepointClient,
       filename,
     });
+
+    return { uploadResult };
   } catch (error) {
     log.error(`${reportConfig.name} report generation failed: ${error.message}`);
     throw error;
@@ -97,14 +98,14 @@ export async function runWeeklyReport({
   const siteId = site.getId();
   try {
     log.info(`Starting ${reportConfig.name} report for site ${siteId} with week offset: ${weekOffset}...`);
-    await runReport(reportConfig, athenaClient, s3Config, log, {
+    const result = await runReport(reportConfig, athenaClient, s3Config, log, {
       site,
       sharepointClient,
       weekOffset,
       context,
     });
     log.info(`Successfully completed ${reportConfig.name} report for site ${siteId}`);
-    return { success: true };
+    return { success: true, uploadResult: result?.uploadResult };
   } catch (error) {
     log.error(`Failed to generate ${reportConfig.name} report for site ${siteId}: ${error.message}`);
     return { success: false, error: error.message };

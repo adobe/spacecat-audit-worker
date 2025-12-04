@@ -350,6 +350,25 @@ export async function shouldRecreateRawTable(
   }
 }
 
+export function buildSiteFilters(filters, site) {
+  if (!filters || filters.length === 0) {
+    const baseURL = site.getBaseURL();
+    const { host } = new URL(baseURL);
+    return `REGEXP_LIKE(host, '(?i)(${host})')`;
+  }
+
+  const clauses = filters.map(({ key, value, type }) => {
+    const regexPattern = value.join('|');
+    if (type === 'exclude') {
+      return `NOT REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+    }
+    return `REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+  });
+
+  const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
+  return `(${filterConditions})`;
+}
+
 /**
  * Builds date filter for Athena queries using UTC dates
  */
@@ -375,14 +394,15 @@ export function buildDateFilter(startDate, endDate) {
  */
 export function buildUserAgentFilter() {
   const {
-    chatgpt, perplexity, google, claude,
+    chatgpt, perplexity, google, claude, mistralai,
   } = PROVIDER_USER_AGENT_PATTERNS;
 
   return `(
     REGEXP_LIKE(user_agent, '${chatgpt}') OR 
     REGEXP_LIKE(user_agent, '${perplexity}') OR 
     REGEXP_LIKE(user_agent, '${google}') OR
-    REGEXP_LIKE(user_agent, '${claude}')
+    REGEXP_LIKE(user_agent, '${claude}') OR
+    REGEXP_LIKE(user_agent, '${mistralai}')
   )`;
 }
 /* c8 ignore end */
