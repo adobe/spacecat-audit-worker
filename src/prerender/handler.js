@@ -88,7 +88,7 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = TOP_AGENTIC_UR
     }
 
     const baseUrl = site.getBaseURL?.() || '';
-    const topUrls = (results || [])
+    const topUrls = results
       .map((row) => row?.url)
       .filter((path) => typeof path === 'string' && path.length > 0)
       .map((path) => {
@@ -675,7 +675,7 @@ export async function processContentAndGenerateOpportunities(context) {
       /* c8 ignore stop */
       const msg = `Prerender - Fallback for baseUrl=${site.getBaseURL()}, siteId=${siteId}. `
         + `Using agenticURLs=${agenticStats.length}, `
-        + `topPages=${(topPagesUrls || []).length}, `
+        + `topPages=${topPagesUrls.length}, `
         + `includedURLs=${includedURLs.length}, `
         + `total=${urlsToCheck.length}`;
       log.info(msg);
