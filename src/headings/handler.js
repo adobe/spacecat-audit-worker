@@ -418,7 +418,7 @@ function extractTocData(document) {
 
 function tocArrayToHast(tocData) {
   // children for <ul>
-  const liNodes = tocData.map(item => {
+  const liNodes = tocData.map((item) => {
     const isSub = Number(item.level) === 2;
 
     return {
@@ -433,9 +433,9 @@ function tocArrayToHast(tocData) {
             href: '#',
             'data-selector': item.selector,
           },
-          children: [{ type: 'text', value: item.text }]
-        }
-      ]
+          children: [{ type: 'text', value: item.text }],
+        },
+      ],
     };
   });
 
@@ -443,19 +443,19 @@ function tocArrayToHast(tocData) {
     type: 'element',
     tagName: 'ul',
     properties: {},
-    children: liNodes
+    children: liNodes,
   };
 
   const nav = {
     type: 'element',
     tagName: 'nav',
     properties: { className: ['toc'] },
-    children: [ul]
+    children: [ul],
   };
 
   return {
     type: 'root',
-    children: [nav]
+    children: [nav],
   };
 }
 
@@ -467,7 +467,7 @@ function tocArrayToHast(tocData) {
 function determineTocPlacement(document) {
   const h1Element = document.querySelector('h1');
   const mainElement = document.querySelector('body > main');
-  
+
   // Strategy 1: After H1 if present
   if (h1Element) {
     return {
@@ -477,7 +477,7 @@ function determineTocPlacement(document) {
       reasoning: 'TOC placed immediately after H1 heading',
     };
   }
-  
+
   // Strategy 2: At the beginning of main content area (direct child of body)
   if (mainElement) {
     return {
@@ -487,7 +487,7 @@ function determineTocPlacement(document) {
       reasoning: 'TOC placed at the start of main content area',
     };
   }
-  
+
   // Fallback: Beginning of body content
   return {
     action: 'insertBefore',
@@ -504,7 +504,7 @@ function determineTocPlacement(document) {
  * @param {Object} pageTags - Page metadata (title, lang, etc.)
  * @param {Object} log - Logger instance
  * @param {Object} context - Audit context containing environment and clients
- * @returns {Promise<Object>} Object with tocPresent, TOCCSSSelector, confidence (1-10), and reasoning
+ * @returns {Promise<Object>} Object with tocPresent, TOCCSSSelector, confidence, reasoning
  */
 async function getTocDetails(document, url, pageTags, log, context, scrapedAt) {
   try {
@@ -538,7 +538,6 @@ async function getTocDetails(document, url, pageTags, log, context, scrapedAt) {
       'toc-detection',
       log,
     );
-  
 
     const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
       responseFormat: 'json_object',
@@ -578,14 +577,14 @@ async function getTocDetails(document, url, pageTags, log, context, scrapedAt) {
       const placement = determineTocPlacement(document);
       // const tocHtml = generateTocHtml(document);
       const headingsData = extractTocData(document);
-      
+
       result.suggestedPlacement = placement;
       result.transformRules = {
         action: placement.action,
         selector: placement.selector,
         value: headingsData,
         valueFormat: 'html',
-        scrapedAt: new Date(scrapedAt).toISOString()
+        scrapedAt: new Date(scrapedAt).toISOString(),
       };
       log.debug(`[TOC Detection] Suggested TOC placement for ${url}: ${placement.reasoning}`);
     }
@@ -762,7 +761,14 @@ export async function validatePageHeadingFromScrapeJson(
       }
     }
 
-    const tocDetails = await getTocDetails(document, url, pageTags, log, context, scrapeJsonObject.scrapedAt);
+    const tocDetails = await getTocDetails(
+      document,
+      url,
+      pageTags,
+      log,
+      context,
+      scrapeJsonObject.scrapedAt,
+    );
 
     return { url, checks, tocDetails };
   } catch (error) {
@@ -967,7 +973,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
               tocConfidence: tocDetails.confidence,
               tocReasoning: tocDetails.reasoning,
             });
-          } 
+          }
         }
       }
     });
@@ -1138,7 +1144,7 @@ export async function opportunityAndSuggestionsForToc(auditUrl, auditData, conte
     log.info('Headings audit has no toc issues, skipping opportunity creation');
     return { ...auditData };
   }
-  
+
   const opportunity = await convertToOpportunity(
     auditUrl,
     { ...auditData, suggestions: auditData.suggestions.toc },
@@ -1167,14 +1173,14 @@ export async function opportunityAndSuggestionsForToc(auditUrl, auditData, conte
         checkTitle: suggestion.checkTitle,
         isAISuggested: suggestion.isAISuggested,
         ...(suggestion.transformRules && {
-          transformRules: { 
+          transformRules: {
             ...suggestion.transformRules,
             value: tocArrayToHast(suggestion.transformRules.value),
-            valueFormat: 'hast'
+            valueFormat: 'hast',
           },
         }),
       },
-    })
+    }),
   });
 
   log.info(`TOC opportunity created for Site Optimizer and ${auditData.suggestions.toc.length} suggestions synced for ${auditUrl}`);
