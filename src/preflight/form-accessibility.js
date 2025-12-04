@@ -40,18 +40,18 @@ export async function detectFormAccessibility(context, auditContext) {
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
 
   if (!bucketName) {
-    const errorMsg = 'Missing S3 bucket configuration for form accessibility audit';
+    const errorMsg = `[preflight-audit] ${siteId}, Missing S3 bucket configuration for form accessibility audit`;
     log.error(errorMsg);
     return;
   }
 
   // Check if we have URLs to scrape
   if (!isNonEmptyArray(previewUrls)) {
-    log.warn('[preflight-audit] No URLs to scrape for accessibility audit');
+    log.warn(`[preflight-audit] ${siteId}, No URLs to scrape for accessibility audit`);
     return;
   }
 
-  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Step 1: Preparing form accessibility scrape`);
+  log.debug(`[preflight-audit] ${siteId}, job: ${jobId}, step: ${step}. Step 1: Preparing form accessibility scrape`);
 
   // Create form accessibility audit entries for all pages
   previewUrls.forEach((url) => {
@@ -59,19 +59,16 @@ export async function detectFormAccessibility(context, auditContext) {
     if (pageResult) {
       pageResult.audits.push({ name: PREFLIGHT_FORM_ACCESSIBILITY, type: 'form-a11y', opportunities: [] });
     } else {
-      log.warn(`[preflight-audit] No audit entry found for URL: ${url}`);
+      log.warn(`[preflight-audit] ${siteId}, No audit entry found for URL: ${url}`);
     }
   });
 
   // Use the URLs from the preflight job request directly
   const urlsToDetect = previewUrls.map((url) => ({ form: url, formSource: 'form' }));
-  log.info(`[preflight-audit] Using preview URLs for form accessibility audit: ${JSON.stringify(urlsToDetect, null, 2)}`);
-
-  // Force re-scrape all URLs regardless of existing data
-  log.info(`[preflight-audit] Force re-scraping all ${urlsToDetect.length} URLs for form accessibility audit`);
+  log.info(`[preflight-audit] ${siteId} Using preview URLs for form accessibility audit: ${JSON.stringify(urlsToDetect, null, 2)}`);
 
   if (urlsToDetect.length > 0) {
-    log.info(`[preflight-audit] Sending ${urlsToDetect.length} URLs to mystique for form accessibility audit`);
+    log.info(`[preflight-audit] ${siteId} Sending ${urlsToDetect.length} URLs to mystique for form accessibility audit`);
 
     try {
       const mystiqueMessage = {
@@ -93,23 +90,23 @@ export async function detectFormAccessibility(context, auditContext) {
         },
       };
 
-      log.debug(`[preflight-audit] Mystique message being sent: ${JSON.stringify(mystiqueMessage, null, 2)}`);
-      log.debug(`[preflight-audit] S3 bucket: ${mystiqueMessage.options.bucketName}`);
+      log.debug(`[preflight-audit] ${siteId} Mystique message being sent: ${JSON.stringify(mystiqueMessage, null, 2)}`);
+      log.debug(`[preflight-audit] ${siteId} S3 bucket: ${mystiqueMessage.options.bucketName}`);
 
       // Send to mystique queue
-      log.info(`[preflight-audit] Sending to queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+      log.debug(`[preflight-audit] ${siteId} Sending to queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
       log.info(
-        `[preflight-audit] Sent form accessibility audit request to mystique for ${urlsToDetect.length} URLs`,
+        `[preflight-audit] ${siteId} Sent form accessibility audit request to mystique for ${urlsToDetect.length} URLs`,
       );
     } catch (error) {
       log.error(
-        `[preflight-audit] Failed to send form accessibility audit request: ${error.message}`,
+        `[preflight-audit] ${siteId} Failed to send form accessibility audit request: ${error.message}`,
       );
       throw error;
     }
   } else {
-    log.info('[preflight-audit] No URLs to detect for form accessibility audit');
+    log.info(`[preflight-audit] ${siteId}  No URLs to detect for form accessibility audit`);
   }
 }
 
@@ -135,12 +132,12 @@ export async function processFormAccessibilityOpportunities(context, auditContex
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
 
   if (!bucketName) {
-    const errorMsg = 'Missing S3 bucket configuration for form accessibility audit';
+    const errorMsg = `[preflight-audit] ${siteId}  Missing S3 bucket configuration for form accessibility audit`;
     log.error(errorMsg);
     return;
   }
 
-  log.info(`[preflight-audit] Processing individual form accessibility result files for ${site.getBaseURL()}`);
+  log.debug(`[preflight-audit] ${siteId}  Processing individual form accessibility result files for ${site.getBaseURL()}`);
 
   try {
     // Process each preview URL's accessibility result file
@@ -150,17 +147,17 @@ export async function processFormAccessibilityOpportunities(context, auditContex
         const filename = generateAccessibilityFilename(url);
 
         const fileKey = `form-accessibility-preflight/${siteId}/${filename}`;
-        log.info(`[preflight-audit] Processing form accessibility file: ${fileKey}`);
+        log.info(`[preflight-audit] ${siteId}  Processing form accessibility file: ${fileKey}`);
 
         // Get the accessibility result file from S3 using existing utility
         // eslint-disable-next-line no-await-in-loop
         const accessibilityData = await getObjectFromKey(s3Client, bucketName, fileKey, log);
 
         if (!accessibilityData) {
-          log.warn(`[preflight-audit] No form accessibility data found for ${url} at key: ${fileKey}`);
+          log.warn(`[preflight-audit] ${siteId}  No form accessibility data found for ${url} at key: ${fileKey}`);
           // Skip to next URL if no data found
         } else {
-          log.info(`[preflight-audit] Successfully loaded form accessibility data for ${url}`);
+          log.info(`[preflight-audit] ${siteId}  Successfully loaded form accessibility data for ${url}`);
 
           // Get the page result for this URL
           const pageResult = audits.get(url);
@@ -183,9 +180,9 @@ export async function processFormAccessibilityOpportunities(context, auditContex
             }));
             accessibilityAudit.opportunities.push(...issues);
 
-            log.info(`[preflight-audit] Form accessibility audit details for ${url}:`, JSON.stringify(accessibilityAudit, null, 2));
+            log.debug(`[preflight-audit] ${siteId}  Form accessibility audit details for ${url}:`, JSON.stringify(accessibilityAudit, null, 2));
           } else {
-            log.warn(`[preflight-audit] No accessibility audit found for URL: ${url}`);
+            log.warn(`[preflight-audit]  ${siteId}  No accessibility audit found for URL: ${url}`);
           }
         }
       } catch (error) {
@@ -245,30 +242,13 @@ Form Accessibility audit completed in ${accessibilityElapsed} seconds`,
       });
 
       await s3Client.send(deleteCommand);
-      log.info(`[preflight-audit] Successfully cleaned up ${filesToDelete.length} form accessibility files`);
+      log.info(`[preflight-audit] ${siteId}  Successfully cleaned up ${filesToDelete.length} form accessibility files`);
     } catch (cleanupError) {
-      log.warn(`[preflight-audit] Failed to clean up form accessibility files: ${cleanupError.message}`);
+      log.warn(`[preflight-audit] ${siteId}  Failed to clean up form accessibility files: ${cleanupError.message}`);
       // Don't fail the entire audit if cleanup fails
     }
   } catch (error) {
-    log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Form Accessibility audit failed: ${error.message}`, error);
-
-    // Add error to audit results
-    previewUrls.forEach((url) => {
-      const pageResult = audits.get(url);
-      const accessibilityAudit = pageResult.audits.find(
-        (a) => a.name === PREFLIGHT_FORM_ACCESSIBILITY,
-      );
-
-      if (accessibilityAudit) {
-        accessibilityAudit.opportunities.push({
-          type: 'form-accessibility-error',
-          title: 'Form Accessibility Audit Error',
-          description: `Failed to complete form accessibility audit: ${error.message}`,
-          severity: 'error',
-        });
-      }
-    });
+    log.error(`[preflight-audit] ${siteId}  not able to delete prefight files, site: ${site.getId()}, job: ${jobId}, step: ${step}. error ${error.message}`, error);
   }
 }
 
@@ -279,10 +259,12 @@ export default async function formAccessibility(context, auditContext) {
   const { checks, previewUrls, timeExecutionBreakdown } = auditContext;
   const { log, site, job } = context;
 
+  const siteId = site.getId();
+
   if (!checks || checks.includes(PREFLIGHT_FORM_ACCESSIBILITY)) {
     // Check if we have URLs to process
     if (!isNonEmptyArray(previewUrls)) {
-      log.warn('[preflight-audit] No URLs to process for form accessibility audit, skipping');
+      log.warn(`[preflight-audit] ${siteId} No URLs to process for form accessibility audit, skipping`);
       return;
     }
 
@@ -297,7 +279,6 @@ export default async function formAccessibility(context, auditContext) {
     // Poll for mystique to process the URLs
     const { s3Client, env } = context;
     const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-    const siteId = context.site.getId();
     const jobId = context.job?.getId();
 
     log.debug('[preflight-audit] Starting to poll for form accessibility data');
@@ -313,7 +294,7 @@ export default async function formAccessibility(context, auditContext) {
     // Generate expected filenames based on preview URLs
     const expectedFiles = previewUrls.map((url) => generateAccessibilityFilename(url));
 
-    log.info(`[preflight-audit] Expected files: ${JSON.stringify(expectedFiles)}`);
+    log.info(`[preflight-audit] ${siteId}  Expected files: ${JSON.stringify(expectedFiles)}`);
 
     // Recursive polling function to check for accessibility files
     const pollForFormAccessibilityFiles = async () => {
@@ -388,7 +369,7 @@ export default async function formAccessibility(context, auditContext) {
       endTime: scrapeEndTimestamp,
     });
 
-    log.info('[preflight-audit] Polling completed, proceeding to process form accessibility data');
+    log.info(`[preflight-audit] ${siteId}  Polling completed, proceeding to process form accessibility data`);
 
     // Step 2: Process scraped data and create opportunities
     await processFormAccessibilityOpportunities(context, auditContext);
