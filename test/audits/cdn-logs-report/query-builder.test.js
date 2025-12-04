@@ -212,7 +212,7 @@ describe('CDN Logs Query Builder', () => {
     const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
 
     expect(query).to.include('WHERE');
-    expect(query).to.include('(?i)ChatGPT|GPTBot|OAI-SearchBot');
+    expect(query).to.include('(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))');
     expect(query).to.include('(?i)Claude(?!-web)');
   });
 });
