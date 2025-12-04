@@ -431,7 +431,7 @@ function tocArrayToHast(tocData) {
           tagName: 'a',
           properties: {
             href: '#',
-            'data-selector': item.selector
+            'data-selector': item.selector,
           },
           children: [{ type: 'text', value: item.text }]
         }
