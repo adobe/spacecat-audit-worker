@@ -315,24 +315,6 @@ export function getAuditPrefixes(auditType) {
 }
 
 /**
- * Gets S3 object last modified timestamp
- * @param {import('@aws-sdk/client-s3').S3Client} s3Client - an S3 client
- * @param {string} bucketName - the name of the S3 bucket
- * @param {string} key - the key of the S3 object
- * @returns {Promise<Date|null>} last modified date or null if not found
- */
-async function getObjectLastModifiedTimestamp(s3Client, bucketName, key, log) {
-  try {
-    const response = await s3Client.send(new HeadObjectCommand({ Bucket: bucketName, Key: key }));
-    log.info(`[A11yMerge] Object last modified timestamp: ${response.LastModified}`);
-    log.info(`[A11yMerge] Object key: ${key}`);
-    return response.LastModified;
-  } catch (error) {
-    return null; // File doesn't exist
-  }
-}
-
-/**
  * Merges two accessibility data objects, preserving data from both
  * @param {object} existingData - the existing aggregated data
  * @param {object} newData - the new aggregated data to merge
@@ -529,16 +511,17 @@ export async function aggregateAccessibilityData(
       }
     });
 
-    // Check if file already exists and merge if it's recent (within 24 hours)
+    // Check if file already exists and merge if it does
     let finalData = aggregatedData;
-    const lastModified = await getObjectLastModifiedTimestamp(s3Client, bucketName, outputKey);
-
-    if (lastModified && (new Date() - lastModified) <= 24 * 60 * 60 * 1000) {
+    try {
+      await s3Client.send(new HeadObjectCommand({ Bucket: bucketName, Key: outputKey }));
       const existingData = await getObjectFromKey(s3Client, bucketName, outputKey, log);
       if (existingData) {
-        log.info(`[${logIdentifier}] Merging with existing file (age: ${Math.round((new Date() - lastModified) / 1000)}s)`);
+        log.info(`[${logIdentifier}] File exists, merging with existing content`);
         finalData = mergeAccessibilityData(existingData, aggregatedData, log, logIdentifier);
       }
+    } catch (error) {
+      log.info(`[${logIdentifier}] File doesn't exist, will create new file`);
     }
 
     // Save final data to S3
