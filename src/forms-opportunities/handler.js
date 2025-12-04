@@ -110,7 +110,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     const url = topForm.getUrl();
     const formSource = topForm.getFormSource();
 
-    // Add URL if it doesn't have a formSource
+    // Add URL if it doesn't have a formSource, as it will be added from form vitals
     if (!formSource) {
       uniqueUrls.add(url);
     }
@@ -139,6 +139,26 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
       ...(formSources.length > 0 && { formSources }),
     };
   });
+
+  // Add form that are included in top forms and have formSource.
+  // This is to ensure if RUM data is not available, scraper should run atleast on imported forms
+  for (const topForm of topForms) {
+    const url = topForm.getUrl();
+    const formSource = topForm.getFormSource();
+    if (formSource) {
+      const existingItem = urlsData.find((item) => item.url === url);
+      if (existingItem && !existingItem.formSources) {
+        existingItem.formSources = [formSource];
+      } else if (existingItem && !existingItem.formSources.includes(formSource)) {
+        existingItem.formSources.push(formSource);
+      } else {
+        urlsData.push({
+          url,
+          formSources: [formSource],
+        });
+      }
+    }
+  }
 
   const result = {
     processingType: 'form',
