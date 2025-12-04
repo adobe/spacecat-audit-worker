@@ -145,6 +145,7 @@ describe('CDN Logs Report Handler', function test() {
   let handler;
   let saveExcelReportStub;
   let createLLMOSharepointClientStub;
+  let bulkPublishToAdminHlxStub;
 
   this.timeout(10000);
 
@@ -196,11 +197,13 @@ describe('CDN Logs Report Handler', function test() {
   before(async () => {
     saveExcelReportStub = sinon.stub().resolves();
     createLLMOSharepointClientStub = sinon.stub();
+    bulkPublishToAdminHlxStub = sinon.stub().resolves();
     
     handler = await esmock('../../../src/cdn-logs-report/handler.js', {}, {
       '../../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: createLLMOSharepointClientStub,
         saveExcelReport: saveExcelReportStub,
+        bulkPublishToAdminHlx: bulkPublishToAdminHlxStub,
       },
     });
   });
@@ -213,6 +216,8 @@ describe('CDN Logs Report Handler', function test() {
     saveExcelReportStub.reset();
     createLLMOSharepointClientStub.reset();
     createLLMOSharepointClientStub.resolves(createMockSharepointClient(sandbox));
+    bulkPublishToAdminHlxStub.reset();
+    bulkPublishToAdminHlxStub.resolves();
 
     site = {
       getSiteId: () => 'test-site',
@@ -321,7 +326,7 @@ describe('CDN Logs Report Handler', function test() {
       );
     });
 
-    it('runs both week 0 and -1 on Monday when no weekOffset provided', async () => {
+    it('runs -1 and 0 on Monday when no weekOffset provided', async () => {
       const clock = sinon.useFakeTimers({
         now: new Date('2025-01-06'),
         toFake: ['Date']
@@ -361,6 +366,17 @@ describe('CDN Logs Report Handler', function test() {
 
       clock.restore();
       expect(context.athenaClient.query).to.have.been.callCount(2);
+    });
+
+    it('handles bulk publish errors gracefully', async () => {
+      bulkPublishToAdminHlxStub.rejects(new Error('Bulk publish failed'));
+      const auditContext = createAuditContext(sandbox);
+      const result = await handler.runner('https://example.com', context, site, auditContext);
+
+      expect(result).to.have.property('auditResult').that.is.an('array');
+      expect(result.auditResult).to.have.length.greaterThan(0);
+      
+      expect(context.log.error).to.have.been.calledWith('Failed to bulk publish reports:', sinon.match.instanceOf(Error));
     });
 
     it('handles table creation errors', async () => {

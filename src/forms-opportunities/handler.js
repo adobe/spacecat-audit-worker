@@ -99,7 +99,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   }
 
   // generating opportunity data from audit to be send to scraper
-  const formOpportunities = await generateOpptyData(formVitals, context);
+  const formOpportunities = await generateOpptyData(formVitals, context, undefined, data);
   const uniqueUrls = new Set();
   for (const opportunity of formOpportunities) {
     uniqueUrls.add(opportunity.form);
@@ -219,6 +219,7 @@ export async function codeImportStep(context) {
   return {
     type: 'code',
     siteId: site.getId(),
+    allowCache: false,
     ...(auditContext?.data && { auditContext: { data: auditContext.data } }),
   };
 }

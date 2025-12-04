@@ -13,7 +13,7 @@ import wrap from '@adobe/helix-shared-wrap';
 import { helixStatus } from '@adobe/helix-status';
 import secrets from '@adobe/helix-shared-secrets';
 import dataAccess from '@adobe/spacecat-shared-data-access';
-import { resolveSecretsName, sqsEventAdapter } from '@adobe/spacecat-shared-utils';
+import { resolveSecretsName, sqsEventAdapter, logWrapper } from '@adobe/spacecat-shared-utils';
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { checkSiteRequiresValidation } from './utils/site-validation.js';
 
@@ -26,17 +26,15 @@ import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
 import lhsDesktop from './lhs/handler-desktop.js';
 import lhsMobile from './lhs/handler-mobile.js';
-import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
 import sitemapProductCoverage from './sitemap-product-coverage/handler.js';
 import redirectChains from './redirect-chains/handler.js';
 import paid from './paid-cookie-consent/handler.js';
+import noCTAAboveTheFold from './no-cta-above-the-fold/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
 import brokenLinksGuidance from './broken-links-guidance/guidance-handler.js';
 import internalLinks from './internal-links/handler.js';
-import experimentation from './experimentation/handler.js';
-import conversion from './conversion/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
 import experimentationOpportunities from './experimentation-opportunities/handler.js';
@@ -51,6 +49,7 @@ import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-hand
 import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-views.js';
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import paidConsentGuidance from './paid-cookie-consent/guidance-handler.js';
+import noCTAAboveTheFoldGuidance from './no-cta-above-the-fold/guidance-handler.js';
 import paidTrafficAnalysisGuidance from './paid-traffic-analysis/guidance-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
@@ -70,7 +69,8 @@ import cdnLogsReport from './cdn-logs-report/handler.js';
 import analyticsReport from './analytics-report/handler.js';
 import pageIntent from './page-intent/handler.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
-import readabilityGuidance from './readability/guidance-readability-handler.js';
+import readabilityOpportunities from './readability/opportunities/handler.js';
+import unifiedReadabilityGuidance from './readability/shared/unified-guidance-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
@@ -82,6 +82,7 @@ import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
+import vulnerabilitiesCodeFix from './vulnerabilities-code-fix/handler.js';
 import prerender from './prerender/handler.js';
 import productMetatags from './product-metatags/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
@@ -102,19 +103,17 @@ const HANDLERS = {
   cwv,
   'lhs-mobile': lhsMobile,
   'lhs-desktop': lhsDesktop,
-  404: notfound,
   sitemap,
   'sitemap-product-coverage': sitemapProductCoverage,
   'redirect-chains': redirectChains,
   paid,
+  'no-cta-above-the-fold': noCTAAboveTheFold,
   'paid-traffic-analysis-weekly': paidTrafficAnalysisWeekly,
   'paid-traffic-analysis-monthly': paidTrafficAnalysisMonthly,
   'page-type-detection': pageTypeDetection,
   canonical,
   'broken-backlinks': backlinks,
   'broken-internal-links': internalLinks,
-  experimentation,
-  conversion,
   'experimentation-ess-daily': essExperimentationDaily,
   'experimentation-ess-all': essExperimentationAll,
   'experimentation-opportunities': experimentationOpportunities,
@@ -127,7 +126,8 @@ const HANDLERS = {
   'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
   'guidance:broken-links': brokenLinksGuidance,
   'alt-text': imageAltText,
-  'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
+  'guidance:high-form-views-low-conversions':
+    highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'geo-brand-presence': geoBrandPresence,
@@ -143,10 +143,12 @@ const HANDLERS = {
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
   'codefix:accessibility': accessibilityCodeFix,
   'guidance:paid-cookie-consent': paidConsentGuidance,
+  'guidance:no-cta-above-the-fold': noCTAAboveTheFoldGuidance,
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
   'detect:page-types': pageTypeGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
-  'guidance:readability': readabilityGuidance,
+  'guidance:readability': unifiedReadabilityGuidance, // unified for both preflight and opportunities
+  readability: readabilityOpportunities, // for opportunities
   'guidance:structured-data-remediation': structuredDataGuidance,
   preflight,
   'cdn-logs-analysis': cdnLogsAnalysis,
@@ -166,6 +168,7 @@ const HANDLERS = {
   prerender,
   'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,
+  'codefix:security-vulnerabilities': vulnerabilitiesCodeFix,
   'codefix:form-accessibility': accessibilityCodeFixHandler,
   'security-permissions': permissions,
   'security-permissions-redundant': permissionsRedundant,
@@ -233,6 +236,7 @@ async function run(message, context) {
 export const main = wrap(run)
   .with(dataAccess)
   .with(sqsEventAdapter)
+  .with(logWrapper)
   .with(sqs)
   .with(s3Client)
   .with(secrets, { name: resolveSecretsName })

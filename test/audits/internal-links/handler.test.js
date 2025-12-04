@@ -15,6 +15,7 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import esmock from 'esmock';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
@@ -85,6 +86,7 @@ const AUDIT_RESULT_DATA_WITH_SUGGESTIONS = [
 ];
 
 use(sinonChai);
+use(chaiAsPromised);
 
 const sandbox = sinon.createSandbox();
 
@@ -228,6 +230,49 @@ describe('Broken internal links audit ', () => {
     // Verify that SiteTopPage.allBySiteIdAndSourceAndGeo was not called since we exit early
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
   }).timeout(5000);
+
+  it('prepareScrapingStep should throw error when no top pages found in database', async () => {
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]), // Empty array
+    };
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
+
+    await expect(prepareScrapingStep(context))
+      .to.be.rejectedWith(`No top pages found in database for site ${site.getId()}. Ahrefs import required.`);
+  }).timeout(5000);
+
+  it('prepareScrapingStep should throw error when all top pages filtered out by audit scope', async () => {
+    // Mock site with subpath
+    const siteWithSubpath = {
+      ...site,
+      getBaseURL: () => 'https://example.com/blog',
+    };
+    context.site = siteWithSubpath;
+
+    // Mock top pages that don't match the subpath
+    const topPagesOutsideScope = [
+      { getUrl: () => 'https://example.com/products' },
+      { getUrl: () => 'https://example.com/about' },
+    ];
+    
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPagesOutsideScope),
+    };
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
+
+    await expect(prepareScrapingStep(context))
+      .to.be.rejectedWith(`All 2 top pages filtered out by audit scope. BaseURL: https://example.com/blog requires subpath match but no pages match scope.`);
+  }).timeout(5000);
 });
 
 describe('broken-internal-links audit opportunity and suggestions', () => {
@@ -284,6 +329,11 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
     };
 
+    // Initialize Suggestion in dataAccess for Mystique integration tests
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+
     opportunity = {
       getType: () => 'broken-internal-links',
       getId: () => 'oppty-id-1',
@@ -321,8 +371,10 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
         generateSuggestionData: () => AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
       },
     });
+    // Stub is already initialized in beforeEach, just update the method
     context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
       .resolves(AUDIT_RESULT_DATA_WITH_SUGGESTIONS.map((data) => (
         { getData: () => data, getId: () => '1111', save: () => {} })));
@@ -337,6 +389,21 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     context.dataAccess.Opportunity.create.resolves(opportunity);
     context.site.getLatestAuditByAuditType = () => auditData;
     context.site.getDeliveryType = () => 'aem_edge';
+    // Stub Configuration to prevent errors when checking feature flag
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => false, // Feature flag disabled for this test
+      }),
+    };
+
+    // Re-esmock handler without stubbing syncBrokenInternalLinksSuggestions
+    // so the real function runs and calls opportunity.addSuggestions
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
+        // Don't stub syncBrokenInternalLinksSuggestions - let it run for this test
+      },
+    });
 
     const result = await handler.opportunityAndSuggestionsStep(context);
 
@@ -385,6 +452,11 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
   }).timeout(5000);
 
   it('handles SQS message sending errors', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
     context.sqs.sendMessage.rejects(new Error('SQS error'));
@@ -392,10 +464,48 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     context.site.getLatestAuditByAuditType = () => auditData;
     context.site.getDeliveryType = () => 'aem_edge';
+    // Ensure getBaseURL returns the same domain as the top pages for filterByAuditScope to work
+    context.site.getBaseURL = () => 'https://example.com';
 
-    await expect(
-      handler.opportunityAndSuggestionsStep(context),
-    ).to.be.rejectedWith('SQS error');
+    // Ensure opportunity.getSuggestions() returns empty so syncSuggestions creates new ones
+    opportunity.getSuggestions = sandbox.stub().resolves([]);
+    opportunity.addSuggestions = sandbox.stub().resolves({ createdItems: [], errorItems: [] });
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    // Ensure we have suggestions and alternativeUrls for SQS to be called
+    // Stub must be set up AFTER handler is created to ensure it uses the correct context
+    // Use root URLs (pathname === '/') so extractPathPrefix returns empty string
+    // This ensures brokenLinkLocales.size === 0, so all alternatives are included
+    const validSuggestions = [
+      {
+        getData: () => ({
+          urlFrom: 'https://example.com/',
+          urlTo: 'https://example.com/', // Root URL - extractPathPrefix returns '' (empty string)
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+    // Stub must accept any opportunity ID (the code calls it with opportunity.getId())
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves([{ getUrl: () => 'https://example.com/page1' }]);
+
+    try {
+      await handler.opportunityAndSuggestionsStep(context);
+      expect.fail('Expected promise to be rejected');
+    } catch (error) {
+      expect(error.message).to.include('SQS error');
+    }
 
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
       expectedOpportunity,
@@ -403,12 +513,52 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
   }).timeout(5000);
 
   it('creating a new opportunity object succeeds and sends SQS messages', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
 
     context.site.getLatestAuditByAuditType = () => auditData;
     context.site.getDeliveryType = () => 'aem_edge';
+    // Ensure getBaseURL returns the same domain as the top pages for filterByAuditScope to work
+    context.site.getBaseURL = () => 'https://example.com';
+
+    // Ensure opportunity.getSuggestions() returns empty so syncSuggestions creates new ones
+    opportunity.getSuggestions = sandbox.stub().resolves([]);
+    opportunity.addSuggestions = sandbox.stub().resolves({ createdItems: [], errorItems: [] });
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    // Ensure we have suggestions and alternativeUrls for SQS to be called
+    // Stub must be set up AFTER handler is created to ensure it uses the correct context
+    // Use root URLs (pathname === '/') so extractPathPrefix returns empty string
+    // This ensures brokenLinkLocales.size === 0, so all alternatives are included
+    const validSuggestions = [
+      {
+        getData: () => ({
+          urlFrom: 'https://example.com/',
+          urlTo: 'https://example.com/', // Root URL - extractPathPrefix returns '' (empty string)
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+    // Stub must accept any opportunity ID (the code calls it with opportunity.getId())
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves([{ getUrl: () => 'https://example.com/page1' }]);
 
     const result = await handler.opportunityAndSuggestionsStep(context);
 
@@ -628,6 +778,11 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
   it('should use urlTo prefix when urlTo has prefix', async () => {
     // Test case where urlTo has path prefix, so extractPathPrefix(urlTo) returns '/uk'
     // This covers the case where the || operator uses the first operand (urlTo)
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
     context.site.getBaseURL = () => 'https://bulk.com/uk'; // Site with subpath
     context.site.getDeliveryType = () => 'aem_edge';
@@ -661,13 +816,18 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     const messageArg = context.sqs.sendMessage.getCall(0).args[1];
 
-    // Verify that brokenLinks array contains filtered alternatives
+    // Verify that brokenLinks array does NOT contain per-link alternatives
     expect(messageArg.data.brokenLinks).to.be.an('array').with.lengthOf(1);
     const brokenLink = messageArg.data.brokenLinks[0];
+    expect(brokenLink).to.have.property('urlFrom');
+    expect(brokenLink).to.have.property('urlTo');
+    expect(brokenLink).to.have.property('suggestionId');
+    expect(brokenLink).to.not.have.property('alternativeUrls'); // Per-link alternatives removed
 
+    // Verify that main alternativeUrls array is filtered by broken links' locales
     // Since urlTo has /uk prefix, alternatives should be filtered to only /uk URLs
-    expect(brokenLink.alternativeUrls).to.be.an('array');
-    brokenLink.alternativeUrls.forEach((url) => {
+    expect(messageArg.data.alternativeUrls).to.be.an('array');
+    messageArg.data.alternativeUrls.forEach((url) => {
       expect(url).to.include('/uk/');
     });
   }).timeout(5000);
@@ -677,6 +837,11 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // This triggers the fallback to extractPathPrefix(urlFrom) when urlTo has no prefix
     // NOTE: extractPathPrefix returns empty string only for root URLs (no path segments)
     // URLs like 'https://bulk.com/page1' return '/page1', not empty string!
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
     context.site.getBaseURL = () => 'https://bulk.com/uk'; // Site with subpath
     context.site.getDeliveryType = () => 'aem_edge';
@@ -711,16 +876,202 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     const messageArg = context.sqs.sendMessage.getCall(0).args[1];
 
-    // Verify that brokenLinks array contains filtered alternatives
+    // Verify that brokenLinks array does NOT contain per-link alternatives
     expect(messageArg.data.brokenLinks).to.be.an('array').with.lengthOf(1);
     const brokenLink = messageArg.data.brokenLinks[0];
+    expect(brokenLink).to.have.property('urlFrom');
+    expect(brokenLink).to.have.property('urlTo');
+    expect(brokenLink).to.have.property('suggestionId');
+    expect(brokenLink).to.not.have.property('alternativeUrls'); // Per-link alternatives removed
 
+    // Verify that main alternativeUrls array is filtered by broken links' locales
     // Since urlTo has no prefix, it should fall back to urlFrom's prefix (/uk)
-    // So alternatives should be filtered to only /uk URLs (from the already filtered top pages)
-    expect(brokenLink.alternativeUrls).to.be.an('array');
+    // So alternatives should be filtered to only /uk URLs
+    expect(messageArg.data.alternativeUrls).to.be.an('array');
     // All alternatives should have /uk prefix since we're filtering by urlFrom's prefix
-    brokenLink.alternativeUrls.forEach((url) => {
+    messageArg.data.alternativeUrls.forEach((url) => {
       expect(url).to.include('/uk/');
     });
+  }).timeout(5000);
+
+  it('should skip sending to Mystique when all broken links are filtered out', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+    context.site.getBaseURL = () => 'https://bulk.com';
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    // Create suggestions that will all be filtered out (missing required fields)
+    const invalidSuggestions = [
+      {
+        getData: () => ({
+          // Missing urlFrom
+          urlTo: 'https://bulk.com/broken',
+        }),
+        getId: () => 'suggestion-1',
+      },
+      {
+        getData: () => ({
+          urlFrom: 'https://bulk.com/from',
+          // Missing urlTo
+        }),
+        getId: () => 'suggestion-2',
+      },
+      {
+        getData: () => ({
+          urlFrom: 'https://bulk.com/from',
+          urlTo: 'https://bulk.com/broken',
+        }),
+        getId: () => undefined, // Missing ID - will be filtered out
+      },
+    ];
+
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .resolves(invalidSuggestions);
+
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves([{ getUrl: () => 'https://bulk.com/page1' }]);
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    // Should return complete without sending message
+    expect(result.status).to.equal('complete');
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/No valid broken links to send to Mystique/),
+    );
+  }).timeout(5000);
+
+  it('should skip sending to Mystique when opportunity ID is missing', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    
+    // Create opportunity with missing getId()
+    const opportunityWithoutId = {
+      ...opportunity,
+      getId: () => undefined, // Missing ID
+    };
+    
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunityWithoutId]);
+    context.site.getBaseURL = () => 'https://bulk.com';
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const validSuggestions = [
+      {
+        getData: () => ({
+          urlFrom: 'https://bulk.com/from',
+          urlTo: 'https://bulk.com/broken',
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .resolves(validSuggestions);
+
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves([{ getUrl: () => 'https://bulk.com/page1' }]);
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    // Should return complete without sending message
+    expect(result.status).to.equal('complete');
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+    expect(context.log.error).to.have.been.calledWith(
+      sinon.match(/Opportunity ID is missing/),
+    );
+  }).timeout(5000);
+
+  it('should include all alternatives when no locale prefixes found in broken links', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+    context.site.getBaseURL = () => 'https://bulk.com'; // Root domain, no subpath
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    // Create suggestions with URLs that have pathname '/' (extractPathPrefix returns '')
+    // This triggers the else branch where brokenLinkLocales.size === 0
+    const suggestionsWithoutLocales = [
+      {
+        getData: () => ({
+          urlTo: 'https://bulk.com/', // Pathname is '/' - extractPathPrefix returns ''
+          urlFrom: 'https://bulk.com/', // Pathname is '/' - extractPathPrefix returns ''
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .resolves(suggestionsWithoutLocales);
+
+    // Mock top pages with mixed locales
+    const topPagesWithMixedLocales = [
+      { getUrl: () => 'https://bulk.com/home' },
+      { getUrl: () => 'https://bulk.com/uk/home' },
+      { getUrl: () => 'https://bulk.com/de/home' },
+      { getUrl: () => 'https://bulk.com/about' },
+    ];
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves(topPagesWithMixedLocales);
+
+    await handler.opportunityAndSuggestionsStep(context);
+
+    // Verify SQS message was sent
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const messageArg = context.sqs.sendMessage.getCall(0).args[1];
+
+    // Verify that all alternatives are included (no locale filtering)
+    expect(messageArg.data.alternativeUrls).to.be.an('array').with.lengthOf(4);
+    // All alternatives should be included since no locale filtering was applied
+    expect(messageArg.data.alternativeUrls).to.include('https://bulk.com/home');
+    expect(messageArg.data.alternativeUrls).to.include('https://bulk.com/uk/home');
+    expect(messageArg.data.alternativeUrls).to.include('https://bulk.com/de/home');
+    expect(messageArg.data.alternativeUrls).to.include('https://bulk.com/about');
+  }).timeout(5000);
+
+  it('should skip sending to Mystique when alternativeUrls is empty', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+    context.site.getBaseURL = () => 'https://bulk.com';
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const validSuggestions = [
+      {
+        getData: () => ({
+          urlFrom: 'https://bulk.com/from',
+          urlTo: 'https://bulk.com/broken',
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .resolves(validSuggestions);
+
+    // Mock empty top pages - no alternatives available
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves([]);
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    // Should return complete without sending message
+    expect(result.status).to.equal('complete');
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/No alternative URLs available/),
+    );
   }).timeout(5000);
 });

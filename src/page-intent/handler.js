@@ -42,7 +42,9 @@ export async function getPathsOfLastWeek(context) {
   } = context;
 
   const { S3_IMPORTER_BUCKET_NAME: importerBucket, PAGE_INTENT_BATCH_SIZE: batchSize = 10 } = env;
-  const baseURL = site.getBaseURL();
+  /* c8 ignore next */
+  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+  const baseURL = overrideBaseURL || site.getBaseURL();
   const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
   const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
   const today = new Date();
@@ -65,11 +67,17 @@ export async function getPathsOfLastWeek(context) {
   }
 
   const pageIntents = await site.getPageIntents();
-  const existingUrls = new Set(pageIntents.map((pi) => pi.getUrl()));
+  const existingPaths = new Set(pageIntents.map((pi) => {
+    try {
+      return new URL(pi.getUrl()).pathname;
+    } catch {
+      return pi.getUrl();
+    }
+  }));
 
   const missingPageIntents = paths
     .map(({ path }) => path)
-    .filter((path) => !existingUrls.has(`${baseURL}${path}`));
+    .filter((path) => !existingPaths.has(path));
 
   const numOfMissing = missingPageIntents.length;
 

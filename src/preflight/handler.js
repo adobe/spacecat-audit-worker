@@ -12,7 +12,7 @@
 
 import { isValidUrl, stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
-import { JSDOM } from 'jsdom';
+import { load as cheerioLoad } from 'cheerio';
 import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { isAuditEnabledForSite, noopPersister, noopUrlResolver } from '../common/index.js';
@@ -23,7 +23,7 @@ import {
 import canonical from './canonical.js';
 import metatags from './metatags.js';
 import links from './links.js';
-import readability from '../readability/handler.js';
+import readability from '../readability/preflight/handler.js';
 import accessibility from './accessibility.js';
 import headings from './headings.js';
 
@@ -217,13 +217,13 @@ export const preflightAudit = async (context) => {
       scrapedObjects.forEach(({ data }) => {
         const { finalUrl, scrapeResult: { rawBody } } = data;
         const pageResult = audits.get(stripTrailingSlash(finalUrl));
-        const doc = new JSDOM(rawBody).window.document;
+        const $ = cheerioLoad(rawBody);
 
         const auditsByName = Object.fromEntries(
           pageResult.audits.map((auditEntry) => [auditEntry.name, auditEntry]),
         );
 
-        const textContent = doc.body.textContent.replace(/\n/g, '').trim();
+        const textContent = $('body').text().replace(/\n/g, '').trim();
 
         if (bodySizeEnabled) {
           if (textContent.length > 0 && textContent.length <= 100) {
@@ -246,7 +246,7 @@ export const preflightAudit = async (context) => {
         }
 
         if (h1CountEnabled) {
-          const headingCount = doc.querySelectorAll('h1').length;
+          const headingCount = $('h1').length;
           if (headingCount !== 1) {
             auditsByName[AUDIT_H1_COUNT].opportunities.push({
               check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',

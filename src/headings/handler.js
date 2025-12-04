@@ -10,10 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-import { JSDOM } from 'jsdom';
 import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
+import { load as cheerioLoad } from 'cheerio';
+
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -80,8 +81,9 @@ function getHeadingLevel(tagName) {
  * @param {Element} element - The DOM element
  * @returns {string} - The trimmed text content, or empty string if null/undefined
  */
-function getTextContent(element) {
-  return (element.textContent || '').trim();
+function getTextContent(element, $) {
+  if (!element || !$) return '';
+  return $(element).text().trim();
 }
 
 function getScrapeJsonPath(url, siteId) {
@@ -102,34 +104,35 @@ function getScrapeJsonPath(url, siteId) {
  * @returns {string} A CSS selector string that uniquely identifies the element
  */
 export function getHeadingSelector(heading) {
-  if (!heading || !heading.tagName) {
+  // Works with cheerio elements only
+  if (!heading || !heading.name) {
     return null;
   }
 
-  const tag = heading.tagName.toLowerCase();
+  const { name, attribs, parent } = heading;
+  const tag = name.toLowerCase();
   let selectors = [tag];
 
   // 1. Check for ID (most specific - return immediately)
-  if (heading.id) {
-    return `${tag}#${heading.id}`;
+  const id = attribs?.id;
+  if (id) {
+    return `${tag}#${id}`;
   }
 
   // 2. Add classes if available
-  if (heading.className && typeof heading.className === 'string') {
-    const classes = heading.className.trim().split(/\s+/).filter(Boolean);
+  const className = attribs?.class;
+  if (className && typeof className === 'string') {
+    const classes = className.trim().split(/\s+/).filter(Boolean);
     if (classes.length > 0) {
-      // Limit to first 2 classes for readability
       const classSelector = classes.slice(0, 2).join('.');
       selectors = [`${tag}.${classSelector}`];
     }
   }
 
   // 3. Add nth-of-type if multiple siblings of same tag exist
-  const parent = heading.parentElement;
-  if (parent) {
-    // Get all sibling elements of the same tag type (direct children only)
-    const siblingsOfSameTag = Array.from(parent.children).filter(
-      (child) => child.tagName === heading.tagName,
+  if (parent && parent.children) {
+    const siblingsOfSameTag = parent.children.filter(
+      (child) => child.type === 'tag' && child.name === name,
     );
 
     if (siblingsOfSameTag.length > 1) {
@@ -145,18 +148,20 @@ export function getHeadingSelector(heading) {
   let current = parent;
   let levels = 0;
 
-  while (current && current.tagName && current.tagName.toLowerCase() !== 'html' && levels < 3) {
-    let parentSelector = current.tagName.toLowerCase();
+  while (current && current.name && current.name.toLowerCase() !== 'html' && levels < 3) {
+    let parentSelector = current.name.toLowerCase();
 
     // If parent has ID, use it and stop (ID is unique enough)
-    if (current.id) {
-      pathParts.unshift(`#${current.id}`);
+    const parentId = current.attribs?.id;
+    if (parentId) {
+      pathParts.unshift(`#${parentId}`);
       break;
     }
 
     // Add parent classes (limit to first 2 for readability)
-    if (current.className && typeof current.className === 'string') {
-      const classes = current.className.trim().split(/\s+/).filter(Boolean);
+    const parentClassName = current.attribs?.class;
+    if (parentClassName && typeof parentClassName === 'string') {
+      const classes = parentClassName.trim().split(/\s+/).filter(Boolean);
       if (classes.length > 0) {
         const classSelector = classes.slice(0, 2).join('.');
         parentSelector = `${parentSelector}.${classSelector}`;
@@ -164,7 +169,7 @@ export function getHeadingSelector(heading) {
     }
 
     pathParts.unshift(parentSelector);
-    current = current.parentElement;
+    current = current.parent;
     levels += 1;
   }
 
@@ -242,12 +247,12 @@ export async function validatePageHeadingFromScrapeJson(
   seoChecks,
 ) {
   try {
-    let document = null;
+    let $;
     if (!scrapeJsonObject) {
       log.error(`Scrape JSON object not found for ${url}, skipping headings audit`);
       return null;
     } else {
-      document = new JSDOM(scrapeJsonObject.scrapeResult.rawBody).window.document;
+      $ = cheerioLoad(scrapeJsonObject.scrapeResult.rawBody);
     }
 
     const pageTags = {
@@ -259,11 +264,11 @@ export async function validatePageHeadingFromScrapeJson(
     };
     seoChecks.performChecks(url, pageTags);
 
-    const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+    const headings = $('h1, h2, h3, h4, h5, h6').toArray();
 
     const checks = [];
 
-    const h1Elements = headings.filter((h) => h.tagName === 'H1');
+    const h1Elements = headings.filter((h) => $(h).prop('tagName') === 'H1');
 
     if (h1Elements.length === 0) {
       log.debug(`Missing h1 element detected at ${url}`);
@@ -276,7 +281,7 @@ export async function validatePageHeadingFromScrapeJson(
         suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
         transformRules: {
           action: 'insertBefore',
-          selector: document.querySelector('body > main') ? 'body > main > :first-child' : 'body > :first-child',
+          selector: $('body > main').length > 0 ? 'body > main > :first-child' : 'body > :first-child',
           tag: 'h1',
           scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
         },
@@ -293,10 +298,10 @@ export async function validatePageHeadingFromScrapeJson(
         suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
         count: h1Elements.length,
       });
-    } else if (getTextContent(h1Elements[0]).length === 0
-      || getTextContent(h1Elements[0]).length > H1_LENGTH_CHARS) {
+    } else if (getTextContent(h1Elements[0], $).length === 0
+      || getTextContent(h1Elements[0], $).length > H1_LENGTH_CHARS) {
       const h1Selector = getHeadingSelector(h1Elements[0]);
-      const h1Length = h1Elements[0].textContent.length;
+      const h1Length = $(h1Elements[0]).text().length;
       const lengthIssue = h1Length === 0 ? 'empty' : 'too long';
       log.info(`H1 length ${lengthIssue} detected at ${url}: ${h1Length} characters using selector: ${h1Selector}`);
       checks.push({
@@ -309,7 +314,7 @@ export async function validatePageHeadingFromScrapeJson(
         transformRules: {
           action: 'replace',
           selector: h1Selector,
-          currValue: h1Elements[0].textContent,
+          currValue: $(h1Elements[0]).text(),
           scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
         },
         pageTags,
@@ -317,17 +322,18 @@ export async function validatePageHeadingFromScrapeJson(
     }
 
     const headingChecks = headings.map(async (heading) => {
-      if (heading.tagName !== 'H1') {
-        const text = getTextContent(heading);
+      const tagName = $(heading).prop('tagName');
+      if (tagName !== 'H1') {
+        const text = getTextContent(heading, $);
         if (text.length === 0) {
-          log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
+          log.info(`Empty heading detected (${tagName}) at ${url}`);
           const headingSelector = getHeadingSelector(heading);
           return {
             check: HEADINGS_CHECKS.HEADING_EMPTY.check,
             checkTitle: HEADINGS_CHECKS.HEADING_EMPTY.title,
-            description: HEADINGS_CHECKS.HEADING_EMPTY.description.replace('{tagName}', heading.tagName),
+            description: HEADINGS_CHECKS.HEADING_EMPTY.description.replace('{tagName}', tagName),
             success: false,
-            explanation: `Found empty text for ${heading.tagName}: ${HEADINGS_CHECKS.HEADING_EMPTY.explanation}`,
+            explanation: `Found empty text for ${tagName}: ${HEADINGS_CHECKS.HEADING_EMPTY.explanation}`,
             suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
             transformRules: {
               action: 'replace',
@@ -335,7 +341,7 @@ export async function validatePageHeadingFromScrapeJson(
               currValue: text,
               scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
             },
-            tagName: heading.tagName,
+            tagName,
             pageTags,
           };
         }

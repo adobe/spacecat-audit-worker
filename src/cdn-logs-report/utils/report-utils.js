@@ -19,6 +19,7 @@ import {
   extractCustomerDomain,
   resolveConsolidatedBucketName,
 } from '../../utils/cdn-utils.js';
+import { uploadToSharePoint } from '../../utils/report-uploader.js';
 
 export async function getS3Config(site, context) {
   const customerDomain = extractCustomerDomain(site);
@@ -131,26 +132,6 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
     periodIdentifier,
   };
 }
-
-export function buildSiteFilters(filters, site) {
-  if (!filters || filters.length === 0) {
-    const baseURL = site.getBaseURL();
-    const { host } = new URL(baseURL);
-    return `REGEXP_LIKE(host, '(?i)(${host})')`;
-  }
-
-  const clauses = filters.map(({ key, value, type }) => {
-    const regexPattern = value.join('|');
-    if (type === 'exclude') {
-      return `NOT REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
-    }
-    return `REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
-  });
-
-  const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
-  return `(${filterConditions})`;
-}
-
 /**
  * Fetches remote patterns for a site
  */
@@ -210,4 +191,21 @@ export async function getConfigCategories(site, context) {
     log.warn(`Failed to fetch config categories: ${error.message}`);
     return [];
   }
+}
+
+export async function saveExcelReportForBatch({
+  workbook,
+  outputLocation,
+  log,
+  sharepointClient,
+  filename,
+}) {
+  const buffer = await workbook.xlsx.writeBuffer();
+
+  if (sharepointClient) {
+    await uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log);
+    return { filename, outputLocation };
+  }
+
+  return null;
 }

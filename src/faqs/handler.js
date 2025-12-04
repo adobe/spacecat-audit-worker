@@ -14,10 +14,11 @@ import ExcelJS from 'exceljs';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
-import { generateReportingPeriods } from '../llm-error-pages/utils.js';
-import { SPREADSHEET_COLUMNS } from './utils.js';
+import { getPreviousWeekTriples } from '../utils/date-utils.js';
+import { SPREADSHEET_COLUMNS, validateContentAI } from './utils.js';
 
 const MAX_ROWS_TO_READ = 200;
+const WEEKS_TO_LOOK_BACK = 4;
 
 /**
  * Groups prompts by URL and topic
@@ -90,9 +91,47 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
     log.info(`[FAQ] Extracted ${prompts.length} prompts from ${maxRows} rows`);
     return prompts;
   } catch (error) {
-    log.error(`[FAQ] Failed to read brand presence spreadsheet: ${error.message}`);
+    // File not found is expected when trying multiple weeks
+    if (error.message?.includes('resource could not be found') || error.message?.includes('itemNotFound')) {
+      log.info(`[FAQ] Brand presence file not found: ${filename}`);
+    } else {
+      // Unexpected error
+      log.error(`[FAQ] Failed to read brand presence spreadsheet: ${error.message}`);
+    }
     return [];
   }
+}
+
+/**
+ * Deduplicates prompts based on question text
+ * Prioritizes prompts with URL, then keeps the first occurrence
+ * @param {Array} prompts - Array of prompt objects with url, topic, and question
+ * @returns {Array} Deduplicated array of prompts
+ */
+function deduplicatePrompts(prompts) {
+  const seenQuestions = new Map();
+
+  prompts.forEach((prompt) => {
+    const questionKey = prompt.question.toLowerCase().trim();
+    const existing = seenQuestions.get(questionKey);
+
+    if (!existing) {
+      // First occurrence of this question
+      seenQuestions.set(questionKey, prompt);
+    } else {
+      // Duplicate found - prioritize the one with a URL
+      const existingHasUrl = existing.url && existing.url.length > 0;
+      const currentHasUrl = prompt.url && prompt.url.length > 0;
+
+      // Replace existing if current has URL and existing doesn't
+      if (currentHasUrl && !existingHasUrl) {
+        seenQuestions.set(questionKey, prompt);
+      }
+      // Otherwise keep existing (either it has URL, or both don't have URL - keep first)
+    }
+  });
+
+  return Array.from(seenQuestions.values());
 }
 
 async function runFaqsAudit(url, context, site) {
@@ -104,40 +143,101 @@ async function runFaqsAudit(url, context, site) {
   log.info('[FAQ] Running FAQs audit');
 
   try {
-    const week = generateReportingPeriods().weeks[0];
-    const periodIdentifier = `w${week.weekNumber}-${week.year}`;
-    log.info(`[FAQ] Running weekly audit for ${periodIdentifier}`);
+    const contentAIStatus = await validateContentAI(site, context);
 
-    // Prepare SharePoint client and file location
-    const sharepointClient = await createLLMOSharepointClient(context);
-    const outputLocation = getOutputLocation
-      ? getOutputLocation(site)
-      : `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
-    const brandPresenceFilename = `brandpresence-all-${periodIdentifier}.xlsx`;
+    // Check if Content AI is properly configured and working
+    if (!contentAIStatus.uid || !contentAIStatus.genSearchEnabled || !contentAIStatus.isWorking) {
+      let errorMessage;
+      if (!contentAIStatus.uid) {
+        errorMessage = 'Content AI configuration not found';
+        log.warn('[FAQ] Content AI configuration does not exist for this site, skipping audit');
+      } else if (!contentAIStatus.genSearchEnabled) {
+        errorMessage = 'Content AI generative search not enabled';
+        log.warn(`[FAQ] Content AI generative search not enabled for index ${contentAIStatus.indexName}, skipping audit`);
+      } else {
+        errorMessage = 'Content AI search endpoint validation failed';
+        log.warn(`[FAQ] Content AI search endpoint is not working for index ${contentAIStatus.indexName}, skipping audit`);
+      }
 
-    // Read brand presence spreadsheet
-    const topPrompts = await readBrandPresenceSpreadsheet(
-      brandPresenceFilename,
-      outputLocation,
-      sharepointClient,
-      log,
-    );
-
-    if (topPrompts.length === 0) {
-      log.warn('[FAQ] No prompts found in brand presence spreadsheet');
       return {
         auditResult: {
           success: false,
+          error: errorMessage,
           promptsByUrl: [],
         },
         fullAuditRef: url,
       };
     }
 
-    // Group prompts by URL and topic (already limited to MAX_ROWS_TO_READ)
-    const promptsByUrl = groupPromptsByUrlAndTopic(topPrompts);
+    log.info(`[FAQ] Content AI validation successful - UID: ${contentAIStatus.uid}, Index: ${contentAIStatus.indexName}, GenSearch: ${contentAIStatus.genSearchEnabled}`);
 
-    log.info(`[FAQ] Grouped ${topPrompts.length} prompts into ${promptsByUrl.length} topics`);
+    // Prepare SharePoint client and file location
+    const sharepointClient = await createLLMOSharepointClient(context);
+    const outputLocation = getOutputLocation
+      ? getOutputLocation(site)
+      : `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
+
+    // Try to find brand presence spreadsheet from the last weeks (most recent first)
+    const weekTriples = getPreviousWeekTriples(new Date(), WEEKS_TO_LOOK_BACK);
+    // Convert to unique weeks since triples may contain multiple entries per week
+    const uniqueWeeks = new Map();
+    weekTriples.forEach(({ year, week }) => {
+      const key = `${year}-${week}`;
+      if (!uniqueWeeks.has(key)) {
+        uniqueWeeks.set(key, { weekNumber: week, year });
+      }
+    });
+    const weeks = Array.from(uniqueWeeks.values());
+
+    let topPrompts = [];
+    let usedPeriodIdentifier = null;
+
+    for (const week of weeks) {
+      const periodIdentifier = `w${week.weekNumber}-${week.year}`;
+      const brandPresenceFilename = `brandpresence-all-${periodIdentifier}.xlsx`;
+
+      log.info(`[FAQ] Attempting to read brand presence file for ${periodIdentifier}`);
+
+      // eslint-disable-next-line no-await-in-loop
+      const prompts = await readBrandPresenceSpreadsheet(
+        brandPresenceFilename,
+        outputLocation,
+        sharepointClient,
+        log,
+      );
+
+      if (prompts.length > 0) {
+        topPrompts = prompts;
+        usedPeriodIdentifier = periodIdentifier;
+        log.info(`[FAQ] Successfully found brand presence data for ${periodIdentifier} with ${prompts.length} prompts`);
+        break;
+      }
+
+      log.info(`[FAQ] No data found for ${periodIdentifier}, will try next week`);
+    }
+
+    if (topPrompts.length === 0) {
+      log.warn(`[FAQ] No prompts found in brand presence spreadsheet from the last ${WEEKS_TO_LOOK_BACK} weeks`);
+      return {
+        auditResult: {
+          success: false,
+          error: `No brand presence data found in the last ${WEEKS_TO_LOOK_BACK} weeks`,
+          promptsByUrl: [],
+        },
+        fullAuditRef: url,
+      };
+    }
+
+    log.info(`[FAQ] Using brand presence data from ${usedPeriodIdentifier}`);
+
+    // Deduplicate prompts before grouping
+    const uniquePrompts = deduplicatePrompts(topPrompts);
+    log.info(`[FAQ] Deduplicated ${topPrompts.length} prompts to ${uniquePrompts.length} unique prompts`);
+
+    // Group prompts by URL and topic (already limited to MAX_ROWS_TO_READ)
+    const promptsByUrl = groupPromptsByUrlAndTopic(uniquePrompts);
+
+    log.info(`[FAQ] Grouped ${uniquePrompts.length} prompts into ${promptsByUrl.length} topics`);
 
     const auditResult = {
       success: true,
@@ -208,7 +308,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`[FAQ] Queued ${promptsByUrl.length} FAQ topics to Mystique for AI processing`);
+    log.info(`[FAQ] Queued ${promptsByUrl.length} FAQ groups to Mystique`);
   } catch (error) {
     log.error(`[FAQ] Failed to send Mystique message: ${error.message}`);
   }

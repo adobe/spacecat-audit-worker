@@ -20,6 +20,8 @@ export default defineConfig([
     '.idea/*',
     '.aws-sam/*',
     'coverage/*',
+    'dist/*',
+    'node_modules/*',
     'scripts/*',
     'test/*/fixtures/*',
     'test/audits/**/*.test.js',
@@ -44,7 +46,7 @@ export default defineConfig([
     },
     rules: {
       'no-unused-expressions': 'off',
-      'import/no-unresolved': ['error', { ignore: ['@octokit/rest', 'is-language-code'] }],
+      'import/no-unresolved': ['error', { ignore: ['@octokit/rest', 'is-language-code', 'uuid'] }],
     },
   },
   {
@@ -54,5 +56,9 @@ export default defineConfig([
   {
     ...test,
     files: [...test.files],
+    rules: {
+      'no-console': 'off',
+      'func-names': 'off',
+    },
   }
 ]);

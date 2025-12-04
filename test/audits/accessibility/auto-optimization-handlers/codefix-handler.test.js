@@ -28,9 +28,14 @@ describe('AccessibilityCodeFixHandler', () => {
   let mockOpportunity;
   let mockSuggestion;
   let getObjectFromKeyStub;
+  let CodeFixConfigurationError;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sandbox = sinon.createSandbox();
+
+    // Import CodeFixConfigurationError for testing
+    const codefixHandler = await import('../../../../src/common/codefix-handler.js');
+    CodeFixConfigurationError = codefixHandler.CodeFixConfigurationError;
 
     mockSuggestion = {
       getId: sandbox.stub().returns('suggestion-123'),
@@ -252,22 +257,6 @@ describe('AccessibilityCodeFixHandler', () => {
       expect(result.status).to.equal(200);
     });
 
-    it('should return internalServerError when S3 bucket not configured', async () => {
-      context.env.S3_MYSTIQUE_BUCKET_NAME = undefined;
-
-      const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
-        '../../../../src/common/codefix-handler.js': await esmock('../../../../src/common/codefix-handler.js', {
-          '../../../../src/utils/s3-utils.js': {
-            getObjectFromKey: getObjectFromKeyStub,
-          },
-        }),
-      });
-
-      const result = await handler.default(validMessage, context);
-
-      expect(result.status).to.equal(500);
-    });
-
     it('should handle missing S3 reports gracefully', async () => {
       getObjectFromKeyStub.resolves(null);
 
@@ -325,7 +314,7 @@ describe('AccessibilityCodeFixHandler', () => {
             {
               url: 'https://example.com/contact',
               source: 'form',
-              type: ['color-contrast'],
+              types: ['color-contrast'],
             },
           ],
         },
@@ -552,38 +541,10 @@ describe('AccessibilityCodeFixHandler', () => {
       expect(context.log.warn).to.have.been.called;
     });
 
-    it('should handle error when S3_MYSTIQUE_BUCKET_NAME not set for old format', async () => {
-      context.env.S3_MYSTIQUE_BUCKET_NAME = undefined;
-
-      const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
-        '../../../../src/common/codefix-handler.js': await esmock('../../../../src/common/codefix-handler.js', {
-          '../../../../src/utils/s3-utils.js': {
-            getObjectFromKey: getObjectFromKeyStub,
-          },
-        }),
-      });
-
-      const messageOldFormat = {
-        siteId: 'site-123',
-        data: {
-          opportunityId: 'opportunity-123',
-          updates: [
-            {
-              url: 'https://example.com/contact',
-              source: 'form',
-              type: ['color-contrast'],
-            },
-          ],
-        },
-      };
-
-      const result = await handler.default(messageOldFormat, context);
-
-      expect(result.status).to.equal(500);
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Configuration error.*S3 bucket name not configured/),
-      );
-    });
+    // Note: Lines 270-272 and 312-314 in codefix-handler.js are defensive error checks
+    // that cannot be reached with current implementation because defaultBucketName
+    // always has a fallback value ('spacecat-prod-mystique-assets').
+    // These lines are kept for defensive programming and future-proofing.
 
     it('should work without source parameter', async () => {
       const mockReportData = {
@@ -715,7 +676,7 @@ describe('AccessibilityCodeFixHandler', () => {
             {
               url: 'https://example.com/contact',
               source: 'form',
-              type: ['color-contrast'],
+              types: ['color-contrast'],
             },
           ],
         },
@@ -756,7 +717,7 @@ describe('AccessibilityCodeFixHandler', () => {
             {
               url: 'https://example.com/contact',
               // No source
-              type: ['color-contrast'],
+              types: ['color-contrast'],
             },
           ],
         },
@@ -820,7 +781,7 @@ describe('AccessibilityCodeFixHandler', () => {
             {
               url: 'https://example.com/page1',
               source: 'form1',
-              type: ['color-contrast', 'select-name'],
+              types: ['color-contrast', 'select-name'],
             },
           ],
         },
@@ -870,7 +831,7 @@ describe('AccessibilityCodeFixHandler', () => {
               url: 'https://example.com/contact',
               source: 'form',
               aggregation_key: 'https://example.com/contact|button-name|form',
-              type: ['should-be-ignored'],
+              types: ['should-be-ignored'],
             },
           ],
         },
@@ -886,6 +847,7 @@ describe('AccessibilityCodeFixHandler', () => {
 
     it('should handle plain text diff content from S3 (non-JSON)', async () => {
       // Simulate plain text content from S3 (string instead of object)
+      // With the new behavior, non-JSON strings return null and no suggestions are updated
       const plainTextDiff = 'diff --git a/file.js b/file.js\nindex 123..456\n--- a/file.js\n+++ b/file.js\n@@ -1,3 +1,3 @@\n-old line\n+new line';
 
       const suggestionData = {
@@ -900,7 +862,7 @@ describe('AccessibilityCodeFixHandler', () => {
       };
 
       mockSuggestion.getData.returns(suggestionData);
-      // Return plain string instead of JSON object - this will be wrapped as {diff: string}
+      // Return plain string instead of JSON object - this will return null after JSON parse fails
       getObjectFromKeyStub.resolves(plainTextDiff);
 
       const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
@@ -929,6 +891,61 @@ describe('AccessibilityCodeFixHandler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(200);
+      // With new behavior, plain text (non-JSON) returns null, so no suggestions are updated
+      expect(mockSuggestion.setData).to.not.have.been.called;
+      expect(mockSuggestion.save).to.not.have.been.called;
+    });
+
+    it('should handle JSON string from S3 and parse it successfully', async () => {
+      // Simulate JSON string content from S3 that needs to be parsed
+      const mockDiffContent = 'mock diff content for button-name';
+      const reportDataObject = {
+        diff: mockDiffContent,
+      };
+      const jsonString = JSON.stringify(reportDataObject);
+
+      const suggestionData = {
+        url: 'https://example.com/contact',
+        source: 'form',
+        issues: [{
+          type: 'button-name',
+          htmlWithIssues: [{
+            target_selector: 'button.submit',
+          }],
+        }],
+      };
+
+      mockSuggestion.getData.returns(suggestionData);
+      // Return JSON string - this will be parsed successfully
+      getObjectFromKeyStub.resolves(jsonString);
+
+      const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
+        '../../../../src/common/codefix-handler.js': await esmock('../../../../src/common/codefix-handler.js', {
+          '../../../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        }),
+      });
+
+      const message = {
+        siteId: 'site-123',
+        type: 'codefix:accessibility',
+        data: {
+          opportunityId: 'opportunity-123',
+          updates: [
+            {
+              url: 'https://example.com/contact',
+              source: 'form',
+              aggregation_key: 'https://example.com/contact|button-name|form',
+            },
+          ],
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      // JSON string should be parsed and suggestion should be updated
       expect(mockSuggestion.setData).to.have.been.calledWith({
         url: 'https://example.com/contact',
         source: 'form',
@@ -938,7 +955,7 @@ describe('AccessibilityCodeFixHandler', () => {
             target_selector: 'button.submit',
           }],
         }],
-        patchContent: plainTextDiff,
+        patchContent: mockDiffContent,
         isCodeChangeAvailable: true,
       });
       expect(mockSuggestion.save).to.have.been.called;
@@ -1044,6 +1061,30 @@ describe('AccessibilityCodeFixHandler', () => {
       });
       expect(mockSuggestion.save).to.have.been.called;
       expect(mockSuggestion2.save).to.have.been.called;
+    });
+  });
+
+  describe('CodeFixConfigurationError', () => {
+    it('should create error with correct name and message', () => {
+      const message = 'S3 bucket name not configured';
+      const error = new CodeFixConfigurationError(message);
+
+      expect(error).to.be.instanceof(Error);
+      expect(error).to.be.instanceof(CodeFixConfigurationError);
+      expect(error.name).to.equal('CodeFixConfigurationError');
+      expect(error.message).to.equal(message);
+    });
+
+    it('should be catchable as Error', () => {
+      const message = 'Test configuration error';
+      
+      try {
+        throw new CodeFixConfigurationError(message);
+      } catch (error) {
+        expect(error).to.be.instanceof(Error);
+        expect(error.name).to.equal('CodeFixConfigurationError');
+        expect(error.message).to.equal(message);
+      }
     });
   });
 });
