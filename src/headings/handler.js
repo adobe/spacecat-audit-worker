@@ -28,7 +28,6 @@ const auditType = Audit.AUDIT_TYPES.HEADINGS;
 
 const tocAuditType = Audit.AUDIT_TYPES.TOC;
 
-
 const H1_LENGTH_CHARS = 70;
 
 export const HEADINGS_CHECKS = Object.freeze({
@@ -407,15 +406,12 @@ export async function getBrandGuidelines(healthyTagsObject, log, context) {
 }
 
 function extractTocData(document) {
-  const headings = Array.from(document.querySelectorAll("h1, h2"));
+  const headings = Array.from(document.querySelectorAll('h1', 'h2'));
 
   return headings.map((h) => {
     const text = getTextContent(h);
     const level = getHeadingLevel(h.tagName);
-
-    
     const selector = getHeadingSelector(h);
-
     return { text, level, selector };
   });
 }
@@ -542,7 +538,6 @@ async function getTocDetails(document, url, pageTags, log, context, scrapedAt) {
       'toc-detection',
       log,
     );
-    log.info(`[TOC Detection] Prompt for ${url}: ${prompt}`);
   
 
     const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
@@ -550,7 +545,6 @@ async function getTocDetails(document, url, pageTags, log, context, scrapedAt) {
     });
 
     const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
-    log.info(`[TOC Detection] AI response for ${url}: ${JSON.stringify(aiResponseContent)}`);
 
     // Validate response structure
     if (typeof aiResponseContent.tocPresent !== 'boolean') {
