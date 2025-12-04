@@ -529,11 +529,11 @@ export async function aggregateAccessibilityData(
       }
     });
 
-    // Check if file already exists and merge if it's recent (within 10 minutes)
+    // Check if file already exists and merge if it's recent (within 24 hours)
     let finalData = aggregatedData;
     const lastModified = await getObjectLastModifiedTimestamp(s3Client, bucketName, outputKey);
 
-    if (lastModified && (new Date() - lastModified) <= 10 * 60 * 1000) {
+    if (lastModified && (new Date() - lastModified) <= 24 * 60 * 60 * 1000) {
       const existingData = await getObjectFromKey(s3Client, bucketName, outputKey, log);
       if (existingData) {
         log.info(`[${logIdentifier}] Merging with existing file (age: ${Math.round((new Date() - lastModified) / 1000)}s)`);
