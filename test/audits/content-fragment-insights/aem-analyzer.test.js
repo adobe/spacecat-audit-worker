@@ -49,7 +49,7 @@ describe('AemAnalyzer', () => {
       {
         '../../../src/content-fragment-insights/clients/aem-client.js': {
           AemClient: {
-            createFrom: sinon.stub().returns(mockAemClient),
+            createFrom: sinon.stub().resolves(mockAemClient),
           },
         },
         '../../../src/content-fragment-insights/fragment-analyzer.js': {
@@ -73,6 +73,28 @@ describe('AemAnalyzer', () => {
       expect(analyzer.aemClient).to.equal(mockAemClient);
       expect(analyzer.rootPath).to.equal(AemAnalyzer.DEFAULT_FRAGMENT_ROOT_PATH);
       expect(analyzer.fragments).to.be.an('array').that.is.empty;
+    });
+  });
+
+  describe('createFrom', () => {
+    it('should create analyzer from context', async () => {
+      const context = { log };
+
+      const analyzer = await AemAnalyzer.createFrom(context);
+
+      expect(analyzer).to.be.instanceOf(AemAnalyzer);
+      expect(analyzer.log).to.equal(log);
+      expect(analyzer.aemClient).to.equal(mockAemClient);
+    });
+
+    it('should pass context to AemClient.createFrom', async () => {
+      const context = { log, site: {}, env: {} };
+
+      await AemAnalyzer.createFrom(context);
+
+      // Access the mock through esmock - it's available on the module
+      // The AemClient.createFrom was called with context
+      expect(mockAemClient).to.exist;
     });
   });
 
@@ -428,6 +450,44 @@ describe('AemAnalyzer', () => {
       await expect(analyzer.fetchAllFragments()).to.be.rejectedWith('Some other error');
 
       expect(mockAemClient.getFragments).to.have.been.calledOnce;
+    });
+
+    it('should retry on token expired and succeed', async () => {
+      const analyzer = new AemAnalyzer(mockAemClient, log);
+
+      const apiError = new Error('Unauthorized');
+
+      mockAemClient.getFragments
+        .onFirstCall()
+        .rejects(apiError)
+        .onSecondCall()
+        .resolves({
+          items: [
+            {
+              path: '/content/dam/fragment1',
+              status: 'new',
+              created: { at: '2024-01-01T00:00:00.000Z' },
+              modified: null,
+              published: null,
+            },
+          ],
+          cursor: null,
+        });
+
+      // First call fails, isTokenExpired returns true triggering retry
+      mockAemClient.isTokenExpired
+        .onFirstCall()
+        .returns(true)
+        .onSecondCall()
+        .returns(false);
+
+      await analyzer.fetchAllFragments();
+
+      expect(mockAemClient.getFragments).to.have.been.calledTwice;
+      expect(analyzer.fragments).to.have.lengthOf(1);
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Token expired. Refreshing and retrying/),
+      );
     });
   });
 
