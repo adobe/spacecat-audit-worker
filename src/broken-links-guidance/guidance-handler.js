@@ -90,7 +90,6 @@ export default async function handler(message, context) {
     );
 
     // Handle AI rationale - clear it if all URLs were filtered out
-    // This prevents showing rationale for URLs that don't exist
     let aiRationale = brokenLink.aiRationale || '';
     if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length > 0) {
       // All URLs were filtered out (likely invalid/broken), clear rationale

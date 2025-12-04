@@ -16,6 +16,7 @@ import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { isPdfUrl } from '../utils/url-utils.js';
 import { syncBrokenInternalLinksSuggestions } from './suggestions-generator.js';
 import {
   isLinkInaccessible,
@@ -280,7 +281,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
       }
     });
 
-    // Filter alternatives to only include URLs matching broken links' locales
+    // Filter alternatives by locales/subpaths present in broken links
     // If no locales found (no subpath), include all alternatives
     // Always ensure alternativeUrls is an array (even if empty)
     let alternativeUrls = [];
@@ -293,6 +294,13 @@ export const opportunityAndSuggestionsStep = async (context) => {
     } else {
       // No locale prefixes found, include all alternatives
       alternativeUrls = allTopPageUrls;
+    }
+
+    // Filter out PDF URLs before sending to Mystique
+    const originalCount = alternativeUrls.length;
+    alternativeUrls = alternativeUrls.filter((url) => !isPdfUrl(url));
+    if (alternativeUrls.length < originalCount) {
+      log.info(`[${AUDIT_TYPE}] Filtered out ${originalCount - alternativeUrls.length} PDF URLs from alternative URLs before sending to Mystique`);
     }
 
     // Validate before sending to Mystique

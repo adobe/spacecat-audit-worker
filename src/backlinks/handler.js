@@ -14,6 +14,7 @@ import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { isPdfUrl } from '../utils/url-utils.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
@@ -240,6 +241,13 @@ export const generateSuggestionData = async (context) => {
   } else {
     // No locale prefixes found, include all alternatives
     alternativeUrls = allTopPageUrls;
+  }
+
+  // Filter out PDF URLs before sending to Mystique
+  const originalCount = alternativeUrls.length;
+  alternativeUrls = alternativeUrls.filter((url) => !isPdfUrl(url));
+  if (alternativeUrls.length < originalCount) {
+    log.info(`Filtered out ${originalCount - alternativeUrls.length} PDF URLs from alternative URLs before sending to Mystique`);
   }
 
   // Validate before sending to Mystique
