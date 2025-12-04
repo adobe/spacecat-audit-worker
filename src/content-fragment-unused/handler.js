@@ -27,6 +27,13 @@ import {
 // TODO: Change to Audit.AUDIT_TYPES.CONTENT_FRAGMENT_UNUSED
 export const AUDIT_TYPE = 'content-fragment-unused';
 
+/**
+ * Creates a summary of unused fragments grouped by their publication status.
+ *
+ * @param {number} totalFragments - Total number of content fragments analyzed.
+ * @param {UnusedFragment[]} unusedFragments - Array of unused fragment objects.
+ * @returns {StatusSummaryEntry[]} Array of status summaries.
+ */
 export function createStatusSummary(totalFragments, unusedFragments) {
   const groupedByStatus = {};
 
@@ -62,6 +69,24 @@ export function createStatusSummary(totalFragments, unusedFragments) {
   });
 }
 
+/**
+ * Runs the content fragment unused audit for a given site.
+ *
+ * This audit identifies content fragments that have not been published or modified
+ * within a threshold period, helping content governance by flagging unused content.
+ * The detailed fragment data is stored in S3 for later processing.
+ *
+ * @param {string} baseURL - The base URL of the site being audited.
+ * @param {Object} context - The audit context containing services and configuration.
+ * @param {Object} context.log - Logger instance.
+ * @param {Object} context.dataAccess - Data access layer for database operations.
+ * @param {Object} context.s3Client - AWS S3 client for storage operations.
+ * @param {Object} context.env - Environment variables including AWS_ENV.
+ * @param {Object} site - The site object being audited.
+ * @returns {Promise<AuditResult>} The audit result with summary and S3 reference.
+ * @throws {Error} If IMS organization ID is missing for the site.
+ * @throws {Error} If AWS environment is not configured.
+ */
 export async function contentFragmentUnusedAuditRunner(baseURL, context, site) {
   const {
     log, dataAccess, s3Client, env,
@@ -100,6 +125,24 @@ export async function contentFragmentUnusedAuditRunner(baseURL, context, site) {
   };
 }
 
+/**
+ * Creates opportunity suggestions for unused content fragments.
+ *
+ * This post-processor downloads the detailed fragment data from S3,
+ * creates or updates an opportunity, and syncs suggestions for each
+ * unused fragment identified in the audit.
+ *
+ * @param {string} auditUrl - The URL of the audited site.
+ * @param {Object} auditData - The audit data containing results and metadata.
+ * @param {string} auditData.siteId - The unique identifier of the site.
+ * @param {string} auditData.id - The unique identifier of the audit.
+ * @param {Object} auditData.auditResult - The audit result containing S3 path reference.
+ * @param {Object} context - The audit context containing services.
+ * @param {Object} context.log - Logger instance.
+ * @param {Object} context.s3Client - AWS S3 client for downloading fragment data.
+ * @param {Object} context.dataAccess - Data access layer for opportunity operations.
+ * @returns {Promise<void>} Resolves when suggestions are created/synced.
+ */
 export async function createContentFragmentUnusedSuggestions(auditUrl, auditData, context) {
   const { log, s3Client } = context;
 

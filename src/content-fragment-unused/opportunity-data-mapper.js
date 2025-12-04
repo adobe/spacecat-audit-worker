@@ -12,6 +12,14 @@
 
 import { DATA_SOURCES } from '../common/constants.js';
 
+/**
+ * Creates the opportunity data object for unused content fragment opportunities.
+ *
+ * This function generates the static metadata used when creating or updating
+ * opportunities related to unused content fragments in AEM.
+ *
+ * @returns {Object} The opportunity configuration object.
+ */
 export function createOpportunityData() {
   return {
     runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/',
