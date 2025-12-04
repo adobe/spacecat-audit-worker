@@ -28,8 +28,9 @@ export function isPreviewPage(url) {
   return urlObj.hostname.endsWith('.page');
 }
 
-export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
+export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL, log = console) {
   const baseDomain = new URL(baseURL).hostname;
+
   const checks = suggestedUrls.map(async (suggestedUrl) => {
     try {
       const schemaPrependedUrl = prependSchema(stripWWW(suggestedUrl));
@@ -38,15 +39,29 @@ export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
         const response = await fetch(schemaPrependedUrl);
         if (response.ok) {
           return suggestedUrl;
+        } else {
+          log.warn(`[URL Filter] REJECTED ${suggestedUrl} - HTTP ${response.status}`);
+          return null;
         }
+      } else {
+        log.warn(`[URL Filter] REJECTED ${suggestedUrl} - domain mismatch`);
+        return null;
       }
-      return null;
       // eslint-disable-next-line no-unused-vars
     } catch (error) {
+      log.warn(`[URL Filter] REJECTED ${suggestedUrl} - error: ${error.message}`);
       return null;
     }
   });
-  return (await Promise.all(checks)).filter((url) => url !== null);
+
+  const results = await Promise.all(checks);
+  const filteredUrls = results.filter((url) => url !== null);
+
+  if (filteredUrls.length !== suggestedUrls.length) {
+    log.warn(`[URL Filter] ${filteredUrls.length}/${suggestedUrls.length} URLs passed filtering`);
+  }
+
+  return filteredUrls;
 }
 
 /**
