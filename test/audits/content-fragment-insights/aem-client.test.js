@@ -12,23 +12,51 @@
 
 /* eslint-env mocha */
 
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import { AemClient } from '../../../src/content-fragment-insights/clients/aem-client.js';
+import esmock from 'esmock';
+
+use(sinonChai);
+use(chaiAsPromised);
 
 describe('AemClient', () => {
+  let AemClient;
   let log;
+  let mockImsClient;
   const baseUrl = 'https://author.example.com';
-  const authToken = 'test-token-123';
+  const accessToken = 'test-token-123';
 
-  beforeEach(() => {
+  beforeEach(async () => {
     log = {
       debug: sinon.spy(),
       info: sinon.spy(),
       warn: sinon.spy(),
       error: sinon.spy(),
     };
+
+    mockImsClient = {
+      getServiceAccessToken: sinon.stub().resolves({
+        access_token: accessToken,
+        expires_in: 3600,
+      }),
+    };
+
+    // Import with esmock to control ImsClient.createFrom
+    const AemClientModule = await esmock(
+      '../../../src/content-fragment-insights/clients/aem-client.js',
+      {
+        '@adobe/spacecat-shared-ims-client': {
+          ImsClient: {
+            createFrom: sinon.stub().returns(mockImsClient),
+          },
+        },
+      },
+    );
+
+    AemClient = AemClientModule.AemClient;
   });
 
   afterEach(() => {
@@ -38,56 +66,50 @@ describe('AemClient', () => {
 
   describe('constructor', () => {
     it('should create client with valid parameters', () => {
-      const client = new AemClient(baseUrl, authToken, log);
+      const client = new AemClient(baseUrl, mockImsClient, log);
       expect(client.baseUrl).to.equal(baseUrl);
-      expect(client.authToken).to.equal(authToken);
+      expect(client.imsClient).to.equal(mockImsClient);
       expect(client.log).to.equal(log);
     });
 
     it('should use console as default logger', () => {
-      const client = new AemClient(baseUrl, authToken);
+      const client = new AemClient(baseUrl, mockImsClient);
       expect(client.log).to.equal(console);
     });
 
     it('should throw error when baseUrl is missing', () => {
-      expect(() => new AemClient(null, authToken)).to.throw(
+      expect(() => new AemClient(null, mockImsClient)).to.throw(
         'baseUrl is required for AEM client',
       );
     });
 
     it('should throw error when baseUrl is undefined', () => {
-      expect(() => new AemClient(undefined, authToken)).to.throw(
+      expect(() => new AemClient(undefined, mockImsClient)).to.throw(
         'baseUrl is required for AEM client',
       );
     });
 
     it('should throw error when baseUrl is empty string', () => {
-      expect(() => new AemClient('', authToken)).to.throw(
+      expect(() => new AemClient('', mockImsClient)).to.throw(
         'baseUrl is required for AEM client',
       );
     });
 
-    it('should throw error when authToken is missing', () => {
+    it('should throw error when imsClient is missing', () => {
       expect(() => new AemClient(baseUrl, null)).to.throw(
-        'authToken is required for AEM client',
+        'imsClient is required for AEM client',
       );
     });
 
-    it('should throw error when authToken is undefined', () => {
+    it('should throw error when imsClient is undefined', () => {
       expect(() => new AemClient(baseUrl, undefined)).to.throw(
-        'authToken is required for AEM client',
-      );
-    });
-
-    it('should throw error when authToken is empty string', () => {
-      expect(() => new AemClient(baseUrl, '')).to.throw(
-        'authToken is required for AEM client',
+        'imsClient is required for AEM client',
       );
     });
   });
 
   describe('createFrom', () => {
-    it('should create client from context', () => {
+    it('should create client from context', async () => {
       const context = {
         site: {
           getDeliveryConfig: () => ({
@@ -95,36 +117,40 @@ describe('AemClient', () => {
           }),
         },
         env: {
-          AEM_AUTHOR_TOKEN: authToken,
+          IMS_HOST: 'ims.example.com',
+          IMS_CLIENT_ID: 'client-id',
+          IMS_CLIENT_CODE: 'client-code',
+          IMS_CLIENT_SECRET: 'client-secret',
+          IMS_SCOPE: 'scope',
         },
         log,
       };
 
-      const client = AemClient.createFrom(context);
+      const client = await AemClient.createFrom(context);
 
       expect(client).to.be.instanceOf(AemClient);
       expect(client.baseUrl).to.equal(baseUrl);
-      expect(client.authToken).to.equal(authToken);
+      expect(client.imsClient).to.equal(mockImsClient);
       expect(client.log).to.equal(log);
     });
 
-    it('should throw error when authorURL is missing', () => {
+    it('should throw error when authorURL is missing', async () => {
       const context = {
         site: {
           getDeliveryConfig: () => ({}),
         },
         env: {
-          AEM_AUTHOR_TOKEN: authToken,
+          IMS_HOST: 'ims.example.com',
         },
         log,
       };
 
-      expect(() => AemClient.createFrom(context)).to.throw(
+      await expect(AemClient.createFrom(context)).to.be.rejectedWith(
         'AEM Author configuration missing: AEM Author URL required',
       );
     });
 
-    it('should throw error when authorURL is null', () => {
+    it('should throw error when authorURL is null', async () => {
       const context = {
         site: {
           getDeliveryConfig: () => ({
@@ -132,47 +158,13 @@ describe('AemClient', () => {
           }),
         },
         env: {
-          AEM_AUTHOR_TOKEN: authToken,
+          IMS_HOST: 'ims.example.com',
         },
         log,
       };
 
-      expect(() => AemClient.createFrom(context)).to.throw(
+      await expect(AemClient.createFrom(context)).to.be.rejectedWith(
         'AEM Author configuration missing: AEM Author URL required',
-      );
-    });
-
-    it('should throw error when AEM_AUTHOR_TOKEN is missing', () => {
-      const context = {
-        site: {
-          getDeliveryConfig: () => ({
-            authorURL: baseUrl,
-          }),
-        },
-        env: {},
-        log,
-      };
-
-      expect(() => AemClient.createFrom(context)).to.throw(
-        'AEM Author configuration missing: AEM_AUTHOR_TOKEN required',
-      );
-    });
-
-    it('should throw error when AEM_AUTHOR_TOKEN is null', () => {
-      const context = {
-        site: {
-          getDeliveryConfig: () => ({
-            authorURL: baseUrl,
-          }),
-        },
-        env: {
-          AEM_AUTHOR_TOKEN: null,
-        },
-        log,
-      };
-
-      expect(() => AemClient.createFrom(context)).to.throw(
-        'AEM Author configuration missing: AEM_AUTHOR_TOKEN required',
       );
     });
   });
@@ -181,7 +173,7 @@ describe('AemClient', () => {
     let client;
 
     beforeEach(() => {
-      client = new AemClient(baseUrl, authToken, log);
+      client = new AemClient(baseUrl, mockImsClient, log);
     });
 
     it('should make successful GET request', async () => {
@@ -198,7 +190,7 @@ describe('AemClient', () => {
     it('should include authorization header', async () => {
       nock(baseUrl)
         .get('/test/path')
-        .matchHeader('Authorization', `Bearer ${authToken}`)
+        .matchHeader('Authorization', `Bearer ${accessToken}`)
         .reply(200, {}, { 'content-type': 'application/json' });
 
       await client.request('GET', '/test/path');
@@ -283,13 +275,23 @@ describe('AemClient', () => {
         body: JSON.stringify({ data: 'test' }),
       });
     });
+
+    it('should call imsClient.getServiceAccessToken to get token', async () => {
+      nock(baseUrl)
+        .get('/test/path')
+        .reply(200, {}, { 'content-type': 'application/json' });
+
+      await client.request('GET', '/test/path');
+
+      expect(mockImsClient.getServiceAccessToken).to.have.been.calledOnce;
+    });
   });
 
   describe('getFragments', () => {
     let client;
 
     beforeEach(() => {
-      client = new AemClient(baseUrl, authToken, log);
+      client = new AemClient(baseUrl, mockImsClient, log);
     });
 
     it('should fetch fragments successfully', async () => {
