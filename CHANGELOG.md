@@ -1,3 +1,10 @@
+## [1.265.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.265.1...v1.265.2) (2025-12-04)
+
+
+### Bug Fixes
+
+* scrape only top pages ([#1731](https://github.com/adobe/spacecat-audit-worker/issues/1731)) ([eb2f40c](https://github.com/adobe/spacecat-audit-worker/commit/eb2f40cad4f005d306aa4151d4093852d5c41165))
+
 ## [1.265.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.265.0...v1.265.1) (2025-12-03)
 
 
