@@ -452,6 +452,19 @@ async function prepareDomainWideAggregateSuggestion(
     0,
   );
 
+  // Sum up AI-readable percentages from all suggestions
+  const totalAiReadablePercent = preRenderSuggestions.reduce(
+    (sum, s) => {
+      const wordCountBefore = s.wordCountBefore || 0;
+      const wordCountAfter = s.wordCountAfter || 0;
+      const percent = wordCountAfter > 0
+        ? Math.round((wordCountBefore / wordCountAfter) * 100)
+        : 0;
+      return sum + percent;
+    },
+    0,
+  );
+
   // Calculate total agentic traffic for all audited URLs
   let totalAgenticTraffic = 0;
   auditedUrls.forEach((url) => {
@@ -472,11 +485,6 @@ async function prepareDomainWideAggregateSuggestion(
 
   // Array of allowed regex patterns (prepares for future blockedRegexPatterns)
   const allowedRegexPatterns = [domainRegex];
-
-  // Calculate % AI-readable content based on total word counts
-  const totalAiReadablePercent = totalWordCountAfter > 0
-    ? Math.round((totalWordCountBefore / totalWordCountAfter) * 100)
-    : 0;
 
   // Domain-wide suggestion data matching the schema of individual suggestions
   // This applies to ALL URLs in the domain, including the qualified & prioritized URLs

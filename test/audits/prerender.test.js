@@ -1200,11 +1200,12 @@ describe('Prerender Audit', () => {
           expect(domainWideSuggestion.data.displayAnnotations.wordCountBefore).to.equal('100+');
           expect(domainWideSuggestion.data.displayAnnotations.wordCountAfter).to.equal('150+');
 
-          // Verify calculated AI-readable percentage based on totals
-          // (450 / 850) * 100 ≈ 53%
+          // Verify calculated AI-readable percentage (sum of individual percentages)
+          // URL1: (100/300)*100 = 33%, URL2: (200/400)*100 = 50%, URL3: (150/150)*100 = 100%
+          // Total: 33 + 50 + 100 = 183
           expect(domainWideSuggestion.data).to.have.property('aiReadablePercent');
           expect(domainWideSuggestion.data.aiReadablePercent).to.be.a('number');
-          expect(domainWideSuggestion.data.aiReadablePercent).to.equal(53);
+          expect(domainWideSuggestion.data.aiReadablePercent).to.equal(183);
 
           // Verify high rank for appearing first
           expect(domainWideSuggestion.rank).to.equal(999999);
