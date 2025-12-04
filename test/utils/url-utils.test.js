@@ -149,6 +149,27 @@ describe('parseCustomUrls Function', () => {
   });
 });
 
+describe('isPdfUrl', () => {
+  it('should return true for PDF URLs', () => {
+    expect(utils.isPdfUrl('https://example.com/document.pdf')).to.be.true;
+    expect(utils.isPdfUrl('https://example.com/guide.PDF')).to.be.true;
+    expect(utils.isPdfUrl('https://example.com/files/report.pdf')).to.be.true;
+  });
+
+  it('should return false for non-PDF URLs', () => {
+    expect(utils.isPdfUrl('https://example.com/page.html')).to.be.false;
+    expect(utils.isPdfUrl('https://example.com/image.jpg')).to.be.false;
+    expect(utils.isPdfUrl('https://example.com/document')).to.be.false;
+  });
+
+  it('should handle invalid URLs gracefully', () => {
+    expect(utils.isPdfUrl('invalid-url')).to.be.false;
+    expect(utils.isPdfUrl('not-a-url-at-all')).to.be.false;
+    expect(utils.isPdfUrl('')).to.be.false;
+    expect(utils.isPdfUrl(null)).to.be.false;
+  });
+});
+
 describe('filterBrokenSuggestedUrls', () => {
   let fetchStub;
   let prependSchemaStub;
@@ -236,6 +257,28 @@ describe('filterBrokenSuggestedUrls', () => {
 
     const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
     expect(result).to.deep.equal(['https://www.example.com/page2']);
+  });
+
+  it('should filter out PDF URLs', async () => {
+    const suggestedUrls = [
+      'https://www.example.com/document.pdf',
+      'https://www.example.com/page1',
+      'https://www.example.com/guide.PDF',
+    ];
+
+    nock('https://example.com')
+      .get('/page1').reply(200);
+
+    const mockLog = {
+      warn: sinon.spy(),
+    };
+
+    const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL, mockLog);
+    expect(result).to.deep.equal(['https://www.example.com/page1']);
+
+    // Verify PDF files were logged as rejected
+    expect(mockLog.warn).to.have.been.calledWith('[URL Filter] REJECTED https://www.example.com/document.pdf - URL is a PDF');
+    expect(mockLog.warn).to.have.been.calledWith('[URL Filter] REJECTED https://www.example.com/guide.PDF - URL is a PDF');
   });
 });
 
