@@ -67,14 +67,16 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 
     // 5. Filter only inaccessible links and transform for further processing
     // Also filter by audit scope (subpath/locale) if baseURL has a subpath
-    const baseURL = site.getBaseURL();
+    // Use overrideBaseURL if configured for HTTP/2 compatibility
+    const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+    const baseURL = overrideBaseURL || site.getBaseURL();
     const inaccessibleLinks = accessibilityResults
       .filter((result) => result.inaccessible)
       .filter((result) => (
         // Filter broken links to only include those within audit scope
         // Both url_from and url_to should be within scope
         isWithinAuditScope(result.link.url_from, baseURL)
-          && isWithinAuditScope(result.link.url_to, baseURL)
+        && isWithinAuditScope(result.link.url_to, baseURL)
       ))
       .map((result) => ({
         urlFrom: result.link.url_from,
@@ -137,7 +139,9 @@ export async function prepareScrapingStep(context) {
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
   // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
-  const baseURL = site.getBaseURL();
+  // Use overrideBaseURL if configured for HTTP/2 compatibility
+  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+  const baseURL = overrideBaseURL || site.getBaseURL();
   const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
 
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope`);
@@ -245,7 +249,9 @@ export const opportunityAndSuggestionsStep = async (context) => {
   // - If baseURL is "site.com" → ALL locales alternatives
   // Mystique will then filter by domain (not locale), so cross-locale suggestions
   // are possible if audit scope includes multiple locales
-  const baseURL = site.getBaseURL();
+  // Use overrideBaseURL if configured for HTTP/2 compatibility
+  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+  const baseURL = overrideBaseURL || site.getBaseURL();
   const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
 
   log.info(

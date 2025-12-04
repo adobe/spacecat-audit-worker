@@ -43,7 +43,7 @@ async function filterOutValidBacklinks(backlinks, log) {
   const isStillBrokenBacklink = async (backlink) => {
     const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
     if (!response.ok && response.status !== 404
-        && response.status >= 400 && response.status < 500) {
+      && response.status >= 400 && response.status < 500) {
       log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
     }
     return !response.ok;
@@ -120,7 +120,9 @@ export async function submitForScraping(context) {
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
   // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
-  const baseURL = site.getBaseURL();
+  // Use overrideBaseURL if configured for HTTP/2 compatibility
+  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+  const baseURL = overrideBaseURL || site.getBaseURL();
   const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
 
   log.info(`Found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope`);
@@ -212,7 +214,9 @@ export const generateSuggestionData = async (context) => {
 
   // Get top pages and filter by audit scope
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  const baseURL = site.getBaseURL();
+  // Use overrideBaseURL if configured for HTTP/2 compatibility
+  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+  const baseURL = overrideBaseURL || site.getBaseURL();
   const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
 
   // Filter alternatives by locales/subpaths present in broken links
