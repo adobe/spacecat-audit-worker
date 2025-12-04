@@ -14,7 +14,6 @@ import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { load as cheerioLoad } from 'cheerio';
-
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -23,6 +22,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
+import { getDomElementSelector } from '../utils/dom-selector.js';
 
 const auditType = Audit.AUDIT_TYPES.HEADINGS;
 
@@ -104,77 +104,7 @@ function getScrapeJsonPath(url, siteId) {
  * @returns {string} A CSS selector string that uniquely identifies the element
  */
 export function getHeadingSelector(heading) {
-  // Works with cheerio elements only
-  if (!heading || !heading.name) {
-    return null;
-  }
-
-  const { name, attribs, parent } = heading;
-  const tag = name.toLowerCase();
-  let selectors = [tag];
-
-  // 1. Check for ID (most specific - return immediately)
-  const id = attribs?.id;
-  if (id) {
-    return `${tag}#${id}`;
-  }
-
-  // 2. Add classes if available
-  const className = attribs?.class;
-  if (className && typeof className === 'string') {
-    const classes = className.trim().split(/\s+/).filter(Boolean);
-    if (classes.length > 0) {
-      const classSelector = classes.slice(0, 2).join('.');
-      selectors = [`${tag}.${classSelector}`];
-    }
-  }
-
-  // 3. Add nth-of-type if multiple siblings of same tag exist
-  if (parent && parent.children) {
-    const siblingsOfSameTag = parent.children.filter(
-      (child) => child.type === 'tag' && child.name === name,
-    );
-
-    if (siblingsOfSameTag.length > 1) {
-      const index = siblingsOfSameTag.indexOf(heading) + 1;
-      selectors.push(`:nth-of-type(${index})`);
-    }
-  }
-
-  const selector = selectors.join('');
-
-  // 4. Build path with parent selectors for more specificity (max 3 levels)
-  const pathParts = [selector];
-  let current = parent;
-  let levels = 0;
-
-  while (current && current.name && current.name.toLowerCase() !== 'html' && levels < 3) {
-    let parentSelector = current.name.toLowerCase();
-
-    // If parent has ID, use it and stop (ID is unique enough)
-    const parentId = current.attribs?.id;
-    if (parentId) {
-      pathParts.unshift(`#${parentId}`);
-      break;
-    }
-
-    // Add parent classes (limit to first 2 for readability)
-    const parentClassName = current.attribs?.class;
-    if (parentClassName && typeof parentClassName === 'string') {
-      const classes = parentClassName.trim().split(/\s+/).filter(Boolean);
-      if (classes.length > 0) {
-        const classSelector = classes.slice(0, 2).join('.');
-        parentSelector = `${parentSelector}.${classSelector}`;
-      }
-    }
-
-    pathParts.unshift(parentSelector);
-    current = current.parent;
-    levels += 1;
-  }
-
-  // 5. Join with '>' (direct child combinator)
-  return pathParts.join(' > ');
+  return getDomElementSelector(heading);
 }
 
 export async function getH1HeadingASuggestion(url, log, pageTags, context, brandGuidelines) {
@@ -269,6 +199,7 @@ export async function validatePageHeadingFromScrapeJson(
     const checks = [];
 
     const h1Elements = headings.filter((h) => $(h).prop('tagName') === 'H1');
+    const h1Selectors = h1Elements.map((h) => getHeadingSelector(h)).filter(Boolean);
 
     if (h1Elements.length === 0) {
       log.debug(`Missing h1 element detected at ${url}`);
@@ -297,6 +228,7 @@ export async function validatePageHeadingFromScrapeJson(
         explanation: `Found ${h1Elements.length} h1 elements: ${HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation}`,
         suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
         count: h1Elements.length,
+        selectors: h1Selectors,
       });
     } else if (getTextContent(h1Elements[0], $).length === 0
       || getTextContent(h1Elements[0], $).length > H1_LENGTH_CHARS) {
@@ -318,6 +250,7 @@ export async function validatePageHeadingFromScrapeJson(
           scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
         },
         pageTags,
+        selectors: h1Selector ? [h1Selector] : [],
       });
     }
 
@@ -343,6 +276,7 @@ export async function validatePageHeadingFromScrapeJson(
             },
             tagName,
             pageTags,
+            selectors: headingSelector ? [headingSelector] : [],
           };
         }
       }
@@ -361,7 +295,11 @@ export async function validatePageHeadingFromScrapeJson(
         const prevLevel = getHeadingLevel(prev.tagName);
         const curLevel = getHeadingLevel(cur.tagName);
         if (curLevel - prevLevel > 1) {
-          invalidJumps.push({ previous: `h${prevLevel}`, current: `h${curLevel}` });
+          invalidJumps.push({
+            previous: `h${prevLevel}`,
+            current: `h${curLevel}`,
+            selector: getHeadingSelector(cur),
+          });
           log.debug(`Heading level jump detected at ${url}: h${prevLevel} → h${curLevel}`);
         }
       }
@@ -375,6 +313,7 @@ export async function validatePageHeadingFromScrapeJson(
           success: false,
           explanation: `${HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation} Invalid jumps found: ${jumpDetails}`,
           suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
+          selectors: invalidJumps.map((jump) => jump.selector).filter(Boolean),
         });
       }
     }
