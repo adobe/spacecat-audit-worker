@@ -481,6 +481,54 @@ describe('Prerender Audit', () => {
         // Unique union => 3
         expect(urls.length).to.equal(3);
       });
+
+      it('should handle undefined topPages list from SiteTopPage gracefully', async () => {
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-athena-client': {
+            // No agentic URLs for this test
+            AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
+          },
+          '../../src/prerender/utils/shared.js': {
+            generateReportingPeriods: () => ({
+              weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+            }),
+            getS3Config: async () => ({
+              databaseName: 'db',
+              tableName: 'tbl',
+              getAthenaTempLocation: () => 's3://tmp/',
+            }),
+            weeklyBreakdownQueries: {
+              createAgenticReportQuery: async () => 'SELECT 1',
+              createTopUrlsQueryWithLimit: async () => 'SELECT 2',
+            },
+            loadLatestAgenticSheet: async () => ({
+              weekId: 'w45-2025',
+              baseUrl: 'https://example.com',
+              rows: [],
+            }),
+          },
+        });
+
+        const mockSiteTopPage = {
+          // Return undefined to exercise `(topPages || [])` fallback in getTopOrganicUrlsFromAhrefs
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(undefined),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: { SiteTopPage: mockSiteTopPage },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+        };
+
+        const result = await mockHandler.submitForScraping(context);
+
+        expect(result).to.be.an('object');
+        expect(result.urls).to.be.an('array');
+      });
     });
 
     describe('processContentAndGenerateOpportunities', () => {
@@ -546,6 +594,76 @@ describe('Prerender Audit', () => {
         expect(result).to.be.an('object');
         expect(result.status).to.equal('complete');
         expect(result.auditResult).to.be.an('object');
+      });
+
+      it('should warn when Athena returns no agentic rows and agentic URL fallback fails', async () => {
+        const athenaQueryStub = sinon.stub().resolves([]);
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-athena-client': {
+            AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
+          },
+          '../../src/prerender/utils/shared.js': {
+            generateReportingPeriods: () => ({
+              weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+            }),
+            getS3Config: async () => ({
+              databaseName: 'db',
+              tableName: 'tbl',
+              getAthenaTempLocation: () => 's3://tmp/',
+            }),
+            weeklyBreakdownQueries: {
+              createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+            },
+          },
+        });
+
+        const infoStub = sandbox.stub();
+        infoStub.callsFake((msg) => {
+          // Allow normal info logging except for the specific fallback message
+          if (msg && msg.includes('No agentic URLs from Athena; attempting Sheet fallback')) {
+            throw new Error('info log failed');
+          }
+        });
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: {
+              // No top pages, we don't want to exercise that path here
+              allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+            },
+          },
+          log: {
+            info: infoStub,
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          scrapeResultPaths: new Map(),
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result).to.be.an('object');
+        expect(result.status).to.equal('complete');
+        expect(result.auditResult).to.be.an('object');
+
+        // Line 85-87: warning when Athena returns no agentic rows
+        expect(context.log.warn).to.have.been.calledWith(
+          'Prerender - Athena returned no agentic rows. baseUrl=https://example.com',
+        );
+
+        // Lines 540-541: warning when fetching agentic URLs for fallback fails
+        expect(context.log.warn).to.have.been.calledWith(
+          'Prerender - Failed to fetch agentic URLs for fallback: info log failed. baseUrl=https://example.com',
+        );
       });
 
       it('should process URLs with scrape result paths', async () => {
@@ -1428,6 +1546,368 @@ describe('Prerender Audit', () => {
       // Top-level catch logs error (not warn)
       expect(err.called).to.be.true;
       expect(err.args.some(a => String(a[0]).includes('Audit failed')) || err.args.some(a => String(a[0]).includes('config failed'))).to.be.true;
+    });
+
+    it('should handle missing SiteTopPage without errors (no top organic URLs)', async () => {
+      const athenaQueryStub = sinon.stub().resolves([]);
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+            periodIdentifier: 'w45-2025',
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+            createAgenticReportQuery: sinon.stub().resolves('SELECT 2'),
+          },
+          loadLatestAgenticSheet: async () => ({
+            weekId: 'w45-2025',
+            baseUrl: 'https://example.com',
+            rows: [],
+          }),
+          buildSheetHitsMap: (rows) => new Map(rows.map((r) => [r.url, r.number_of_hits])),
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        // Intentionally omit SiteTopPage to exercise the "no top pages" branch in getTopOrganicUrlsFromAhrefs
+        dataAccess: {},
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+      };
+
+      const res = await mockHandler.submitForScraping(ctx);
+      expect(res).to.be.an('object');
+      expect(res.urls).to.be.an('array');
+    });
+
+    it('should handle Athena results with missing url fields', async () => {
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: {
+            fromContext: () => ({
+              query: async () => ([
+                // First row has no url field and should be filtered out
+                { number_of_hits: 5 },
+                // Second row has a valid url and should be kept
+                { url: '/valid', number_of_hits: 3 },
+              ]),
+            }),
+          },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+          },
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+      };
+
+      const res = await mockHandler.submitForScraping(ctx);
+      const urls = res.urls.map((u) => u.url);
+      // Only the row with a defined url should be included
+      expect(urls).to.include('https://example.com/valid');
+      expect(urls.filter((u) => u === undefined).length).to.equal(0);
+    });
+
+    it('should handle sheet load failures gracefully even when log.warn is missing', async () => {
+      const athenaQueryStub = sinon.stub().resolves([]);
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+            periodIdentifier: 'w45-2025',
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            aggregatedLocation: 'agg/',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+          },
+          loadLatestAgenticSheet: async () => {
+            throw new Error('Sheet load failed');
+          },
+          buildSheetHitsMap: (rows) => new Map(rows.map((r) => [r.url, r.number_of_hits])),
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
+        log: {
+          info: sinon.stub(),
+          debug: sinon.stub(),
+          // Intentionally omit warn to exercise optional chaining in getTopAgenticUrlsFromSheet
+        },
+      };
+
+      const res = await mockHandler.submitForScraping(ctx);
+      expect(res).to.be.an('object');
+      expect(res.urls).to.be.an('array');
+    });
+
+    it('should log detailed fallback message when building URL list from fallbacks', async () => {
+      const html = '<html><body><p>x</p></body></html>';
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: {
+            fromContext: () => ({
+              query: async () => ([
+                { url: '/agentic', number_of_hits: 10 },
+              ]),
+            }),
+          },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createAgenticReportQuery: async () => 'SELECT 1',
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 2'),
+          },
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => html,
+        },
+      });
+
+      const info = sinon.stub();
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getIncludedURLs: () => ['https://example.com/included'],
+          }),
+        },
+        audit: { getId: () => 'a' },
+        dataAccess: {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => 'https://example.com/top1' },
+            ]),
+          },
+        },
+        log: { info, warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
+        s3Client: { send: sinon.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        // Empty scrapeResultPaths to force fallback URL list composition branch
+        scrapeResultPaths: new Map(),
+      };
+
+      const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
+      expect(res.status).to.equal('complete');
+
+      const loggedFallback = info.args
+        .map((a) => String(a[0]))
+        .find((msg) => msg.includes('Prerender - Fallback for baseUrl=https://example.com, siteId=site.'));
+
+      expect(loggedFallback).to.exist;
+      expect(loggedFallback).to.include('agenticURLs=1');
+      expect(loggedFallback).to.include('topPages=1');
+      expect(loggedFallback).to.include('includedURLs=1');
+    });
+
+    it('should handle missing dataAccess when loading top pages', async () => {
+      const html = '<html><body><p>x</p></body></html>';
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: {
+            fromContext: () => ({
+              // No agentic URLs for this test
+              query: async () => [],
+            }),
+          },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+            createAgenticReportQuery: sinon.stub().resolves('SELECT 2'),
+          },
+          loadLatestAgenticSheet: async () => ({
+            weekId: 'w45-2025',
+            baseUrl: 'https://example.com',
+            rows: [],
+          }),
+          buildSheetHitsMap: (rows) => new Map(rows.map((r) => [r.url, r.number_of_hits])),
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectFromKey: async () => html,
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        // Intentionally omit dataAccess to exercise `dataAccess || {}` branch in getTopOrganicUrlsFromAhrefs
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
+        s3Client: { send: sinon.stub().resolves({}) },
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      };
+
+      const res = await mockHandler.submitForScraping(ctx);
+      expect(res).to.be.an('object');
+      expect(res.urls).to.be.an('array');
+    });
+
+    it('should handle missing site.getBaseURL when mapping agentic URLs from Athena', async () => {
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: {
+            fromContext: () => ({
+              query: async () => ([
+                { url: '/from-athena', number_of_hits: 10 },
+              ]),
+            }),
+          },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+          },
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          // getBaseURL deliberately returns undefined to force `|| ''` fallback
+          getBaseURL: () => undefined,
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        dataAccess: {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+          },
+        },
+        log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
+      };
+
+      const res = await mockHandler.submitForScraping(ctx);
+      const urls = res.urls.map((u) => u.url);
+      // With empty baseUrl, new URL(path, baseUrl) will throw and we fall back to raw path
+      expect(urls).to.include('/from-athena');
+    });
+
+    it('should log sheet fallback error message when error has no message field', async () => {
+      const athenaQueryStub = sinon.stub().resolves([]);
+      const warn = sinon.stub();
+
+      const mockHandler = await esmock('../../src/prerender/handler.js', {
+        '@adobe/spacecat-shared-athena-client': {
+          AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
+        },
+        '../../src/prerender/utils/shared.js': {
+          generateReportingPeriods: () => ({
+            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+            periodIdentifier: 'w45-2025',
+          }),
+          getS3Config: async () => ({
+            databaseName: 'db',
+            tableName: 'tbl',
+            aggregatedLocation: 'agg/',
+            getAthenaTempLocation: () => 's3://tmp/',
+          }),
+          weeklyBreakdownQueries: {
+            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
+          },
+          // Throw a primitive value so `e?.message` is falsy and `|| e` branch is taken
+          loadLatestAgenticSheet: async () => {
+            // eslint-disable-next-line no-throw-literal
+            throw 'sheet-broken';
+          },
+        },
+      });
+
+      const ctx = {
+        site: {
+          getId: () => 'site',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        },
+        dataAccess: {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+          },
+        },
+        log: {
+          info: sinon.stub(),
+          warn,
+          debug: sinon.stub(),
+        },
+      };
+
+      const res = await mockHandler.submitForScraping(ctx);
+      expect(res).to.be.an('object');
+      expect(res.urls).to.be.an('array');
+
+      const warnArgs = warn.args.map((a) => String(a[0]));
+      expect(warnArgs.some((msg) => msg.includes('Sheet-based agentic URL fetch failed'))).to.be.true;
+      expect(warnArgs.some((msg) => msg.includes('sheet-broken'))).to.be.true;
     });
   });
 
