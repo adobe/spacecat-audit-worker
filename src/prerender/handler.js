@@ -382,7 +382,7 @@ export async function createScrapeForbiddenOpportunity(auditUrl, auditData, cont
 }
 
 /**
- * Creates a domain-wide master suggestion that covers all URLs
+ * Creates a domain-wide aggregate suggestion that covers all URLs
  * This is an additional suggestion (n+1) that acts as a superset
  * @param {Object} opportunity - The opportunity object
  * @param {Array} preRenderSuggestions - Array of individual suggestions
@@ -390,7 +390,12 @@ export async function createScrapeForbiddenOpportunity(auditUrl, auditData, cont
  * @param {Object} context - Processing context
  * @returns {Promise<void>}
  */
-async function syncDomainWideMasterSuggestion(opportunity, preRenderSuggestions, baseUrl, context) {
+async function syncDomainWideAggregateSuggestion(
+  opportunity,
+  preRenderSuggestions,
+  baseUrl,
+  context,
+) {
   const { log } = context;
 
   const sampleUrls = preRenderSuggestions.map((s) => s.url);
@@ -428,16 +433,16 @@ async function syncDomainWideMasterSuggestion(opportunity, preRenderSuggestions,
   const escapedBaseUrl = baseUrlObj.origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const domainRegex = `${escapedBaseUrl}/.*`;
 
-  // Master suggestion data matching the schema of individual suggestions
+  // Domain-wide suggestion data matching the schema of individual suggestions
   // This applies to ALL URLs in the domain, not just the audited sample
-  const masterSuggestionData = {
+  const domainWideSuggestionData = {
     // Special marker to indicate this covers the entire domain
     url: `${baseUrl}/* (All Domain URLs)`,
     contentGainRatio: Number(avgContentGainRatio.toFixed(2)),
     wordCountBefore: avgWordCountBefore, // Average from sample
     wordCountAfter: avgWordCountAfter, // Average from sample
     // Additional metadata for domain-wide configuration
-    isDomainWideMaster: true,
+    isDomainWide: true,
     regex: domainRegex,
     pathPattern: '/*',
     scope: 'domain-wide',
@@ -447,14 +452,14 @@ async function syncDomainWideMasterSuggestion(opportunity, preRenderSuggestions,
     note: `This configuration applies to ALL URLs in the domain, not just the ${sampleCount} audited URL${sampleCount > 1 ? 's' : ''}. Metrics shown are based on the audited sample.`,
   };
 
-  // Use a constant key to ensure only one master suggestion exists
-  const MASTER_SUGGESTION_KEY = 'domain-wide-master|prerender';
+  // Use a constant key to ensure only one domain-wide suggestion exists
+  const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
 
-  // Sync master suggestion using the same pattern as individual suggestions
-  // This ensures only one master suggestion exists and gets updated on subsequent runs
+  // Sync domain-wide suggestion using the same pattern as individual suggestions
+  // This ensures only one domain-wide suggestion exists and gets updated on subsequent runs
   await syncSuggestions({
     opportunity,
-    newData: [{ key: MASTER_SUGGESTION_KEY, data: masterSuggestionData }],
+    newData: [{ key: DOMAIN_WIDE_SUGGESTION_KEY, data: domainWideSuggestionData }],
     context,
     buildKey: (data) => data.key,
     mapNewSuggestion: (suggestion) => ({
@@ -466,7 +471,7 @@ async function syncDomainWideMasterSuggestion(opportunity, preRenderSuggestions,
     mergeDataFunction: (existingData, newDataItem) => newDataItem.data,
   });
 
-  log.info(`Prerender - Synced domain-wide master suggestion for entire domain with regex: ${domainRegex}. Based on ${sampleCount} audited URL(s).`);
+  log.info(`Prerender - Synced domain-wide aggregate suggestion for entire domain with regex: ${domainRegex}. Based on ${sampleCount} audited URL(s).`);
 }
 
 /**
@@ -539,8 +544,8 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
 
   log.info(`Prerender - Successfully synced suggestions=${preRenderSuggestions.length} for baseUrl: ${auditUrl}, siteId: ${auditData.siteId}`);
 
-  // Create additional domain-wide master suggestion (n+1) that covers all URLs
-  await syncDomainWideMasterSuggestion(opportunity, preRenderSuggestions, auditUrl, context);
+  // Create additional domain-wide aggregate suggestion (n+1) that covers all URLs
+  await syncDomainWideAggregateSuggestion(opportunity, preRenderSuggestions, auditUrl, context);
 }
 
 /**

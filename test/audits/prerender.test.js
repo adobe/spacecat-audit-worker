@@ -974,7 +974,7 @@ describe('Prerender Audit', () => {
         expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
       });
 
-      it('should create domain-wide master suggestion with correct aggregate metrics', async () => {
+      it('should create domain-wide aggregate suggestion with correct aggregate metrics', async () => {
         const mockOpportunity = {
           getId: () => 'test-opportunity-id',
         };
@@ -1040,41 +1040,41 @@ describe('Prerender Audit', () => {
           // May fail due to complex dependencies, but we can check created suggestions
         }
 
-        // Find the domain-wide master suggestion
-        const masterSuggestion = createdSuggestions.find(
-          (s) => s.data.isDomainWideMaster === true,
+        // Find the domain-wide aggregate suggestion
+        const domainWideSuggestion = createdSuggestions.find(
+          (s) => s.data.isDomainWide === true,
         );
 
-        if (masterSuggestion) {
-          // Verify domain-wide master suggestion properties
-          expect(masterSuggestion.data.url).to.equal('https://example.com/* (All Domain URLs)');
-          expect(masterSuggestion.data.isDomainWideMaster).to.be.true;
-          expect(masterSuggestion.data.regex).to.equal('https://example\\.com/.*');
-          expect(masterSuggestion.data.pathPattern).to.equal('/*');
-          expect(masterSuggestion.data.scope).to.equal('domain-wide');
+        if (domainWideSuggestion) {
+          // Verify domain-wide aggregate suggestion properties
+          expect(domainWideSuggestion.data.url).to.equal('https://example.com/* (All Domain URLs)');
+          expect(domainWideSuggestion.data.isDomainWide).to.be.true;
+          expect(domainWideSuggestion.data.regex).to.equal('https://example\\.com/.*');
+          expect(domainWideSuggestion.data.pathPattern).to.equal('/*');
+          expect(domainWideSuggestion.data.scope).to.equal('domain-wide');
 
           // Verify aggregate metrics (averages)
           // Average contentGainRatio: (3.0 + 2.0 + 1.0) / 3 = 2.0
-          expect(masterSuggestion.data.contentGainRatio).to.equal(2.0);
+          expect(domainWideSuggestion.data.contentGainRatio).to.equal(2.0);
 
           // Average wordCountBefore: (100 + 200 + 150) / 3 = 150
-          expect(masterSuggestion.data.wordCountBefore).to.equal(150);
+          expect(domainWideSuggestion.data.wordCountBefore).to.equal(150);
 
           // Average wordCountAfter: (300 + 400 + 150) / 3 ≈ 283
-          expect(masterSuggestion.data.wordCountAfter).to.equal(283);
+          expect(domainWideSuggestion.data.wordCountAfter).to.equal(283);
 
           // Verify metadata
-          expect(masterSuggestion.data.sampleSize).to.equal(3);
-          expect(masterSuggestion.data.sampleUrls).to.have.length(3);
-          expect(masterSuggestion.data.description).to.include('entire domain');
-          expect(masterSuggestion.data.note).to.include('ALL URLs in the domain');
+          expect(domainWideSuggestion.data.sampleSize).to.equal(3);
+          expect(domainWideSuggestion.data.sampleUrls).to.have.length(3);
+          expect(domainWideSuggestion.data.description).to.include('entire domain');
+          expect(domainWideSuggestion.data.note).to.include('ALL URLs in the domain');
 
           // Verify high rank for appearing first
-          expect(masterSuggestion.rank).to.equal(999999);
+          expect(domainWideSuggestion.rank).to.equal(999999);
         }
       });
 
-      it('should create domain-wide master suggestion even with single URL', async () => {
+      it('should create domain-wide aggregate suggestion even with single URL', async () => {
         const mockOpportunity = {
           getId: () => 'test-opportunity-id',
         };
@@ -1126,20 +1126,20 @@ describe('Prerender Audit', () => {
           // May fail due to complex dependencies
         }
 
-        // Find the domain-wide master suggestion
-        const masterSuggestion = createdSuggestions.find(
-          (s) => s.data.isDomainWideMaster === true,
+        // Find the domain-wide aggregate suggestion
+        const domainWideSuggestion = createdSuggestions.find(
+          (s) => s.data.isDomainWide === true,
         );
 
-        if (masterSuggestion) {
-          // Should create master suggestion even with single URL
-          expect(masterSuggestion.data.url).to.equal('https://example.com/* (All Domain URLs)');
-          expect(masterSuggestion.data.sampleSize).to.equal(1);
-          expect(masterSuggestion.data.contentGainRatio).to.equal(5.0);
+        if (domainWideSuggestion) {
+          // Should create domain-wide suggestion even with single URL
+          expect(domainWideSuggestion.data.url).to.equal('https://example.com/* (All Domain URLs)');
+          expect(domainWideSuggestion.data.sampleSize).to.equal(1);
+          expect(domainWideSuggestion.data.contentGainRatio).to.equal(5.0);
         }
       });
 
-      it('should use constant key for domain-wide master suggestion to ensure uniqueness', async () => {
+      it('should use constant key for domain-wide aggregate suggestion to ensure uniqueness', async () => {
         const mockOpportunity = {
           getId: () => 'test-opportunity-id',
         };
@@ -1189,7 +1189,7 @@ describe('Prerender Audit', () => {
 
         // Verify logging mentions domain-wide suggestion sync
         const logCalls = logStub.info.getCalls().map((call) => call.args[0]);
-        const domainWideSuggestionLog = logCalls.find((msg) => msg.includes('domain-wide master suggestion'));
+        const domainWideSuggestionLog = logCalls.find((msg) => msg.includes('domain-wide aggregate suggestion'));
 
         if (domainWideSuggestionLog) {
           expect(domainWideSuggestionLog).to.include('entire domain');
@@ -1197,7 +1197,7 @@ describe('Prerender Audit', () => {
         }
       });
 
-      it('should properly execute syncSuggestions with master suggestion mapper and merge functions', async () => {
+      it('should properly execute syncSuggestions with domain-wide aggregate suggestion mapper and merge functions', async () => {
         // This test specifically ensures lines 460-466 are covered (mapNewSuggestion and mergeDataFunction)
         const mockOpportunity = { getId: () => 'test-opp-id' };
         const syncSuggestionsStub = sinon.stub().resolves();
@@ -1244,15 +1244,15 @@ describe('Prerender Audit', () => {
 
         await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
-        // Verify syncSuggestions was called twice (individual + master)
+        // Verify syncSuggestions was called twice (individual + domain-wide)
         expect(syncSuggestionsStub).to.have.been.calledTwice;
 
-        // Get the second call (master suggestion)
-        const masterCall = syncSuggestionsStub.getCall(1);
-        expect(masterCall).to.exist;
+        // Get the second call (domain-wide aggregate suggestion)
+        const domainWideCall = syncSuggestionsStub.getCall(1);
+        expect(domainWideCall).to.exist;
 
         // Extract and test the mapNewSuggestion function (covers lines 460-465)
-        const { mapNewSuggestion, mergeDataFunction, newData } = masterCall.args[0];
+        const { mapNewSuggestion, mergeDataFunction, newData } = domainWideCall.args[0];
 
         // Test mapNewSuggestion function execution
         const testSuggestion = newData[0];
@@ -1262,11 +1262,11 @@ describe('Prerender Audit', () => {
         expect(mappedSuggestion).to.have.property('type', 'CONFIG_UPDATE');
         expect(mappedSuggestion).to.have.property('rank', 999999);
         expect(mappedSuggestion).to.have.property('data');
-        expect(mappedSuggestion.data).to.have.property('isDomainWideMaster', true);
+        expect(mappedSuggestion.data).to.have.property('isDomainWide', true);
 
         // Test mergeDataFunction execution (covers line 466)
         const existingData = { oldField: 'preserved' };
-        const newDataItem = { key: 'domain-wide-master|prerender', data: { newField: 'value' } };
+        const newDataItem = { key: 'domain-wide-aggregate|prerender', data: { newField: 'value' } };
         const mergedData = mergeDataFunction(existingData, newDataItem);
 
         expect(mergedData).to.deep.equal({ newField: 'value' });
@@ -2662,14 +2662,14 @@ describe('Prerender Audit', () => {
         expect(mergedData).to.not.have.property('agenticTraffic');
         expect(mergedData).to.not.have.property('needsPrerender'); // Filtered out by mapSuggestionData
 
-        // Second call: Verify the domain-wide master suggestion
-        const masterSyncCall = syncSuggestionsStub.getCall(1);
-        expect(masterSyncCall.args[0]).to.have.property('newData');
-        expect(masterSyncCall.args[0].newData).to.be.an('array').with.lengthOf(1);
-        expect(masterSyncCall.args[0].newData[0]).to.have.property('key', 'domain-wide-master|prerender');
-        expect(masterSyncCall.args[0].newData[0].data).to.have.property('isDomainWideMaster', true);
-        expect(masterSyncCall.args[0].newData[0].data).to.have.property('regex');
-        expect(masterSyncCall.args[0].newData[0].data.url).to.include('All Domain URLs');
+        // Second call: Verify the domain-wide aggregate suggestion
+        const domainWideSyncCall = syncSuggestionsStub.getCall(1);
+        expect(domainWideSyncCall.args[0]).to.have.property('newData');
+        expect(domainWideSyncCall.args[0].newData).to.be.an('array').with.lengthOf(1);
+        expect(domainWideSyncCall.args[0].newData[0]).to.have.property('key', 'domain-wide-aggregate|prerender');
+        expect(domainWideSyncCall.args[0].newData[0].data).to.have.property('isDomainWide', true);
+        expect(domainWideSyncCall.args[0].newData[0].data).to.have.property('regex');
+        expect(domainWideSyncCall.args[0].newData[0].data.url).to.include('All Domain URLs');
       });
 
       it('should update existing PRERENDER opportunity with all data fields', async () => {
