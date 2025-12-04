@@ -1605,7 +1605,7 @@ describe('Preflight Audit', () => {
       expect(audits.find((a) => a.name === AUDIT_LOREM_IPSUM)).to.not.exist;
     });
 
-    it('should keep job in progress when audit handler returns processing: true ', async () => {
+    it('should keep job in progress when audit handler returns processing: true', async () => {
       // Create a new test with its own setup that mocks readability to return processing: true
       const mockContext = new MockContextBuilder()
         .withSandbox(sinon.createSandbox())
@@ -1683,7 +1683,7 @@ describe('Preflight Audit', () => {
       expect(finalJobEntity.save).to.have.been.called;
     });
 
-    it('should handle null handlerResults and use fallback ', async () => {
+    it('should handle null handlerResults and use fallback', async () => {
       // This test covers the || [] fallback on line 269 when handlerResults is null/undefined
       const mockContext = new MockContextBuilder()
         .withSandbox(sinon.createSandbox())

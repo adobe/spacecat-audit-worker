@@ -608,7 +608,7 @@ describe('Sitemap Audit', () => {
       expect(result.success).to.equal(false);
     });
 
-    it('should handle missing details properties with fallback defaults ', async () => {
+    it('should handle missing details properties with fallback defaults', async () => {
       // Test the exact fallback logic directly by simulating the specific scenario
       // This is what the code does on lines 41-42:
       // const extractedPaths = siteMapUrlsResult.details?.extractedPaths || {};

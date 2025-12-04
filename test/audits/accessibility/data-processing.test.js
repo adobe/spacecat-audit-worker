@@ -3797,7 +3797,7 @@ describe('data-processing utility functions', () => {
       mockAuditType = 'accessibility';
     });
 
-    describe('initial data setup ', () => {
+    describe('initial data setup', () => {
       it('should correctly extract basic data from inputs', async () => {
         // Arrange
         const mockOpportunity = {
@@ -3977,7 +3977,7 @@ describe('data-processing utility functions', () => {
       });
     });
 
-    describe('in-depth report generation ', () => {
+    describe('in-depth report generation', () => {
       it('should successfully generate in-depth report opportunity', async () => {
         // Arrange
         const mockOpportunity = {
@@ -4173,7 +4173,7 @@ describe('data-processing utility functions', () => {
       });
     });
 
-    describe('enhanced report generation ', () => {
+    describe('enhanced report generation', () => {
       it('should successfully generate enhanced report opportunity', async () => {
         // Arrange
         const mockOpportunity = {
@@ -4434,7 +4434,7 @@ describe('data-processing utility functions', () => {
       });
     });
 
-    describe('fixed vs new report generation ', () => {
+    describe('fixed vs new report generation', () => {
       it('should successfully generate fixed vs new report opportunity', async () => {
         // Arrange
         const mockOpportunity = {
@@ -4768,7 +4768,7 @@ describe('data-processing utility functions', () => {
       });
     });
 
-    describe('base report generation ', () => {
+    describe('base report generation', () => {
       it('should successfully generate base report opportunity with shouldIgnore=false', async () => {
         // Arrange
         const mockOpportunity = {
@@ -5516,7 +5516,7 @@ describe('data-processing utility functions', () => {
       expect(mockExistingSuggestion.setData).to.not.have.been.called;
     });
 
-    it('should handle null getData() result ', async () => {
+    it('should handle null getData() result', async () => {
       // Arrange - test the ?? {} branch
       mockExistingSuggestion.getData.returns(null);
       const reportMarkdown = '# Content\n';
@@ -5538,7 +5538,7 @@ describe('data-processing utility functions', () => {
       expect(result.suggestion).to.equal(mockExistingSuggestion);
     });
 
-    it('should handle missing suggestionValue in currentData ', async () => {
+    it('should handle missing suggestionValue in currentData', async () => {
       // Arrange - test the ?? {} branch for suggestionValue
       mockExistingSuggestion.getData.returns({ someOtherField: 'value' });
       const reportMarkdown = '# Content\n';
@@ -5560,7 +5560,7 @@ describe('data-processing utility functions', () => {
       expect(result.suggestion).to.equal(mockExistingSuggestion);
     });
 
-    it('should handle empty reportMarkdown ', async () => {
+    it('should handle empty reportMarkdown', async () => {
       // Arrange - test the || 0 branch when reportMarkdown is empty
       mockOpportunity.getSuggestions.resolves([]);
       const reportMarkdown = ''; // Empty string
@@ -5581,7 +5581,7 @@ describe('data-processing utility functions', () => {
       expect(mockOpportunity.addSuggestions).to.have.been.called;
     });
 
-    it('should handle null reportMarkdown ', async () => {
+    it('should handle null reportMarkdown', async () => {
       // Arrange - test the ?. branch when reportMarkdown is null
       mockOpportunity.getSuggestions.resolves([]);
       const reportMarkdown = null;
@@ -5602,7 +5602,7 @@ describe('data-processing utility functions', () => {
       expect(result).to.exist;
     });
 
-    it('should handle missing accessibility-desktop in suggestionValue ', async () => {
+    it('should handle missing accessibility-desktop in suggestionValue', async () => {
       // Arrange - test the || 0 branch when accessibility-desktop is undefined
       mockExistingSuggestion.getData.returns({
         suggestionValue: {
@@ -5627,7 +5627,7 @@ describe('data-processing utility functions', () => {
       expect(mockExistingSuggestion.save).to.have.been.called;
     });
 
-    it('should handle missing accessibility-mobile in suggestionValue ', async () => {
+    it('should handle missing accessibility-mobile in suggestionValue', async () => {
       // Arrange - test the || 0 branch when accessibility-mobile is undefined
       mockExistingSuggestion.getData.returns({
         suggestionValue: {
@@ -5801,7 +5801,7 @@ describe('data-processing utility functions', () => {
       expect(mockOpportunity.getStatus).to.have.been.called;
     });
 
-    it('should not find opportunity with RESOLVED status ', async () => {
+    it('should not find opportunity with RESOLVED status', async () => {
       // Arrange - test that non-NEW and non-IGNORED statuses are filtered out
       const mockOpportunity = {
         getTitle: sandbox.stub().returns('Accessibility report - Desktop - Week 26 - 2024'),

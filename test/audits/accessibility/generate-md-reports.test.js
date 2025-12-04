@@ -85,7 +85,7 @@ describe('generate-md-reports utility functions', () => {
       expect(result).to.include('2. Another critical issue');
     });
 
-    it('should handle multiple sections and add previous section to result ', () => {
+    it('should handle multiple sections and add previous section to result', () => {
       const failureSummary = `Fix any of the following:
 First optional issue
 Second optional issue
@@ -134,7 +134,7 @@ Optional issue second`;
   });
 
   describe('generateAccessibilityComplianceIssuesVsTrafficSection', () => {
-    it('should handle pages with no traffic ', () => {
+    it('should handle pages with no traffic', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -159,7 +159,7 @@ Optional issue second`;
       expect(result).to.include('| https://example.com/page2 | 1K |'); // Should format traffic
     });
 
-    it('should handle pages with zero traffic ', () => {
+    it('should handle pages with zero traffic', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -176,7 +176,7 @@ Optional issue second`;
       expect(result).to.include('| https://example.com/page1 | - |'); // Should show '-' for zero traffic
     });
 
-    it('should handle pages with undefined traffic ', () => {
+    it('should handle pages with undefined traffic', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -193,7 +193,7 @@ Optional issue second`;
       expect(result).to.include('| https://example.com/page1 | - |'); // Should show '-' for undefined traffic
     });
 
-    it('should handle pages with empty levelA array ', () => {
+    it('should handle pages with empty levelA array', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -210,7 +210,7 @@ Optional issue second`;
       expect(result).to.include('| https://example.com/page1 | 1K | 1 | - | 1 x `focus-visible` |');
     });
 
-    it('should handle pages with empty levelAA array ', () => {
+    it('should handle pages with empty levelAA array', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -227,7 +227,7 @@ Optional issue second`;
       expect(result).to.include('| https://example.com/page1 | 1K | 1 | 1 x `color-contrast` | - |');
     });
 
-    it('should handle pages with both empty levelA and levelAA arrays ', () => {
+    it('should handle pages with both empty levelA and levelAA arrays', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -244,7 +244,7 @@ Optional issue second`;
       expect(result).to.include('| https://example.com/page1 | 1K | 0 | - | - |');
     });
 
-    it('should handle pages with multiple levelA issues ', () => {
+    it('should handle pages with multiple levelA issues', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -262,7 +262,7 @@ Optional issue second`;
       expect(result).to.include('| https://example.com/page1 | 1.5K | 4 | 1 x `color-contrast`, 2 x `aria-label`, 1 x `heading-order` | 1 x `focus-visible` |');
     });
 
-    it('should handle pages with multiple levelAA issues ', () => {
+    it('should handle pages with multiple levelAA issues', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -351,7 +351,7 @@ Optional issue second`;
   });
 
   describe('generateAccessibilityComplianceOverviewSection', () => {
-    it('should handle division by zero for previous counts ', () => {
+    it('should handle division by zero for previous counts', () => {
       const currentFile = {
         overall: {
           violations: {
@@ -376,7 +376,7 @@ Optional issue second`;
       expect(result).to.include('0.00%'); // Should handle division by zero gracefully
     });
 
-    it('should set seriousEmoji to 🔴 when seriousPercentage > 0 ', () => {
+    it('should set seriousEmoji to 🔴 when seriousPercentage > 0', () => {
       const currentFile = {
         overall: {
           violations: {
@@ -402,7 +402,7 @@ Optional issue second`;
       expect(result).to.include('100.00% 🔴'); // Should show red emoji for increase
     });
 
-    it('should set seriousEmoji to 🟢 when seriousPercentage = 0 ', () => {
+    it('should set seriousEmoji to 🟢 when seriousPercentage = 0', () => {
       const currentFile = {
         overall: {
           violations: {
@@ -428,7 +428,7 @@ Optional issue second`;
       expect(result).to.include('0.00% 🟢'); // Should show green emoji for no change
     });
 
-    it('should set seriousEmoji to 🟢 when seriousPercentage < 0 ', () => {
+    it('should set seriousEmoji to 🟢 when seriousPercentage < 0', () => {
       const currentFile = {
         overall: {
           violations: {
@@ -454,7 +454,7 @@ Optional issue second`;
       expect(result).to.include('-50.00% 🟢'); // Should show green emoji for decrease
     });
 
-    it('should set seriousEmoji to 🟢 when previous serious count is 0 ', () => {
+    it('should set seriousEmoji to 🟢 when previous serious count is 0', () => {
       const currentFile = {
         overall: {
           violations: {
@@ -480,7 +480,7 @@ Optional issue second`;
       expect(result).to.include('0.00% 🟢'); // Should show green emoji when no previous data
     });
 
-    it('should handle edge case where seriousPercentage is exactly 0.01 ', () => {
+    it('should handle edge case where seriousPercentage is exactly 0.01', () => {
       const currentFile = {
         overall: {
           violations: {
@@ -506,7 +506,7 @@ Optional issue second`;
       expect(result).to.include('0.01% 🔴'); // Should show red emoji for tiny increase
     });
 
-    it('should handle edge case where seriousPercentage is exactly -0.01 ', () => {
+    it('should handle edge case where seriousPercentage is exactly -0.01', () => {
       const currentFile = {
         overall: {
           violations: {
@@ -532,7 +532,7 @@ Optional issue second`;
       expect(result).to.include('-0.01% 🟢'); // Should show green emoji for tiny decrease
     });
 
-    it('should handle large positive seriousPercentage ', () => {
+    it('should handle large positive seriousPercentage', () => {
       const currentFile = {
         overall: {
           violations: {
@@ -558,7 +558,7 @@ Optional issue second`;
       expect(result).to.include('900.00% 🔴'); // Should show red emoji for large increase
     });
 
-    it('should handle large negative seriousPercentage ', () => {
+    it('should handle large negative seriousPercentage', () => {
       const currentFile = {
         overall: {
           violations: {
@@ -584,7 +584,7 @@ Optional issue second`;
       expect(result).to.include('-99.00% 🟢'); // Should show green emoji for large decrease
     });
 
-    it('should verify both critical and serious emojis work independently ', () => {
+    it('should verify both critical and serious emojis work independently', () => {
       const currentFile = {
         overall: {
           violations: {
@@ -614,7 +614,7 @@ Optional issue second`;
   });
 
   describe('generateQuickWinsOverviewSection', () => {
-    it('should return empty string when no groups after filtering ', () => {
+    it('should return empty string when no groups after filtering', () => {
       const quickWinsData = {
         topIssues: [
           { id: 'image-alt', description: 'Image alt', count: 5 }, // Will be filtered out
@@ -630,7 +630,7 @@ Optional issue second`;
       expect(result).to.equal(''); // Should return empty string when all issues are filtered
     });
 
-    it('should sort by level when percentages are equal ', () => {
+    it('should sort by level when percentages are equal', () => {
       // Test the specific line: return a.level === 'A' ? -1 : 1;
       const quickWinsData = {
         topIssues: [
@@ -713,7 +713,7 @@ Optional issue second`;
   });
 
   describe('generateQuickWinsPagesSection', () => {
-    it('should handle missing allViolations property ', () => {
+    it('should handle missing allViolations property', () => {
       const quickWinsData = {
         topIssues: [
           {
@@ -731,7 +731,7 @@ Optional issue second`;
       expect(result).to.include('| Test issue description | - |'); // Should show '-' for no pages
     });
 
-    it('should return empty string when no groups after filtering ', () => {
+    it('should return empty string when no groups after filtering', () => {
       const quickWinsData = {
         topIssues: [
           { id: 'image-alt', description: 'Image alt', count: 5 }, // Will be filtered out
@@ -745,7 +745,7 @@ Optional issue second`;
       expect(result).to.equal(''); // Should return empty string when all issues are filtered
     });
 
-    it('should handle empty page info ', () => {
+    it('should handle empty page info', () => {
       const quickWinsData = {
         topIssues: [
           {
@@ -769,7 +769,7 @@ Optional issue second`;
       expect(result).to.include('| Test issue description | - |'); // Should show '-' for empty page info
     });
 
-    it('should aggregate counts for same issue on same URL ', () => {
+    it('should aggregate counts for same issue on same URL', () => {
       // Test the line where existingEntry.count += issueData.count
       const quickWinsData = {
         topIssues: [
@@ -804,7 +804,7 @@ Optional issue second`;
       expect(result).to.include('Test issue description');
     });
 
-    it('should process both critical and serious levels ', () => {
+    it('should process both critical and serious levels', () => {
       // Test that both 'critical' and 'serious' levels are processed
       const quickWinsData = {
         topIssues: [
@@ -845,7 +845,7 @@ Optional issue second`;
       expect(result).to.include('https://example.com/page1 (1)'); // Serious issue
     });
 
-    it('should filter out image-alt issues from violation items ', () => {
+    it('should filter out image-alt issues from violation items', () => {
       // Test the specific line: if (isImageAltIssue(issueName)) return;
       const quickWinsData = {
         topIssues: [
@@ -886,7 +886,7 @@ Optional issue second`;
       expect(result).to.not.include('svg-img-alt');
     });
 
-    it('should handle missing items property in violations ', () => {
+    it('should handle missing items property in violations', () => {
       // Test the fallback: data.violations[level].items || {}
       const quickWinsData = {
         topIssues: [
@@ -918,7 +918,7 @@ Optional issue second`;
       expect(result).to.include('https://example.com/page1 (2)'); // Only serious level count
     });
 
-    it('should create new issuePageMap entry when issue does not exist ', () => {
+    it('should create new issuePageMap entry when issue does not exist', () => {
       // Test the condition: if (!issuePageMap[issueName])
       const quickWinsData = {
         topIssues: [
@@ -948,7 +948,7 @@ Optional issue second`;
       expect(result).to.include('https://example.com/page1 (3)');
     });
 
-    it('should add new page entry when URL does not exist for issue ', () => {
+    it('should add new page entry when URL does not exist for issue', () => {
       // Test the else branch where a new page entry is added
       const quickWinsData = {
         topIssues: [
@@ -989,7 +989,7 @@ Optional issue second`;
       expect(result).to.include('https://example.com/page2 (2)');
     });
 
-    it('should skip overall entry in allViolations ', () => {
+    it('should skip overall entry in allViolations', () => {
       // Test the condition: if (url === 'overall') return;
       const quickWinsData = {
         topIssues: [
@@ -1123,7 +1123,7 @@ Optional issue second`;
   });
 
   describe('generateWeekOverWeekSection', () => {
-    it('should return empty string when all changes are "-" ', () => {
+    it('should return empty string when all changes are "-"', () => {
       const currentData = {
         overall: {
           violations: {
@@ -1147,7 +1147,7 @@ Optional issue second`;
       expect(result).to.equal(''); // Should return empty string when no changes
     });
 
-    it('should return empty string when previousData is null ', () => {
+    it('should return empty string when previousData is null', () => {
       const currentData = {
         overall: {
           violations: {
@@ -1164,7 +1164,7 @@ Optional issue second`;
       expect(result).to.equal(''); // Should return empty string when no previous data
     });
 
-    it('should return empty string when previousData has no overall property ', () => {
+    it('should return empty string when previousData has no overall property', () => {
       const currentData = {
         overall: {
           violations: {
@@ -1181,7 +1181,7 @@ Optional issue second`;
       expect(result).to.equal(''); // Should return empty string when no overall data
     });
 
-    it('should return empty string when previousData has no violations property ', () => {
+    it('should return empty string when previousData has no violations property', () => {
       const currentData = {
         overall: {
           violations: {
@@ -1232,7 +1232,7 @@ Optional issue second`;
       expect(result).to.include('`test-issue` (2 less)'); // Should show improvement
     });
 
-    it('should handle serious issue improvements with count reduction ', () => {
+    it('should handle serious issue improvements with count reduction', () => {
       // Test the specific lines that calculate and format serious issue improvements
       const currentData = {
         overall: {
@@ -1270,7 +1270,7 @@ Optional issue second`;
       expect(result).to.include('**[Serious]'); // Should be in the Serious row
     });
 
-    it('should filter out image-alt issues from critical fixed issues ', () => {
+    it('should filter out image-alt issues from critical fixed issues', () => {
       // Test the specific line:
       // .filter(([issue]) => !currentCritical[issue] && !isImageAltIssue(issue))
       const currentData = {
@@ -1308,7 +1308,7 @@ Optional issue second`;
       expect(result).to.not.include('svg-img-alt');
     });
 
-    it('should filter out image-alt issues from serious fixed issues ', () => {
+    it('should filter out image-alt issues from serious fixed issues', () => {
       // Test the filtering logic for serious fixed issues
       const currentData = {
         overall: {
@@ -1343,7 +1343,7 @@ Optional issue second`;
       expect(result).to.not.include('svg-img-alt');
     });
 
-    it('should handle missing currentData with fallback to empty objects ', () => {
+    it('should handle missing currentData with fallback to empty objects', () => {
       // Test the specific lines:
       // const currentCritical = currentData?.overall?.violations?.critical?.items || {};
       // const currentSerious = currentData?.overall?.violations?.serious?.items || {};
@@ -1373,7 +1373,7 @@ Optional issue second`;
       expect(result).to.include('`test-serious-issue`');
     });
 
-    it('should handle missing overall property in currentData ', () => {
+    it('should handle missing overall property in currentData', () => {
       // Test fallback when currentData.overall is missing
       const currentData = {}; // Missing overall property
       const previousData = {
@@ -1401,7 +1401,7 @@ Optional issue second`;
       expect(result).to.include('`serious-issue`');
     });
 
-    it('should handle missing violations property in currentData ', () => {
+    it('should handle missing violations property in currentData', () => {
       // Test fallback when currentData.overall.violations is missing
       const currentData = {
         overall: {}, // Missing violations property
@@ -1431,7 +1431,7 @@ Optional issue second`;
       expect(result).to.include('`serious-issue`');
     });
 
-    it('should handle missing critical property in currentData violations ', () => {
+    it('should handle missing critical property in currentData violations', () => {
       // Test fallback when currentData.overall.violations.critical is missing
       const currentData = {
         overall: {
@@ -1473,7 +1473,7 @@ Optional issue second`;
       expect(result).to.include('`serious-issue`');
     });
 
-    it('should handle missing serious property in currentData violations ', () => {
+    it('should handle missing serious property in currentData violations', () => {
       // Test fallback when currentData.overall.violations.serious is missing
       const currentData = {
         overall: {
@@ -1515,7 +1515,7 @@ Optional issue second`;
       expect(result).to.include('`serious-issue`');
     });
 
-    it('should handle missing items property in currentData critical violations ', () => {
+    it('should handle missing items property in currentData critical violations', () => {
       // Test fallback when currentData.overall.violations.critical.items is missing
       const currentData = {
         overall: {
@@ -1557,7 +1557,7 @@ Optional issue second`;
       expect(result).to.include('`existing-serious` (1 less)');
     });
 
-    it('should handle missing items property in currentData serious violations ', () => {
+    it('should handle missing items property in currentData serious violations', () => {
       // Test fallback when currentData.overall.violations.serious.items is missing
       const currentData = {
         overall: {
@@ -1634,7 +1634,7 @@ Optional issue second`;
       expect(result).to.not.include('role-img-alt');
     });
 
-    it('should handle pages with only filtered issues ', () => {
+    it('should handle pages with only filtered issues', () => {
       // Test the condition where filteredIssues.length > 0 is false
       const diffData = {
         fixedIssues: {
@@ -1656,7 +1656,7 @@ Optional issue second`;
       expect(result).to.not.include('https://example.com/page2');
     });
 
-    it('should filter out image-alt issues using isImageAltIssue function ', () => {
+    it('should filter out image-alt issues using isImageAltIssue function', () => {
       // Test the specific line: const filteredIssues = issues.filter((i) => !isImageAltIssue(i));
       const diffData = {
         fixedIssues: {
@@ -1730,7 +1730,7 @@ Optional issue second`;
       expect(result).to.not.include('image-alt');
     });
 
-    it('should handle pages with only filtered issues ', () => {
+    it('should handle pages with only filtered issues', () => {
       // Test the condition where filteredIssues.length > 0 is false
       const diffData = {
         newIssues: {
@@ -1826,7 +1826,7 @@ Optional issue second`;
       expect(result.complianceScores.AA).to.be.closeTo(94, 0.01);
     });
 
-    it('should handle missing critical items property ', () => {
+    it('should handle missing critical items property', () => {
       // Test the fallback when critical.items is undefined
       const currentFile = {
         overall: {
@@ -1851,7 +1851,7 @@ Optional issue second`;
       expect(result.passed.AA).to.equal(19); // 20 - 1
     });
 
-    it('should handle missing serious items property ', () => {
+    it('should handle missing serious items property', () => {
       // Test the fallback when serious.items is undefined
       const currentFile = {
         overall: {
@@ -1876,7 +1876,7 @@ Optional issue second`;
       expect(result.passed.AA).to.equal(20); // 20 - 0
     });
 
-    it('should handle both missing items properties ', () => {
+    it('should handle both missing items properties', () => {
       // Test the fallback when both critical.items and serious.items are undefined
       const currentFile = {
         overall: {
@@ -2071,7 +2071,7 @@ Optional issue second`;
       expect(result.fixedIssues.critical['https://example.com/page1']).to.not.include('color-contrast');
     });
 
-    it('should filter out image-alt related issues from new issues ', () => {
+    it('should filter out image-alt related issues from new issues', () => {
       const currentFile = {
         overall: { violations: { total: 10 } },
         'https://example.com/page1': {
@@ -2109,7 +2109,7 @@ Optional issue second`;
       expect(result.newIssues.critical['https://example.com/page1']).to.not.include('svg-img-alt');
     });
 
-    it('should filter out image-alt related issues from fixed issues ', () => {
+    it('should filter out image-alt related issues from fixed issues', () => {
       const currentFile = {
         overall: { violations: { total: 0 } },
         'https://example.com/page1': {
@@ -2147,7 +2147,7 @@ Optional issue second`;
       expect(result.fixedIssues.critical['https://example.com/page1']).to.not.include('svg-img-alt');
     });
 
-    it('should handle missing items property in current data ', () => {
+    it('should handle missing items property in current data', () => {
       const currentFile = {
         overall: { violations: { total: 5 } },
         'https://example.com/page1': {
@@ -2181,7 +2181,7 @@ Optional issue second`;
       expect(result.newIssues.critical).to.deep.equal({});
     });
 
-    it('should handle missing items property in last week data ', () => {
+    it('should handle missing items property in last week data', () => {
       const currentFile = {
         overall: { violations: { total: 0 } },
         'https://example.com/page1': {
@@ -2215,7 +2215,7 @@ Optional issue second`;
       expect(result.fixedIssues.critical).to.deep.equal({});
     });
 
-    it('should skip overall entries in both current and last week data ', () => {
+    it('should skip overall entries in both current and last week data', () => {
       const currentFile = {
         overall: { violations: { total: 10 } }, // Should be skipped
         'https://example.com/page1': {
@@ -2248,7 +2248,7 @@ Optional issue second`;
       expect(result.fixedIssues.critical.overall).to.be.undefined;
     });
 
-    it('should handle pages that exist in current but not in last week data ', () => {
+    it('should handle pages that exist in current but not in last week data', () => {
       const currentFile = {
         overall: { violations: { total: 10 } },
         'https://example.com/page1': {
@@ -2291,7 +2291,7 @@ Optional issue second`;
       expect(result.newIssues.critical['https://example.com/new-page']).to.include('aria-label');
     });
 
-    it('should handle pages that exist in last week but not in current data ', () => {
+    it('should handle pages that exist in last week but not in current data', () => {
       const currentFile = {
         overall: { violations: { total: 5 } },
         'https://example.com/page1': {
@@ -2334,7 +2334,7 @@ Optional issue second`;
       expect(result.fixedIssues.critical['https://example.com/old-page']).to.include('aria-label');
     });
 
-    it('should initialize arrays for new issues when URL does not exist ', () => {
+    it('should initialize arrays for new issues when URL does not exist', () => {
       const currentFile = {
         overall: { violations: { total: 10 } },
         'https://example.com/page1': {
@@ -2369,7 +2369,7 @@ Optional issue second`;
       expect(result.newIssues.critical['https://example.com/page1']).to.include('aria-label');
     });
 
-    it('should initialize arrays for fixed issues when URL does not exist ', () => {
+    it('should initialize arrays for fixed issues when URL does not exist', () => {
       const currentFile = {
         overall: { violations: { total: 0 } },
         'https://example.com/page1': {
@@ -2610,7 +2610,7 @@ Optional issue second`;
   });
 
   describe('generateAccessibilityIssuesOverviewSection', () => {
-    it('should return empty string when no issues after filtering ', () => {
+    it('should return empty string when no issues after filtering', () => {
       const issuesOverview = {
         levelA: [
           { rule: 'image-alt', count: 5, level: 'A' }, // Will be filtered out
@@ -2626,7 +2626,7 @@ Optional issue second`;
       expect(result).to.equal(''); // Should return empty string when all issues are filtered
     });
 
-    it('should return empty string when sortedIssues length is 0 ', () => {
+    it('should return empty string when sortedIssues length is 0', () => {
       // Test the specific condition where sortedIssues.length === 0
       const issuesOverview = {
         levelA: [], // Empty array
@@ -2638,7 +2638,7 @@ Optional issue second`;
       expect(result).to.equal(''); // Should return empty string when no issues at all
     });
 
-    it('should sort issues by count when levels are equal ', () => {
+    it('should sort issues by count when levels are equal', () => {
       // Test the sorting logic when a.level === b.level
       const issuesOverview = {
         levelA: [
@@ -2670,7 +2670,7 @@ Optional issue second`;
       expect(ariaLabelIndex).to.be.lessThan(colorContrastIndex);
     });
 
-    it('should prioritize level A over level AA when levels are different ', () => {
+    it('should prioritize level A over level AA when levels are different', () => {
       // Test the specific line: return a.level === 'A' ? -1 : 1;
       const issuesOverview = {
         levelA: [
@@ -2770,7 +2770,7 @@ Optional issue second`;
       expect(aIssueIndex).to.be.lessThan(aaIssueIndex);
     });
 
-    it('should generate complete section with headers and table structure ', () => {
+    it('should generate complete section with headers and table structure', () => {
       const issuesOverview = {
         levelA: [
           {
@@ -2802,7 +2802,7 @@ Optional issue second`;
       expect(result).to.include('---');
     });
 
-    it('should handle missing accessibilityIssuesImpact for issue rule ', () => {
+    it('should handle missing accessibilityIssuesImpact for issue rule', () => {
       const issuesOverview = {
         levelA: [
           {
@@ -2824,7 +2824,7 @@ Optional issue second`;
       expect(result).to.include('Issue with unknown impact');
     });
 
-    it('should format success criteria number with dots ', () => {
+    it('should format success criteria number with dots', () => {
       const issuesOverview = {
         levelA: [
           {
@@ -2845,7 +2845,7 @@ Optional issue second`;
       expect(result).to.include('1.4.3');
     });
 
-    it('should escape HTML in description using escapeHtmlTags ', () => {
+    it('should escape HTML in description using escapeHtmlTags', () => {
       const issuesOverview = {
         levelA: [
           {
@@ -2927,7 +2927,7 @@ Optional issue second`;
       expect(aaHighIndex).to.be.lessThan(aaMediumIndex);
     });
 
-    it('should filter out all image-alt related issues ', () => {
+    it('should filter out all image-alt related issues', () => {
       const issuesOverview = {
         levelA: [
           { rule: 'image-alt', count: 10, level: 'A' }, // Should be filtered
@@ -2958,7 +2958,7 @@ Optional issue second`;
       expect(result).to.not.include('svg-img-alt');
     });
 
-    it('should handle edge case with only one issue ', () => {
+    it('should handle edge case with only one issue', () => {
       const issuesOverview = {
         levelA: [
           {
@@ -3155,7 +3155,7 @@ Optional issue second`;
   });
 
   describe('generateEnhancingAccessibilitySection', () => {
-    it('should filter out image-alt issues from issuesOverview ', () => {
+    it('should filter out image-alt issues from issuesOverview', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3192,7 +3192,7 @@ Optional issue second`;
       expect(result).to.not.include('role-img-alt');
     });
 
-    it('should create issuesLookup with escaped HTML content ', () => {
+    it('should create issuesLookup with escaped HTML content', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3224,7 +3224,7 @@ Optional issue second`;
       expect(result).to.include('Test `<script>`alert("xss")`</script>` issue');
     });
 
-    it('should sort traffic violations by traffic and slice to top 10 ', () => {
+    it('should sort traffic violations by traffic and slice to top 10', () => {
       const trafficViolations = Array.from({ length: 15 }, (_, i) => ({
         url: `https://example.com/page${i + 1}`,
         traffic: (15 - i) * 100, // Descending traffic
@@ -3255,7 +3255,7 @@ Optional issue second`;
       expect(result).to.not.include('https://example.com/page11');
     });
 
-    it('should handle null traffic values in sorting ', () => {
+    it('should handle null traffic values in sorting', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3315,7 +3315,7 @@ Optional issue second`;
       expect(page2Index).to.be.lessThan(page3Index);
     });
 
-    it('should process both levelA and levelAA issues ', () => {
+    it('should process both levelA and levelAA issues', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3356,7 +3356,7 @@ Optional issue second`;
       expect(result).to.include('https://example.com/page1 (3)'); // Serious issue count
     });
 
-    it('should parse issue text with regex and extract count and name ', () => {
+    it('should parse issue text with regex and extract count and name', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3398,7 +3398,7 @@ Optional issue second`;
       expect(result).to.not.include('invalid format');
     });
 
-    it('should filter out image-alt issues from parsed issue names ', () => {
+    it('should filter out image-alt issues from parsed issue names', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3450,7 +3450,7 @@ Optional issue second`;
       expect(result).to.not.include('svg-img-alt');
     });
 
-    it('should create new commonIssues entry when issue does not exist ', () => {
+    it('should create new commonIssues entry when issue does not exist', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3492,7 +3492,7 @@ Optional issue second`;
       expect(result).to.include('| AA |');
     });
 
-    it('should add pages to existing commonIssues entry ', () => {
+    it('should add pages to existing commonIssues entry', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3538,7 +3538,7 @@ Optional issue second`;
       expect(result).to.include('https://example.com/page3 (1)');
     });
 
-    it('should sort issues by level (A before AA) ', () => {
+    it('should sort issues by level (A before AA)', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3578,7 +3578,7 @@ Optional issue second`;
       expect(aLevelIndex).to.be.lessThan(aaLevelIndex);
     });
 
-    it('should sort issues by page count when levels are equal ', () => {
+    it('should sort issues by page count when levels are equal', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3629,7 +3629,7 @@ Optional issue second`;
       expect(manyPagesIndex).to.be.lessThan(fewPagesIndex);
     });
 
-    it('should sort issues by total count when levels and page counts are equal ', () => {
+    it('should sort issues by total count when levels and page counts are equal', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3675,7 +3675,7 @@ Optional issue second`;
       expect(highCountIndex).to.be.lessThan(lowCountIndex);
     });
 
-    it('should generate section headers and table structure ', () => {
+    it('should generate section headers and table structure', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3711,7 +3711,7 @@ Optional issue second`;
       expect(result).to.include('---');
     });
 
-    it('should format pages text with URL and count ', () => {
+    it('should format pages text with URL and count', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3748,7 +3748,7 @@ Optional issue second`;
       expect(result).to.include('https://example.com/page1 (3), https://example.com/page2 (2)');
     });
 
-    it('should handle missing issue in issuesLookup ', () => {
+    it('should handle missing issue in issuesLookup', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3774,7 +3774,7 @@ Optional issue second`;
       expect(result).to.include('| unknown-issue |');
     });
 
-    it('should escape HTML in userImpact and suggestion ', () => {
+    it('should escape HTML in userImpact and suggestion', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3805,7 +3805,7 @@ Optional issue second`;
       expect(result).to.include('test-issue');
     });
 
-    it('should handle missing pages in issue ', () => {
+    it('should handle missing pages in issue', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3837,7 +3837,7 @@ Optional issue second`;
       // Should handle gracefully without crashing
     });
 
-    it('should handle missing pageData in currentData ', () => {
+    it('should handle missing pageData in currentData', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3869,7 +3869,7 @@ Optional issue second`;
       // Should handle missing page data gracefully
     });
 
-    it('should handle missing violations in pageData ', () => {
+    it('should handle missing violations in pageData', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3905,7 +3905,7 @@ Optional issue second`;
       // Should handle missing violations gracefully
     });
 
-    it('should handle missing pageViolation items ', () => {
+    it('should handle missing pageViolation items', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3947,7 +3947,7 @@ Optional issue second`;
       // Should handle missing violation items gracefully
     });
 
-    it('should handle missing failureSummary in pageViolation ', () => {
+    it('should handle missing failureSummary in pageViolation', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -3991,7 +3991,7 @@ Optional issue second`;
       // Should handle missing failureSummary gracefully
     });
 
-    it('should process and escape failureSummary with HTML replacement ', () => {
+    it('should process and escape failureSummary with HTML replacement', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -4039,7 +4039,7 @@ Optional issue second`;
       expect(result).to.include('&#124;');
     });
 
-    it('should format successCriteriaNumber with dots ', () => {
+    it('should format successCriteriaNumber with dots', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -4070,7 +4070,7 @@ Optional issue second`;
       expect(result).to.include('1.4.3'); // Should format '143' as '1.4.3'
     });
 
-    it('should generate complete table row with all columns ', () => {
+    it('should generate complete table row with all columns', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',
@@ -4162,7 +4162,7 @@ Optional issue second`;
       // Should handle gracefully with empty issuesLookup
     });
 
-    it('should escape HTML in userImpact and suggestion ', () => {
+    it('should escape HTML in userImpact and suggestion', () => {
       const trafficViolations = [
         {
           url: 'https://example.com/page1',

@@ -95,7 +95,7 @@ describe('Readability Opportunities Handler', () => {
     sinon.restore();
   });
 
-  describe('processImportStep ', () => {
+  describe('processImportStep', () => {
     it('should return import step data with correct structure', async () => {
       const context = {
         site: mockSite,
@@ -127,7 +127,7 @@ describe('Readability Opportunities Handler', () => {
     });
   });
 
-  describe('scrapeReadabilityData ', () => {
+  describe('scrapeReadabilityData', () => {
     it('should return error when S3 bucket is not configured ', async () => {
       const context = {
         site: mockSite,
@@ -259,7 +259,7 @@ describe('Readability Opportunities Handler', () => {
     });
   });
 
-  describe('processReadabilityOpportunities ', () => {
+  describe('processReadabilityOpportunities', () => {
     // Sample scrapeResultPaths to use in tests
     const mockScrapeResultPaths = new Map([
       ['https://example.com/page1', 'scrapes/site-123/page1.json'],
