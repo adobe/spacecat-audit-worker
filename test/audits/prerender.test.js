@@ -1169,7 +1169,9 @@ describe('Prerender Audit', () => {
           // Verify domain-wide aggregate suggestion properties
           expect(domainWideSuggestion.data.url).to.equal('https://example.com/* (All Domain URLs)');
           expect(domainWideSuggestion.data.isDomainWide).to.be.true;
-          expect(domainWideSuggestion.data.regex).to.equal('https://example\\.com/.*');
+          expect(domainWideSuggestion.data.allowedRegexPatterns).to.be.an('array');
+          expect(domainWideSuggestion.data.allowedRegexPatterns).to.have.lengthOf(1);
+          expect(domainWideSuggestion.data.allowedRegexPatterns[0]).to.equal('https://example\\.com/.*');
           expect(domainWideSuggestion.data.pathPattern).to.equal('/*');
           expect(domainWideSuggestion.data.scope).to.equal('domain-wide');
 
@@ -1404,6 +1406,115 @@ describe('Prerender Audit', () => {
         const mergedData = mergeDataFunction(existingData, newDataItem);
 
         expect(mergedData).to.deep.equal({ newField: 'value' });
+      });
+
+      it('should format large numbers with M+ suffix in displayAnnotations', async () => {
+        // Test to cover formatNumber with million+ values (lines 439-441)
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'test-audit-id',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.0,
+                wordCountBefore: 2500000, // 2.5M - will trigger M+ format
+                wordCountAfter: 5000000, // 5M - will trigger M+ format
+              },
+            ],
+          },
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sandbox.stub().resolves([]),
+        };
+
+        const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
+        const syncSuggestionsStub = sandbox.stub().resolves();
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+          '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        });
+
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+        // Verify syncSuggestions was called twice (individual + domain-wide)
+        expect(syncSuggestionsStub).to.have.been.calledTwice;
+
+        // Get the domain-wide suggestion call (second call)
+        const domainWideCall = syncSuggestionsStub.getCall(1);
+        const { newData } = domainWideCall.args[0];
+
+        // Verify M+ formatting is applied
+        expect(newData[0].data.displayAnnotations.wordCountBefore).to.equal('2.5M+');
+        expect(newData[0].data.displayAnnotations.wordCountAfter).to.equal('5.0M+');
+      });
+
+      it('should handle zero values with N/A in displayAnnotations', async () => {
+        // Test to cover formatNumber with zero/null values (lines 436-438)
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'test-audit-id',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 0, // Zero value
+                wordCountBefore: 0, // Zero value
+                wordCountAfter: 0, // Zero value
+              },
+            ],
+          },
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sandbox.stub().resolves([]),
+        };
+
+        const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
+        const syncSuggestionsStub = sandbox.stub().resolves();
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+          '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        });
+
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+        // Get the domain-wide suggestion call
+        const domainWideCall = syncSuggestionsStub.getCall(1);
+        const { newData } = domainWideCall.args[0];
+
+        // Verify N/A is shown for zero values
+        expect(newData[0].data.displayAnnotations.contentGainRatio).to.equal('N/A');
+        expect(newData[0].data.displayAnnotations.wordCountBefore).to.equal('N/A');
+        expect(newData[0].data.displayAnnotations.wordCountAfter).to.equal('N/A');
+        expect(newData[0].data.displayAnnotations.agenticTraffic).to.equal('N/A');
       });
     });
   });
@@ -3164,7 +3275,8 @@ describe('Prerender Audit', () => {
         expect(domainWideSyncCall.args[0].newData).to.be.an('array').with.lengthOf(1);
         expect(domainWideSyncCall.args[0].newData[0]).to.have.property('key', 'domain-wide-aggregate|prerender');
         expect(domainWideSyncCall.args[0].newData[0].data).to.have.property('isDomainWide', true);
-        expect(domainWideSyncCall.args[0].newData[0].data).to.have.property('regex');
+        expect(domainWideSyncCall.args[0].newData[0].data).to.have.property('allowedRegexPatterns');
+        expect(domainWideSyncCall.args[0].newData[0].data.allowedRegexPatterns).to.be.an('array');
         expect(domainWideSyncCall.args[0].newData[0].data.url).to.include('All Domain URLs');
       });
 

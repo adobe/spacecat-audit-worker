@@ -418,10 +418,13 @@ async function syncDomainWideAggregateSuggestion(
     ? Math.min(...preRenderSuggestions.map((s) => s.wordCountAfter || 0))
     : 0;
 
-  // Create domain-wide regex pattern
+  // Create domain-wide regex patterns
   const baseUrlObj = new URL(baseUrl);
   const escapedBaseUrl = baseUrlObj.origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const domainRegex = `${escapedBaseUrl}/.*`;
+
+  // Array of allowed regex patterns (prepares for future blockedRegexPatterns)
+  const allowedRegexPatterns = [domainRegex];
 
   // Calculate % AI-readable content (percentage of content visible before JS execution)
   const minAiReadablePercent = minWordCountAfter > 0
@@ -452,7 +455,7 @@ async function syncDomainWideAggregateSuggestion(
     wordCountAfter: minWordCountAfter, // Minimum from audited URLs
     // Additional metadata for domain-wide configuration
     isDomainWide: true,
-    regex: domainRegex,
+    allowedRegexPatterns, // Array of regex patterns to match URLs for pre-rendering
     pathPattern: '/*',
     scope: 'domain-wide',
     description: `Apply pre-rendering to all URLs across the entire domain (${baseUrlObj.origin})`,
@@ -476,26 +479,39 @@ async function syncDomainWideAggregateSuggestion(
     aiReadablePercent: minAiReadablePercent,
   };
 
-  // Use a constant key to ensure only one domain-wide suggestion exists
+  // Use a constant key to ensure only ONE domain-wide suggestion exists per opportunity
+  // This key-based approach guarantees uniqueness through syncSuggestions:
+  // - If a suggestion with this key exists, it gets updated
+  // - If it doesn't exist, it gets created
+  // - No duplicates are possible because the key is constant
   const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
 
   // Sync domain-wide suggestion using the same pattern as individual suggestions
-  // This ensures only one domain-wide suggestion exists and gets updated on subsequent runs
+  // syncSuggestions ensures only one domain-wide suggestion exists
+  // and gets updated on subsequent runs
   await syncSuggestions({
     opportunity,
     newData: [{ key: DOMAIN_WIDE_SUGGESTION_KEY, data: domainWideSuggestionData }],
     context,
-    buildKey: (data) => data.key,
+    buildKey: (data) => data.key, // Always returns the same key for domain-wide suggestion
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: Suggestion.TYPES.CONFIG_UPDATE,
       rank: 999999, // High rank to appear first in the list
       data: suggestion.data,
     }),
-    mergeDataFunction: (existingData, newDataItem) => newDataItem.data,
+    // Merge function: completely replace with new data (including regexPatterns array)
+    mergeDataFunction: (existingData, newDataItem) => {
+      const merged = { ...newDataItem.data };
+      // Preserve any additional fields that might have been added externally
+      if (existingData.customFields) {
+        merged.customFields = existingData.customFields;
+      }
+      return merged;
+    },
   });
 
-  log.info(`Prerender - Synced domain-wide aggregate suggestion for entire domain with regex: ${domainRegex}. Based on ${auditedUrlCount} audited URL(s).`);
+  log.info(`Prerender - Synced domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s).`);
 }
 
 /**
