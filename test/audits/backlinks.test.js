@@ -220,6 +220,35 @@ describe('Backlinks Tests', function () {
     }
   });
 
+  it('should throw error when no top pages found in database', async () => {
+    context.audit.getAuditResult.returns({ success: true });
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]); // Empty array
+
+    await expect(submitForScraping(context))
+      .to.be.rejectedWith(`No top pages found in database for site ${contextSite.getId()}. Ahrefs import required.`);
+  });
+
+  it('should throw error when all top pages filtered out by audit scope', async () => {
+    context.audit.getAuditResult.returns({ success: true });
+    
+    // Mock site with subpath
+    const siteWithSubpath = {
+      ...contextSite,
+      getBaseURL: () => 'https://example.com/blog',
+    };
+    context.site = siteWithSubpath;
+
+    // Mock top pages that don't match the subpath
+    const topPagesOutsideScope = [
+      { getUrl: () => 'https://example.com/products' },
+      { getUrl: () => 'https://example.com/about' },
+    ];
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPagesOutsideScope);
+
+    await expect(submitForScraping(context))
+      .to.be.rejectedWith(`All 2 top pages filtered out by audit scope. BaseURL: https://example.com/blog requires subpath match but no pages match scope.`);
+  });
+
   it('should filter out broken backlinks that return ok (even with redirection)', async () => {
     const allBacklinks = auditDataMock.auditResult.brokenBacklinks
       .concat(fixedBacklinks)

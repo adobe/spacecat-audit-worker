@@ -1,3 +1,71 @@
+## [1.265.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.265.3...v1.265.4) (2025-12-04)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1751](https://github.com/adobe/spacecat-audit-worker/issues/1751)) ([7bfb2d7](https://github.com/adobe/spacecat-audit-worker/commit/7bfb2d7778dbec8d5a9513b4f81b9b417ef051fd))
+
+## [1.265.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.265.2...v1.265.3) (2025-12-04)
+
+
+### Bug Fixes
+
+* prerender code coverage ([#1752](https://github.com/adobe/spacecat-audit-worker/issues/1752)) ([fc7dee6](https://github.com/adobe/spacecat-audit-worker/commit/fc7dee6ca042ff6a4c939288fd43bef8d5203276))
+
+## [1.265.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.265.1...v1.265.2) (2025-12-04)
+
+
+### Bug Fixes
+
+* scrape only top pages ([#1731](https://github.com/adobe/spacecat-audit-worker/issues/1731)) ([eb2f40c](https://github.com/adobe/spacecat-audit-worker/commit/eb2f40cad4f005d306aa4151d4093852d5c41165))
+
+## [1.265.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.265.0...v1.265.1) (2025-12-03)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1744](https://github.com/adobe/spacecat-audit-worker/issues/1744)) ([c41f23d](https://github.com/adobe/spacecat-audit-worker/commit/c41f23d5546746481bc8be0fa388a1588ecc82e7))
+
+# [1.265.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.7...v1.265.0) (2025-12-03)
+
+
+### Bug Fixes
+
+* sites-38017  ([#1739](https://github.com/adobe/spacecat-audit-worker/issues/1739)) ([5981377](https://github.com/adobe/spacecat-audit-worker/commit/598137763361af2e24b18ee33b322311b437c5f1))
+
+
+### Features
+
+* add vulnerabilities code-fix handler ([#1700](https://github.com/adobe/spacecat-audit-worker/issues/1700)) ([4a3fdc4](https://github.com/adobe/spacecat-audit-worker/commit/4a3fdc40836c9417c2cd791d3d6180ac155da1cc))
+
+## [1.264.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.6...v1.264.7) (2025-12-03)
+
+
+### Bug Fixes
+
+* Move aggregation key to data in Mystique message ([#1740](https://github.com/adobe/spacecat-audit-worker/issues/1740)) ([964236a](https://github.com/adobe/spacecat-audit-worker/commit/964236a6a94799c5202da7c0782ca36f14e02e4b))
+
+## [1.264.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.5...v1.264.6) (2025-12-03)
+
+
+### Bug Fixes
+
+* update tests ([#1742](https://github.com/adobe/spacecat-audit-worker/issues/1742)) ([2f7bbed](https://github.com/adobe/spacecat-audit-worker/commit/2f7bbedbc8256f08396f1914d5c27cc8af94f68c))
+
+## [1.264.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.4...v1.264.5) (2025-12-03)
+
+
+### Bug Fixes
+
+* reverting page views checks for forms opportunity ([#1741](https://github.com/adobe/spacecat-audit-worker/issues/1741)) ([67e507c](https://github.com/adobe/spacecat-audit-worker/commit/67e507c719aaa440fe926a086279adc415fa166a))
+
+## [1.264.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.3...v1.264.4) (2025-12-03)
+
+
+### Bug Fixes
+
+* filter forms which are not lead gen and is not critical ([#1734](https://github.com/adobe/spacecat-audit-worker/issues/1734)) ([6d42674](https://github.com/adobe/spacecat-audit-worker/commit/6d42674324e0ca98768a188459d74c830380dc62))
+
 ## [1.264.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.264.2...v1.264.3) (2025-12-02)
 
 
