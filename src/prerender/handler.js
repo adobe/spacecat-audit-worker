@@ -316,6 +316,30 @@ export async function importTopPages(context) {
   };
 }
 
+function addWWW(url) {
+  return url.replace('https://', 'https://www.');
+}
+
+function removeWWW(url) {
+  return url.replace('https://www.', 'https://');
+}
+
+function decorateUrlsWithWWW(urls, context) {
+  const { site } = context;
+  const baseUrl = site.getConfig()?.getFetchConfig()?.overrideBaseURL || site.getBaseURL();
+  return urls.map((url) => {
+    const iswwwBaseUrl = baseUrl.startsWith('https://www.');
+    const isWWWUrl = url.startsWith('https://www.');
+    if (iswwwBaseUrl && !isWWWUrl) {
+      return addWWW(url);
+    }
+    if (!iswwwBaseUrl && isWWWUrl) {
+      return removeWWW(url);
+    }
+    return url;
+  });
+}
+
 /**
  * Step 2: Submit URLs for scraping
  * @param {Object} context - Audit context with site and dataAccess
@@ -336,6 +360,8 @@ export async function submitForScraping(context) {
   const agenticUrls = agenticStats.map((s) => s.url);
 
   const finalUrls = [...new Set([...topPagesUrls, ...agenticUrls, ...includedURLs])];
+
+  decorateUrlsWithWWW(finalUrls, context);
 
   log.info(`Prerender: Submitting ${finalUrls.length} URLs for scraping. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
 
