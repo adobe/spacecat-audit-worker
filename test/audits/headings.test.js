@@ -2619,6 +2619,226 @@ describe('Headings Audit', () => {
     expect(mockClient.fetchChatCompletion).to.have.been.called;
   });
 
+  it('handles error in AI suggestion generation within headingsAuditRunner aggregation loop', async () => {
+    const baseURL = 'https://example.com';
+    const url = 'https://example.com/page';
+    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+    context.log = logSpy;
+
+    // Mock AI client to fail on the H1 suggestion call but succeed on other calls
+    let callCount = 0;
+    const mockClient = {
+      fetchChatCompletion: sinon.stub().callsFake(() => {
+        callCount++;
+        if (callCount === 1) {
+          // First call: TOC detection - succeed
+          return Promise.resolve({
+            choices: [{ message: { content: '{"tocPresent":false,"confidence":5}' } }],
+          });
+        }
+        if (callCount === 2) {
+          // Second call: Brand guidelines - succeed
+          return Promise.resolve({
+            choices: [{ message: { content: '{"guidelines":"Test guidelines"}' } }],
+          });
+        }
+        // Third call: H1 suggestion - fail with error
+        return Promise.reject(new Error('AI service temporarily unavailable'));
+      }),
+    };
+    AzureOpenAIClient.createFrom.restore();
+    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+    // Mock getTopPagesForSiteId
+    const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
+
+    const mockedHandler = await esmock('../../src/headings/handler.js', {
+      '../../src/canonical/handler.js': {
+        getTopPagesForSiteId: getTopPagesForSiteIdStub,
+      },
+    });
+
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
+      },
+    };
+
+    // Mock S3 to return HTML with empty H1 (triggers AI suggestion)
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
+
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () => JSON.stringify({
+              finalUrl: url,
+              scrapedAt: Date.now(),
+              scrapeResult: {
+                rawBody: '<h1></h1><h2>Section</h2>', // Empty H1 to trigger AI suggestion
+                tags: {
+                  title: 'Page Title',
+                  description: 'Page Description',
+                  h1: [],
+                },
+              },
+            }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+
+      throw new Error('Unexpected command passed to s3Client.send');
+    });
+
+    context.s3Client = s3Client;
+    const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+
+    // Verify the error was logged (caught inside getH1HeadingASuggestion at line 218)
+    expect(logSpy.error).to.have.been.calledWith(
+      sinon.match(/\[Headings AI Suggestions\] Error for empty heading suggestion:.*AI service temporarily unavailable/)
+    );
+
+    // Verify that AI suggestion was attempted
+    expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(3);
+
+    // Verify the audit still completed with the H1 length issue detected
+    expect(result.auditResult.headings['heading-h1-length']).to.exist;
+    expect(result.auditResult.headings['heading-h1-length'].urls[0].url).to.equal(url);
+    
+    // Verify that isAISuggested is false since AI failed
+    expect(result.auditResult.headings['heading-h1-length'].urls[0].isAISuggested).to.equal(false);
+    
+    // Verify that the default suggestion is used instead of AI suggestion
+    expect(result.auditResult.headings['heading-h1-length'].urls[0].suggestion).to.equal(
+      HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion
+    );
+  });
+
+  it('covers catch block at line 660 - error thrown by getH1HeadingASuggestion itself', async () => {
+    const baseURL = 'https://example.com';
+    const url = 'https://example.com/page';
+    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+    context.log = logSpy;
+
+    // Mock AI client to succeed for TOC and brand guidelines
+    let callCount = 0;
+    const mockClient = {
+      fetchChatCompletion: sinon.stub().callsFake(() => {
+        callCount++;
+        if (callCount === 1) {
+          // First call: TOC detection - succeed
+          return Promise.resolve({
+            choices: [{ message: { content: '{"tocPresent":false,"confidence":5}' } }],
+          });
+        }
+        if (callCount === 2) {
+          // Second call: Brand guidelines - succeed
+          return Promise.resolve({
+            choices: [{ message: { content: '{"guidelines":"Test guidelines"}' } }],
+          });
+        }
+        // This won't be reached because getPrompt will throw first
+        return Promise.resolve({
+          choices: [{ message: { content: '{"h1":{"aiSuggestion":"Test"}}' } }],
+        });
+      }),
+    };
+    AzureOpenAIClient.createFrom.restore();
+    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+    // Mock getPrompt to throw an error on the H1 suggestion call
+    let getPromptCallCount = 0;
+    const getPromptStub = sinon.stub().callsFake(async (data, templateName) => {
+      getPromptCallCount++;
+      if (getPromptCallCount === 1) {
+        // First call: TOC detection - succeed
+        return 'toc detection prompt';
+      }
+      if (getPromptCallCount === 2) {
+        // Second call: Brand guidelines - succeed
+        return 'brand guidelines prompt';
+      }
+      // Third call: H1 suggestion - throw error
+      throw new Error('Prompt template file not found');
+    });
+
+    // Mock getTopPagesForSiteId
+    const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
+
+    const mockedHandler = await esmock('../../src/headings/handler.js', {
+      '../../src/canonical/handler.js': {
+        getTopPagesForSiteId: getTopPagesForSiteIdStub,
+      },
+      '@adobe/spacecat-shared-utils': {
+        getPrompt: getPromptStub,
+      },
+    });
+
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
+      },
+    };
+
+    // Mock S3 to return HTML with empty H1 (triggers AI suggestion)
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
+
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () => JSON.stringify({
+              finalUrl: url,
+              scrapedAt: Date.now(),
+              scrapeResult: {
+                rawBody: '<h1></h1><h2>Section</h2>', // Empty H1 to trigger AI suggestion
+                tags: {
+                  title: 'Page Title',
+                  description: 'Page Description',
+                  h1: [],
+                },
+              },
+            }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+
+      throw new Error('Unexpected command passed to s3Client.send');
+    });
+
+    context.s3Client = s3Client;
+    const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+
+    // Verify the error was logged from the catch block at line 660
+    expect(logSpy.error).to.have.been.calledWith(
+      sinon.match(new RegExp(`\\[Headings AI Suggestions\\] Error generating AI suggestion for ${url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:.*Prompt template file not found`))
+    );
+
+    // Verify the audit still completed with the H1 length issue detected
+    expect(result.auditResult.headings['heading-h1-length']).to.exist;
+    expect(result.auditResult.headings['heading-h1-length'].urls[0].url).to.equal(url);
+    
+    // Verify that isAISuggested is false since getH1HeadingASuggestion threw an error
+    expect(result.auditResult.headings['heading-h1-length'].urls[0].isAISuggested).to.equal(false);
+    
+    // Verify that the default suggestion is used (because aiSuggestion was set to null at line 661)
+    expect(result.auditResult.headings['heading-h1-length'].urls[0].suggestion).to.equal(
+      HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion
+    );
+  });
+
   it('getBrandGuidelines generates brand guidelines successfully', async () => {
     const healthyTagsObject = {
       title: 'Test Title 1, Test Title 2',
@@ -4265,6 +4485,186 @@ describe('Headings Audit', () => {
       expect(selector).to.not.include('main-content');
       expect(selector).to.not.include('primary');
     });
+    });
+  });
+
+  describe('getSurroundingText utility function', () => {
+    it('breaks after loop when afterText reaches charLimit (line 50)', async () => {
+      const url = 'https://example.com/page';
+      
+      // Create long text that will exceed the default 150 char limit
+      // We need an EMPTY non-H1 heading for getHeadingContext to be called
+      const longText = 'A'.repeat(100); // 100 chars in first element
+      const moreText = 'B'.repeat(100); // 100 chars in second element
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: `<h1>Title</h1><h2></h2><p>${longText}</p><p>${moreText}</p>`,
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Title'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      // Empty H2 triggers getHeadingContext -> getSurroundingText
+      // The break at line 50 prevents collecting more than charLimit chars after the heading
+      expect(result).to.exist;
+      expect(result.checks).to.be.an('array');
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      expect(emptyCheck.headingContext).to.exist;
+    });
+
+    it('breaks before loop when beforeText reaches charLimit (line 63)', async () => {
+      const url = 'https://example.com/page';
+      
+      // Create long text that will exceed the default 150 char limit
+      const longText = 'C'.repeat(100); // 100 chars in first element before
+      const moreText = 'D'.repeat(100); // 100 chars in second element before
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: `<h1>Title</h1><p>${moreText}</p><p>${longText}</p><h2></h2>`,
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Title'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      // Empty H2 triggers getHeadingContext -> getSurroundingText
+      // The break at line 63 prevents collecting more than charLimit chars before the heading
+      expect(result).to.exist;
+      expect(result.checks).to.be.an('array');
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      expect(emptyCheck.headingContext).to.exist;
+    });
+
+    it('continues after loop when afterText does not reach charLimit (line 50 not taken)', async () => {
+      const url = 'https://example.com/page';
+      
+      // Create short text that won't exceed the limit
+      const shortText = 'Short text here.';
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: `<h1>Title</h1><h2></h2><p>${shortText}</p><p>More short text.</p>`,
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Title'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      // When text is short, the break at line 50 is NOT taken
+      // The loop continues to collect text from all siblings
+      expect(result).to.exist;
+      expect(result.checks).to.be.an('array');
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      expect(emptyCheck.headingContext).to.exist;
+    });
+
+    it('continues before loop when beforeText does not reach charLimit (line 63 not taken)', async () => {
+      const url = 'https://example.com/page';
+      
+      // Create short text that won't exceed the limit
+      const shortText = 'Short before text.';
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: `<h1>Title</h1><p>More before text.</p><p>${shortText}</p><h2></h2>`,
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Title'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      // When text is short, the break at line 63 is NOT taken
+      // The loop continues to collect text from all previous siblings
+      expect(result).to.exist;
+      expect(result.checks).to.be.an('array');
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      expect(emptyCheck.headingContext).to.exist;
+    });
+
+    it('handles both breaks when text exceeds limit in both directions', async () => {
+      const url = 'https://example.com/page';
+      
+      // Create long text in both directions
+      const longTextBefore = 'E'.repeat(100);
+      const longTextAfter = 'F'.repeat(100);
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: `<h1>Title</h1><p>${longTextBefore}</p><p>${longTextBefore}</p><h2></h2><p>${longTextAfter}</p><p>${longTextAfter}</p>`,
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Title'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      // Both breaks (lines 50 and 63) should be triggered
+      expect(result).to.exist;
+      expect(result.checks).to.be.an('array');
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      expect(emptyCheck.headingContext).to.exist;
     });
   });
 });

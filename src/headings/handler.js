@@ -430,16 +430,6 @@ async function getTocDetails(document, url, pageTags, log, context, scrapedAt) {
   try {
     // Extract first 3000 characters from body
     const bodyElement = document.querySelector('body');
-    if (!bodyElement) {
-      log.warn(`[TOC Detection] No body element found for ${url}`);
-      return {
-        tocPresent: false,
-        TOCCSSSelector: null,
-        confidence: 10,
-        reasoning: 'No body element found in document',
-      };
-    }
-
     const bodyHTML = bodyElement.innerHTML || '';
     const bodyContent = bodyHTML.substring(0, 3000);
 
