@@ -91,181 +91,6 @@ export const TOC_CHECK = {
   suggestion: 'Add a Table of Contents to the page',
 };
 
-<<<<<<< HEAD
-function getHeadingLevel(tagName) {
-  return Number(tagName.charAt(1));
-}
-
-/**
- * Safely extract text content from an element
- * @param {Element} element - The DOM element
- * @param {CheerioAPI} $ - The cheerio instance
- * @returns {string} - The trimmed text content, or empty string if null/undefined
- */
-export function getTextContent(element, $) {
-  if (!element || !$) return '';
-  return $(element).text().trim();
-}
-
-/**
- * Get surrounding text content before and after a heading
- * @param {Element} heading - The heading element
- * @param {number} charLimit - Maximum characters to extract in each direction
- * @returns {Object} Object with before and after text
- */
-function getSurroundingText(heading, charLimit = 150) {
-  // Text AFTER the heading
-  let afterText = '';
-  let nextSibling = heading.nextElementSibling;
-
-  while (nextSibling && afterText.length < charLimit) {
-    const text = getTextContent(nextSibling);
-    if (text) {
-      afterText += `${text} `;
-      if (afterText.length >= charLimit) break;
-    }
-    nextSibling = nextSibling.nextElementSibling;
-  }
-
-  // Text BEFORE the heading
-  let beforeText = '';
-  let prevSibling = heading.previousElementSibling;
-
-  while (prevSibling && beforeText.length < charLimit) {
-    const text = getTextContent(prevSibling);
-    if (text) {
-      beforeText = `${text} ${beforeText}`;
-      if (beforeText.length >= charLimit) break;
-    }
-    prevSibling = prevSibling.previousElementSibling;
-  }
-
-  return {
-    before: beforeText.trim().slice(-charLimit), // Last N chars
-    after: afterText.trim().slice(0, charLimit), // First N chars
-  };
-}
-
-/**
- * Get information about the content structure that follows a heading
- * @param {Element} heading - The heading element
- * @returns {Object} Information about following content
- */
-function getFollowingStructure(heading) {
-  const nextElement = heading.nextElementSibling;
-
-  if (!nextElement) {
-    return {
-      isEmpty: true,
-      firstElement: null,
-      firstText: '',
-    };
-  }
-
-  const tagName = nextElement.tagName.toLowerCase();
-
-  return {
-    isEmpty: false,
-    firstElement: tagName,
-    hasImages: nextElement.querySelectorAll('img').length > 0,
-    hasLinks: nextElement.querySelectorAll('a').length > 0,
-    isList: ['ul', 'ol'].includes(tagName),
-    firstText: getTextContent(nextElement).slice(0, 100),
-  };
-}
-
-/**
- * Find the nearest semantic parent element and preceding heading for context
- * @param {Element} heading - The heading element
- * @param {Array<Element>} allHeadings - Array of all heading elements on the page
- * @param {number} currentIndex - Index of the current heading in allHeadings array
- * @returns {Object} Parent section context with semantic tag info and preceding heading
- */
-function getParentSectionContext(heading, allHeadings, currentIndex) {
-  const semanticTags = ['article', 'section', 'aside', 'nav', 'main', 'header', 'footer'];
-  const currentLevel = getHeadingLevel(heading.tagName);
-  let current = heading.parentElement;
-  let parentContext = null;
-  let precedingHeading = null;
-
-  // Find nearest semantic parent
-  while (current && current.tagName.toLowerCase() !== 'body') {
-    const tagName = current.tagName.toLowerCase();
-
-    if (semanticTags.includes(tagName) && !parentContext) {
-      parentContext = {
-        parentTag: tagName,
-        parentClasses: current.className
-          ? current.className.trim().split(/\s+/).filter(Boolean).slice(0, 2)
-          : [],
-        parentId: current.id || null,
-      };
-    }
-
-    current = current.parentElement;
-  }
-
-  // Find preceding higher-level heading (walk backwards using provided array)
-  for (let i = currentIndex - 1; i >= 0; i -= 1) {
-    const prevHeading = allHeadings[i];
-    const level = getHeadingLevel(prevHeading.tagName);
-
-    if (level < currentLevel) {
-      const text = getTextContent(prevHeading);
-      if (text) {
-        precedingHeading = {
-          level: prevHeading.tagName.toLowerCase(),
-          text: text.slice(0, 100), // Limit to 100 chars
-        };
-        break;
-      }
-    }
-  }
-
-  // Fallback if no semantic parent found
-  if (!parentContext && heading.parentElement) {
-    parentContext = {
-      parentTag: heading.parentElement.tagName.toLowerCase(),
-      parentClasses: heading.parentElement.className
-        ? heading.parentElement.className.trim().split(/\s+/).filter(Boolean).slice(0, 2)
-        : [],
-      parentId: heading.parentElement.id || null,
-    };
-  }
-
-  return {
-    ...parentContext,
-    precedingHeading,
-  };
-}
-
-/**
- * Get comprehensive context for a heading element to enable better AI suggestions
- * Includes surrounding text, following structure, and parent section context
- * @param {Element} heading - The heading element
- * @param {Document} document - The JSDOM document
- * @param {Array<Element>} allHeadings - Array of all heading elements on the page
- * @param {number} currentIndex - Index of the current heading in allHeadings array
- * @returns {Object} Complete heading context
- */
-function getHeadingContext(heading, document, allHeadings, currentIndex) {
-  return {
-    // Tier 1: Essential context
-    surroundingText: getSurroundingText(heading, 150),
-    followingStructure: getFollowingStructure(heading),
-
-    // Tier 2: Valuable context
-    parentSection: getParentSectionContext(heading, allHeadings, currentIndex),
-  };
-}
-
-function getScrapeJsonPath(url, siteId) {
-  const pathname = new URL(url).pathname.replace(/\/$/, '');
-  return `scrapes/${siteId}${pathname}/scrape.json`;
-}
-
-=======
->>>>>>> 3ecf6874 (fix: test cases)
 /**
  * Generate a unique CSS selector for a heading element.
  * Uses a progressive specificity strategy:
@@ -426,10 +251,10 @@ export async function getBrandGuidelines(healthyTagsObject, log, context) {
  * @param {Object} context - Audit context containing environment and clients
  * @returns {Promise<Object>} Object with tocPresent, TOCCSSSelector, confidence, reasoning
  */
-async function getTocDetails(document, url, pageTags, log, context, scrapedAt) {
+async function getTocDetails($, url, pageTags, log, context, scrapedAt) {
   try {
     // Extract first 3000 characters from body
-    const bodyElement = document.querySelector('body');
+    const bodyElement = $('body')[0];
     const bodyHTML = bodyElement.innerHTML || '';
     const bodyContent = bodyHTML.substring(0, 3000);
 
@@ -484,9 +309,8 @@ async function getTocDetails(document, url, pageTags, log, context, scrapedAt) {
 
     // If TOC is not present, determine where it should be placed
     if (!aiResponseContent.tocPresent) {
-      const placement = determineTocPlacement(document, getHeadingSelector);
-      // const tocHtml = generateTocHtml(document);
-      const headingsData = extractTocData(document, getHeadingSelector);
+      const placement = determineTocPlacement($, getHeadingSelector);
+      const headingsData = extractTocData($, getHeadingSelector);
 
       result.suggestedPlacement = placement;
       result.transformRules = {
@@ -532,6 +356,13 @@ export async function validatePageHeadingFromScrapeJson(
 ) {
   try {
     let $;
+    if (!scrapeJsonObject) {
+      log.error(`Scrape JSON object not found for ${url}, skipping headings audit`);
+      return null;
+    } else {
+      $ = cheerioLoad(scrapeJsonObject.scrapeResult.rawBody);
+    }
+
     if (!scrapeJsonObject) {
       log.error(`Scrape JSON object not found for ${url}, skipping headings audit`);
       return null;
@@ -605,20 +436,14 @@ export async function validatePageHeadingFromScrapeJson(
       });
     }
 
-<<<<<<< HEAD
-    const headingChecks = headings.map(async (heading) => {
+    const headingChecks = headings.map(async (heading, index) => {
       const tagName = $(heading).prop('tagName');
       if (tagName !== 'H1') {
         const text = getTextContent(heading, $);
-=======
-    const headingChecks = headings.map(async (heading, index) => {
-      if (heading.tagName !== 'H1') {
-        const text = getTextContent(heading);
->>>>>>> d8ab8b8c (fix: adding empty headings)
         if (text.length === 0) {
           log.info(`Empty heading detected (${tagName}) at ${url}`);
           const headingSelector = getHeadingSelector(heading);
-          const headingContext = getHeadingContext(heading, document, headings, index);
+          const headingContext = getHeadingContext(heading, $, headings, index);
           return {
             check: HEADINGS_CHECKS.HEADING_EMPTY.check,
             checkTitle: HEADINGS_CHECKS.HEADING_EMPTY.title,
@@ -686,7 +511,7 @@ export async function validatePageHeadingFromScrapeJson(
     }
 
     const tocDetails = await getTocDetails(
-      document,
+      $,
       url,
       pageTags,
       log,
