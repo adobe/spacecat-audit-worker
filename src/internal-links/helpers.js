@@ -79,8 +79,14 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
  * false if reachable/accessible
  */
 export async function isLinkInaccessible(url, log, site) {
+  // TEMP DEBUG: Log version to confirm code deployment
+  log.info(`broken-internal-links audit [v1.267.0-debug]: Checking URL accessibility for ${url}`);
+
   // Get overrideBaseURL for HTTP/2 compatibility
   const overrideBaseURL = site?.getConfig()?.getFetchConfig()?.overrideBaseURL;
+
+  // TEMP DEBUG: Log overrideBaseURL value
+  log.info(`broken-internal-links audit: overrideBaseURL=${overrideBaseURL || 'NOT_SET'}`);
 
   // Construct the final URL for fetching
   let fetchUrl = url;
@@ -90,10 +96,13 @@ export async function isLinkInaccessible(url, log, site) {
       const overrideUrl = new URL(overrideBaseURL);
       // Replace base URL but keep the pathname, search, and hash from original
       fetchUrl = `${overrideUrl.origin}${originalUrl.pathname}${originalUrl.search}${originalUrl.hash}`;
-      log.debug(`broken-internal-links audit: Using overrideBaseURL for accessibility check. Original: ${url}, Fetch URL: ${fetchUrl}`);
+      log.info(`broken-internal-links audit: USING overrideBaseURL. Original: ${url}, Fetch URL: ${fetchUrl}`);
     } catch (error) {
       log.warn(`broken-internal-links audit: Failed to construct URL with overrideBaseURL: ${error.message}. Using original URL.`);
     }
+  } else {
+    // TEMP DEBUG: Log when NOT using overrideBaseURL
+    log.info(`broken-internal-links audit: NOT using overrideBaseURL. Fetching original URL: ${url}`);
   }
 
   try {
