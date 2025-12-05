@@ -194,11 +194,11 @@ describe('isLinkInaccessible', () => {
 
     const result = await isLinkInaccessible('https://example.com/test-page', mockLog, siteWithOverride);
     expect(result).to.be.false;
-    expect(mockLog.debug.calledOnce).to.be.true;
-    // Check that debug was called with a message containing both original and fetch URL
-    const debugCall = mockLog.debug.getCall(0).args[0];
-    expect(debugCall).to.include('broken-internal-links audit: Using overrideBaseURL for accessibility check');
-    expect(debugCall).to.include('https://example.com/test-page');
-    expect(debugCall).to.include('https://proxy.example.com/test-page');
+    // Check that info was called with messages about overrideBaseURL
+    expect(mockLog.info.called).to.be.true;
+    const infoCalls = mockLog.info.getCalls().map((call) => call.args[0]);
+    expect(infoCalls.some((msg) => msg.includes('USING overrideBaseURL'))).to.be.true;
+    expect(infoCalls.some((msg) => msg.includes('https://example.com/test-page'))).to.be.true;
+    expect(infoCalls.some((msg) => msg.includes('https://proxy.example.com/test-page'))).to.be.true;
   });
 });
