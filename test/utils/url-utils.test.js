@@ -20,8 +20,47 @@ import {
   getCountryCodeFromLang,
   parseCustomUrls,
   findBestMatchingPath,
+  isPdfUrl,
 } from '../../src/utils/url-utils.js';
 import * as utils from '../../src/utils/url-utils.js';
+
+describe('isPdfUrl', () => {
+  it('should return true for URLs ending with .pdf', () => {
+    expect(isPdfUrl('https://example.com/document.pdf')).to.be.true;
+    expect(isPdfUrl('https://example.com/path/to/file.pdf')).to.be.true;
+    expect(isPdfUrl('https://www.bmw.fr/content/dam/bmw/brochure.pdf')).to.be.true;
+  });
+
+  it('should return true for URLs with .pdf regardless of case', () => {
+    expect(isPdfUrl('https://example.com/document.PDF')).to.be.true;
+    expect(isPdfUrl('https://example.com/file.Pdf')).to.be.true;
+    expect(isPdfUrl('https://example.com/doc.PdF')).to.be.true;
+  });
+
+  it('should return false for non-PDF URLs', () => {
+    expect(isPdfUrl('https://example.com/page.html')).to.be.false;
+    expect(isPdfUrl('https://example.com/image.jpg')).to.be.false;
+    expect(isPdfUrl('https://example.com/document.docx')).to.be.false;
+    expect(isPdfUrl('https://example.com/page')).to.be.false;
+  });
+
+  it('should return true for URLs with query parameters after .pdf', () => {
+    expect(isPdfUrl('https://example.com/doc.pdf?version=1')).to.be.true;
+    expect(isPdfUrl('https://example.com/file.pdf#page=2')).to.be.true;
+  });
+
+  it('should return false for invalid URLs', () => {
+    expect(isPdfUrl('not-a-url')).to.be.false;
+    expect(isPdfUrl('')).to.be.false;
+    expect(isPdfUrl(null)).to.be.false;
+    expect(isPdfUrl(undefined)).to.be.false;
+  });
+
+  it('should return false for URLs containing "pdf" but not ending with .pdf', () => {
+    expect(isPdfUrl('https://example.com/pdf-documents/page')).to.be.false;
+    expect(isPdfUrl('https://example.com/my-pdf-file.html')).to.be.false;
+  });
+});
 
 describe('isPreviewPage', () => {
   it('should return true for preview pages', () => {

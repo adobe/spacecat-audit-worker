@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { h1 } from '@adobe/fetch';
 
 const LINK_TIMEOUT = 3000;
 export const CPC_DEFAULT_VALUE = 1;
@@ -71,24 +72,70 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
  * The check will timeout after LINK_TIMEOUT milliseconds.
  * Non-404 client errors (400-499) will log a warning.
  * All errors (network, timeout etc) will log an error and return true.
+ * Uses overrideBaseURL from site configuration if available for HTTP/2 compatibility.
  * @param {string} url - The URL to validate
+ * @param {Object} log - Logger instance
+ * @param {Object} site - Site object containing configuration
  * @returns {Promise<boolean>} True if the URL is inaccessible, times out, or errors
  * false if reachable/accessible
  */
-export async function isLinkInaccessible(url, log) {
-  try {
-    const response = await fetch(url, { timeout: LINK_TIMEOUT });
-    const { status } = response;
+export async function isLinkInaccessible(url, log, site) {
+  // TEMP DEBUG: Log version to confirm code deployment
+  log.info(`broken-internal-links audit [v1.267.1-http1-fix]: Checking URL accessibility for ${url}`);
 
-    // Log non-404, non-200 status codes
-    if (status >= 400 && status < 500 && status !== 404) {
-      log.warn(`broken-internal-links audit: Warning: ${url} returned client error: ${status}`);
+  // Get fetch configuration
+  const fetchConfig = site?.getConfig()?.getFetchConfig();
+  const overrideBaseURL = fetchConfig?.overrideBaseURL;
+  // Use HTTP/1.1 when overrideBaseURL is set (indicates HTTP/2 compatibility issues)
+  const forceHTTP1 = !!overrideBaseURL;
+
+  // TEMP DEBUG: Log configuration
+  log.info(`broken-internal-links audit: overrideBaseURL=${overrideBaseURL || 'NOT_SET'}, forceHTTP1=${forceHTTP1}`);
+
+  // Construct the final URL for fetching
+  let fetchUrl = url;
+  if (overrideBaseURL) {
+    try {
+      const originalUrl = new URL(url);
+      const overrideUrl = new URL(overrideBaseURL);
+      // Replace base URL but keep the pathname, search, and hash from original
+      fetchUrl = `${overrideUrl.origin}${originalUrl.pathname}${originalUrl.search}${originalUrl.hash}`;
+      log.info(`broken-internal-links audit: USING overrideBaseURL. Original: ${url}, Fetch URL: ${fetchUrl}`);
+    } catch (error) {
+      log.warn(`broken-internal-links audit: Failed to construct URL with overrideBaseURL: ${error.message}. Using original URL.`);
     }
+  }
 
-    // URL is valid if status code is less than 400, otherwise it is invalid
-    return status >= 400;
+  try {
+    // Use HTTP/1.1 if forceHTTP1 is true (for sites with bot protection blocking HTTP/2)
+    const fetchFunction = forceHTTP1 ? h1().fetch : fetch;
+
+    // Create AbortController for timeout (works with both h1().fetch and regular fetch)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), LINK_TIMEOUT);
+
+    try {
+      const response = await fetchFunction(fetchUrl, {
+        signal: controller.signal,
+        ...(forceHTTP1 ? {} : { timeout: LINK_TIMEOUT }), // Only use timeout for regular fetch
+      });
+      clearTimeout(timeoutId);
+
+      const { status } = response;
+
+      // Log non-404, non-200 status codes
+      if (status >= 400 && status < 500 && status !== 404) {
+        log.warn(`broken-internal-links audit: Warning: ${url} returned client error: ${status}`);
+      }
+
+      // URL is valid if status code is less than 400, otherwise it is invalid
+      return status >= 400;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   } catch (error) {
-    log.error(`broken-internal-links audit: Error checking ${url}: ${error.code === 'ETIMEOUT' ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
+    const isTimeout = error.name === 'AbortError' || error.code === 'ETIMEOUT';
+    log.error(`broken-internal-links audit: Error checking ${url}: ${isTimeout ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
     // Any error means the URL is inaccessible
     return true;
   }
