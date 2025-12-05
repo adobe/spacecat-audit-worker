@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { h1 } from '@adobe/fetch';
 
 const LINK_TIMEOUT = 3000;
 export const CPC_DEFAULT_VALUE = 1;
@@ -82,11 +83,14 @@ export async function isLinkInaccessible(url, log, site) {
   // TEMP DEBUG: Log version to confirm code deployment
   log.info(`broken-internal-links audit [v1.267.0-debug]: Checking URL accessibility for ${url}`);
 
-  // Get overrideBaseURL for HTTP/2 compatibility
-  const overrideBaseURL = site?.getConfig()?.getFetchConfig()?.overrideBaseURL;
+  // Get fetch configuration
+  const fetchConfig = site?.getConfig()?.getFetchConfig();
+  const overrideBaseURL = fetchConfig?.overrideBaseURL;
+  // Use HTTP/1.1 when overrideBaseURL is set (indicates HTTP/2 compatibility issues)
+  const forceHTTP1 = !!overrideBaseURL;
 
-  // TEMP DEBUG: Log overrideBaseURL value
-  log.info(`broken-internal-links audit: overrideBaseURL=${overrideBaseURL || 'NOT_SET'}`);
+  // TEMP DEBUG: Log configuration
+  log.info(`broken-internal-links audit: overrideBaseURL=${overrideBaseURL || 'NOT_SET'}, forceHTTP1=${forceHTTP1}`);
 
   // Construct the final URL for fetching
   let fetchUrl = url;
@@ -100,13 +104,12 @@ export async function isLinkInaccessible(url, log, site) {
     } catch (error) {
       log.warn(`broken-internal-links audit: Failed to construct URL with overrideBaseURL: ${error.message}. Using original URL.`);
     }
-  } else {
-    // TEMP DEBUG: Log when NOT using overrideBaseURL
-    log.info(`broken-internal-links audit: NOT using overrideBaseURL. Fetching original URL: ${url}`);
   }
 
   try {
-    const response = await fetch(fetchUrl, { timeout: LINK_TIMEOUT });
+    // Use HTTP/1.1 if forceHTTP1 is true (for sites with bot protection blocking HTTP/2)
+    const fetchFunction = forceHTTP1 ? h1().fetch : fetch;
+    const response = await fetchFunction(fetchUrl, { timeout: LINK_TIMEOUT });
     const { status } = response;
 
     // Log non-404, non-200 status codes

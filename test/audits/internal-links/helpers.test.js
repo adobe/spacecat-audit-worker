@@ -174,31 +174,29 @@ describe('isLinkInaccessible', () => {
     )).to.be.true;
   });
 
-  it('should log debug message when overrideBaseURL is present', async function call() {
+  it('should use HTTP/1.1 when forceHTTP1 is enabled', async function call() {
     this.timeout(6000);
 
-    // Mock site with overrideBaseURL
-    const siteWithOverride = {
+    // Mock site with forceHTTP1 enabled (for sites with HTTP/2 issues)
+    const siteWithHTTP1 = {
       getBaseURL: sinon.stub().returns('https://example.com'),
       getConfig: sinon.stub().returns({
         getFetchConfig: sinon.stub().returns({
-          overrideBaseURL: 'https://proxy.example.com',
+          forceHTTP1: true,
         }),
       }),
     };
 
-    // Mock the fetch to the proxy URL (overrideBaseURL) with the original path
-    nock('https://proxy.example.com')
+    // Mock the fetch
+    nock('https://example.com')
       .get('/test-page')
       .reply(200);
 
-    const result = await isLinkInaccessible('https://example.com/test-page', mockLog, siteWithOverride);
+    const result = await isLinkInaccessible('https://example.com/test-page', mockLog, siteWithHTTP1);
     expect(result).to.be.false;
-    // Check that info was called with messages about overrideBaseURL
+    // Check that info was called with message about HTTP/1.1
     expect(mockLog.info.called).to.be.true;
     const infoCalls = mockLog.info.getCalls().map((call) => call.args[0]);
-    expect(infoCalls.some((msg) => msg.includes('USING overrideBaseURL'))).to.be.true;
-    expect(infoCalls.some((msg) => msg.includes('https://example.com/test-page'))).to.be.true;
-    expect(infoCalls.some((msg) => msg.includes('https://proxy.example.com/test-page'))).to.be.true;
+    expect(infoCalls.some((msg) => msg.includes('Using HTTP/1.1 protocol'))).to.be.true;
   });
 });
