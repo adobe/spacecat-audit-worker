@@ -23,6 +23,15 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
+import {
+  getHeadingLevel,
+  getTextContent,
+  getHeadingContext,
+  getScrapeJsonPath,
+  extractTocData,
+  tocArrayToHast,
+  determineTocPlacement,
+} from './utils.js';
 
 const auditType = Audit.AUDIT_TYPES.HEADINGS;
 
@@ -82,6 +91,7 @@ export const TOC_CHECK = {
   suggestion: 'Add a Table of Contents to the page',
 };
 
+<<<<<<< HEAD
 function getHeadingLevel(tagName) {
   return Number(tagName.charAt(1));
 }
@@ -254,6 +264,8 @@ function getScrapeJsonPath(url, siteId) {
   return `scrapes/${siteId}${pathname}/scrape.json`;
 }
 
+=======
+>>>>>>> 3ecf6874 (fix: test cases)
 /**
  * Generate a unique CSS selector for a heading element.
  * Uses a progressive specificity strategy:
@@ -405,98 +417,6 @@ export async function getBrandGuidelines(healthyTagsObject, log, context) {
   return aiResponseContent;
 }
 
-function extractTocData(document) {
-  const headings = Array.from(document.querySelectorAll('h1', 'h2'));
-
-  return headings.map((h) => {
-    const text = getTextContent(h);
-    const level = getHeadingLevel(h.tagName);
-    const selector = getHeadingSelector(h);
-    return { text, level, selector };
-  });
-}
-
-function tocArrayToHast(tocData) {
-  // children for <ul>
-  const liNodes = tocData.map((item) => {
-    const isSub = Number(item.level) === 2;
-
-    return {
-      type: 'element',
-      tagName: 'li',
-      properties: isSub ? { className: ['toc-sub'] } : {},
-      children: [
-        {
-          type: 'element',
-          tagName: 'a',
-          properties: {
-            href: '#',
-            'data-selector': item.selector,
-          },
-          children: [{ type: 'text', value: item.text }],
-        },
-      ],
-    };
-  });
-
-  const ul = {
-    type: 'element',
-    tagName: 'ul',
-    properties: {},
-    children: liNodes,
-  };
-
-  const nav = {
-    type: 'element',
-    tagName: 'nav',
-    properties: { className: ['toc'] },
-    children: [ul],
-  };
-
-  return {
-    type: 'root',
-    children: [nav],
-  };
-}
-
-/**
- * Determine optimal placement for a Table of Contents based on page structure
- * @param {Document} document - The JSDOM document
- * @returns {Object} Object with action, selector, and reasoning for TOC placement
- */
-function determineTocPlacement(document) {
-  const h1Element = document.querySelector('h1');
-  const mainElement = document.querySelector('body > main');
-
-  // Strategy 1: After H1 if present
-  if (h1Element) {
-    return {
-      action: 'insertAfter',
-      selector: getHeadingSelector(h1Element),
-      placement: 'after-h1',
-      reasoning: 'TOC placed immediately after H1 heading',
-    };
-  }
-
-  // Strategy 2: At the beginning of main content area (direct child of body)
-  if (mainElement) {
-    return {
-      action: 'insertBefore',
-      selector: 'body > main > :first-child',
-      placement: 'main-start',
-      reasoning: 'TOC placed at the start of main content area',
-    };
-  }
-
-  // Fallback: Beginning of body content
-  return {
-    action: 'insertBefore',
-    selector: 'body > :first-child',
-    placement: 'body-start',
-    reasoning: 'TOC placed at the beginning of body (fallback)',
-  };
-}
-
 /**
  * Detect if a Table of Contents (TOC) is present in the document using LLM analysis
  * @param {Document} document - The JSDOM document
@@ -574,9 +494,9 @@ async function getTocDetails(document, url, pageTags, log, context, scrapedAt) {
 
     // If TOC is not present, determine where it should be placed
     if (!aiResponseContent.tocPresent) {
-      const placement = determineTocPlacement(document);
+      const placement = determineTocPlacement(document, getHeadingSelector);
       // const tocHtml = generateTocHtml(document);
-      const headingsData = extractTocData(document);
+      const headingsData = extractTocData(document, getHeadingSelector);
 
       result.suggestedPlacement = placement;
       result.transformRules = {
