@@ -19,6 +19,7 @@ import sinonChai from 'sinon-chai';
 import {
   DeleteObjectCommand,
   DeleteObjectsCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
@@ -1609,6 +1610,9 @@ describe('data-processing utility functions', () => {
         .resolves({
           CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
         });
+      // S3 HeadObject mock (for checking if file exists - simulate file doesn't exist)
+      mockS3Client.send.withArgs(sinon.match.instanceOf(HeadObjectCommand))
+        .rejects(new Error('File not found'));
       // S3 PutObject mock (saving aggregated data)
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
       // S3 DeleteObjects/DeleteObject mocks (for cleanupS3Files)
@@ -1776,6 +1780,9 @@ describe('data-processing utility functions', () => {
         .resolves({
           CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
         });
+      // S3 HeadObject mock (for checking if file exists - simulate file doesn't exist)
+      mockS3Client.send.withArgs(sinon.match.instanceOf(HeadObjectCommand))
+        .rejects(new Error('File not found'));
       // S3 PutObject mock
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
       // S3 DeleteObject/DeleteObjects mock (for cleanupS3Files)
@@ -1809,9 +1816,9 @@ describe('data-processing utility functions', () => {
 
       expect(result.success).to.be.true;
 
-      // const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey1}`;
-      // The log message in the code actually uses lastWeekObjectKeys[1] for the key part.
-      const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey2}`;
+      // The log message in the code actually uses lastWeekObjectKeys[length-2] for the key part.
+      // With array [lastWeekFileKey1, lastWeekFileKey2], length-2 = 0, so it uses lastWeekFileKey1
+      const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey1}`;
       const logCall = mockLog.debug.getCalls().find((call) => call.args[0].includes(expectedKeyInLog) && call.args[0].includes('with content:'));
       expect(logCall).to.not.be.undefined;
       // If more precise matching is needed, verify the full content:
@@ -1831,6 +1838,9 @@ describe('data-processing utility functions', () => {
       // For getSubfolders (via getObjectKeysFromSubfolders)
       mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
         .resolves({ CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }] });
+      // S3 HeadObject mock (for checking if file exists - simulate file doesn't exist)
+      mockS3Client.send.withArgs(sinon.match.instanceOf(HeadObjectCommand))
+        .rejects(new Error('File not found'));
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({}); // For save
       mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
 

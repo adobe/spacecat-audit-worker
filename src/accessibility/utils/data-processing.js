@@ -315,6 +315,125 @@ export function getAuditPrefixes(auditType) {
 }
 
 /**
+ * Merges two accessibility data objects, preserving data from both
+ * @param {object} existingData - the existing aggregated data
+ * @param {object} newData - the new aggregated data to merge
+ * @param {import('@azure/logger').Logger} log - a logger instance
+ * @param {string} logIdentifier - identifier for log messages
+ * @returns {object} merged data
+ */
+export function mergeAccessibilityData(existingData, newData, log, logIdentifier = 'A11yMerge') {
+  log.info(`[${logIdentifier}] MERGE FUNCTION START: Beginning merge process`);
+  log.info(`[${logIdentifier}] MERGE FUNCTION: existingData has ${Object.keys(existingData).length} keys`);
+  log.info(`[${logIdentifier}] MERGE FUNCTION: newData has ${Object.keys(newData).length} keys`);
+
+  const existingUrls = Object.keys(existingData).filter((k) => k !== 'overall');
+  const newUrls = Object.keys(newData).filter((k) => k !== 'overall');
+
+  log.info(`[${logIdentifier}] MERGE FUNCTION: existingData URLs: ${existingUrls.length} - ${existingUrls.slice(0, 5).join(', ')}${existingUrls.length > 5 ? '...' : ''}`);
+  log.info(`[${logIdentifier}] MERGE FUNCTION: newData URLs: ${newUrls.length} - ${newUrls.slice(0, 5).join(', ')}${newUrls.length > 5 ? '...' : ''}`);
+
+  const merged = JSON.parse(JSON.stringify(existingData));
+  log.info(`[${logIdentifier}] MERGE FUNCTION: Created deep copy of existingData`);
+
+  let addedCount = 0;
+  let skippedCount = 0;
+
+  Object.entries(newData).forEach(([key, value]) => {
+    if (key === 'overall') {
+      log.debug(`[${logIdentifier}] MERGE FUNCTION: Skipping 'overall' key - will recalculate`);
+      return; // Skip overall, we'll recalculate it
+    }
+
+    if (!merged[key]) {
+      // New URL not in existing data, add it
+      merged[key] = value;
+      addedCount += 1;
+      log.info(`[${logIdentifier}] MERGE FUNCTION: Added new URL data for: ${key}`);
+    } else {
+      skippedCount += 1;
+      log.debug(`[${logIdentifier}] MERGE FUNCTION: URL already exists, skipping: ${key}`);
+    }
+  });
+
+  log.info(`[${logIdentifier}] MERGE FUNCTION: Added ${addedCount} new URLs, skipped ${skippedCount} existing URLs`);
+
+  // Recalculate overall statistics from all merged data
+  const recalculatedOverall = {
+    violations: {
+      total: 0,
+      critical: { count: 0, items: {} },
+      serious: { count: 0, items: {} },
+    },
+  };
+
+  // Process each URL's violations
+  Object.entries(merged).forEach(([key, urlData]) => {
+    if (key === 'overall' || !urlData || !urlData.violations) return;
+
+    // Add to total violations count
+    const totalViolations = Number(urlData.violations.total) || 0;
+    recalculatedOverall.violations.total += totalViolations;
+
+    // Process critical and serious violations
+    ['critical', 'serious'].forEach((severity) => {
+      const severityData = urlData.violations[severity];
+      if (!severityData?.items) return;
+
+      // Merge each rule's data
+      Object.entries(severityData.items).forEach(([ruleId, ruleData]) => {
+        if (!ruleId || !ruleData || typeof ruleData !== 'object') return;
+
+        const overallItems = recalculatedOverall.violations[severity].items;
+
+        if (!overallItems[ruleId]) {
+          // If first time seeing this rule, copy it with all required fields
+          overallItems[ruleId] = {
+            count: ruleData.count || 0,
+            description: ruleData.description || '',
+            level: ruleData.level || severity,
+            understandingUrl: ruleData.understandingUrl || '',
+            successCriteriaNumber: ruleData.successCriteriaNumber || '',
+            ...ruleData, // Include any additional fields
+          };
+          if (ruleData.htmlData) {
+            overallItems[ruleId].htmlData = [...ruleData.htmlData];
+          }
+        } else {
+          // If rule already exists, merge the data
+          overallItems[ruleId].count = (overallItems[ruleId].count || 0) + (ruleData.count || 0);
+
+          if (ruleData.htmlData?.length) {
+            if (!overallItems[ruleId].htmlData) overallItems[ruleId].htmlData = [];
+            overallItems[ruleId].htmlData.push(...ruleData.htmlData);
+          }
+        }
+      });
+    });
+  });
+
+  // Calculate final severity counts (after all URLs processed)
+  ['critical', 'serious'].forEach((severity) => {
+    recalculatedOverall.violations[severity].count = Object.values(
+      recalculatedOverall.violations[severity].items,
+    ).reduce((sum, rule) => sum + (rule.count || 0), 0);
+  });
+
+  merged.overall = recalculatedOverall;
+
+  const existingUrlCount = Object.keys(existingData).length - 1; // -1 for 'overall'
+  const newUrlCount = Object.keys(newData).length - 1;
+  const mergedUrlCount = Object.keys(merged).length - 1;
+
+  log.info(`[${logIdentifier}] MERGE FUNCTION COMPLETE: existing=${existingUrlCount} URLs, new=${newUrlCount} URLs, final=${mergedUrlCount} URLs`);
+  log.info(`[${logIdentifier}] MERGE FUNCTION COMPLETE: Final merged data has ${Object.keys(merged).length} total keys`);
+  log.info(`[${logIdentifier}] MERGE FUNCTION COMPLETE: Final URLs: ${Object.keys(merged).filter((k) => k !== 'overall').slice(0, 10).join(', ')}${mergedUrlCount > 10 ? '...' : ''}`);
+  log.info(`[${logIdentifier}] MERGE FUNCTION COMPLETE: Overall violations total: ${recalculatedOverall.violations.total}`);
+
+  return merged;
+}
+
+/**
  * Aggregates accessibility audit data from multiple JSON files in S3 and creates a summary
  * @param {import('@aws-sdk/client-s3').S3Client} s3Client - an S3 client
  * @param {string} bucketName - the name of the S3 bucket
@@ -397,7 +516,8 @@ export async function aggregateAccessibilityData(
     }
 
     // Process the results
-    results.forEach((result) => {
+    log.info(`[${logIdentifier}] PROCESSING: About to process ${results.length} files`);
+    results.forEach((result, index) => {
       const { data } = result;
       const {
         violations, traffic, url: siteUrl, source,
@@ -407,6 +527,8 @@ export async function aggregateAccessibilityData(
       const key = source ? `${siteUrl}${URL_SOURCE_SEPARATOR}${source}` : siteUrl;
       aggregatedData[key] = { violations, traffic };
 
+      log.debug(`[${logIdentifier}] PROCESSING: File ${index + 1}/${results.length} - Added URL: ${key}`);
+
       // Update overall data
       aggregatedData = updateViolationData(aggregatedData, violations, 'critical');
       aggregatedData = updateViolationData(aggregatedData, violations, 'serious');
@@ -415,15 +537,56 @@ export async function aggregateAccessibilityData(
       }
     });
 
-    // Save aggregated data to S3
+    log.info(`[${logIdentifier}] PROCESSING COMPLETE: Processed ${results.length} files`);
+    log.info(`[${logIdentifier}] PROCESSING COMPLETE: aggregatedData now has ${Object.keys(aggregatedData).length} keys`);
+    log.info(`[${logIdentifier}] PROCESSING COMPLETE: URLs in aggregatedData: ${Object.keys(aggregatedData).filter((k) => k !== 'overall').length}`);
+    log.info(`[${logIdentifier}] PROCESSING COMPLETE: Total violations: ${aggregatedData.overall.violations.total}`);
+
+    // Check if file already exists and merge if it does
+    let finalData = aggregatedData;
+    log.info(`[${logIdentifier}] MERGE DEBUG: Starting merge check for outputKey: ${outputKey}`);
+    log.info(`[${logIdentifier}] MERGE DEBUG: Current aggregatedData has ${Object.keys(aggregatedData).length} keys: ${Object.keys(aggregatedData).join(', ')}`);
+    log.info(`[${logIdentifier}] MERGE DEBUG: Current aggregatedData URLs (excluding overall): ${Object.keys(aggregatedData).filter((k) => k !== 'overall').length}`);
+
+    try {
+      log.info(`[${logIdentifier}] MERGE DEBUG: Checking if file exists with HeadObjectCommand...`);
+      await s3Client.send(new HeadObjectCommand({ Bucket: bucketName, Key: outputKey }));
+      log.info(`[${logIdentifier}] MERGE DEBUG: File exists! Attempting to load existing data...`);
+
+      const existingData = await getObjectFromKey(s3Client, bucketName, outputKey, log);
+      if (existingData) {
+        log.info(`[${logIdentifier}] MERGE DEBUG: Existing data loaded successfully`);
+        log.info(`[${logIdentifier}] MERGE DEBUG: Existing data has ${Object.keys(existingData).length} keys: ${Object.keys(existingData).join(', ')}`);
+        log.info(`[${logIdentifier}] MERGE DEBUG: Existing data URLs (excluding overall): ${Object.keys(existingData).filter((k) => k !== 'overall').length}`);
+        log.info(`[${logIdentifier}] MERGE DEBUG: About to call mergeAccessibilityData...`);
+
+        finalData = mergeAccessibilityData(existingData, aggregatedData, log, logIdentifier);
+
+        log.info(`[${logIdentifier}] MERGE DEBUG: Merge completed! Final data has ${Object.keys(finalData).length} keys`);
+        log.info(`[${logIdentifier}] MERGE DEBUG: Final data URLs (excluding overall): ${Object.keys(finalData).filter((k) => k !== 'overall').length}`);
+      } else {
+        log.warn(`[${logIdentifier}] MERGE DEBUG: File exists but getObjectFromKey returned null/undefined`);
+      }
+    } catch (error) {
+      log.info(`[${logIdentifier}] MERGE DEBUG: File doesn't exist (HeadObjectCommand failed): ${error.message}`);
+      log.info(`[${logIdentifier}] MERGE DEBUG: Will create new file with current aggregatedData`);
+    }
+
+    // Save final data to S3
+    log.info(`[${logIdentifier}] SAVING: About to save final data to S3`);
+    log.info(`[${logIdentifier}] SAVING: Final data has ${Object.keys(finalData).length} keys`);
+    log.info(`[${logIdentifier}] SAVING: Final data URLs: ${Object.keys(finalData).filter((k) => k !== 'overall').length}`);
+    log.info(`[${logIdentifier}] SAVING: Final data total violations: ${finalData.overall?.violations?.total || 'N/A'}`);
+
     await s3Client.send(new PutObjectCommand({
       Bucket: bucketName,
       Key: outputKey,
-      Body: JSON.stringify(aggregatedData, null, 2),
+      Body: JSON.stringify(finalData, null, 2),
       ContentType: 'application/json',
     }));
 
     log.debug(`[${logIdentifier}] Saved aggregated accessibility data to ${outputKey}`);
+    log.info(`[${logIdentifier}] SAVING COMPLETE: Saved aggregated accessibility data to ${outputKey}`);
 
     // check if there are any other final-result files in the {storagePrefix}/siteId folder
     // if there are, we will use the latest one for comparison later on
@@ -440,7 +603,7 @@ export async function aggregateAccessibilityData(
         log,
       );
     if (lastWeekFile) {
-      log.debug(`[${logIdentifier}] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
+      log.debug(`[${logIdentifier}] Last week file key:${lastWeekObjectKeys[lastWeekObjectKeys.length - 2]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
     }
 
     await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
@@ -448,7 +611,7 @@ export async function aggregateAccessibilityData(
     return {
       success: true,
       finalResultFiles: {
-        current: aggregatedData,
+        current: finalData,
         lastWeek: lastWeekFile,
       },
       message: `Successfully aggregated ${objectKeys.length} files into ${outputKey}`,
