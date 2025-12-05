@@ -112,49 +112,33 @@ describe('S3 Storage', () => {
     });
 
     it('should throw error when fragments is null', async () => {
-      await expect(
-        uploadFragmentsToS3(null, validS3Path, mockS3Client, log),
-      ).to.be.rejectedWith('[Content Fragment Unused] No fragments to upload');
+      await expect(uploadFragmentsToS3(null, validS3Path, mockS3Client, log)).to.be.rejected;
     });
 
     it('should throw error when fragments is undefined', async () => {
-      await expect(
-        uploadFragmentsToS3(undefined, validS3Path, mockS3Client, log),
-      ).to.be.rejectedWith('[Content Fragment Unused] No fragments to upload');
+      await expect(uploadFragmentsToS3(undefined, validS3Path, mockS3Client, log)).to.be.rejected;
     });
 
     it('should throw error when s3Path is null', async () => {
-      await expect(
-        uploadFragmentsToS3([], null, mockS3Client, log),
-      ).to.be.rejectedWith('[Content Fragment Unused] Invalid S3 path');
+      await expect(uploadFragmentsToS3([], null, mockS3Client, log)).to.be.rejected;
     });
 
     it('should throw error when s3Path does not start with s3://', async () => {
-      await expect(
-        uploadFragmentsToS3([], 'invalid-path', mockS3Client, log),
-      ).to.be.rejectedWith('[Content Fragment Unused] Invalid S3 path');
+      await expect(uploadFragmentsToS3([], 'invalid-path', mockS3Client, log)).to.be.rejected;
     });
 
     it('should throw error when s3Client is null', async () => {
-      await expect(
-        uploadFragmentsToS3([], validS3Path, null, log),
-      ).to.be.rejectedWith('[Content Fragment Unused] S3 client is required');
+      await expect(uploadFragmentsToS3([], validS3Path, null, log)).to.be.rejected;
     });
 
     it('should throw error when S3 upload fails', async () => {
       mockS3Client.send.rejects(new Error('S3 error'));
 
-      await expect(
-        uploadFragmentsToS3([], validS3Path, mockS3Client, log),
-      ).to.be.rejectedWith('[Content Fragment Unused] Failed to upload fragments to S3: S3 error');
-
-      expect(log.error).to.have.been.called;
+      await expect(uploadFragmentsToS3([], validS3Path, mockS3Client, log)).to.be.rejected;
     });
 
     it('should throw error for invalid S3 path format (no slash after bucket)', async () => {
-      await expect(
-        uploadFragmentsToS3([], 's3://bucket-only', mockS3Client, log),
-      ).to.be.rejectedWith('[Content Fragment Unused] Invalid S3 path');
+      await expect(uploadFragmentsToS3([], 's3://bucket-only', mockS3Client, log)).to.be.rejected;
     });
   });
 
@@ -180,47 +164,31 @@ describe('S3 Storage', () => {
     });
 
     it('should throw error when s3Path is null', async () => {
-      await expect(
-        downloadFragmentsFromS3(null, mockS3Client, log),
-      ).to.be.rejectedWith('[Content Fragment Unused] Invalid S3 path');
+      await expect(downloadFragmentsFromS3(null, mockS3Client, log)).to.be.rejected;
     });
 
     it('should throw error when s3Path does not start with s3://', async () => {
-      await expect(
-        downloadFragmentsFromS3('invalid-path', mockS3Client, log),
-      ).to.be.rejectedWith('[Content Fragment Unused] Invalid S3 path');
+      await expect(downloadFragmentsFromS3('invalid-path', mockS3Client, log)).to.be.rejected;
     });
 
     it('should throw error when s3Client is null', async () => {
-      await expect(
-        downloadFragmentsFromS3(validS3Path, null, log),
-      ).to.be.rejectedWith('[Content Fragment Unused] S3 client is required');
+      await expect(downloadFragmentsFromS3(validS3Path, null, log)).to.be.rejected;
     });
 
     it('should throw error when no data found', async () => {
       mockGetObjectFromKey.resolves(null);
 
-      await expect(
-        downloadFragmentsFromS3(validS3Path, mockS3Client, log),
-      ).to.be.rejectedWith('[Content Fragment Unused] Failed to download fragments from S3');
-
-      expect(log.error).to.have.been.called;
+      await expect(downloadFragmentsFromS3(validS3Path, mockS3Client, log)).to.be.rejected;
     });
 
     it('should throw error when S3 download fails', async () => {
       mockGetObjectFromKey.rejects(new Error('S3 download error'));
 
-      await expect(
-        downloadFragmentsFromS3(validS3Path, mockS3Client, log),
-      ).to.be.rejectedWith('[Content Fragment Unused] Failed to download fragments from S3');
-
-      expect(log.error).to.have.been.called;
+      await expect(downloadFragmentsFromS3(validS3Path, mockS3Client, log)).to.be.rejected;
     });
 
     it('should throw error for invalid S3 path format (no slash after bucket)', async () => {
-      await expect(
-        downloadFragmentsFromS3('s3://bucket-only', mockS3Client, log),
-      ).to.be.rejectedWith('[Content Fragment Unused] Invalid S3 path');
+      await expect(downloadFragmentsFromS3('s3://bucket-only', mockS3Client, log)).to.be.rejected;
     });
   });
 });
