@@ -13,7 +13,11 @@
 /* eslint-disable max-classes-per-file */
 
 import { createHash } from 'crypto';
-import { isNonEmptyArray, buildAggregationKeyFromSuggestion } from '@adobe/spacecat-shared-utils';
+import {
+  isNonEmptyArray,
+  buildAggregationKey,
+  buildKey,
+} from '@adobe/spacecat-shared-utils';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 
 /**
@@ -133,19 +137,42 @@ async function updateSuggestionsWithCodeChange(
       const suggestionUrl = suggestionData.url;
       const suggestionSource = suggestionData.source;
 
-      let suggestionMatchKey;
+      let suggestionsMatch = false;
+
       if (useAggregationKey) {
-        // Build aggregation key from suggestion data
-        suggestionMatchKey = buildAggregationKeyFromSuggestion(suggestionData);
+        // For aggregation key matching, we need to check each issue and its htmlWithIssues
+        // A suggestion can have multiple issues, and each issue can have multiple htmlWithIssues
+        // We match if ANY of them produces an aggregation key that matches
+        const { issues = [] } = suggestionData;
+        for (const issue of issues) {
+          const { htmlWithIssues = [] } = issue;
+          for (const htmlItem of htmlWithIssues) {
+            // Build aggregation key using the same logic as when creating suggestions
+            const targetSelector = htmlItem.target_selector || htmlItem.targetSelector || '';
+            const suggestionMatchKey = buildAggregationKey(
+              issue.type,
+              suggestionUrl,
+              targetSelector,
+              suggestionSource,
+            );
+
+            if (suggestionMatchKey === matchKey && !!reportData.diff) {
+              suggestionsMatch = true;
+              log.debug(`[CodeFixProcessor] Matched suggestion ${suggestion.getId()}: key="${suggestionMatchKey}"`);
+              break;
+            }
+          }
+          if (suggestionsMatch) break;
+        }
       } else {
-        // Use issue type (ruleId) for backwards compatibility
-        suggestionMatchKey = suggestionData.issues?.[0]?.type;
+        const suggestionMatchKey = buildKey(suggestionUrl, suggestionSource);
+        const issueType = suggestionData.issues?.[0]?.type;
+        suggestionsMatch = suggestionMatchKey === buildKey(url, source)
+          && issueType === matchKey
+          && !!reportData.diff;
       }
 
-      if (suggestionUrl === url
-            && (!source || suggestionSource === source)
-            && suggestionMatchKey === matchKey
-            && !!reportData.diff) {
+      if (suggestionsMatch) {
         log.info(`Updating suggestion ${suggestion.getId()} with code change data`);
 
         // Update suggestion data with diff content and availability flag
