@@ -24,7 +24,7 @@ export function createOpportunityData() {
   return {
     runbook: 'https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/',
     origin: 'AUTOMATION',
-    title: 'Remove unused Content Fragment to optimize content governance',
+    title: 'Remove unused Content Fragments to optimize content governance',
     description: 'Identifying and removing unused content fragments reduces system overhead, optimizes storage, and helps teams focus on active content governance.',
     tags: ['Headless'],
     data: {
