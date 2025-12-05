@@ -50,7 +50,7 @@ describe('Opportunity Data Mapper', () => {
       const result = createOpportunityData();
 
       expect(result.title).to.equal(
-        'Remove unused Content Fragment to optimize content governance',
+        'Remove unused Content Fragments to optimize content governance',
       );
     });
 
