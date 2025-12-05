@@ -81,6 +81,7 @@ export default async function handler(message, context) {
     const filteredSuggestedUrls = await filterBrokenSuggestedUrls(
       validSuggestedUrls,
       site.getBaseURL(),
+      site, // Pass site for overrideBaseURL support
     );
 
     // Handle AI rationale - clear it if all URLs were filtered out

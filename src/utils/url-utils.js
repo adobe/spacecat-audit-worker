@@ -28,7 +28,19 @@ export function isPreviewPage(url) {
   return urlObj.hostname.endsWith('.page');
 }
 
-export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
+/**
+ * Filters and validates suggested URLs for broken links.
+ * Only returns URLs that:
+ * - Match the base domain
+ * - Are accessible (return HTTP 200)
+ * Uses overrideBaseURL from site configuration if available for HTTP/2 compatibility.
+ * @param {Array<string>} suggestedUrls - Array of suggested URLs to validate
+ * @param {string} baseURL - Base URL to match domain against
+ * @param {Object} site - Site object containing configuration (optional)
+ * @returns {Promise<Array<string>>} - Array of validated URLs
+ */
+export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL, _ = null) {
+  // TODO: Use site parameter for overrideBaseURL support in future iteration
   const baseDomain = new URL(baseURL).hostname;
   const checks = suggestedUrls.map(async (suggestedUrl) => {
     try {

@@ -88,6 +88,7 @@ describe('calculateKpiDeltasForAudit', () => {
 
 describe('isLinkInaccessible', () => {
   let mockLog;
+  let mockSite;
 
   beforeEach(() => {
     // Reset mock logger before each test
@@ -95,6 +96,14 @@ describe('isLinkInaccessible', () => {
       info: sinon.stub(),
       error: sinon.stub(),
       warn: sinon.stub(),
+      debug: sinon.stub(),
+    };
+    // Mock site object
+    mockSite = {
+      getBaseURL: sinon.stub().returns('https://example.com'),
+      getConfig: sinon.stub().returns({
+        getFetchConfig: sinon.stub().returns({}),
+      }),
     };
     // Clear all nock interceptors
     nock.cleanAll();
@@ -110,7 +119,7 @@ describe('isLinkInaccessible', () => {
       .get('/')
       .reply(200);
 
-    const result = await isLinkInaccessible('https://example.com', mockLog);
+    const result = await isLinkInaccessible('https://example.com', mockLog, mockSite);
     expect(result).to.be.false;
   });
 
@@ -120,7 +129,7 @@ describe('isLinkInaccessible', () => {
       .get('/notfound')
       .reply(404);
 
-    const result = await isLinkInaccessible('https://example.com/notfound', mockLog);
+    const result = await isLinkInaccessible('https://example.com/notfound', mockLog, mockSite);
     expect(result).to.be.true;
   });
 
@@ -130,7 +139,7 @@ describe('isLinkInaccessible', () => {
       .get('/forbidden')
       .reply(403);
 
-    const result = await isLinkInaccessible('https://example.com/forbidden', mockLog);
+    const result = await isLinkInaccessible('https://example.com/forbidden', mockLog, mockSite);
     expect(result).to.be.true;
     expect(mockLog.warn.calledWith(
       'broken-internal-links audit: Warning: https://example.com/forbidden returned client error: 403',
@@ -143,7 +152,7 @@ describe('isLinkInaccessible', () => {
       .get('/error')
       .replyWithError('Network error');
 
-    const result = await isLinkInaccessible('https://example.com/error', mockLog);
+    const result = await isLinkInaccessible('https://example.com/error', mockLog, mockSite);
     expect(result).to.be.true;
     expect(mockLog.error.calledWith(
       'broken-internal-links audit: Error checking https://example.com/error: Network error',
@@ -158,10 +167,34 @@ describe('isLinkInaccessible', () => {
       .delay(6000) // Set delay just above the 3000ms timeout in isLinkInaccessible
       .reply(200);
 
-    const result = await isLinkInaccessible('https://example.com/timeout', mockLog);
+    const result = await isLinkInaccessible('https://example.com/timeout', mockLog, mockSite);
     expect(result).to.be.true;
     expect(mockLog.error.calledWith(
       'broken-internal-links audit: Error checking https://example.com/timeout: Request timed out after 3000ms',
+    )).to.be.true;
+  });
+
+  it('should log debug message when overrideBaseURL is present', async function call() {
+    this.timeout(6000);
+    
+    // Mock site with overrideBaseURL
+    const siteWithOverride = {
+      getBaseURL: sinon.stub().returns('https://example.com'),
+      getConfig: sinon.stub().returns({
+        getFetchConfig: sinon.stub().returns({
+          overrideBaseURL: 'https://example.com/fr/',
+        }),
+      }),
+    };
+
+    nock('https://example.com')
+      .get('/')
+      .reply(200);
+
+    const result = await isLinkInaccessible('https://example.com', mockLog, siteWithOverride);
+    expect(result).to.be.false;
+    expect(mockLog.debug.calledWith(
+      'broken-internal-links audit: Using overrideBaseURL for accessibility check: https://example.com/fr/',
     )).to.be.true;
   });
 });

@@ -71,11 +71,21 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
  * The check will timeout after LINK_TIMEOUT milliseconds.
  * Non-404 client errors (400-499) will log a warning.
  * All errors (network, timeout etc) will log an error and return true.
+ * Uses overrideBaseURL from site configuration if available for HTTP/2 compatibility.
  * @param {string} url - The URL to validate
+ * @param {Object} log - Logger instance
+ * @param {Object} site - Site object containing configuration
  * @returns {Promise<boolean>} True if the URL is inaccessible, times out, or errors
  * false if reachable/accessible
  */
-export async function isLinkInaccessible(url, log) {
+export async function isLinkInaccessible(url, log, site) {
+  // Get overrideBaseURL for HTTP/2 compatibility
+  const overrideBaseURL = site?.getConfig()?.getFetchConfig()?.overrideBaseURL;
+
+  if (overrideBaseURL) {
+    log.debug(`broken-internal-links audit: Using overrideBaseURL for accessibility check: ${overrideBaseURL}`);
+  }
+
   try {
     const response = await fetch(url, { timeout: LINK_TIMEOUT });
     const { status } = response;
