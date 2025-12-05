@@ -13,7 +13,10 @@
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 
 const siteData = {
-  getConfig: () => Config({}),
+  getConfig: () => ({
+    ...Config({}),
+    getFetchConfig: () => ({}), // Add getFetchConfig method for HTTP/2 compatibility tests
+  }),
   getId: () => 'site1',
   getBaseURL: () => 'https://bar.foo.com',
   getIsLive: () => true,
@@ -27,28 +30,31 @@ export const excludedUrl = 'https://foo.com/returns-404';
 
 export const siteWithExcludedUrls = {
   ...siteData,
-  getConfig: () => Config({
-    slack: {
-      workspace: 'my-workspace',
-      channel: 'general',
-      invitedUserCount: 10,
-    },
-    handlers: {
-      404: {
-        mentions: {
-          slack: ['user1', 'user2'],
-          email: ['user1@example.com'],
-        },
-        excludedURLs: [excludedUrl],
+  getConfig: () => ({
+    ...Config({
+      slack: {
+        workspace: 'my-workspace',
+        channel: 'general',
+        invitedUserCount: 10,
       },
-      'broken-backlinks': {
-        mentions: {
-          slack: ['user3'],
-          email: ['user2@example.com'],
+      handlers: {
+        404: {
+          mentions: {
+            slack: ['user1', 'user2'],
+            email: ['user1@example.com'],
+          },
+          excludedURLs: [excludedUrl],
         },
-        excludedURLs: [excludedUrl],
+        'broken-backlinks': {
+          mentions: {
+            slack: ['user3'],
+            email: ['user2@example.com'],
+          },
+          excludedURLs: [excludedUrl],
+        },
       },
-    },
+    }),
+    getFetchConfig: () => ({}), // Add getFetchConfig method for HTTP/2 compatibility tests
   }),
 };
 
@@ -75,7 +81,10 @@ export const siteTopPage2 = {
 export const site2 = {
   getId: () => 'site2',
   getBaseURL: () => 'https://foo.com',
-  getConfig: () => Config({}),
+  getConfig: () => ({
+    ...Config({}),
+    getFetchConfig: () => ({}),
+  }),
   getIsLive: () => true,
   getOrganizationId: () => 'org2',
 };
@@ -83,7 +92,10 @@ export const site2 = {
 export const site3 = {
   getId: () => 'site3',
   getBaseURL: () => 'https://foo.com',
-  getConfig: () => Config({}),
+  getConfig: () => ({
+    ...Config({}),
+    getFetchConfig: () => ({}),
+  }),
   getIsLive: () => true,
   getOrganizationId: () => 'org3',
 };

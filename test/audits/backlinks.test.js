@@ -67,6 +67,9 @@ describe('Backlinks Tests', function () {
     getId: () => 'site-id',
     getDeliveryType: () => 'aem_cs',
     getBaseURL: () => 'https://example.com',
+    getConfig: () => ({
+      getFetchConfig: () => ({}),
+    }),
   };
   let brokenBacklinksOpportunity;
   const sandbox = sinon.createSandbox();
