@@ -174,15 +174,15 @@ describe('isLinkInaccessible', () => {
     )).to.be.true;
   });
 
-  it('should use HTTP/1.1 when forceHTTP1 is enabled', async function call() {
+  it('should use HTTP/1.1 when overrideBaseURL is present', async function call() {
     this.timeout(6000);
 
-    // Mock site with forceHTTP1 enabled (for sites with HTTP/2 issues)
+    // Mock site with overrideBaseURL (triggers HTTP/1.1 for sites with HTTP/2 issues)
     const siteWithHTTP1 = {
       getBaseURL: sinon.stub().returns('https://example.com'),
       getConfig: sinon.stub().returns({
         getFetchConfig: sinon.stub().returns({
-          forceHTTP1: true,
+          overrideBaseURL: 'https://example.com',
         }),
       }),
     };
@@ -194,9 +194,9 @@ describe('isLinkInaccessible', () => {
 
     const result = await isLinkInaccessible('https://example.com/test-page', mockLog, siteWithHTTP1);
     expect(result).to.be.false;
-    // Check that info was called with message about HTTP/1.1
+    // Check that info was called with overrideBaseURL and forceHTTP1=true
     expect(mockLog.info.called).to.be.true;
     const infoCalls = mockLog.info.getCalls().map((call) => call.args[0]);
-    expect(infoCalls.some((msg) => msg.includes('Using HTTP/1.1 protocol'))).to.be.true;
+    expect(infoCalls.some((msg) => msg.includes('forceHTTP1=true'))).to.be.true;
   });
 });
