@@ -28,7 +28,7 @@ export function createOpportunityData() {
         'Use AI-generated suggestions as a starting point for improvements.',
       ],
     },
-    tags: ['Engagement', 'isElmo'],
+    tags: ['Engagement', 'isElmo', 'content'],
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
     },
