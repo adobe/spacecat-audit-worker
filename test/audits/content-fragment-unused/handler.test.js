@@ -98,7 +98,7 @@ describe('Content Fragment Unused Handler', () => {
     it('should create summary for empty fragments', () => {
       const result = createStatusSummary(0, []);
 
-      expect(result).to.have.lengthOf(4);
+      expect(result).to.have.lengthOf(3);
       result.forEach((status) => {
         expect(status.count).to.equal(0);
         expect(status.percentage).to.equal(0);
@@ -170,34 +170,16 @@ describe('Content Fragment Unused Handler', () => {
       expect(unpublishedStatus.oldest).to.equal(200);
     });
 
-    it('should create summary for MODIFIED status fragments', () => {
-      const fragments = [
-        {
-          status: 'MODIFIED',
-          ageInDays: 95,
-        },
-      ];
-
-      const result = createStatusSummary(20, fragments);
-
-      const modifiedStatus = result.find((s) => s.status === 'MODIFIED');
-      expect(modifiedStatus.count).to.equal(1);
-      expect(modifiedStatus.percentage).to.equal(5);
-      expect(modifiedStatus.averageAge).to.equal(95);
-      expect(modifiedStatus.oldest).to.equal(95);
-    });
-
     it('should handle mixed status fragments', () => {
       const fragments = [
         { status: 'NEW', ageInDays: 100 },
         { status: 'DRAFT', ageInDays: 120 },
         { status: 'UNPUBLISHED', ageInDays: 150 },
-        { status: 'MODIFIED', ageInDays: 200 },
       ];
 
       const result = createStatusSummary(10, fragments);
 
-      expect(result).to.have.lengthOf(4);
+      expect(result).to.have.lengthOf(3);
       result.forEach((status) => {
         expect(status.count).to.be.at.least(0);
       });
@@ -210,12 +192,11 @@ describe('Content Fragment Unused Handler', () => {
 
       const result = createStatusSummary(10, fragments);
 
-      expect(result).to.have.lengthOf(4);
+      expect(result).to.have.lengthOf(3);
       expect(result.map((s) => s.status)).to.deep.equal([
         'NEW',
         'DRAFT',
         'UNPUBLISHED',
-        'MODIFIED',
       ]);
     });
 
@@ -291,17 +272,17 @@ describe('Content Fragment Unused Handler', () => {
         totalFragments: 5,
         totalUnused: 1,
         data: [
-          { status: 'MODIFIED', ageInDays: 95 },
+          { status: 'DRAFT', ageInDays: 95 },
         ],
       });
 
       const result = await contentFragmentUnusedAuditRunner(baseURL, context, site);
 
-      expect(result.auditResult.statusSummary).to.have.lengthOf(4);
-      const modifiedStatus = result.auditResult.statusSummary.find(
-        (s) => s.status === 'MODIFIED',
+      expect(result.auditResult.statusSummary).to.have.lengthOf(3);
+      const draftStatus = result.auditResult.statusSummary.find(
+        (s) => s.status === 'DRAFT',
       );
-      expect(modifiedStatus.count).to.equal(1);
+      expect(draftStatus.count).to.equal(1);
     });
 
     it('should pass site to context', async () => {

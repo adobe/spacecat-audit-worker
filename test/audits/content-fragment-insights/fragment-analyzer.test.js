@@ -72,8 +72,8 @@ describe('FragmentAnalyzer', () => {
       expect(FragmentAnalyzer.hasUnusedStatus('UNPUBLISHED')).to.be.true;
     });
 
-    it('should return true for MODIFIED status', () => {
-      expect(FragmentAnalyzer.hasUnusedStatus('MODIFIED')).to.be.true;
+    it('should return false for MODIFIED status', () => {
+      expect(FragmentAnalyzer.hasUnusedStatus('MODIFIED')).to.be.false;
     });
 
     it('should return true for lowercase status', () => {
@@ -266,17 +266,10 @@ describe('FragmentAnalyzer', () => {
           modifiedAt: null,
           publishedAt: null,
         },
-        {
-          fragmentPath: '/content/dam/test/fragment4',
-          status: 'MODIFIED',
-          createdAt: oldDate.toISOString(),
-          modifiedAt: null,
-          publishedAt: null,
-        },
       ];
 
       const result = analyzer.findUnusedFragments(fragments);
-      expect(result).to.have.lengthOf(4);
+      expect(result).to.have.lengthOf(3);
     });
 
     it('should filter mixed old and new fragments', () => {
@@ -310,7 +303,7 @@ describe('FragmentAnalyzer', () => {
       const fragments = [
         {
           fragmentPath: '/content/dam/test/fragment1',
-          status: 'MODIFIED',
+          status: 'UNPUBLISHED',
           createdAt: oldDate.toISOString(),
           modifiedAt: null,
           publishedAt: publishedDate.toISOString(),
@@ -384,7 +377,6 @@ describe('FragmentAnalyzer', () => {
         'NEW',
         'DRAFT',
         'UNPUBLISHED',
-        'MODIFIED',
       ]);
     });
   });

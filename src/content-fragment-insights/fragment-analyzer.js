@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-export const UNUSED_CONTENT_STATUSES = ['NEW', 'DRAFT', 'UNPUBLISHED', 'MODIFIED'];
+export const UNUSED_CONTENT_STATUSES = ['NEW', 'DRAFT', 'UNPUBLISHED'];
 
 export class FragmentAnalyzer {
   static DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -43,8 +43,6 @@ export class FragmentAnalyzer {
         // eslint-disable-next-line no-continue
         continue;
       }
-
-      // TODO: Check MODIFIED content to be unpublished before adding to unused fragments
 
       const lastTimestamp = fragment.modifiedAt || fragment.createdAt || null;
       if (!lastTimestamp) {
