@@ -42,7 +42,7 @@ describe('Readability Opportunities - Opportunity Data Mapper', () => {
       expect(result.guidance.steps).to.have.length(6);
 
       // Line 31
-      expect(result.tags).to.deep.equal(['Engagement', 'isElmo']);
+      expect(result.tags).to.deep.equal(['Engagement', 'isElmo', 'content']);
 
       // Lines 32-34
       expect(result.data).to.be.an('object');
