@@ -1,3 +1,10 @@
+## [1.267.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.4...v1.267.5) (2025-12-05)
+
+
+### Bug Fixes
+
+* Adding toc ([#1757](https://github.com/adobe/spacecat-audit-worker/issues/1757)) ([40d2e0d](https://github.com/adobe/spacecat-audit-worker/commit/40d2e0d65aaa9197276d064db5e95f35c4f92ff5))
+
 ## [1.267.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.3...v1.267.4) (2025-12-05)
 
 
