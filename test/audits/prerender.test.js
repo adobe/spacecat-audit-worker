@@ -364,7 +364,15 @@ describe('Prerender Audit', () => {
           log: { info: sandbox.stub(), debug: sandbox.stub() },
         };
         const out = await mockHandler.submitForScraping(context);
-        expect(out.urls).to.have.length(TOP_ORGANIC_URLS_LIMIT);
+
+        if (TOP_ORGANIC_URLS_LIMIT === 0) {
+          // When the limit is 0, we effectively disable top organic URLs and fall back to baseUrl
+          expect(out.urls).to.have.length(1);
+          expect(out.urls[0].url).to.equal('https://example.com');
+        } else {
+          // When the limit is > 0 we should cap at TOP_ORGANIC_URLS_LIMIT
+          expect(out.urls).to.have.length(TOP_ORGANIC_URLS_LIMIT);
+        }
       });
 
       it('should fall back to sheet when Athena returns no data and use weekId from shared utils', async () => {
@@ -420,11 +428,18 @@ describe('Prerender Audit', () => {
         };
 
         const result = await mockHandler.submitForScraping(context);
-        // Expect agentic URLs to be capped by TOP_AGENTIC_URLS_LIMIT (or available rows if fewer)
-        const expectedCount = Math.min(TOP_AGENTIC_URLS_LIMIT, 60);
-        expect(result.urls).to.have.length(expectedCount);
-        // Sanity: top URL comes from sheet aggregation and is normalized against base URL
-        expect(result.urls[0].url).to.equal('https://example.com/p0');
+
+        if (TOP_AGENTIC_URLS_LIMIT === 0) {
+          // With a 0 limit we disable agentic URLs and the handler falls back to baseUrl
+          expect(result.urls).to.have.length(1);
+          expect(result.urls[0].url).to.equal('https://example.com');
+        } else {
+          // Expect agentic URLs to be capped by TOP_AGENTIC_URLS_LIMIT (or available rows if fewer)
+          const expectedCount = Math.min(TOP_AGENTIC_URLS_LIMIT, 60);
+          expect(result.urls).to.have.length(expectedCount);
+          // Sanity: top URL comes from sheet aggregation and is normalized against base URL
+          expect(result.urls[0].url).to.equal('https://example.com/p0');
+        }
       });
 
       it('should merge includedURLs with sheet fallback agentic URLs (unique union)', async () => {
@@ -474,12 +489,21 @@ describe('Prerender Audit', () => {
 
         const result = await mockHandler.submitForScraping(context);
         const urls = result.urls.map((u) => u.url);
-        // Sheet /a and /b plus included /c (note: /b overlaps)
-        expect(urls).to.include('https://example.com/a');
-        expect(urls).to.include('https://example.com/b');
-        expect(urls).to.include('https://example.com/c');
-        // Unique union => 3
-        expect(urls.length).to.equal(3);
+
+        if (TOP_AGENTIC_URLS_LIMIT === 0) {
+          // With a 0 limit, sheet-based agentic URLs are disabled; we only see includedURLs
+          expect(urls).to.not.include('https://example.com/a');
+          expect(urls).to.include('https://example.com/b');
+          expect(urls).to.include('https://example.com/c');
+          expect(urls.length).to.equal(2);
+        } else {
+          // Sheet /a and /b plus included /c (note: /b overlaps)
+          expect(urls).to.include('https://example.com/a');
+          expect(urls).to.include('https://example.com/b');
+          expect(urls).to.include('https://example.com/c');
+          // Unique union => 3
+          expect(urls.length).to.equal(3);
+        }
       });
 
       it('should handle undefined topPages list from SiteTopPage gracefully', async () => {
@@ -1452,8 +1476,17 @@ describe('Prerender Audit', () => {
         dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
       });
-      // mapping catch keeps raw '/p1'
-      expect(res.urls.map((u) => u.url)).to.include('/p1');
+
+      const urls = res.urls.map((u) => u.url);
+
+      if (TOP_AGENTIC_URLS_LIMIT === 0) {
+        // With a 0 limit, sheet-based agentic URLs are disabled, so we fall back to baseUrl
+        expect(urls).to.include('invalid');
+        expect(urls).to.not.include('/p1');
+      } else {
+        // mapping catch keeps raw '/p1'
+        expect(urls).to.include('/p1');
+      }
     });
 
     it('should cover agenticStats mapping and ranking loop by returning non-empty top list', async () => {
@@ -1748,8 +1781,17 @@ describe('Prerender Audit', () => {
         .find((msg) => msg.includes('Prerender - Fallback for baseUrl=https://example.com, siteId=site.'));
 
       expect(loggedFallback).to.exist;
+
+      // In this test, the Athena stub always returns a single agentic URL,
+      // so agenticURLs should be 1 regardless of TOP_AGENTIC_URLS_LIMIT.
       expect(loggedFallback).to.include('agenticURLs=1');
-      expect(loggedFallback).to.include('topPages=1');
+
+      if (TOP_ORGANIC_URLS_LIMIT === 0) {
+        expect(loggedFallback).to.include('topPages=0');
+      } else {
+        expect(loggedFallback).to.include('topPages=1');
+      }
+
       expect(loggedFallback).to.include('includedURLs=1');
     });
 
