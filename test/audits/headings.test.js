@@ -140,7 +140,27 @@ describe('Headings Audit', () => {
     context.s3Client = s3Client;
     const completedAudit = await headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
+    
+    // Debug: Check what we actually got
+    if (!result || !result.headings) {
+      console.log('DEBUG: completedAudit:', JSON.stringify(completedAudit, null, 2));
+      console.log('DEBUG: result:', JSON.stringify(result, null, 2));
+      console.log('DEBUG: result.error:', result?.error);
+      console.log('DEBUG: result.status:', result?.status);
+    }
+    
+    // The audit might have failed, check for error state first
+    expect(result).to.exist;
+    
+    // If there's an error, the structure will be different
+    if (result.error || result.status === 'success') {
+      // Audit either errored or had no issues
+      console.log('Audit did not detect heading issues as expected');
+      console.log('Result:', JSON.stringify(result, null, 2));
+    }
+    
     // Check heading-h1-length (empty H1 now triggers this check instead of heading-missing-h1)
+    expect(result.headings, 'result.headings should exist').to.exist;
     expect(result.headings[HEADINGS_CHECKS.HEADING_H1_LENGTH.check]).to.exist;
     expect(result.headings[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].success).to.equal(false);
     expect(result.headings[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_H1_LENGTH.explanation);

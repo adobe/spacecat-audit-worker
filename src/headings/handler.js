@@ -25,7 +25,6 @@ import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js
 import SeoChecks from '../metatags/seo-checks.js';
 import {
   getHeadingLevel,
-  getTextContent,
   getHeadingContext,
   getScrapeJsonPath,
   extractTocData,
@@ -90,6 +89,17 @@ export const TOC_CHECK = {
   explanation: 'Table of Contents should be present on the page',
   suggestion: 'Add a Table of Contents to the page',
 };
+
+/**
+ * Safely extract text content from an element
+ * @param {Element} element - The DOM element
+ * @param {CheerioAPI} $ - The cheerio instance
+ * @returns {string} - The trimmed text content, or empty string if null/undefined
+ */
+export function getTextContent(element, $) {
+  if (!element || !$) return '';
+  return $(element).text().trim();
+}
 
 /**
  * Generate a unique CSS selector for a heading element.
@@ -244,18 +254,19 @@ export async function getBrandGuidelines(healthyTagsObject, log, context) {
 
 /**
  * Detect if a Table of Contents (TOC) is present in the document using LLM analysis
- * @param {Document} document - The JSDOM document
+ * @param {CheerioAPI} $ - The Cheerio instance
  * @param {string} url - The page URL
  * @param {Object} pageTags - Page metadata (title, lang, etc.)
  * @param {Object} log - Logger instance
  * @param {Object} context - Audit context containing environment and clients
+ * @param {string} scrapedAt - Timestamp when the page was scraped
  * @returns {Promise<Object>} Object with tocPresent, TOCCSSSelector, confidence, reasoning
  */
 async function getTocDetails($, url, pageTags, log, context, scrapedAt) {
   try {
     // Extract first 3000 characters from body
     const bodyElement = $('body')[0];
-    const bodyHTML = bodyElement.innerHTML || '';
+    const bodyHTML = $(bodyElement).html() || '';
     const bodyContent = bodyHTML.substring(0, 3000);
 
     // Prepare prompt data
@@ -356,13 +367,6 @@ export async function validatePageHeadingFromScrapeJson(
 ) {
   try {
     let $;
-    if (!scrapeJsonObject) {
-      log.error(`Scrape JSON object not found for ${url}, skipping headings audit`);
-      return null;
-    } else {
-      $ = cheerioLoad(scrapeJsonObject.scrapeResult.rawBody);
-    }
-
     if (!scrapeJsonObject) {
       log.error(`Scrape JSON object not found for ${url}, skipping headings audit`);
       return null;
@@ -490,7 +494,7 @@ export async function validatePageHeadingFromScrapeJson(
             transformRules: {
               action: 'replaceWith',
               selector: curSelector,
-              currValue: getTextContent(cur),
+              currValue: getTextContent(cur, $),
               scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
               valueFormat: 'hast',
               value: {
@@ -500,7 +504,7 @@ export async function validatePageHeadingFromScrapeJson(
                     type: 'element',
                     tagName: `h${prevLevel + 1}`,
                     properties: {},
-                    children: [{ type: 'text', value: getTextContent(cur) }],
+                    children: [{ type: 'text', value: getTextContent(cur, $) }],
                   },
                 ],
               },
