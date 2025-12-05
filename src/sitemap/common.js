@@ -15,7 +15,9 @@ import {
   isLoginPage,
   toggleWWW,
   getBaseUrlPagesFromSitemapContents,
-  getSitemapUrlsFromSitemapIndex, extractDomainAndProtocol,
+  getSitemapUrlsFromSitemapIndex,
+  extractDomainAndProtocol,
+  getUrlWithoutPath,
 } from '../support/utils.js';
 
 // Performance tuning constants - Optimized for 20K-30K URLs in 15min Lambda
@@ -130,6 +132,7 @@ export async function fetchContent(targetUrl) {
     clearTimeout(timeoutId);
 
     if (!response.ok) {
+      // caught locally
       throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
     }
 
@@ -354,7 +357,9 @@ export async function checkSitemap(sitemapUrl) {
 /**
  * Retrieves base URL pages from sitemaps with improved error handling
  */
-export async function getBaseUrlPagesFromSitemaps(baseUrl, initialUrls) {
+export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls) {
+  // Strip subpath to get domain-only URL for sitemap.xml matching
+  const baseUrl = getUrlWithoutPath(inputUrl);
   const baseUrlVariant = toggleWWW(baseUrl);
   const pagesBySitemap = {};
   let sitemapsToProcess = [...initialUrls];
@@ -381,8 +386,9 @@ export async function getBaseUrlPagesFromSitemaps(baseUrl, initialUrls) {
           sitemapUrl.startsWith(baseUrl)
           || sitemapUrl.startsWith(baseUrlVariant)
         ) {
+          // Process sitemaps under the same domain; page URL filtering uses inputUrl
           const pages = getBaseUrlPagesFromSitemapContents(
-            baseUrl,
+            inputUrl,
             sitemapData.details,
           );
           if (pages.length > 0) {
@@ -448,21 +454,16 @@ export async function getSitemapUrls(inputUrl) {
     }
   }
 
-  // Filter sitemaps that match the input URL domain
-  const inputUrlToggledWww = toggleWWW(inputUrl);
-  const filteredSitemapUrls = sitemapUrls.ok.filter(
-    (path) => path.startsWith(inputUrl) || path.startsWith(inputUrlToggledWww),
-  );
-
-  // Extract and validate pages from sitemaps
-  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, filteredSitemapUrls);
+  // Extract and validate page URLs from our validated sitemap URLs:
+  //   getBaseUrlPagesFromSitemaps filters sitemaps by domain, then filters page URLs by full path
+  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, sitemapUrls.ok);
 
   return {
     success: true,
     reasons: [{ value: 'Urls are extracted from sitemap.' }],
     details: {
       extractedPaths,
-      filteredSitemapUrls,
+      filteredSitemapUrls: sitemapUrls.ok, // Validated sitemap URLs
     },
   };
 }
