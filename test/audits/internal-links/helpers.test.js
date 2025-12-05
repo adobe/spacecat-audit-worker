@@ -176,25 +176,29 @@ describe('isLinkInaccessible', () => {
 
   it('should log debug message when overrideBaseURL is present', async function call() {
     this.timeout(6000);
-    
+
     // Mock site with overrideBaseURL
     const siteWithOverride = {
       getBaseURL: sinon.stub().returns('https://example.com'),
       getConfig: sinon.stub().returns({
         getFetchConfig: sinon.stub().returns({
-          overrideBaseURL: 'https://example.com/fr/',
+          overrideBaseURL: 'https://proxy.example.com',
         }),
       }),
     };
 
-    nock('https://example.com')
-      .get('/')
+    // Mock the fetch to the proxy URL (overrideBaseURL) with the original path
+    nock('https://proxy.example.com')
+      .get('/test-page')
       .reply(200);
 
-    const result = await isLinkInaccessible('https://example.com', mockLog, siteWithOverride);
+    const result = await isLinkInaccessible('https://example.com/test-page', mockLog, siteWithOverride);
     expect(result).to.be.false;
-    expect(mockLog.debug.calledWith(
-      'broken-internal-links audit: Using overrideBaseURL for accessibility check: https://example.com/fr/',
-    )).to.be.true;
+    expect(mockLog.debug.calledOnce).to.be.true;
+    // Check that debug was called with a message containing both original and fetch URL
+    const debugCall = mockLog.debug.getCall(0).args[0];
+    expect(debugCall).to.include('broken-internal-links audit: Using overrideBaseURL for accessibility check');
+    expect(debugCall).to.include('https://example.com/test-page');
+    expect(debugCall).to.include('https://proxy.example.com/test-page');
   });
 });

@@ -82,12 +82,22 @@ export async function isLinkInaccessible(url, log, site) {
   // Get overrideBaseURL for HTTP/2 compatibility
   const overrideBaseURL = site?.getConfig()?.getFetchConfig()?.overrideBaseURL;
 
+  // Construct the final URL for fetching
+  let fetchUrl = url;
   if (overrideBaseURL) {
-    log.debug(`broken-internal-links audit: Using overrideBaseURL for accessibility check: ${overrideBaseURL}`);
+    try {
+      const originalUrl = new URL(url);
+      const overrideUrl = new URL(overrideBaseURL);
+      // Replace base URL but keep the pathname, search, and hash from original
+      fetchUrl = `${overrideUrl.origin}${originalUrl.pathname}${originalUrl.search}${originalUrl.hash}`;
+      log.debug(`broken-internal-links audit: Using overrideBaseURL for accessibility check. Original: ${url}, Fetch URL: ${fetchUrl}`);
+    } catch (error) {
+      log.warn(`broken-internal-links audit: Failed to construct URL with overrideBaseURL: ${error.message}. Using original URL.`);
+    }
   }
 
   try {
-    const response = await fetch(url, { timeout: LINK_TIMEOUT });
+    const response = await fetch(fetchUrl, { timeout: LINK_TIMEOUT });
     const { status } = response;
 
     // Log non-404, non-200 status codes
