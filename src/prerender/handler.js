@@ -18,6 +18,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import { toggleWWW } from '../support/utils.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import {
   generateReportingPeriods,
@@ -316,14 +317,6 @@ export async function importTopPages(context) {
   };
 }
 
-function addWWW(url) {
-  return url.replace('https://', 'https://www.');
-}
-
-function removeWWW(url) {
-  return url.replace('https://www.', 'https://');
-}
-
 function resolveBaseUrlForWWW(site) {
   const siteConfig = site.getConfig?.();
   const fetchConfigOrFn = siteConfig?.getFetchConfig;
@@ -347,10 +340,8 @@ function decorateUrlsWithWWW(urls, context) {
     const isWWWUrl = url.startsWith('https://www.');
     let normalizedUrl = url;
 
-    if (iswwwBaseUrl && !isWWWUrl) {
-      normalizedUrl = addWWW(url);
-    } else if (!iswwwBaseUrl && isWWWUrl) {
-      normalizedUrl = removeWWW(url);
+    if (iswwwBaseUrl !== isWWWUrl) {
+      normalizedUrl = toggleWWW(url);
     }
 
     return { url: normalizedUrl };
