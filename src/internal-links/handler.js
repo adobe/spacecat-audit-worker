@@ -70,6 +70,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     // Use overrideBaseURL if configured for HTTP/2 compatibility
     const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
     const baseURL = overrideBaseURL || site.getBaseURL();
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] overrideBaseURL: ${overrideBaseURL || 'NOT SET'}, baseURL: ${baseURL}`);
     const inaccessibleLinks = accessibilityResults
       .filter((result) => result.inaccessible)
       .filter((result) => (
@@ -142,6 +143,7 @@ export async function prepareScrapingStep(context) {
   // Use overrideBaseURL if configured for HTTP/2 compatibility
   const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
   const baseURL = overrideBaseURL || site.getBaseURL();
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] prepareScrapingStep - overrideBaseURL: ${overrideBaseURL || 'NOT SET'}, baseURL: ${baseURL}`);
   const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
 
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope`);
@@ -252,6 +254,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   // Use overrideBaseURL if configured for HTTP/2 compatibility
   const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
   const baseURL = overrideBaseURL || site.getBaseURL();
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] opportunityAndSuggestionsStep - overrideBaseURL: ${overrideBaseURL || 'NOT SET'}, baseURL: ${baseURL}`);
   const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
 
   log.info(

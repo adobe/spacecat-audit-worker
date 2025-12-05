@@ -83,6 +83,8 @@ export async function isLinkInaccessible(url, log, site) {
     const overrideBaseURL = site?.getConfig()?.getFetchConfig()?.overrideBaseURL;
     let fetchUrl = url;
 
+    log.info(`broken-internal-links audit: isLinkInaccessible checking ${url} - overrideBaseURL: ${overrideBaseURL || 'NOT SET'}`);
+
     // If overrideBaseURL is configured, replace the base URL for HTTP/2 compatibility
     if (overrideBaseURL) {
       try {
