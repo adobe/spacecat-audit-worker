@@ -135,8 +135,7 @@ export class AemClient {
 
     if (!response.ok) {
       const errorText = await response.text();
-      this.log.error(`[AEM Client] Request failed with status ${response.status}: ${errorText}`);
-      throw new Error(`AEM API request failed with status ${response.status}: ${errorText}`);
+      throw new Error(`[AEM Client] Request failed with status ${response.status}: ${errorText}`);
     }
 
     // Handle non-empty responses
@@ -189,8 +188,7 @@ export class AemClient {
         cursor: data?.cursor || null,
       };
     } catch (error) {
-      this.log.error(`[AEM Client] Failed to fetch fragments from ${path}:`, error);
-      throw error;
+      throw new Error(`[AEM Client] Failed to fetch fragments from ${path}: ${error.message}`);
     }
   }
 }

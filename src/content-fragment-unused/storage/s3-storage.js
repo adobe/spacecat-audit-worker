@@ -99,7 +99,6 @@ export async function uploadFragmentsToS3(fragments, s3Path, s3Client, log) {
 
     log.info(`[Content Fragment Unused] Successfully uploaded fragments data to S3: ${s3Path}`);
   } catch (error) {
-    log.error(`[Content Fragment Unused] Failed to upload fragments to S3: ${error.message}`);
     throw new Error(`[Content Fragment Unused] Failed to upload fragments to S3: ${error.message}`);
   }
 }
@@ -140,7 +139,6 @@ export async function downloadFragmentsFromS3(s3Path, s3Client, log) {
 
     return data;
   } catch (error) {
-    log.error(`[Content Fragment Unused] Failed to download fragments from S3: ${error.message}`);
     throw new Error(`[Content Fragment Unused] Failed to download fragments from S3: ${error.message}`);
   }
 }
