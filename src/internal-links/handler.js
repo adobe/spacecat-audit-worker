@@ -61,7 +61,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     const accessibilityResults = await Promise.all(
       internal404Links.map(async (link) => ({
         link,
-        inaccessible: await isLinkInaccessible(link.url_to, log),
+        inaccessible: await isLinkInaccessible(link.url_to, log, site),
       })),
     );
 

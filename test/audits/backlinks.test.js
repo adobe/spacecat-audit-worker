@@ -113,8 +113,8 @@ describe('Backlinks Tests', function () {
       getSuggestions: sinon.stub().returns([]),
       addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
       getType: () => 'broken-backlinks',
-      setData: () => {},
-      getData: () => {},
+      setData: () => { },
+      getData: () => { },
       setUpdatedBy: sinon.stub().returnsThis(),
     };
 
@@ -233,7 +233,7 @@ describe('Backlinks Tests', function () {
 
   it('should throw error when all top pages filtered out by audit scope', async () => {
     context.audit.getAuditResult.returns({ success: true });
-    
+
     // Mock site with subpath
     const siteWithSubpath = {
       ...contextSite,
@@ -427,11 +427,11 @@ describe('Backlinks Tests', function () {
       const result = await generateSuggestionData(context);
 
       expect(result.status).to.deep.equal('complete');
-      
+
       // Verify no warnings were called (meaning both brokenLinks and alternativeUrls have items)
       expect(context.log.warn).to.not.have.been.calledWith('No valid broken links to send to Mystique. Skipping message.');
       expect(context.log.warn).to.not.have.been.calledWith('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
-      
+
       // Verify message was sent with correct structure
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
@@ -448,7 +448,7 @@ describe('Backlinks Tests', function () {
         urlTo: 'https://example.com',
         suggestionId: 'test-suggestion-1',
       });
-      
+
       expect(context.log.debug).to.have.been.calledWith(sinon.match(/Message sent to Mystique/));
     });
 
