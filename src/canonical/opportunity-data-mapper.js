@@ -24,7 +24,7 @@ const OpptyData = {
       'Use lowercase, absolute URLs for canonical tags to avoid formatting issues.',
     ],
   },
-  tags: ['Traffic Acquisition', 'SEO'],
+  tags: ['Traffic Acquisition', 'SEO', 'tech-seo'],
   data: {
     dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
   },
