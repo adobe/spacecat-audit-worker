@@ -18,6 +18,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import { toggleWWW } from '../support/utils.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import {
   generateReportingPeriods,
@@ -316,6 +317,37 @@ export async function importTopPages(context) {
   };
 }
 
+function resolveBaseUrlForWWW(site) {
+  const siteConfig = site.getConfig?.();
+  const fetchConfigOrFn = siteConfig?.getFetchConfig;
+  const fetchConfig = typeof fetchConfigOrFn === 'function' ? fetchConfigOrFn() : fetchConfigOrFn;
+  const overrideBaseURL = fetchConfig?.overrideBaseURL;
+  return overrideBaseURL || site.getBaseURL();
+}
+
+function decorateUrlsWithWWW(urls, context) {
+  const { site } = context;
+  const baseUrl = resolveBaseUrlForWWW(site);
+
+  // If baseUrl is not a valid URL string, just wrap the original URLs
+  if (typeof baseUrl !== 'string' || !baseUrl.startsWith('http')) {
+    return urls.map((url) => ({ url }));
+  }
+
+  const iswwwBaseUrl = baseUrl.startsWith('https://www.');
+
+  return urls.map((url) => {
+    const isWWWUrl = url.startsWith('https://www.');
+    let normalizedUrl = url;
+
+    if (iswwwBaseUrl !== isWWWUrl) {
+      normalizedUrl = toggleWWW(url);
+    }
+
+    return { url: normalizedUrl };
+  });
+}
+
 /**
  * Step 2: Submit URLs for scraping
  * @param {Object} context - Audit context with site and dataAccess
@@ -336,7 +368,6 @@ export async function submitForScraping(context) {
   const agenticUrls = agenticStats.map((s) => s.url);
 
   const finalUrls = [...new Set([...topPagesUrls, ...agenticUrls, ...includedURLs])];
-
   log.info(`Prerender: Submitting ${finalUrls.length} URLs for scraping. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
 
   if (finalUrls.length === 0) {
@@ -347,7 +378,7 @@ export async function submitForScraping(context) {
   }
 
   return {
-    urls: finalUrls.map((url) => ({ url })),
+    urls: decorateUrlsWithWWW(finalUrls, context),
     siteId: site.getId(),
     type: AUDIT_TYPE,
     processingType: AUDIT_TYPE,

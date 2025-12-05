@@ -264,6 +264,8 @@ describe('Prerender Audit', () => {
 
         expect(result).to.be.an('object');
         expect(result.urls).to.be.an('array');
+        expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });
+        expect(result.urls[1]).to.deep.equal({ url: 'https://example.com/page2' });
         expect(result.siteId).to.equal('test-site-id');
         expect(result.processingType).to.equal('prerender');
         expect(result.type).to.equal('prerender');
@@ -365,6 +367,10 @@ describe('Prerender Audit', () => {
         };
         const out = await mockHandler.submitForScraping(context);
         expect(out.urls).to.have.length(TOP_ORGANIC_URLS_LIMIT);
+        // Ensure shape is { url }
+        out.urls.forEach((entry) => {
+          expect(entry).to.have.property('url').that.is.a('string');
+        });
       });
 
       it('should fall back to sheet when Athena returns no data and use weekId from shared utils', async () => {
@@ -480,6 +486,106 @@ describe('Prerender Audit', () => {
         expect(urls).to.include('https://example.com/c');
         // Unique union => 3
         expect(urls.length).to.equal(3);
+      });
+
+      it('should honor overrideBaseURL from fetch config and add www when needed', async () => {
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-athena-client': {
+            AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
+          },
+          '../../src/prerender/utils/shared.js': {
+            generateReportingPeriods: () => ({
+              weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+            }),
+            getS3Config: async () => ({
+              databaseName: 'db',
+              tableName: 'tbl',
+              getAthenaTempLocation: () => 's3://tmp/',
+            }),
+            weeklyBreakdownQueries: {
+              createAgenticReportQuery: async () => 'SELECT 1',
+              createTopUrlsQueryWithLimit: async () => 'SELECT 2',
+            },
+            loadLatestAgenticSheet: async () => ({
+              weekId: 'w45-2025',
+              baseUrl: 'https://www.example.com',
+              rows: [],
+            }),
+          },
+        });
+
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/page1' },
+          ]),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'site',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({
+              getIncludedURLs: () => [],
+              getFetchConfig: () => ({ overrideBaseURL: 'https://www.example.com' }),
+            }),
+          },
+          dataAccess: { SiteTopPage: mockSiteTopPage },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+        };
+
+        const res = await mockHandler.submitForScraping(context);
+        expect(res.urls).to.have.length(1);
+        expect(res.urls[0].url).to.equal('https://www.example.com/page1');
+      });
+
+      it('should remove www when override/base URL has no www but URLs do', async () => {
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-athena-client': {
+            AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
+          },
+          '../../src/prerender/utils/shared.js': {
+            generateReportingPeriods: () => ({
+              weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
+            }),
+            getS3Config: async () => ({
+              databaseName: 'db',
+              tableName: 'tbl',
+              getAthenaTempLocation: () => 's3://tmp/',
+            }),
+            weeklyBreakdownQueries: {
+              createAgenticReportQuery: async () => 'SELECT 1',
+              createTopUrlsQueryWithLimit: async () => 'SELECT 2',
+            },
+            loadLatestAgenticSheet: async () => ({
+              weekId: 'w45-2025',
+              baseUrl: 'https://example.com',
+              rows: [],
+            }),
+          },
+        });
+
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://www.example.com/page1' },
+          ]),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'site',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({
+              getIncludedURLs: () => [],
+              getFetchConfig: () => ({ overrideBaseURL: 'https://example.com' }),
+            }),
+          },
+          dataAccess: { SiteTopPage: mockSiteTopPage },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+        };
+
+        const res = await mockHandler.submitForScraping(context);
+        expect(res.urls).to.have.length(1);
+        expect(res.urls[0].url).to.equal('https://example.com/page1');
       });
 
       it('should handle undefined topPages list from SiteTopPage gracefully', async () => {
