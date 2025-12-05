@@ -22,9 +22,7 @@ import {
   TOP_PAGES_LIMIT,
 } from '../shared/constants.js';
 
-const { AUDIT_STEP_DESTINATIONS } = Audit;
-// Use existing audit type or create new one if needed
-const AUDIT_TYPE_READABILITY = Audit.AUDIT_TYPES.READABILITY || 'readability';
+const { AUDIT_STEP_DESTINATIONS, AUDIT_TYPES } = Audit;
 
 export async function processImportStep(context) {
   const { site, finalUrl } = context;
@@ -148,7 +146,7 @@ export async function processReadabilityOpportunities(context) {
       { siteId, id: audit.getId() },
       context,
       createOpportunityData,
-      AUDIT_TYPE_READABILITY,
+      AUDIT_TYPES.READABILITY,
       {
         totalIssues: readabilityIssues.length,
         urlsProcessed,

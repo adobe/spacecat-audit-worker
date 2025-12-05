@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.265.4",
+  "version": "1.267.0",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -11,6 +11,7 @@
   "scripts": {
     "start": "nodemon",
     "test": "c8 mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
+    "test:spec": "c8 mocha -i -g 'Post-Deploy'",
     "test:bundle": "HELIX_TEST_BUNDLE_NAME=dist/spacecat-services/audit-worker@$(npm pkg get version | tr -d \\\")-bundle.mjs mocha --spec=test/index.test.js",
     "test-postdeploy": "mocha -g 'Post-Deploy' --spec=test/**/*.test.js",
     "lint": "eslint .",
@@ -83,7 +84,7 @@
     "@adobe/spacecat-helix-content-sdk": "1.4.32",
     "@adobe/spacecat-shared-ahrefs-client": "1.10.3",
     "@adobe/spacecat-shared-athena-client": "1.8.3",
-    "@adobe/spacecat-shared-data-access": "2.88.8",
+    "@adobe/spacecat-shared-data-access": "2.88.9",
     "@adobe/spacecat-shared-google-client": "1.4.62",
     "@adobe/spacecat-shared-gpt-client": "1.6.14",
     "@adobe/spacecat-shared-html-analyzer": "1.2.0",
@@ -161,7 +162,7 @@
   },
   "overrides": {
     "@adobe/fetch": "4.2.3",
-    "@adobe/spacecat-shared-data-access": "2.88.8"
+    "@adobe/spacecat-shared-data-access": "2.88.9"
   },
   "lint-staged": {
     "*.js": "eslint",

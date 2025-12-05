@@ -105,7 +105,7 @@ const site = {
   getDeliveryType: sinon.stub().returns('aem_edge'),
 };
 
-describe('Broken internal links audit ', () => {
+describe('Broken internal links audit', () => {
   let context;
 
   beforeEach(() => {
