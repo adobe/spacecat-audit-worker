@@ -81,7 +81,7 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
  */
 export async function isLinkInaccessible(url, log, site) {
   // TEMP DEBUG: Log version to confirm code deployment
-  log.info(`broken-internal-links audit [v1.267.0-debug]: Checking URL accessibility for ${url}`);
+  log.info(`broken-internal-links audit [v1.267.1-http1-fix]: Checking URL accessibility for ${url}`);
 
   // Get fetch configuration
   const fetchConfig = site?.getConfig()?.getFetchConfig();
@@ -109,18 +109,33 @@ export async function isLinkInaccessible(url, log, site) {
   try {
     // Use HTTP/1.1 if forceHTTP1 is true (for sites with bot protection blocking HTTP/2)
     const fetchFunction = forceHTTP1 ? h1().fetch : fetch;
-    const response = await fetchFunction(fetchUrl, { timeout: LINK_TIMEOUT });
-    const { status } = response;
 
-    // Log non-404, non-200 status codes
-    if (status >= 400 && status < 500 && status !== 404) {
-      log.warn(`broken-internal-links audit: Warning: ${url} returned client error: ${status}`);
+    // Create AbortController for timeout (works with both h1().fetch and regular fetch)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), LINK_TIMEOUT);
+
+    try {
+      const response = await fetchFunction(fetchUrl, {
+        signal: controller.signal,
+        ...(forceHTTP1 ? {} : { timeout: LINK_TIMEOUT }), // Only use timeout for regular fetch
+      });
+      clearTimeout(timeoutId);
+
+      const { status } = response;
+
+      // Log non-404, non-200 status codes
+      if (status >= 400 && status < 500 && status !== 404) {
+        log.warn(`broken-internal-links audit: Warning: ${url} returned client error: ${status}`);
+      }
+
+      // URL is valid if status code is less than 400, otherwise it is invalid
+      return status >= 400;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    // URL is valid if status code is less than 400, otherwise it is invalid
-    return status >= 400;
   } catch (error) {
-    log.error(`broken-internal-links audit: Error checking ${url}: ${error.code === 'ETIMEOUT' ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
+    const isTimeout = error.name === 'AbortError' || error.code === 'ETIMEOUT';
+    log.error(`broken-internal-links audit: Error checking ${url}: ${isTimeout ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
     // Any error means the URL is inaccessible
     return true;
   }
