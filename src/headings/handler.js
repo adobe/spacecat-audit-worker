@@ -19,7 +19,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData } from './opportunity-data-mapper.js';
+import { createOpportunityData, createOpportunityDataForTOC } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
@@ -1083,7 +1083,7 @@ export async function opportunityAndSuggestionsForToc(auditUrl, auditData, conte
     auditUrl,
     { ...auditData, suggestions: auditData.suggestions.toc },
     context,
-    createOpportunityData,
+    createOpportunityDataForTOC,
     tocAuditType,
   );
 
