@@ -736,28 +736,42 @@ export async function validatePageHeadingFromScrapeJson(
     checks.push(...headingChecksResults.filter(Boolean));
 
     if (headings.length > 1) {
-      const invalidJumps = [];
       for (let i = 1; i < headings.length; i += 1) {
         const prev = headings[i - 1];
         const cur = headings[i];
         const prevLevel = getHeadingLevel(prev.tagName);
         const curLevel = getHeadingLevel(cur.tagName);
         if (curLevel - prevLevel > 1) {
-          invalidJumps.push({ previous: `h${prevLevel}`, current: `h${curLevel}` });
           log.debug(`Heading level jump detected at ${url}: h${prevLevel} → h${curLevel}`);
+          const curSelector = getHeadingSelector(cur);
+          // Create a separate check for each invalid jump
+          checks.push({
+            check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
+            checkTitle: HEADINGS_CHECKS.HEADING_ORDER_INVALID.title,
+            description: HEADINGS_CHECKS.HEADING_ORDER_INVALID.description,
+            success: false,
+            explanation: `${HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation} Invalid jump: h${prevLevel} → h${curLevel}`,
+            suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
+            transformRules: {
+              action: 'replaceWith',
+              selector: curSelector,
+              currValue: getTextContent(cur),
+              scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
+              valueFormat: 'hast',
+              value: {
+                type: 'root',
+                children: [
+                  {
+                    type: 'element',
+                    tagName: `h${prevLevel + 1}`,
+                    properties: {},
+                    children: [{ type: 'text', value: getTextContent(cur) }],
+                  },
+                ],
+              },
+            },
+          });
         }
-      }
-      // Create a single check with all invalid jumps in the explanation
-      if (invalidJumps.length > 0) {
-        const jumpDetails = invalidJumps.map((jump) => `${jump.previous} → ${jump.current}`).join(', ');
-        checks.push({
-          check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
-          checkTitle: HEADINGS_CHECKS.HEADING_ORDER_INVALID.title,
-          description: HEADINGS_CHECKS.HEADING_ORDER_INVALID.description,
-          success: false,
-          explanation: `${HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation} Invalid jumps found: ${jumpDetails}`,
-          suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
-        });
       }
     }
 
