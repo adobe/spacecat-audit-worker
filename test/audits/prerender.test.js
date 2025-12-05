@@ -1761,13 +1761,15 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion.data.aiReadablePercent).to.equal(0);
       });
 
-      it('should correctly sum aiReadablePercent from individual suggestions', async () => {
-        // Test to cover the new totalAiReadablePercent calculation logic (lines 454-462)
+      it('should correctly sum aiReadablePercent from individual suggestions with mixed zero/non-zero values', async () => {
+        // Test to cover the new totalAiReadablePercent calculation logic (lines 456-466)
+        // This test ensures both branches of the ternary operator are covered
+        // Including undefined/null values to ensure || 0 fallback is covered
         const auditData = {
           siteId: 'test-site',
           auditId: 'test-audit-id',
           auditResult: {
-            urlsNeedingPrerender: 3,
+            urlsNeedingPrerender: 5,
             results: [
               {
                 url: 'https://example.com/page1',
@@ -1789,6 +1791,20 @@ describe('Prerender Audit', () => {
                 contentGainRatio: 1.5,
                 wordCountBefore: 300,
                 wordCountAfter: 300, // 300/300 = 100%
+              },
+              {
+                url: 'https://example.com/page4',
+                needsPrerender: true,
+                contentGainRatio: 0,
+                wordCountBefore: 0,
+                wordCountAfter: 0, // 0/0 = 0% (triggers else branch)
+              },
+              {
+                url: 'https://example.com/page5',
+                needsPrerender: true,
+                contentGainRatio: 1.0,
+                // wordCountBefore: undefined - tests || 0 fallback
+                // wordCountAfter: undefined - tests || 0 fallback
               },
             ],
           },
@@ -1830,13 +1846,13 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion).to.exist;
 
         // Verify aiReadablePercent is sum of individual percentages
-        // page1: 20%, page2: 50%, page3: 100% = total 170%
+        // page1: 20%, page2: 50%, page3: 100%, page4: 0%, page5: 0% = total 170%
         expect(domainWideSuggestion.data.aiReadablePercent).to.equal(170);
 
-        // Also verify word count totals
-        expect(domainWideSuggestion.data.wordCountBefore).to.equal(800); // 100+400+300
-        expect(domainWideSuggestion.data.wordCountAfter).to.equal(1600); // 500+800+300
-        expect(domainWideSuggestion.data.contentGainRatio).to.equal(6.5); // 2+3+1.5
+        // Also verify word count totals (including undefined handling)
+        expect(domainWideSuggestion.data.wordCountBefore).to.equal(800); // 100+400+300+0+0
+        expect(domainWideSuggestion.data.wordCountAfter).to.equal(1600); // 500+800+300+0+0
+        expect(domainWideSuggestion.data.contentGainRatio).to.equal(7.5); // 2+3+1.5+0+1
       });
     });
   });
