@@ -3659,7 +3659,7 @@ describe('Headings Audit', () => {
 
       expect(opportunityData).to.have.property('tags');
       expect(opportunityData.tags).to.be.an('array');
-      expect(opportunityData.tags).to.have.lengthOf(6);
+      expect(opportunityData.tags).to.have.lengthOf(5);
     });
 
     it('has correct data sources configuration', () => {
