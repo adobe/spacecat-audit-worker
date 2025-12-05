@@ -1760,6 +1760,84 @@ describe('Prerender Audit', () => {
         // aiReadablePercent should be 0 when wordCountAfter is 0
         expect(domainWideSuggestion.data.aiReadablePercent).to.equal(0);
       });
+
+      it('should correctly sum aiReadablePercent from individual suggestions', async () => {
+        // Test to cover the new totalAiReadablePercent calculation logic (lines 454-462)
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'test-audit-id',
+          auditResult: {
+            urlsNeedingPrerender: 3,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.0,
+                wordCountBefore: 100,
+                wordCountAfter: 500, // 100/500 = 20%
+              },
+              {
+                url: 'https://example.com/page2',
+                needsPrerender: true,
+                contentGainRatio: 3.0,
+                wordCountBefore: 400,
+                wordCountAfter: 800, // 400/800 = 50%
+              },
+              {
+                url: 'https://example.com/page3',
+                needsPrerender: true,
+                contentGainRatio: 1.5,
+                wordCountBefore: 300,
+                wordCountAfter: 300, // 300/300 = 100%
+              },
+            ],
+          },
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sandbox.stub().resolves([]),
+        };
+
+        const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
+        const syncSuggestionsStub = sandbox.stub().resolves();
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+          '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        });
+
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions(
+          'https://example.com',
+          auditData,
+          context,
+          new Map(),
+        );
+
+        // Get domain-wide suggestion
+        const syncCall = syncSuggestionsStub.getCall(0);
+        const { newData } = syncCall.args[0];
+        const domainWideSuggestion = newData.find((item) => item.key);
+        expect(domainWideSuggestion).to.exist;
+
+        // Verify aiReadablePercent is sum of individual percentages
+        // page1: 20%, page2: 50%, page3: 100% = total 170%
+        expect(domainWideSuggestion.data.aiReadablePercent).to.equal(170);
+
+        // Also verify word count totals
+        expect(domainWideSuggestion.data.wordCountBefore).to.equal(800); // 100+400+300
+        expect(domainWideSuggestion.data.wordCountAfter).to.equal(1600); // 500+800+300
+        expect(domainWideSuggestion.data.contentGainRatio).to.equal(6.5); // 2+3+1.5
+      });
     });
   });
 
