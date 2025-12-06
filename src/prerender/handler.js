@@ -352,6 +352,7 @@ export async function submitForScraping(context) {
     type: AUDIT_TYPE,
     processingType: AUDIT_TYPE,
     allowCache: false,
+    concurrency: 100,
     options: {
       pageLoadTimeout: 20000,
       storagePrefix: AUDIT_TYPE,
