@@ -266,8 +266,7 @@ describe('Prerender Audit', () => {
         expect(result.urls).to.be.an('array');
         expect(result.siteId).to.equal('test-site-id');
         expect(result.processingType).to.equal('prerender');
-        expect(result.type).to.equal('prerender');
-        expect(result.allowCache).to.equal(false);
+        expect(result.maxScrapeAge).to.equal(0);
       });
 
       it('should fallback to base URL when no URLs found', async () => {
@@ -298,9 +297,8 @@ describe('Prerender Audit', () => {
 
         // Validate essential fields without requiring strict deep equality
         expect(result.siteId).to.equal('test-site-id');
-        expect(result.type).to.equal('prerender');
         expect(result.processingType).to.equal('prerender');
-        expect(result.allowCache).to.equal(false);
+        expect(result.maxScrapeAge).to.equal(0);
         expect(result.options).to.deep.equal({
           pageLoadTimeout: 20000,
           storagePrefix: 'prerender',
