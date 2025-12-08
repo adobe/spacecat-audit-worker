@@ -349,9 +349,8 @@ export async function submitForScraping(context) {
   return {
     urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
-    type: AUDIT_TYPE,
     processingType: AUDIT_TYPE,
-    allowCache: false,
+    maxScrapeAge: 0,
     options: {
       pageLoadTimeout: 20000,
       storagePrefix: AUDIT_TYPE,
@@ -652,6 +651,6 @@ export async function processContentAndGenerateOpportunities(context) {
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('process-content-and-generate-opportunities', processContentAndGenerateOpportunities)
   .build();
