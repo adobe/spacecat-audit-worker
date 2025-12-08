@@ -1,3 +1,10 @@
+## [1.267.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.12...v1.267.13) (2025-12-08)
+
+
+### Bug Fixes
+
+* preview/publish sheets in bulk ([#1717](https://github.com/adobe/spacecat-audit-worker/issues/1717)) ([31df258](https://github.com/adobe/spacecat-audit-worker/commit/31df258c854badd9bad9fbfd635c2c0dc266c347))
+
 ## [1.267.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.11...v1.267.12) (2025-12-08)
 
 
