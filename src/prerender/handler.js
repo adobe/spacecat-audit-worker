@@ -616,11 +616,7 @@ export async function processOpportunityAndSuggestions(
     mergeDataFunction: (existingData, newDataItem) => {
       // Domain-wide suggestion: replace with new data
       if (newDataItem.key) {
-        const merged = { ...newDataItem.data };
-        if (existingData.customFields) {
-          merged.customFields = existingData.customFields;
-        }
-        return merged;
+        return { ...newDataItem.data };
       }
       // Individual suggestions: merge with existing
       return {
