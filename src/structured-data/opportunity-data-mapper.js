@@ -21,7 +21,7 @@ export function createOpportunityData() {
     guidance: {
       steps: [],
     },
-    tags: ['Traffic acquisition'],
+    tags: ['Traffic acquisition', 'tech-seo'],
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.GSC, DATA_SOURCES.SITE],
     },

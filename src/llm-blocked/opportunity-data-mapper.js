@@ -21,7 +21,7 @@ export function createOpportunityData({ fullRobots, numProcessedUrls }) {
         'If the URLs are intentionally blocked, ignore the suggestion.',
       ],
     },
-    tags: ['llm', 'isElmo'],
+    tags: ['llm', 'isElmo', 'tech-geo'],
     data: {
       fullRobots,
       numProcessedUrls,
