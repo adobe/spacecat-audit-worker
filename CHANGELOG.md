@@ -1,3 +1,10 @@
+## [1.267.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.9...v1.267.10) (2025-12-08)
+
+
+### Bug Fixes
+
+* moving prerender audit to SCRAPE_CLIENT ([#1772](https://github.com/adobe/spacecat-audit-worker/issues/1772)) ([db44bc2](https://github.com/adobe/spacecat-audit-worker/commit/db44bc2b3153522c1424743d024180a6091dc1c3))
+
 ## [1.267.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.8...v1.267.9) (2025-12-08)
 
 
