@@ -1,3 +1,10 @@
+## [1.267.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.10...v1.267.11) (2025-12-08)
+
+
+### Bug Fixes
+
+* Codefix aggregation key consistency fix ([#1773](https://github.com/adobe/spacecat-audit-worker/issues/1773)) ([b76ce79](https://github.com/adobe/spacecat-audit-worker/commit/b76ce79ab9a0b4d61b490a8acc6e76ef059af82c))
+
 ## [1.267.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.9...v1.267.10) (2025-12-08)
 
 
