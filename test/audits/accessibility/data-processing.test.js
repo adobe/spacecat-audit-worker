@@ -287,6 +287,22 @@ describe('data-processing utility functions', () => {
       expect(result).to.deep.equal([]);
       expect(mockLog.debug.calledWith('Fetched 0 keys from S3 for bucket test-bucket and prefix accessibility/site1/ with delimiter /')).to.be.true;
     });
+
+    it('should handle missing CommonPrefixes property in S3 response', async () => {
+      mockS3Client.send.resolves({});
+
+      const result = await getSubfoldersUsingPrefixAndDelimiter(
+        mockS3Client,
+        'test-bucket',
+        'accessibility/site1/',
+        '/',
+        mockLog,
+      );
+
+      expect(result).to.deep.equal([]);
+      expect(mockS3Client.send.calledOnce).to.be.true;
+      expect(mockLog.debug.calledWith('Fetched 0 keys from S3 for bucket test-bucket and prefix accessibility/site1/ with delimiter /')).to.be.true;
+    });
   });
 
   describe('updateViolationData', () => {
@@ -821,14 +837,14 @@ describe('data-processing utility functions', () => {
 
       mockS3Client.send.resolves();
 
-      await cleanupS3Files(mockS3Client, 'test-bucket', objectKeys, lastWeekObjectKeys, mockLog);
+      await cleanupS3Files(mockS3Client, 'test-bucket', lastWeekObjectKeys, mockLog);
 
       // Should call delete twice: once for original files, once for oldest final result
-      expect(mockS3Client.send.callCount).to.equal(2);
+      expect(mockS3Client.send.callCount).to.equal(1);
       expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
     });
 
-    it('should only delete original files when 2 or fewer final result files exist', async () => {
+    it('should not delete files when 2 or fewer final result files exist', async () => {
       const objectKeys = ['file1.json', 'file2.json'];
       const lastWeekObjectKeys = [
         'accessibility/site1/2024-01-08-final-result.json',
@@ -840,7 +856,7 @@ describe('data-processing utility functions', () => {
       await cleanupS3Files(mockS3Client, 'test-bucket', objectKeys, lastWeekObjectKeys, mockLog);
 
       // Should only call delete once for original files
-      expect(mockS3Client.send.callCount).to.equal(1);
+      expect(mockS3Client.send.callCount).to.equal(0);
     });
 
     it('should sort final result files by timestamp correctly', async () => {
@@ -853,7 +869,7 @@ describe('data-processing utility functions', () => {
 
       mockS3Client.send.resolves();
 
-      await cleanupS3Files(mockS3Client, 'test-bucket', objectKeys, lastWeekObjectKeys, mockLog);
+      await cleanupS3Files(mockS3Client, 'test-bucket', lastWeekObjectKeys, mockLog);
 
       expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
     });
@@ -868,7 +884,7 @@ describe('data-processing utility functions', () => {
 
       mockS3Client.send.resolves();
 
-      await cleanupS3Files(mockS3Client, 'test-bucket', objectKeys, lastWeekObjectKeys, mockLog);
+      await cleanupS3Files(mockS3Client, 'test-bucket', lastWeekObjectKeys, mockLog);
 
       // Should still delete oldest final result file even if no original files
       expect(mockS3Client.send.callCount).to.equal(1);
@@ -876,17 +892,16 @@ describe('data-processing utility functions', () => {
     });
 
     it('should handle single final result file', async () => {
-      const objectKeys = ['file1.json'];
       const lastWeekObjectKeys = [
         'accessibility/site1/2024-01-15-final-result.json',
       ];
 
       mockS3Client.send.resolves();
 
-      await cleanupS3Files(mockS3Client, 'test-bucket', objectKeys, lastWeekObjectKeys, mockLog);
+      await cleanupS3Files(mockS3Client, 'test-bucket', lastWeekObjectKeys, mockLog);
 
       // Should only delete original files, not the single final result file
-      expect(mockS3Client.send.callCount).to.equal(1);
+      expect(mockS3Client.send.callCount).to.equal(0);
     });
 
     it('should handle complex timestamp sorting', async () => {
@@ -900,7 +915,7 @@ describe('data-processing utility functions', () => {
 
       mockS3Client.send.resolves();
 
-      await cleanupS3Files(mockS3Client, 'test-bucket', objectKeys, lastWeekObjectKeys, mockLog);
+      await cleanupS3Files(mockS3Client, 'test-bucket', lastWeekObjectKeys, mockLog);
 
       // Should delete the oldest file (2024-01-01)
       expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
@@ -1451,105 +1466,27 @@ describe('data-processing utility functions', () => {
       }
     });
 
-    it('should return error when getObjectKeysFromSubfolders fails', async () => {
-      // esmock for getObjectKeysFromSubfolders isn't hit in this specific test case.
-      // Rely on mockS3Client to cause failure in real getObjectKeysFromSubfolders.
-      // aggregateAccessibilityData should catch the thrown error.
-      mockS3Client.send.rejects(new Error('Cannot read properties of undefined (reading \'CommonPrefixes\')')); // Simulate S3 error
-
-      const result = await aggregateAccessibilityData(
-        mockS3Client,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        'accessibility',
-        '2024-01-01',
-        2,
-      );
-
-      expect(result.success).to.be.false;
-      expect(result.aggregatedData).to.be.null;
-      // Expect the message that aggregateAccessibilityData constructs when it catches an error
-      expect(result.message).to.equal('Error: Cannot read properties of undefined (reading \'CommonPrefixes\')');
-    });
-
-    it('should return error when no files could be processed', async () => {
+    it('should return error when fetching final result files fails', async () => {
       const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
-
-      // For real getObjectKeysFromSubfolders to succeed:
-      // 1. S3 ListObjectsV2Command for getSubfoldersUsingPrefixAndDelimiter
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
-
-      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
-        '../../../src/utils/s3-utils.js': {
-          // 2. Mock getObjectKeysUsingPrefix (from s3-utils)
-          getObjectKeysUsingPrefix: sandbox.stub().resolves(['file1.json', 'file2.json']),
-          // Mock getObjectFromKey (from s3-utils) to make processFilesWithRetry return empty
-          getObjectFromKey: sandbox.stub().resolves(null),
-        },
-      });
-
-      const result = await aggregateData(
-        mockS3Client,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        'accessibility',
-        targetDate, // version
-        2,
-      );
-
-      expect(result.success).to.be.false;
-      expect(result.aggregatedData).to.be.null;
-      expect(result.message).to.equal('[A11yAudit] No files could be processed successfully for site test-site');
-      expect(mockLog.error.calledWith('[A11yProcessingError] [A11yAudit] No files could be processed successfully for site test-site')).to.be.true;
-    });
-
-    it('should successfully aggregate data with single file', async () => {
-      const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'file1.json'],
+      ]);
       const mockFileData = {
         url: 'https://example.com/page1',
         violations: {
           total: 5,
-          critical: { count: 3, items: { issue1: { count: 3 } } },
-          serious: { count: 2, items: { issue2: { count: 2 } } },
+          critical: { count: 3, items: {} },
+          serious: { count: 2, items: {} },
         },
         traffic: 100,
       };
 
-      // For real getObjectKeysFromSubfolders to succeed:
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
-
-      // For S3 PutObject to save aggregated data
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
-      // For cleanupS3Files (deleteOriginalFiles)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
-      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectsCommand)).resolves({});
 
       const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
         '../../../src/utils/s3-utils.js': {
-          getObjectKeysUsingPrefix: sandbox.stub()
-            // For getObjectKeysFromSubfolders's internal call
-            .onFirstCall().resolves(['file1.json'])
-            // For aggregateAccessibilityData's direct call (last week files)
-            .onSecondCall()
-            .resolves([`accessibility/test-site/${targetDate}-final-result.json`]),
-          getObjectFromKey: sandbox.stub()
-            // For processFilesWithRetry's internal call
-            .onFirstCall().resolves(mockFileData)
-            // For aggregateAccessibilityData's direct call (last week file content)
-            .onSecondCall()
-            .resolves(null), // No last week file content for this test
+          getObjectFromKey: sandbox.stub().resolves(mockFileData),
+          getObjectKeysUsingPrefix: sandbox.stub().rejects(new Error('Failed to fetch final result files')),
         },
       });
 
@@ -1561,6 +1498,81 @@ describe('data-processing utility functions', () => {
         'output-key',
         'accessibility',
         targetDate,
+        scrapeResultPaths,
+        2,
+      );
+
+      expect(result.success).to.be.false;
+      expect(result.aggregatedData).to.be.null;
+      expect(result.message).to.equal('Error: Failed to fetch final result files');
+      expect(mockLog.error.calledWith('[A11yAudit][A11yProcessingError] Error aggregating accessibility data for site test-site')).to.be.true;
+    });
+
+    it('should return error when no files could be processed', async () => {
+      const targetDate = '2024-01-01';
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'file1.json'],
+        ['https://example.com/page2', 'file2.json'],
+      ]);
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectFromKey: sandbox.stub().resolves(null), // processFilesWithRetry returns zero successful results
+          getObjectKeysUsingPrefix: sandbox.stub().resolves([]),
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'accessibility',
+        targetDate,
+        scrapeResultPaths,
+        2,
+      );
+
+      expect(result.success).to.be.false;
+      expect(result.aggregatedData).to.be.null;
+      expect(result.message).to.equal('[A11yAudit] No files could be processed successfully for site test-site');
+      expect(mockLog.error.calledWith('[A11yProcessingError] [A11yAudit] No files could be processed successfully for site test-site')).to.be.true;
+    });
+
+    it('should successfully aggregate data with single file', async () => {
+      const targetDate = '2024-01-01';
+      const mockFileData = {
+        url: 'https://example.com/page1',
+        violations: {
+          total: 5,
+          critical: { count: 3, items: { issue1: { count: 3 } } },
+          serious: { count: 2, items: { issue2: { count: 2 } } },
+        },
+        traffic: 100,
+      };
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'file1.json'],
+      ]);
+
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub().resolves([`accessibility/test-site/${targetDate}-final-result.json`]),
+          getObjectFromKey: sandbox.stub().resolves(mockFileData),
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'accessibility',
+        targetDate,
+        scrapeResultPaths,
         2,
       );
 
@@ -1575,7 +1587,6 @@ describe('data-processing utility functions', () => {
 
     it('should handle multiple files and aggregate violations correctly', async () => {
       const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
       const mockFile1Data = {
         url: 'https://example.com/page1',
         violations: {
@@ -1595,43 +1606,28 @@ describe('data-processing utility functions', () => {
         traffic: 50,
       };
       const lastWeekFileKeys = [
-        // Oldest file key
-        `accessibility/test-site/${new Date(new Date(targetDate).setDate(new Date(targetDate).getDate() - 14)).toISOString().split('T')[0]}-final-result.json`,
-        // Key for last week's data (aggData loads index length-2)
-        `accessibility/test-site/${new Date(new Date(targetDate).setDate(new Date(targetDate).getDate() - 7)).toISOString().split('T')[0]}-final-result.json`,
-        // Newest file key (current)
+        `accessibility/test-site/2023-12-18-final-result.json`,
+        `accessibility/test-site/2023-12-25-final-result.json`,
         `accessibility/test-site/${targetDate}-final-result.json`,
       ];
       const lastWeekContent = { overall: { violations: { total: 10 } } };
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'file1.json'],
+        ['https://example.com/page2', 'file2.json'],
+      ]);
 
-      // S3 ListObjectsV2 mock (for getSubfoldersUsingPrefixAndDelimiter)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
-      // S3 PutObject mock (saving aggregated data)
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
-      // S3 DeleteObjects/DeleteObject mocks (for cleanupS3Files)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectsCommand)).resolves({});
       mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
+
+      const getObjectFromKeyStub = sandbox.stub();
+      getObjectFromKeyStub.onCall(0).resolves(mockFile1Data);
+      getObjectFromKeyStub.onCall(1).resolves(mockFile2Data);
+      getObjectFromKeyStub.onCall(2).resolves(lastWeekContent);
 
       const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
         '../../../src/utils/s3-utils.js': {
-          getObjectKeysUsingPrefix: sandbox.stub()
-            // For getObjectKeysFromSubfolders
-            .onFirstCall().resolves(['file1.json', 'file2.json'])
-            // For aggregateAccessibilityData (finding last week files)
-            .onSecondCall()
-            .resolves(lastWeekFileKeys),
-          getObjectFromKey: sandbox.stub()
-            // For processFilesWithRetry on file1.json
-            .onFirstCall().resolves(mockFile1Data)
-            // For processFilesWithRetry on file2.json
-            .onSecondCall()
-            .resolves(mockFile2Data)
-            // For aggregateAccessibilityData (loading content of lastWeekFileKeys[1])
-            .onThirdCall()
-            .resolves(lastWeekContent),
+          getObjectKeysUsingPrefix: sandbox.stub().resolves(lastWeekFileKeys),
+          getObjectFromKey: getObjectFromKeyStub,
         },
       });
 
@@ -1643,6 +1639,7 @@ describe('data-processing utility functions', () => {
         'output-key',
         'accessibility',
         targetDate,
+        scrapeResultPaths,
         2,
       );
 
@@ -1665,6 +1662,11 @@ describe('data-processing utility functions', () => {
         },
         traffic: 100,
       };
+      const scrapeResultPaths = new Map([
+        ['https://www.example.com', 'scrapes/test-site/scrape.json'],
+        ['https://www.example.com/test', 'scrapes/test-site/test/scrape.json'],
+        ['https://www.example.com/anotherTest', 'scrapes/test-site/anotherTest/scrape.json'],
+      ]);
 
       // S3 ListObjectsV2 mock (for getSubfoldersUsingPrefixAndDelimiter)
       mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
@@ -1701,6 +1703,7 @@ describe('data-processing utility functions', () => {
         'output-key',
         'accessibility',
         targetDate,
+        scrapeResultPaths,
         2,
       );
 
@@ -1724,12 +1727,12 @@ describe('data-processing utility functions', () => {
           traffic: 100,
         },
       }];
+      const scrapeResultPaths = new Map([
+        ['https://www.example.com', 'scrapes/test-site/scrape.json'],
+        ['https://www.example.com/test', 'scrapes/test-site/test/scrape.json'],
+        ['https://www.example.com/anotherTest', 'scrapes/test-site/anotherTest/scrape.json'],
+      ]);
 
-      // S3 ListObjectsV2 mock
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
       // S3 PutObject mock - THIS ONE FAILS
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).rejects(new Error('S3 save failed'));
 
@@ -1748,6 +1751,7 @@ describe('data-processing utility functions', () => {
         'output-key',
         'accessibility',
         targetDate,
+        scrapeResultPaths,
         2,
       );
 
@@ -1756,150 +1760,6 @@ describe('data-processing utility functions', () => {
       expect(result.message).to.equal('Error: S3 save failed');
       // The main catch block in aggregateAccessibilityData logs a generic error
       expect(mockLog.error.calledWith('[A11yAudit][A11yProcessingError] Error aggregating accessibility data for site test-site')).to.be.true;
-    });
-
-    it('should handle lastWeekFile logging correctly', async () => {
-      const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
-      const mockFileData = { // Data for the current processing
-        url: 'https://example.com/page1',
-        violations: { total: 5 },
-        traffic: 100,
-      };
-      const lastWeekFileKey1 = `accessibility/test-site/${new Date(new Date(targetDate).setDate(new Date(targetDate).getDate() - 14)).toISOString().split('T')[0]}-final-result.json`;
-      const lastWeekFileKey2 = `accessibility/test-site/${new Date(new Date(targetDate).setDate(new Date(targetDate).getDate() - 7)).toISOString().split('T')[0]}-final-result.json`;
-      const mockLastWeekObjectKeys = [lastWeekFileKey1, lastWeekFileKey2];
-      const mockLastWeekContent = { overall: { violations: { total: 8 } } };
-
-      // S3 ListObjectsV2 mock
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
-      // S3 PutObject mock
-      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
-      // S3 DeleteObject/DeleteObjects mock (for cleanupS3Files)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
-      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectsCommand)).resolves({});
-
-      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
-        '../../../src/utils/s3-utils.js': {
-          getObjectKeysUsingPrefix: sandbox.stub()
-            .onFirstCall().resolves(['file1.json']) // For getObjectKeysFromSubfolders
-            .onSecondCall()
-            .resolves(mockLastWeekObjectKeys), // For finding last week files
-          getObjectFromKey: sandbox.stub()
-            .onFirstCall().resolves(mockFileData) // For processFilesWithRetry
-            // For loading last week file content (loads index length - 2 = lastWeekFileKey1)
-            .onSecondCall()
-            .resolves(mockLastWeekContent),
-        },
-      });
-
-      const result = await aggregateData(
-        mockS3Client,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        'accessibility',
-        targetDate,
-        2,
-      );
-
-      expect(result.success).to.be.true;
-
-      // const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey1}`;
-      // The log message in the code actually uses lastWeekObjectKeys[1] for the key part.
-      const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey2}`;
-      const logCall = mockLog.debug.getCalls().find((call) => call.args[0].includes(expectedKeyInLog) && call.args[0].includes('with content:'));
-      expect(logCall).to.not.be.undefined;
-      // If more precise matching is needed, verify the full content:
-      const logContentString = JSON.stringify(mockLastWeekContent, null, 2);
-      expect(logCall.args[0]).to.include(logContentString);
-    });
-
-    it('should call all required functions in correct order', async () => {
-      const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
-      const mockFileData = { url: 'https://example.com/page1', violations: { total: 5 }, traffic: 100 };
-      const dt = new Date(targetDate);
-      const prevDate = new Date(dt.setDate(dt.getDate() - 7));
-      const lastWeekFileKey = `accessibility/test-site/${prevDate.toISOString().split('T')[0]}-final-result.json`;
-
-      // S3 Mocks
-      // For getSubfolders (via getObjectKeysFromSubfolders)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({ CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }] });
-      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({}); // For save
-      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
-
-      // Create stubs for s3-utils functions BEFORE esmock call
-      const getObjectKeysUsingPrefixStub = sandbox.stub()
-        .onFirstCall().resolves(['file1.json']) // For getObjectKeysFromSubfolders
-        .onSecondCall()
-        .resolves([lastWeekFileKey]); // For aggData direct call
-      const getObjectFromKeyStub = sandbox.stub()
-        .onFirstCall().resolves(mockFileData) // For processFilesWithRetry
-        .onSecondCall()
-        .resolves(null); // For aggData direct call (last week content)
-
-      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
-        '../../../src/utils/s3-utils.js': {
-          getObjectKeysUsingPrefix: getObjectKeysUsingPrefixStub,
-          getObjectFromKey: getObjectFromKeyStub,
-        },
-      });
-
-      const result = await aggregateData(
-        mockS3Client,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        'accessibility',
-        targetDate,
-        2,
-      );
-
-      // Check if the main aggregation succeeded
-      expect(result.success, 'aggregateData should succeed').to.be.true;
-
-      // Assertions for s3-utils.js functions (on the stubs themselves)
-      expect(getObjectKeysUsingPrefixStub.calledTwice).to.be.true;
-      expect(getObjectFromKeyStub.calledOnce).to.be.true;
-
-      // Assertions for S3 commands
-      expect(mockS3Client.send.calledWith(sinon.match.instanceOf(ListObjectsV2Command))).to.be.true;
-      expect(mockS3Client.send.calledWith(sinon.match.instanceOf(PutObjectCommand))).to.be.true;
-
-      expect(mockS3Client.send.calledWith(sinon.match.instanceOf(DeleteObjectCommand)))
-        .to.be.true;
-    });
-
-    it('should return error and specific message when getObjectKeysFromSubfolders returns success false', async () => {
-      // eslint-disable-next-line max-len
-      const expectedMessage = 'No accessibility data found in bucket test-bucket at prefix accessibility/test-site/ for site test-site with delimiter /';
-
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({ CommonPrefixes: [] }); // No subfolders found
-
-      const result = await aggregateAccessibilityData(
-        mockS3Client,
-        'test-bucket',
-        'test-site',
-        mockLog,
-        'output-key',
-        'accessibility', // auditType
-        '2024-01-01', // version
-        2, // maxRetries
-      );
-
-      expect(result.success).to.be.false;
-      expect(result.aggregatedData).to.be.null;
-      expect(result.message).to.equal(expectedMessage);
-      expect(mockS3Client.send
-        .calledOnceWith(sinon.match.instanceOf(ListObjectsV2Command))).to.be.true;
     });
 
     it('should use correct log identifier and storage prefix for forms-opportunities audit type', async () => {
@@ -1912,12 +1772,10 @@ describe('data-processing utility functions', () => {
         formSource: '#contact-form',
         source: '#contact-form',
       };
+      const scrapeResultPaths = new Map([
+        ['https://www.example.com', 'scrapes/test-site/scrape.json']
+      ]);
 
-      // S3 ListObjectsV2 mock - note the forms-accessibility prefix
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
-        });
       // S3 PutObject mock
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
       // S3 DeleteObject mock
@@ -1944,6 +1802,7 @@ describe('data-processing utility functions', () => {
         'output-key',
         'forms-opportunities', // forms audit type
         targetDate,
+        scrapeResultPaths,
         2,
       );
 
@@ -1958,7 +1817,6 @@ describe('data-processing utility functions', () => {
 
     it('should handle forms-opportunities audit type with form source data', async () => {
       const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
       const mockFileData = {
         url: 'https://example.com/contact',
         violations: { total: 2 },
@@ -1966,12 +1824,12 @@ describe('data-processing utility functions', () => {
         formSource: '#contact-form', // CSS selector for form
         source: '#contact-form',
       };
+      const scrapeResultPaths = new Map([
+        ['https://www.example.com', 'scrapes/test-site/scrape.json'],
+        ['https://www.example.com/test', 'scrapes/test-site/test/scrape.json'],
+        ['https://www.example.com/anotherTest', 'scrapes/test-site/anotherTest/scrape.json'],
+      ]);
 
-      // S3 ListObjectsV2 mock
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
-        });
       // S3 PutObject mock
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
       // S3 DeleteObject mock
@@ -1998,6 +1856,7 @@ describe('data-processing utility functions', () => {
         'output-key',
         'forms-opportunities',
         targetDate,
+        scrapeResultPaths,
         2,
       );
 
@@ -2010,7 +1869,6 @@ describe('data-processing utility functions', () => {
 
     it('should handle forms-opportunities audit type with different CSS selector form sources', async () => {
       const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
       const mockFileData = {
         url: 'https://example.com/newsletter',
         violations: { total: 1 },
@@ -2018,12 +1876,13 @@ describe('data-processing utility functions', () => {
         formSource: '.newsletter-signup-form', // CSS class selector for form
         source: '.newsletter-signup-form',
       };
+      const scrapeResultPaths = new Map([
+        ['https://www.example.com', 'scrapes/test-site/scrape.json'],
+        ['https://www.example.com/test', 'scrapes/test-site/test/scrape.json'],
+        ['https://www.example.com/anotherTest', 'scrapes/test-site/anotherTest/scrape.json'],
+      ]);
 
-      // S3 ListObjectsV2 mock
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
-        });
+
       // S3 PutObject mock
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
       // S3 DeleteObject mock
@@ -2050,6 +1909,7 @@ describe('data-processing utility functions', () => {
         'output-key',
         'forms-opportunities',
         targetDate,
+        scrapeResultPaths,
         2,
       );
 
@@ -2062,13 +1922,11 @@ describe('data-processing utility functions', () => {
 
     it('should return error with correct log identifier for forms-opportunities when no files processed', async () => {
       const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
-
-      // S3 ListObjectsV2 mock
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
-        });
+      const scrapeResultPaths = new Map([
+        ['https://www.example.com', 'scrapes/test-site/scrape.json'],
+        ['https://www.example.com/test', 'scrapes/test-site/test/scrape.json'],
+        ['https://www.example.com/anotherTest', 'scrapes/test-site/anotherTest/scrape.json'],
+      ]);
 
       const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
         '../../../src/utils/s3-utils.js': {
@@ -2088,6 +1946,7 @@ describe('data-processing utility functions', () => {
         'output-key',
         'forms-opportunities',
         targetDate,
+        scrapeResultPaths,
         2,
       );
 
@@ -2099,13 +1958,12 @@ describe('data-processing utility functions', () => {
 
     it('should handle forms-opportunities audit type error with correct log identifier', async () => {
       const targetDate = '2024-01-01';
-      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+      const scrapeResultPaths = new Map([
+        ['https://www.example.com', 'scrapes/test-site/scrape.json'],
+        ['https://www.example.com/test', 'scrapes/test-site/test/scrape.json'],
+        ['https://www.example.com/anotherTest', 'scrapes/test-site/anotherTest/scrape.json'],
+      ]);
 
-      // S3 ListObjectsV2 mock
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
-        });
       // S3 PutObject mock - THIS ONE FAILS
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).rejects(new Error('S3 save failed'));
 
@@ -2130,6 +1988,7 @@ describe('data-processing utility functions', () => {
         'output-key',
         'forms-opportunities',
         targetDate,
+        scrapeResultPaths,
         2,
       );
 
@@ -5184,7 +5043,7 @@ describe('data-processing utility functions', () => {
       // Arrange
       const mockGenMdFn = sandbox.stub().returns('# Mobile Report\n\nMobile content.');
       const mockCreateOpportunityFn = sandbox.stub().returns({ type: 'accessibility', title: 'Test' });
-      
+
       const mockExistingDesktopOpportunity = {
         getId: sandbox.stub().returns('desktop-opp-123'),
         getSuggestions: sandbox.stub().resolves([]),
@@ -5235,7 +5094,7 @@ describe('data-processing utility functions', () => {
       // Arrange
       const mockGenMdFn = sandbox.stub().returns('# Mobile Only Report\n');
       const mockCreateOpportunityFn = sandbox.stub().returns({ type: 'accessibility', title: 'Mobile Test' });
-      
+
       const mockNewOpportunity = {
         getId: sandbox.stub().returns('new-mobile-opp'),
         getSuggestions: sandbox.stub().resolves([]),
@@ -5279,7 +5138,7 @@ describe('data-processing utility functions', () => {
       // Arrange
       const mockGenMdFn = sandbox.stub().returns('# Desktop Report\n\nDesktop content.');
       const mockCreateOpportunityFn = sandbox.stub().returns({ type: 'accessibility', title: 'Desktop Test' });
-      
+
       const mockExistingMobileOpportunityForFind = {
         getTitle: sandbox.stub().returns('Accessibility report - Mobile - Week 22 - 2024'),
         getStatus: sandbox.stub().returns('NEW'),
@@ -5324,7 +5183,7 @@ describe('data-processing utility functions', () => {
       // Arrange
       const mockGenMdFn = sandbox.stub().returns('# Base Report\n');
       const mockCreateOpportunityFn = sandbox.stub().returns({ type: 'accessibility', title: 'Base' });
-      
+
       const mockOpportunity = {
         getId: sandbox.stub().returns('base-opp'),
         getSuggestions: sandbox.stub().resolves([]),
@@ -5367,7 +5226,7 @@ describe('data-processing utility functions', () => {
       // Arrange
       const mockGenMdFn = sandbox.stub().returns('# Error Report\n');
       const mockCreateOpportunityFn = sandbox.stub().returns({ type: 'accessibility', title: 'Error Test' });
-      
+
       const mockOpportunity = {
         getId: sandbox.stub().returns('error-opp'),
         getSuggestions: sandbox.stub().rejects(new Error('Suggestion creation failed')),
@@ -5388,9 +5247,9 @@ describe('data-processing utility functions', () => {
         },
       };
 
-      // Act & Assert
-      await expect(
-        generateReportOpportunityMocked(
+      let caughtError;
+      try {
+        await generateReportOpportunityMocked(
           reportData,
           mockGenMdFn,
           mockCreateOpportunityFn,
@@ -5398,9 +5257,14 @@ describe('data-processing utility functions', () => {
           false,
           'desktop',
           '',
-        )
-      ).to.be.rejectedWith('Suggestion creation failed');
+        );
+        expect.fail('generateReportOpportunity should have thrown');
+      } catch (error) {
+        caughtError = error;
+      }
 
+      expect(caughtError).to.be.instanceOf(Error);
+      expect(caughtError.message).to.equal('Suggestion creation failed');
       expect(mockLog.error).to.have.been.called;
     });
   });
