@@ -101,20 +101,22 @@ describe('Wikipedia Analysis Guidance Handler', () => {
             company: 'Example Corp',
             suggestions: [
               {
+                id: 'add_citations',
                 priority: 'HIGH',
                 title: 'Add more citations',
                 description: 'The article needs more references',
-                suggestedValue: '15 citations',
-                currentValue: '5 citations',
-                category: 'references',
+                whyMatters: 'Citations improve credibility',
+                expectedResult: '15 citations',
+                dataSources: 'Company reports',
               },
               {
+                id: 'expand_content',
                 priority: 'MEDIUM',
                 title: 'Expand content',
                 description: 'Add more content about products',
-                suggestedValue: '2000 words',
-                currentValue: '800 words',
-                category: 'content',
+                whyMatters: 'More content improves coverage',
+                expectedResult: '2000 words',
+                dataSources: 'Product documentation',
               },
             ],
             industryAnalysis: {
@@ -142,7 +144,7 @@ describe('Wikipedia Analysis Guidance Handler', () => {
           analysis: {
             company: 'Example Corp',
             suggestions: [
-              { priority: 'HIGH', title: 'Test', description: 'Test', category: 'test' },
+              { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test', whyMatters: 'Test', expectedResult: 'Test', dataSources: 'Test' },
             ],
             industryAnalysis: {
               industry: 'Finance',
@@ -166,7 +168,7 @@ describe('Wikipedia Analysis Guidance Handler', () => {
           analysis: {
             company: 'Example Corp',
             suggestions: [
-              { priority: 'HIGH', title: 'Test', description: 'Test', category: 'test' },
+              { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test', whyMatters: 'Test', expectedResult: 'Test', dataSources: 'Test' },
             ],
           },
         },
@@ -220,7 +222,7 @@ describe('Wikipedia Analysis Guidance Handler', () => {
         data: {
           analysis: {
             company: 'Example Corp',
-            suggestions: [{ priority: 'HIGH', title: 'Test', description: 'Test', category: 'test' }],
+            suggestions: [{ id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test', whyMatters: 'Test', expectedResult: 'Test', dataSources: 'Test' }],
           },
         },
       };
@@ -238,10 +240,13 @@ describe('Wikipedia Analysis Guidance Handler', () => {
         company: 'Example Corp',
         suggestions: [
           {
+            id: 'critical_1',
             priority: 'CRITICAL',
             title: 'Critical improvement',
             description: 'This is critical',
-            category: 'critical',
+            whyMatters: 'Critical for credibility',
+            expectedResult: 'Improved article',
+            dataSources: 'News sources',
           },
         ],
       };
@@ -314,11 +319,11 @@ describe('Wikipedia Analysis Guidance Handler', () => {
           analysis: {
             company: 'Example Corp',
             suggestions: [
-              { priority: 'CRITICAL', title: 'A', description: 'A', category: 'a' },
-              { priority: 'HIGH', title: 'B', description: 'B', category: 'b' },
-              { priority: 'MEDIUM', title: 'C', description: 'C', category: 'c' },
-              { priority: 'LOW', title: 'D', description: 'D', category: 'd' },
-              { priority: 'UNKNOWN', title: 'E', description: 'E', category: 'e' },
+              { id: 'sug_a', priority: 'CRITICAL', title: 'A', description: 'A', whyMatters: 'A', expectedResult: 'A', dataSources: 'A' },
+              { id: 'sug_b', priority: 'HIGH', title: 'B', description: 'B', whyMatters: 'B', expectedResult: 'B', dataSources: 'B' },
+              { id: 'sug_c', priority: 'MEDIUM', title: 'C', description: 'C', whyMatters: 'C', expectedResult: 'C', dataSources: 'C' },
+              { id: 'sug_d', priority: 'LOW', title: 'D', description: 'D', whyMatters: 'D', expectedResult: 'D', dataSources: 'D' },
+              { id: 'sug_e', priority: 'UNKNOWN', title: 'E', description: 'E', whyMatters: 'E', expectedResult: 'E', dataSources: 'E' },
             ],
           },
         },
@@ -345,13 +350,14 @@ describe('Wikipedia Analysis Guidance Handler', () => {
             company: 'Example Corp',
             suggestions: [
               {
+                id: 'test_suggestion',
                 priority: 'HIGH',
                 title: 'Test Title',
+                priorityNote: 'Important note',
                 description: 'Test Description',
-                suggestedValue: 'Suggested',
-                currentValue: 'Current',
-                competitorAverage: 'Average',
-                category: 'test-category',
+                whyMatters: 'This matters because...',
+                expectedResult: 'Expected outcome',
+                dataSources: 'Data source list',
               },
             ],
           },
@@ -363,13 +369,14 @@ describe('Wikipedia Analysis Guidance Handler', () => {
       const syncCall = syncSuggestionsStub.firstCall;
       const { newData } = syncCall.args[0];
 
+      expect(newData[0].data.id).to.equal('test_suggestion');
       expect(newData[0].data.priority).to.equal('HIGH');
       expect(newData[0].data.title).to.equal('Test Title');
+      expect(newData[0].data.priorityNote).to.equal('Important note');
       expect(newData[0].data.description).to.equal('Test Description');
-      expect(newData[0].data.suggestedValue).to.equal('Suggested');
-      expect(newData[0].data.currentValue).to.equal('Current');
-      expect(newData[0].data.competitorAverage).to.equal('Average');
-      expect(newData[0].data.category).to.equal('test-category');
+      expect(newData[0].data.whyMatters).to.equal('This matters because...');
+      expect(newData[0].data.expectedResult).to.equal('Expected outcome');
+      expect(newData[0].data.dataSources).to.equal('Data source list');
       expect(newData[0].type).to.equal('CONTENT_UPDATE');
     });
 
@@ -381,7 +388,7 @@ describe('Wikipedia Analysis Guidance Handler', () => {
           analysis: {
             company: 'Example Corp',
             suggestions: [
-              { priority: 'HIGH', title: 'My Title', description: 'Desc', category: 'my-cat' },
+              { id: 'my_suggestion_id', priority: 'HIGH', title: 'My Title', description: 'Desc', whyMatters: 'Test', expectedResult: 'Test', dataSources: 'Test' },
             ],
           },
         },
@@ -391,9 +398,9 @@ describe('Wikipedia Analysis Guidance Handler', () => {
 
       const syncCall = syncSuggestionsStub.firstCall;
       const { buildKey } = syncCall.args[0];
-      const key = buildKey({ data: { category: 'my-cat', title: 'My Title' } });
+      const key = buildKey({ data: { id: 'my_suggestion_id' } });
 
-      expect(key).to.equal('wikipedia::my-cat::My Title');
+      expect(key).to.equal('wikipedia::my_suggestion_id');
     });
 
     it('should use correct mapNewSuggestion function', async () => {
@@ -404,7 +411,7 @@ describe('Wikipedia Analysis Guidance Handler', () => {
           analysis: {
             company: 'Example Corp',
             suggestions: [
-              { priority: 'HIGH', title: 'Title', description: 'Desc', category: 'cat' },
+              { id: 'test_id', priority: 'HIGH', title: 'Title', description: 'Desc', whyMatters: 'Test', expectedResult: 'Test', dataSources: 'Test' },
             ],
           },
         },
@@ -417,13 +424,13 @@ describe('Wikipedia Analysis Guidance Handler', () => {
       const mapped = mapNewSuggestion({
         type: 'CONTENT_UPDATE',
         rank: 1,
-        data: { test: 'data' },
+        data: { id: 'test_id', title: 'Test' },
       });
 
       expect(mapped.opportunityId).to.equal('opp-123');
       expect(mapped.type).to.equal('CONTENT_UPDATE');
       expect(mapped.rank).to.equal(1);
-      expect(mapped.data).to.deep.equal({ test: 'data' });
+      expect(mapped.data).to.deep.equal({ id: 'test_id', title: 'Test' });
     });
   });
 

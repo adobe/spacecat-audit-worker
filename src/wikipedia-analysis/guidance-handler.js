@@ -71,15 +71,7 @@ function mapSuggestions(suggestions) {
   return suggestions.map((suggestion) => ({
     rank: getRankFromPriority(suggestion.priority),
     type: 'CONTENT_UPDATE',
-    data: {
-      priority: suggestion.priority,
-      title: suggestion.title,
-      description: suggestion.description,
-      suggestedValue: suggestion.suggestedValue,
-      currentValue: suggestion.currentValue,
-      competitorAverage: suggestion.competitorAverage,
-      category: suggestion.category,
-    },
+    data: suggestion, // Pass through entire suggestion object
   }));
 }
 
@@ -176,7 +168,7 @@ export default async function handler(message, context) {
       context,
       opportunity,
       newData: mappedSuggestions,
-      buildKey: (suggestion) => `wikipedia::${suggestion.data.category}::${suggestion.data.title}`,
+      buildKey: (suggestion) => `wikipedia::${suggestion.data.id}`,
       mapNewSuggestion: (suggestion) => ({
         opportunityId: opportunity.getId(),
         type: suggestion.type,
