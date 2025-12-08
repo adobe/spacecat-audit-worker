@@ -12,4 +12,4 @@
 
 export const CONTENT_GAIN_THRESHOLD = 1.1;
 export const TOP_AGENTIC_URLS_LIMIT = 200;
-export const TOP_ORGANIC_URLS_LIMIT = 160;
+export const TOP_ORGANIC_URLS_LIMIT = 200;
