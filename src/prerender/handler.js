@@ -349,9 +349,8 @@ export async function submitForScraping(context) {
   return {
     urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
-    type: AUDIT_TYPE,
     processingType: AUDIT_TYPE,
-    allowCache: false,
+    maxScrapeAge: 0,
     options: {
       pageLoadTimeout: 20000,
       storagePrefix: AUDIT_TYPE,
@@ -532,23 +531,23 @@ export async function processContentAndGenerateOpportunities(context) {
   try {
     let urlsToCheck = [];
 
-    // Fetch agentic URLs only for URL list fallback
-    let agenticStats = [];
-    try {
-      agenticStats = await getTopAgenticUrls(site, context);
-    } catch (e) {
-      log.warn(`Prerender - Failed to fetch agentic URLs for fallback: ${e.message}. baseUrl=${site.getBaseURL()}`);
-    }
-
-    // Load top organic pages cache for fallback merging
-    const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
-
     // Try to get URLs from the audit context first
     if (scrapeResultPaths?.size > 0) {
       urlsToCheck = Array.from(context.scrapeResultPaths.keys());
       log.info(`Prerender - Found ${urlsToCheck.length} URLs from scrape results`);
     } else {
       /* c8 ignore start */
+      // Fetch agentic URLs only for URL list fallback
+      let agenticStats = [];
+      try {
+        agenticStats = await getTopAgenticUrls(site, context);
+      } catch (e) {
+        log.warn(`Prerender - Failed to fetch agentic URLs for fallback: ${e.message}. baseUrl=${site.getBaseURL()}`);
+      }
+
+      // Load top organic pages cache for fallback merging
+      const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
+
       const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
       const merged = [...agenticStats.map((s) => s.url), ...topPagesUrls];
       urlsToCheck = [...new Set([...merged, ...includedURLs])];
@@ -652,6 +651,6 @@ export async function processContentAndGenerateOpportunities(context) {
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('process-content-and-generate-opportunities', processContentAndGenerateOpportunities)
   .build();
