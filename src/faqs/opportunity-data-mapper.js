@@ -23,7 +23,7 @@ export function createOpportunityData(siteId, auditId, guidance) {
     description: 'Add the relevant FAQs listed below to the corresponding pages to improve content discoverability in LLMs.',
     status: 'NEW',
     guidance,
-    tags: ['isElmo'],
+    tags: ['isElmo', 'content'],
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.PAGE, DATA_SOURCES.SITE],
     },
