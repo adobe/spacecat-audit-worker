@@ -434,7 +434,6 @@ async function prepareDomainWideAggregateSuggestion(
   const auditedUrls = preRenderSuggestions.map((s) => s.url);
   const auditedUrlCount = auditedUrls.length;
 
-  // Calculate totals (sum) from all audited URLs
   // Sum up contentGainRatio from all suggestions
   const totalContentGainRatio = preRenderSuggestions.reduce(
     (sum, s) => sum + (s.contentGainRatio || 0),
@@ -478,33 +477,30 @@ async function prepareDomainWideAggregateSuggestion(
     }
   });
 
-  // Create domain-wide regex patterns
+  // Create domain-wide regex pattern(s)
   const baseUrlObj = new URL(baseUrl);
   const escapedBaseUrl = baseUrlObj.origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const domainRegex = `${escapedBaseUrl}/.*`;
 
-  // Array of allowed regex patterns (prepares for future blockedRegexPatterns)
+  // Array of allowed regex patterns
   const allowedRegexPatterns = [domainRegex];
 
-  // Domain-wide suggestion data matching the schema of individual suggestions
-  // This applies to ALL URLs in the domain, including the qualified & prioritized URLs
+  // This applies to ALL URLs in the domain
   const domainWideSuggestionData = {
-    // Special marker to indicate this covers the entire domain
     url: `${baseUrl}/* (All Domain URLs)`,
     contentGainRatio: totalContentGainRatio > 0 ? Number(totalContentGainRatio.toFixed(2)) : 0,
     wordCountBefore: totalWordCountBefore,
     wordCountAfter: totalWordCountAfter,
-    agenticTraffic: totalAgenticTraffic, // Aggregated traffic from all audited URLs
+    agenticTraffic: totalAgenticTraffic,
     // Additional metadata for domain-wide configuration
     isDomainWide: true,
-    allowedRegexPatterns, // Array of regex patterns to match URLs for pre-rendering
+    allowedRegexPatterns,
     pathPattern: '/*',
     scope: 'domain-wide',
     description: `Apply pre-rendering to all URLs across the entire domain (${baseUrlObj.origin})`,
     auditedUrlCount,
     auditedUrls, // URLs that were audited and generated individual suggestions
     note: 'This configuration applies to ALL URLs in the domain. Metrics represent total aggregated values from qualified & prioritized URLs.',
-    // Store calculated percentage for UI
     aiReadablePercent: totalAiReadablePercent,
   };
 
@@ -513,7 +509,6 @@ async function prepareDomainWideAggregateSuggestion(
 
   log.info(`Prerender - Prepared domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s). Total agentic traffic: ${totalAgenticTraffic}`);
 
-  // Return the domain-wide suggestion object (will be synced together with individual suggestions)
   return {
     key: DOMAIN_WIDE_SUGGESTION_KEY,
     data: domainWideSuggestionData,
@@ -592,8 +587,6 @@ export async function processOpportunityAndSuggestions(
     prerenderedHtmlKey: getS3Path(suggestion.url, auditData.siteId, 'client-side.html'),
   });
 
-  // Combine individual suggestions with domain-wide suggestion for a single sync call
-  // This prevents the second call from marking the first batch as OUTDATED
   const allSuggestions = [...preRenderSuggestions, domainWideSuggestion];
 
   await syncSuggestions({
