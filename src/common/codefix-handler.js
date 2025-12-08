@@ -286,7 +286,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
         bucketName = defaultBucketName;
         const urlSourceHash = generateUrlSourceHash(url, source || '');
         // Sanitize aggregation key for S3 path (replace slashes with underscores)
-        const sanitizedAggregationKey = aggregationKey ? aggregationKey.replace(/[/\\]/g, '_') : 'default';
+        const sanitizedAggregationKey = aggregationKey.replace(/[/\\]/g, '_');
         reportKey = `fixes/${siteId}/${urlSourceHash}/${sanitizedAggregationKey}/report.json`;
         log.info(`[CodeFixProcessor] Using default S3 path: s3://${bucketName}/${reportKey}`);
       }
