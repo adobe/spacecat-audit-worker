@@ -186,4 +186,3 @@ export default new AuditBuilder()
   .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('processImageOptimization', processImageOptimization)
   .build();
-

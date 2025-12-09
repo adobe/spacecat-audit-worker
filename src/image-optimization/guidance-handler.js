@@ -112,7 +112,8 @@ async function validateAndGetOpportunity(Opportunity, siteId, log) {
   );
 
   if (!imageOptOppty) {
-    const errorMsg = `[${AUDIT_TYPE}]: No existing opportunity found for siteId ${siteId}. Opportunity should be created by main handler before processing results.`;
+    const errorMsg = `[${AUDIT_TYPE}]: No existing opportunity found for siteId ${siteId}. `
+      + 'Opportunity should be created by main handler before processing results.';
     log.error(errorMsg);
     throw new Error(errorMsg);
   }
@@ -209,7 +210,11 @@ export default async function handler(message, context) {
   }
 
   // Process image analysis results
-  if (imageAnalysisResults && Array.isArray(imageAnalysisResults) && imageAnalysisResults.length > 0) {
+  const hasResults = imageAnalysisResults
+    && Array.isArray(imageAnalysisResults)
+    && imageAnalysisResults.length > 0;
+
+  if (hasResults) {
     // Convert results to suggestions
     const mappedSuggestions = mapAnalysisResultsToSuggestionDTOs(
       imageAnalysisResults,
@@ -243,4 +248,3 @@ export default async function handler(message, context) {
 
   return ok();
 }
-

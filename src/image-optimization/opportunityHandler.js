@@ -230,4 +230,3 @@ export async function cleanupOutdatedSuggestions(opportunity, log) {
     log.error(`[${AUDIT_TYPE}]: Failed to cleanup OUTDATED suggestions: ${error.message}`);
   }
 }
-

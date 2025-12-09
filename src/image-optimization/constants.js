@@ -39,4 +39,3 @@ export const IMAGE_OPTIMIZATION_OBSERVATION = 'Images not optimized for AVIF for
 
 // Batch size for processing page URLs
 export const ANALYZER_BATCH_SIZE = 10;
-
