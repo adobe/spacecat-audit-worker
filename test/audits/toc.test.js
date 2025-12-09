@@ -1300,7 +1300,7 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(opportunityData).to.be.an('object');
       expect(opportunityData).to.have.property('runbook', '');
       expect(opportunityData).to.have.property('origin', 'AUTOMATION');
-      expect(opportunityData).to.have.property('title', 'Table of contents issues affecting accessibility and SEO');
+      expect(opportunityData).to.have.property('title', 'Add Table of Content');
       expect(opportunityData).to.have.property('description');
       expect(opportunityData.description).to.include('table of contents');
       expect(opportunityData.description).to.include('AI-powered suggestions');
