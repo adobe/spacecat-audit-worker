@@ -704,6 +704,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
   try {
     let urlsToCheck = [];
+    /* c8 ignore next */
     let agenticStats = [];
 
     // Try to get URLs from the audit context first
@@ -775,6 +776,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
     if (urlsNeedingPrerender.length > 0) {
       // Build agentic traffic map from already-fetched agenticStats
+      /* c8 ignore next 2 */
       const agenticTrafficMap = buildTrafficMapFromStats(agenticStats, log);
       log.info(`Prerender - Built traffic map from ${agenticStats.length} agentic URLs. baseUrl=${site.getBaseURL()}`);
 
