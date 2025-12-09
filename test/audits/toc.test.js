@@ -1303,7 +1303,6 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(opportunityData).to.have.property('title', 'Add Table of Content');
       expect(opportunityData).to.have.property('description');
       expect(opportunityData.description).to.include('table of contents');
-      expect(opportunityData.description).to.include('AI-powered suggestions');
     });
 
     it('includes proper guidance steps for TOC', async () => {
