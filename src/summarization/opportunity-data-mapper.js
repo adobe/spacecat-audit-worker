@@ -19,7 +19,7 @@ export function createOpportunityData(siteId, auditId, guidance) {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Summarization_Runbook.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
     origin: 'AUTOMATION',
     type: 'summarization',
-    title: 'Content Summarization Improvements for High Traffic Content Pages',
+    title: 'Add LLM-Friendly Summaries',
     description: 'Content summarization elements such as summary and key points improve content discoverability and user engagement.',
     status: 'NEW',
     guidance,
