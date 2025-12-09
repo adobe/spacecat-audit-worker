@@ -271,13 +271,13 @@ describe('CDN Logs Sheet Configs', () => {
     it('referral traffic post processes valid data', () => {
       const testData = [{
         path: 'some/path/first',
-        referrer: '',
+        referrer: 'gemini.google.com',
         utm_source: 'google',
-        utm_medium: 'cpc',
-        tracking_param: 'paid',
+        utm_medium: '',
+        tracking_param: '',
         device: 'mobile',
         date: '2025-07-18',
-        pageviews: '200',
+        pageviews: '250',
         region: 'UK',
       }, {
         path: 'some/path/first',
@@ -291,7 +291,7 @@ describe('CDN Logs Sheet Configs', () => {
         region: 'UK',
       }, {
         path: '/another/path',
-        referrer: 'https://facebook.com',
+        referrer: 'https://l.meta.ai',
         utm_source: '',
         utm_medium: '',
         tracking_param: '',
@@ -326,12 +326,12 @@ describe('CDN Logs Sheet Configs', () => {
 
       expect(result).to.deep.include.members([[
         'some/path/first',
-        'paid',
-        'display',
+        'earned',
+        'llm',
         'google',
         'mobile',
         '2025-07-18',
-        500,
+        250,
         '',
         '',
         'UK',
@@ -339,8 +339,8 @@ describe('CDN Logs Sheet Configs', () => {
       ], [
         '/another/path',
         'earned',
-        'social',
-        'facebook',
+        'llm',
+        'meta',
         'desktop',
         '2025-07-19',
         23,
@@ -348,19 +348,7 @@ describe('CDN Logs Sheet Configs', () => {
         '',
         'US',
         '',
-      ], [
-        '',
-        'paid',
-        'social',
-        'tiktok',
-        'mobile',
-        '2025-07-19',
-        23,
-        '',
-        '',
-        'FR',
-        '',
-      ],
+      ], 
       ]);
     });
 
