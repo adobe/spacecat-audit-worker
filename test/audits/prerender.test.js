@@ -1171,7 +1171,7 @@ describe('Prerender Audit', () => {
           expect(domainWideSuggestion.data.isDomainWide).to.be.true;
           expect(domainWideSuggestion.data.allowedRegexPatterns).to.be.an('array');
           expect(domainWideSuggestion.data.allowedRegexPatterns).to.have.lengthOf(1);
-          expect(domainWideSuggestion.data.allowedRegexPatterns[0]).to.equal('https://example\\.com/.*');
+          expect(domainWideSuggestion.data.allowedRegexPatterns[0]).to.equal('/*');
           expect(domainWideSuggestion.data.pathPattern).to.equal('/*');
           expect(domainWideSuggestion.data.scope).to.equal('domain-wide');
 

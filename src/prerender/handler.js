@@ -477,13 +477,10 @@ async function prepareDomainWideAggregateSuggestion(
     }
   });
 
-  // Create domain-wide regex pattern(s)
+  // Create domain-wide path pattern(s) for allowList
+  // The allowList in metaconfig expects glob patterns (e.g., "/*")
   const baseUrlObj = new URL(baseUrl);
-  const escapedBaseUrl = baseUrlObj.origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const domainRegex = `${escapedBaseUrl}/.*`;
-
-  // Array of allowed regex patterns
-  const allowedRegexPatterns = [domainRegex];
+  const allowedRegexPatterns = ['/*'];
 
   // This applies to ALL URLs in the domain
   const domainWideSuggestionData = {
