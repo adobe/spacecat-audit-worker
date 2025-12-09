@@ -1,3 +1,10 @@
+## [1.267.19](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.18...v1.267.19) (2025-12-09)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** referral traffic uses only llm driven referrals ([#1781](https://github.com/adobe/spacecat-audit-worker/issues/1781)) ([ebeaf01](https://github.com/adobe/spacecat-audit-worker/commit/ebeaf01b0a7a6e8c2264a2cd2a96545c2fc2dd4d))
+
 ## [1.267.18](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.17...v1.267.18) (2025-12-09)
 
 
