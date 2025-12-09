@@ -31,7 +31,7 @@ describe('Readability Opportunities - Opportunity Data Mapper', () => {
       expect(result.origin).to.equal('AUTOMATION');
 
       // Line 19
-      expect(result.title).to.equal('Content readability issues affecting user experience and accessibility');
+      expect(result.title).to.equal('Simplify Complex Content');
 
       // Line 20
       expect(result.description).to.equal('Poor readability makes content difficult for users to understand. Content with low readability scores may drive away visitors and reduce engagement metrics.');
