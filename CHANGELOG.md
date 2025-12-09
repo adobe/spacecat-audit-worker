@@ -1,3 +1,10 @@
+## [1.267.14](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.13...v1.267.14) (2025-12-09)
+
+
+### Bug Fixes
+
+* content oppty titles and toc update ([#1777](https://github.com/adobe/spacecat-audit-worker/issues/1777)) ([683ae22](https://github.com/adobe/spacecat-audit-worker/commit/683ae222d4e0c33ded3ec5fb7589a812b67ea631))
+
 ## [1.267.13](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.12...v1.267.13) (2025-12-08)
 
 
