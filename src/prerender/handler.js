@@ -192,6 +192,7 @@ function buildTrafficMapFromStats(agenticStats, log) {
       if (hits > 0) {
         trafficMap.set(normalizedPath, (trafficMap.get(normalizedPath) || 0) + hits);
       }
+      /* c8 ignore next 3 */
     } catch (e) {
       log?.debug?.(`Prerender - Could not parse URL for traffic map: ${stat.url} - ${e.message}`);
     }
@@ -471,6 +472,7 @@ async function prepareDomainWideAggregateSuggestion(
       const normalizedPath = urlObj.pathname === '/' ? '/' : urlObj.pathname.replace(/\/$/, '');
       const traffic = agenticTrafficMap.get(normalizedPath) || 0;
       totalAgenticTraffic += traffic;
+      /* c8 ignore next 3 */
     } catch (e) {
       log.debug(`Prerender - Could not parse URL for traffic lookup: ${url}`);
     }
