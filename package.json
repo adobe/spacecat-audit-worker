@@ -91,7 +91,7 @@
     "@adobe/spacecat-shared-html-analyzer": "1.2.0",
     "@adobe/spacecat-shared-http-utils": "1.19.4",
     "@adobe/spacecat-shared-ims-client": "1.11.7",
-    "@adobe/spacecat-shared-rum-api-client": "2.40.1",
+    "@adobe/spacecat-shared-rum-api-client": "2.40.2",
     "@adobe/spacecat-shared-scrape-client": "2.3.6",
     "@adobe/spacecat-shared-slack-client": "1.5.32",
     "@adobe/spacecat-shared-tier-client": "1.3.10",
