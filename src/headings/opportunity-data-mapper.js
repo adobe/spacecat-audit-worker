@@ -15,7 +15,7 @@ import { DATA_SOURCES } from '../common/constants.js';
 const OpptyData = {
   runbook: '',
   origin: 'AUTOMATION',
-  title: 'Heading structure issues affecting accessibility and SEO',
+  title: 'Optimize Headings for LLMs',
   description: 'Ensure heading elements (h1–h6) are used in a logical, hierarchical order without skipping levels, and that no heading is empty. Proper heading structure improves accessibility and helps search engines and generative engines understand page content. AI-powered suggestions are available to help improve heading quality and consistency.',
   guidance: {
     steps: [
@@ -35,7 +35,7 @@ const OpptyData = {
 const OpptyDataForTOC = {
   runbook: '',
   origin: 'AUTOMATION',
-  title: 'Table of contents issues affecting accessibility and SEO',
+  title: 'Add Table of Content',
   description: 'Ensure table of contents (TOC) is properly implemented in the <head> section of each page. Proper TOC implementation improves accessibility and helps search engines and generative engines understand page content. AI-powered suggestions are available to help improve TOC quality and consistency.',
   guidance: {
     steps: [
