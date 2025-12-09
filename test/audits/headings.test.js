@@ -3895,7 +3895,7 @@ describe('Headings Audit', () => {
       expect(opportunityData).to.be.an('object');
       expect(opportunityData).to.have.property('runbook', '');
       expect(opportunityData).to.have.property('origin', 'AUTOMATION');
-      expect(opportunityData).to.have.property('title', 'Heading structure issues affecting accessibility and SEO');
+      expect(opportunityData).to.have.property('title', 'Optimize Headings for LLMs');
       expect(opportunityData).to.have.property('description');
       expect(opportunityData.description).to.include('heading elements');
       expect(opportunityData.description).to.include('hierarchical order');

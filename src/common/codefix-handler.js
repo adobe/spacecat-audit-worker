@@ -137,35 +137,21 @@ async function updateSuggestionsWithCodeChange(
       const suggestionUrl = suggestionData.url;
       const suggestionSource = suggestionData.source;
 
+      let suggestionMatchKey;
       let suggestionsMatch = false;
 
       if (useAggregationKey) {
-        // For aggregation key matching, we need to check each issue and its htmlWithIssues
-        // A suggestion can have multiple issues, and each issue can have multiple htmlWithIssues
-        // We match if ANY of them produces an aggregation key that matches
-        const { issues = [] } = suggestionData;
-        for (const issue of issues) {
-          const { htmlWithIssues = [] } = issue;
-          for (const htmlItem of htmlWithIssues) {
-            // Build aggregation key using the same logic as when creating suggestions
-            const targetSelector = htmlItem.target_selector || htmlItem.targetSelector || '';
-            const suggestionMatchKey = buildAggregationKey(
-              issue.type,
-              suggestionUrl,
-              targetSelector,
-              suggestionSource,
-            );
-
-            if (suggestionMatchKey === matchKey && !!reportData.diff) {
-              suggestionsMatch = true;
-              log.debug(`[CodeFixProcessor] Matched suggestion ${suggestion.getId()}: key="${suggestionMatchKey}"`);
-              break;
-            }
-          }
-          if (suggestionsMatch) break;
-        }
+        const issueType = suggestionData.issues?.[0]?.type || '';
+        const targetSelector = suggestionData.issues?.[0]?.htmlWithIssues?.[0]?.target_selector || '';
+        suggestionMatchKey = buildAggregationKey(
+          issueType,
+          suggestionUrl,
+          targetSelector,
+          suggestionSource,
+        );
+        suggestionsMatch = suggestionMatchKey === matchKey && !!reportData.diff;
       } else {
-        const suggestionMatchKey = buildKey(suggestionUrl, suggestionSource);
+        suggestionMatchKey = buildKey(suggestionUrl, suggestionSource);
         const issueType = suggestionData.issues?.[0]?.type;
         suggestionsMatch = suggestionMatchKey === buildKey(url, source)
           && issueType === matchKey
@@ -258,7 +244,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
   }
 
   // Default bucket name from environment
-  const defaultBucketName = env.S3_MYSTIQUE_BUCKET_NAME || 'spacecat-prod-mystique-assets';
+  const defaultBucketName = env.S3_MYSTIQUE_BUCKET_NAME;
 
   let totalUpdatedSuggestions = 0;
 
@@ -299,7 +285,9 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
         }
         bucketName = defaultBucketName;
         const urlSourceHash = generateUrlSourceHash(url, source || '');
-        reportKey = `fixes/${siteId}/${urlSourceHash}/${aggregationKey}/report.json`;
+        // Sanitize aggregation key for S3 path (replace slashes with underscores)
+        const sanitizedAggregationKey = aggregationKey.replace(/[/\\]/g, '_');
+        reportKey = `fixes/${siteId}/${urlSourceHash}/${sanitizedAggregationKey}/report.json`;
         log.info(`[CodeFixProcessor] Using default S3 path: s3://${bucketName}/${reportKey}`);
       }
 

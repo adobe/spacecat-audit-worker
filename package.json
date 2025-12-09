@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.267.5",
+  "version": "1.267.17",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -82,12 +82,12 @@
     "@adobe/helix-shared-wrap": "2.0.2",
     "@adobe/helix-status": "10.1.5",
     "@adobe/helix-universal-logger": "3.0.28",
-    "@adobe/spacecat-helix-content-sdk": "1.4.32",
+    "@adobe/spacecat-helix-content-sdk": "1.4.33",
     "@adobe/spacecat-shared-ahrefs-client": "1.10.3",
-    "@adobe/spacecat-shared-athena-client": "1.8.4",
-    "@adobe/spacecat-shared-data-access": "2.88.9",
+    "@adobe/spacecat-shared-athena-client": "1.9.1",
+    "@adobe/spacecat-shared-data-access": "2.90.0",
     "@adobe/spacecat-shared-google-client": "1.4.62",
-    "@adobe/spacecat-shared-gpt-client": "1.6.14",
+    "@adobe/spacecat-shared-gpt-client": "1.6.15",
     "@adobe/spacecat-shared-html-analyzer": "1.2.0",
     "@adobe/spacecat-shared-http-utils": "1.19.4",
     "@adobe/spacecat-shared-ims-client": "1.11.7",
@@ -124,7 +124,7 @@
   },
   "devDependencies": {
     "@adobe/eslint-config-helix": "3.0.15",
-    "@adobe/helix-deploy": "13.2.1",
+    "@adobe/helix-deploy": "13.2.2",
     "@adobe/helix-universal": "5.3.0",
     "@adobe/helix-universal-devserver": "1.1.143",
     "@adobe/semantic-release-coralogix": "1.1.40",
@@ -163,7 +163,7 @@
   },
   "overrides": {
     "@adobe/fetch": "4.2.3",
-    "@adobe/spacecat-shared-data-access": "2.88.9"
+    "@adobe/spacecat-shared-data-access": "2.90.0"
   },
   "lint-staged": {
     "*.js": "eslint",
