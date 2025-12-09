@@ -394,7 +394,7 @@ export function buildDateFilter(startDate, endDate) {
  */
 export function buildUserAgentFilter() {
   const {
-    chatgpt, perplexity, google, claude, mistralai,
+    chatgpt, perplexity, google, claude, mistralai, amazon,
   } = PROVIDER_USER_AGENT_PATTERNS;
 
   return `(
@@ -402,7 +402,8 @@ export function buildUserAgentFilter() {
     REGEXP_LIKE(user_agent, '${perplexity}') OR 
     REGEXP_LIKE(user_agent, '${google}') OR
     REGEXP_LIKE(user_agent, '${claude}') OR
-    REGEXP_LIKE(user_agent, '${mistralai}')
+    REGEXP_LIKE(user_agent, '${mistralai}') OR
+    REGEXP_LIKE(user_agent, '${amazon}')
   )`;
 }
 /* c8 ignore end */
