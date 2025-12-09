@@ -29,9 +29,12 @@ describe('Image Optimization Handler', () => {
   const s3BucketPath = 'scrapes/site-id/';
   let context;
   let handlerModule;
+  let getIncludedURLsStub;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
+    getIncludedURLsStub = sandbox.stub().returns([]);
+    
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
@@ -40,7 +43,7 @@ describe('Image Optimization Handler', () => {
           getId: () => 'site-id',
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
-            getIncludedURLs: sandbox.stub().returns([]),
+            getIncludedURLs: getIncludedURLsStub,
           }),
         },
         audit: {
@@ -176,7 +179,7 @@ describe('Image Optimization Handler', () => {
     });
 
     it('should include both top pages and included URLs', async () => {
-      context.site.getConfig().getIncludedURLs.returns([
+      getIncludedURLsStub.returns([
         'https://example.com/included1',
         'https://example.com/included2',
       ]);

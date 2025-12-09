@@ -13,11 +13,30 @@
 import {
   isNonEmptyArray,
   isNonEmptyObject,
-  buildAggregationKey,
-  buildKey,
 } from '@adobe/spacecat-shared-utils';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { issueTypesForMystique } from '../utils/constants.js';
+
+/**
+ * Builds a simple key from url
+ * @param {string} url - The URL
+ * @returns {string} The key
+ */
+function buildKey(url) {
+  return url;
+}
+
+/**
+ * Builds an aggregation key from multiple components
+ * @param {string} issueType - The type of issue
+ * @param {string} url - The URL
+ * @param {string} targetSelector - The target selector
+ * @param {string} source - The source
+ * @returns {string} The aggregation key
+ */
+function buildAggregationKey(issueType, url, targetSelector, source) {
+  return `${issueType}|${url}|${targetSelector}|${source}`;
+}
 
 /**
  * Determines if an HTML issue should be sent to Mystique for processing

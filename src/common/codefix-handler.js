@@ -15,10 +15,30 @@
 import { createHash } from 'crypto';
 import {
   isNonEmptyArray,
-  buildAggregationKey,
-  buildKey,
 } from '@adobe/spacecat-shared-utils';
 import { getObjectFromKey } from '../utils/s3-utils.js';
+
+/**
+ * Builds a simple key from url and source
+ * @param {string} url - The URL
+ * @param {string} source - The source
+ * @returns {string} The key
+ */
+function buildKey(url, source) {
+  return `${url}|${source}`;
+}
+
+/**
+ * Builds an aggregation key from multiple components
+ * @param {string} issueType - The type of issue
+ * @param {string} url - The URL
+ * @param {string} targetSelector - The target selector
+ * @param {string} source - The source
+ * @returns {string} The aggregation key
+ */
+function buildAggregationKey(issueType, url, targetSelector, source) {
+  return `${issueType}|${url}|${targetSelector}|${source}`;
+}
 
 /**
  * Custom error classes for code fix processing
