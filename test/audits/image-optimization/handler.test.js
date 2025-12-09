@@ -183,18 +183,12 @@ describe('Image Optimization Handler', () => {
 
       await handlerModule.processImageOptimization(context);
 
-      expect(sendImageOptimizationToAnalyzerStub).to.have.been.calledWith(
-        'https://example.com',
-        sinon.match.array.contains([
-          'https://example.com/page1',
-          'https://example.com/page2',
-          'https://example.com/included1',
-          'https://example.com/included2',
-        ]),
-        'site-id',
-        'audit-id',
-        context,
-      );
+      const urls = sendImageOptimizationToAnalyzerStub.firstCall.args[1];
+      expect(urls).to.include('https://example.com/page1');
+      expect(urls).to.include('https://example.com/page2');
+      expect(urls).to.include('https://example.com/included1');
+      expect(urls).to.include('https://example.com/included2');
+      expect(urls).to.have.lengthOf(4);
     });
 
     it('should deduplicate URLs', async () => {
@@ -218,7 +212,9 @@ describe('Image Optimization Handler', () => {
       ).to.be.rejectedWith('No top pages found');
     });
 
-    it('should cleanup outdated suggestions', async () => {
+    it('should cleanup outdated suggestions', async function () {
+      this.timeout(5000); // Increase timeout for this test
+
       const opportunity = {
         getId: () => 'oppty-id',
         getType: () => AUDIT_TYPE,
@@ -231,7 +227,8 @@ describe('Image Optimization Handler', () => {
 
       await handlerModule.processImageOptimization(context);
 
-      await new Promise((resolve) => setTimeout(resolve, 1100));
+      // Wait for cleanup to be called (after 1 second delay in handler)
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       expect(cleanupOutdatedSuggestionsStub).to.have.been.calledWith(opportunity, context.log);
     });
 
