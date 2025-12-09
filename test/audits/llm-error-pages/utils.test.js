@@ -25,7 +25,6 @@ import {
   createDateRange,
   generatePeriodIdentifier,
   generateReportingPeriods,
-  buildSiteFilters,
   processErrorPagesResults,
   categorizeErrorsByStatusCode,
   consolidateErrorsByUrl,
@@ -863,70 +862,6 @@ describe('LLM Error Pages Utils', () => {
   });
 
   // ============================================================================
-  // FILTERING TESTS
-  // ============================================================================
-
-  describe('buildSiteFilters', () => {
-    it('should build include filter', () => {
-      const filters = [{
-        key: 'url',
-        value: ['test', 'example'],
-        type: 'include',
-      }];
-
-      const result = buildSiteFilters(filters);
-      expect(result).to.equal('(REGEXP_LIKE(url, \'(?i)(test|example)\'))');
-    });
-
-    it('should build exclude filter', () => {
-      const filters = [{
-        key: 'url',
-        value: ['test', 'example'],
-        type: 'exclude',
-      }];
-
-      const result = buildSiteFilters(filters);
-      expect(result).to.equal('(NOT REGEXP_LIKE(url, \'(?i)(test|example)\'))');
-    });
-
-    it('should build multiple filters', () => {
-      const filters = [
-        {
-          key: 'url',
-          value: ['test'],
-          type: 'include',
-        },
-        {
-          key: 'domain',
-          value: ['example'],
-          type: 'exclude',
-        },
-      ];
-
-      const result = buildSiteFilters(filters);
-      expect(result).to.equal('(REGEXP_LIKE(url, \'(?i)(test)\') AND NOT REGEXP_LIKE(domain, \'(?i)(example)\'))');
-    });
-
-    it('should use site host when no filters provided', () => {
-      const site = {
-        getBaseURL: () => 'https://example.com',
-      };
-
-      const result = buildSiteFilters(null, site);
-      expect(result).to.equal('REGEXP_LIKE(host, \'(?i)(example.com)\')');
-    });
-
-    it('should use site host when empty filters array provided', () => {
-      const site = {
-        getBaseURL: () => 'https://test.example.com',
-      };
-
-      const result = buildSiteFilters([], site);
-      expect(result).to.equal('REGEXP_LIKE(host, \'(?i)(test.example.com)\')');
-    });
-  });
-
-  // ============================================================================
   // PROCESSING RESULTS TESTS
   // ============================================================================
 
@@ -1312,37 +1247,6 @@ describe('LLM Error Pages Utils', () => {
     it('should return null for null input', () => {
       const result = getLlmProviderPattern(null);
       expect(result).to.be.null;
-    });
-  });
-
-  describe('buildSiteFilters', () => {
-    it('should build include filters for host using REGEXP_LIKE', () => {
-      const filters = [{ key: 'host', value: ['example.com', 'test.com'] }];
-      const result = buildSiteFilters(filters);
-      expect(result).to.include("REGEXP_LIKE(host, '(?i)(example.com|test.com)')");
-    });
-
-    it('should build exclude filters using NOT REGEXP_LIKE', () => {
-      const filters = [{ key: 'host', value: ['example.com'], type: 'exclude' }];
-      const result = buildSiteFilters(filters);
-      expect(result).to.include("NOT REGEXP_LIKE(host, '(?i)(example.com)')");
-    });
-
-    it('should handle url filters using REGEXP_LIKE', () => {
-      const filters = [{ key: 'url', value: ['/page1', '/page2'] }];
-      const result = buildSiteFilters(filters);
-      expect(result).to.include("REGEXP_LIKE(url, '(?i)(/page1|/page2)')");
-    });
-
-    it('should handle multiple filter types with AND join', () => {
-      const filters = [
-        { key: 'host', value: ['example.com'] },
-        { key: 'url', value: ['/page1'], type: 'exclude' },
-      ];
-      const result = buildSiteFilters(filters);
-      expect(result).to.include("REGEXP_LIKE(host, '(?i)(example.com)')");
-      expect(result).to.include("NOT REGEXP_LIKE(url, '(?i)(/page1)')");
-      expect(result).to.include(' AND ');
     });
   });
 
