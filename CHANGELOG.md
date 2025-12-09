@@ -1,3 +1,10 @@
+## [1.267.16](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.15...v1.267.16) (2025-12-09)
+
+
+### Bug Fixes
+
+* support amzn user for Alexa ([#1779](https://github.com/adobe/spacecat-audit-worker/issues/1779)) ([f8458dc](https://github.com/adobe/spacecat-audit-worker/commit/f8458dc65817955b1d924e48e31778674e10f061))
+
 ## [1.267.15](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.14...v1.267.15) (2025-12-09)
 
 
