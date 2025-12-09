@@ -558,19 +558,24 @@ describe('Backlinks Tests', function () {
       brokenBacklinksOpportunity.getSuggestions.returns([]);
       brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
 
-      // First call (FIXED) throws to trigger warn branch, second call (NEW) returns 1 valid entry
-      const stub = sandbox.stub()
-        .onFirstCall().rejects(new Error('boom'))
-        .onSecondCall().resolves([{
-          getId: () => 'new-1',
-          getData: () => ({ url_from: 'https://test-example.com/from', url_to: 'https://test-example.com/' }),
-        }]);
-      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = stub;
+      // NEW suggestions returned (single call in new flow)
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([{
+        getId: () => 'new-1',
+        getData: () => ({ url_from: 'https://test-example.com/from', url_to: 'https://test-example.com/' }),
+      }]);
 
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
         .resolves([{ getUrl: () => 'https://test-example.com/page1' }]);
 
-      const result = await generateSuggestionData(context);
+      // Re-import handler with failing publish helper
+      const handler = await (await import('esmock')).default('../../src/backlinks/handler.js', {
+        '../../src/utils/data-access.js': {
+          publishDeployedFixesForFixedSuggestions: sandbox.stub().rejects(new Error('boom')),
+          syncSuggestions: async (...args) => (await import('../../src/utils/data-access.js')).syncSuggestions(...args),
+        },
+      });
+
+      const result = await handler.generateSuggestionData(context);
 
       expect(result.status).to.deep.equal('complete');
       expect(context.log.warn).to.have.been.calledWith(

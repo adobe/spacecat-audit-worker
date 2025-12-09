@@ -320,3 +320,92 @@ export async function syncSuggestions({
     }
   }
 }
+
+/**
+ * Publishes DEPLOYED fix entities to PUBLISHED when their associated suggestion
+ * targets are no longer broken. This function follows a FixEntity-first flow:
+ * 1) Fetch FixEntities by opportunity and DEPLOYED status
+ * 2) Resolve suggestions for each FixEntity
+ * 3) If all suggestions' target URLs are healthy, publish the FixEntity
+ *
+ * @param {Object} params
+ * @param {string} params.opportunityId - The opportunity id
+ * @param {Object} params.FixEntity - FixEntity DataAccess (from shared package)
+ * @param {Object} params.log - Logger
+ * @param {function(Object): Promise<boolean>} params.isSuggestionStillBrokenInLive
+ *   Async predicate that returns true if URL is still broken
+ * @returns {Promise<void>}
+ */
+export async function publishDeployedFixesForFixedSuggestions({
+  opportunityId,
+  FixEntity,
+  log,
+  isSuggestionStillBrokenInLive,
+}) {
+  try {
+    if (!FixEntity?.STATUSES?.DEPLOYED || !FixEntity?.STATUSES?.PUBLISHED) {
+      log.debug('FixEntity status constants not available; skipping publish.');
+      return;
+    }
+    if (typeof FixEntity.allByOpportunityIdAndStatus !== 'function'
+      || typeof FixEntity.getSuggestionsByFixEntityId !== 'function') {
+      log.debug('FixEntity FixEntity-first APIs not available; skipping publish.');
+      return;
+    }
+
+    const deployedStatus = FixEntity.STATUSES.DEPLOYED;
+    const publishedStatus = FixEntity.STATUSES.PUBLISHED;
+
+    const deployedFixEntities = await FixEntity.allByOpportunityIdAndStatus(
+      opportunityId,
+      deployedStatus,
+    );
+    if (!Array.isArray(deployedFixEntities) || deployedFixEntities.length === 0) {
+      return;
+    }
+
+    const publishTasks = [];
+    for (const fixEntity of deployedFixEntities) {
+      const fixEntityId = fixEntity.getId?.();
+      // eslint-disable-next-line no-await-in-loop
+      const { data: suggestions = [] } = await FixEntity.getSuggestionsByFixEntityId(fixEntityId);
+      if (!suggestions || suggestions.length === 0) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      // Determine if all suggestion targets have become healthy.
+      // If we cannot verify for any suggestion (errors or unavailable predicate),
+      // we consider it NOT healthy to avoid accidental publish.
+      let shouldPublish = true;
+      for (const suggestion of suggestions) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const stillBroken = await isSuggestionStillBrokenInLive?.(suggestion);
+          if (stillBroken !== false) {
+            shouldPublish = false;
+            break;
+          }
+        } catch (e) {
+          log?.debug?.(`Live check failed for suggestion under fixEntity ${fixEntity.getId?.()}: ${e.message}`);
+          shouldPublish = false;
+          break;
+        }
+      }
+
+      if (shouldPublish && typeof fixEntity.getStatus === 'function'
+        && fixEntity.getStatus() === deployedStatus) {
+        publishTasks.push((async () => {
+          fixEntity.setStatus?.(publishedStatus);
+          fixEntity.setUpdatedBy?.('system');
+          await fixEntity.save?.();
+          log.debug(`Published fix entity ${fixEntity.getId?.()} from DEPLOYED to PUBLISHED`);
+        })());
+      }
+    }
+
+    await Promise.all(publishTasks);
+  } catch (err) {
+    log?.warn?.(`Failed to publish DEPLOYED fix entities for opportunity ${opportunityId}: ${err.message}`);
+  }
+}
