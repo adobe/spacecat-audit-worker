@@ -704,6 +704,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
   try {
     let urlsToCheck = [];
+    let agenticStats = [];
 
     // Try to get URLs from the audit context first
     if (scrapeResultPaths?.size > 0) {
@@ -712,7 +713,6 @@ export async function processContentAndGenerateOpportunities(context) {
     } else {
       /* c8 ignore start */
       // Fetch agentic URLs only for URL list fallback
-      let agenticStats = [];
       try {
         agenticStats = await getTopAgenticUrls(site, context);
       } catch (e) {
