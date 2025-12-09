@@ -1,3 +1,10 @@
+## [1.267.18](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.17...v1.267.18) (2025-12-09)
+
+
+### Bug Fixes
+
+* added logging for consent-banner result ([#1780](https://github.com/adobe/spacecat-audit-worker/issues/1780)) ([9491329](https://github.com/adobe/spacecat-audit-worker/commit/94913291ef158632b6c6e242fc4933345a5dccdd))
+
 ## [1.267.17](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.16...v1.267.17) (2025-12-09)
 
 
