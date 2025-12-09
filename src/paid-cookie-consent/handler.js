@@ -182,7 +182,7 @@ export async function paidAuditRunner(auditUrl, context, site) {
       averageBounceRateMobileTop3,
       temporalCondition,
     };
-    log.info(`[paid-audit] [Site: ${auditUrl}] Audit initial result:`, JSON.stringify(auditResult, 2));
+    log.info(`[paid-audit] [Site: ${auditUrl}] Audit initial result:`, JSON.stringify(auditResult, null, 2));
     return {
       auditResult,
       fullAuditRef: auditUrl,
