@@ -18,6 +18,7 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   mistralai: '(?i)MistralAI-User',
   copilot: '(?i)Copilot',
   bing: '(?i)Bingbot',
+  amazon: '(?i)Amzn-User',
 };
 
 /**
@@ -51,6 +52,8 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%claude-searchbot%', displayName: 'Claude-SearchBot' },
   // MistralAI
   { pattern: '%mistralai-user%', displayName: 'MistralAI-User' },
+  // Amazon
+  { pattern: '%amzn-user%', displayName: 'Amzn-User' },
 ];
 
 /**
@@ -92,6 +95,8 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%claude-user%', result: 'Chatbots' },
     // MistralAI
     { pattern: '%mistralai-user%', result: 'Chatbots' },
+    // Amazon
+    { pattern: '%amzn-user%', result: 'Chatbots' },
   ];
 
   const cases = patterns.map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.result}'`).join('\n          ');

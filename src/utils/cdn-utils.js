@@ -354,7 +354,8 @@ export function buildSiteFilters(filters, site) {
   if (!filters || filters.length === 0) {
     const baseURL = site.getBaseURL();
     const { host } = new URL(baseURL);
-    return `REGEXP_LIKE(host, '(?i)(${host})')`;
+    const rootHost = host.replace(/^www\./, '');
+    return `REGEXP_LIKE(host, '(?i)^(www.)?${rootHost}$')`;
   }
 
   const clauses = filters.map(({ key, value, type }) => {
@@ -394,7 +395,7 @@ export function buildDateFilter(startDate, endDate) {
  */
 export function buildUserAgentFilter() {
   const {
-    chatgpt, perplexity, google, claude, mistralai,
+    chatgpt, perplexity, google, claude, mistralai, amazon,
   } = PROVIDER_USER_AGENT_PATTERNS;
 
   return `(
@@ -402,7 +403,8 @@ export function buildUserAgentFilter() {
     REGEXP_LIKE(user_agent, '${perplexity}') OR 
     REGEXP_LIKE(user_agent, '${google}') OR
     REGEXP_LIKE(user_agent, '${claude}') OR
-    REGEXP_LIKE(user_agent, '${mistralai}')
+    REGEXP_LIKE(user_agent, '${mistralai}') OR
+    REGEXP_LIKE(user_agent, '${amazon}')
   )`;
 }
 /* c8 ignore end */

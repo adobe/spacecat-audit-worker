@@ -205,7 +205,6 @@ describe('LLM Error Pages Handler', function () {
       '../../../src/llm-error-pages/utils.js': {
         getS3Config: mockGetS3Config,
         generateReportingPeriods: mockGenerateReportingPeriods,
-        buildSiteFilters: mockBuildSiteFilters,
         processErrorPagesResults: mockProcessResults,
         buildLlmErrorPagesQuery: mockBuildQuery,
         getAllLlmProviders: mockGetAllLlmProviders,
@@ -221,6 +220,9 @@ describe('LLM Error Pages Handler', function () {
         createLLMOSharepointClient: mockCreateLLMOSharepointClient,
         saveExcelReport: mockSaveExcelReport,
         readFromSharePoint: mockReadFromSharePoint,
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: mockBuildSiteFilters,
       },
       exceljs: {
         default: mockExcelJS,
@@ -490,7 +492,6 @@ describe('LLM Error Pages Handler', function () {
         '../../../src/llm-error-pages/utils.js': {
           getS3Config: mockGetS3Config,
           generateReportingPeriods: mockGenerateReportingPeriods,
-          buildSiteFilters: mockBuildSiteFilters,
           processErrorPagesResults: () => ({
             totalErrors: 2,
             errorPages: [
@@ -510,6 +511,9 @@ describe('LLM Error Pages Handler', function () {
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: mockCreateLLMOSharepointClient,
           saveExcelReport: mockSaveExcelReport,
+        },
+        '../../../src/utils/cdn-utils.js': {
+          buildSiteFilters: mockBuildSiteFilters,
         },
         exceljs: {
           default: {
@@ -718,7 +722,6 @@ describe('LLM Error Pages Handler (isolated)', function () {
       '../../../src/llm-error-pages/utils.js': {
         getS3Config: mockGetS3Config,
         generateReportingPeriods: mockGenerateReportingPeriods,
-        buildSiteFilters: mockBuildSiteFilters,
         processErrorPagesResults: () => ({
           totalErrors: 2,
           errorPages: [
