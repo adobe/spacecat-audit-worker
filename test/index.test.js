@@ -72,7 +72,9 @@ describe('Index Tests', () => {
     const resp = await main(request, context);
 
     expect(resp.status).to.equal(404);
-    expect(errorSpy).to.have.been.calledWith('no such audit type: unknown-type');
+    expect(errorSpy).to.have.been.calledWithMatch({
+      message: 'no such audit type: unknown-type',
+    });
   });
 
   it('rejects when a new type audit fails', async () => {

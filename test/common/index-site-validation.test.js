@@ -82,9 +82,13 @@ describe('Index siteId handling and validation flag', () => {
   it('logs a warning when site fetch fails (coverage for catch)', async () => {
     context.dataAccess.Site.findById.rejects(new Error('db down'));
 
+    const warnSpy = context.log.warn;
+
     const resp = await main(new Request('https://space.cat'), context);
 
     expect(resp.status).to.equal(200);
-    expect(context.log.warn).to.have.been.calledWithMatch('Failed to fetch site');
+    expect(warnSpy).to.have.been.calledWithMatch({
+      message: sinon.match(/Failed to fetch site/),
+    });
   });
 });
