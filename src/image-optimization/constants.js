@@ -13,6 +13,9 @@
 // Image optimization metrics - AVIF typically provides 50% compression improvement
 export const AVIF_COMPRESSION_RATIO = 0.5;
 
+// WebP typically provides 30% compression improvement over JPEG/PNG
+export const WEBP_COMPRESSION_RATIO = 0.7;
+
 // RUM data interval for traffic analysis
 export const RUM_INTERVAL = 30; // days
 
