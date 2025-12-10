@@ -15,6 +15,7 @@ import secrets from '@adobe/helix-shared-secrets';
 import dataAccess from '@adobe/spacecat-shared-data-access';
 import { resolveSecretsName, sqsEventAdapter, logWrapper } from '@adobe/spacecat-shared-utils';
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { auditLogWrapper } from './utils/audit-log-wrapper.js';
 import { checkSiteRequiresValidation } from './utils/site-validation.js';
 
 import sqs from './support/sqs.js';
@@ -241,6 +242,7 @@ export const main = wrap(run)
   .with(dataAccess)
   .with(sqsEventAdapter)
   .with(logWrapper)
+  .with(auditLogWrapper)
   .with(sqs)
   .with(s3Client)
   .with(secrets, { name: resolveSecretsName })
