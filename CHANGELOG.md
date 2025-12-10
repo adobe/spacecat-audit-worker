@@ -1,3 +1,10 @@
+# [1.270.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.269.1...v1.270.0) (2025-12-10)
+
+
+### Features
+
+* Prerender Audit - Domain-Wide Suggestion ([#1747](https://github.com/adobe/spacecat-audit-worker/issues/1747)) ([fa2c208](https://github.com/adobe/spacecat-audit-worker/commit/fa2c208eb46347d547c067d06be0f82177a99ea9))
+
 ## [1.269.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.269.0...v1.269.1) (2025-12-10)
 
 
