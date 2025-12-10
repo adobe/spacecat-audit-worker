@@ -107,13 +107,29 @@ async function findOrCreateOpportunity({
  * @returns {Promise<Object>} Audit result object
  */
 export async function imageOptimizationRunner(baseURL, context, site) {
-  const { log, dataAccess, audit } = context;
+  const { log, dataAccess } = context;
   const siteId = site.getId();
 
   log.info(`[${AUDIT_TYPE}]: Starting image optimization audit for site ${siteId}`);
 
   try {
-    const { Opportunity, SiteTopPage } = dataAccess;
+    const { Opportunity, SiteTopPage, Audit } = dataAccess;
+
+    // Create audit record first - we need the auditId to send to the analyzer
+    // Note: auditResult must be a non-empty object or array per schema validation
+    const audit = await Audit.create({
+      siteId,
+      auditType: AUDIT_TYPE,
+      auditedAt: new Date().toISOString(),
+      fullAuditRef: baseURL,
+      isLive: true,
+      auditResult: {
+        status: 'pending',
+        message: 'Audit in progress - waiting for analyzer response',
+      },
+    });
+
+    log.info(`[${AUDIT_TYPE}]: Created audit with ID: ${audit.getId()}`);
 
     // Gather page URLs from top pages and site configuration
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
