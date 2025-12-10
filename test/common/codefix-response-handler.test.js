@@ -26,14 +26,9 @@ describe('CodeFixResponseHandler', () => {
   let context;
   let mockDataAccess;
   let mockOpportunity;
-  let CodeFixConfigurationError;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
-
-    // Import error class
-    const codefixHandler = await import('../../src/common/codefix-handler.js');
-    CodeFixConfigurationError = codefixHandler.CodeFixConfigurationError;
 
     mockOpportunity = {
       getId: sandbox.stub().returns('opportunity-123'),
@@ -70,11 +65,42 @@ describe('CodeFixResponseHandler', () => {
   });
 
   describe('Error Handling', () => {
-    it('should handle CodeFixConfigurationError when thrown from processCodeFixUpdate', async () => {
-      // Stub the DataAccess to throw CodeFixConfigurationError
-      mockDataAccess.Opportunity.findById.rejects(
-        new CodeFixConfigurationError('Custom configuration error message'),
-      );
+    it('should handle CodeFixConfigurationError when S3 bucket is not configured', async () => {
+      // Setup a suggestion so the code reaches the bucket check
+      const mockSuggestion = {
+        getId: () => 'suggestion-test',
+        getData: () => ({
+          url: 'https://example.com/test',
+          source: 'axe',
+          issues: [{
+            type: 'test-key',
+            htmlWithIssues: [{
+              target_selector: '.test',
+            }],
+          }],
+        }),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+      mockOpportunity.getSuggestions.resolves([mockSuggestion]);
+
+      // Create context without S3_MYSTIQUE_BUCKET_NAME to trigger CodeFixConfigurationError
+      const contextWithoutBucket = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          log: {
+            info: sandbox.spy(),
+            debug: sandbox.spy(),
+            warn: sandbox.spy(),
+            error: sandbox.spy(),
+          },
+          dataAccess: mockDataAccess,
+          s3Client: { send: sandbox.stub().resolves() },
+          env: {
+            // S3_MYSTIQUE_BUCKET_NAME is not set
+          },
+        })
+        .build();
 
       const handler = await esmock('../../src/common/codefix-response-handler.js', {
         '../../src/common/codefix-handler.js': await esmock('../../src/common/codefix-handler.js', {
@@ -93,20 +119,21 @@ describe('CodeFixResponseHandler', () => {
             {
               url: 'https://example.com/test',
               aggregation_key: 'test-key',
+              // No code_fix_path or code_fix_bucket, so it will try to use default bucket
             },
           ],
         },
       };
 
-      const result = await handler.default(message, context);
+      const result = await handler.default(message, contextWithoutBucket);
 
       expect(result.status).to.equal(500);
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Unexpected error for codefix:test: Custom configuration error message/),
+      expect(contextWithoutBucket.log.error).to.have.been.calledWith(
+        sinon.match(/Configuration error for codefix:test/),
       );
 
-      // Restore the stub
-      mockDataAccess.Opportunity.findById.resolves(mockOpportunity);
+      // Reset the stub
+      mockOpportunity.getSuggestions.resolves([]);
     });
   });
 
