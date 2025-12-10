@@ -28,6 +28,45 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const buildKey = (data) => `${data.url}|${data.type}|${data.imageSrc}`;
 
 /**
+ * Map checker types to valid Suggestion types
+ * @param {string} checkerType - Type from checker (e.g., 'oversized-image')
+ * @returns {string} Valid suggestion type
+ */
+function mapCheckerTypeToSuggestionType(checkerType) {
+  const typeMapping = {
+    'oversized-image': 'CONTENT_UPDATE',
+    'upscaled-image': 'CONTENT_UPDATE',
+    'blurry-image': 'CONTENT_UPDATE',
+    'wrong-file-type': 'CONTENT_UPDATE',
+    'format-detection': 'CONTENT_UPDATE',
+    'missing-dimensions': 'CODE_CHANGE',
+    'missing-lazy-loading': 'CODE_CHANGE',
+    'responsive-images': 'CODE_CHANGE',
+    'picture-element': 'CODE_CHANGE',
+    'svg-opportunity': 'CONTENT_UPDATE',
+    'cdn-delivery': 'CONFIG_UPDATE',
+    'cache-control': 'CONFIG_UPDATE',
+  };
+
+  return typeMapping[checkerType] || 'CONTENT_UPDATE';
+}
+
+/**
+ * Map severity string to numeric rank
+ * @param {string} severity - Severity level ('high', 'medium', 'low')
+ * @returns {number} Numeric rank
+ */
+function mapSeverityToRank(severity) {
+  const rankMap = {
+    high: 100,
+    medium: 50,
+    low: 25,
+  };
+
+  return rankMap[severity] || 50; // Default to medium
+}
+
+/**
  * Fetch and process a scraped page object from S3
  * @param {Object} s3Client - S3 client
  * @param {string} bucketName - S3 bucket name
@@ -256,9 +295,12 @@ export async function runAuditAndGenerateSuggestions(context) {
     buildKey,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
-      type: suggestion.type,
-      rank: suggestion.severity || 'medium',
-      data: { ...suggestion },
+      type: mapCheckerTypeToSuggestionType(suggestion.type),
+      rank: mapSeverityToRank(suggestion.severity),
+      data: {
+        ...suggestion,
+        checkerType: suggestion.type, // Preserve original checker type in data
+      },
     }),
   });
 

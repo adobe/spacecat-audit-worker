@@ -13,15 +13,16 @@
 import { main as universalMain } from './index.js';
 
 export const main = async () => {
+  // ======================================================================
+  // CONFIGURE YOUR TEST HERE
+  // ======================================================================
+  const TEST_SITE_ID = 'f35ffe86-4d9b-4c13-a20b-9e6fc6231ead';
+  // ======================================================================
+
+  // Simple message - no steps, just run the audit
   const messageBody = {
-    type: 'llm-blocked',
-    siteId: 'b1555a54-48b4-47ee-97c1-438257bd3839',
-    auditContext: {
-      next: 'check-llm-blocked',
-      auditId: 'a263123c-9f9a-44a8-9531-955884563472',
-      type: 'llm-blocked',
-      fullAuditRef: 'llm-blocked::cisco.com',
-    },
+    type: 'image-optimization',
+    siteId: TEST_SITE_ID,
   };
 
   const message = {
@@ -38,7 +39,7 @@ export const main = async () => {
       info: console.log,
       error: console.error,
       warn: console.warn,
-      debug: () => {}, // Disable debug logging
+      debug: console.log, // Enable debug logging
     },
     runtime: {
       region: 'us-east-1',
@@ -54,6 +55,12 @@ export const main = async () => {
       },
     },
   };
+
+  console.log('\n🚀 Running image-optimization audit (Simple Runner)...\n');
+  console.log('📋 Configuration:');
+  console.log(`   Site ID: ${TEST_SITE_ID}`);
+  console.log('   Mode: Simple Runner (processes existing S3 data)');
+  console.log(`   S3 Bucket: ${process.env.S3_SCRAPER_BUCKET_NAME || 'NOT SET'}\n`);
 
   await universalMain(message, context);
 };
