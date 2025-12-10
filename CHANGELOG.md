@@ -1,3 +1,10 @@
+## [1.269.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.269.0...v1.269.1) (2025-12-10)
+
+
+### Bug Fixes
+
+* prerender audit use scrapejobId for s3 paths ([#1786](https://github.com/adobe/spacecat-audit-worker/issues/1786)) ([5d37793](https://github.com/adobe/spacecat-audit-worker/commit/5d377936d8cf64e17d4477ed75c7ea25c03b8208))
+
 # [1.269.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.268.0...v1.269.0) (2025-12-10)
 
 
