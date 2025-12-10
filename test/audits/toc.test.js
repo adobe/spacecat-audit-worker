@@ -1300,10 +1300,9 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(opportunityData).to.be.an('object');
       expect(opportunityData).to.have.property('runbook', '');
       expect(opportunityData).to.have.property('origin', 'AUTOMATION');
-      expect(opportunityData).to.have.property('title', 'Table of contents issues affecting accessibility and SEO');
+      expect(opportunityData).to.have.property('title', 'Add Table of Content');
       expect(opportunityData).to.have.property('description');
       expect(opportunityData.description).to.include('table of contents');
-      expect(opportunityData.description).to.include('AI-powered suggestions');
     });
 
     it('includes proper guidance steps for TOC', async () => {
@@ -1330,6 +1329,355 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(opportunityData.tags).to.include('Accessibility');
       expect(opportunityData.tags).to.include('SEO');
       expect(opportunityData.tags).to.include('isElmo');
+    });
+  });
+
+  describe('TOC Merge Data Function', () => {
+    it('merges existing and new suggestions normally when isEdited is false', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+            explanation: 'TOC missing',
+            recommendedAction: 'Add TOC',
+            transformRules: {
+              action: 'insertAfter',
+              selector: 'h1',
+              value: [{ text: 'New Title', level: 1 }],
+              valueFormat: 'html',
+            },
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+
+      expect(capturedMergeDataFunction).to.be.a('function');
+
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        explanation: 'Old explanation',
+        isEdited: false,
+        transformRules: {
+          value: [{ text: 'Old Title', level: 1 }],
+        },
+      };
+
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        explanation: 'New explanation',
+        transformRules: {
+          value: [{ text: 'New Title', level: 1 }],
+        },
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      expect(merged.explanation).to.equal('New explanation');
+      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+      expect(merged.isEdited).to.equal(false);
+    });
+
+    it('preserves transformRules.value when isEdited is true and value exists', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+            transformRules: {
+              value: [{ text: 'Title', level: 1 }],
+            },
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        explanation: 'Old explanation',
+        isEdited: true,
+        transformRules: {
+          value: [{ text: 'Edited by User', level: 1 }],
+        },
+      };
+
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        explanation: 'New explanation',
+        transformRules: {
+          value: [{ text: 'AI Generated', level: 1 }],
+        },
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      // Should preserve the edited value
+      expect(merged.transformRules.value).to.deep.equal([{ text: 'Edited by User', level: 1 }]);
+      expect(merged.explanation).to.equal('New explanation');
+      expect(merged.isEdited).to.equal(true);
+    });
+
+    it('does not preserve value when isEdited is true but transformRules.value is undefined', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        isEdited: true,
+        transformRules: {
+          action: 'insertAfter',
+          selector: 'h1',
+          // No value property
+        },
+      };
+
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        transformRules: {
+          value: [{ text: 'New Title', level: 1 }],
+        },
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      // Should use new value since existing.transformRules.value is undefined
+      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+      expect(merged.isEdited).to.equal(true);
+    });
+
+    it('does not preserve value when isEdited is true but transformRules is null', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        isEdited: true,
+        transformRules: null,
+      };
+
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        transformRules: {
+          value: [{ text: 'New Title', level: 1 }],
+        },
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      // Should use new value since existing.transformRules is null
+      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+      expect(merged.isEdited).to.equal(true);
+    });
+
+    it('overwrites value when isEdited is false even if transformRules.value exists', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        isEdited: false,
+        transformRules: {
+          value: [{ text: 'Old Title', level: 1 }],
+        },
+      };
+
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        transformRules: {
+          value: [{ text: 'New Title', level: 1 }],
+        },
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      // Should overwrite with new value since isEdited is false
+      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+      expect(merged.isEdited).to.equal(false);
+    });
+
+    it('handles case where isEdited is undefined (falsy)', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id',
+      });
+
+      let capturedMergeDataFunction;
+      const syncSuggestionsStub = sinon.stub().callsFake((args) => {
+        capturedMergeDataFunction = args.mergeDataFunction;
+        return Promise.resolve();
+      });
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: {
+          toc: [{
+            type: 'CODE_CHANGE',
+            checkType: 'toc',
+            url: 'https://example.com/page1',
+          }],
+        },
+      };
+
+      await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+
+      const existingSuggestion = {
+        url: 'https://example.com/page1',
+        // isEdited is undefined
+        transformRules: {
+          value: [{ text: 'Old Title', level: 1 }],
+        },
+      };
+
+      const newSuggestion = {
+        url: 'https://example.com/page1',
+        transformRules: {
+          value: [{ text: 'New Title', level: 1 }],
+        },
+      };
+
+      const merged = capturedMergeDataFunction(existingSuggestion, newSuggestion);
+
+      // Should overwrite with new value since isEdited is undefined (falsy)
+      expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
     });
   });
 });

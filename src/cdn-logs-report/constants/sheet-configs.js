@@ -144,7 +144,7 @@ export const SHEET_CONFIGS = {
       });
 
       return Object.values(grouped)
-        .filter((row) => ['paid', 'earned'].includes(row[1]))
+        .filter((row) => ['earned'].includes(row[1]) && ['llm'].includes(row[2])) // filter out non earned:llm
         .sort((a, b) => b[6] - a[6]); // sort by pageviews (descending)
     },
   },
