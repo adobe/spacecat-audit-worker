@@ -49,7 +49,6 @@ async function enableAudits(site, context, audits = [], options = undefined) {
 }
 
 async function enableImports(site, imports = []) {
-  /* c8 ignore next 6 */
   const siteConfig = site.getConfig();
 
   imports.forEach(({ type, options }) => {

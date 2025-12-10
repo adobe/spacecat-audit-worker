@@ -82,7 +82,6 @@ async function getSkus(categoryPath, params, log) {
   return products;
 }
 
-/* c8 ignore start */
 async function getAllCategories(params, log) {
   const categories = [];
   const categoriesResp = await requestSaaS(CategoriesQuery, 'getCategories', {}, params, log);
@@ -94,7 +93,6 @@ async function getAllCategories(params, log) {
   }
   return categories;
 }
-/* c8 ignore stop */
 
 async function getAllSkus(params, log) {
   const productCountResp = await requestSaaS(ProductCountQuery, 'getProductCount', { categoryPath: '' }, params, log);
