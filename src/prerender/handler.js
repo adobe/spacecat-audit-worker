@@ -181,35 +181,39 @@ function sanitizeImportPath(importPath) {
 }
 
 /**
- * Transforms a URL into an S3 path for a given site and file type
- * @param {string} url - The URL to transform
- * @param {string} siteId - The site ID (used as jobId)
- * @param {string} fileName - The file name (e.g., 'scrape.json', 'server-side.html',
- * 'client-side.html')
- * @returns {string} The S3 path to the file
- */
-function getS3Path(url, siteId, fileName) {
+* Transforms a URL into an S3 path for a given identifier and file type.
+* The identifier can be either a scrape job id or a site id.
+* @param {string} url - The URL to transform
+* @param {string} id - The identifier - scrapeJobId
+* @param {string} fileName - The file name (e.g., 'scrape.json', 'server-side.html',
+* 'client-side.html')
+* @returns {string} The S3 path to the file
+*/
+function getS3Path(url, id, fileName) {
   const rawImportPath = new URL(url).pathname;
   const sanitizedImportPath = sanitizeImportPath(rawImportPath);
   const pathSegment = sanitizedImportPath ? `/${sanitizedImportPath}` : '';
-  return `${AUDIT_TYPE}/scrapes/${siteId}${pathSegment}/${fileName}`;
+  return `${AUDIT_TYPE}/scrapes/${id}${pathSegment}/${fileName}`;
 }
 
 /**
  * Gets scraped HTML content and metadata from S3 for a specific URL
  * @param {string} url - Full URL
- * @param {string} siteId - Site ID
- * @param {Object} context - Audit context
+ * @param {Object} context - Audit context (must contain log, s3Client, env;
+ * may contain auditContext, site)
  * @returns {Promise<Object>} - Object with serverSideHtml, clientSideHtml, and metadata
  */
-async function getScrapedHtmlFromS3(url, siteId, context) {
-  const { log, s3Client, env } = context;
+async function getScrapedHtmlFromS3(url, context) {
+  const {
+    log, s3Client, env, auditContext,
+  } = context;
 
   try {
     const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-    const serverSideKey = getS3Path(url, siteId, 'server-side.html');
-    const clientSideKey = getS3Path(url, siteId, 'client-side.html');
-    const scrapeJsonKey = getS3Path(url, siteId, 'scrape.json');
+    const { scrapeJobId: storageId } = auditContext;
+    const serverSideKey = getS3Path(url, storageId, 'server-side.html');
+    const clientSideKey = getS3Path(url, storageId, 'client-side.html');
+    const scrapeJsonKey = getS3Path(url, storageId, 'scrape.json');
 
     log.debug(`Prerender - Getting scraped content for URL: ${url}`);
 
@@ -246,16 +250,15 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
 /**
  * Compares server-side HTML with client-side HTML and detects prerendering opportunities
  * @param {string} url - URL being analyzed
- * @param {string} siteId - Site ID
  * @param {Object} context - Audit context
  * @returns {Promise<Object>} - Comparison result with similarity score and recommendation
  */
-async function compareHtmlContent(url, siteId, context) {
+async function compareHtmlContent(url, context) {
   const { log } = context;
 
   log.debug(`Prerender - Comparing HTML content for: ${url}`);
 
-  const scrapedData = await getScrapedHtmlFromS3(url, siteId, context);
+  const scrapedData = await getScrapedHtmlFromS3(url, context);
 
   const { serverSideHtml, clientSideHtml, metadata } = scrapedData;
 
@@ -426,8 +429,16 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     wordCountBefore: suggestion.wordCountBefore,
     wordCountAfter: suggestion.wordCountAfter,
     // S3 references to stored HTML content for comparison
-    originalHtmlKey: getS3Path(suggestion.url, auditData.siteId, 'server-side.html'),
-    prerenderedHtmlKey: getS3Path(suggestion.url, auditData.siteId, 'client-side.html'),
+    originalHtmlKey: getS3Path(
+      suggestion.url,
+      auditData.scrapeJobId,
+      'server-side.html',
+    ),
+    prerenderedHtmlKey: getS3Path(
+      suggestion.url,
+      auditData.scrapeJobId,
+      'client-side.html',
+    ),
   });
 
   await syncSuggestions({
@@ -460,7 +471,12 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
  */
 export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
   const { log, s3Client, env } = context;
-  const { auditResult, siteId, auditedAt } = auditData;
+  const {
+    auditResult,
+    siteId,
+    auditedAt,
+    scrapeJobId,
+  } = auditData;
 
   try {
     if (!auditResult) {
@@ -473,6 +489,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       baseUrl: auditUrl,
       siteId,
       auditType: AUDIT_TYPE,
+      scrapeJobId: scrapeJobId || null,
       lastUpdated: auditedAt || new Date().toISOString(),
       totalUrlsChecked: auditResult.totalUrlsChecked || 0,
       urlsNeedingPrerender: auditResult.urlsNeedingPrerender || 0,
@@ -568,7 +585,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
     const comparisonResults = await Promise.all(
       urlsToCheck.map(async (url) => {
-        const result = await compareHtmlContent(url, siteId, context);
+        const result = await compareHtmlContent(url, context);
         return {
           ...result,
         };
@@ -599,11 +616,15 @@ export async function processContentAndGenerateOpportunities(context) {
       scrapeForbidden,
     };
 
+    const { auditContext } = context;
+    const { scrapeJobId } = auditContext;
+
     if (urlsNeedingPrerender.length > 0) {
       await processOpportunityAndSuggestions(site.getBaseURL(), {
         siteId,
         auditId: audit.getId(),
         auditResult,
+        scrapeJobId,
       }, context);
     } else if (scrapeForbidden) {
       // Create a dummy opportunity when scraping is forbidden (403)
@@ -612,6 +633,7 @@ export async function processContentAndGenerateOpportunities(context) {
         siteId,
         auditId: audit.getId(),
         auditResult,
+        scrapeJobId,
       }, context);
     } else {
       log.info(`Prerender - No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}`);
@@ -629,6 +651,7 @@ export async function processContentAndGenerateOpportunities(context) {
       auditedAt: new Date().toISOString(),
       auditType: AUDIT_TYPE,
       auditResult,
+      scrapeJobId,
     };
     await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
 
