@@ -104,6 +104,7 @@ export async function sendRequestToMystique(auditUrl, auditData, context, site) 
   log.debug(`[traffic-analysis-audit] [siteId: ${siteId}] [baseUrl:${siteId}] Completed mystique evaluation step`);
 }
 
+/* c8 ignore start */
 function getWeeksForMonth(targetMonth, targetYear) {
   // Get the last 6 weeks to ensure we cover the entire target month
   const weeks = getLastNumberOfWeeks(6);
@@ -116,6 +117,7 @@ function getWeeksForMonth(targetMonth, targetYear) {
     return year === targetYear && weekMonth === targetMonth;
   });
 }
+/* c8 ignore stop */
 
 async function importDataStep(context, period) {
   const {

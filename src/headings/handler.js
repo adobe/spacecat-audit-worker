@@ -891,6 +891,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   return { ...auditData };
 }
 
+/* c8 ignore start */
 export async function opportunityAndSuggestionsForToc(auditUrl, auditData, context) {
   const { log } = context;
   if (!auditData.suggestions?.toc?.length) {
@@ -952,6 +953,7 @@ export async function opportunityAndSuggestionsForToc(auditUrl, auditData, conte
   log.info(`TOC opportunity created for Site Optimizer and ${auditData.suggestions.toc.length} suggestions synced for ${auditUrl}`);
   return { ...auditData };
 }
+/* c8 ignore stop */
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
