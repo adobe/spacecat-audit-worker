@@ -173,32 +173,6 @@ async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) 
 }
 
 /**
- * Builds a traffic map from agentic stats array
- * @param {Array<{url:string, hits:number}>} agenticStats - Array of URL stats with hits
- * @param {Object} log - Logger instance
- * @returns {Map<string, number>} Map of normalized URL paths to traffic counts
- */
-function buildTrafficMapFromStats(agenticStats, log) {
-  const trafficMap = new Map();
-
-  /* c8 ignore next 11 */
-  agenticStats.forEach((stat) => {
-    try {
-      const urlObj = new URL(stat.url);
-      const normalizedPath = urlObj.pathname === '/' ? '/' : urlObj.pathname.replace(/\/$/, '');
-      const hits = Number(stat.hits || 0);
-      if (hits > 0) {
-        trafficMap.set(normalizedPath, (trafficMap.get(normalizedPath) || 0) + hits);
-      }
-    } catch (e) {
-      log?.debug?.(`Prerender - Could not parse URL for traffic map: ${stat.url} - ${e.message}`);
-    }
-  });
-
-  return trafficMap;
-}
-
-/**
  * Sanitizes the import path by replacing special characters with hyphens
  * @param {string} importPath - The path to sanitize
  * @returns {string} The sanitized path
@@ -417,14 +391,12 @@ export async function createScrapeForbiddenOpportunity(auditUrl, auditData, cont
  * @param {Array} preRenderSuggestions - Array of individual suggestions
  * @param {string} baseUrl - Base URL of the site
  * @param {Object} context - Processing context
- * @param {Map<string, number>} agenticTrafficMap - Map of URL paths to traffic counts
  * @returns {Promise<Object>} Domain-wide suggestion object with key and data
  */
 async function prepareDomainWideAggregateSuggestion(
   preRenderSuggestions,
   baseUrl,
   context,
-  agenticTrafficMap = new Map(),
 ) {
   const { log } = context;
 
@@ -461,48 +433,28 @@ async function prepareDomainWideAggregateSuggestion(
     0,
   );
 
-  // Calculate total agentic traffic for all audited URLs
-  /* c8 ignore next 12 */
-  let totalAgenticTraffic = 0;
-  auditedUrls.forEach((url) => {
-    try {
-      const urlObj = new URL(url);
-      const normalizedPath = urlObj.pathname === '/' ? '/' : urlObj.pathname.replace(/\/$/, '');
-      const traffic = agenticTrafficMap.get(normalizedPath) || 0;
-      totalAgenticTraffic += traffic;
-    } catch (e) {
-      log.debug(`Prerender - Could not parse URL for traffic lookup: ${url}`);
-    }
-  });
-
   // Create domain-wide path pattern(s) for allowList
   // The allowList in metaconfig expects glob patterns (e.g., "/*")
-  const baseUrlObj = new URL(baseUrl);
   const allowedRegexPatterns = ['/*'];
 
   // This applies to ALL URLs in the domain
+  // Note: agenticTraffic is calculated in the UI from fresh CDN logs data
   const domainWideSuggestionData = {
     url: `${baseUrl}/* (All Domain URLs)`,
     contentGainRatio: totalContentGainRatio > 0 ? Number(totalContentGainRatio.toFixed(2)) : 0,
     wordCountBefore: totalWordCountBefore,
     wordCountAfter: totalWordCountAfter,
-    agenticTraffic: totalAgenticTraffic,
-    // Additional metadata for domain-wide configuration
+    aiReadablePercent: totalAiReadablePercent,
+    // Domain-wide configuration metadata
     isDomainWide: true,
     allowedRegexPatterns,
     pathPattern: '/*',
-    scope: 'domain-wide',
-    description: `Apply pre-rendering to all URLs across the entire domain (${baseUrlObj.origin})`,
-    auditedUrlCount,
-    auditedUrls, // URLs that were audited and generated individual suggestions
-    note: 'This configuration applies to ALL URLs in the domain. Metrics represent total aggregated values from qualified & prioritized URLs.',
-    aiReadablePercent: totalAiReadablePercent,
   };
 
   // Use a constant key to ensure only ONE domain-wide suggestion exists per opportunity
   const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
 
-  log.info(`Prerender - Prepared domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s). Total agentic traffic: ${totalAgenticTraffic}`);
+  log.info(`Prerender - Prepared domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s).`);
 
   return {
     key: DOMAIN_WIDE_SUGGESTION_KEY,
@@ -512,17 +464,16 @@ async function prepareDomainWideAggregateSuggestion(
 
 /**
  * Processes opportunities and suggestions for prerender audit results
+ * Note: Agentic traffic aggregation is handled in the UI from fresh CDN logs data
  * @param {string} auditUrl - Audited URL
  * @param {Object} auditData - Audit data with results
  * @param {Object} context - Processing context
- * @param {Map<string, number>} agenticTrafficMap - Map of URL paths to traffic counts
  * @returns {Promise<void>}
  */
 export async function processOpportunityAndSuggestions(
   auditUrl,
   auditData,
   context,
-  agenticTrafficMap = new Map(),
 ) {
   const { log } = context;
 
@@ -560,7 +511,6 @@ export async function processOpportunityAndSuggestions(
     preRenderSuggestions,
     auditUrl,
     context,
-    agenticTrafficMap,
   );
 
   // Build key function that handles both individual and domain-wide suggestions
@@ -592,24 +542,12 @@ export async function processOpportunityAndSuggestions(
     newData: allSuggestions,
     context,
     buildKey,
-    mapNewSuggestion: (suggestion) => {
-      // Handle domain-wide suggestion differently
-      if (suggestion.key) {
-        return {
-          opportunityId: opportunity.getId(),
-          type: Suggestion.TYPES.CONFIG_UPDATE,
-          rank: 999999, // High rank to appear first
-          data: suggestion.data,
-        };
-      }
-      // Handle individual suggestions
-      return {
-        opportunityId: opportunity.getId(),
-        type: Suggestion.TYPES.CONFIG_UPDATE,
-        rank: 0,
-        data: mapSuggestionData(suggestion),
-      };
-    },
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: Suggestion.TYPES.CONFIG_UPDATE,
+      rank: 0,
+      data: suggestion.key ? suggestion.data : mapSuggestionData(suggestion),
+    }),
     // Custom merge function: handle both types
     mergeDataFunction: (existingData, newDataItem) => {
       // Domain-wide suggestion: replace with new data
@@ -624,7 +562,7 @@ export async function processOpportunityAndSuggestions(
     },
   });
 
-  log.info(`Prerender - Successfully synced ${preRenderSuggestions.length} individual + 1 domain-wide suggestion for baseUrl: ${auditUrl}, siteId: ${auditData.siteId}`);
+  log.info(`Prerender - Successfully synced ${allSuggestions.length} suggestions for baseUrl: ${auditUrl}, siteId: ${auditData.siteId}`);
 }
 
 /**
@@ -777,16 +715,11 @@ export async function processContentAndGenerateOpportunities(context) {
     };
 
     if (urlsNeedingPrerender.length > 0) {
-      // Build agentic traffic map from already-fetched agenticStats
-      /* c8 ignore next 2 */
-      const agenticTrafficMap = buildTrafficMapFromStats(agenticStats, log);
-      log.info(`Prerender - Built traffic map from ${agenticStats.length} agentic URLs. baseUrl=${site.getBaseURL()}`);
-
       await processOpportunityAndSuggestions(site.getBaseURL(), {
         siteId,
         auditId: audit.getId(),
         auditResult,
-      }, context, agenticTrafficMap);
+      }, context);
       /* c8 ignore next 12 */
     } else if (scrapeForbidden) {
       // Create a dummy opportunity when scraping is forbidden (403)

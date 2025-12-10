@@ -1397,7 +1397,7 @@ describe('Prerender Audit', () => {
 
         expect(mappedSuggestion).to.have.property('opportunityId', 'test-opp-id');
         expect(mappedSuggestion).to.have.property('type', 'CONFIG_UPDATE');
-        expect(mappedSuggestion).to.have.property('rank', 999999);
+        expect(mappedSuggestion).to.have.property('rank', 0); // All suggestions have rank 0 (sorting handled in UI)
         expect(mappedSuggestion).to.have.property('data');
         expect(mappedSuggestion.data).to.have.property('isDomainWide', true);
 
@@ -1541,11 +1541,11 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion.data.contentGainRatio).to.equal(0);
         expect(domainWideSuggestion.data.wordCountBefore).to.equal(0);
         expect(domainWideSuggestion.data.wordCountAfter).to.equal(0);
-        expect(domainWideSuggestion.data.agenticTraffic).to.equal(0);
+        // agenticTraffic is calculated in the UI from fresh CDN logs data
       });
 
-      it('should aggregate agentic traffic from traffic map for domain-wide suggestion', async () => {
-        // Test to cover traffic aggregation logic (lines 452-461)
+      it('should create domain-wide suggestion without agenticTraffic (handled in UI)', async () => {
+        // agenticTraffic aggregation is now handled in the UI from fresh CDN logs
         const auditData = {
           siteId: 'test-site',
           auditId: 'test-audit-id',
@@ -1599,18 +1599,10 @@ describe('Prerender Audit', () => {
           },
         };
 
-        // Create traffic map with traffic for the audited URLs
-        const agenticTrafficMap = new Map([
-          ['/page1', 1000],  // Matches https://example.com/page1
-          ['/page2', 2500],  // Matches https://example.com/page2
-          ['/page3', 1500],  // Matches https://example.com/page3/ (trailing slash normalized)
-        ]);
-
         await mockHandler.processOpportunityAndSuggestions(
           'https://example.com',
           auditData,
           context,
-          agenticTrafficMap,
         );
 
         // Verify syncSuggestions was called once
@@ -1622,12 +1614,14 @@ describe('Prerender Audit', () => {
         const domainWideSuggestion = newData.find((item) => item.key);
         expect(domainWideSuggestion).to.exist;
 
-        // Verify traffic was aggregated correctly: 1000 + 2500 + 1500 = 5000
-        expect(domainWideSuggestion.data.agenticTraffic).to.equal(5000);
+        // Verify domain-wide suggestion exists (agenticTraffic is calculated in UI)
+        expect(domainWideSuggestion.data.contentGainRatio).to.exist;
+        expect(domainWideSuggestion.data.wordCountBefore).to.exist;
+        expect(domainWideSuggestion.data.wordCountAfter).to.exist;
       });
 
-      it('should handle invalid URLs gracefully when looking up traffic', async () => {
-        // Test to cover error handling in traffic lookup (lines 458-460)
+      it('should create suggestions even with mixed valid/invalid URLs', async () => {
+        // Test that suggestions are created regardless of URL validity
         const auditData = {
           siteId: 'test-site',
           auditId: 'test-audit-id',
@@ -1665,39 +1659,28 @@ describe('Prerender Audit', () => {
           '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
         });
 
-        const debugStub = sandbox.stub();
         const context = {
           log: {
             info: sandbox.stub(),
-            debug: debugStub,
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
         };
 
-        const agenticTrafficMap = new Map([['/page1', 1000]]);
-
         await mockHandler.processOpportunityAndSuggestions(
           'https://example.com',
           auditData,
           context,
-          agenticTrafficMap,
         );
 
-        // Verify debug log was called for invalid URL
-        expect(debugStub).to.have.been.called;
-        const debugCalls = debugStub.getCalls().map((call) => call.args[0]);
-        const trafficLookupDebug = debugCalls.find((msg) => msg.includes('Could not parse URL for traffic lookup'));
-        expect(trafficLookupDebug).to.exist;
-
-        // Verify suggestion was still created (only valid URL's traffic counted)
+        // Verify suggestions were created despite invalid URL
         expect(syncSuggestionsStub).to.have.been.calledOnce;
         const syncCall = syncSuggestionsStub.getCall(0);
         const { newData } = syncCall.args[0];
         const domainWideSuggestion = newData.find((item) => item.key);
         expect(domainWideSuggestion).to.exist;
-        // Only page1's traffic should be counted
-        expect(domainWideSuggestion.data.agenticTraffic).to.equal(1000);
+        expect(domainWideSuggestion.data.contentGainRatio).to.exist;
       });
 
       it('should handle zero totalWordCountAfter when calculating aiReadablePercent', async () => {
@@ -4169,7 +4152,9 @@ describe('Prerender Audit', () => {
       expect(result.status).to.equal('complete');
     });
 
-    it('should normalize paths by removing trailing slashes', async () => {
+    it('should successfully fetch agentic URLs for prerender audit', async () => {
+      // This test verifies that agentic URL fetching still works
+      // (traffic aggregation is now handled in the UI)
       const log = {
         debug: sinon.stub(),
         info: sinon.stub(),
@@ -4178,8 +4163,8 @@ describe('Prerender Audit', () => {
       };
 
       const agenticStats = [
-        { url: 'https://example.com/page/', hits: 100 }, // With trailing slash
-        { url: 'https://example.com/page', hits: 50 }, // Without trailing slash - should aggregate
+        { url: 'https://example.com/page1', hits: 100 },
+        { url: 'https://example.com/page2', hits: 50 },
       ];
 
       const mockHandler = await esmock('../../src/prerender/handler.js', {
@@ -4204,11 +4189,7 @@ describe('Prerender Audit', () => {
           },
         },
         '../../src/utils/s3-utils.js': {
-          getObjectFromKey: async (_c, _b, key) => {
-            if (key.includes('server-side')) return '<html><body>Server</body></html>';
-            if (key.includes('client-side')) return '<html><body>Server plus more client content that makes it worth prerendering with substantial gain</body></html>';
-            return null;
-          },
+          getObjectFromKey: async () => '<html><body><p>Content</p></body></html>',
         },
       });
 
@@ -4222,15 +4203,14 @@ describe('Prerender Audit', () => {
         log,
         s3Client: { send: sinon.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-        scrapeResultPaths: new Map([['https://example.com/page', 'path']]),
+        scrapeResultPaths: new Map([['https://example.com/page1', 'path1']]),
       };
 
-      await mockHandler.processContentAndGenerateOpportunities(context);
+      const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
-      // Traffic should be aggregated for the same normalized path
-      const infoCalls = log.info.getCalls();
-      const trafficMapLog = infoCalls.find((call) => String(call.args[0]).includes('Built traffic map from'));
-      expect(trafficMapLog).to.exist;
+      // Verify audit completed successfully
+      expect(result).to.exist;
+      expect(result.auditResult).to.exist;
     });
 
     it('should filter out entries with zero hits', async () => {
