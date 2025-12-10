@@ -57,7 +57,7 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
  * @param {any} site
  * @param {any} context
  * @param {number} limit
- * @returns {Promise<Array<{url:string, hits:number}>>}
+ * @returns {Promise<Array<string>>}
  */
 async function getTopAgenticUrlsFromAthena(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
   const { log } = context;
@@ -91,17 +91,10 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = TOP_AGENTIC_UR
       .filter((row) => typeof row?.url === 'string' && row.url.length > 0)
       .map((row) => {
         const path = row.url;
-        const hits = Number(row?.hits || 0);
         try {
-          return {
-            url: new URL(path, baseUrl).toString(),
-            hits,
-          };
+          return new URL(path, baseUrl).toString();
         } catch {
-          return {
-            url: path,
-            hits,
-          };
+          return path;
         }
       });
 
@@ -118,7 +111,7 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = TOP_AGENTIC_UR
  * @param {any} site
  * @param {any} context
  * @param {number} limit
- * @returns {Promise<Array<{url:string, hits:number}>>}
+ * @returns {Promise<Array<string>>}
  */
 async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
   const { log } = context;
@@ -134,17 +127,11 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
     const top = Array.from(byUrl.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, limit)
-      .map(([path, hits]) => {
+      .map(([path]) => {
         try {
-          return {
-            url: new URL(path, baseUrl).toString(),
-            hits,
-          };
+          return new URL(path, baseUrl).toString();
         } catch {
-          return {
-            url: path,
-            hits,
-          };
+          return path;
         }
       });
 
@@ -161,7 +148,7 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
  * @param {any} site
  * @param {any} context
  * @param {number} limit
- * @returns {Promise<Array<{url:string, hits:number}>>}
+ * @returns {Promise<Array<string>>}
  */
 async function getTopAgenticUrls(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
   const fromAthena = await getTopAgenticUrlsFromAthena(site, context, limit);
@@ -337,8 +324,7 @@ export async function submitForScraping(context) {
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
   // Fetch Top Agentic URLs (limited by TOP_AGENTIC_URLS_LIMIT)
-  const agenticStats = await getTopAgenticUrls(site, context);
-  const agenticUrls = agenticStats.map((s) => s.url);
+  const agenticUrls = await getTopAgenticUrls(site, context);
 
   const finalUrls = [...new Set([...topPagesUrls, ...agenticUrls, ...includedURLs])];
 
@@ -464,7 +450,6 @@ async function prepareDomainWideAggregateSuggestion(
 
 /**
  * Processes opportunities and suggestions for prerender audit results
- * Note: Agentic traffic aggregation is handled in the UI from fresh CDN logs data
  * @param {string} auditUrl - Audited URL
  * @param {Object} auditData - Audit data with results
  * @param {Object} context - Processing context
@@ -645,7 +630,7 @@ export async function processContentAndGenerateOpportunities(context) {
   try {
     let urlsToCheck = [];
     /* c8 ignore next */
-    let agenticStats = [];
+    let agenticUrls = [];
 
     // Try to get URLs from the audit context first
     if (scrapeResultPaths?.size > 0) {
@@ -655,7 +640,7 @@ export async function processContentAndGenerateOpportunities(context) {
       /* c8 ignore start */
       // Fetch agentic URLs only for URL list fallback
       try {
-        agenticStats = await getTopAgenticUrls(site, context);
+        agenticUrls = await getTopAgenticUrls(site, context);
       } catch (e) {
         log.warn(`Prerender - Failed to fetch agentic URLs for fallback: ${e.message}. baseUrl=${site.getBaseURL()}`);
       }
@@ -664,11 +649,11 @@ export async function processContentAndGenerateOpportunities(context) {
       const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
 
       const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
-      const merged = [...agenticStats.map((s) => s.url), ...topPagesUrls];
+      const merged = [...agenticUrls, ...topPagesUrls];
       urlsToCheck = [...new Set([...merged, ...includedURLs])];
       /* c8 ignore stop */
       const msg = `Prerender - Fallback for baseUrl=${site.getBaseURL()}, siteId=${siteId}. `
-        + `Using agenticURLs=${agenticStats.length}, `
+        + `Using agenticURLs=${agenticUrls.length}, `
         + `topPages=${topPagesUrls.length}, `
         + `includedURLs=${includedURLs.length}, `
         + `total=${urlsToCheck.length}`;
