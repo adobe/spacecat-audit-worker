@@ -1,3 +1,10 @@
+# [1.269.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.268.0...v1.269.0) (2025-12-10)
+
+
+### Features
+
+* protect code coverage on main branch ([#1745](https://github.com/adobe/spacecat-audit-worker/issues/1745)) ([8182425](https://github.com/adobe/spacecat-audit-worker/commit/81824255fcdfe7a20a071e2521d577b13ce82ffb))
+
 # [1.268.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.22...v1.268.0) (2025-12-10)
 
 
