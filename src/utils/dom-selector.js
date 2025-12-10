@@ -81,6 +81,19 @@ export function getDomElementSelector(element) {
       }
     }
 
+    // Add nth-of-type for parent if it has multiple siblings of same tag
+    if (current.parent && current.parent.children) {
+      const parentSiblingsOfSameTag = current.parent.children.filter(
+        // eslint-disable-next-line no-loop-func
+        (child) => child.type === 'tag' && child.name === current.name,
+      );
+
+      if (parentSiblingsOfSameTag.length > 1) {
+        const parentIndex = parentSiblingsOfSameTag.indexOf(current) + 1;
+        parentSelector = `${parentSelector}:nth-of-type(${parentIndex})`;
+      }
+    }
+
     pathParts.unshift(parentSelector);
     current = current.parent;
     levels += 1;
