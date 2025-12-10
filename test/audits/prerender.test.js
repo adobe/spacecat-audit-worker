@@ -555,6 +555,7 @@ describe('Prerender Audit', () => {
           scrapeResultPaths: new Map(), // Empty map to avoid S3 calls
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         // Test that the function exists and can be called
@@ -584,6 +585,7 @@ describe('Prerender Audit', () => {
           scrapeResultPaths: new Map(),
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await processContentAndGenerateOpportunities(context);
@@ -646,6 +648,7 @@ describe('Prerender Audit', () => {
           scrapeResultPaths: new Map(),
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
@@ -691,6 +694,7 @@ describe('Prerender Audit', () => {
           scrapeResultPaths,
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await processContentAndGenerateOpportunities(context);
@@ -721,6 +725,7 @@ describe('Prerender Audit', () => {
           scrapeResultPaths: new Map(), // No scrape results
           s3Client: { send: sandbox.stub().rejects(new Error('No S3 data')) },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await processContentAndGenerateOpportunities(context);
@@ -782,6 +787,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: mockS3Client,
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         // This should fully execute the opportunity processing path including line 341
@@ -858,6 +864,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: mockS3Client,
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await mockHandlerWithS3.processContentAndGenerateOpportunities(context);
@@ -1933,6 +1940,7 @@ describe('Prerender Audit', () => {
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: {},
         env: { S3_SCRAPER_BUCKETNAME: 'b' },
+        auditContext: { scrapeJobId: 'test-job-id' },
       };
       const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
       const found = res.auditResult.results.find((r) => r.url.includes('/inc'));
@@ -1975,6 +1983,7 @@ describe('Prerender Audit', () => {
         },
         dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub() },
+        auditContext: { scrapeJobId: 'test-job-id' },
       };
       const out = await mockHandler.submitForScraping(ctx);
       // Handler returns whatever Athena returns; assert we passed LIMIT and used latest week
@@ -2067,6 +2076,7 @@ describe('Prerender Audit', () => {
         s3Client: { send: sinon.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         // No scrapeResultPaths so includedURLs are used to build urlsToCheck
+        auditContext: { scrapeJobId: 'test-job-id' },
       };
       const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
       expect(res.status).to.equal('complete');
@@ -2116,6 +2126,7 @@ describe('Prerender Audit', () => {
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         // Provide scrape results to ensure completion without suggestion sync
         scrapeResultPaths: new Map([['https://example.com/inc', '/tmp/inc']]),
+        auditContext: { scrapeJobId: 'test-job-id' },
       };
       const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
       expect(res.status).to.equal('complete');
@@ -2159,6 +2170,7 @@ describe('Prerender Audit', () => {
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: {},
         env: { S3_SCRAPER_BUCKETNAME: 'b' },
+        auditContext: { scrapeJobId: 'test-job-id' },
       };
       const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
       expect(res).to.be.an('object');
@@ -2236,6 +2248,7 @@ describe('Prerender Audit', () => {
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         // Provide a scrape result to bypass later includedURLs call path
         scrapeResultPaths: new Map([['https://example.com/x', '/tmp/x']]),
+        auditContext: { scrapeJobId: 'test-job-id' },
       };
       const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
       // Should have processed at least the '/x' entry
@@ -2480,6 +2493,7 @@ describe('Prerender Audit', () => {
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         // Empty scrapeResultPaths to force fallback URL list composition branch
         scrapeResultPaths: new Map(),
+        auditContext: { scrapeJobId: 'test-job-id' },
       };
 
       const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
@@ -2861,6 +2875,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: mockS3Client,
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await processContentAndGenerateOpportunities(context);
@@ -2886,6 +2901,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: mockS3Client,
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         // Test through the exposed function since getScrapedHtmlFromS3 is not exported
@@ -2903,6 +2919,7 @@ describe('Prerender Audit', () => {
           },
           audit: { getId: () => 'audit-id' },
           dataAccess: { SiteTopPage: mockSiteTopPage },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await processContentAndGenerateOpportunities(fullContext);
@@ -2945,6 +2962,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: mockS3Client,
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await processContentAndGenerateOpportunities(context);
@@ -2995,6 +3013,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: mockS3Client,
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await processContentAndGenerateOpportunities(context);
@@ -3076,6 +3095,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: mockS3Client,
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         try {
@@ -3125,6 +3145,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: mockS3Client,
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await processContentAndGenerateOpportunities(context);
@@ -3410,6 +3431,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await mockS3Utils.processContentAndGenerateOpportunities(context);
@@ -3453,6 +3475,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
@@ -3502,6 +3525,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
@@ -3594,6 +3618,54 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion.data).to.have.property('allowedRegexPatterns');
         expect(domainWideSuggestion.data.allowedRegexPatterns).to.be.an('array');
         expect(domainWideSuggestion.data.url).to.include('All Domain URLs');
+      });
+
+      it('should prefer scrapeJobId over siteId when building S3 HTML keys', async () => {
+        const mockOpportunity = { getId: () => 'test-opportunity-id' };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site-id',
+          scrapeJobId: 'scrape-job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.1,
+                wordCountBefore: 100,
+                wordCountAfter: 210,
+              },
+            ],
+          },
+        };
+
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+        const syncCall = syncSuggestionsStub.getCall(0);
+        const mappedSuggestion = syncCall.args[0].mapNewSuggestion(auditData.auditResult.results[0]);
+
+        expect(mappedSuggestion.data.originalHtmlKey).to.include('prerender/scrapes/scrape-job-123');
+        expect(mappedSuggestion.data.prerenderedHtmlKey).to.include('prerender/scrapes/scrape-job-123');
       });
 
       it('should update existing PRERENDER opportunity with all data fields', async () => {
@@ -3736,6 +3808,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
@@ -3784,6 +3857,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
@@ -3832,6 +3906,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
@@ -3882,6 +3957,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
@@ -3931,6 +4007,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
@@ -3975,6 +4052,7 @@ describe('Prerender Audit', () => {
           },
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
@@ -4011,6 +4089,7 @@ describe('Prerender Audit', () => {
           log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
           s3Client: { send: sandbox.stub().resolves({}) },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
         };
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
@@ -4046,6 +4125,7 @@ describe('Prerender Audit', () => {
       const auditUrl = 'https://example.com';
       const auditData = {
         siteId: 'test-site-id',
+        scrapeJobId: 'scrape-job-999',
         auditedAt: '2025-01-01T00:00:00.000Z',
         auditResult: {
           totalUrlsChecked: 5,
@@ -4088,6 +4168,7 @@ describe('Prerender Audit', () => {
       expect(uploadedData.baseUrl).to.equal('https://example.com');
       expect(uploadedData.siteId).to.equal('test-site-id');
       expect(uploadedData.auditType).to.equal('prerender');
+      expect(uploadedData.scrapeJobId).to.equal('scrape-job-999');
       expect(uploadedData.lastUpdated).to.equal('2025-01-01T00:00:00.000Z');
       expect(uploadedData.totalUrlsChecked).to.equal(5);
       expect(uploadedData.urlsNeedingPrerender).to.equal(2);

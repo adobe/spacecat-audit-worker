@@ -1,3 +1,29 @@
+## [1.269.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.269.0...v1.269.1) (2025-12-10)
+
+
+### Bug Fixes
+
+* prerender audit use scrapejobId for s3 paths ([#1786](https://github.com/adobe/spacecat-audit-worker/issues/1786)) ([5d37793](https://github.com/adobe/spacecat-audit-worker/commit/5d377936d8cf64e17d4477ed75c7ea25c03b8208))
+
+# [1.269.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.268.0...v1.269.0) (2025-12-10)
+
+
+### Features
+
+* protect code coverage on main branch ([#1745](https://github.com/adobe/spacecat-audit-worker/issues/1745)) ([8182425](https://github.com/adobe/spacecat-audit-worker/commit/81824255fcdfe7a20a071e2521d577b13ce82ffb))
+
+# [1.268.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.22...v1.268.0) (2025-12-10)
+
+
+### Bug Fixes
+
+* test coverage ([#1787](https://github.com/adobe/spacecat-audit-worker/issues/1787)) ([681f803](https://github.com/adobe/spacecat-audit-worker/commit/681f803305ea1bb17a9d3a268661fda2237e1036))
+
+
+### Features
+
+* **geo-brand-presence:** add `-paid` and `-free` for scheduling ([#1785](https://github.com/adobe/spacecat-audit-worker/issues/1785)) ([be9d5bb](https://github.com/adobe/spacecat-audit-worker/commit/be9d5bbc7b0fae5d733c246ef61ade397f163f2d))
+
 ## [1.267.22](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.21...v1.267.22) (2025-12-10)
 
 

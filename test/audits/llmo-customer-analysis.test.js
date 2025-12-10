@@ -17,6 +17,8 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 
+import chaiAsPromised from 'chai-as-promised';
+use(chaiAsPromised);
 use(sinonChai);
 
 describe('LLMO Customer Analysis Handler', () => {
@@ -1297,6 +1299,52 @@ describe('LLMO Customer Analysis Handler', () => {
 
       // Should complete successfully with undefined oldConfig handled by ??
       expect(result.auditResult.status).to.equal('completed');
+    });
+
+    it('should enable audits and save configuration when enableAudits is called', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Verify enableHandlerForSite was called for each expected audit type
+      const expectedAudits = [
+        'scrape-top-pages',
+        'headings',
+        'llm-blocked',
+        'llm-error-pages',
+        'canonical',
+        'hreflang',
+        'summarization',
+        'faqs',
+        'llmo-referral-traffic',
+        'cdn-logs-report',
+        'geo-brand-presence',
+        'geo-brand-presence-free',
+      ];
+
+      for (const audit of expectedAudits) {
+        expect(configuration.enableHandlerForSite).to.have.been.calledWith(audit, site);
+      }
+
+      // Verify configuration.save was called
+      expect(configuration.save).to.have.been.called;
     });
 
   });
