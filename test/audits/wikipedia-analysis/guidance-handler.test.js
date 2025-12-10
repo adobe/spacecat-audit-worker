@@ -460,7 +460,7 @@ describe('Wikipedia Analysis Guidance Handler', () => {
       );
     });
 
-    it('should warn when audit not found but continue processing', async () => {
+    it('should return notFound when audit not found', async () => {
       context.dataAccess.Audit.findById.resolves(null);
 
       const message = {
@@ -478,8 +478,8 @@ describe('Wikipedia Analysis Guidance Handler', () => {
 
       const result = await handler.default(message, context);
 
-      expect(result.status).to.equal(200);
-      expect(context.log.warn).to.have.been.calledWith(sinon.match(/Audit not found/));
+      expect(result.status).to.equal(404);
+      expect(context.log.error).to.have.been.calledWith(sinon.match(/Audit not found/));
     });
 
     it('should store full analysis in opportunity data', async () => {
@@ -526,7 +526,7 @@ describe('Wikipedia Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Message received in Wikipedia analysis guidance handler/),
+        sinon.match(/Received Wikipedia analysis guidance for siteId/),
       );
     });
   });

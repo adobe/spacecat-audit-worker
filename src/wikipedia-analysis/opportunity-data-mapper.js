@@ -14,15 +14,12 @@ import { DATA_SOURCES } from '../common/constants.js';
 
 /**
  * Creates opportunity data for Wikipedia analysis
- * @param {string} siteId - The site ID
- * @param {string} auditId - The audit ID
- * @param {Array} guidance - The guidance array
+ * @param {Object} props - The props object from convertToOpportunity
+ * @param {Array} props.guidance - The guidance array
  * @returns {Object} Opportunity data
  */
-export function createOpportunityData(siteId, auditId, guidance) {
+export function createOpportunityData({ guidance }) {
   return {
-    siteId,
-    auditId,
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Wikipedia_Analysis_Runbook.docx',
     origin: 'AUTOMATION',
     type: 'wikipedia-analysis',
@@ -30,7 +27,7 @@ export function createOpportunityData(siteId, auditId, guidance) {
     description: 'Enhance your company\'s Wikipedia page to improve visibility in Large Language Model (LLM) responses. A well-maintained Wikipedia presence increases the likelihood of being cited by AI systems like ChatGPT, Claude, and Perplexity.',
     status: 'NEW',
     guidance,
-    tags: ['isElmo', 'llmo', 'wikipedia'],
+    tags: ['isElmo', 'llmo', 'wikipedia', 'Off-Site'],
     data: {
       dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.PAGE],
     },

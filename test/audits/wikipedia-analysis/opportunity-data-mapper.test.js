@@ -16,9 +16,6 @@ import { expect } from 'chai';
 import { createOpportunityData } from '../../../src/wikipedia-analysis/opportunity-data-mapper.js';
 
 describe('Wikipedia Analysis Opportunity Data Mapper', () => {
-  const siteId = 'test-site-id';
-  const auditId = 'test-audit-id';
-
   describe('createOpportunityData', () => {
     it('should create opportunity data with correct structure', () => {
       const guidance = [
@@ -30,10 +27,8 @@ describe('Wikipedia Analysis Opportunity Data Mapper', () => {
         },
       ];
 
-      const result = createOpportunityData(siteId, auditId, guidance);
+      const result = createOpportunityData({ guidance });
 
-      expect(result.siteId).to.equal(siteId);
-      expect(result.auditId).to.equal(auditId);
       expect(result.guidance).to.deep.equal(guidance);
       expect(result.origin).to.equal('AUTOMATION');
       expect(result.type).to.equal('wikipedia-analysis');
@@ -41,24 +36,25 @@ describe('Wikipedia Analysis Opportunity Data Mapper', () => {
     });
 
     it('should include correct title and description', () => {
-      const result = createOpportunityData(siteId, auditId, []);
+      const result = createOpportunityData({ guidance: [] });
 
       expect(result.title).to.equal('LLM discoverability: Improve Wikipedia presence');
       expect(result.description).to.include('Wikipedia');
       expect(result.description).to.include('LLM');
     });
 
-    it('should include correct tags', () => {
-      const result = createOpportunityData(siteId, auditId, []);
+    it('should include correct tags including Off-Site', () => {
+      const result = createOpportunityData({ guidance: [] });
 
       expect(result.tags).to.be.an('array');
       expect(result.tags).to.include('isElmo');
       expect(result.tags).to.include('llmo');
       expect(result.tags).to.include('wikipedia');
+      expect(result.tags).to.include('Off-Site');
     });
 
     it('should include runbook URL', () => {
-      const result = createOpportunityData(siteId, auditId, []);
+      const result = createOpportunityData({ guidance: [] });
 
       expect(result.runbook).to.be.a('string');
       expect(result.runbook).to.include('sharepoint');
@@ -66,7 +62,7 @@ describe('Wikipedia Analysis Opportunity Data Mapper', () => {
     });
 
     it('should include data sources', () => {
-      const result = createOpportunityData(siteId, auditId, []);
+      const result = createOpportunityData({ guidance: [] });
 
       expect(result.data).to.be.an('object');
       expect(result.data.dataSources).to.be.an('array');
@@ -74,7 +70,7 @@ describe('Wikipedia Analysis Opportunity Data Mapper', () => {
     });
 
     it('should handle empty guidance array', () => {
-      const result = createOpportunityData(siteId, auditId, []);
+      const result = createOpportunityData({ guidance: [] });
 
       expect(result.guidance).to.deep.equal([]);
     });
@@ -86,7 +82,7 @@ describe('Wikipedia Analysis Opportunity Data Mapper', () => {
         { insight: 'Insight 3', rationale: 'Rationale 3', recommendation: 'Rec 3', type: 'TYPE3' },
       ];
 
-      const result = createOpportunityData(siteId, auditId, guidance);
+      const result = createOpportunityData({ guidance });
 
       expect(result.guidance).to.have.lengthOf(3);
       expect(result.guidance[0].insight).to.equal('Insight 1');

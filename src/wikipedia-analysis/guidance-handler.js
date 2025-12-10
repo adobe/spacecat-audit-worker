@@ -86,7 +86,7 @@ export default async function handler(message, context) {
   const { Site, Audit: AuditModel } = dataAccess;
   const { siteId, auditId, data } = message;
 
-  log.info(`[Wikipedia] Message received in Wikipedia analysis guidance handler: ${JSON.stringify(message, null, 2)}`);
+  log.info(`[Wikipedia] Received Wikipedia analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
 
   // Handle presigned URL (large response) or direct analysis data
   let analysisData = data?.analysis;
@@ -127,7 +127,8 @@ export default async function handler(message, context) {
   if (auditId) {
     const audit = await AuditModel.findById(auditId);
     if (!audit) {
-      log.warn(`[Wikipedia] Audit not found for auditId: ${auditId}`);
+      log.error(`[Wikipedia] Audit not found for auditId: ${auditId}`);
+      return notFound('Audit not found');
     }
   }
 
