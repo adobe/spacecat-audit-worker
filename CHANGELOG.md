@@ -1,3 +1,31 @@
+## [1.267.20](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.19...v1.267.20) (2025-12-09)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.82.2 ([#1782](https://github.com/adobe/spacecat-audit-worker/issues/1782)) ([ef8ee55](https://github.com/adobe/spacecat-audit-worker/commit/ef8ee5577c1e221aa0f476e0bd6ce6f7845e7aef))
+
+## [1.267.19](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.18...v1.267.19) (2025-12-09)
+
+
+### Bug Fixes
+
+* **cdn-logs-report:** referral traffic uses only llm driven referrals ([#1781](https://github.com/adobe/spacecat-audit-worker/issues/1781)) ([ebeaf01](https://github.com/adobe/spacecat-audit-worker/commit/ebeaf01b0a7a6e8c2264a2cd2a96545c2fc2dd4d))
+
+## [1.267.18](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.17...v1.267.18) (2025-12-09)
+
+
+### Bug Fixes
+
+* added logging for consent-banner result ([#1780](https://github.com/adobe/spacecat-audit-worker/issues/1780)) ([9491329](https://github.com/adobe/spacecat-audit-worker/commit/94913291ef158632b6c6e242fc4933345a5dccdd))
+
+## [1.267.17](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.16...v1.267.17) (2025-12-09)
+
+
+### Bug Fixes
+
+* **geo-brand-presence:** only publish files in root directory ([#1776](https://github.com/adobe/spacecat-audit-worker/issues/1776)) ([e5ea863](https://github.com/adobe/spacecat-audit-worker/commit/e5ea8632181a6c68ad375c77aa544215104fd3c9))
+
 ## [1.267.16](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.15...v1.267.16) (2025-12-09)
 
 
