@@ -31,9 +31,9 @@ export function auditLogWrapper(fn) {
               const enhanced = { ...logObj };
               if (siteId) enhanced.siteId = siteId;
               if (auditType) enhanced.auditType = auditType;
-              return originalLog[level](enhanced);
+              return originalLog[level](JSON.stringify(enhanced));
             }
-            return originalLog[level](logObj);
+            return originalLog[level](JSON.stringify(logObj));
           };
         }
       });

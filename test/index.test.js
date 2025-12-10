@@ -72,9 +72,12 @@ describe('Index Tests', () => {
     const resp = await main(request, context);
 
     expect(resp.status).to.equal(404);
-    expect(errorSpy).to.have.been.calledWithMatch({
-      message: 'no such audit type: unknown-type',
-    });
+    // audit-log-wrapper now stringifies log objects to JSON
+    expect(errorSpy).to.have.been.called;
+    const loggedValue = errorSpy.getCall(0).args[0];
+    expect(loggedValue).to.be.a('string');
+    const parsed = JSON.parse(loggedValue);
+    expect(parsed.message).to.equal('no such audit type: unknown-type');
   });
 
   it('rejects when a new type audit fails', async () => {

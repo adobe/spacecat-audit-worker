@@ -87,8 +87,11 @@ describe('Index siteId handling and validation flag', () => {
     const resp = await main(new Request('https://space.cat'), context);
 
     expect(resp.status).to.equal(200);
-    expect(warnSpy).to.have.been.calledWithMatch({
-      message: sinon.match(/Failed to fetch site/),
-    });
+    // audit-log-wrapper now stringifies log objects to JSON
+    expect(warnSpy).to.have.been.called;
+    const loggedValue = warnSpy.getCall(0).args[0];
+    expect(loggedValue).to.be.a('string');
+    const parsed = JSON.parse(loggedValue);
+    expect(parsed.message).to.match(/Failed to fetch site/);
   });
 });
