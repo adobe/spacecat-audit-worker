@@ -290,7 +290,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   // don't tamper with configuration if daily geo brand presence is already enabled.
   if (!isDailyEnabled) {
     auditsToEnable.push('geo-brand-presence');
-    // only enable free geo brand presence if paid is not already enabled/
+    // only enable free geo brand presence if paid is not already enabled
     if (!isPaidEnabled) {
       auditsToEnable.push('geo-brand-presence-free');
     }
