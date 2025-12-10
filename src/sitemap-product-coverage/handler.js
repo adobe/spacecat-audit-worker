@@ -41,7 +41,6 @@ const MAX_PRODUCTS_PER_CATEGORY = 10000;
  */
 const MAX_PAGES = 20;
 
-/* c8 ignore start */
 function fillUrlTemplate(template, params) {
   return template
     .replace(/%baseUrl/g, params.baseUrl)
@@ -51,7 +50,6 @@ function fillUrlTemplate(template, params) {
     .replace(/%skuUpperCase/g, params.sku ? params.sku.toUpperCase() : '')
     .replace(/%sku/g, params.sku || '');
 }
-/* c8 ignore stop */
 
 async function getSkus(categoryPath, params, log) {
   let productsResp = await requestSaaS(ProductsQuery, 'getProducts', { currentPage: 1, categoryPath }, params, log);
