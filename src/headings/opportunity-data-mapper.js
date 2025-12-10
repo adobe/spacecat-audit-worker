@@ -15,7 +15,7 @@ import { DATA_SOURCES } from '../common/constants.js';
 const OpptyData = {
   runbook: '',
   origin: 'AUTOMATION',
-  title: 'Heading structure issues affecting accessibility and SEO',
+  title: 'Optimize Headings for LLMs',
   description: 'Ensure heading elements (h1–h6) are used in a logical, hierarchical order without skipping levels, and that no heading is empty. Proper heading structure improves accessibility and helps search engines and generative engines understand page content. AI-powered suggestions are available to help improve heading quality and consistency.',
   guidance: {
     steps: [
@@ -26,7 +26,25 @@ const OpptyData = {
       'Ensure headings follow brand guidelines and maintain consistent tone across the site.',
     ],
   },
-  tags: ['Accessibility', 'SEO', 'isElmo', 'isASO'],
+  tags: ['Accessibility', 'SEO', 'isElmo', 'isASO', 'tech-seo'],
+  data: {
+    dataSources: [DATA_SOURCES.SITE],
+  },
+};
+
+const OpptyDataForTOC = {
+  runbook: '',
+  origin: 'AUTOMATION',
+  title: 'Add Table of Content',
+  description: 'Ensure table of contents (TOC) is properly implemented in the <head> section of each page. Proper TOC implementation improves accessibility and helps search engines and generative engines understand page content',
+  guidance: {
+    steps: [
+      'Review pages flagged for TOC issues in the audit results.',
+      'Use AI-generated suggestions to improve TOC quality, consistency, and SEO performance.',
+      'Ensure TOC is properly implemented in the <head> section of each page.',
+    ],
+  },
+  tags: ['Accessibility', 'SEO', 'isElmo'],
   data: {
     dataSources: [DATA_SOURCES.SITE],
   },
@@ -34,4 +52,8 @@ const OpptyData = {
 
 export function createOpportunityData() {
   return OpptyData;
+}
+
+export function createOpportunityDataForTOC() {
+  return OpptyDataForTOC;
 }

@@ -82,6 +82,7 @@ import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
+import vulnerabilitiesCodeFix from './vulnerabilities-code-fix/handler.js';
 import prerender from './prerender/handler.js';
 import productMetatags from './product-metatags/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
@@ -93,6 +94,7 @@ import permissionsRedundant from './permissions/handler.redundant.js';
 import faqs from './faqs/handler.js';
 import faqsGuidance from './faqs/guidance-handler.js';
 import pageCitability from './page-citability/handler.js';
+import healthCheck from './health-check/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -167,12 +169,14 @@ const HANDLERS = {
   prerender,
   'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,
+  'codefix:security-vulnerabilities': vulnerabilitiesCodeFix,
   'codefix:form-accessibility': accessibilityCodeFixHandler,
   'security-permissions': permissions,
   'security-permissions-redundant': permissionsRedundant,
   faqs,
   'guidance:faqs': faqsGuidance,
   'page-citability': pageCitability,
+  'health-check': healthCheck,
   dummy: (message) => ok(message),
 };
 

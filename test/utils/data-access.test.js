@@ -449,6 +449,70 @@ describe('data-access', () => {
       })).to.be.rejectedWith('Failed to create suggestions for siteId');
     });
 
+    it('should log partial success when some items are created and some fail', async () => {
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        remove: sinon.stub(),
+        getData: sinon.stub().returns(suggestionsData[0]),
+        getStatus: sinon.stub().returns('NEW'),
+      }];
+      const newData = [{ key: '2' }, { key: '3' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({
+        errorItems: [{ item: { key: '2' }, error: 'some error' }],
+        createdItems: [{ key: '3' }],
+      });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(mockLogger.warn).to.have.been.calledWith('Partial success: Created 1 suggestions, 1 failed');
+    });
+
+    it('should log "... and more errors" when there are more than 5 errors', async () => {
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        remove: sinon.stub(),
+        getData: sinon.stub().returns(suggestionsData[0]),
+        getStatus: sinon.stub().returns('NEW'),
+      }];
+      const newData = Array.from({ length: 7 }, (_, i) => ({ key: `new-${i + 2}` }));
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({
+        errorItems: Array.from({ length: 7 }, (_, i) => ({
+          item: { key: `new-${i + 2}` },
+          error: `error ${i + 1}`,
+        })),
+        createdItems: [],
+      });
+
+      try {
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+      } catch (e) {
+        // Expected to throw
+      }
+
+      // Should log first 5 errors individually, then "... and 2 more errors"
+      expect(mockLogger.error).to.have.been.calledWith('... and 2 more errors');
+    });
+
     describe('scrapedUrlsSet filtering', () => {
       it('should preserve suggestions when their URLs were not scraped', async () => {
         const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
@@ -991,6 +1055,138 @@ describe('data-access', () => {
 
       // Verify that debug was called (safeStringify should have prevented the error)
       expect(mockLogger.debug).to.have.been.called;
+    });
+
+    it('should handle unstringifiable data gracefully via safeStringify', async () => {
+      // Create existing suggestions with BigInt to trigger safeStringify catch block
+      // (JSON.stringify cannot serialize BigInt values)
+      const unstringifiableData = { key: '1', bigValue: BigInt(9007199254740991) };
+
+      const existingSuggestions = [{
+        id: '1',
+        data: unstringifiableData,
+        getData: sinon.stub().returns(unstringifiableData),
+        getStatus: sinon.stub().returns('NEW'),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [{ key: '1', title: 'updated' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      // This should not throw - safeStringify catches JSON.stringify errors
+      await expect(syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+      })).to.not.be.rejected;
+
+      // Verify debug was called and contains the error message from safeStringify
+      const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
+      const hasUnavailableStringify = debugCalls.some((msg) => msg.includes('[Unable to stringify:'));
+      expect(hasUnavailableStringify).to.be.true;
+    });
+
+    it('should handle unstringifiable non-array data via safeStringify', async () => {
+      // Test safeStringify catch block with non-array data to cover the 'N/A' branch
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        remove: sinon.stub(),
+        getData: sinon.stub().returns(suggestionsData[0]),
+        getStatus: sinon.stub().returns('NEW'),
+      }];
+      const newData = [{ key: '2' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      // errorItem.item contains BigInt, which is a non-array object
+      mockOpportunity.addSuggestions.resolves({
+        errorItems: [{ item: { key: '2', bigValue: BigInt(123) }, error: 'some error' }],
+        createdItems: [],
+      });
+
+      try {
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+      } catch (e) {
+        // Expected to throw
+      }
+
+      // Verify the N/A branch was hit (errorItem.item is not an array)
+      const errorCalls = mockLogger.error.getCalls().map((call) => call.args[0]);
+      const hasNAStringify = errorCalls.some((msg) => msg.includes('N/A'));
+      expect(hasNAStringify).to.be.true;
+    });
+
+    it('should handle undefined createdItems', async () => {
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        remove: sinon.stub(),
+        getData: sinon.stub().returns(suggestionsData[0]),
+        getStatus: sinon.stub().returns('NEW'),
+      }];
+      const newData = [{ key: '2' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      // Return array-like object with errorItems and empty createdItems
+      // When createdItems.length is 0, the condition `createdItems?.length <= 0` is true
+      const mockSuggestions = [];
+      mockSuggestions.errorItems = [{ item: { key: '2' }, error: 'some error' }];
+      mockSuggestions.createdItems = [];
+      mockOpportunity.addSuggestions.resolves(mockSuggestions);
+
+      // Should throw because no items were created
+      await expect(syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+      })).to.be.rejectedWith(/Failed to create suggestions for siteId/);
+    });
+
+    it('should use "Unknown error" fallback when errorItems[0].error is falsy', async () => {
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        remove: sinon.stub(),
+        getData: sinon.stub().returns(suggestionsData[0]),
+        getStatus: sinon.stub().returns('NEW'),
+      }];
+      const newData = [{ key: '2' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      // errorItems[0].error is undefined/falsy to trigger 'Unknown error' fallback
+      // Return array-like object with errorItems and empty createdItems
+      const mockSuggestions = [];
+      mockSuggestions.errorItems = [{ item: { key: '2' }, error: undefined }];
+      mockSuggestions.createdItems = [];
+      mockOpportunity.addSuggestions.resolves(mockSuggestions);
+
+      try {
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+      } catch (e) {
+        expect(e.message).to.include('Sample error: Unknown error');
+      }
     });
   });
 
