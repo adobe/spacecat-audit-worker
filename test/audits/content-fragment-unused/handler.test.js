@@ -471,7 +471,7 @@ describe('Content Fragment Unused Handler', () => {
         sinon.match.object,
         context,
         sinon.match.func,
-        'content-fragment-unused',
+        AUDIT_TYPE,
       );
     });
 

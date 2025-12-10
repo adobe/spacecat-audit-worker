@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -24,8 +24,7 @@ import {
   downloadFragmentsFromS3,
 } from './storage/s3-storage.js';
 
-// TODO: Change to Audit.AUDIT_TYPES.CONTENT_FRAGMENT_UNUSED
-export const AUDIT_TYPE = 'content-fragment-unused';
+export const AUDIT_TYPE = Audit.AUDIT_TYPES.CONTENT_FRAGMENT_UNUSED;
 
 /**
  * Creates a summary of unused fragments grouped by their publication status.
