@@ -1,3 +1,15 @@
+# [1.268.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.22...v1.268.0) (2025-12-10)
+
+
+### Bug Fixes
+
+* test coverage ([#1787](https://github.com/adobe/spacecat-audit-worker/issues/1787)) ([681f803](https://github.com/adobe/spacecat-audit-worker/commit/681f803305ea1bb17a9d3a268661fda2237e1036))
+
+
+### Features
+
+* **geo-brand-presence:** add `-paid` and `-free` for scheduling ([#1785](https://github.com/adobe/spacecat-audit-worker/issues/1785)) ([be9d5bb](https://github.com/adobe/spacecat-audit-worker/commit/be9d5bbc7b0fae5d733c246ef61ade397f163f2d))
+
 ## [1.267.22](https://github.com/adobe/spacecat-audit-worker/compare/v1.267.21...v1.267.22) (2025-12-10)
 
 
