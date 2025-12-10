@@ -47,8 +47,7 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
   } catch (error) {
     log.warn(`Prerender - Failed to load top pages for fallback: ${error.message}. baseUrl=${site.getBaseURL()}`);
   }
-  // TEMPORARY: Limit to 2 URLs for testing - REMOVE AFTER TESTING
-  return topPagesUrls.slice(0, 2);
+  return topPagesUrls;
 }
 
 /**
@@ -107,8 +106,7 @@ async function getTopAgenticUrlsFromAthena(site, context, limit = TOP_AGENTIC_UR
       });
 
     log.info(`Prerender - Selected ${topUrls.length} top agentic URLs via Athena. baseUrl=${site.getBaseURL()}`);
-    // TEMPORARY: Limit to 2 URLs for testing - REMOVE AFTER TESTING
-    return topUrls.slice(0, 2);
+    return topUrls;
   } catch (e) {
     log?.warn?.(`Prerender - Athena agentic URL fetch failed: ${e.message}. baseUrl=${site.getBaseURL()}`);
     return [];
@@ -151,8 +149,7 @@ async function getTopAgenticUrlsFromSheet(site, context, limit = 200) {
       });
 
     log.info(`Prerender - Selected ${top.length} top agentic URLs via Sheet (${weekId}). baseUrl=${baseUrl}`);
-    // TEMPORARY: Limit to 2 URLs for testing - REMOVE AFTER TESTING
-    return top.slice(0, 2);
+    return top;
   } catch (e) {
     log?.warn?.(`Prerender - Sheet-based agentic URL fetch failed: ${e?.message || e}. baseUrl=${site.getBaseURL()}`);
     return [];

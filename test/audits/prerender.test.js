@@ -362,8 +362,8 @@ describe('Prerender Audit', () => {
           log: { info: sandbox.stub(), debug: sandbox.stub() },
         };
         const out = await mockHandler.submitForScraping(context);
-        // TEMPORARY: Expect 2 URLs due to testing limit - REVERT TO TOP_ORGANIC_URLS_LIMIT AFTER TESTING
-        expect(out.urls).to.have.length(2);
+        // Expect TOP_ORGANIC_URLS_LIMIT (200) URLs from Ahrefs top pages
+        expect(out.urls).to.have.length(TOP_ORGANIC_URLS_LIMIT);
       });
 
       it('should fall back to sheet when Athena returns no data and use weekId from shared utils', async () => {
@@ -420,9 +420,8 @@ describe('Prerender Audit', () => {
 
         const result = await mockHandler.submitForScraping(context);
         // Expect agentic URLs to be capped by TOP_AGENTIC_URLS_LIMIT (or available rows if fewer)
-        // TEMPORARY: Expect 2 URLs due to testing limit - REVERT TO expectedCount AFTER TESTING
         const expectedCount = Math.min(TOP_AGENTIC_URLS_LIMIT, 60);
-        expect(result.urls).to.have.length(2);
+        expect(result.urls).to.have.length(expectedCount);
         // Sanity: top URL comes from sheet aggregation and is normalized against base URL
         expect(result.urls[0].url).to.equal('https://example.com/p0');
       });
