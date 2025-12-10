@@ -198,7 +198,7 @@ async function run(message, context) {
   const { log } = context;
   const { type, siteId } = message;
 
-  log.info(`Received ${type} audit request for: ${siteId}. Message:`, message);
+  log.info(`Received ${type} audit request for: ${siteId}.`, { sqs_message: message });
 
   const handler = HANDLERS[type];
   if (!handler) {
