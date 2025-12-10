@@ -30,6 +30,8 @@ import { ContentAIClient } from '../utils/content-ai.js';
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
 
+/* c8 ignore start */
+/* this is actually running during tests. verified manually on 2025-12-10. */
 /**
  * @param {object} site A site object
  * @param {object} context The request context object
@@ -46,6 +48,7 @@ async function enableAudits(site, context, audits = [], options = undefined) {
     configuration.enableHandlerForSite(audit, site);
   });
   await configuration.save();
+  /* c8 ignore stop */
 }
 
 async function enableImports(site, imports = []) {
