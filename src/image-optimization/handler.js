@@ -10,34 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendImageOptimizationToAnalyzer, chunkArray, cleanupOutdatedSuggestions } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { ANALYZER_BATCH_SIZE } from './constants.js';
 
 const AUDIT_TYPE = 'image-optimization';
-const { AUDIT_STEP_DESTINATIONS } = AuditModel;
-
-/**
- * First step: Prepares the audit for import processing.
- * Returns metadata needed for subsequent steps.
- *
- * @param {Object} context - Context object containing site and finalUrl
- * @returns {Promise<Object>} Audit result with S3 bucket path and metadata
- */
-export async function processImportStep(context) {
-  const { site, finalUrl } = context;
-
-  const s3BucketPath = `scrapes/${site.getId()}/`;
-
-  return {
-    auditResult: { status: 'preparing', finalUrl },
-    fullAuditRef: s3BucketPath,
-    type: 'top-pages',
-    siteId: site.getId(),
-  };
-}
 
 /**
  * Creates or updates an opportunity for image optimization.
@@ -120,22 +98,22 @@ async function findOrCreateOpportunity({
 }
 
 /**
- * Main processing step: Analyzes images for optimization opportunities.
+ * Main audit runner: Analyzes images for optimization opportunities.
  * Orchestrates the image analysis workflow by coordinating with external analyzer.
  *
- * @param {Object} context - Context object with site, audit, dataAccess, log
- * @returns {Promise<void>}
+ * @param {string} baseURL - The base URL of the site
+ * @param {Object} context - Context object with site, log, dataAccess, etc.
+ * @param {Object} site - The site object
+ * @returns {Promise<Object>} Audit result object
  */
-export async function processImageOptimization(context) {
-  const {
-    log, site, audit, dataAccess,
-  } = context;
+export async function imageOptimizationRunner(baseURL, context, site) {
+  const { log, dataAccess, audit } = context;
+  const siteId = site.getId();
 
-  log.debug(`[${AUDIT_TYPE}]: Processing image optimization for site ${site.getId()}`);
+  log.info(`[${AUDIT_TYPE}]: Starting image optimization audit for site ${siteId}`);
 
   try {
     const { Opportunity, SiteTopPage } = dataAccess;
-    const siteId = site.getId();
 
     // Gather page URLs from top pages and site configuration
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
@@ -143,8 +121,16 @@ export async function processImageOptimization(context) {
 
     // Combine and deduplicate URLs
     const pageUrls = [...new Set([...topPages.map((page) => page.getUrl()), ...includedURLs])];
+
     if (pageUrls.length === 0) {
-      throw new Error(`No top pages found for site ${site.getId()}`);
+      log.info(`[${AUDIT_TYPE}]: No top pages found for site ${siteId}`);
+      return {
+        fullAuditRef: baseURL,
+        auditResult: {
+          status: 'completed',
+          message: 'No top pages found to analyze',
+        },
+      };
     }
 
     const urlBatches = chunkArray(pageUrls, ANALYZER_BATCH_SIZE);
@@ -159,30 +145,50 @@ export async function processImageOptimization(context) {
     });
 
     // Send URLs to external analyzer for image detection and analysis
+    log.info(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to analyzer`);
+    log.info(`[${AUDIT_TYPE}]: AuditId: ${audit.getId()}, OpportunityId: ${imageOptOppty.getId()}`);
+    log.info(`[${AUDIT_TYPE}]: Expected batches: ${urlBatches.length}`);
+
     await sendImageOptimizationToAnalyzer(
-      site.getBaseURL(),
+      baseURL,
       pageUrls,
-      site.getId(),
+      siteId,
       audit.getId(),
       context,
     );
 
-    log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to analyzer for image optimization analysis`);
+    log.info(`[${AUDIT_TYPE}]: ✅ Successfully sent ${pageUrls.length} pages to analyzer`);
+    log.info(`[${AUDIT_TYPE}]: Waiting for analyzer responses via guidance handler...`);
 
     // Clean up stale suggestions from previous runs
     await new Promise((resolve) => {
       setTimeout(resolve, 1000);
     });
     await cleanupOutdatedSuggestions(imageOptOppty, log);
+
+    return {
+      fullAuditRef: baseURL,
+      auditResult: {
+        status: 'completed',
+        message: `Sent ${pageUrls.length} pages to analyzer for processing`,
+        pagesAnalyzed: pageUrls.length,
+        opportunityId: imageOptOppty.getId(),
+      },
+    };
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to process image optimization: ${error.message}`);
-    throw error;
+    return {
+      fullAuditRef: baseURL,
+      auditResult: {
+        status: 'error',
+        error: error.message,
+      },
+    };
   }
 }
 
 // Build and export the audit using the fluent builder pattern
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
-  .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('processImageOptimization', processImageOptimization)
+  .withRunner(imageOptimizationRunner)
   .build();

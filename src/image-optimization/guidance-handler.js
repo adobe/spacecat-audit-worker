@@ -301,30 +301,47 @@ export default async function handler(message, context) {
   } = message;
   const { imageAnalysisResults } = data || {};
 
+  log.info(`[${AUDIT_TYPE}]: 🔵 GUIDANCE HANDLER CALLED`);
+  log.info(`[${AUDIT_TYPE}]: MessageId: ${messageId}`);
+  log.info(`[${AUDIT_TYPE}]: AuditId: ${auditId}, SiteId: ${siteId}`);
+  log.info(`[${AUDIT_TYPE}]: Message type: ${message.type}`);
+  log.info(`[${AUDIT_TYPE}]: Has imageAnalysisResults: ${!!imageAnalysisResults}`);
+  if (imageAnalysisResults) {
+    log.info(`[${AUDIT_TYPE}]: Number of images in results: ${imageAnalysisResults.length}`);
+  }
+
   // Validate audit exists
   const audit = await Audit.findById(auditId);
   if (!audit) {
-    log.warn(`[${AUDIT_TYPE}]: No audit found for auditId: ${auditId}`);
+    log.warn(`[${AUDIT_TYPE}]: ❌ No audit found for auditId: ${auditId}`);
     return notFound();
   }
+  log.info(`[${AUDIT_TYPE}]: ✅ Audit found`);
 
   await Site.findById(siteId);
+  log.info(`[${AUDIT_TYPE}]: ✅ Site found`);
 
   // Find and validate opportunity
   let imageOptOppty;
   try {
+    log.info(`[${AUDIT_TYPE}]: Looking for existing opportunity...`);
     imageOptOppty = await validateAndGetOpportunity(Opportunity, siteId, log);
+    log.info(`[${AUDIT_TYPE}]: ✅ Found opportunity: ${imageOptOppty.getId()}`);
   } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}]: ❌ Failed to find opportunity: ${e.message}`);
     throw e;
   }
 
   // Check for duplicate processing
   const existingData = imageOptOppty.getData() || {};
+  log.info(`[${AUDIT_TYPE}]: Checking for duplicate processing...`);
+  log.info(`[${AUDIT_TYPE}]: Processed IDs so far: ${JSON.stringify(existingData.processedAnalysisIds || [])}`);
+
   if (isAlreadyProcessed(existingData, messageId)) {
-    log.info(`[${AUDIT_TYPE}]: Analysis ${messageId} already processed. Skipping.`);
+    log.info(`[${AUDIT_TYPE}]: ⚠️  Analysis ${messageId} already processed. Skipping.`);
     return ok();
   }
+  log.info(`[${AUDIT_TYPE}]: ✅ Not a duplicate, proceeding...`);
 
   // Process image analysis results
   const hasResults = imageAnalysisResults
@@ -332,37 +349,58 @@ export default async function handler(message, context) {
     && imageAnalysisResults.length > 0;
 
   if (hasResults) {
+    log.info(`[${AUDIT_TYPE}]: ✅ Has results! Processing ${imageAnalysisResults.length} images...`);
+
     // Convert results to suggestions
+    log.info(`[${AUDIT_TYPE}]: Step 1: Mapping analysis results to suggestion DTOs...`);
     const mappedSuggestions = mapAnalysisResultsToSuggestionDTOs(
       imageAnalysisResults,
       imageOptOppty.getId(),
     );
+    log.info(`[${AUDIT_TYPE}]: ✅ Created ${mappedSuggestions.length} suggestion DTOs`);
+
+    if (mappedSuggestions.length > 0) {
+      log.info(`[${AUDIT_TYPE}]: Sample suggestion: ${JSON.stringify(mappedSuggestions[0], null, 2)}`);
+    }
 
     // Add suggestions to opportunity
+    log.info(`[${AUDIT_TYPE}]: Step 2: Adding suggestions to opportunity...`);
     await addImageOptimizationSuggestions({
       opportunity: imageOptOppty,
       newSuggestionDTOs: mappedSuggestions,
       log,
     });
+    log.info(`[${AUDIT_TYPE}]: ✅ Suggestions added successfully`);
 
     // Calculate and update aggregate metrics
+    log.info(`[${AUDIT_TYPE}]: Step 3: Calculating aggregate metrics...`);
     const metrics = calculateAggregateMetrics(imageAnalysisResults);
+    log.info(`[${AUDIT_TYPE}]: ✅ Metrics calculated: ${JSON.stringify(metrics, null, 2)}`);
 
+    log.info(`[${AUDIT_TYPE}]: Step 4: Updating opportunity metrics...`);
     await updateOpportunityMetrics(
       imageOptOppty,
       metrics,
       messageId,
       auditId,
     );
+    log.info(`[${AUDIT_TYPE}]: ✅ Opportunity metrics updated`);
 
     // Log summary
     const sizeMB = (metrics.totalSavings / 1024 / 1024).toFixed(2);
-    log.debug(`[${AUDIT_TYPE}]: Processed ${metrics.totalImages} images, found ${metrics.totalIssues} total issues`);
-    log.debug(`[${AUDIT_TYPE}]: ${metrics.dynamicMediaCount} using Dynamic Media, ${metrics.avifCount} already AVIF`);
-    log.debug(`[${AUDIT_TYPE}]: Issue breakdown: ${JSON.stringify(metrics.issueBreakdown)}`);
-    log.debug(`[${AUDIT_TYPE}]: Total potential savings: ${sizeMB} MB (${metrics.savingsPercent}%)`);
+    log.info(`[${AUDIT_TYPE}]: ═══════════════════════════════════════════`);
+    log.info(`[${AUDIT_TYPE}]: 📊 PROCESSING SUMMARY`);
+    log.info(`[${AUDIT_TYPE}]: Processed ${metrics.totalImages} images`);
+    log.info(`[${AUDIT_TYPE}]: Found ${metrics.totalIssues} total issues`);
+    log.info(`[${AUDIT_TYPE}]: Created ${mappedSuggestions.length} suggestions`);
+    log.info(`[${AUDIT_TYPE}]: ${metrics.dynamicMediaCount} using Dynamic Media`);
+    log.info(`[${AUDIT_TYPE}]: ${metrics.avifCount} already AVIF`);
+    log.info(`[${AUDIT_TYPE}]: Issue breakdown: ${JSON.stringify(metrics.issueBreakdown)}`);
+    log.info(`[${AUDIT_TYPE}]: Total potential savings: ${sizeMB} MB (${metrics.savingsPercent}%)`);
+    log.info(`[${AUDIT_TYPE}]: ═══════════════════════════════════════════`);
   } else {
-    log.info(`[${AUDIT_TYPE}]: No image analysis results to process for siteId: ${siteId}`);
+    log.warn(`[${AUDIT_TYPE}]: ⚠️  No image analysis results to process for siteId: ${siteId}`);
+    log.warn(`[${AUDIT_TYPE}]: Message data: ${JSON.stringify(data, null, 2)}`);
   }
 
   return ok();

@@ -137,7 +137,9 @@ export async function sendImageOptimizationToAnalyzer(
     const site = await dataAccess.Site.findById(siteId);
     const urlBatches = chunkArray(pageUrls, ANALYZER_BATCH_SIZE);
 
-    log.debug(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to analyzer in ${urlBatches.length} batch(es)`);
+    log.info(`[${AUDIT_TYPE}]: 📤 Sending ${pageUrls.length} URLs to analyzer in ${urlBatches.length} batch(es)`);
+    log.info(`[${AUDIT_TYPE}]: Queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+    log.info(`[${AUDIT_TYPE}]: Batch size: ${ANALYZER_BATCH_SIZE}`);
 
     // Send each batch as a separate message to avoid payload size limits
     for (let i = 0; i < urlBatches.length; i += 1) {
@@ -159,14 +161,19 @@ export async function sendImageOptimizationToAnalyzer(
         },
       };
 
+      log.info(`[${AUDIT_TYPE}]: Sending batch ${i + 1}/${urlBatches.length}...`);
+      log.info(`[${AUDIT_TYPE}]: Message: ${JSON.stringify(analyzerMessage, null, 2)}`);
+
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, analyzerMessage);
-      log.debug(`[${AUDIT_TYPE}]: Batch ${i + 1}/${urlBatches.length} sent with ${batch.length} URLs`);
+
+      log.info(`[${AUDIT_TYPE}]: ✅ Batch ${i + 1}/${urlBatches.length} sent with ${batch.length} URLs`);
     }
 
-    log.debug(`[${AUDIT_TYPE}]: All ${urlBatches.length} batches sent to analyzer successfully`);
+    log.info(`[${AUDIT_TYPE}]: ✅ All ${urlBatches.length} batches sent to analyzer successfully`);
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}]: Failed to send to analyzer: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}]: ❌ Failed to send to analyzer: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}]: Error stack: ${error.stack}`);
     throw error;
   }
 }
@@ -183,17 +190,25 @@ export async function sendImageOptimizationToAnalyzer(
  */
 export async function addImageOptimizationSuggestions({ opportunity, newSuggestionDTOs, log }) {
   if (!isNonEmptyArray(newSuggestionDTOs)) {
-    log.debug(`[${AUDIT_TYPE}]: No new suggestions to add`);
+    log.info(`[${AUDIT_TYPE}]: ⚠️  No new suggestions to add (empty or null array)`);
     return;
   }
 
+  log.info(`[${AUDIT_TYPE}]: 📝 Adding ${newSuggestionDTOs.length} suggestions to opportunity ${opportunity.getId()}`);
+  log.info(`[${AUDIT_TYPE}]: Calling opportunity.addSuggestions()...`);
+
   const updateResult = await opportunity.addSuggestions(newSuggestionDTOs);
+
+  log.info(`[${AUDIT_TYPE}]: addSuggestions() completed`);
+  log.info(`[${AUDIT_TYPE}]: Created items: ${updateResult.createdItems?.length || 0}`);
+  log.info(`[${AUDIT_TYPE}]: Error items: ${updateResult.errorItems?.length || 0}`);
 
   // Handle partial failures - log errors but don't fail if some succeeded
   if (isNonEmptyArray(updateResult.errorItems)) {
-    log.error(`[${AUDIT_TYPE}]: Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
-    updateResult.errorItems.forEach((errorItem) => {
-      log.error(`[${AUDIT_TYPE}]: Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+    log.error(`[${AUDIT_TYPE}]: ❌ Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
+    updateResult.errorItems.forEach((errorItem, idx) => {
+      log.error(`[${AUDIT_TYPE}]: Error ${idx + 1}/${updateResult.errorItems.length}: ${JSON.stringify(errorItem.error)}`);
+      log.error(`[${AUDIT_TYPE}]: Failed item: ${JSON.stringify(errorItem.item)}`);
     });
 
     // Only throw if ALL items failed
@@ -202,7 +217,7 @@ export async function addImageOptimizationSuggestions({ opportunity, newSuggesti
     }
   }
 
-  log.debug(`[${AUDIT_TYPE}]: Added ${newSuggestionDTOs.length} new suggestions`);
+  log.info(`[${AUDIT_TYPE}]: ✅ Successfully added ${updateResult.createdItems?.length || 0} suggestions`);
 }
 
 /**
