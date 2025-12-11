@@ -56,6 +56,8 @@ export default function enhancedLogWrapper(fn) {
         markers.traceId = traceId;
       }
 
+      log.info('Applying enhanced log wrapper with markers:', markers);
+
       // Only enhance if we have markers to add
       if (Object.keys(markers).length > 0) {
         const logLevels = ['info', 'error', 'debug', 'warn', 'trace', 'verbose', 'silly', 'fatal'];
