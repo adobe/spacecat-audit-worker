@@ -107,7 +107,7 @@ describe('Information Gain Preflight Handler', () => {
       const infoGainAudit = pageResult.audits.find((a) => a.name === 'information-gain');
 
       expect(infoGainAudit).to.exist;
-      expect(infoGainAudit.type).to.equal('seo');
+      expect(infoGainAudit.type).to.equal('geo');
       expect(infoGainAudit.opportunities).to.have.lengthOf(1);
 
       const opportunity = infoGainAudit.opportunities[0];
@@ -282,7 +282,7 @@ describe('Information Gain Preflight Handler', () => {
       expect(infoGainAudit).to.exist;
       const opportunity = infoGainAudit.opportunities[0];
       expect(opportunity.check).to.equal('information-gain-analysis');
-      
+
       // High scoring content should have no weak aspects or very few
       if (opportunity.weakAspects && opportunity.weakAspects.length > 0) {
         expect(opportunity.scoreCategory).to.be.oneOf(['good', 'moderate']);
@@ -312,7 +312,7 @@ describe('Information Gain Preflight Handler', () => {
 
       const opportunity = infoGainAudit.opportunities[0];
       expect(opportunity.weakAspects).to.exist;
-      
+
       // Should identify specificity as a weak aspect
       const specificityIssue = opportunity.weakAspects.find((a) => a.aspect === 'specificity');
       if (specificityIssue) {
@@ -343,7 +343,7 @@ describe('Information Gain Preflight Handler', () => {
 
       const opportunity = infoGainAudit.opportunities[0];
       expect(opportunity.weakAspects).to.exist;
-      
+
       // Should identify completeness as a weak aspect
       const completenessIssue = opportunity.weakAspects.find((a) => a.aspect === 'completeness');
       if (completenessIssue) {
