@@ -12,14 +12,13 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
 PARTITIONED BY (
   year  string,
   month string,
-  day   string,
-  hour  string
+  day   string
 )
 ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe'
 LOCATION '{{rawLocation}}'
 TBLPROPERTIES (
   'projection.enabled'        = 'true',
-  'storage.location.template' = '{{rawLocation}}${year}/${month}/${day}/${hour}/',
+  'storage.location.template' = '{{rawLocation}}${year}/${month}/${day}/',
   'projection.year.type'      = 'integer',
   'projection.year.range'     = '2024,2030',
   'projection.month.type'     = 'integer',
@@ -28,9 +27,6 @@ TBLPROPERTIES (
   'projection.day.type'       = 'integer',
   'projection.day.range'      = '1,31',
   'projection.day.digits'     = '2',
-  'projection.hour.type'      = 'integer',
-  'projection.hour.range'     = '0,23',
-  'projection.hour.digits'    = '2',
   'has_encrypted_data'        = 'false'
 );
 
