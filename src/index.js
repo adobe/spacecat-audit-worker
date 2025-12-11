@@ -19,6 +19,7 @@ import { checkSiteRequiresValidation } from './utils/site-validation.js';
 
 import sqs from './support/sqs.js';
 import s3Client from './support/s3-client.js';
+import { siteIdCollector, auditTypeCollector } from './utils/log-collectors.js';
 import enhancedLogWrapper from './utils/audit-log-wrapper.js';
 import accessibility from './accessibility/handler.js';
 import accessibilityDesktop from './accessibility/handler-desktop.js';
@@ -245,7 +246,7 @@ async function run(message, context) {
 export const main = wrap(run)
   .with(dataAccess)
   .with(sqsEventAdapter)
-  .with(enhancedLogWrapper)
+  .with(enhancedLogWrapper, [siteIdCollector, auditTypeCollector])
   .with(sqs)
   .with(s3Client)
   .with(secrets, { name: resolveSecretsName })
