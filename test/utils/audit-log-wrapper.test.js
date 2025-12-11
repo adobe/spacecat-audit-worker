@@ -14,6 +14,7 @@
 
 import sinon from 'sinon';
 import { expect } from 'chai';
+import { logWrapper } from '@adobe/spacecat-shared-utils';
 import { auditLogWrapper } from '../../src/utils/audit-log-wrapper.js';
 
 const message = {
@@ -58,7 +59,7 @@ describe('auditLogWrapper tests', () => {
   });
 
   it('should call the original function with the provided message and context', async () => {
-    const wrappedFn = auditLogWrapper(mockFn);
+    const wrappedFn = auditLogWrapper(logWrapper(mockFn));
 
     await wrappedFn(message, mockContext);
 
@@ -67,7 +68,7 @@ describe('auditLogWrapper tests', () => {
   });
 
   it('should handle empty messages without errors', async () => {
-    const wrappedFn = auditLogWrapper(mockFn);
+    const wrappedFn = auditLogWrapper(logWrapper(mockFn));
 
     // Test with empty message
     await wrappedFn({}, mockContext);
@@ -75,7 +76,7 @@ describe('auditLogWrapper tests', () => {
   });
 
   it('should handle null messages without errors', async () => {
-    const wrappedFn = auditLogWrapper(mockFn);
+    const wrappedFn = auditLogWrapper(logWrapper(mockFn));
 
     // Test with null message
     await wrappedFn(null, mockContext);
@@ -85,7 +86,7 @@ describe('auditLogWrapper tests', () => {
   logLevels.forEach((level) => {
     it(`should add siteId and auditType to ${level} log when both are present`, async () => {
       const originalLogSpy = mockContext.log[level];
-      const wrappedFn = auditLogWrapper(mockFn);
+      const wrappedFn = auditLogWrapper(logWrapper(mockFn));
 
       await wrappedFn(message, mockContext);
 
@@ -96,6 +97,7 @@ describe('auditLogWrapper tests', () => {
       const logArgs = originalLogSpy.getCall(0).args[0];
       expect(logArgs).to.be.a('string');
       const parsed = JSON.parse(logArgs);
+      expect(parsed.severity).to.equal(level);
       expect(parsed.siteId).to.equal(message.siteId);
       expect(parsed.auditType).to.equal(message.type);
       expect(parsed.action).to.equal('test');
@@ -105,7 +107,7 @@ describe('auditLogWrapper tests', () => {
   logLevels.forEach((level) => {
     it(`should add only siteId to ${level} log when auditType is missing`, async () => {
       const originalLogSpy = mockContext.log[level];
-      const wrappedFn = auditLogWrapper(mockFn);
+      const wrappedFn = auditLogWrapper(logWrapper(mockFn));
 
       const messageWithoutType = { siteId: 'test-site-456' };
       await wrappedFn(messageWithoutType, mockContext);
@@ -117,6 +119,7 @@ describe('auditLogWrapper tests', () => {
       const logArgs = originalLogSpy.getCall(0).args[0];
       expect(logArgs).to.be.a('string');
       const parsed = JSON.parse(logArgs);
+      expect(parsed.severity).to.equal(level);
       expect(parsed.siteId).to.equal('test-site-456');
       expect(parsed.auditType).to.be.undefined;
       expect(parsed.action).to.equal('test');
@@ -126,7 +129,7 @@ describe('auditLogWrapper tests', () => {
   logLevels.forEach((level) => {
     it(`should add only auditType to ${level} log when siteId is missing`, async () => {
       const originalLogSpy = mockContext.log[level];
-      const wrappedFn = auditLogWrapper(mockFn);
+      const wrappedFn = auditLogWrapper(logWrapper(mockFn));
 
       const messageWithoutSiteId = { type: 'structured-data' };
       await wrappedFn(messageWithoutSiteId, mockContext);
@@ -138,6 +141,7 @@ describe('auditLogWrapper tests', () => {
       const logArgs = originalLogSpy.getCall(0).args[0];
       expect(logArgs).to.be.a('string');
       const parsed = JSON.parse(logArgs);
+      expect(parsed.severity).to.equal(level);
       expect(parsed.siteId).to.be.undefined;
       expect(parsed.auditType).to.equal('structured-data');
       expect(parsed.action).to.equal('test');
@@ -147,7 +151,7 @@ describe('auditLogWrapper tests', () => {
   logLevels.forEach((level) => {
     it(`should not add siteId or auditType to ${level} log when both are missing`, async () => {
       const originalLogSpy = mockContext.log[level];
-      const wrappedFn = auditLogWrapper(mockFn);
+      const wrappedFn = auditLogWrapper(logWrapper(mockFn));
 
       await wrappedFn({}, mockContext);
 
@@ -158,6 +162,7 @@ describe('auditLogWrapper tests', () => {
       const logArgs = originalLogSpy.getCall(0).args[0];
       expect(logArgs).to.be.a('string');
       const parsed = JSON.parse(logArgs);
+      expect(parsed.severity).to.equal(level);
       expect(parsed.siteId).to.be.undefined;
       expect(parsed.auditType).to.be.undefined;
       expect(parsed.action).to.equal('test');
@@ -167,23 +172,28 @@ describe('auditLogWrapper tests', () => {
   logLevels.forEach((level) => {
     it(`should not modify non-object arguments in ${level} log`, async () => {
       const originalLogSpy = mockContext.log[level];
-      const wrappedFn = auditLogWrapper(mockFn);
+      const wrappedFn = auditLogWrapper(logWrapper(mockFn));
 
       await wrappedFn(message, mockContext);
 
       // Log a string (non-object) to test the wrapper
       mockContext.log[level]('test message');
 
-      // Verify that the string is stringified
+      // Verify that the string is wrapped in JSON object with message field
       const logArgs = originalLogSpy.getCall(0).args[0];
-      expect(logArgs).to.equal('"test message"');
+      expect(logArgs).to.be.a('string');
+      const parsed = JSON.parse(logArgs);
+      expect(parsed.severity).to.equal(level);
+      expect(parsed.message).to.equal('test message');
+      expect(parsed.siteId).to.equal(message.siteId);
+      expect(parsed.auditType).to.equal(message.type);
     });
   });
 
   logLevels.forEach((level) => {
     it(`should stringify Error objects in ${level} log`, async () => {
       const originalLogSpy = mockContext.log[level];
-      const wrappedFn = auditLogWrapper(mockFn);
+      const wrappedFn = auditLogWrapper(logWrapper(mockFn));
 
       await wrappedFn(message, mockContext);
 
@@ -191,18 +201,22 @@ describe('auditLogWrapper tests', () => {
       const error = new Error('test error');
       mockContext.log[level](error);
 
-      // Verify that the Error is stringified (results in empty object {})
+      // Verify that the Error is wrapped in JSON object with data field
       const logArgs = originalLogSpy.getCall(0).args[0];
       expect(logArgs).to.be.a('string');
       const parsed = JSON.parse(logArgs);
-      expect(parsed).to.deep.equal({});
+      expect(parsed.severity).to.equal(level);
+      expect(parsed.siteId).to.equal(message.siteId);
+      expect(parsed.auditType).to.equal(message.type);
+      expect(parsed.data).to.be.an('array');
+      expect(parsed.data).to.have.lengthOf(1);
     });
   });
 
   logLevels.forEach((level) => {
     it(`should stringify Array arguments in ${level} log`, async () => {
       const originalLogSpy = mockContext.log[level];
-      const wrappedFn = auditLogWrapper(mockFn);
+      const wrappedFn = auditLogWrapper(logWrapper(mockFn));
 
       await wrappedFn(message, mockContext);
 
@@ -210,11 +224,15 @@ describe('auditLogWrapper tests', () => {
       const arrayArg = ['item1', 'item2'];
       mockContext.log[level](arrayArg);
 
-      // Verify that the array is stringified
+      // Verify that the array is wrapped in JSON object with data field
       const logArgs = originalLogSpy.getCall(0).args[0];
       expect(logArgs).to.be.a('string');
       const parsed = JSON.parse(logArgs);
-      expect(parsed).to.deep.equal(arrayArg);
+      expect(parsed.severity).to.equal(level);
+      expect(parsed.siteId).to.equal(message.siteId);
+      expect(parsed.auditType).to.equal(message.type);
+      expect(parsed.data).to.be.an('array');
+      expect(parsed.data[0]).to.deep.equal(arrayArg);
     });
   });
 
@@ -267,7 +285,7 @@ describe('auditLogWrapper tests', () => {
 
   it('should create a new object instead of mutating the parameter', async () => {
     const originalLogSpy = mockContext.log.info;
-    const wrappedFn = auditLogWrapper(mockFn);
+    const wrappedFn = auditLogWrapper(logWrapper(mockFn));
 
     await wrappedFn(message, mockContext);
 
@@ -283,6 +301,7 @@ describe('auditLogWrapper tests', () => {
     const logArgs = originalLogSpy.getCall(0).args[0];
     expect(logArgs).to.be.a('string');
     const parsed = JSON.parse(logArgs);
+    expect(parsed.severity).to.equal('info');
     expect(parsed.siteId).to.equal(message.siteId);
     expect(parsed.auditType).to.equal(message.type);
     expect(parsed.action).to.equal('test');
@@ -290,11 +309,9 @@ describe('auditLogWrapper tests', () => {
   });
 
   it('should work correctly when used after logWrapper', async () => {
-    // Simulate logWrapper having already wrapped the log
     const originalLogSpy = mockContext.log.info;
-    mockContext.contextualLog = mockContext.log;
 
-    const wrappedFn = auditLogWrapper(mockFn);
+    const wrappedFn = auditLogWrapper(logWrapper(mockFn));
     await wrappedFn(message, mockContext);
 
     // Log an object
@@ -304,6 +321,7 @@ describe('auditLogWrapper tests', () => {
     const logArgs = originalLogSpy.getCall(0).args[0];
     expect(logArgs).to.be.a('string');
     const parsed = JSON.parse(logArgs);
+    expect(parsed.severity).to.equal('info');
     expect(parsed.siteId).to.equal(message.siteId);
     expect(parsed.auditType).to.equal(message.type);
     expect(parsed.action).to.equal('test');
@@ -325,7 +343,7 @@ describe('auditLogWrapper tests', () => {
   logLevels.forEach((level) => {
     it(`should preserve existing fields in log object for ${level}`, async () => {
       const originalLogSpy = mockContext.log[level];
-      const wrappedFn = auditLogWrapper(mockFn);
+      const wrappedFn = auditLogWrapper(logWrapper(mockFn));
 
       await wrappedFn(message, mockContext);
 
@@ -340,11 +358,43 @@ describe('auditLogWrapper tests', () => {
       const logArgs = originalLogSpy.getCall(0).args[0];
       expect(logArgs).to.be.a('string');
       const parsed = JSON.parse(logArgs);
+      expect(parsed.severity).to.equal(level);
       expect(parsed.siteId).to.equal(message.siteId);
       expect(parsed.auditType).to.equal(message.type);
       expect(parsed.message).to.equal('Processing audit');
       expect(parsed.duration).to.equal(1500);
       expect(parsed.status).to.equal('success');
     });
+  });
+
+  it('should handle invalid JSON strings gracefully', async () => {
+    // Test without logWrapper to check error handling in auditLogWrapper
+    const originalLogSpy = mockContext.log.info;
+    const wrappedFn = auditLogWrapper(mockFn);
+
+    await wrappedFn(message, mockContext);
+
+    // Pass an invalid JSON string directly
+    const invalidJsonString = 'not a valid {json}';
+    mockContext.log.info(invalidJsonString);
+
+    // Verify the original log was called with the invalid string as-is
+    expect(originalLogSpy.calledWith(invalidJsonString)).to.be.true;
+  });
+
+  it('should handle non-plain objects by stringifying them', async () => {
+    // Test without logWrapper to check non-plain object handling
+    const originalLogSpy = mockContext.log.info;
+    const wrappedFn = auditLogWrapper(mockFn);
+
+    await wrappedFn(message, mockContext);
+
+    // Pass a number (non-plain object)
+    mockContext.log.info(42);
+
+    // Verify it was stringified
+    expect(originalLogSpy.calledOnce).to.be.true;
+    const logArgs = originalLogSpy.getCall(0).args[0];
+    expect(logArgs).to.equal('42');
   });
 });

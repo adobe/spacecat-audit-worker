@@ -26,14 +26,25 @@ export function auditLogWrapper(fn) {
       logLevels.forEach((level) => {
         if (typeof originalLog[level] === 'function') {
           context.log[level] = (logObj) => {
+            // If logObj is a JSON string, parse it first
+            let parsedObj = logObj;
+            if (typeof logObj === 'string') {
+              try {
+                parsedObj = JSON.parse(logObj);
+              } catch (e) {
+                // If parsing fails, just pass through the original string
+                return originalLog[level](logObj);
+              }
+            }
+
             // Create new object instead of mutating parameter
-            if (logObj?.constructor === Object) {
-              const enhanced = { ...logObj };
+            if (parsedObj?.constructor === Object) {
+              const enhanced = { ...parsedObj };
               if (siteId) enhanced.siteId = siteId;
               if (auditType) enhanced.auditType = auditType;
               return originalLog[level](JSON.stringify(enhanced));
             }
-            return originalLog[level](JSON.stringify(logObj));
+            return originalLog[level](JSON.stringify(parsedObj));
           };
         }
       });
