@@ -7,7 +7,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
   response_status       int,
   request_referer       string,
   response_content_type string,
-  time_to_first_byte    string
+  time_to_first_byte    int
 )
 PARTITIONED BY (
   year  string,
