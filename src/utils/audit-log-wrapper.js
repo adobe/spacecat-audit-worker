@@ -56,7 +56,7 @@ export default function enhancedLogWrapper(fn) {
         markers.traceId = traceId;
       }
 
-      log.info('Applying enhanced log wrapper with markers:', markers);
+      log.info('!TEST! Applying enhanced log wrapper with markers:', markers);
 
       // Only enhance if we have markers to add
       if (Object.keys(markers).length > 0) {
@@ -68,6 +68,7 @@ export default function enhancedLogWrapper(fn) {
 
           // Only wrap if both methods exist
           if (typeof originalMethod === 'function' && typeof fieldsMethod === 'function') {
+            log.info('!TEST! Enhancing log level:', level);
             // Replace the method to call *Fields version with markers appended
             // Simply call the *Fields method with all args + markers as fields
             context.log[level] = (...args) => fieldsMethod.call(log, ...args, markers);
