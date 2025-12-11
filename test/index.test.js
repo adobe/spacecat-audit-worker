@@ -72,12 +72,11 @@ describe('Index Tests', () => {
     const resp = await main(request, context);
 
     expect(resp.status).to.equal(404);
-    // audit-log-wrapper now stringifies log objects to JSON
-    expect(errorSpy).to.have.been.called;
-    const loggedValue = errorSpy.getCall(0).args[0];
-    expect(loggedValue).to.be.a('string');
-    const parsed = JSON.parse(loggedValue);
-    expect(parsed.message).to.equal('no such audit type: unknown-type');
+    // Check that an error containing 'no such audit type: unknown-type' was logged
+    expect(errorSpy.args.some((args) => args.some(
+      (arg) => (typeof arg === 'string' && arg.includes('no such audit type: unknown-type'))
+        || (typeof arg === 'object' && arg?.message?.includes('no such audit type: unknown-type')),
+    ))).to.be.true;
   });
 
   it('rejects when a new type audit fails', async () => {

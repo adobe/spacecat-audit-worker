@@ -1,3 +1,24 @@
+# [1.271.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.270.2...v1.271.0) (2025-12-11)
+
+
+### Features
+
+* add Wikipedia analysis audit handlers ([#1765](https://github.com/adobe/spacecat-audit-worker/issues/1765)) ([4db8ad9](https://github.com/adobe/spacecat-audit-worker/commit/4db8ad9f96957fc4961b0f72d530c9879e034316))
+
+## [1.270.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.270.1...v1.270.2) (2025-12-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.40.3 ([#1788](https://github.com/adobe/spacecat-audit-worker/issues/1788)) ([be14c4f](https://github.com/adobe/spacecat-audit-worker/commit/be14c4fe46cddd7cf368615ac513fe01b5a1fc67))
+
+## [1.270.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.270.0...v1.270.1) (2025-12-11)
+
+
+### Bug Fixes
+
+* improve page types ([#1791](https://github.com/adobe/spacecat-audit-worker/issues/1791)) ([0399b29](https://github.com/adobe/spacecat-audit-worker/commit/0399b2978ff5c8da534ef98e31b48b53623b9119))
+
 # [1.270.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.269.1...v1.270.0) (2025-12-10)
 
 
