@@ -634,10 +634,12 @@ export default async function informationGain(context, auditContext) {
                     return {
                       ...aspect,
                       improvedContent: improvement.improvedContent,
+                      newSummary: improvement.newSummary,
                       newScore: improvement.newScore,
                       newScoreCategory: improvement.newScoreCategory,
                       improvementDelta: improvement.improvementDelta,
                       newMetrics: improvement.newMetrics,
+                      newTraitScores: improvement.newTraitScores,
                       aiRationale: improvement.aiRationale,
                       suggestionStatus: 'completed',
                     };

@@ -85,12 +85,19 @@ export async function sendInformationGainToMystique(
     // Send each improvement request as a separate message to Mystique
     const messagePromises = improvementRequests.map((request, index) => {
       const prompt = IMPROVEMENT_PROMPTS[request.aspect];
-      const observation = `${INFORMATION_GAIN_OBSERVATION}
+
+      // Build observation matching the Python improvement_service structure
+      // System context + specific prompt + original content
+      const observation = `You are a content improvement specialist focused on enhancing ${request.aspect}.
+
+${INFORMATION_GAIN_OBSERVATION}
 
 ${prompt}
 
 Original content:
-${request.originalContent}`;
+${request.originalContent}
+
+Generate improved content with HIGH ${request.aspect} that addresses the identified weakness while maintaining the same general topic and intent.`;
 
       const mystiqueMessage = {
         type: 'guidance:information-gain',

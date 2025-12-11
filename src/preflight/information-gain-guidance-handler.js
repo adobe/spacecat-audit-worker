@@ -75,22 +75,28 @@ export default async function handler(message, context) {
     return ok();
   }
 
-  // Calculate new metrics for improved content
+  // Calculate new metrics for improved content (matching Python's generate_variation)
   const originalContent = data.original_content || '';
-  const newMetrics = measureInfoGain(improvedContent, improvedContent);
+
+  // Generate summary of improved content (like Python's analyze_content)
+  const improvedSummary = improvedContent.substring(0, Math.min(500, improvedContent.length));
+
+  // Measure InfoGain metrics on improved content
+  const newMetrics = measureInfoGain(improvedContent, improvedSummary);
   const newScoreCategory = categorizeScore(newMetrics.infogain_score);
   const newTraitScores = analyzeContentTraits(improvedContent);
 
   // Calculate improvement delta
   const improvementDelta = newMetrics.infogain_score - (data.current_score || 0);
 
-  // Create improvement object
+  // Create improvement object matching Python's generate_variation return structure
   const improvement = {
     id: `infogain-${data.pageUrl || 'unknown'}-${data.aspect}`,
     pageUrl: data.pageUrl,
     aspect: data.aspect,
     originalContent,
     improvedContent,
+    newSummary: improvedSummary,
     originalScore: data.current_score,
     newScore: newMetrics.ten_point_score,
     newScoreCategory,
@@ -100,11 +106,14 @@ export default async function handler(message, context) {
       semantic_similarity: newMetrics.semantic_similarity.toFixed(2),
       entity_preservation: newMetrics.entity_preservation.toFixed(2),
       fact_coverage: newMetrics.fact_coverage.toFixed(2),
+      entropy_ratio: newMetrics.entropy_ratio.toFixed(2),
       infogain_score: newMetrics.infogain_score.toFixed(2),
+      ten_point_score: newMetrics.ten_point_score.toFixed(1),
+      novel_info_count: newMetrics.novel_info_count,
     },
     newTraitScores,
     seoImpact: data.seo_impact || 'Moderate',
-    aiRationale: `Improved ${data.aspect} by ${improvementDelta > 0 ? 'increasing' : 'maintaining'} information density`,
+    aiRationale: `Improved ${data.aspect} by ${improvementDelta > 0 ? 'increasing' : 'maintaining'} information density. Original score: ${data.current_score?.toFixed(2) || 'N/A'}, New score: ${newMetrics.ten_point_score.toFixed(1)}/10`,
   };
 
   // Update job metadata with the improvement
@@ -144,7 +153,7 @@ export default async function handler(message, context) {
         // Update opportunities with improvements
         infoGainAudit.opportunities.forEach((opp) => {
           if (opp.check === 'information-gain-analysis' && opp.weakAspects) {
-            // Add improvements to each weak aspect
+            // Add improvements to each weak aspect (matching Python's generate_variation output)
             // eslint-disable-next-line no-param-reassign
             opp.weakAspects = opp.weakAspects.map((aspect) => {
               // eslint-disable-next-line no-shadow
@@ -153,10 +162,12 @@ export default async function handler(message, context) {
                 return {
                   ...aspect,
                   improvedContent: improvement.improvedContent,
+                  newSummary: improvement.newSummary,
                   newScore: improvement.newScore,
                   newScoreCategory: improvement.newScoreCategory,
                   improvementDelta: improvement.improvementDelta,
                   newMetrics: improvement.newMetrics,
+                  newTraitScores: improvement.newTraitScores,
                   aiRationale: improvement.aiRationale,
                   suggestionStatus: 'completed',
                 };
