@@ -17,12 +17,20 @@ export const main = async () => {
   // CONFIGURE YOUR TEST HERE
   // ======================================================================
   const TEST_SITE_ID = 'f35ffe86-4d9b-4c13-a20b-9e6fc6231ead';
+  const TEST_AUDIT_ID = 'test-audit-step3';
   // ======================================================================
 
-  // Simple message - no steps, just run the audit
+  // Start at Step 3: run-audit-and-generate-suggestions
+  // This assumes scraping is already done and data is in S3
   const messageBody = {
     type: 'image-optimization',
     siteId: TEST_SITE_ID,
+    auditContext: {
+      next: 'run-audit-and-generate-suggestions',
+      auditId: TEST_AUDIT_ID,
+      type: 'image-optimization',
+      fullAuditRef: `scrapes/${TEST_SITE_ID}/`,
+    },
   };
 
   const message = {
@@ -56,10 +64,17 @@ export const main = async () => {
     },
   };
 
-  console.log('\n🚀 Running image-optimization audit (Simple Runner)...\n');
+  console.log('\n🚀 Running image-optimization audit (Step 3)...\n');
   console.log('📋 Configuration:');
   console.log(`   Site ID: ${TEST_SITE_ID}`);
-  console.log('   Mode: Simple Runner (processes existing S3 data)');
+  console.log(`   Audit ID: ${TEST_AUDIT_ID}`);
+  console.log('   Step: 3️⃣  run-audit-and-generate-suggestions');
+  console.log('   Action: Analyze images from S3 and generate optimization suggestions');
+  console.log('   Features:');
+  console.log('     • Real DM format verification (AVIF, WebP, JPEG, PNG)');
+  console.log('     • Oversized image detection');
+  console.log('     • Missing dimensions, lazy loading checks');
+  console.log('     • And more...');
   console.log(`   S3 Bucket: ${process.env.S3_SCRAPER_BUCKET_NAME || 'NOT SET'}\n`);
 
   await universalMain(message, context);

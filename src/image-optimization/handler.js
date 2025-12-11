@@ -10,15 +10,15 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit } from '@adobe/spacecat-shared-data-access';
+// import { Audit } from '@adobe/spacecat-shared-data-access'; // Uncomment for full pipeline
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getObjectFromKey } from '../utils/s3-utils.js';
+import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import { runAllChecks } from './checkers/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { DATA_SOURCES } from '../common/constants.js';
 
 const AUDIT_TYPE = 'image-optimization';
-const { AUDIT_STEP_DESTINATIONS } = Audit;
+// const { AUDIT_STEP_DESTINATIONS } = Audit; // Uncomment for full pipeline
 
 /**
  * Build a unique key for suggestion deduplication
@@ -26,6 +26,46 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
  * @returns {string} Unique key
  */
 export const buildKey = (data) => `${data.url}|${data.type}|${data.imageSrc}`;
+
+/**
+ * Sanitize numeric values to ensure DynamoDB compatibility
+ * Replaces Infinity and NaN with null
+ * @param {*} value - Value to sanitize
+ * @returns {*} Sanitized value
+ */
+function sanitizeNumericValue(value) {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      return null; // Replace Infinity and NaN with null
+    }
+  }
+  return value;
+}
+
+/**
+ * Recursively sanitize an object's numeric values
+ * @param {Object} obj - Object to sanitize
+ * @returns {Object} Sanitized object
+ */
+function sanitizeObject(obj) {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeObject);
+  }
+
+  if (typeof obj === 'object') {
+    const sanitized = {};
+    Object.keys(obj).forEach((key) => {
+      sanitized[key] = sanitizeObject(obj[key]);
+    });
+    return sanitized;
+  }
+
+  return sanitizeNumericValue(obj);
+}
 
 /**
  * Map checker types to valid Suggestion types
@@ -76,14 +116,21 @@ function mapSeverityToRank(severity) {
  * @returns {Promise<Object|null>} Processed image data or null
  */
 export async function fetchAndProcessPageImages(s3Client, bucketName, url, key, log) {
+  log.info(`[${AUDIT_TYPE}]: Fetching S3 object: bucket=${bucketName}, key=${key}, url=${url}`);
+
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
 
-  if (!object?.imageData || !Array.isArray(object.imageData)) {
-    log.warn(`[${AUDIT_TYPE}]: No imageData found in S3 object for ${key}`);
+  if (!object) {
+    log.warn(`[${AUDIT_TYPE}]: S3 object not found for key: ${key}`);
     return null;
   }
 
-  log.info(`[${AUDIT_TYPE}]: Found ${object.imageData.length} images for ${url}`);
+  if (!object?.imageData || !Array.isArray(object.imageData)) {
+    log.warn(`[${AUDIT_TYPE}]: No imageData found in S3 object for ${key}. Object keys: ${Object.keys(object || {}).join(', ')}`);
+    return null;
+  }
+
+  log.info(`[${AUDIT_TYPE}]: Successfully fetched ${object.imageData.length} images for ${url}`);
   return {
     url: object.finalUrl || url,
     images: object.imageData,
@@ -94,22 +141,37 @@ export async function fetchAndProcessPageImages(s3Client, bucketName, url, key, 
  * Process images and generate suggestions
  * @param {Array<Object>} pagesWithImages - Array of page objects with images
  * @param {Object} log - Logger
- * @returns {Array<Object>} Array of suggestions
+ * @returns {Promise<Array<Object>>} Array of suggestions
  */
-function processImagesAndGenerateSuggestions(pagesWithImages, log) {
+async function processImagesAndGenerateSuggestions(pagesWithImages, log) {
+  log.info(`[${AUDIT_TYPE}]: Starting to process ${pagesWithImages.length} pages`);
   const allSuggestions = [];
+  let totalImagesProcessed = 0;
 
-  pagesWithImages.forEach((page) => {
+  // eslint-disable-next-line no-restricted-syntax
+  for (const page of pagesWithImages) {
     if (!page || !page.images) {
-      return;
+      log.warn(`[${AUDIT_TYPE}]: Skipping page with no images: ${page?.url || 'unknown'}`);
+      // eslint-disable-next-line no-continue
+      continue;
     }
 
     log.info(`[${AUDIT_TYPE}]: Processing ${page.images.length} images from ${page.url}`);
 
-    page.images.forEach((imageData) => {
+    // Process images sequentially to avoid rate limiting on DM format verification
+    // eslint-disable-next-line no-restricted-syntax
+    for (const imageData of page.images) {
       try {
-        // Run all checkers on the image
-        const suggestions = runAllChecks(imageData);
+        totalImagesProcessed += 1;
+        log.debug(`[${AUDIT_TYPE}]: Analyzing image ${totalImagesProcessed}: ${imageData.src}`);
+
+        // Run all checkers on the image (includes DM format verification)
+        // eslint-disable-next-line no-await-in-loop
+        const suggestions = await runAllChecks(imageData, null, log);
+
+        if (suggestions.length > 0) {
+          log.debug(`[${AUDIT_TYPE}]: Found ${suggestions.length} issues for image: ${imageData.src}`);
+        }
 
         suggestions.forEach((suggestion) => {
           allSuggestions.push({
@@ -121,12 +183,14 @@ function processImagesAndGenerateSuggestions(pagesWithImages, log) {
           });
         });
       } catch (error) {
-        log.error(`[${AUDIT_TYPE}]: Error processing image ${imageData.src}: ${error.message}`);
+        log.error(`[${AUDIT_TYPE}]: Error processing image ${imageData.src}: ${error.message}`, { error });
       }
-    });
-  });
+    }
 
-  log.info(`[${AUDIT_TYPE}]: Generated ${allSuggestions.length} total suggestions`);
+    log.info(`[${AUDIT_TYPE}]: Completed processing page ${page.url}. Current total suggestions: ${allSuggestions.length}`);
+  }
+
+  log.info(`[${AUDIT_TYPE}]: Processed ${totalImagesProcessed} images and generated ${allSuggestions.length} total suggestions`);
   return allSuggestions;
 }
 
@@ -241,8 +305,9 @@ export async function submitForScraping(context) {
  */
 export async function runAuditAndGenerateSuggestions(context) {
   const {
-    site, audit, log, scrapeResultPaths, dataAccess, s3Client,
+    site, audit, log, dataAccess, s3Client,
   } = context;
+  let { scrapeResultPaths } = context;
   const { Opportunity } = dataAccess;
 
   log.info(`[${AUDIT_TYPE}]: scrapeResultPaths for ${site.getId()}: ${JSON.stringify(scrapeResultPaths)}`);
@@ -250,6 +315,49 @@ export async function runAuditAndGenerateSuggestions(context) {
 
   // Fetch image data from S3 for all scraped pages
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+
+  // If scrapeResultPaths is not provided, list S3 objects directly
+  if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
+    log.info(`[${AUDIT_TYPE}]: No scrapeResultPaths from scrapeClient, listing S3 objects directly...`);
+    const prefix = `scrapes/${site.getId()}/`;
+    log.info(`[${AUDIT_TYPE}]: Listing S3 objects with prefix: ${prefix}`);
+
+    const objectKeys = await getObjectKeysUsingPrefix(
+      s3Client,
+      bucketName,
+      prefix,
+      log,
+      1000,
+      'scrape.json',
+    );
+
+    log.info(`[${AUDIT_TYPE}]: Found ${objectKeys.length} scrape.json files in S3`);
+
+    if (objectKeys.length === 0) {
+      log.warn(`[${AUDIT_TYPE}]: No scrape.json files found in S3 for site ${site.getId()}`);
+      return {
+        auditResult: {
+          status: 'NO_DATA',
+          message: `No scraped data found in S3 at ${prefix}`,
+        },
+        fullAuditRef: site.getBaseURL(),
+      };
+    }
+
+    // Build scrapeResultPaths Map from S3 keys
+    // Extract URL from path: scrapes/{siteId}/{page-path}/scrape.json -> {page-path}
+    scrapeResultPaths = new Map();
+    objectKeys.forEach((key) => {
+      // Remove prefix and /scrape.json suffix to get the page path
+      const pagePath = key.replace(prefix, '').replace('/scrape.json', '');
+      // Reconstruct URL (you may need to adjust this based on your site's URL structure)
+      const pageUrl = `${site.getBaseURL()}/${pagePath}`;
+      scrapeResultPaths.set(pageUrl, key);
+    });
+
+    log.info(`[${AUDIT_TYPE}]: Built scrapeResultPaths Map with ${scrapeResultPaths.size} entries`);
+  }
+
   const pagesWithImagesResults = await Promise.all(
     [...scrapeResultPaths].map(([url, path]) => fetchAndProcessPageImages(
       s3Client,
@@ -263,34 +371,46 @@ export async function runAuditAndGenerateSuggestions(context) {
   const pagesWithImages = pagesWithImagesResults.filter((page) => page !== null);
 
   if (pagesWithImages.length === 0) {
-    log.info(`[${AUDIT_TYPE}]: No pages with image data found for site ${site.getId()}`);
-    return {
-      status: 'complete',
-    };
+    log.error(`[${AUDIT_TYPE}]: Failed to extract image data from scraped content for bucket ${bucketName}`);
   }
 
   // Process images and generate suggestions
-  const suggestions = processImagesAndGenerateSuggestions(pagesWithImages, log);
+  log.info(`[${AUDIT_TYPE}]: Starting image analysis and suggestion generation...`);
+  const suggestions = await processImagesAndGenerateSuggestions(pagesWithImages, log);
 
   if (suggestions.length === 0) {
     log.info(`[${AUDIT_TYPE}]: No image optimization suggestions found for site ${site.getId()}`);
+    log.info(`[${AUDIT_TYPE}]: Returning early with COMPLETE status (no issues found).`);
     return {
-      status: 'complete',
+      auditResult: {
+        status: 'COMPLETE',
+        totalImages: pagesWithImages.reduce((sum, page) => sum + (page.images?.length || 0), 0),
+        issuesFound: 0,
+        message: 'No optimization opportunities found.',
+      },
+      fullAuditRef: site.getBaseURL(),
     };
   }
 
+  log.info(`[${AUDIT_TYPE}]: Creating or finding opportunity for site ${site.getId()}...`);
   // Create or find opportunity
   const opportunity = await findOrCreateOpportunity({
     Opportunity,
     siteId: site.getId(),
-    auditId: audit.getId(),
+    auditId: audit?.getId() || 'no-audit',
     log,
   });
+  log.info(`[${AUDIT_TYPE}]: Opportunity ID: ${opportunity.getId()}`);
 
   // Sync suggestions
-  await syncSuggestions({
+  log.info(`[${AUDIT_TYPE}]: Syncing ${suggestions.length} suggestions to database...`);
+
+  // Sanitize suggestions to remove Infinity/NaN values that DynamoDB cannot store
+  const sanitizedSuggestions = suggestions.map(sanitizeObject);
+
+  const syncResult = await syncSuggestions({
     opportunity,
-    newData: suggestions,
+    newData: sanitizedSuggestions,
     context,
     buildKey,
     mapNewSuggestion: (suggestion) => ({
@@ -303,6 +423,7 @@ export async function runAuditAndGenerateSuggestions(context) {
       },
     }),
   });
+  log.info(`[${AUDIT_TYPE}]: Suggestion sync complete. Created: ${syncResult?.created || 0}, Updated: ${syncResult?.updated || 0}, Deleted: ${syncResult?.deleted || 0}`);
 
   // Update opportunity data
   const opptyData = opportunity.getData() || {};
@@ -313,19 +434,33 @@ export async function runAuditAndGenerateSuggestions(context) {
   opptyData.totalImages = totalImages;
   opptyData.issuesFound = suggestions.length;
   opportunity.setData(opptyData);
+
+  log.info(`[${AUDIT_TYPE}]: Updating opportunity with final metrics: totalImages=${totalImages}, issuesFound=${suggestions.length}`);
   await opportunity.save();
 
-  log.info(`[${AUDIT_TYPE}]: Finish runAuditAndGenerateSuggestions step for: ${site.getId()}`);
+  log.info(`[${AUDIT_TYPE}]: ========== Image Optimization Audit Complete ==========`);
+  log.info(`[${AUDIT_TYPE}]: Total images analyzed: ${totalImages}`);
+  log.info(`[${AUDIT_TYPE}]: Issues found: ${suggestions.length}`);
+  log.info(`[${AUDIT_TYPE}]: Opportunity ID: ${opportunity.getId()}`);
 
   return {
-    status: 'complete',
+    auditResult: {
+      status: 'COMPLETE',
+      totalImages,
+      issuesFound: suggestions.length,
+      message: `Analyzed ${totalImages} images and found ${suggestions.length} optimization opportunities`,
+    },
+    fullAuditRef: site.getBaseURL(),
   };
 }
 
 // Build and export the audit using the fluent builder pattern
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
-  .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+  // STEPS 1 & 2: Handled by external workers (import-worker and scrape-client)
+  // Uncomment these lines to enable the full pipeline in production:
+  // .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  // .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+  // STEP 3: Run analysis on scraped data from S3
   .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)
   .build();

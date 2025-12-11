@@ -95,8 +95,7 @@ import faqs from './faqs/handler.js';
 import faqsGuidance from './faqs/guidance-handler.js';
 import pageCitability from './page-citability/handler.js';
 import healthCheck from './health-check/handler.js';
-// Use simple handler for local testing - swap back to handler.js for production
-import imageOptimization from './image-optimization/handler-simple.js';
+import imageOptimization from './image-optimization/handler.js';
 
 const HANDLERS = {
   accessibility,
