@@ -1,0 +1,5 @@
+{
+  "exclude": [
+    "src/utils/audit-log-wrapper.js"
+  ]
+}

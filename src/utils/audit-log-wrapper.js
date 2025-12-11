@@ -10,46 +10,71 @@
  * governing permissions and limitations under the License.
  */
 
+import { getTraceId } from '@adobe/spacecat-shared-utils';
+
 /**
- * Adds audit context (siteId, auditType) to all log objects.
- * Must be used AFTER logWrapper from shared-utils.
+ * Enhanced log wrapper that adds jobId and traceId as structured fields to all log calls.
+ *
+ * This wrapper enhances the helix-universal-logger by automatically injecting:
+ * - jobId: extracted from the message object
+ * - traceId: extracted from AWS X-Ray context
+ *
+ * The wrapper replaces standard log methods (info, error, debug, etc.) with calls to
+ * their *Fields counterparts (infoFields, errorFields, etc.), automatically appending
+ * jobId and traceId as structured fields.
+ *
+ * @example
+ *
+ * // All these work and get jobId/traceId automatically:
+ * log.info('message');
+ * log.info('User logged in', userData);
+ * log.error('Error occurred', error);
+ * log.debug('Processing', item1, item2, item3);
+ *
+ * // Result in logs:
+ * // { message: [...], jobId: 'xxx', traceId: 'yyy', ... }
+ *  *
+ * @param {Function} fn - The original function to be wrapped
+ * @returns {Function} - A wrapped function with enhanced logging
  */
-export function auditLogWrapper(fn) {
+export default function enhancedLogWrapper(fn) {
   return async (message, context) => {
-    if (context.log && !context.auditLogWrapped) {
-      const originalLog = { ...context.log };
-      const siteId = message?.siteId;
-      const auditType = message?.type;
+    const { log } = context;
 
-      const logLevels = ['info', 'error', 'debug', 'warn', 'trace', 'verbose', 'silly', 'fatal'];
+    // Only enhance if log exists and hasn't been enhanced yet
+    if (log && !context.enhancedLogWrapperApplied) {
+      const markers = {};
 
-      logLevels.forEach((level) => {
-        if (typeof originalLog[level] === 'function') {
-          context.log[level] = (logObj) => {
-            // If logObj is a JSON string, parse it first
-            let parsedObj = logObj;
-            if (typeof logObj === 'string') {
-              try {
-                parsedObj = JSON.parse(logObj);
-              } catch (e) {
-                // If parsing fails, just pass through the original string
-                return originalLog[level](logObj);
-              }
-            }
+      // Extract jobId from message if available
+      if (typeof message === 'object' && message !== null && 'jobId' in message) {
+        markers.jobId = message.jobId;
+      }
 
-            // Create new object instead of mutating parameter
-            if (parsedObj?.constructor === Object) {
-              const enhanced = { ...parsedObj };
-              if (siteId) enhanced.siteId = siteId;
-              if (auditType) enhanced.auditType = auditType;
-              return originalLog[level](JSON.stringify(enhanced));
-            }
-            return originalLog[level](JSON.stringify(parsedObj));
-          };
-        }
-      });
+      // Extract traceId from AWS X-Ray
+      const traceId = getTraceId();
+      if (traceId) {
+        markers.traceId = traceId;
+      }
 
-      context.auditLogWrapped = true;
+      // Only enhance if we have markers to add
+      if (Object.keys(markers).length > 0) {
+        const logLevels = ['info', 'error', 'debug', 'warn', 'trace', 'verbose', 'silly', 'fatal'];
+
+        logLevels.forEach((level) => {
+          const originalMethod = log[level];
+          const fieldsMethod = log[`${level}Fields`];
+
+          // Only wrap if both methods exist
+          if (typeof originalMethod === 'function' && typeof fieldsMethod === 'function') {
+            // Replace the method to call *Fields version with markers appended
+            // Simply call the *Fields method with all args + markers as fields
+            context.log[level] = (...args) => fieldsMethod.call(log, ...args, markers);
+          }
+        });
+      }
+
+      // Mark that we've enhanced this context
+      context.enhancedLogWrapperApplied = true;
     }
 
     return fn(message, context);
