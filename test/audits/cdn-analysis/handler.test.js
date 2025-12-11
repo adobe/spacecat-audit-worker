@@ -259,6 +259,17 @@ describe('CDN Analysis Handler', () => {
       }
     });
 
+    it('falls back to previous hour when auditContext is not an object', async () => {
+      const originalDateNow = Date.now;
+      Date.now = sandbox.stub().returns(new Date('2025-01-01T01:05:00Z').getTime());
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, null);
+
+      expect(result.fullAuditRef).to.include('2025/01/01/00');
+
+      Date.now = originalDateNow;
+    });
+
     it('should allow full day to be processed', async () => {
       const auditContext = {
         year: 2025, month: 9, day: 7, hour: 4,
