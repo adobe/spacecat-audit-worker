@@ -1,3 +1,10 @@
+# [1.271.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.270.2...v1.271.0) (2025-12-11)
+
+
+### Features
+
+* add Wikipedia analysis audit handlers ([#1765](https://github.com/adobe/spacecat-audit-worker/issues/1765)) ([4db8ad9](https://github.com/adobe/spacecat-audit-worker/commit/4db8ad9f96957fc4961b0f72d530c9879e034316))
+
 ## [1.270.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.270.1...v1.270.2) (2025-12-11)
 
 
