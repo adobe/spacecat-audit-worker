@@ -37,38 +37,44 @@ import { getTraceId } from '@adobe/spacecat-shared-utils';
  * @param {Function} fn - The original function to be wrapped
  * @returns {Function} - A wrapped function with enhanced logging
  */
-export default function logMarkersWrapper(fn, collectors = []) {
+export default function enhancedLogWrapper(fn) {
   return async (message, context) => {
     const { log } = context;
 
-    if (log && !context.logMarkersApplied) {
-      const allMarkers = {};
+    // Only enhance if log exists and hasn't been enhanced yet
+    if (log && !context.enhancedLogWrapperApplied) {
+      const markers = {};
 
-      if (message?.jobId) {
-        allMarkers.jobId = message.jobId;
+      // Extract jobId from message if available
+      if (typeof message === 'object' && message !== null && 'jobId' in message) {
+        markers.jobId = message.jobId;
       }
 
+      // Extract traceId from AWS X-Ray
       const traceId = getTraceId();
       if (traceId) {
-        allMarkers.traceId = traceId;
+        markers.traceId = traceId;
       }
 
-      collectors.forEach((collector) => {
-        Object.assign(allMarkers, collector(message, context));
-      });
+      // Only enhance if we have markers to add
+      if (Object.keys(markers).length > 0) {
+        const logLevels = ['info', 'error', 'debug', 'warn', 'trace', 'verbose', 'silly', 'fatal'];
 
-      if (Object.keys(allMarkers).length > 0) {
-        ['info', 'error', 'debug', 'warn', 'trace', 'verbose', 'silly', 'fatal'].forEach((level) => {
+        logLevels.forEach((level) => {
           const originalMethod = log[level];
           const fieldsMethod = log[`${level}Fields`];
 
+          // Only wrap if both methods exist
           if (typeof originalMethod === 'function' && typeof fieldsMethod === 'function') {
-            context.log[level] = (...args) => fieldsMethod.call(log, ...args, allMarkers);
+            // Replace the method to call *Fields version with markers appended
+            // Simply call the *Fields method with all args + markers as fields
+            context.log[level] = (...args) => fieldsMethod.call(log, ...args, markers);
           }
         });
       }
 
-      context.logMarkersApplied = true;
+      // Mark that we've enhanced this context
+      context.enhancedLogWrapperApplied = true;
     }
 
     return fn(message, context);
