@@ -17,6 +17,14 @@ import {
   isDynamicMedia,
 } from './opportunityHandler.js';
 import { runAllChecks } from './checkers/index.js';
+import {
+  batchVerifyDmFormats,
+  createVerificationSummary,
+} from './dm-format-verifier.js';
+import {
+  batchVerifyNonDmFormats,
+  createNonDmVerificationSummary,
+} from './non-dm-format-verifier.js';
 
 const AUDIT_TYPE = 'image-optimization';
 
@@ -359,12 +367,138 @@ export default async function handler(message, context) {
     );
     log.info(`[${AUDIT_TYPE}]: ✅ Created ${mappedSuggestions.length} suggestion DTOs`);
 
+    // Step 2: Verify DM images for actual format savings
+    log.info(`[${AUDIT_TYPE}]: Step 2: Verifying image formats for actual savings...`);
+
+    // Prepare images for verification
+    const imagesForVerification = imageAnalysisResults.map((result) => ({
+      src: result.imageUrl,
+      pageUrl: result.pageUrl,
+      xpath: result.xpath,
+      alt: result.alt,
+      isDynamicMedia: isDynamicMedia(result.imageUrl),
+      naturalWidth: result.naturalWidth,
+      naturalHeight: result.naturalHeight,
+      renderedWidth: result.renderedWidth,
+      renderedHeight: result.renderedHeight,
+    }));
+
+    // Separate DM and non-DM images
+    const dmImages = imagesForVerification.filter((img) => img.isDynamicMedia);
+    const nonDmImages = imagesForVerification.filter((img) => !img.isDynamicMedia);
+
+    log.info(`[${AUDIT_TYPE}]: Found ${dmImages.length} DM images and ${nonDmImages.length} non-DM images`);
+
+    // Verify DM images (fast - just HEAD requests)
+    let dmVerificationSummary = null;
+    if (dmImages.length > 0) {
+      try {
+        log.info(`[${AUDIT_TYPE}]: Verifying ${dmImages.length} DM images...`);
+        const dmResults = await batchVerifyDmFormats(dmImages, log, { concurrency: 5 });
+        dmVerificationSummary = createVerificationSummary(dmResults);
+
+        // Add verified DM suggestions
+        dmResults.forEach((result) => {
+          if (result.recommendations && result.recommendations.length > 0) {
+            const rec = result.recommendations[0];
+            const suggestionId = `${result.pageUrl}|${result.originalUrl}|dm-format-verified`;
+            const savingsRank = rec.savingsPercent > 50 ? 150 : 100;
+
+            mappedSuggestions.push({
+              opportunityId: imageOptOppty.getId(),
+              type: SuggestionModel.TYPES.CONTENT_UPDATE,
+              data: {
+                id: suggestionId,
+                pageUrl: result.pageUrl,
+                imageUrl: result.originalUrl,
+                issueType: 'dm-format-optimization-verified',
+                severity: rec.savingsPercent > 50 ? 'high' : 'medium',
+                impact: rec.savingsPercent > 50 ? 'high' : 'medium',
+                title: `Verified: ${rec.message}`,
+                description: `Actual format comparison shows ${rec.recommendedFormat.toUpperCase()} is optimal.`,
+                recommendation: rec.message,
+                xpath: result.xpath || null,
+                verified: true,
+                currentFormat: rec.currentFormat,
+                recommendedFormat: rec.recommendedFormat,
+                currentSize: rec.currentSize,
+                recommendedSize: rec.recommendedSize,
+                savingsBytes: rec.savingsBytes,
+                savingsPercent: rec.savingsPercent,
+                recommendedUrl: rec.recommendedUrl,
+                formatComparison: result.formats,
+              },
+              rank: savingsRank,
+            });
+          }
+        });
+
+        log.info(`[${AUDIT_TYPE}]: ✅ DM verification complete: ${dmVerificationSummary.imagesWithRecommendations} with recommendations`);
+      } catch (dmError) {
+        log.warn(`[${AUDIT_TYPE}]: ⚠️ DM verification failed: ${dmError.message}`);
+      }
+    }
+
+    // Verify non-DM images (slower - requires upload to Scene7)
+    let nonDmVerificationSummary = null;
+    if (nonDmImages.length > 0) {
+      try {
+        log.info(`[${AUDIT_TYPE}]: Verifying ${nonDmImages.length} non-DM images via Scene7 Snapshot...`);
+        const nonDmResults = await batchVerifyNonDmFormats(nonDmImages, log, {
+          concurrency: 2,
+        });
+        nonDmVerificationSummary = createNonDmVerificationSummary(nonDmResults);
+
+        // Add verified non-DM suggestions
+        nonDmResults.forEach((result) => {
+          if (result.success && result.recommendations && result.recommendations.length > 0) {
+            const rec = result.recommendations[0];
+            const suggestionId = `${result.pageUrl}|${result.originalUrl}|non-dm-format-verified`;
+            const savingsRank = rec.savingsPercent > 50 ? 150 : 100;
+
+            mappedSuggestions.push({
+              opportunityId: imageOptOppty.getId(),
+              type: SuggestionModel.TYPES.CONTENT_UPDATE,
+              data: {
+                id: suggestionId,
+                pageUrl: result.pageUrl,
+                imageUrl: result.originalUrl,
+                issueType: 'non-dm-format-optimization-verified',
+                severity: rec.savingsPercent > 50 ? 'high' : 'medium',
+                impact: rec.savingsPercent > 50 ? 'high' : 'medium',
+                title: `Verified: ${rec.message}`,
+                description: `Scene7 format comparison shows ${rec.recommendedFormat.toUpperCase()} is optimal.`,
+                recommendation: rec.message,
+                xpath: result.xpath || null,
+                verified: true,
+                currentFormat: rec.currentFormat,
+                recommendedFormat: rec.recommendedFormat,
+                currentSize: rec.currentSize,
+                recommendedSize: rec.recommendedSize,
+                savingsBytes: rec.savingsBytes,
+                savingsPercent: rec.savingsPercent,
+                previewUrl: result.previewUrl,
+                previewExpiry: result.previewExpiry,
+                recommendedUrl: rec.previewUrl,
+                formatComparison: result.formats,
+              },
+              rank: savingsRank,
+            });
+          }
+        });
+
+        log.info(`[${AUDIT_TYPE}]: ✅ Non-DM verification complete: ${nonDmVerificationSummary.imagesWithRecommendations} with recommendations`);
+      } catch (nonDmError) {
+        log.warn(`[${AUDIT_TYPE}]: ⚠️ Non-DM verification failed: ${nonDmError.message}`);
+      }
+    }
+
     if (mappedSuggestions.length > 0) {
       log.info(`[${AUDIT_TYPE}]: Sample suggestion: ${JSON.stringify(mappedSuggestions[0], null, 2)}`);
     }
 
     // Add suggestions to opportunity
-    log.info(`[${AUDIT_TYPE}]: Step 2: Adding suggestions to opportunity...`);
+    log.info(`[${AUDIT_TYPE}]: Step 3: Adding suggestions to opportunity...`);
     await addImageOptimizationSuggestions({
       opportunity: imageOptOppty,
       newSuggestionDTOs: mappedSuggestions,
@@ -373,11 +507,29 @@ export default async function handler(message, context) {
     log.info(`[${AUDIT_TYPE}]: ✅ Suggestions added successfully`);
 
     // Calculate and update aggregate metrics
-    log.info(`[${AUDIT_TYPE}]: Step 3: Calculating aggregate metrics...`);
+    log.info(`[${AUDIT_TYPE}]: Step 4: Calculating aggregate metrics...`);
     const metrics = calculateAggregateMetrics(imageAnalysisResults);
+
+    // Add verification metrics
+    if (dmVerificationSummary) {
+      metrics.dmVerification = {
+        imagesVerified: dmVerificationSummary.totalImagesVerified,
+        withRecommendations: dmVerificationSummary.imagesWithRecommendations,
+        verifiedSavingsKB: dmVerificationSummary.totalPotentialSavingsKB,
+      };
+    }
+    if (nonDmVerificationSummary) {
+      metrics.nonDmVerification = {
+        imagesProcessed: nonDmVerificationSummary.totalImagesProcessed,
+        successful: nonDmVerificationSummary.successfulVerifications,
+        withRecommendations: nonDmVerificationSummary.imagesWithRecommendations,
+        verifiedSavingsKB: nonDmVerificationSummary.totalPotentialSavingsKB,
+      };
+    }
+
     log.info(`[${AUDIT_TYPE}]: ✅ Metrics calculated: ${JSON.stringify(metrics, null, 2)}`);
 
-    log.info(`[${AUDIT_TYPE}]: Step 4: Updating opportunity metrics...`);
+    log.info(`[${AUDIT_TYPE}]: Step 5: Updating opportunity metrics...`);
     await updateOpportunityMetrics(
       imageOptOppty,
       metrics,
@@ -396,7 +548,13 @@ export default async function handler(message, context) {
     log.info(`[${AUDIT_TYPE}]: ${metrics.dynamicMediaCount} using Dynamic Media`);
     log.info(`[${AUDIT_TYPE}]: ${metrics.avifCount} already AVIF`);
     log.info(`[${AUDIT_TYPE}]: Issue breakdown: ${JSON.stringify(metrics.issueBreakdown)}`);
-    log.info(`[${AUDIT_TYPE}]: Total potential savings: ${sizeMB} MB (${metrics.savingsPercent}%)`);
+    log.info(`[${AUDIT_TYPE}]: Total estimated savings: ${sizeMB} MB (${metrics.savingsPercent}%)`);
+    if (metrics.dmVerification) {
+      log.info(`[${AUDIT_TYPE}]: DM Verified: ${metrics.dmVerification.withRecommendations} images, ${metrics.dmVerification.verifiedSavingsKB} KB savings`);
+    }
+    if (metrics.nonDmVerification) {
+      log.info(`[${AUDIT_TYPE}]: Non-DM Verified: ${metrics.nonDmVerification.withRecommendations} images, ${metrics.nonDmVerification.verifiedSavingsKB} KB savings`);
+    }
     log.info(`[${AUDIT_TYPE}]: ═══════════════════════════════════════════`);
   } else {
     log.warn(`[${AUDIT_TYPE}]: ⚠️  No image analysis results to process for siteId: ${siteId}`);

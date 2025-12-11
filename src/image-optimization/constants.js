@@ -42,3 +42,22 @@ export const IMAGE_OPTIMIZATION_OBSERVATION = 'Images not optimized for AVIF for
 
 // Batch size for processing page URLs
 export const ANALYZER_BATCH_SIZE = 10;
+
+// Scene7 Snapshot API configuration for non-DM image verification
+export const SCENE7_SNAPSHOT_CONFIG = {
+  BASE_URL: 'https://snapshot.scene7.com',
+  ENDPOINTS: {
+    UPLOAD: '/api/upload-to-aem',
+    FETCH_ASSETS: '/api/fetch-aem-assets',
+    GENERATE_PREVIEW: '/api/generate-asset-preview-url',
+  },
+  TIMEOUTS: {
+    DOWNLOAD: 30000, // 30 seconds for downloading image
+    API: 60000, // 60 seconds for API calls
+    PREVIEW_POLL: 120000, // 2 minutes for preview generation
+    PREVIEW_INTERVAL: 5000, // Check every 5 seconds
+  },
+  LIMITS: {
+    CONCURRENCY: 2, // Concurrent verifications
+  },
+};
