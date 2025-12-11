@@ -1,3 +1,10 @@
+## [1.270.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.270.0...v1.270.1) (2025-12-11)
+
+
+### Bug Fixes
+
+* improve page types ([#1791](https://github.com/adobe/spacecat-audit-worker/issues/1791)) ([0399b29](https://github.com/adobe/spacecat-audit-worker/commit/0399b2978ff5c8da534ef98e31b48b53623b9119))
+
 # [1.270.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.269.1...v1.270.0) (2025-12-10)
 
 
