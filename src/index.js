@@ -95,6 +95,7 @@ import faqs from './faqs/handler.js';
 import faqsGuidance from './faqs/guidance-handler.js';
 import pageCitability from './page-citability/handler.js';
 import healthCheck from './health-check/handler.js';
+import informationGainGuidance from './preflight/information-gain-guidance-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -179,6 +180,7 @@ const HANDLERS = {
   'guidance:faqs': faqsGuidance,
   'page-citability': pageCitability,
   'health-check': healthCheck,
+  'guidance:information-gain': informationGainGuidance,
   dummy: (message) => ok(message),
 };
 
