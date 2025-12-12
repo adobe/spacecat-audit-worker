@@ -1,3 +1,10 @@
+# [1.273.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.272.0...v1.273.0) (2025-12-12)
+
+
+### Features
+
+* LLMO-1925 audits support cdn logs coming from 'other' sources ([#1792](https://github.com/adobe/spacecat-audit-worker/issues/1792)) ([47908ec](https://github.com/adobe/spacecat-audit-worker/commit/47908ec6f62959861f31ffd1e19dd387752fdb9c))
+
 # [1.272.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.271.1...v1.272.0) (2025-12-12)
 
 
