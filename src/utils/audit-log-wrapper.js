@@ -45,6 +45,7 @@ export default function enhancedLogWrapper(fn) {
     if (log && !context.enhancedLogWrapperApplied) {
       log.info('!TEST! Log object keys:', Object.keys(log));
       log.info('!TEST! Has infoFields:', typeof log.infoFields);
+      log.info('!DEBUG! Logger type:', log.constructor.name);
       const markers = {};
 
       // Extract jobId from message if available
