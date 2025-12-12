@@ -1,3 +1,10 @@
+## [1.273.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.0...v1.273.1) (2025-12-12)
+
+
+### Bug Fixes
+
+* update scores ([#1796](https://github.com/adobe/spacecat-audit-worker/issues/1796)) ([fe52b53](https://github.com/adobe/spacecat-audit-worker/commit/fe52b53a7df2e58130cf7b667968051b0be4e684))
+
 # [1.273.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.272.0...v1.273.0) (2025-12-12)
 
 
