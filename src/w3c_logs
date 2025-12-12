@@ -1,0 +1,5 @@
+#Software: Incapsula LOGS API
+#Version: 1.0
+#Date: 20/Jan/2016 14:22:15
+#Fields: date time cs-countrycode s-computername cs-uri cs-method cs(User-Agent) sc-status cs(Referrer) cs-additionalResHeaders
+"2016-01-20" "14:21:20" "US" "fullLevelW3C.test.co" "fullLevelW3c.test.co/" "GET" "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:42.0) Gecko/20100101 Firefox/42.0" "" "" "[{"Content-Type":"text/html; charset\=UTF-8"}]"
