@@ -43,6 +43,8 @@ export default function enhancedLogWrapper(fn) {
 
     // Only enhance if log exists and hasn't been enhanced yet
     if (log && !context.enhancedLogWrapperApplied) {
+      log.info('!TEST! Log object keys:', Object.keys(log));
+      log.info('!TEST! Has infoFields:', typeof log.infoFields);
       const markers = {};
 
       // Extract jobId from message if available
