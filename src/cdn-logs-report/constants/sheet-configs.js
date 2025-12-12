@@ -45,7 +45,15 @@ export const SHEET_CONFIGS = {
       const { PageCitability } = dataAccess;
       const citabilityScores = await PageCitability.allBySiteId(site.getId());
       const citabilityMap = citabilityScores.reduce((acc, score) => {
-        acc[new URL(score.getUrl()).pathname] = score.getCitabilityScore();
+        const { pathname } = new URL(score.getUrl());
+        const existingScore = acc[pathname];
+
+        if (!existingScore || new Date(score.getUpdatedAt()) > new Date(existingScore.updatedAt)) {
+          acc[pathname] = {
+            score: score.getCitabilityScore(),
+            updatedAt: score.getUpdatedAt(),
+          };
+        }
         return acc;
       }, {});
 
@@ -55,7 +63,7 @@ export const SHEET_CONFIGS = {
       return data.map((row) => {
         const urlPath = row.url === '-' ? '/' : (row.url || '');
         const path = new URL(joinBaseAndPath(baseURL, urlPath)).pathname;
-        const citabilityScore = citabilityMap[path] || 'N/A';
+        const citabilityScore = citabilityMap[path]?.score || 'N/A';
 
         return [
           row.agent_type || 'Other',
