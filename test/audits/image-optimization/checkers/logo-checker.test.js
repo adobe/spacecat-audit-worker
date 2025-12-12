@@ -31,52 +31,18 @@ describe('File Type Checker', () => {
       expect(result).to.be.null;
     });
 
-    it('should return null for PNG graphics with small size', () => {
+    it('should return null for PNG images', () => {
       const imageData = {
-        src: 'https://example.com/icon.png',
-        format: 'png',
-        naturalWidth: 64,
-        naturalHeight: 64,
-        fileSize: 5000,
-        alt: 'icon',
-      };
-
-      const result = checkWrongFileType(imageData);
-      expect(result).to.be.null;
-    });
-
-    it('should detect PNG used for large photo', () => {
-      const imageData = {
-        src: 'https://example.com/landscape.png',
+        src: 'https://example.com/image.png',
         format: 'png',
         naturalWidth: 1920,
         naturalHeight: 1080,
         fileSize: 800000,
-        alt: 'Mountain landscape',
+        alt: 'Some image',
       };
 
       const result = checkWrongFileType(imageData);
-      expect(result).to.not.be.null;
-      expect(result.type).to.equal('wrong-file-type');
-      expect(result.currentFormat).to.equal('png');
-      expect(result.recommendedFormat).to.include('jpeg');
-      expect(result.severity).to.equal('medium');
-    });
-
-    it('should mark high impact for very large PNG photos', () => {
-      const imageData = {
-        src: 'https://example.com/photo.png',
-        format: 'png',
-        naturalWidth: 2048,
-        naturalHeight: 1536,
-        fileSize: 1500000,
-        alt: 'Photo',
-      };
-
-      const result = checkWrongFileType(imageData);
-      expect(result).to.not.be.null;
-      expect(result.impact).to.equal('high');
-      expect(result.estimatedSavings).to.be.greaterThan(0);
+      expect(result).to.be.null;
     });
 
     it('should detect JPEG used for icon based on size', () => {
@@ -91,6 +57,7 @@ describe('File Type Checker', () => {
 
       const result = checkWrongFileType(imageData);
       expect(result).to.not.be.null;
+      expect(result.type).to.equal('wrong-file-type');
       expect(result.currentFormat).to.equal('jpeg');
       expect(result.recommendedFormat).to.include('png');
       expect(result.severity).to.equal('low');
@@ -125,32 +92,19 @@ describe('File Type Checker', () => {
       expect(result).to.not.be.null;
     });
 
-    it('should detect PNG photo based on URL', () => {
+    it('should detect JPEG logo based on URL', () => {
       const imageData = {
-        src: 'https://example.com/photos/nature.png',
-        format: 'png',
-        naturalWidth: 1600,
-        naturalHeight: 1200,
-        fileSize: 500000,
-        alt: 'Nature scene',
+        src: 'https://example.com/assets/logo-company.jpg',
+        format: 'jpg',
+        naturalWidth: 200,
+        naturalHeight: 80,
+        fileSize: 25000,
+        alt: 'Brand',
       };
 
       const result = checkWrongFileType(imageData);
       expect(result).to.not.be.null;
-    });
-
-    it('should return null for PNG with small file size even if large dimensions', () => {
-      const imageData = {
-        src: 'https://example.com/image.png',
-        format: 'png',
-        naturalWidth: 1920,
-        naturalHeight: 1080,
-        fileSize: 30000,
-        alt: 'Image',
-      };
-
-      const result = checkWrongFileType(imageData);
-      expect(result).to.be.null;
+      expect(result.currentFormat).to.equal('jpeg');
     });
 
     it('should return null for standard-sized JPEG photo', () => {
@@ -164,7 +118,20 @@ describe('File Type Checker', () => {
       };
 
       const result = checkWrongFileType(imageData);
-      // Standard photo size should not be flagged
+      expect(result).to.be.null;
+    });
+
+    it('should return null for WebP format', () => {
+      const imageData = {
+        src: 'https://example.com/icon.webp',
+        format: 'webp',
+        naturalWidth: 48,
+        naturalHeight: 48,
+        fileSize: 5000,
+        alt: 'icon',
+      };
+
+      const result = checkWrongFileType(imageData);
       expect(result).to.be.null;
     });
   });

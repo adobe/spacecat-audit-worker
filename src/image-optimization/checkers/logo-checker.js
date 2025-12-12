@@ -11,7 +11,7 @@
  */
 
 /**
- * Checks if wrong file type is used (PNG for photos, JPEG for graphics/icons)
+ * Checks if JPEG is used for icons/logos (should use PNG or SVG instead)
  * @param {Object} imageData - Image data from scraper
  * @returns {Object|null} Suggestion object or null if file type is appropriate
  */
@@ -25,34 +25,12 @@ export function checkWrongFileType(imageData) {
     fileSize,
   } = imageData;
 
-  // Heuristics to detect image type
+  // Heuristics to detect if image is likely an icon or logo
   const isLikelyIcon = (
     (naturalWidth <= 64 && naturalHeight <= 64) // Small size
     || (alt && (alt.toLowerCase().includes('icon') || alt.toLowerCase().includes('logo')))
     || (src && (src.toLowerCase().includes('icon') || src.toLowerCase().includes('logo')))
   );
-
-  const isLikelyPhoto = (
-    naturalWidth > 400 && naturalHeight > 300 // Large size
-    && !(alt && (alt.toLowerCase().includes('icon') || alt.toLowerCase().includes('logo')))
-  );
-
-  // PNG used for photo
-  if (format === 'png' && isLikelyPhoto && fileSize > 50000) {
-    return {
-      type: 'wrong-file-type',
-      severity: 'medium',
-      impact: fileSize > 200000 ? 'high' : 'medium',
-      title: 'PNG used for photograph',
-      description: 'PNG is optimized for graphics with transparency, not photographs. JPEG or WebP would be more efficient',
-      imageUrl: src,
-      currentFormat: 'png',
-      recommendedFormat: 'jpeg or webp',
-      currentSize: fileSize,
-      estimatedSavings: Math.round(fileSize * 0.6), // PNG photos typically 2-3x larger
-      recommendation: 'Convert to JPEG (lossy) or WebP for better compression',
-    };
-  }
 
   // JPEG used for icon/logo
   if ((format === 'jpeg' || format === 'jpg') && isLikelyIcon) {

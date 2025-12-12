@@ -10,80 +10,26 @@
  * governing permissions and limitations under the License.
  */
 
-import { AVIF_COMPRESSION_RATIO, WEBP_COMPRESSION_RATIO } from '../constants.js';
 import { verifyDmFormats } from '../dm-format-verifier.js';
 
 /**
- * Checks format optimization using compression ratio estimates
- * @param {Object} imageData - Image data from scraper
- * @returns {Object|null} Suggestion object or null
- */
-function checkFormatEstimation(imageData) {
-  const {
-    src, format, isAvif, isWebp, fileSize, naturalWidth, naturalHeight,
-  } = imageData;
-
-  // Already using modern format
-  if (isAvif) {
-    return null;
-  }
-
-  // Calculate potential savings
-  const recommendedFormat = 'avif';
-  let projectedSize = fileSize;
-  let savingsBytes = 0;
-  let savingsPercent = 0;
-
-  if (!fileSize || fileSize === 0) {
-    return null; // Can't calculate savings without file size
-  }
-
-  if (isWebp) {
-    // WebP to AVIF conversion
-    projectedSize = Math.round(fileSize * (AVIF_COMPRESSION_RATIO / WEBP_COMPRESSION_RATIO));
-    savingsBytes = fileSize - projectedSize;
-    savingsPercent = Math.round((savingsBytes / fileSize) * 100);
-  } else if (format === 'jpeg' || format === 'jpg' || format === 'png') {
-    // JPEG/PNG to AVIF conversion
-    const ratio = format === 'png' ? AVIF_COMPRESSION_RATIO : AVIF_COMPRESSION_RATIO;
-    projectedSize = Math.round(fileSize * ratio);
-    savingsBytes = fileSize - projectedSize;
-    savingsPercent = Math.round((savingsBytes / fileSize) * 100);
-  } else {
-    return null; // Unknown format or can't optimize
-  }
-
-  // Only suggest if savings are significant (> 10%)
-  if (savingsPercent < 10) {
-    return null;
-  }
-
-  return {
-    type: 'format-optimization',
-    severity: 'medium',
-    impact: savingsBytes > 100000 ? 'high' : 'medium', // High impact if > 100KB savings
-    title: `Convert ${format.toUpperCase()} to ${recommendedFormat.toUpperCase()}`,
-    description: `Image can be converted to ${recommendedFormat.toUpperCase()} format for better compression`,
-    imageUrl: src,
-    currentFormat: format,
-    recommendedFormat,
-    currentSize: fileSize,
-    projectedSize,
-    savingsBytes,
-    savingsPercent,
-    dimensions: `${naturalWidth}x${naturalHeight}`,
-    recommendation: `Convert image to ${recommendedFormat.toUpperCase()} format to save ${savingsPercent}% (${Math.round(savingsBytes / 1024)}KB)`,
-    verificationMethod: 'estimation',
-  };
-}
-
-/**
- * Checks DM image format optimization using real HEAD requests
+ * Checks Dynamic Media image format optimization using real HEAD requests.
+ * Only runs for Dynamic Media images.
+ *
  * @param {Object} imageData - Image data from scraper
  * @param {Object} log - Logger
- * @returns {Promise<Object|null>} Suggestion object or null
+ * @returns {Promise<Object|null>} Suggestion object or null if no optimization needed
  */
-async function checkDmFormatOptimization(imageData, log) {
+export async function checkFormatDetection(imageData, log) {
+  // Only check Dynamic Media images
+  if (!imageData.isDynamicMedia) {
+    return null;
+  }
+
+  if (!log) {
+    return null;
+  }
+
   try {
     const verification = await verifyDmFormats(imageData.src, log);
 
@@ -107,32 +53,13 @@ async function checkDmFormatOptimization(imageData, log) {
         dimensions: `${imageData.naturalWidth}x${imageData.naturalHeight}`,
         recommendation: rec.message,
         verificationMethod: 'real-dm-check',
-        formatComparison: verification.formats, // Include all format comparisons
+        formatComparison: verification.formats,
       };
     }
 
     return null;
   } catch (error) {
-    log.warn(`[format-checker] DM verification failed for ${imageData.src}, falling back to estimation: ${error.message}`);
-    return checkFormatEstimation(imageData);
+    log.warn(`[format-checker] DM verification failed for ${imageData.src}: ${error.message}`);
+    return null;
   }
-}
-
-/**
- * Checks if image format can be optimized to AVIF or WebP
- * For Dynamic Media images, uses real format verification.
- * For other images, uses compression ratio estimates.
- *
- * @param {Object} imageData - Image data from scraper
- * @param {Object} log - Logger (optional, for DM verification)
- * @returns {Object|null|Promise<Object|null>} Suggestion object or null if no optimization needed
- */
-export function checkFormatDetection(imageData, log = null) {
-  // If it's a Dynamic Media image and we have a logger, use real verification
-  if (imageData.isDynamicMedia && log) {
-    return checkDmFormatOptimization(imageData, log);
-  }
-
-  // Otherwise, use estimation logic
-  return checkFormatEstimation(imageData);
 }

@@ -245,7 +245,7 @@ export async function verifyDmFormats(imageUrl, log) {
     }
   });
 
-  // Generate recommendations
+  // Generate recommendations - always recommend smallest format
   if (results.smallestFormat && results.currentFormat) {
     const currentSize = results.formats[results.currentFormat]?.size;
     const optimalSize = results.formats[results.smallestFormat]?.size;
@@ -254,19 +254,17 @@ export async function verifyDmFormats(imageUrl, log) {
       const savingsBytes = currentSize - optimalSize;
       const savingsPercent = Math.round((savingsBytes / currentSize) * 100);
 
-      if (savingsPercent > 10) { // Only recommend if savings > 10%
-        results.recommendations.push({
-          type: 'format-optimization',
-          currentFormat: results.currentFormat,
-          recommendedFormat: results.smallestFormat,
-          currentSize,
-          recommendedSize: optimalSize,
-          savingsBytes,
-          savingsPercent,
-          recommendedUrl: results.formats[results.smallestFormat].url,
-          message: `Switch from ${results.currentFormat.toUpperCase()} to ${results.smallestFormat.toUpperCase()} to save ${savingsPercent}% (${Math.round(savingsBytes / 1024)} KB)`,
-        });
-      }
+      results.recommendations.push({
+        type: 'format-optimization',
+        currentFormat: results.currentFormat,
+        recommendedFormat: results.smallestFormat,
+        currentSize,
+        recommendedSize: optimalSize,
+        savingsBytes,
+        savingsPercent,
+        recommendedUrl: results.formats[results.smallestFormat].url,
+        message: `Switch from ${results.currentFormat.toUpperCase()} to ${results.smallestFormat.toUpperCase()} to save ${savingsPercent}% (${Math.round(savingsBytes / 1024)} KB)`,
+      });
     }
   }
 
