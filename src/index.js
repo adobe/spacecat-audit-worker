@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import wrap from '@adobe/helix-shared-wrap';
+import { logger } from '@adobe/helix-universal-logger';
 import { helixStatus } from '@adobe/helix-status';
 import secrets from '@adobe/helix-shared-secrets';
 import dataAccess from '@adobe/spacecat-shared-data-access';
@@ -245,6 +246,7 @@ async function run(message, context) {
 export const main = wrap(run)
   .with(dataAccess)
   .with(sqsEventAdapter)
+  .with(logger)
   .with(enhancedLogWrapper)
   .with(sqs)
   .with(s3Client)
