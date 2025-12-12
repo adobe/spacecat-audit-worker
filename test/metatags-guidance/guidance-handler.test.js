@@ -15,6 +15,7 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import { ok, notFound, badRequest } from '@adobe/spacecat-shared-http-utils';
 import handler from '../../src/metatags-guidance/guidance-handler.js';
 
 use(sinonChai);
@@ -74,6 +75,7 @@ describe('Metatags Guidance Handler', () => {
     context = {
       log: logStub,
       dataAccess: dataAccessStub,
+      site: siteStub,
     };
 
     message = {
@@ -104,7 +106,7 @@ describe('Metatags Guidance Handler', () => {
   it('should successfully update suggestions with AI-generated content', async () => {
     const result = await handler(message, context);
 
-    expect(result.statusCode).to.equal(200);
+    expect(result.status).to.equal(ok().status);
     expect(dataAccessStub.Site.findById).to.have.been.calledWith('site-123');
     expect(dataAccessStub.Audit.findById).to.have.been.calledWith('audit-123');
     expect(dataAccessStub.Opportunity.findById).to.have.been.calledWith('opp-123');
@@ -118,7 +120,7 @@ describe('Metatags Guidance Handler', () => {
 
     const result = await handler(message, context);
 
-    expect(result.statusCode).to.equal(404);
+    expect(result.status).to.equal(notFound().status);
     expect(logStub.error).to.have.been.calledWith(sinon.match(/Site not found for siteId: site-123/));
   });
 
@@ -127,7 +129,7 @@ describe('Metatags Guidance Handler', () => {
 
     const result = await handler(message, context);
 
-    expect(result.statusCode).to.equal(404);
+    expect(result.status).to.equal(notFound().status);
     expect(logStub.warn).to.have.been.calledWith(sinon.match(/No audit found for auditId: audit-123/));
   });
 
@@ -136,7 +138,7 @@ describe('Metatags Guidance Handler', () => {
 
     const result = await handler(message, context);
 
-    expect(result.statusCode).to.equal(404);
+    expect(result.status).to.equal(notFound().status);
     expect(logStub.error).to.have.been.calledWith(sinon.match(/Opportunity not found for ID: opp-123/));
   });
 
@@ -145,7 +147,7 @@ describe('Metatags Guidance Handler', () => {
 
     const result = await handler(message, context);
 
-    expect(result.statusCode).to.equal(400);
+    expect(result.status).to.equal(badRequest().status);
     expect(logStub.error).to.have.been.calledWith(sinon.match(/Site ID mismatch/));
   });
 
@@ -154,7 +156,7 @@ describe('Metatags Guidance Handler', () => {
 
     const result = await handler(message, context);
 
-    expect(result.statusCode).to.equal(400);
+    expect(result.status).to.equal(badRequest().status);
     expect(logStub.error).to.have.been.calledWith(sinon.match(/Invalid suggestions format/));
   });
 
@@ -163,7 +165,7 @@ describe('Metatags Guidance Handler', () => {
 
     const result = await handler(message, context);
 
-    expect(result.statusCode).to.equal(400);
+    expect(result.status).to.equal(badRequest().status);
     expect(logStub.error).to.have.been.calledWith(sinon.match(/Invalid suggestions format/));
   });
 
@@ -172,7 +174,7 @@ describe('Metatags Guidance Handler', () => {
 
     const result = await handler(message, context);
 
-    expect(result.statusCode).to.equal(200);
+    expect(result.status).to.equal(ok().status);
     expect(logStub.info).to.have.been.calledWith(sinon.match(/No suggestions provided/));
     expect(suggestionStub.save).to.not.have.been.called;
   });
@@ -183,7 +185,7 @@ describe('Metatags Guidance Handler', () => {
 
     const result = await handler(message, context);
 
-    expect(result.statusCode).to.equal(200);
+    expect(result.status).to.equal(ok().status);
     expect(logStub.error).to.have.been.calledWith(sinon.match(/Suggestion not found for ID: sugg-002/));
     expect(suggestionStub.save).to.have.been.calledOnce; // Only first suggestion saved
   });
@@ -193,7 +195,7 @@ describe('Metatags Guidance Handler', () => {
 
     const result = await handler(message, context);
 
-    expect(result.statusCode).to.equal(200);
+    expect(result.status).to.equal(ok().status);
     expect(logStub.warn).to.have.been.calledWith(sinon.match(/Incomplete data for suggestion sugg-001/));
     expect(suggestionStub.setData).to.have.been.calledWith(sinon.match({
       aiSuggestion: '',
@@ -205,7 +207,7 @@ describe('Metatags Guidance Handler', () => {
 
     const result = await handler(message, context);
 
-    expect(result.statusCode).to.equal(200);
+    expect(result.status).to.equal(ok().status);
     expect(logStub.warn).to.have.been.calledWith(sinon.match(/Incomplete data for suggestion sugg-001/));
     expect(suggestionStub.setData).to.have.been.calledWith(sinon.match({
       aiRationale: '',
@@ -218,7 +220,7 @@ describe('Metatags Guidance Handler', () => {
 
     const result = await handler(message, context);
 
-    expect(result.statusCode).to.equal(200);
+    expect(result.status).to.equal(ok().status);
     expect(logStub.warn).to.have.been.calledWith(sinon.match(/Incomplete data/));
     expect(suggestionStub.setData).to.have.been.calledWith(sinon.match({
       aiSuggestion: '',
@@ -236,7 +238,7 @@ describe('Metatags Guidance Handler', () => {
 
     const result = await handler(message, context);
 
-    expect(result.statusCode).to.equal(200);
+    expect(result.status).to.equal(ok().status);
     expect(suggestionStub.setData).to.have.been.calledWith(sinon.match({
       url: 'https://example.com/page',
       tagName: 'title',
