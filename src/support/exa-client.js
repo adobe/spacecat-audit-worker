@@ -16,6 +16,7 @@ import {
 
 const EXA_API_BASE_URL = 'https://api.exa.ai';
 const EXA_FIND_SIMILAR_ENDPOINT = '/findSimilar';
+const EXA_GET_CONTENTS_ENDPOINT = '/contents';
 
 /**
  * Validates the Exa API response for find similar links
@@ -23,6 +24,17 @@ const EXA_FIND_SIMILAR_ENDPOINT = '/findSimilar';
  * @returns {boolean} - True if response is valid
  */
 function validateFindSimilarResponse(response) {
+  return isObject(response)
+    && Array.isArray(response?.results)
+    && hasText(response?.requestId);
+}
+
+/**
+ * Validates the Exa API response for get contents
+ * @param {Object} response - The API response
+ * @returns {boolean} - True if response is valid
+ */
+function validateGetContentsResponse(response) {
   return isObject(response)
     && Array.isArray(response?.results)
     && hasText(response?.requestId);
@@ -265,5 +277,136 @@ export default class ExaClient {
    */
   async findSimilarWithFullContent(url, options = {}) {
     return this.findSimilar(url, { ...options, text: true, summary: true });
+  }
+
+  /**
+   * Get contents for a list of URLs
+   * @see https://docs.exa.ai/reference/get-contents
+   *
+   * @param {string[]} urls - Array of URLs to fetch content for
+   * @param {Object} options - Optional parameters
+   * @param {boolean} options.text - Whether to include full content text (default: false)
+   * @param {boolean|Object} options.highlights - Whether to include highlights or highlights config
+   * @param {boolean} options.summary - Whether to include AI-generated summary (default: false)
+   * @param {number|boolean} options.subpages - Number of subpages to crawl (default: 0)
+   * @param {string} options.livecrawl - Livecrawl mode: "always", "fallback", "never"
+   * @param {boolean|Object} options.context - Return contents as context string for LLM
+   * @returns {Promise<Object>} - The get contents response
+   */
+  async getContents(urls, options = {}) {
+    const startTime = process.hrtime.bigint();
+
+    // Validate URLs
+    if (!Array.isArray(urls) || urls.length === 0) {
+      throw new Error('URLs must be a non-empty array');
+    }
+
+    const invalidUrls = urls.filter((url) => !isValidUrl(url));
+    if (invalidUrls.length > 0) {
+      throw new Error(`Invalid URLs provided: ${invalidUrls.join(', ')}`);
+    }
+
+    // Build request body
+    const body = {
+      urls,
+    };
+
+    // Add optional parameters
+    if (options.text === true) {
+      body.text = true;
+    }
+
+    if (options.highlights === true || isObject(options.highlights)) {
+      body.highlights = options.highlights;
+    }
+
+    if (options.summary === true) {
+      body.summary = true;
+    }
+
+    if (typeof options.subpages === 'number' && options.subpages > 0) {
+      body.subpages = options.subpages;
+    }
+
+    if (hasText(options.livecrawl) && ['always', 'fallback', 'never'].includes(options.livecrawl)) {
+      body.livecrawl = options.livecrawl;
+    }
+
+    if (options.context === true || isObject(options.context)) {
+      body.contents = isObject(options.context) ? options.context : { context: true };
+    }
+
+    let response;
+    try {
+      response = await this.#submitRequest(EXA_GET_CONTENTS_ENDPOINT, body);
+      this.#logDuration('Exa API Get Contents call', startTime);
+    } catch (error) {
+      this.log.error('Error while fetching contents from Exa API: ', error.message);
+      throw error;
+    }
+
+    // Validate response
+    if (!validateGetContentsResponse(response)) {
+      this.log.error('Could not obtain contents from Exa API: Invalid response format.');
+      throw new Error('Invalid response format from Exa API');
+    }
+
+    // Log cost information if available
+    if (response.costDollars) {
+      this.log.debug(`[Exa API Cost]: $${response.costDollars.total}`);
+    }
+
+    // Log status information
+    if (response.statuses) {
+      const successCount = response.statuses.filter((s) => s.status === 'success').length;
+      const errorCount = response.statuses.filter((s) => s.status === 'error').length;
+      this.log.debug(`[Exa API Contents]: ${successCount} successful, ${errorCount} errors out of ${urls.length} URLs`);
+
+      // Log specific errors
+      response.statuses.filter((s) => s.status === 'error').forEach((status) => {
+        const logFn = this.log.warn || this.log.error || this.log.debug;
+        logFn.call(this.log, `[Exa API Contents Error]: ${status.id} - ${status.error?.tag} (HTTP ${status.error?.httpStatusCode})`);
+      });
+    }
+
+    this.log.debug(`[Exa API Success]: Retrieved contents for ${response.results.length} URLs`);
+
+    return response;
+  }
+
+  /**
+   * Get contents with full text
+   * Convenience method that sets text: true
+   *
+   * @param {string[]} urls - Array of URLs to fetch content for
+   * @param {Object} options - Optional parameters (see getContents)
+   * @returns {Promise<Object>} - The get contents response with full text
+   */
+  async getContentsWithText(urls, options = {}) {
+    return this.getContents(urls, { ...options, text: true });
+  }
+
+  /**
+   * Get contents with AI-generated summaries
+   * Convenience method that sets summary: true
+   *
+   * @param {string[]} urls - Array of URLs to fetch content for
+   * @param {Object} options - Optional parameters (see getContents)
+   * @returns {Promise<Object>} - The get contents response with summaries
+   */
+  async getContentsWithSummary(urls, options = {}) {
+    return this.getContents(urls, { ...options, summary: true });
+  }
+
+  /**
+   * Get contents with full text and summaries
+   * Convenience method that sets text: true and summary: true
+   *
+   * @param {string[]} urls - Array of URLs to fetch content for
+   * @param {Object} options - Optional parameters (see getContents)
+   * @returns {Promise<Object>} - The get contents response with full text and summaries
+   */
+  async getContentsWithFullContent(urls, options = {}) {
+    return this.getContents(urls, { ...options, text: true, summary: true });
   }
 }

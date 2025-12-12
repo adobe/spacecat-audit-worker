@@ -41,6 +41,7 @@ describe('ExaClient', () => {
       debug: sinon.stub(),
       error: sinon.stub(),
       info: sinon.stub(),
+      warn: sinon.stub(),
     };
 
     client = new ExaClient({
@@ -365,6 +366,224 @@ describe('ExaClient', () => {
       await client.findSimilarWithContent(testUrl, { numResults: 25 });
 
       expect(nock.isDone()).to.be.true;
+    });
+  });
+
+  describe('getContents', () => {
+    const testUrls = [
+      'https://example.com/page1',
+      'https://example.com/page2',
+    ];
+
+    const mockContentsResponse = {
+      requestId: 'contents-request-123',
+      results: [
+        {
+          title: 'Page 1',
+          url: 'https://example.com/page1',
+          publishedDate: '2024-01-01T00:00:00.000Z',
+          author: 'Test Author',
+          id: 'page-1',
+          text: 'Full content of page 1...',
+        },
+        {
+          title: 'Page 2',
+          url: 'https://example.com/page2',
+          publishedDate: '2024-01-02T00:00:00.000Z',
+          author: 'Test Author 2',
+          id: 'page-2',
+          text: 'Full content of page 2...',
+        },
+      ],
+      statuses: [
+        {
+          id: 'https://example.com/page1',
+          status: 'success',
+        },
+        {
+          id: 'https://example.com/page2',
+          status: 'success',
+        },
+      ],
+      costDollars: {
+        total: 0.002,
+      },
+    };
+
+    it('should get contents successfully', async () => {
+      nock(apiEndpoint)
+        .post('/contents', {
+          urls: testUrls,
+        })
+        .reply(200, mockContentsResponse);
+
+      const result = await client.getContents(testUrls);
+
+      expect(result).to.deep.equal(mockContentsResponse);
+      expect(result.results).to.have.lengthOf(2);
+      expect(log.debug).to.have.been.called;
+    });
+
+    it('should throw error for empty URL array', async () => {
+      await expect(client.getContents([]))
+        .to.be.rejectedWith('URLs must be a non-empty array');
+    });
+
+    it('should throw error for invalid URLs in array', async () => {
+      await expect(client.getContents(['https://valid.com', 'not-a-url']))
+        .to.be.rejectedWith('Invalid URLs provided');
+    });
+
+    it('should include text content when requested', async () => {
+      nock(apiEndpoint)
+        .post('/contents', (body) => body.text === true)
+        .reply(200, mockContentsResponse);
+
+      const result = await client.getContents(testUrls, { text: true });
+
+      expect(result.results[0].text).to.exist;
+    });
+
+    it('should include summaries when requested', async () => {
+      const mockWithSummary = {
+        ...mockContentsResponse,
+        results: mockContentsResponse.results.map((r) => ({
+          ...r,
+          summary: 'AI summary...',
+        })),
+      };
+
+      nock(apiEndpoint)
+        .post('/contents', (body) => body.summary === true)
+        .reply(200, mockWithSummary);
+
+      const result = await client.getContents(testUrls, { summary: true });
+
+      expect(result.results[0].summary).to.exist;
+    });
+
+    it('should support highlights option', async () => {
+      nock(apiEndpoint)
+        .post('/contents', (body) => body.highlights === true)
+        .reply(200, mockContentsResponse);
+
+      await client.getContents(testUrls, { highlights: true });
+
+      expect(nock.isDone()).to.be.true;
+    });
+
+    it('should support livecrawl option', async () => {
+      nock(apiEndpoint)
+        .post('/contents', (body) => body.livecrawl === 'always')
+        .reply(200, mockContentsResponse);
+
+      await client.getContents(testUrls, { livecrawl: 'always' });
+
+      expect(nock.isDone()).to.be.true;
+    });
+
+    it('should support context mode', async () => {
+      const mockWithContext = {
+        ...mockContentsResponse,
+        context: 'Combined context string...',
+      };
+
+      nock(apiEndpoint)
+        .post('/contents', (body) => body.contents?.context === true)
+        .reply(200, mockWithContext);
+
+      const result = await client.getContents(testUrls, { context: true });
+
+      expect(result.context).to.equal('Combined context string...');
+    });
+
+    it('should handle partial failures with statuses', async () => {
+      const mockWithErrors = {
+        ...mockContentsResponse,
+        statuses: [
+          {
+            id: 'https://example.com/page1',
+            status: 'success',
+          },
+          {
+            id: 'https://example.com/page2',
+            status: 'error',
+            error: {
+              tag: 'CRAWL_NOT_FOUND',
+              httpStatusCode: 404,
+            },
+          },
+        ],
+      };
+
+      nock(apiEndpoint)
+        .post('/contents')
+        .reply(200, mockWithErrors);
+
+      const result = await client.getContents(testUrls);
+
+      expect(result.statuses).to.have.lengthOf(2);
+      expect(result.statuses[1].status).to.equal('error');
+      expect(log.warn).to.have.been.called;
+    });
+
+    it('should log cost information', async () => {
+      nock(apiEndpoint)
+        .post('/contents')
+        .reply(200, mockContentsResponse);
+
+      await client.getContents(testUrls);
+
+      expect(log.debug).to.have.been.calledWith(
+        sinon.match(/\$0.002/),
+      );
+    });
+  });
+
+  describe('getContents convenience methods', () => {
+    const testUrls = ['https://example.com/page1'];
+    const mockResponse = {
+      requestId: 'test-123',
+      results: [
+        {
+          title: 'Page',
+          url: 'https://example.com/page1',
+          text: 'Content...',
+          summary: 'Summary...',
+        },
+      ],
+      statuses: [{ id: 'https://example.com/page1', status: 'success' }],
+    };
+
+    it('should get contents with text', async () => {
+      nock(apiEndpoint)
+        .post('/contents', (body) => body.text === true)
+        .reply(200, mockResponse);
+
+      const result = await client.getContentsWithText(testUrls);
+
+      expect(result.results[0].text).to.exist;
+    });
+
+    it('should get contents with summary', async () => {
+      nock(apiEndpoint)
+        .post('/contents', (body) => body.summary === true)
+        .reply(200, mockResponse);
+
+      const result = await client.getContentsWithSummary(testUrls);
+
+      expect(result.results[0].summary).to.exist;
+    });
+
+    it('should get contents with full content', async () => {
+      nock(apiEndpoint)
+        .post('/contents', (body) => body.text === true && body.summary === true)
+        .reply(200, mockResponse);
+
+      const result = await client.getContentsWithFullContent(testUrls);
+
+      expect(result.results[0].text).to.exist;
+      expect(result.results[0].summary).to.exist;
     });
   });
 });

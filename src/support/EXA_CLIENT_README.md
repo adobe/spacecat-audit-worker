@@ -1,10 +1,10 @@
 # Exa AI Client
 
-A client for the [Exa AI Find Similar Links API](https://docs.exa.ai/reference/find-similar-links) integrated into the spacecat-audit-worker.
+A client for the [Exa AI API](https://docs.exa.ai/) integrated into the spacecat-audit-worker.
 
 ## Overview
 
-The Exa AI client provides semantic search capabilities to find similar pages based on a reference URL. It's useful for content discovery, research, and finding related pages programmatically.
+The Exa AI client provides semantic search capabilities to find similar pages and retrieve content from specific URLs. It's useful for content discovery, research, finding related pages programmatically, and fetching page contents for analysis.
 
 ## Installation & Usage
 
@@ -101,7 +101,86 @@ const result = await exaClient.findSimilarWithFullContent('https://example.com/p
 // Returns results with both full text and summaries
 ```
 
+### `getContents(urls, options)`
+
+Get contents for a list of specific URLs directly.
+
+**Parameters:**
+- `urls` (string[], required): Array of URLs to fetch content for
+- `options` (object, optional):
+  - `text` (boolean): Include full content text (default: false)
+  - `highlights` (boolean|object): Include highlights or highlights config (default: false)
+  - `summary` (boolean): Include AI-generated summary (default: false)
+  - `subpages` (number): Number of subpages to crawl (default: 0)
+  - `livecrawl` (string): Livecrawl mode - "always", "fallback", "never" (default: "fallback")
+  - `context` (boolean|object): Return contents as context string for LLM (default: false)
+
+**Returns:** Promise resolving to Exa API response with contents and status information
+
+**Example:**
+```javascript
+const result = await exaClient.getContents([
+  'https://example.com/page1',
+  'https://example.com/page2',
+], {
+  text: true,
+  summary: true,
+});
+
+console.log(`Retrieved ${result.results.length} pages`);
+result.results.forEach(page => {
+  console.log(`- ${page.title} (${page.url})`);
+  console.log(`  Text length: ${page.text?.length || 0} chars`);
+  console.log(`  Summary: ${page.summary}`);
+});
+
+// Check status of each URL
+result.statuses.forEach(status => {
+  if (status.status === 'error') {
+    console.error(`Failed to fetch ${status.id}: ${status.error.tag}`);
+  }
+});
+```
+
+#### `getContentsWithText(urls, options)`
+
+Alias for `getContents` with `text: true`.
+
+```javascript
+const result = await exaClient.getContentsWithText([
+  'https://example.com/page1',
+  'https://example.com/page2',
+]);
+// Returns results with full text content
+```
+
+#### `getContentsWithSummary(urls, options)`
+
+Alias for `getContents` with `summary: true`.
+
+```javascript
+const result = await exaClient.getContentsWithSummary([
+  'https://example.com/page1',
+  'https://example.com/page2',
+]);
+// Returns results with AI-generated summaries
+```
+
+#### `getContentsWithFullContent(urls, options)`
+
+Alias for `getContents` with both `text: true` and `summary: true`.
+
+```javascript
+const result = await exaClient.getContentsWithFullContent([
+  'https://example.com/page1',
+  'https://example.com/page2',
+]);
+// Returns results with both full text and summaries
+```
+
 ## Response Format
+
+### Find Similar Response
 
 ```javascript
 {
@@ -125,6 +204,49 @@ const result = await exaClient.findSimilarWithFullContent('https://example.com/p
   context: "Combined context string...",  // if context: true
   costDollars: {
     total: 0.005,
+    breakDown: [...]
+  }
+}
+```
+
+### Get Contents Response
+
+```javascript
+{
+  requestId: "unique-request-id",
+  results: [
+    {
+      title: "Page Title",
+      url: "https://example.com/page",
+      publishedDate: "2024-01-01T00:00:00.000Z",
+      author: "Author Name",
+      id: "unique-page-id",
+      image: "https://example.com/image.jpg",
+      favicon: "https://example.com/favicon.ico",
+      text: "Full page content...",  // if text: true
+      summary: "AI-generated summary...",  // if summary: true
+      highlights: ["relevant excerpt..."],  // if highlights: true
+      highlightScores: [0.95],
+      subpages: [...]  // if subpages > 0
+    }
+  ],
+  statuses: [  // Status for each requested URL
+    {
+      id: "https://example.com/page",
+      status: "success"
+    },
+    {
+      id: "https://example.com/failed-page",
+      status: "error",
+      error: {
+        tag: "CRAWL_NOT_FOUND",
+        httpStatusCode: 404
+      }
+    }
+  ],
+  context: "Combined context string...",  // if context: true
+  costDollars: {
+    total: 0.002,
     breakDown: [...]
   }
 }
@@ -172,6 +294,44 @@ const recent = await exaClient.findSimilar('https://example.com/article', {
 });
 ```
 
+### Direct Content Retrieval
+```javascript
+// Get content for specific URLs (useful when you already know which pages you want)
+const pages = await exaClient.getContentsWithFullContent([
+  'https://docs.example.com/page1',
+  'https://docs.example.com/page2',
+  'https://docs.example.com/page3',
+]);
+
+// Check which pages succeeded
+const successful = pages.results.filter((_, i) => 
+  pages.statuses[i].status === 'success'
+);
+console.log(`Retrieved ${successful.length} out of ${pages.statuses.length} pages`);
+```
+
+### Batch Content Analysis
+```javascript
+// Get contents for analysis with livecrawl
+const contents = await exaClient.getContents([
+  'https://example.com/article1',
+  'https://example.com/article2',
+], {
+  text: true,
+  summary: true,
+  livecrawl: 'always',  // Force fresh crawl
+});
+
+// Analyze each page
+contents.results.forEach((page, index) => {
+  const status = contents.statuses[index];
+  if (status.status === 'success') {
+    console.log(`Analyzing ${page.title}...`);
+    // Run your analysis on page.text and page.summary
+  }
+});
+```
+
 ## Error Handling
 
 ```javascript
@@ -187,6 +347,34 @@ try {
   } else {
     // Other error
   }
+}
+
+// For getContents, also check individual URL statuses
+try {
+  const result = await exaClient.getContents(['https://example.com/page']);
+  
+  result.statuses.forEach(status => {
+    if (status.status === 'error') {
+      switch (status.error.tag) {
+        case 'CRAWL_NOT_FOUND':
+          console.error(`Page not found: ${status.id}`);
+          break;
+        case 'CRAWL_TIMEOUT':
+          console.error(`Crawl timeout: ${status.id}`);
+          break;
+        case 'CRAWL_LIVECRAWL_TIMEOUT':
+          console.error(`Live crawl timeout: ${status.id}`);
+          break;
+        case 'SOURCE_NOT_AVAILABLE':
+          console.error(`Source not available: ${status.id}`);
+          break;
+        default:
+          console.error(`Unknown error for ${status.id}: ${status.error.tag}`);
+      }
+    }
+  });
+} catch (error) {
+  console.error('Failed to get contents:', error);
 }
 ```
 
@@ -214,7 +402,9 @@ Run tests:
 npm run test:spec -- test/support/exa-client.test.js
 ```
 
-All 20 tests passing ✅
+All 33 tests passing ✅
+- 20 tests for Find Similar API
+- 13 tests for Get Contents API
 
 ## Future Work
 
@@ -222,11 +412,12 @@ All 20 tests passing ✅
 - Add caching layer for repeated queries
 - Implement rate limiting
 - Add retry logic with exponential backoff
-- Support for Exa Search API (not just Find Similar)
+- Support for Exa Search API
 
 ## References
 
 - [Exa AI Documentation](https://docs.exa.ai/)
 - [Find Similar Links API](https://docs.exa.ai/reference/find-similar-links)
+- [Get Contents API](https://docs.exa.ai/reference/get-contents)
 - [Exa Pricing](https://exa.ai/pricing)
 
