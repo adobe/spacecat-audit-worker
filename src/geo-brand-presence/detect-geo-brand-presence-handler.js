@@ -104,7 +104,11 @@ export default async function handler(message, context) {
   if (subType === 'refresh:geo-brand-presence' || subType === 'refresh:geo-brand-presence-daily') {
     log.info(`%s: Handling refresh for auditId: ${auditId}, siteId: ${siteId}, subType: ${subType}`, AUDIT_NAME);
     return handleRefresh({
-      auditId, siteId, outputLocations, presignedURL,
+      auditId,
+      siteId,
+      outputLocations,
+      mainOutputLocation,
+      presignedURL,
     }, context);
   }
 
@@ -149,8 +153,8 @@ export default async function handler(message, context) {
   const totalUploadDuration = Date.now() - uploadStartTime;
   log.info(`%s: All SharePoint uploads completed for auditId: ${auditId}, siteId: ${siteId} (${outputLocations.length} locations in ${totalUploadDuration}ms)`, AUDIT_NAME);
 
-  // Bulk preview and publish
-  const reports = outputLocations.map((outputLocation) => ({ filename: xlsxName, outputLocation }));
+  // Bulk preview and publish (only root directory, not config-version-specific)
+  const reports = [{ filename: xlsxName, outputLocation: mainOutputLocation }];
   await bulkPublishToAdminHlx(reports, log);
 
   return ok();
@@ -161,6 +165,7 @@ async function handleRefresh(
     auditId,
     siteId,
     outputLocations,
+    mainOutputLocation,
     presignedURL,
   },
   context,
@@ -336,8 +341,8 @@ async function handleRefresh(
         log.debug(`%s REFRESH: Uploading sheet ${name} to location ${locIndex + 1}/${outputLocations.length}, auditId: ${auditId}, siteId: ${siteId}, location: ${outDir}`, AUDIT_NAME);
         const arrayBuffer = /** @type {ArrayBuffer} */ (xlsxBuffer.buffer);
         await uploadToSharePoint(arrayBuffer, name, outDir, sharepointClient, log);
-        reports.push({ filename: name, outputLocation: outDir });
       }
+      reports.push({ filename: name, outputLocation: mainOutputLocation });
     }
 
     const sharepointDuration = Date.now() - sharepointStartTime;

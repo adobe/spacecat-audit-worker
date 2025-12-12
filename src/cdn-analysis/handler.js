@@ -133,8 +133,11 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   for (const serviceProvider of serviceProviders) {
     const cdnType = mapServiceToCdnProvider(serviceProvider);
 
-    // Skip CloudFlare for hourly analysis - only process daily at end of day
-    if (cdnType.toLowerCase() === CDN_TYPES.CLOUDFLARE && hour !== '23') {
+    const cdnTypeLower = cdnType.toLowerCase();
+    const hasDailyPartitioningOnly = [CDN_TYPES.CLOUDFLARE, CDN_TYPES.OTHER].includes(cdnTypeLower);
+
+    // Skip providers with daily partitioning only (no hourly partitions) unless hour=23
+    if (hasDailyPartitioningOnly && hour !== '23') {
       log.info(`Skipping service provider ${serviceProvider.toUpperCase()} (CDN: ${cdnType.toUpperCase()}) - only processed daily at end of day (hour 23)`);
     } else {
       log.info(`Processing service provider ${serviceProvider.toUpperCase()} (CDN: ${cdnType.toUpperCase()})`);
@@ -203,9 +206,15 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
 
       // Check if raw logs exist for this hour/day
       // For CloudFlare, check daily file; for others, check hourly directory
-      const rawDataPath = cdnType.toLowerCase() === CDN_TYPES.CLOUDFLARE
-        ? `${paths.rawLocation}${year}${month}${day}/`
-        : `${paths.rawLocation}${year}/${month}/${day}/${hour}/`;
+      const rawDataPath = (() => {
+        if (cdnTypeLower === CDN_TYPES.CLOUDFLARE) {
+          return `${paths.rawLocation}${year}${month}${day}/`;
+        }
+        if (cdnTypeLower === CDN_TYPES.OTHER) {
+          return `${paths.rawLocation}${year}/${month}/${day}/`;
+        }
+        return `${paths.rawLocation}${year}/${month}/${day}/${hour}/`;
+      })();
 
       // eslint-disable-next-line no-await-in-loop
       const hasRawData = await pathHasData(context.s3Client, rawDataPath);
@@ -217,7 +226,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
       }
 
       // Generate hour filter based on processing mode
-      const hourFilter = auditContext?.processFullDay ? '' : `AND hour = '${hour}'`;
+      const hourFilter = (hasDailyPartitioningOnly || auditContext?.processFullDay) ? '' : `AND hour = '${hour}'`;
 
       // Load SQL queries in parallel
       // eslint-disable-next-line no-await-in-loop

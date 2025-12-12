@@ -132,7 +132,7 @@ async function analyzeTextReadability(
 
 /**
  * Returns an array of meaningful text elements from the provided document.
- * Selects <p>, <blockquote>, and <li> elements, but excludes <li> elements
+ * Selects <p>, <blockquote>, <div> and <li> elements, but excludes elements
  * that are descendants of <header> or <footer>.
  * Also filters out elements with insufficient text content length.
  *
@@ -141,7 +141,7 @@ async function analyzeTextReadability(
  */
 const getMeaningfulElementsForReadability = ($) => {
   $('header, footer').remove();
-  return $('p, blockquote, li').toArray().filter((el) => {
+  return $('p, blockquote, li, div').toArray().filter((el) => {
     const text = $(el).text()?.trim();
     return text && text.length >= MIN_TEXT_LENGTH;
   });
