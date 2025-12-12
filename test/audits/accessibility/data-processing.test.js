@@ -1776,6 +1776,7 @@ describe('data-processing utility functions', () => {
         .resolves({
           CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
         });
+      // S3 PutObject mock
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
       // S3 DeleteObject/DeleteObjects mock (for cleanupS3Files)
       mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
@@ -1808,6 +1809,9 @@ describe('data-processing utility functions', () => {
 
       expect(result.success).to.be.true;
 
+      // const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey1}`;
+      // The log message in the code actually uses lastWeekObjectKeys[1] for the key part.
+      const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey2}`;
       const logCall = mockLog.debug.getCalls().find((call) => call.args[0].includes(expectedKeyInLog) && call.args[0].includes('with content:'));
       expect(logCall).to.not.be.undefined;
       // If more precise matching is needed, verify the full content:
