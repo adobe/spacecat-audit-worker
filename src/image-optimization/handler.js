@@ -17,6 +17,18 @@ import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js
 import { runAllChecks } from './checkers/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { DATA_SOURCES } from '../common/constants.js';
+import { DYNAMIC_MEDIA_PATTERNS } from './constants.js';
+import { batchVerifyNonDmFormats } from './non-dm-format-verifier.js';
+
+/**
+ * Checks if a URL belongs to Adobe Dynamic Media
+ * @param {string} url - Image URL to check
+ * @returns {boolean} True if the URL is a Dynamic Media URL
+ */
+function isDynamicMedia(url) {
+  if (!url) return false;
+  return DYNAMIC_MEDIA_PATTERNS.some((pattern) => pattern.test(url));
+}
 
 const AUDIT_TYPE = 'image-optimization';
 // const { AUDIT_STEP_DESTINATIONS } = Audit; // Uncomment for full pipeline
@@ -80,6 +92,7 @@ function mapCheckerTypeToSuggestionType(checkerType) {
     'blurry-image': 'CONTENT_UPDATE',
     'wrong-file-type': 'CONTENT_UPDATE',
     'format-detection': 'CONTENT_UPDATE',
+    'non-dm-format-verified': 'CONTENT_UPDATE',
     'missing-dimensions': 'CODE_CHANGE',
     'missing-lazy-loading': 'CODE_CHANGE',
     'responsive-images': 'CODE_CHANGE',
@@ -140,6 +153,8 @@ export async function fetchAndProcessPageImages(s3Client, bucketName, url, key, 
 
 /**
  * Process images and generate suggestions
+ * For DM images: runs all checkers (includes DM format verification via HEAD requests)
+ * For non-DM images: runs all checkers + Scene7 Snapshot upload API for format verification
  * @param {Array<Object>} pagesWithImages - Array of page objects with images
  * @param {Object} log - Logger
  * @returns {Promise<Array<Object>>} Array of suggestions
@@ -147,6 +162,7 @@ export async function fetchAndProcessPageImages(s3Client, bucketName, url, key, 
 async function processImagesAndGenerateSuggestions(pagesWithImages, log) {
   log.info(`[${AUDIT_TYPE}]: Starting to process ${pagesWithImages.length} pages`);
   const allSuggestions = [];
+  const nonDmImagesForVerification = [];
   let totalImagesProcessed = 0;
 
   // eslint-disable-next-line no-restricted-syntax
@@ -159,16 +175,23 @@ async function processImagesAndGenerateSuggestions(pagesWithImages, log) {
 
     log.info(`[${AUDIT_TYPE}]: Processing ${page.images.length} images from ${page.url}`);
 
-    // Process images sequentially to avoid rate limiting on DM format verification
     // eslint-disable-next-line no-restricted-syntax
     for (const imageData of page.images) {
       try {
         totalImagesProcessed += 1;
-        log.debug(`[${AUDIT_TYPE}]: Analyzing image ${totalImagesProcessed}: ${imageData.src}`);
+        const isImageDm = isDynamicMedia(imageData.src);
+        imageData.isDynamicMedia = isImageDm;
 
-        // Run all checkers on the image (includes DM format verification)
+        log.debug(`[${AUDIT_TYPE}]: Analyzing image ${totalImagesProcessed}: ${imageData.src} (DM: ${isImageDm})`);
+
+        // For DM images: run all checkers (includes format verification via HEAD requests)
+        // For non-DM images: run all checkers EXCEPT format (format will be verified via Scene7)
+        const enabledChecks = isImageDm
+          ? null // Run all checkers for DM
+          : ['oversized', 'responsive', 'picture', 'dimensions', 'lazy-loading', 'file-type', 'svg', 'upscaled'];
+
         // eslint-disable-next-line no-await-in-loop
-        const suggestions = await runAllChecks(imageData, null, log);
+        const suggestions = await runAllChecks(imageData, enabledChecks, log);
 
         if (suggestions.length > 0) {
           log.debug(`[${AUDIT_TYPE}]: Found ${suggestions.length} issues for image: ${imageData.src}`);
@@ -183,12 +206,69 @@ async function processImagesAndGenerateSuggestions(pagesWithImages, log) {
             imagePosition: imageData.position,
           });
         });
+
+        // Collect non-DM images for Scene7 format verification
+        if (!isImageDm) {
+          nonDmImagesForVerification.push({
+            src: imageData.src,
+            pageUrl: page.url,
+            alt: imageData.alt,
+            naturalWidth: imageData.naturalWidth,
+            naturalHeight: imageData.naturalHeight,
+          });
+        }
       } catch (error) {
         log.error(`[${AUDIT_TYPE}]: Error processing image ${imageData.src}: ${error.message}`, { error });
       }
     }
 
     log.info(`[${AUDIT_TYPE}]: Completed processing page ${page.url}. Current total suggestions: ${allSuggestions.length}`);
+  }
+
+  // Verify non-DM images using Scene7 Snapshot upload API
+  if (nonDmImagesForVerification.length > 0) {
+    log.info(`[${AUDIT_TYPE}]: Verifying ${nonDmImagesForVerification.length} non-DM images via Scene7 Snapshot...`);
+    try {
+      const nonDmResults = await batchVerifyNonDmFormats(nonDmImagesForVerification, log, {
+        concurrency: 2,
+      });
+
+      // Add verified non-DM format suggestions
+      nonDmResults.forEach((result) => {
+        if (result.success && result.recommendations && result.recommendations.length > 0) {
+          const rec = result.recommendations[0];
+          allSuggestions.push({
+            type: 'non-dm-format-verified',
+            severity: rec.savingsPercent > 50 ? 'high' : 'medium',
+            impact: rec.savingsPercent > 50 ? 'high' : 'medium',
+            title: `Convert to ${rec.recommendedFormat?.toUpperCase() || 'AVIF'}`,
+            description: `Scene7 format comparison shows ${rec.recommendedFormat?.toUpperCase()} is optimal.`,
+            recommendation: rec.message,
+            url: result.pageUrl,
+            imageSrc: result.originalUrl,
+            imageAlt: result.alt || '',
+            verified: true,
+            currentFormat: rec.currentFormat,
+            recommendedFormat: rec.recommendedFormat,
+            currentSize: rec.currentSize,
+            projectedSize: rec.recommendedSize,
+            savingsBytes: rec.savingsBytes,
+            savingsPercent: rec.savingsPercent,
+            previewUrl: result.previewUrl,
+            previewExpiry: result.previewExpiry,
+            formatComparison: result.formats,
+          });
+        }
+      });
+
+      const successCount = nonDmResults.filter((r) => r.success).length;
+      const withRecs = nonDmResults.filter(
+        (r) => r.success && r.recommendations?.length > 0,
+      ).length;
+      log.info(`[${AUDIT_TYPE}]: ✅ Non-DM verification complete: ${successCount} successful, ${withRecs} with recommendations`);
+    } catch (nonDmError) {
+      log.warn(`[${AUDIT_TYPE}]: ⚠️ Non-DM verification failed: ${nonDmError.message}`);
+    }
   }
 
   log.info(`[${AUDIT_TYPE}]: Processed ${totalImagesProcessed} images and generated ${allSuggestions.length} total suggestions`);
