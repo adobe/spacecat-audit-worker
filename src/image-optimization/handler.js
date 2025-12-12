@@ -93,6 +93,7 @@ function mapCheckerTypeToSuggestionType(checkerType) {
     'wrong-file-type': 'CONTENT_UPDATE',
     'format-detection': 'CONTENT_UPDATE',
     'non-dm-format-verified': 'CONTENT_UPDATE',
+    'dm-migration-opportunity': 'CONFIG_UPDATE',
     'missing-dimensions': 'CODE_CHANGE',
     'missing-lazy-loading': 'CODE_CHANGE',
     'responsive-images': 'CODE_CHANGE',
@@ -154,7 +155,7 @@ export async function fetchAndProcessPageImages(s3Client, bucketName, url, key, 
 /**
  * Process images and generate suggestions
  * For DM images: runs all checkers (includes DM format verification via HEAD requests)
- * For non-DM images: runs all checkers + Scene7 Snapshot upload API for format verification
+ * For non-DM images: only runs DM migration analysis via Scene7 Snapshot upload API
  * @param {Array<Object>} pagesWithImages - Array of page objects with images
  * @param {Object} log - Logger
  * @returns {Promise<Array<Object>>} Array of suggestions
@@ -185,29 +186,27 @@ async function processImagesAndGenerateSuggestions(pagesWithImages, log) {
         log.debug(`[${AUDIT_TYPE}]: Analyzing image ${totalImagesProcessed}: ${imageData.src} (DM: ${isImageDm})`);
 
         // For DM images: run all checkers (includes format verification via HEAD requests)
-        // For non-DM images: run all checkers EXCEPT format (format will be verified via Scene7)
-        const enabledChecks = isImageDm
-          ? null // Run all checkers for DM
-          : ['oversized', 'responsive', 'picture', 'dimensions', 'lazy-loading', 'file-type', 'svg', 'upscaled'];
+        // For non-DM images: skip all checkers, only analyze for DM migration opportunity
+        if (isImageDm) {
+          // eslint-disable-next-line no-await-in-loop
+          const suggestions = await runAllChecks(imageData, null, log);
 
-        // eslint-disable-next-line no-await-in-loop
-        const suggestions = await runAllChecks(imageData, enabledChecks, log);
+          if (suggestions.length > 0) {
+            log.debug(`[${AUDIT_TYPE}]: Found ${suggestions.length} issues for image: ${imageData.src}`);
+          }
 
-        if (suggestions.length > 0) {
-          log.debug(`[${AUDIT_TYPE}]: Found ${suggestions.length} issues for image: ${imageData.src}`);
+          suggestions.forEach((suggestion) => {
+            allSuggestions.push({
+              ...suggestion,
+              url: page.url,
+              imageSrc: imageData.src,
+              imageAlt: imageData.alt || '',
+              imagePosition: imageData.position,
+            });
+          });
         }
 
-        suggestions.forEach((suggestion) => {
-          allSuggestions.push({
-            ...suggestion,
-            url: page.url,
-            imageSrc: imageData.src,
-            imageAlt: imageData.alt || '',
-            imagePosition: imageData.position,
-          });
-        });
-
-        // Collect non-DM images for Scene7 format verification
+        // Collect non-DM images for DM migration analysis via Scene7
         if (!isImageDm) {
           nonDmImagesForVerification.push({
             src: imageData.src,
@@ -215,6 +214,7 @@ async function processImagesAndGenerateSuggestions(pagesWithImages, log) {
             alt: imageData.alt,
             naturalWidth: imageData.naturalWidth,
             naturalHeight: imageData.naturalHeight,
+            fileSize: imageData.fileSize,
           });
         }
       } catch (error) {
@@ -225,25 +225,42 @@ async function processImagesAndGenerateSuggestions(pagesWithImages, log) {
     log.info(`[${AUDIT_TYPE}]: Completed processing page ${page.url}. Current total suggestions: ${allSuggestions.length}`);
   }
 
-  // Verify non-DM images using Scene7 Snapshot upload API
+  // Analyze non-DM images for Dynamic Media migration opportunities
   if (nonDmImagesForVerification.length > 0) {
-    log.info(`[${AUDIT_TYPE}]: Verifying ${nonDmImagesForVerification.length} non-DM images via Scene7 Snapshot...`);
+    log.info(`[${AUDIT_TYPE}]: Analyzing ${nonDmImagesForVerification.length} non-DM images for Dynamic Media migration benefits...`);
     try {
       const nonDmResults = await batchVerifyNonDmFormats(nonDmImagesForVerification, log, {
         concurrency: 2,
       });
 
-      // Add verified non-DM format suggestions
+      // Add DM migration opportunity suggestions
       nonDmResults.forEach((result) => {
         if (result.success && result.recommendations && result.recommendations.length > 0) {
           const rec = result.recommendations[0];
+
+          // Calculate cost savings if migrated to DM
+          const bandwidthSavingsBytes = rec.savingsBytes || 0;
+          const bandwidthSavingsKB = Math.round(bandwidthSavingsBytes / 1024);
+          const bandwidthSavingsMB = (bandwidthSavingsBytes / 1024 / 1024).toFixed(2);
+
+          // Determine severity and impact based on savings percentage
+          let severity = 'low';
+          let impact = 'low';
+          if (rec.savingsPercent > 50) {
+            severity = 'high';
+            impact = 'high';
+          } else if (rec.savingsPercent > 25) {
+            severity = 'medium';
+            impact = 'medium';
+          }
+
           allSuggestions.push({
-            type: 'non-dm-format-verified',
-            severity: rec.savingsPercent > 50 ? 'high' : 'medium',
-            impact: rec.savingsPercent > 50 ? 'high' : 'medium',
-            title: `Convert to ${rec.recommendedFormat?.toUpperCase() || 'AVIF'}`,
-            description: `Scene7 format comparison shows ${rec.recommendedFormat?.toUpperCase()} is optimal.`,
-            recommendation: rec.message,
+            type: 'dm-migration-opportunity',
+            severity,
+            impact,
+            title: `Migrate to Adobe Dynamic Media for ${rec.savingsPercent}% bandwidth cost savings`,
+            description: `By migrating this image to Adobe Dynamic Media and using ${rec.recommendedFormat?.toUpperCase() || 'AVIF'} format, you can reduce bandwidth costs significantly.`,
+            recommendation: `Migrate to Adobe Dynamic Media to enable automatic format optimization (${rec.currentFormat?.toUpperCase()} → ${rec.recommendedFormat?.toUpperCase()}). This will save ${bandwidthSavingsKB} KB (${rec.savingsPercent}%) per image load.`,
             url: result.pageUrl,
             imageSrc: result.originalUrl,
             imageAlt: result.alt || '',
@@ -251,12 +268,20 @@ async function processImagesAndGenerateSuggestions(pagesWithImages, log) {
             currentFormat: rec.currentFormat,
             recommendedFormat: rec.recommendedFormat,
             currentSize: rec.currentSize,
-            projectedSize: rec.recommendedSize,
-            savingsBytes: rec.savingsBytes,
+            projectedSizeWithDM: rec.recommendedSize,
+            savingsBytes: bandwidthSavingsBytes,
+            savingsKB: bandwidthSavingsKB,
+            savingsMB: bandwidthSavingsMB,
             savingsPercent: rec.savingsPercent,
             previewUrl: result.previewUrl,
             previewExpiry: result.previewExpiry,
             formatComparison: result.formats,
+            migrationBenefit: {
+              automaticFormatOptimization: true,
+              bandwidthReduction: `${rec.savingsPercent}%`,
+              estimatedCostSavingsPerLoad: bandwidthSavingsKB,
+              recommendedAction: 'Migrate image to Adobe Dynamic Media delivery',
+            },
           });
         }
       });
@@ -265,9 +290,17 @@ async function processImagesAndGenerateSuggestions(pagesWithImages, log) {
       const withRecs = nonDmResults.filter(
         (r) => r.success && r.recommendations?.length > 0,
       ).length;
-      log.info(`[${AUDIT_TYPE}]: ✅ Non-DM verification complete: ${successCount} successful, ${withRecs} with recommendations`);
+
+      // Calculate total potential savings
+      const totalSavingsBytes = nonDmResults
+        .filter((r) => r.success && r.recommendations?.length > 0)
+        .reduce((sum, r) => sum + (r.recommendations[0]?.savingsBytes || 0), 0);
+      const totalSavingsMB = (totalSavingsBytes / 1024 / 1024).toFixed(2);
+
+      log.info(`[${AUDIT_TYPE}]: ✅ DM migration analysis complete: ${successCount} images analyzed, ${withRecs} with migration opportunities`);
+      log.info(`[${AUDIT_TYPE}]: 💰 Total potential bandwidth savings: ${totalSavingsMB} MB per page load if migrated to DM`);
     } catch (nonDmError) {
-      log.warn(`[${AUDIT_TYPE}]: ⚠️ Non-DM verification failed: ${nonDmError.message}`);
+      log.warn(`[${AUDIT_TYPE}]: ⚠️ DM migration analysis failed: ${nonDmError.message}`);
     }
   }
 
@@ -295,24 +328,26 @@ async function findOrCreateOpportunity({
       runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
       type: AUDIT_TYPE,
       origin: 'AUTOMATION',
-      title: 'Images can be optimized for better performance',
-      description: 'Optimizing images through format conversion, proper sizing, and lazy loading can significantly improve page load times and Core Web Vitals',
+      title: 'Image optimization and Dynamic Media migration opportunities',
+      description: 'Dynamic Media images can be optimized through format conversion. Non-DM images show potential bandwidth cost savings if migrated to Adobe Dynamic Media with automatic format optimization.',
       guidance: {
         recommendations: [
           {
-            insight: 'Modern image formats and proper sizing improve performance',
-            recommendation: 'Enable AVIF/WebP formats, ensure proper image dimensions, and implement lazy loading',
+            insight: 'Adobe Dynamic Media provides automatic format optimization and significant bandwidth savings',
+            recommendation: 'For DM images: Enable AVIF/WebP formats. For non-DM images: Consider migrating to Dynamic Media for automatic optimization and cost reduction',
             type: null,
-            rationale: 'Optimized images reduce bandwidth, improve load times, and enhance user experience',
+            rationale: 'Dynamic Media automatically serves optimal formats, reducing bandwidth costs and improving performance without manual intervention',
           },
         ],
       },
       data: {
         totalImages: 0,
         issuesFound: 0,
+        dmImages: 0,
+        nonDmImages: 0,
         dataSources: [DATA_SOURCES.SITE],
       },
-      tags: ['performance', 'core-web-vitals', 'images'],
+      tags: ['performance', 'core-web-vitals', 'images', 'dynamic-media', 'cost-optimization'],
     };
 
     imageOptOppty = await Opportunity.create(opportunityDTO);
