@@ -79,12 +79,14 @@ describe('Index siteId handling and validation flag', () => {
 
   // Removed legacy fallback test: validation is driven solely by entitlements
 
-  it('logs a warning when site fetch fails (coverage for catch)', async () => {
+  it('continues gracefully when site fetch fails (coverage for catch)', async () => {
     context.dataAccess.Site.findById.rejects(new Error('db down'));
 
     const resp = await main(new Request('https://space.cat'), context);
 
+    // The handler should continue despite the site fetch failure
     expect(resp.status).to.equal(200);
-    expect(context.log.warn).to.have.been.calledWithMatch('Failed to fetch site');
+    // Site should not be set on context since fetch failed
+    expect(context.site).to.be.undefined;
   });
 });

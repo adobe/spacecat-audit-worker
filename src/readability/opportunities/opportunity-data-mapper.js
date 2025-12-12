@@ -16,7 +16,7 @@ export function createOpportunityData() {
   return {
     runbook: '',
     origin: 'AUTOMATION',
-    title: 'Content readability issues affecting user experience and accessibility',
+    title: 'Simplify Complex Content',
     description: 'Poor readability makes content difficult for users to understand. Content with low readability scores may drive away visitors and reduce engagement metrics.',
     guidance: {
       steps: [
@@ -28,7 +28,7 @@ export function createOpportunityData() {
         'Use AI-generated suggestions as a starting point for improvements.',
       ],
     },
-    tags: ['Engagement', 'isElmo'],
+    tags: ['Engagement', 'isElmo', 'content'],
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
     },

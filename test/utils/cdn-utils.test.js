@@ -347,27 +347,27 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(adobe.com)')");
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$')");
     });
 
-    it('keeps www prefix when already present', () => {
+    it('normalizes www prefix to optional pattern', () => {
       const mockSite = {
         getBaseURL: () => 'https://www.adobe.com',
       };
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(www.adobe.com)')");
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$')");
     });
 
-    it('keeps subdomain as-is without adding www', () => {
+    it('keeps subdomain and adds optional www prefix', () => {
       const mockSite = {
         getBaseURL: () => 'https://business.adobe.com',
       };
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(business.adobe.com)')");
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?business.adobe.com$')");
     });
   });
 });
