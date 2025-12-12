@@ -1,3 +1,10 @@
+# [1.272.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.271.1...v1.272.0) (2025-12-12)
+
+
+### Features
+
+* enable div text detection ([#1795](https://github.com/adobe/spacecat-audit-worker/issues/1795)) ([182ec70](https://github.com/adobe/spacecat-audit-worker/commit/182ec7018bb8b3e2e29946e3f47463c7bbca2da4))
+
 ## [1.271.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.271.0...v1.271.1) (2025-12-12)
 
 
