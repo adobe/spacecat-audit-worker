@@ -1,3 +1,10 @@
+## [1.273.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.1...v1.273.2) (2025-12-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.86.0 ([#1798](https://github.com/adobe/spacecat-audit-worker/issues/1798)) ([6ba24e4](https://github.com/adobe/spacecat-audit-worker/commit/6ba24e4544b688369375aa081cadbb965b662402))
+
 ## [1.273.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.0...v1.273.1) (2025-12-12)
 
 
