@@ -139,7 +139,6 @@ export const handleOutdatedSuggestions = async ({
 }) => {
   const { Suggestion } = context.dataAccess;
   const { log } = context;
-
   const existingOutdatedSuggestions = existingSuggestions
     .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
     .filter((existing) => ![
