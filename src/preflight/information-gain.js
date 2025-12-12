@@ -275,13 +275,18 @@ export function measureInfoGain(original, summary) {
   const summEntropy = calculateEntropy(summary);
   const entropyRatio = origEntropy > 0 ? summEntropy / origEntropy : 1.0;
 
-  // InfoGain score (weighted combination)
+  // InfoGain as information quality score (0-1 range, represents % of ideal information)
+  // Note: Removed compression_ratio division to make score represent quality percentage
   const infogainScore = (semanticSimilarity * 0.35)
     + (entityPreservation * 0.25)
     + (factCoverage * 0.40);
 
   // Convert to 10-point scale with power curve
+  // 0.0 → 0, 0.5 → 7.1, 0.8 → 9.0, 1.0 → 10
   const tenPointScore = Math.min(10.0, Math.max(0.0, infogainScore ** 0.7 * 10));
+
+  // Extract novel information items (sentences) from summary
+  const novelInfoItems = summary.match(/[^.!?]+[.!?]+/g) || [];
 
   return {
     compression_ratio: compressionRatio,
@@ -291,7 +296,7 @@ export function measureInfoGain(original, summary) {
     entropy_ratio: entropyRatio,
     infogain_score: infogainScore,
     ten_point_score: parseFloat(tenPointScore.toFixed(1)),
-    novel_info_count: (summary.match(/[^.!?]+[.!?]+/g) || []).length,
+    novel_info_items: novelInfoItems,
   };
 }
 

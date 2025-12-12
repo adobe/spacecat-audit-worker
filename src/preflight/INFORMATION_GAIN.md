@@ -16,6 +16,8 @@ The audit performs the following analysis:
 ### 2. Information Analysis
 The audit generates a summary of the content and measures several key metrics:
 
+**Note**: InfoGain score was updated to represent information quality as a percentage (0-100%) rather than an efficiency ratio. This makes interpretation intuitive: a score of 0.79 means the page has 79% of ideal information quality.
+
 #### Metrics Calculated
 
 - **Compression Ratio**: Ratio of summary tokens to original tokens (lower is better for quality content)
@@ -23,8 +25,8 @@ The audit generates a summary of the content and measures several key metrics:
 - **Entity Preservation**: Percentage of named entities (product names, version numbers) preserved in summary (higher is better)
 - **Fact Coverage**: Percentage of numbers, percentages, and factual statements preserved (higher is better)
 - **Entropy Ratio**: Information density metric based on character distribution
-- **InfoGain Score**: Weighted combination of the above metrics (0-1 scale)
-- **Ten Point Score**: User-friendly 0-10 score with power curve transformation
+- **InfoGain Score**: Weighted combination of semantic similarity (35%), entity preservation (25%), and fact coverage (40%). Represents information quality as a percentage (0-100%) of ideal information content.
+- **Ten Point Score**: User-friendly 0-10 score with power curve transformation (0.0 → 0, 0.5 → 7.1, 0.8 → 9.0, 1.0 → 10)
 
 #### Score Categories
 - **Excellent** (9.0-10.0): Content has exceptional information density

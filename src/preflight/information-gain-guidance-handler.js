@@ -109,7 +109,7 @@ export default async function handler(message, context) {
       entropy_ratio: newMetrics.entropy_ratio.toFixed(2),
       infogain_score: newMetrics.infogain_score.toFixed(2),
       ten_point_score: newMetrics.ten_point_score.toFixed(1),
-      novel_info_count: newMetrics.novel_info_count,
+      novel_info_items: newMetrics.novel_info_items,
     },
     newTraitScores,
     seoImpact: data.seo_impact || 'Moderate',
