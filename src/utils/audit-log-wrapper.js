@@ -47,7 +47,7 @@ export default function enhancedLogWrapper(fn) {
       log.info('!TEST! Has infoFields:', typeof log.infoFields);
       log.info('!TEST! Logger type:', log.constructor.name);
 
-      log.log({
+      log.info({
         text: '!TEST!',
         typeof: typeof log,
         constructor: log?.constructor?.name,
@@ -55,16 +55,6 @@ export default function enhancedLogWrapper(fn) {
         isPlainObject: Object.getPrototypeOf(log) === Object.prototype,
         keys: Object.keys(log),
         hasSymbols: Object.getOwnPropertySymbols(log).length > 0,
-        isConsoleLike: {
-          // eslint-disable-next-line no-console
-          log: log.log === console.log,
-          // eslint-disable-next-line no-console
-          info: log.info === console.info,
-          // eslint-disable-next-line no-console
-          warn: log.warn === console.warn,
-          // eslint-disable-next-line no-console
-          error: log.error === console.error,
-        },
       });
       const markers = {};
 
