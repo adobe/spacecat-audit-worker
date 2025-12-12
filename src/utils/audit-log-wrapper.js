@@ -45,7 +45,27 @@ export default function enhancedLogWrapper(fn) {
     if (log && !context.enhancedLogWrapperApplied) {
       log.info('!TEST! Log object keys:', Object.keys(log));
       log.info('!TEST! Has infoFields:', typeof log.infoFields);
-      log.info('!DEBUG! Logger type:', log.constructor.name);
+      log.info('!TEST! Logger type:', log.constructor.name);
+
+      log.log({
+        text: '!TEST!',
+        typeof: typeof log,
+        constructor: log?.constructor?.name,
+        protoConstructor: Object.getPrototypeOf(log)?.constructor?.name,
+        isPlainObject: Object.getPrototypeOf(log) === Object.prototype,
+        keys: Object.keys(log),
+        hasSymbols: Object.getOwnPropertySymbols(log).length > 0,
+        isConsoleLike: {
+          // eslint-disable-next-line no-console
+          log: log.log === console.log,
+          // eslint-disable-next-line no-console
+          info: log.info === console.info,
+          // eslint-disable-next-line no-console
+          warn: log.warn === console.warn,
+          // eslint-disable-next-line no-console
+          error: log.error === console.error,
+        },
+      });
       const markers = {};
 
       // Extract jobId from message if available
