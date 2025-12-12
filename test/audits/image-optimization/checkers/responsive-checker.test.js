@@ -17,9 +17,9 @@ import { checkResponsiveImages } from '../../../../src/image-optimization/checke
 
 describe('Responsive Checker', () => {
   describe('checkResponsiveImages', () => {
-    it('should return null when srcset is present', () => {
+    it('should return null when srcset and sizes are present', () => {
       const imageData = {
-        src: 'https://example.com/image.jpg',
+        src: 'https://example.scene7.com/is/image/company/hero',
         srcset: 'image-320.jpg 320w, image-640.jpg 640w',
         sizes: '(max-width: 640px) 100vw, 50vw',
         naturalWidth: 1920,
@@ -31,9 +31,28 @@ describe('Responsive Checker', () => {
       expect(result).to.be.null;
     });
 
+    it('should flag missing sizes when srcset exists', () => {
+      const imageData = {
+        src: 'https://example.scene7.com/is/image/company/hero',
+        srcset: 'image-320.jpg 320w, image-640.jpg 640w',
+        sizes: null,
+        naturalWidth: 1920,
+        naturalHeight: 1080,
+        fileSize: 200000,
+        position: { isAboveFold: true },
+      };
+
+      const result = checkResponsiveImages(imageData);
+      expect(result).to.not.be.null;
+      expect(result.type).to.equal('missing-sizes-attribute');
+      expect(result.hasSrcset).to.be.true;
+      expect(result.hasSizes).to.be.false;
+      expect(result.recommendation).to.include('sizes');
+    });
+
     it('should return null for small images (<200px)', () => {
       const imageData = {
-        src: 'https://example.com/icon.jpg',
+        src: 'https://example.scene7.com/is/image/company/icon',
         naturalWidth: 150,
         naturalHeight: 150,
         fileSize: 50000,
@@ -43,22 +62,9 @@ describe('Responsive Checker', () => {
       expect(result).to.be.null;
     });
 
-    it('should return null for Dynamic Media images', () => {
-      const imageData = {
-        src: 'https://example.scene7.com/image.jpg',
-        isDynamicMedia: true,
-        naturalWidth: 1920,
-        naturalHeight: 1080,
-        fileSize: 200000,
-      };
-
-      const result = checkResponsiveImages(imageData);
-      expect(result).to.be.null;
-    });
-
     it('should return null for tiny images (<10KB)', () => {
       const imageData = {
-        src: 'https://example.com/image.jpg',
+        src: 'https://example.scene7.com/is/image/company/small',
         naturalWidth: 800,
         naturalHeight: 600,
         fileSize: 5000,
@@ -68,15 +74,13 @@ describe('Responsive Checker', () => {
       expect(result).to.be.null;
     });
 
-    it('should detect missing srcset for large content images', () => {
+    it('should detect missing srcset for large DM images', () => {
       const imageData = {
-        src: 'https://example.com/hero.jpg',
+        src: 'https://example.scene7.com/is/image/company/hero',
         naturalWidth: 1920,
         naturalHeight: 1080,
-        renderedWidth: 1200,
         fileSize: 300000,
         position: { isAboveFold: true },
-        isDynamicMedia: false,
       };
 
       const result = checkResponsiveImages(imageData);
@@ -84,11 +88,44 @@ describe('Responsive Checker', () => {
       expect(result.type).to.equal('missing-responsive-images');
       expect(result.hasSrcset).to.be.false;
       expect(result.recommendation).to.include('srcset');
+      expect(result.recommendation).to.include('wid');
+    });
+
+    it('should include DM URLs with wid parameter', () => {
+      const imageData = {
+        src: 'https://example.scene7.com/is/image/company/hero',
+        naturalWidth: 1920,
+        naturalHeight: 1080,
+        fileSize: 200000,
+      };
+
+      const result = checkResponsiveImages(imageData);
+      expect(result).to.not.be.null;
+      expect(result.dmUrls).to.exist;
+      expect(result.dmUrls).to.have.length(4);
+      expect(result.dmUrls[0].width).to.equal(320);
+      expect(result.dmUrls[0].url).to.include('wid=320');
+    });
+
+    it('should include example with DM wid parameters', () => {
+      const imageData = {
+        src: 'https://example.scene7.com/is/image/company/hero',
+        naturalWidth: 1920,
+        naturalHeight: 1080,
+        fileSize: 200000,
+      };
+
+      const result = checkResponsiveImages(imageData);
+      expect(result).to.not.be.null;
+      expect(result.example).to.include('srcset');
+      expect(result.example).to.include('sizes');
+      expect(result.example).to.include('wid=320');
+      expect(result.example).to.include('wid=1920');
     });
 
     it('should mark high severity for large above-fold images', () => {
       const imageData = {
-        src: 'https://example.com/hero.jpg',
+        src: 'https://example.scene7.com/is/image/company/hero',
         naturalWidth: 1920,
         naturalHeight: 1080,
         fileSize: 500000,
@@ -103,7 +140,7 @@ describe('Responsive Checker', () => {
 
     it('should mark medium severity for smaller images', () => {
       const imageData = {
-        src: 'https://example.com/image.jpg',
+        src: 'https://example.scene7.com/is/image/company/content',
         naturalWidth: 800,
         naturalHeight: 600,
         fileSize: 80000,
@@ -116,37 +153,9 @@ describe('Responsive Checker', () => {
       expect(result.impact).to.equal('medium');
     });
 
-    it('should include example markup in recommendation', () => {
-      const imageData = {
-        src: 'https://example.com/image.jpg',
-        naturalWidth: 1920,
-        naturalHeight: 1080,
-        fileSize: 200000,
-      };
-
-      const result = checkResponsiveImages(imageData);
-      expect(result).to.not.be.null;
-      expect(result.example).to.include('srcset');
-      expect(result.example).to.include('sizes');
-    });
-
-    it('should track sizes attribute presence', () => {
-      const imageData = {
-        src: 'https://example.com/image.jpg',
-        naturalWidth: 1920,
-        naturalHeight: 1080,
-        sizes: '100vw',
-        fileSize: 200000,
-      };
-
-      const result = checkResponsiveImages(imageData);
-      expect(result).to.not.be.null;
-      expect(result.hasSizes).to.be.true;
-    });
-
     it('should handle missing position data', () => {
       const imageData = {
-        src: 'https://example.com/image.jpg',
+        src: 'https://example.scene7.com/is/image/company/hero',
         naturalWidth: 1920,
         naturalHeight: 1080,
         fileSize: 200000,
@@ -155,6 +164,20 @@ describe('Responsive Checker', () => {
       const result = checkResponsiveImages(imageData);
       expect(result).to.not.be.null;
       expect(result.isAboveFold).to.be.false;
+    });
+
+    it('should handle URLs with existing query parameters', () => {
+      const imageData = {
+        src: 'https://example.scene7.com/is/image/company/hero?fmt=jpeg',
+        naturalWidth: 1920,
+        naturalHeight: 1080,
+        fileSize: 200000,
+      };
+
+      const result = checkResponsiveImages(imageData);
+      expect(result).to.not.be.null;
+      expect(result.dmUrls[0].url).to.include('fmt=jpeg');
+      expect(result.dmUrls[0].url).to.include('wid=320');
     });
   });
 });

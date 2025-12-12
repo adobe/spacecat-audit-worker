@@ -46,6 +46,7 @@ export async function checkFormatDetection(imageData, log) {
         imageUrl: imageData.src,
         currentFormat: rec.currentFormat,
         recommendedFormat: rec.recommendedFormat,
+        recommendedUrl: rec.recommendedUrl,
         currentSize: rec.currentSize,
         projectedSize: rec.recommendedSize,
         savingsBytes: rec.savingsBytes,
@@ -54,6 +55,7 @@ export async function checkFormatDetection(imageData, log) {
         recommendation: rec.message,
         verificationMethod: 'real-dm-check',
         formatComparison: verification.formats,
+        smartImagingAlternative: 'Alternatively, enable Smart Imaging by adding bfc=on parameter. This automatically converts images to the best format (AVIF, WebP, JPEG 2000, or JPEG XR) based on browser support.',
       };
     }
 

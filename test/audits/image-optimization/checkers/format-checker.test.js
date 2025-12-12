@@ -104,6 +104,8 @@ describe('Format Checker', () => {
       expect(result.recommendedFormat).to.equal('avif');
       expect(result.currentFormat).to.equal('jpeg');
       expect(result.verificationMethod).to.equal('real-dm-check');
+      expect(result.smartImagingAlternative).to.include('bfc=on');
+      expect(result.smartImagingAlternative).to.include('Smart Imaging');
     });
 
     it('should return null when no optimization opportunity exists', async () => {

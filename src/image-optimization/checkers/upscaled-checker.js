@@ -11,6 +11,23 @@
  */
 
 /**
+ * Generates DM URL with specific width parameter
+ * @param {string} src - Original DM image URL
+ * @param {number} width - Desired width
+ * @returns {string} URL with width parameter
+ */
+function getDmUrlWithWidth(src, width) {
+  try {
+    const url = new URL(src);
+    url.searchParams.set('wid', width.toString());
+    return url.toString();
+  } catch {
+    const separator = src.includes('?') ? '&' : '?';
+    return `${src}${separator}wid=${width}`;
+  }
+}
+
+/**
  * Checks if image is upscaled (rendered larger than intrinsic size)
  * @param {Object} imageData - Image data from scraper
  * @returns {Object|null} Suggestion object or null if not upscaled
@@ -39,6 +56,9 @@ export function checkBlurryOrUpscaled(imageData) {
   const neededWidth = Math.ceil(renderedWidth * 1.5); // 1.5x for high-DPI displays
   const neededHeight = Math.ceil(renderedHeight * 1.5);
 
+  // Generate recommended DM URL with higher resolution
+  const recommendedUrl = getDmUrlWithWidth(src, neededWidth);
+
   return {
     type: 'upscaled-image',
     severity: upscaleRatio > 2 ? 'high' : 'medium',
@@ -49,6 +69,7 @@ export function checkBlurryOrUpscaled(imageData) {
     naturalDimensions: `${naturalWidth}x${naturalHeight}`,
     renderedDimensions: `${renderedWidth}x${renderedHeight}`,
     recommendedDimensions: `${neededWidth}x${neededHeight}`,
+    recommendedUrl,
     upscaleRatio: parseFloat(upscaleRatio.toFixed(2)),
     isAboveFold: position?.isAboveFold || false,
     recommendation: `Use a higher resolution image (at least ${neededWidth}x${neededHeight}) to avoid blurriness on high-DPI displays`,

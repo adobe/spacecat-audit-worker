@@ -11,6 +11,23 @@
  */
 
 /**
+ * Generates DM URL with specific width parameter
+ * @param {string} src - Original DM image URL
+ * @param {number} width - Desired width
+ * @returns {string} URL with width parameter
+ */
+function getDmUrlWithWidth(src, width) {
+  try {
+    const url = new URL(src);
+    url.searchParams.set('wid', width.toString());
+    return url.toString();
+  } catch {
+    const separator = src.includes('?') ? '&' : '?';
+    return `${src}${separator}wid=${width}`;
+  }
+}
+
+/**
  * Checks if image is oversized (intrinsic size larger than rendered size)
  * @param {Object} imageData - Image data from scraper
  * @returns {Object|null} Suggestion object or null if properly sized
@@ -49,6 +66,9 @@ export function checkOversizedImage(imageData) {
   const estimatedSavings = fileSize ? Math.round(fileSize * pixelReduction) : 0;
   const savingsPercent = fileSize ? Math.round(pixelReduction * 100) : 0;
 
+  // Generate recommended DM URL with optimal width
+  const recommendedUrl = getDmUrlWithWidth(src, suggestedWidth);
+
   return {
     type: 'oversized-image',
     severity: ratio > 2 ? 'high' : 'medium',
@@ -59,6 +79,7 @@ export function checkOversizedImage(imageData) {
     naturalDimensions: `${naturalWidth}x${naturalHeight}`,
     renderedDimensions: `${renderedWidth}x${renderedHeight}`,
     suggestedDimensions: `${suggestedWidth}x${suggestedHeight}`,
+    recommendedUrl,
     oversizeRatio: ratio,
     currentSize: fileSize,
     estimatedSavings,

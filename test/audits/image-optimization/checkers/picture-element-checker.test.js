@@ -19,7 +19,7 @@ describe('Picture Element Checker', () => {
   describe('checkPictureElement', () => {
     it('should return null when picture element is already used', () => {
       const imageData = {
-        src: 'https://example.com/image.jpg',
+        src: 'https://example.scene7.com/is/image/company/hero',
         format: 'jpeg',
         hasPictureElement: true,
         fileSize: 200000,
@@ -30,124 +30,83 @@ describe('Picture Element Checker', () => {
       expect(result).to.be.null;
     });
 
-    it('should return null for AVIF images', () => {
+    it('should flag DM image without picture element', () => {
       const imageData = {
-        src: 'https://example.com/image.avif',
-        format: 'avif',
-        isAvif: true,
-        fileSize: 100000,
-        naturalWidth: 1920,
-      };
-
-      const result = checkPictureElement(imageData);
-      expect(result).to.be.null;
-    });
-
-    it('should return null for WebP images', () => {
-      const imageData = {
-        src: 'https://example.com/image.webp',
-        format: 'webp',
-        isWebp: true,
-        fileSize: 150000,
-        naturalWidth: 1920,
-      };
-
-      const result = checkPictureElement(imageData);
-      expect(result).to.be.null;
-    });
-
-    it('should return null for Dynamic Media images', () => {
-      const imageData = {
-        src: 'https://example.scene7.com/image.jpg',
+        src: 'https://example.scene7.com/is/image/company/hero?fmt=jpeg',
         format: 'jpeg',
-        isDynamicMedia: true,
-        fileSize: 200000,
-        naturalWidth: 1920,
-      };
-
-      const result = checkPictureElement(imageData);
-      expect(result).to.be.null;
-    });
-
-    it('should return null for small images (<50KB)', () => {
-      const imageData = {
-        src: 'https://example.com/image.jpg',
-        format: 'jpeg',
-        fileSize: 40000,
-        naturalWidth: 600,
-      };
-
-      const result = checkPictureElement(imageData);
-      expect(result).to.be.null;
-    });
-
-    it('should return null for narrow images (<400px)', () => {
-      const imageData = {
-        src: 'https://example.com/image.jpg',
-        format: 'jpeg',
-        fileSize: 100000,
-        naturalWidth: 300,
-      };
-
-      const result = checkPictureElement(imageData);
-      expect(result).to.be.null;
-    });
-
-    it('should return null for non-JPEG/PNG formats', () => {
-      const imageData = {
-        src: 'https://example.com/image.gif',
-        format: 'gif',
-        fileSize: 200000,
-        naturalWidth: 800,
-      };
-
-      const result = checkPictureElement(imageData);
-      expect(result).to.be.null;
-    });
-
-    it('should suggest picture element for large JPEG images', () => {
-      const imageData = {
-        src: 'https://example.com/hero.jpg',
-        format: 'jpeg',
-        isAvif: false,
-        isWebp: false,
+        hasPictureElement: false,
         fileSize: 300000,
         naturalWidth: 1920,
-        isDynamicMedia: false,
-        hasPictureElement: false,
+        naturalHeight: 1080,
       };
 
       const result = checkPictureElement(imageData);
       expect(result).to.not.be.null;
       expect(result.type).to.equal('missing-picture-element');
       expect(result.currentFormat).to.equal('jpeg');
-      expect(result.example).to.include('<picture>');
-      expect(result.example).to.include('avif');
-      expect(result.example).to.include('webp');
+      expect(result.severity).to.equal('medium');
     });
 
-    it('should suggest picture element for large PNG images', () => {
+    it('should include DM URLs for AVIF, WebP, and fallback', () => {
       const imageData = {
-        src: 'https://example.com/image.png',
-        format: 'png',
-        isAvif: false,
-        isWebp: false,
-        fileSize: 400000,
+        src: 'https://example.scene7.com/is/image/company/hero',
+        format: 'jpeg',
+        hasPictureElement: false,
+        fileSize: 200000,
         naturalWidth: 1920,
-        isDynamicMedia: false,
+        naturalHeight: 1080,
       };
 
       const result = checkPictureElement(imageData);
       expect(result).to.not.be.null;
-      expect(result.currentFormat).to.equal('png');
+      expect(result.dmUrls).to.exist;
+      expect(result.dmUrls.avif).to.include('fmt=avif');
+      expect(result.dmUrls.webp).to.include('fmt=webp-alpha');
+      expect(result.dmUrls.fallback).to.include('fmt=jpeg');
     });
 
-    it('should mark medium impact for very large files', () => {
+    it('should include picture element example with DM URLs', () => {
       const imageData = {
-        src: 'https://example.com/hero.jpg',
+        src: 'https://example.scene7.com/is/image/company/hero',
         format: 'jpeg',
+        hasPictureElement: false,
+        fileSize: 200000,
+        naturalWidth: 1920,
+        naturalHeight: 1080,
+      };
+
+      const result = checkPictureElement(imageData);
+      expect(result).to.not.be.null;
+      expect(result.example).to.include('<picture>');
+      expect(result.example).to.include('type="image/avif"');
+      expect(result.example).to.include('type="image/webp"');
+      expect(result.example).to.include('fmt=avif');
+      expect(result.example).to.include('fmt=webp-alpha');
+    });
+
+    it('should mark high impact for large files (>200KB)', () => {
+      const imageData = {
+        src: 'https://example.scene7.com/is/image/company/hero',
+        format: 'jpeg',
+        hasPictureElement: false,
         fileSize: 500000,
         naturalWidth: 2048,
+        naturalHeight: 1536,
+      };
+
+      const result = checkPictureElement(imageData);
+      expect(result).to.not.be.null;
+      expect(result.impact).to.equal('high');
+    });
+
+    it('should mark medium impact for smaller files (<=200KB)', () => {
+      const imageData = {
+        src: 'https://example.scene7.com/is/image/company/icon',
+        format: 'jpeg',
+        hasPictureElement: false,
+        fileSize: 100000,
+        naturalWidth: 800,
+        naturalHeight: 600,
       };
 
       const result = checkPictureElement(imageData);
@@ -155,30 +114,35 @@ describe('Picture Element Checker', () => {
       expect(result.impact).to.equal('medium');
     });
 
-    it('should mark low impact for moderate files', () => {
+    it('should include dimensions in result', () => {
       const imageData = {
-        src: 'https://example.com/image.jpg',
+        src: 'https://example.scene7.com/is/image/company/hero',
         format: 'jpeg',
-        fileSize: 100000,
-        naturalWidth: 800,
+        hasPictureElement: false,
+        fileSize: 200000,
+        naturalWidth: 1920,
+        naturalHeight: 1080,
       };
 
       const result = checkPictureElement(imageData);
       expect(result).to.not.be.null;
-      expect(result.impact).to.equal('low');
+      expect(result.dimensions).to.equal('1920x1080');
     });
 
-    it('should have low severity', () => {
+    it('should handle URLs with existing query parameters', () => {
       const imageData = {
-        src: 'https://example.com/image.jpg',
+        src: 'https://example.scene7.com/is/image/company/hero?wid=1920&hei=1080',
         format: 'jpeg',
-        fileSize: 300000,
+        hasPictureElement: false,
+        fileSize: 200000,
         naturalWidth: 1920,
+        naturalHeight: 1080,
       };
 
       const result = checkPictureElement(imageData);
       expect(result).to.not.be.null;
-      expect(result.severity).to.equal('low');
+      expect(result.dmUrls.avif).to.include('wid=1920');
+      expect(result.dmUrls.avif).to.include('fmt=avif');
     });
   });
 });

@@ -11,20 +11,38 @@
  */
 
 /**
- * Checks if picture element should be used for modern format fallbacks
+ * Constructs DM URL with specific format parameter
+ * @param {string} src - Original DM image URL
+ * @param {string} format - Desired format (avif, webp, jpeg, png)
+ * @returns {string} URL with format parameter
+ */
+function getDmUrlWithFormat(src, format) {
+  try {
+    const url = new URL(src);
+    url.searchParams.set('fmt', format);
+    return url.toString();
+  } catch {
+    // Fallback for malformed URLs
+    const separator = src.includes('?') ? '&' : '?';
+    return `${src}${separator}fmt=${format}`;
+  }
+}
+
+/**
+ * Checks if Dynamic Media image should use <picture> element for format fallbacks.
+ * Provides DM-specific recommendations with proper URL parameters.
+ *
  * @param {Object} imageData - Image data from scraper
- * @returns {Object|null} Suggestion object or null if picture is used or not needed
+ * @returns {Object|null} Suggestion object or null if picture is used
  */
 export function checkPictureElement(imageData) {
   const {
     src,
     format,
-    isAvif,
-    isWebp,
     hasPictureElement,
     fileSize,
     naturalWidth,
-    isDynamicMedia,
+    naturalHeight,
   } = imageData;
 
   // Skip if already using picture element
@@ -32,40 +50,31 @@ export function checkPictureElement(imageData) {
     return null;
   }
 
-  // Skip if already modern format
-  if (isAvif || isWebp) {
-    return null;
-  }
-
-  // Skip Dynamic Media (handles format negotiation)
-  if (isDynamicMedia) {
-    return null;
-  }
-
-  // Only suggest for significant images
-  if (!fileSize || fileSize < 50000 || naturalWidth < 400) {
-    return null;
-  }
-
-  // Only suggest for JPEG/PNG that would benefit from modern formats
-  if (format !== 'jpeg' && format !== 'jpg' && format !== 'png') {
-    return null;
-  }
+  // Generate DM URLs for each format
+  const avifUrl = getDmUrlWithFormat(src, 'avif');
+  const webpUrl = getDmUrlWithFormat(src, 'webp-alpha');
+  const fallbackUrl = getDmUrlWithFormat(src, 'jpeg');
 
   return {
     type: 'missing-picture-element',
-    severity: 'low',
-    impact: fileSize > 200000 ? 'medium' : 'low',
-    title: 'Consider using <picture> element',
-    description: 'Using <picture> enables serving modern formats with fallbacks for older browsers',
+    severity: 'medium',
+    impact: fileSize > 200000 ? 'high' : 'medium',
+    title: 'Use <picture> element for format fallback',
+    description: 'The <picture> element enables serving modern formats (AVIF/WebP) with automatic fallback to JPEG for older browsers. This ensures optimal compression while maintaining compatibility.',
     imageUrl: src,
     currentFormat: format,
     currentSize: fileSize,
-    recommendation: 'Use <picture> element to serve AVIF/WebP with fallback',
+    dimensions: naturalWidth && naturalHeight ? `${naturalWidth}x${naturalHeight}` : null,
+    recommendation: 'Wrap the image in a <picture> element with <source> elements for AVIF and WebP formats. Dynamic Media serves different formats from the same base URL using the fmt parameter.',
     example: `<picture>
-  <source type="image/avif" srcset="image.avif">
-  <source type="image/webp" srcset="image.webp">
-  <img src="${src}" alt="...">
+  <source type="image/avif" srcset="${avifUrl}">
+  <source type="image/webp" srcset="${webpUrl}">
+  <img src="${fallbackUrl}" alt="...">
 </picture>`,
+    dmUrls: {
+      avif: avifUrl,
+      webp: webpUrl,
+      fallback: fallbackUrl,
+    },
   };
 }
