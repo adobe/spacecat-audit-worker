@@ -187,6 +187,8 @@ async function getImageSize(url, log) {
  * @returns {Promise<Object>} Format comparison results
  */
 export async function verifyDmFormats(imageUrl, log) {
+  log.info(`[dm-format-verifier] 🔍 Starting format verification for: ${imageUrl}`);
+
   const baseUrl = getBaseDmUrl(imageUrl);
   const results = {
     originalUrl: imageUrl,
@@ -205,10 +207,21 @@ export async function verifyDmFormats(imageUrl, log) {
     results.currentFormat = currentFormatMatch[1].toLowerCase();
   }
 
+  log.info(`[dm-format-verifier] Current format detected: ${results.currentFormat || 'UNKNOWN'}`);
+  log.info(`[dm-format-verifier] Base URL: ${baseUrl}`);
+  log.info(`[dm-format-verifier] Testing formats: ${DM_FORMATS.join(', ')}`);
+
   // Test each format
   const formatPromises = DM_FORMATS.map(async (format) => {
     const formatUrl = constructFormatUrl(baseUrl, format);
+    log.debug(`[dm-format-verifier] Testing ${format}: ${formatUrl}`);
     const result = await getImageSize(formatUrl, log);
+
+    if (result.success) {
+      log.info(`[dm-format-verifier] ✅ ${format}: ${result.size} bytes (${Math.round(result.size / 1024)} KB)`);
+    } else {
+      log.warn(`[dm-format-verifier] ❌ ${format}: FAILED - ${result.error || 'Unknown error'}`);
+    }
 
     return {
       format,
@@ -246,16 +259,23 @@ export async function verifyDmFormats(imageUrl, log) {
   });
 
   // Generate recommendations - only if savings > 10%
+  log.info(`[dm-format-verifier] 📊 Analysis: smallestFormat=${results.smallestFormat}, currentFormat=${results.currentFormat}`);
+
   if (results.smallestFormat && results.currentFormat) {
     const currentSize = results.formats[results.currentFormat]?.size;
     const optimalSize = results.formats[results.smallestFormat]?.size;
+
+    log.info(`[dm-format-verifier] Comparing: current=${currentSize} bytes, optimal=${optimalSize} bytes`);
 
     if (currentSize && optimalSize && results.smallestFormat !== results.currentFormat) {
       const savingsBytes = currentSize - optimalSize;
       const savingsPercent = Math.round((savingsBytes / currentSize) * 100);
 
+      log.info(`[dm-format-verifier] Potential savings: ${savingsPercent}% (${Math.round(savingsBytes / 1024)} KB)`);
+
       // Only recommend if savings are significant (>10%)
       if (savingsPercent > 10) {
+        log.info(`[dm-format-verifier] ✅ Creating recommendation (savings ${savingsPercent}% > 10% threshold)`);
         results.recommendations.push({
           type: 'format-optimization',
           currentFormat: results.currentFormat,
@@ -267,12 +287,19 @@ export async function verifyDmFormats(imageUrl, log) {
           recommendedUrl: results.formats[results.smallestFormat].url,
           message: `Switch from ${results.currentFormat.toUpperCase()} to ${results.smallestFormat.toUpperCase()} to save ${savingsPercent}% (${Math.round(savingsBytes / 1024)} KB)`,
         });
+      } else {
+        log.info(`[dm-format-verifier] ⚪ No recommendation: savings ${savingsPercent}% < 10% threshold`);
       }
+    } else if (results.smallestFormat === results.currentFormat) {
+      log.info('[dm-format-verifier] ⚪ No recommendation: already using optimal format');
+    } else {
+      log.warn('[dm-format-verifier] ⚠️ No recommendation: missing size data');
     }
   }
 
   // If no current format detected, recommend the smallest available
   if (!results.currentFormat && results.smallestFormat) {
+    log.info(`[dm-format-verifier] ℹ️ No current format detected, recommending smallest: ${results.smallestFormat}`);
     const smallestResult = results.formats[results.smallestFormat];
     results.recommendations.push({
       type: 'format-optimization',
@@ -283,6 +310,7 @@ export async function verifyDmFormats(imageUrl, log) {
     });
   }
 
+  log.info(`[dm-format-verifier] 🏁 Verification complete: ${results.recommendations.length} recommendations`);
   return results;
 }
 

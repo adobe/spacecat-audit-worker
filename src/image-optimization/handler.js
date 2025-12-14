@@ -165,6 +165,8 @@ async function processImagesAndGenerateSuggestions(pagesWithImages, log) {
   const allSuggestions = [];
   const nonDmImagesForVerification = [];
   let totalImagesProcessed = 0;
+  let dmImagesCount = 0;
+  let nonDmImagesCount = 0;
 
   // eslint-disable-next-line no-restricted-syntax
   for (const page of pagesWithImages) {
@@ -183,16 +185,22 @@ async function processImagesAndGenerateSuggestions(pagesWithImages, log) {
         const isImageDm = isDynamicMedia(imageData.src);
         imageData.isDynamicMedia = isImageDm;
 
-        log.debug(`[${AUDIT_TYPE}]: Analyzing image ${totalImagesProcessed}: ${imageData.src} (DM: ${isImageDm})`);
+        log.info(`[${AUDIT_TYPE}]: 📸 Image #${totalImagesProcessed}: ${imageData.src}`);
+        log.info(`[${AUDIT_TYPE}]:    └─ Type: ${isImageDm ? '🔵 DYNAMIC MEDIA' : '⚪ NON-DM (Content DAM)'}`);
+        log.info(`[${AUDIT_TYPE}]:    └─ Size: ${imageData.naturalWidth}x${imageData.naturalHeight}, File: ${imageData.fileSize ? `${Math.round(imageData.fileSize / 1024)} KB` : 'unknown'}`);
 
         // For DM images: run all checkers (includes format verification via HEAD requests)
         // For non-DM images: skip all checkers, only analyze for DM migration opportunity
         if (isImageDm) {
+          dmImagesCount += 1;
+          log.info(`[${AUDIT_TYPE}]:    └─ Running DM checkers...`);
           // eslint-disable-next-line no-await-in-loop
           const suggestions = await runAllChecks(imageData, null, log);
 
           if (suggestions.length > 0) {
-            log.debug(`[${AUDIT_TYPE}]: Found ${suggestions.length} issues for image: ${imageData.src}`);
+            log.info(`[${AUDIT_TYPE}]:    └─ ✅ Found ${suggestions.length} optimization(s) for DM image`);
+          } else {
+            log.info(`[${AUDIT_TYPE}]:    └─ ✓ No optimizations needed (already optimal)`);
           }
 
           suggestions.forEach((suggestion) => {
@@ -208,6 +216,8 @@ async function processImagesAndGenerateSuggestions(pagesWithImages, log) {
 
         // Collect non-DM images for DM migration analysis via Scene7
         if (!isImageDm) {
+          nonDmImagesCount += 1;
+          log.info(`[${AUDIT_TYPE}]:    └─ Queueing for DM migration analysis...`);
           nonDmImagesForVerification.push({
             src: imageData.src,
             pageUrl: page.url,
@@ -224,6 +234,16 @@ async function processImagesAndGenerateSuggestions(pagesWithImages, log) {
 
     log.info(`[${AUDIT_TYPE}]: Completed processing page ${page.url}. Current total suggestions: ${allSuggestions.length}`);
   }
+
+  // Summary of image classification
+  log.info(`[${AUDIT_TYPE}]: ═══════════════════════════════════════════════════════`);
+  log.info(`[${AUDIT_TYPE}]: 📊 IMAGE CLASSIFICATION SUMMARY`);
+  log.info(`[${AUDIT_TYPE}]: ═══════════════════════════════════════════════════════`);
+  log.info(`[${AUDIT_TYPE}]: Total images processed: ${totalImagesProcessed}`);
+  log.info(`[${AUDIT_TYPE}]: 🔵 Dynamic Media images: ${dmImagesCount}`);
+  log.info(`[${AUDIT_TYPE}]: ⚪ Non-DM images (Content DAM): ${nonDmImagesCount}`);
+  log.info(`[${AUDIT_TYPE}]: Suggestions from DM checkers: ${allSuggestions.length}`);
+  log.info(`[${AUDIT_TYPE}]: ═══════════════════════════════════════════════════════`);
 
   // Analyze non-DM images for Dynamic Media migration opportunities
   if (nonDmImagesForVerification.length > 0) {

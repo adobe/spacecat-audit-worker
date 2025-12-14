@@ -23,6 +23,9 @@ import { verifyDmFormats } from '../dm-format-verifier.js';
 export async function checkFormatDetection(imageData, log) {
   // Only check Dynamic Media images
   if (!imageData.isDynamicMedia) {
+    if (log) {
+      log.debug('[format-checker] Skipping non-DM image');
+    }
     return null;
   }
 
@@ -30,12 +33,22 @@ export async function checkFormatDetection(imageData, log) {
     return null;
   }
 
+  log.info(`[format-checker] 🔍 Checking DM format for: ${imageData.src}`);
+
   try {
     const verification = await verifyDmFormats(imageData.src, log);
+
+    log.info(`[format-checker] Verification result: currentFormat=${verification.currentFormat}, smallestFormat=${verification.smallestFormat}, recommendations=${verification.recommendations.length}`);
+
+    if (verification.formats) {
+      log.debug(`[format-checker] Format comparison: ${JSON.stringify(verification.formats)}`);
+    }
 
     // If there are recommendations from the verifier
     if (verification.recommendations && verification.recommendations.length > 0) {
       const rec = verification.recommendations[0];
+
+      log.info(`[format-checker] ✅ Found optimization: ${rec.currentFormat} → ${rec.recommendedFormat}, savings: ${rec.savingsPercent}%`);
 
       return {
         type: 'format-detection',
@@ -59,9 +72,10 @@ export async function checkFormatDetection(imageData, log) {
       };
     }
 
+    log.info('[format-checker] ⚪ No optimization recommendations (image may already be optimized)');
     return null;
   } catch (error) {
-    log.warn(`[format-checker] DM verification failed for ${imageData.src}: ${error.message}`);
+    log.warn(`[format-checker] ❌ DM verification failed for ${imageData.src}: ${error.message}`);
     return null;
   }
 }

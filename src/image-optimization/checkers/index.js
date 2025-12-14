@@ -16,8 +16,6 @@ import { checkResponsiveImages } from './responsive-checker.js';
 import { checkPictureElement } from './picture-element-checker.js';
 import { checkMissingDimensions } from './dimensions-checker.js';
 import { checkLazyLoading } from './lazy-loading-checker.js';
-import { checkWrongFileType } from './file-type-checker.js';
-import { checkSvgOpportunity } from './svg-opportunity-checker.js';
 import { checkBlurryOrUpscaled } from './upscaled-checker.js';
 
 export {
@@ -27,8 +25,6 @@ export {
   checkPictureElement,
   checkMissingDimensions,
   checkLazyLoading,
-  checkWrongFileType,
-  checkSvgOpportunity,
   checkBlurryOrUpscaled,
 };
 
@@ -48,10 +44,14 @@ export async function runAllChecks(imageData, enabledChecks = null, log = null) 
     { name: 'picture', fn: checkPictureElement },
     { name: 'dimensions', fn: checkMissingDimensions },
     { name: 'lazy-loading', fn: checkLazyLoading },
-    { name: 'file-type', fn: checkWrongFileType },
-    { name: 'svg', fn: checkSvgOpportunity },
     { name: 'upscaled', fn: checkBlurryOrUpscaled },
   ];
+
+  if (log) {
+    log.info(`[runAllChecks] 🔍 Starting checks for image: ${imageData.src}`);
+    log.info(`[runAllChecks] Image is DM: ${imageData.isDynamicMedia}`);
+    log.info(`[runAllChecks] Enabled checks: ${enabledChecks ? enabledChecks.join(', ') : 'ALL'}`);
+  }
 
   const suggestions = [];
 
@@ -59,6 +59,10 @@ export async function runAllChecks(imageData, enabledChecks = null, log = null) 
   for (const checker of checkers) {
     // Skip if check is not enabled
     if (!enabledChecks || enabledChecks.includes(checker.name)) {
+      if (log) {
+        log.info(`[runAllChecks] ▶️  Running checker: ${checker.name}`);
+      }
+
       try {
         // Pass log to format checker for DM verification
         const args = checker.name === 'format' ? [imageData, log] : [imageData];
@@ -67,15 +71,26 @@ export async function runAllChecks(imageData, enabledChecks = null, log = null) 
 
         if (result) {
           suggestions.push(result);
+          if (log) {
+            log.info(`[runAllChecks] ✅ Checker ${checker.name} found issue: ${result.type}`);
+          }
+        } else if (log) {
+          log.debug(`[runAllChecks] ⚪ Checker ${checker.name} - no issues found`);
         }
       } catch (error) {
         // Silently skip failed checkers - errors are handled gracefully
         // in production, logging should be handled by the caller
         if (log) {
-          log.debug(`[runAllChecks] Checker ${checker.name} failed: ${error.message}`);
+          log.warn(`[runAllChecks] ❌ Checker ${checker.name} failed: ${error.message}`);
         }
       }
+    } else if (log) {
+      log.debug(`[runAllChecks] ⏭️  Skipping disabled checker: ${checker.name}`);
     }
+  }
+
+  if (log) {
+    log.info(`[runAllChecks] 🏁 Completed checks. Total suggestions: ${suggestions.length}`);
   }
 
   return suggestions;
