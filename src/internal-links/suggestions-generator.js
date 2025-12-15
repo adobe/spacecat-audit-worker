@@ -119,22 +119,27 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
       return null;
     }
 
-    const response = await azureOpenAIClient.fetchChatCompletion(requestBody, azureOpenAIOptions);
+    try {
+      const response = await azureOpenAIClient.fetchChatCompletion(requestBody, azureOpenAIOptions);
 
-    // Return null if NO choices OR finish_reason is not 'stop'
-    if (!response.choices?.length || response.choices[0].finish_reason !== 'stop') {
-      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No suggestions found for ${urlTo}`);
+      // Return null if NO choices OR finish_reason is not 'stop'
+      if (!response.choices?.length || response.choices[0].finish_reason !== 'stop') {
+        log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No suggestions found for ${urlTo}`);
+        return null;
+      }
+
+      // Check for empty content
+      const content = response.choices[0].message?.content;
+      if (!content || content.trim().length === 0) {
+        log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Empty response content for ${urlTo}`);
+        return null;
+      }
+
+      return JSON.parse(content);
+    } catch (error) {
+      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] AI call failed for ${urlTo}: ${error.message}`);
       return null;
     }
-
-    // Check for empty content
-    const content = response.choices[0].message?.content;
-    if (!content || content.trim().length === 0) {
-      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Empty response content for ${urlTo}`);
-      return null;
-    }
-
-    return JSON.parse(content);
   };
 
   async function processBatches(batches, urlTo) {
@@ -175,20 +180,26 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     if (linkTotalBatches > 1) {
       try {
         const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: link.urlTo }, 'broken-backlinks-followup', log);
-        const finalResponse = await azureOpenAIClient
-          .fetchChatCompletion(finalRequestBody, azureOpenAIOptions);
 
-        if (finalResponse.choices?.length >= 1 && finalResponse.choices[0].finish_reason !== 'stop') {
-          log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No final suggestions found for ${link.urlTo}`);
+        try {
+          const finalResponse = await azureOpenAIClient
+            .fetchChatCompletion(finalRequestBody, azureOpenAIOptions);
+
+          if (finalResponse.choices?.length >= 1 && finalResponse.choices[0].finish_reason !== 'stop') {
+            log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No final suggestions found for ${link.urlTo}`);
+            return { ...link };
+          }
+
+          const answer = JSON.parse(finalResponse.choices[0].message.content);
+          return {
+            ...link,
+            urlsSuggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
+            aiRationale: answer.aiRationale?.length > 0 ? answer.aiRationale : 'No suitable suggestions found',
+          };
+        } catch (aiError) {
+          log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Final AI call failed for ${link.urlTo}: ${aiError.message}`);
           return { ...link };
         }
-
-        const answer = JSON.parse(finalResponse.choices[0].message.content);
-        return {
-          ...link,
-          urlsSuggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
-          aiRationale: answer.aiRationale?.length > 0 ? answer.aiRationale : 'No suitable suggestions found',
-        };
       } catch (error) {
         log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Final suggestion error for ${link.urlTo}: ${error.message}`);
         return { ...link };

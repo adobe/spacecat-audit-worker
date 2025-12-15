@@ -290,6 +290,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
         // Include if URL matches one of the broken links' locales, or has no locale
         return !urlLocale || brokenLinkLocales.has(urlLocale);
       });
+
+      // If filtering resulted in no matches, fall back to all URLs
+      if (alternativeUrls.length === 0) {
+        log.warn(
+          `[${AUDIT_TYPE}] [Site: ${site.getId()}] No locale-specific alternatives found, using all top pages`,
+        );
+        alternativeUrls = allTopPageUrls;
+      }
     } else {
       // No locale prefixes found, include all alternatives
       alternativeUrls = allTopPageUrls;
