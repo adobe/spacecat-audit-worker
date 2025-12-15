@@ -108,7 +108,10 @@ The audit can identify and improve the following aspects:
 6. **Authority Issues** (entity_preservation < 0.5 with low trait score)
    - **Problem**: Content lacks authoritative sources and expert references
    - **Recommendation**: Add citations from authoritative sources, expert quotes, and references to official documentation.
-   - **AI Improvement**: Establishes authority with expert sources and official references
+   - **AI Improvement**: 
+     - **With Exa API**: Discovers relevant Wikipedia pages, extracts authoritative definitions, and integrates them with inline [N] citations and a References section
+     - **Without Exa**: Enhances content with authoritative tone and expert-level explanations
+   - **Special Output**: Includes `wikipediaSources` array with extracted authoritative statements
 
 7. **Credibility Issues** (fact_coverage < 0.5 with low trait score)
    - **Problem**: Content lacks verifiable facts and trustworthy sources
@@ -123,7 +126,10 @@ The audit can identify and improve the following aspects:
 9. **Novelty Issues** (detected through novel_info_items metric)
    - **Problem**: Content lacks unique insights or uncommon information
    - **Recommendation**: Include unique insights, uncommon facts, and distinctive information not commonly found elsewhere.
-   - **AI Improvement**: Adds unique perspectives and lesser-known details
+   - **AI Improvement**:
+     - **With Exa API**: Searches for related content across the web, uses LLM to extract novel insights not present in original, and integrates them with inline [N] citations
+     - **Without Exa**: Adds unique perspectives and creative angles to the content
+   - **Special Output**: Includes `novelSources` array with extracted novel insights and their sources
 
 ## Output Format
 
@@ -312,6 +318,26 @@ The audit is implemented in `/src/preflight/information-gain.js` and includes:
 - **Content Improvement Generation**: LLM generates improved content versions targeting specific traits
 - **Trait Correlation Analysis**: Maps content traits to metrics to identify high-impact improvements
 
+### Exa AI Integration (Optional)
+
+When `EXA_API_KEY` is provided, the audit uses Exa AI for enhanced authority and novelty improvements:
+
+#### Authority Enhancement via Wikipedia
+1. **Concept Extraction**: Extracts key concepts/entities from content using capitalization patterns
+2. **Wikipedia Discovery**: Uses Exa's domain-filtered search to find relevant Wikipedia pages
+3. **Authoritative Statement Extraction**: Extracts lead paragraphs and cleans Wikipedia markup
+4. **LLM Integration**: Uses Azure OpenAI to seamlessly integrate Wikipedia definitions with inline [N] citations
+5. **References Generation**: Automatically creates numbered reference section with Wikipedia sources
+
+#### Novelty Enhancement via Web Discovery
+1. **Keyword Extraction**: Extracts topic keywords from first 200 words of content
+2. **Related Content Discovery**: Uses Exa's `findSimilar` API to discover related pages across the web
+3. **Novel Insight Extraction**: Uses Azure OpenAI to identify information in related sources that's absent from original
+4. **LLM Integration**: Seamlessly integrates novel insights with inline [N] citations
+5. **Source Attribution**: Creates reference section with discovered sources
+
+**Fallback Behavior**: If Exa API is unavailable or fails, both aspects automatically fall back to standard LLM-based improvements.
+
 ### Supporting Files
 
 - `/src/preflight/information-gain-constants.js`: Improvement prompts for each trait
@@ -319,12 +345,26 @@ The audit is implemented in `/src/preflight/information-gain.js` and includes:
 
 ### Environment Variables Required
 
+**Required for LLM-based improvements:**
+
 ```bash
 AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com/
 AZURE_OPENAI_KEY=your-api-key
 AZURE_API_VERSION=2024-08-01-preview
 AZURE_COMPLETION_DEPLOYMENT=your-deployment-name
 ```
+
+**Optional for enhanced authority and novelty improvements:**
+
+```bash
+EXA_API_KEY=your-exa-api-key
+```
+
+The Exa API enables:
+- **Authority enhancements**: Discovers authoritative Wikipedia sources and integrates them with citations
+- **Novelty enhancements**: Finds related content across the web and extracts unique insights not present in the original
+
+Without the Exa API key, authority and novelty aspects will use standard LLM-based improvements without external source discovery.
 
 ## Example Use Cases
 

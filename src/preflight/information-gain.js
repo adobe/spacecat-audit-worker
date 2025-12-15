@@ -13,6 +13,7 @@
 import { stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { load as cheerioLoad } from 'cheerio';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
+import ExaClient from '../support/exa-client.js';
 import { saveIntermediateResults } from './utils.js';
 import { IMPROVEMENT_PROMPTS } from './information-gain-constants.js';
 
@@ -649,6 +650,355 @@ async function identifyWeakAspects(
 }
 
 /**
+ * Extract key concepts from content for Wikipedia/novelty searches
+ * @param {string} content - Content to analyze
+ * @param {number} maxConcepts - Maximum concepts to extract
+ * @returns {Array<string>} List of key concepts
+ */
+function extractKeyConcepts(content, maxConcepts = 5) {
+  const concepts = [];
+
+  // Extract capitalized phrases (likely proper nouns/entities)
+  const capitalizedPattern = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g;
+  const matches = content.match(capitalizedPattern);
+
+  if (matches) {
+    const seen = new Set();
+    matches.forEach((match) => {
+      if (match.length > 3 && !seen.has(match)) {
+        seen.add(match);
+        concepts.push(match);
+      }
+    });
+  }
+
+  return concepts.slice(0, maxConcepts);
+}
+
+/**
+ * Generate authority-enhanced content using Wikipedia sources via Exa
+ * @param {Object} azureOpenAIClient - Azure OpenAI client
+ * @param {Object} exaClient - Exa AI client
+ * @param {string} originalContent - Original content
+ * @param {Object} log - Logger
+ * @returns {Promise<Object>} Enhanced content result
+ */
+async function generateAuthorityEnhancement(
+  azureOpenAIClient,
+  exaClient,
+  originalContent,
+  log,
+) {
+  try {
+    // Extract key concepts
+    const concepts = extractKeyConcepts(originalContent, 5);
+    log.info(`[information-gain authority] Extracted concepts: ${concepts.join(', ')}`);
+
+    if (concepts.length === 0) {
+      throw new Error('No concepts extracted from content');
+    }
+
+    // Find Wikipedia pages via Exa
+    const wikipediaPages = [];
+    for (const concept of concepts.slice(0, 3)) {
+      try {
+        log.info(`[information-gain authority] Searching Wikipedia for: ${concept}`);
+
+        // eslint-disable-next-line no-await-in-loop
+        const results = await exaClient.getContentsWithText([`https://en.wikipedia.org/wiki/${concept.replace(/\s+/g, '_')}`]);
+
+        if (results.results && results.results.length > 0) {
+          const result = results.results[0];
+          if (result.text && result.text.length > 100) {
+            wikipediaPages.push({
+              url: result.url,
+              title: result.title || concept,
+              content: result.text.substring(0, 2000),
+              concept,
+            });
+            log.info(`[information-gain authority] Found Wikipedia page: ${result.title}`);
+          }
+        }
+      } catch (error) {
+        log.warn(`[information-gain authority] Wikipedia search failed for "${concept}": ${error.message}`);
+      }
+    }
+
+    if (wikipediaPages.length === 0) {
+      throw new Error('No Wikipedia pages found');
+    }
+
+    // Extract authoritative statements (first paragraph of each)
+    const authStatements = wikipediaPages.map((page) => {
+      const paragraphs = page.content.split('\n').filter((p) => p.trim().length > 50);
+      const leadPara = paragraphs[0] || page.content.substring(0, 500);
+
+      // Clean Wikipedia markup
+      const cleaned = leadPara
+        .replace(/\[.*?\]/g, '') // Remove [citations]
+        .replace(/\{.*?\}/g, '') // Remove {templates}
+        .trim();
+
+      return {
+        statement: cleaned.substring(0, 500),
+        source_title: page.title,
+        source_url: page.url,
+        concept: page.concept,
+      };
+    });
+
+    // Format for LLM prompt
+    const wikiInfoFormatted = authStatements.map((info, idx) => (
+      `${idx + 1}. Concept: "${info.concept}"\n`
+      + `   Definition: ${info.statement}\n`
+      + `   Source: "${info.source_title}"\n`
+      + `   URL: ${info.source_url}`
+    )).join('\n\n');
+
+    const prompt = 'You are an expert content editor focused on adding authoritative references.'
+      + ' Your task is to rewrite the content integrating Wikipedia information with inline citations.\n\n'
+      + `ORIGINAL CONTENT:\n${originalContent}\n\n`
+      + `WIKIPEDIA AUTHORITATIVE INFORMATION:\n${wikiInfoFormatted}\n\n`
+      + 'INSTRUCTIONS:\n'
+      + '1. Rewrite the content maintaining the original structure and flow\n'
+      + '2. Integrate authoritative definitions and facts from Wikipedia naturally\n'
+      + '3. Add inline citations in [N] format after relevant statements\n'
+      + '4. Use citations like: "Artificial intelligence [1] is a field of computer science..."\n'
+      + '5. Each Wikipedia source must be cited at least once\n'
+      + '6. Keep the writing clear, professional, and readable\n'
+      + '7. Do NOT just append Wikipedia text - integrate it naturally\n\n'
+      + 'CITATION RULES:\n'
+      + '- Place [N] immediately after the statement or clause\n'
+      + '- First time mentioning a concept, cite the definition\n'
+      + '- Can reuse same citation number for the same source\n\n'
+      + 'Generate the authority-enhanced content with inline [1], [2], [3] citations:';
+
+    const systemPrompt = 'You are an expert content editor specializing in adding authoritative'
+      + ' Wikipedia citations. Return enhanced content with inline [N] style citations.';
+
+    const response = await azureOpenAIClient.fetchChatCompletion(prompt, { systemPrompt });
+    const enhancedContent = response.choices[0].message.content.trim();
+
+    // Add references section
+    const references = `\n\n## References\n${
+      authStatements.map((info, idx) => `[${idx + 1}] ${info.source_title}. Wikipedia. ${info.source_url}`).join('\n')}`;
+
+    return {
+      enhancedContent: enhancedContent + references,
+      wikipediaSources: authStatements,
+    };
+  } catch (error) {
+    log.error(`[information-gain authority] Enhancement failed: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Generate novelty-enhanced content using Exa to find related sources
+ * @param {Object} azureOpenAIClient - Azure OpenAI client
+ * @param {Object} exaClient - Exa AI client
+ * @param {string} originalContent - Original content
+ * @param {Object} log - Logger
+ * @returns {Promise<Object>} Enhanced content result
+ */
+async function generateNoveltyEnhancement(azureOpenAIClient, exaClient, originalContent, log) {
+  try {
+    // Extract topic keywords
+    const words = originalContent.split(/\s+/).slice(0, 200);
+    const topicText = words.join(' ');
+    const phrases = topicText.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) || [];
+
+    const keywords = [];
+    const seen = new Set();
+    phrases.forEach((phrase) => {
+      if (phrase.length > 3 && !seen.has(phrase) && keywords.length < 3) {
+        seen.add(phrase);
+        keywords.push(phrase);
+      }
+    });
+
+    if (keywords.length === 0) {
+      keywords.push('related information');
+    }
+
+    log.info(`[information-gain novelty] Extracted keywords: ${keywords.join(', ')}`);
+
+    // Find related content via Exa
+    const relatedPages = [];
+    for (const keyword of keywords.slice(0, 2)) {
+      try {
+        log.info(`[information-gain novelty] Searching for: ${keyword}`);
+
+        // eslint-disable-next-line no-await-in-loop
+        const results = await exaClient.findSimilarWithFullContent(
+          `${keyword}`,
+          { numResults: 2 },
+        );
+
+        if (results.results) {
+          results.results.forEach((result) => {
+            if (result.text && result.text.length > 200) {
+              relatedPages.push({
+                url: result.url,
+                title: result.title || keyword,
+                content: result.text.substring(0, 3000),
+                keyword,
+              });
+            }
+          });
+        }
+      } catch (error) {
+        log.warn(`[information-gain novelty] Search failed for "${keyword}": ${error.message}`);
+      }
+    }
+
+    if (relatedPages.length === 0) {
+      throw new Error('No related pages found');
+    }
+
+    log.info(`[information-gain novelty] Found ${relatedPages.length} related pages`);
+
+    // Extract novel insights using LLM
+    const relatedFormatted = relatedPages.map((page, idx) => (
+      `${idx + 1}. Source: ${page.title}\n`
+      + `   URL: ${page.url}\n`
+      + `   Content excerpt: ${page.content.substring(0, 500)}...`
+    )).join('\n\n');
+
+    const extractPrompt = 'You are an expert content analyst. Your task is to identify novel,'
+      + ' unique information from related sources that is NOT already present in the original content.\n\n'
+      + `ORIGINAL CONTENT:\n${originalContent.substring(0, 2000)}\n\n`
+      + `RELATED SOURCES:\n${relatedFormatted}\n\n`
+      + 'INSTRUCTIONS:\n'
+      + '1. Carefully compare the original content with the related sources\n'
+      + '2. Identify 3-5 specific facts, insights, or information pieces that are:\n'
+      + '   - Present in the related sources\n'
+      + '   - NOT mentioned or implied in the original content\n'
+      + '   - Factual and verifiable\n'
+      + '   - Relevant to the main topic\n'
+      + '   - Would add value if integrated\n\n'
+      + '3. For each novel insight, provide:\n'
+      + '   - The specific information/fact\n'
+      + '   - Which source it came from (source number and title)\n'
+      + '   - Why it\'s novel (what makes it different from original)\n\n'
+      + 'Return ONLY a JSON array of novel insights in this exact format:\n'
+      + '[\n'
+      + '  {\n'
+      + '    "insight": "Specific novel fact or information",\n'
+      + '    "source_index": 1,\n'
+      + '    "source_title": "Source Title",\n'
+      + '    "source_url": "URL",\n'
+      + '    "novelty_reason": "Brief explanation of why this is novel"\n'
+      + '  }\n'
+      + ']\n\n'
+      + 'If no truly novel information is found, return an empty array: []';
+
+    const extractSystemPrompt = 'You are an expert at identifying novel information. Return only valid JSON.';
+
+    const extractResponse = await azureOpenAIClient.fetchChatCompletion(
+      extractPrompt,
+      { systemPrompt: extractSystemPrompt },
+    );
+
+    let novelInsights = [];
+    try {
+      let responseText = extractResponse.choices[0].message.content.trim();
+
+      // Clean markdown wrapping
+      if (responseText.includes('```json')) {
+        responseText = responseText.split('```json')[1].split('```')[0].trim();
+      } else if (responseText.includes('```')) {
+        responseText = responseText.split('```')[1].split('```')[0].trim();
+      }
+
+      novelInsights = JSON.parse(responseText);
+
+      if (!Array.isArray(novelInsights)) {
+        log.warn('[information-gain novelty] Response is not an array');
+        novelInsights = [];
+      }
+    } catch (error) {
+      log.error(`[information-gain novelty] Failed to parse insights: ${error.message}`);
+      novelInsights = [];
+    }
+
+    if (novelInsights.length === 0) {
+      throw new Error('No novel insights extracted');
+    }
+
+    log.info(`[information-gain novelty] Extracted ${novelInsights.length} novel insights`);
+
+    // Generate novelty-enhanced content
+    const insightsFormatted = novelInsights.map((insight, idx) => (
+      `${idx + 1}. ${insight.insight}\n`
+      + `   Source: ${insight.source_title} (${insight.source_url})`
+    )).join('\n\n');
+
+    const integratePrompt = 'You are an expert content editor. Your task is to integrate novel'
+      + ' information into existing content seamlessly.\n\n'
+      + `ORIGINAL CONTENT:\n${originalContent}\n\n`
+      + `NOVEL INSIGHTS TO INTEGRATE:\n${insightsFormatted}\n\n`
+      + 'INSTRUCTIONS:\n'
+      + '1. Rewrite the content to naturally integrate the novel insights\n'
+      + '2. Add the new information in relevant sections where it fits contextually\n'
+      + '3. Include inline citations in [N] format after novel facts\n'
+      + '4. Maintain the original structure and voice\n'
+      + '5. Ensure the content flows naturally with the additions\n'
+      + '6. Make the novel information feel like a natural part of the content\n\n'
+      + 'CITATION FORMAT:\n'
+      + '- Use [1], [2], [3] for each novel insight\n'
+      + '- Place immediately after the novel statement\n'
+      + '- Example: "Recent studies show X result [1] which impacts Y..."\n\n'
+      + 'Generate the novelty-enhanced content with inline citations:';
+
+    const integrateSystemPrompt = 'You are an expert content editor specializing in seamlessly'
+      + ' integrating novel information with inline citations.';
+
+    const integrateResponse = await azureOpenAIClient.fetchChatCompletion(
+      integratePrompt,
+      { systemPrompt: integrateSystemPrompt },
+    );
+
+    const enhancedContent = integrateResponse.choices[0].message.content.trim();
+
+    // Add references section
+    const references = `\n\n## References\n${
+      novelInsights.map((insight, idx) => `[${idx + 1}] ${insight.source_title}. ${insight.source_url}`).join('\n')}`;
+
+    return {
+      enhancedContent: enhancedContent + references,
+      novelSources: novelInsights,
+    };
+  } catch (error) {
+    log.error(`[information-gain novelty] Enhancement failed: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Generate standard improvement using Azure OpenAI (for non-authority/novelty aspects)
+ * @param {Object} azureOpenAIClient - Azure OpenAI client
+ * @param {string} originalContent - Original content
+ * @param {string} aspect - Aspect to improve
+ * @returns {Promise<string>} Improved content
+ */
+async function generateStandardImprovement(azureOpenAIClient, originalContent, aspect) {
+  if (!IMPROVEMENT_PROMPTS[aspect]) {
+    throw new Error(`Unknown aspect: ${aspect}`);
+  }
+
+  const promptTemplate = IMPROVEMENT_PROMPTS[aspect];
+  const userPrompt = `Original content:\n${originalContent}\n\n${promptTemplate}`;
+  const systemPrompt = `You are a content improvement specialist focused on enhancing ${aspect}.`;
+
+  const response = await azureOpenAIClient.fetchChatCompletion(userPrompt, {
+    systemPrompt,
+  });
+
+  return response.choices[0].message.content.trim();
+}
+
+/**
  * Analyze page content and calculate InfoGain metrics
  * @param {string} text - Page text content
  * @returns {Object} Analysis result
@@ -680,32 +1030,79 @@ function analyzeContent(text) {
 /**
  * Generate improved content for a specific aspect using Azure OpenAI
  * @param {Object} azureOpenAIClient - Azure OpenAI client
+ * @param {Object} exaClient - Exa AI client (optional, for authority/novelty)
  * @param {string} originalContent - Original content to improve
  * @param {string} aspect - Aspect to improve (e.g., 'specificity', 'completeness')
  * @param {Object} log - Logger
  * @returns {Promise<Object>} Improvement result with new content and metrics
  */
-async function generateImprovement(azureOpenAIClient, originalContent, aspect, log) {
+async function generateImprovement(
+  azureOpenAIClient,
+  exaClient,
+  originalContent,
+  aspect,
+  log,
+) {
   if (!azureOpenAIClient) {
     throw new Error('Azure OpenAI client is required for content improvement');
   }
 
-  if (!IMPROVEMENT_PROMPTS[aspect]) {
-    throw new Error(`Unknown aspect: ${aspect}`);
-  }
-
-  const promptTemplate = IMPROVEMENT_PROMPTS[aspect];
-  const userPrompt = `Original content:\n${originalContent}\n\n${promptTemplate}`;
-  const systemPrompt = `You are a content improvement specialist focused on enhancing ${aspect}.`;
-
   try {
     log.info(`[information-gain] Generating improvement for aspect: ${aspect}`);
 
-    const response = await azureOpenAIClient.fetchChatCompletion(userPrompt, {
-      systemPrompt,
-    });
+    let improvedContent;
+    const additionalData = {};
 
-    const improvedContent = response.choices[0].message.content.trim();
+    // Special handling for authority and novelty aspects using Exa
+    if (aspect === 'authority' && exaClient) {
+      try {
+        const authorityResult = await generateAuthorityEnhancement(
+          azureOpenAIClient,
+          exaClient,
+          originalContent,
+          log,
+        );
+        improvedContent = authorityResult.enhancedContent;
+        additionalData.wikipedia_sources = authorityResult.wikipediaSources;
+      } catch (error) {
+        log.warn(`[information-gain authority] Exa enhancement failed, using standard improvement: ${error.message}`);
+        // Fallback to standard improvement
+        improvedContent = await generateStandardImprovement(
+          azureOpenAIClient,
+          originalContent,
+          aspect,
+          log,
+        );
+      }
+    } else if (aspect === 'novelty' && exaClient) {
+      try {
+        const noveltyResult = await generateNoveltyEnhancement(
+          azureOpenAIClient,
+          exaClient,
+          originalContent,
+          log,
+        );
+        improvedContent = noveltyResult.enhancedContent;
+        additionalData.novel_sources = noveltyResult.novelSources;
+      } catch (error) {
+        log.warn(`[information-gain novelty] Exa enhancement failed, using standard improvement: ${error.message}`);
+        // Fallback to standard improvement
+        improvedContent = await generateStandardImprovement(
+          azureOpenAIClient,
+          originalContent,
+          aspect,
+          log,
+        );
+      }
+    } else {
+      // Standard improvement for other aspects
+      improvedContent = await generateStandardImprovement(
+        azureOpenAIClient,
+        originalContent,
+        aspect,
+        log,
+      );
+    }
 
     // Analyze the improved content to get new metrics
     const improvedAnalysis = analyzeContent(improvedContent);
@@ -739,6 +1136,7 @@ async function generateImprovement(azureOpenAIClient, originalContent, aspect, l
       improvedContentEntityCount: improvedEntities.size,
       improvementDelta,
       aiRationale: `Content improved to enhance ${aspect}, resulting in better information density and SEO value.`,
+      ...additionalData, // Include wikipedia_sources or novel_sources if present
     };
   } catch (error) {
     log.error(`[information-gain] Content improvement failed for ${aspect}: ${error.message}`);
@@ -774,6 +1172,15 @@ export default async function informationGain(context, auditContext) {
     log.info('[information-gain] Azure OpenAI client initialized successfully');
   } catch (error) {
     log.warn(`[information-gain] Azure OpenAI client initialization failed: ${error.message}. Problem extraction and improvements will be limited.`);
+  }
+
+  // Initialize Exa AI client for authority/novelty enhancements
+  let exaClient = null;
+  try {
+    exaClient = ExaClient.createFrom(context);
+    log.info('[information-gain] Exa AI client initialized successfully');
+  } catch (error) {
+    log.warn(`[information-gain] Exa AI client initialization failed: ${error.message}. Authority and novelty enhancements will use fallback approach.`);
   }
 
   // Create information-gain audit entries for all pages
@@ -936,12 +1343,13 @@ export default async function informationGain(context, auditContext) {
                 // eslint-disable-next-line no-await-in-loop
                 const improvement = await generateImprovement(
                   azureOpenAIClient,
+                  exaClient, // Pass exaClient for authority/novelty enhancements
                   textContent,
                   aspect.aspect,
                   log,
                 );
 
-                weakAspectsWithImprovements.push({
+                const improvementData = {
                   ...aspectData,
                   improvedContent: improvement.improvedContent,
                   newSummary: improvement.newSummary,
@@ -958,7 +1366,19 @@ export default async function informationGain(context, auditContext) {
                   newTraitScores: improvement.newTraitScores,
                   aiRationale: improvement.aiRationale,
                   suggestionStatus: 'completed',
-                });
+                };
+
+                // Add authority-specific sources if present
+                if (improvement.wikipedia_sources) {
+                  improvementData.wikipediaSources = improvement.wikipedia_sources;
+                }
+
+                // Add novelty-specific sources if present
+                if (improvement.novel_sources) {
+                  improvementData.novelSources = improvement.novel_sources;
+                }
+
+                weakAspectsWithImprovements.push(improvementData);
               } catch (error) {
                 log.error(`[information-gain suggest] Failed to generate improvement for ${aspect.aspect}: ${error.message}`);
                 weakAspectsWithImprovements.push({
