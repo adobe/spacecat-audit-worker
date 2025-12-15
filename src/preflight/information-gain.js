@@ -464,25 +464,12 @@ Return ONLY a JSON array of strings, nothing else:
 }
 
 /**
- * Identify weak aspects based on metrics
+ * Correlate content traits with InfoGain metrics
+ * @param {Object} traitScores - Content trait scores (0-10 for each trait)
  * @param {Object} metrics - InfoGain metrics
- * @param {Object} traitScores - Content trait scores
- * @param {Object} azureOpenAIClient - Azure OpenAI client (optional)
- * @param {string} originalContent - Original content (optional, for problem extraction)
- * @param {Object} log - Logger
- * @returns {Promise<Array<Object>>} Weak aspects
+ * @returns {Object} Trait correlations with impact analysis
  */
-async function identifyWeakAspects(metrics, traitScores, azureOpenAIClient, originalContent, log) {
-  const weakAspects = [];
-  const tenPoint = metrics.ten_point_score;
-
-  // Only suggest improvements if score is below 9.0 (excellent threshold)
-  if (tenPoint >= 9.0) {
-    log.info(`[information-gain] Score is excellent (${tenPoint}/10), no improvements suggested`);
-    return weakAspects;
-  }
-
-  // Define trait-to-metric mapping for correlation analysis
+function correlateTraitsWithMetrics(traitScores, metrics) {
   const traitToMetricMapping = {
     specificity: 'entity_preservation',
     completeness: 'fact_coverage',
@@ -494,6 +481,93 @@ async function identifyWeakAspects(metrics, traitScores, azureOpenAIClient, orig
     recency: 'semantic_similarity',
     novelty: 'novel_info_items',
   };
+
+  const traitDescriptions = {
+    relevance: 'Content alignment with target topics and search intent',
+    recency: 'Timeliness and currency of information presented',
+    authority: 'Establishment of expertise and authoritative sources',
+    credibility: 'Trustworthiness and reliability indicators',
+    nuance: 'Depth and thoroughness of topic coverage',
+    quality: 'Writing clarity, structure, and professionalism',
+    specificity: 'Use of concrete details, names, and specific references',
+    completeness: 'Coverage of key facts, data points, and information',
+    novelty: 'Uniqueness and originality of information provided',
+  };
+
+  const correlations = {};
+
+  Object.entries(traitScores).forEach(([trait, score]) => {
+    const mappedMetric = traitToMetricMapping[trait];
+    if (!mappedMetric) {
+      return;
+    }
+
+    let metricValue = metrics[mappedMetric] || 0;
+
+    // Handle special cases
+    if (mappedMetric === 'novel_info_items') {
+      // Normalize to 0-1 scale (assume 10 as good baseline)
+      metricValue = Array.isArray(metrics.novel_info_items)
+        ? metrics.novel_info_items.length / 10
+        : 0;
+    }
+
+    // Determine impact level based on trait score and metric value
+    let impact = 'low';
+    let isProblematic = false;
+
+    if (trait === 'quality') {
+      // For quality, lower compression_ratio is better
+      isProblematic = metricValue > 0.6 && score < 6.0;
+    } else {
+      // For other traits, higher is better
+      isProblematic = metricValue < 0.5 && score < 6.0;
+    }
+
+    if (isProblematic) {
+      impact = 'high';
+    } else if (score < 7.0) {
+      impact = 'medium';
+    }
+
+    correlations[trait] = {
+      trait_score: score,
+      mapped_metric: mappedMetric,
+      metric_value: metricValue,
+      impact,
+      description: traitDescriptions[trait] || '',
+    };
+  });
+
+  return correlations;
+}
+
+/**
+ * Identify weak aspects based on metrics
+ * @param {Object} metrics - InfoGain metrics
+ * @param {Object} traitScores - Content trait scores
+ * @param {Object} traitCorrelations - Trait correlation analysis
+ * @param {Object} azureOpenAIClient - Azure OpenAI client (optional)
+ * @param {string} originalContent - Original content (optional, for problem extraction)
+ * @param {Object} log - Logger
+ * @returns {Promise<Array<Object>>} Weak aspects
+ */
+async function identifyWeakAspects(
+  metrics,
+  traitScores,
+  traitCorrelations,
+  azureOpenAIClient,
+  originalContent,
+  log,
+) {
+  const weakAspects = [];
+  const tenPoint = metrics.ten_point_score;
+
+  // Only suggest improvements if score is below 9.0 (excellent threshold)
+  if (tenPoint >= 9.0) {
+    log.info(`[information-gain] Score is excellent (${tenPoint}/10), no improvements suggested`);
+    return weakAspects;
+  }
 
   // Reason templates for each trait
   const reasonMap = {
@@ -521,30 +595,16 @@ async function identifyWeakAspects(metrics, traitScores, azureOpenAIClient, orig
     novelty: 'Include unique insights, uncommon facts, and distinctive information not commonly found elsewhere.',
   };
 
-  // Correlate traits with metrics to identify high-impact weaknesses
-  for (const [trait, mappedMetric] of Object.entries(traitToMetricMapping)) {
-    const traitScore = traitScores[trait] || 0;
-    let metricValue = metrics[mappedMetric] || 0;
+  // Use trait correlations to identify high-impact weaknesses
+  if (traitCorrelations) {
+    // Get all high-impact traits from correlation analysis
+    const highImpactTraits = Object.entries(traitCorrelations)
+      .filter(([, corr]) => corr.impact === 'high');
 
-    // Handle special cases
-    if (mappedMetric === 'novel_info_items') {
-      // Normalize to 0-1 scale (assume 10 as good baseline)
-      metricValue = Array.isArray(metrics.novel_info_items)
-        ? metrics.novel_info_items.length / 10
-        : 0;
-    }
-
-    // Determine if this trait is problematic
-    let isProblematic = false;
-    if (trait === 'quality') {
-      // For quality, lower compression_ratio is better
-      isProblematic = metricValue > 0.6 && traitScore < 6.0;
-    } else {
-      // For other traits, higher is better
-      isProblematic = metricValue < 0.5 && traitScore < 6.0;
-    }
-
-    if (isProblematic) {
+    // Create weak aspects for each high-impact trait
+    for (const [trait, corr] of highImpactTraits) {
+      const metricValue = corr.metric_value || 0;
+      const traitScore = corr.trait_score || 0;
       const suggestedKeywords = FEATURE_ONTOLOGY[trait] || [];
 
       // Extract problem examples using LLM if content is available
@@ -570,7 +630,13 @@ async function identifyWeakAspects(metrics, traitScores, azureOpenAIClient, orig
         reason: reasonMap[trait] ? reasonMap[trait](metricValue) : `Trait "${trait}" needs improvement for better SEO performance.`,
         current_score: metricValue,
         trait_score: traitScore,
-        seoImpact: isProblematic && metricValue < 0.4 ? 'High' : 'Moderate',
+        trait_analysis: {
+          trait,
+          score: traitScore,
+          description: corr.description || '',
+          impact_on_infogain: corr.impact || 'high',
+        },
+        seoImpact: metricValue < 0.4 ? 'High' : 'Moderate',
         seoRecommendation: seoRecommendationMap[trait] || `Improve ${trait} by focusing on relevant keywords and adding more specific content.`,
         suggestedKeywords: suggestedKeywords.slice(0, 5),
         problemExamples: problemExamples || [],
@@ -752,9 +818,33 @@ export default async function informationGain(context, auditContext) {
           seoRecommendation: 'Ensure page has sufficient text content',
         });
       } else {
-        // For identify step, add metrics and basic analysis
+        // For identify step, add metrics and trait correlation analysis
         if (step === 'identify') {
-          infoGainAudit.opportunities.push({
+          // Calculate trait correlations
+          const traitCorrelations = correlateTraitsWithMetrics(
+            analysis.trait_scores,
+            analysis.metrics,
+          );
+
+          // Convert to array format for response
+          const traitCorrelationsArray = Object.entries(traitCorrelations).map(([trait, corr]) => ({
+            trait,
+            traitScore: corr.trait_score,
+            mappedMetric: corr.mapped_metric,
+            metricValue: corr.metric_value.toFixed(2),
+            impact: corr.impact,
+            description: corr.description,
+          }));
+
+          // Sort by impact (high first) and then by trait score (low first)
+          traitCorrelationsArray.sort((a, b) => {
+            const impactOrder = { high: 0, medium: 1, low: 2 };
+            const impactCompare = impactOrder[a.impact] - impactOrder[b.impact];
+            if (impactCompare !== 0) return impactCompare;
+            return a.traitScore - b.traitScore;
+          });
+
+          const opportunity = {
             check: 'information-gain-score',
             score: analysis.metrics.ten_point_score,
             scoreCategory: analysis.score_category,
@@ -767,20 +857,59 @@ export default async function informationGain(context, auditContext) {
               infogain_score: analysis.metrics.infogain_score.toFixed(2),
             },
             traitScores: analysis.trait_scores,
+            traitCorrelations: traitCorrelationsArray,
             summary: analysis.summary,
             seoImpact: analysis.score_category === 'excellent' || analysis.score_category === 'good' ? 'Low' : 'High',
             seoRecommendation: analysis.score_category === 'excellent' || analysis.score_category === 'good'
               ? 'Content has good information density and SEO value'
               : 'Content needs improvement in information density and specificity',
-          });
+          };
+
+          // For non-excellent scores, optionally identify weak aspects (without improvements)
+          if (analysis.score_category !== 'excellent' && azureOpenAIClient) {
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              const weakAspects = await identifyWeakAspects(
+                analysis.metrics,
+                analysis.trait_scores,
+                traitCorrelations,
+                azureOpenAIClient,
+                textContent,
+                log,
+              );
+
+              if (weakAspects.length > 0) {
+                // Include weak aspects summary in identify step (without improvements)
+                opportunity.weakAspectsIdentified = weakAspects.map((aspect) => ({
+                  aspect: aspect.aspect,
+                  reason: aspect.reason,
+                  currentScore: aspect.current_score.toFixed(2),
+                  traitScore: aspect.trait_score.toFixed(1),
+                  seoImpact: aspect.seoImpact,
+                  problemExamples: aspect.problemExamples || [],
+                }));
+              }
+            } catch (error) {
+              log.warn(`[information-gain identify] Failed to identify weak aspects: ${error.message}`);
+            }
+          }
+
+          infoGainAudit.opportunities.push(opportunity);
         }
 
         // For suggest step, identify weak aspects and generate improvements
         if (step === 'suggest') {
+          // Calculate trait correlations
+          const traitCorrelations = correlateTraitsWithMetrics(
+            analysis.trait_scores,
+            analysis.metrics,
+          );
+
           // eslint-disable-next-line no-await-in-loop
           const weakAspects = await identifyWeakAspects(
             analysis.metrics,
             analysis.trait_scores,
+            traitCorrelations,
             azureOpenAIClient,
             textContent,
             log,
@@ -794,6 +923,7 @@ export default async function informationGain(context, auditContext) {
               reason: aspect.reason,
               currentScore: aspect.current_score.toFixed(2),
               traitScore: aspect.trait_score.toFixed(1),
+              traitAnalysis: aspect.trait_analysis,
               seoImpact: aspect.seoImpact,
               seoRecommendation: aspect.seoRecommendation,
               suggestedKeywords: aspect.suggestedKeywords || [],
@@ -846,6 +976,23 @@ export default async function informationGain(context, auditContext) {
             }
           }
 
+          // Convert trait correlations to array format
+          const traitCorrelationsArray = Object.entries(traitCorrelations).map(([trait, corr]) => ({
+            trait,
+            traitScore: corr.trait_score,
+            mappedMetric: corr.mapped_metric,
+            metricValue: corr.metric_value.toFixed(2),
+            impact: corr.impact,
+            description: corr.description,
+          }));
+
+          traitCorrelationsArray.sort((a, b) => {
+            const impactOrder = { high: 0, medium: 1, low: 2 };
+            const impactCompare = impactOrder[a.impact] - impactOrder[b.impact];
+            if (impactCompare !== 0) return impactCompare;
+            return a.traitScore - b.traitScore;
+          });
+
           infoGainAudit.opportunities.push({
             check: 'information-gain-analysis',
             score: analysis.metrics.ten_point_score,
@@ -858,6 +1005,7 @@ export default async function informationGain(context, auditContext) {
               infogain_score: analysis.metrics.infogain_score.toFixed(2),
             },
             traitScores: analysis.trait_scores,
+            traitCorrelations: traitCorrelationsArray,
             weakAspects: weakAspectsWithImprovements,
             summary: analysis.summary,
             seoImpact: weakAspects.length > 0 ? 'High' : 'Low',

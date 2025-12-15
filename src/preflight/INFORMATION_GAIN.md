@@ -53,11 +53,15 @@ The audit also analyzes content across 9 key traits:
 
 ### Identify Step
 
-In the identify step, the audit calculates all metrics and provides:
-- InfoGain score and category
-- All calculated metrics
-- Content trait scores
-- Summary of the page content
+In the identify step, the audit calculates all metrics and provides comprehensive analysis:
+
+1. **InfoGain Metrics**: Complete metric calculation including score and category
+2. **Content Trait Scores**: Scores for all 9 content traits (0-10 scale)
+3. **Trait Correlation Analysis**: Maps each trait to its corresponding InfoGain metric with impact assessment
+4. **Content Summary**: Extractive summary of the page content
+5. **Weak Aspects Identification** (optional, for non-excellent scores): When Azure OpenAI is available, identifies problematic aspects with LLM-extracted problem examples
+
+The identify step now provides deep insights into content quality by correlating traits with metrics, helping understand exactly which aspects are affecting the InfoGain score and why.
 
 ### Suggest Step
 
@@ -137,21 +141,61 @@ The audit adds opportunities to the preflight response with the following struct
     "semantic_similarity": "0.82",
     "entity_preservation": "0.67",
     "fact_coverage": "0.78",
+    "entropy_ratio": "0.91",
     "infogain_score": "0.76"
   },
   "traitScores": {
     "relevance": 7.2,
-    "specificity": 6.8,
-    "completeness": 7.5,
-    "quality": 6.9,
-    "nuance": 7.1,
+    "recency": 7.2,
     "authority": 6.8,
     "credibility": 7.5,
-    "recency": 7.2
+    "nuance": 7.1,
+    "quality": 6.9,
+    "specificity": 6.8,
+    "completeness": 7.5,
+    "novelty": 6.5
   },
+  "traitCorrelations": [
+    {
+      "trait": "specificity",
+      "traitScore": 6.8,
+      "mappedMetric": "entity_preservation",
+      "metricValue": "0.67",
+      "impact": "medium",
+      "description": "Use of concrete details, names, and specific references"
+    },
+    {
+      "trait": "completeness",
+      "traitScore": 7.5,
+      "mappedMetric": "fact_coverage",
+      "metricValue": "0.78",
+      "impact": "low",
+      "description": "Coverage of key facts, data points, and information"
+    }
+  ],
   "summary": "Adobe released Premiere Pro 24.1 with AI features...",
   "seoImpact": "Low",
   "seoRecommendation": "Content has good information density and SEO value"
+}
+```
+
+For non-excellent scores with Azure OpenAI available, the identify response may also include:
+
+```json
+{
+  "weakAspectsIdentified": [
+    {
+      "aspect": "specificity",
+      "reason": "Low entity preservation (45%). Content lacks specific names...",
+      "currentScore": "0.45",
+      "traitScore": "4.2",
+      "seoImpact": "High",
+      "problemExamples": [
+        "We have various products that can help with different tasks...",
+        "Many features are available in our software..."
+      ]
+    }
+  ]
 }
 ```
 
@@ -169,13 +213,47 @@ The audit adds opportunities to the preflight response with the following struct
     "fact_coverage": "0.48",
     "infogain_score": "0.52"
   },
-  "traitScores": { ... },
+  "traitScores": {
+    "specificity": 4.2,
+    "completeness": 4.5,
+    "relevance": 6.1,
+    "quality": 5.8,
+    "nuance": 5.3,
+    "authority": 3.9,
+    "credibility": 4.7,
+    "recency": 5.5,
+    "novelty": 4.1
+  },
+  "traitCorrelations": [
+    {
+      "trait": "authority",
+      "traitScore": 3.9,
+      "mappedMetric": "entity_preservation",
+      "metricValue": "0.45",
+      "impact": "high",
+      "description": "Establishment of expertise and authoritative sources"
+    },
+    {
+      "trait": "specificity",
+      "traitScore": 4.2,
+      "mappedMetric": "entity_preservation",
+      "metricValue": "0.45",
+      "impact": "high",
+      "description": "Use of concrete details, names, and specific references"
+    }
+  ],
   "weakAspects": [
     {
       "aspect": "specificity",
       "reason": "Low entity preservation (45%). Content lacks specific names, products, or concrete references for SEO keywords.",
       "currentScore": "0.45",
       "traitScore": "4.2",
+      "traitAnalysis": {
+        "trait": "specificity",
+        "score": 4.2,
+        "description": "Use of concrete details, names, and specific references",
+        "impact_on_infogain": "high"
+      },
       "seoImpact": "High",
       "seoRecommendation": "Add specific product names, version numbers, and named entities. Include precise metrics and exact terminology.",
       "suggestedKeywords": ["specific", "precise", "exact", "particular", "concrete"],
