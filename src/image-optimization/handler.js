@@ -33,6 +33,9 @@ function isDynamicMedia(url) {
 const AUDIT_TYPE = 'image-optimization';
 // const { AUDIT_STEP_DESTINATIONS } = Audit; // Uncomment for full pipeline
 
+// Limit number of pages to process (set to 0 or null for no limit)
+const MAX_PAGES_TO_PROCESS = 5;
+
 /**
  * Build a unique key for suggestion deduplication
  * @param {Object} data - Suggestion data
@@ -522,8 +525,16 @@ export async function runAuditAndGenerateSuggestions(context) {
     log.info(`[${AUDIT_TYPE}]: Built scrapeResultPaths Map with ${scrapeResultPaths.size} entries`);
   }
 
+  // Apply page limit if configured
+  let pagesToProcess = [...scrapeResultPaths];
+  if (MAX_PAGES_TO_PROCESS && MAX_PAGES_TO_PROCESS > 0
+    && pagesToProcess.length > MAX_PAGES_TO_PROCESS) {
+    log.info(`[${AUDIT_TYPE}]: Limiting to ${MAX_PAGES_TO_PROCESS} pages (from ${pagesToProcess.length} total)`);
+    pagesToProcess = pagesToProcess.slice(0, MAX_PAGES_TO_PROCESS);
+  }
+
   const pagesWithImagesResults = await Promise.all(
-    [...scrapeResultPaths].map(([url, path]) => fetchAndProcessPageImages(
+    pagesToProcess.map(([url, path]) => fetchAndProcessPageImages(
       s3Client,
       bucketName,
       url,
