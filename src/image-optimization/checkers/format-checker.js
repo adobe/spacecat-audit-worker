@@ -50,23 +50,56 @@ export async function checkFormatDetection(imageData, log) {
 
       log.info(`[format-checker] ✅ Found optimization: ${rec.currentFormat} → ${rec.recommendedFormat}, savings: ${rec.savingsPercent}%`);
 
+      // Calculate KB and MB for consistency
+      const savingsKB = Math.round(rec.savingsBytes / 1024);
+      const savingsMB = (rec.savingsBytes / 1024 / 1024).toFixed(2);
+
+      // Determine severity and impact based on savings percentage (aligned with non-DM logic)
+      let severity = 'low';
+      let impact = 'low';
+      if (rec.savingsPercent > 50) {
+        severity = 'high';
+        impact = 'high';
+      } else if (rec.savingsPercent > 25) {
+        severity = 'medium';
+        impact = 'medium';
+      }
+
       return {
-        type: 'format-detection',
-        severity: rec.savingsPercent > 30 ? 'high' : 'medium',
-        impact: rec.savingsBytes > 100000 ? 'high' : 'medium',
-        title: `Convert to ${rec.recommendedFormat?.toUpperCase() || 'AVIF'}`,
+        type: 'image-format-optimization',
+        checkerType: 'format-detection',
+        severity,
+        impact,
+        title: `Optimize to ${rec.recommendedFormat?.toUpperCase()} for ${rec.savingsPercent}% savings`,
         description: rec.message,
-        imageUrl: imageData.src,
+        recommendation: `Update image URL to use ?fmt=${rec.recommendedFormat} parameter to reduce file size by ${savingsKB} KB`,
+
+        // Image location (unified)
+        imageSrc: imageData.src,
+
+        // Format optimization (unified)
         currentFormat: rec.currentFormat,
         recommendedFormat: rec.recommendedFormat,
-        recommendedUrl: rec.recommendedUrl,
         currentSize: rec.currentSize,
         projectedSize: rec.recommendedSize,
+
+        // Savings (unified)
         savingsBytes: rec.savingsBytes,
+        savingsKB,
+        savingsMB,
         savingsPercent: rec.savingsPercent,
+
+        // Suggested URL (unified)
+        suggestedUrl: rec.recommendedUrl,
+        suggestedUrlExpiry: null,
+
+        // DM specific
+        requiresMigration: false,
+        verified: true,
+        verificationMethod: 'dm-head-request',
+
+        // Additional info
         dimensions: `${imageData.naturalWidth}x${imageData.naturalHeight}`,
-        recommendation: rec.message,
-        verificationMethod: 'real-dm-check',
         formatComparison: verification.formats,
         smartImagingAlternative: 'Alternatively, enable Smart Imaging by adding bfc=on parameter. This automatically converts images to the best format (AVIF, WebP, JPEG 2000, or JPEG XR) based on browser support.',
       };

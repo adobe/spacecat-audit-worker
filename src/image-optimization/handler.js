@@ -87,13 +87,19 @@ function sanitizeObject(obj) {
  */
 function mapCheckerTypeToSuggestionType(checkerType) {
   const typeMapping = {
+    // Image optimization - unified type
+    'image-format-optimization': 'CONTENT_UPDATE',
+    'format-detection': 'CONTENT_UPDATE',
+    'dm-migration-opportunity': 'CONFIG_UPDATE',
+    'non-dm-format-verified': 'CONTENT_UPDATE',
+
+    // Dimension issues
     'oversized-image': 'CONTENT_UPDATE',
     'upscaled-image': 'CONTENT_UPDATE',
     'blurry-image': 'CONTENT_UPDATE',
+
+    // Other optimization
     'wrong-file-type': 'CONTENT_UPDATE',
-    'format-detection': 'CONTENT_UPDATE',
-    'non-dm-format-verified': 'CONTENT_UPDATE',
-    'dm-migration-opportunity': 'CONFIG_UPDATE',
     'missing-dimensions': 'CODE_CHANGE',
     'missing-lazy-loading': 'CODE_CHANGE',
     'responsive-images': 'CODE_CHANGE',
@@ -274,27 +280,49 @@ async function processImagesAndGenerateSuggestions(pagesWithImages, log) {
             impact = 'medium';
           }
 
+          // Get suggested URL - the URL with the recommended (smallest) format
+          const suggestedUrl = result.formats?.[rec.recommendedFormat]?.url || result.previewUrl;
+
           allSuggestions.push({
-            type: 'dm-migration-opportunity',
+            type: 'image-format-optimization',
+            checkerType: 'dm-migration-opportunity',
             severity,
             impact,
             title: `Migrate to Adobe Dynamic Media for ${rec.savingsPercent}% bandwidth cost savings`,
             description: `By migrating this image to Adobe Dynamic Media and using ${rec.recommendedFormat?.toUpperCase() || 'AVIF'} format, you can reduce bandwidth costs significantly.`,
             recommendation: `Migrate to Adobe Dynamic Media to enable automatic format optimization (${rec.currentFormat?.toUpperCase()} → ${rec.recommendedFormat?.toUpperCase()}). This will save ${bandwidthSavingsKB} KB (${rec.savingsPercent}%) per image load.`,
+
+            // Location (unified)
             url: result.pageUrl,
             imageSrc: result.originalUrl,
             imageAlt: result.alt || '',
-            verified: true,
+
+            // Format optimization (unified)
             currentFormat: rec.currentFormat,
             recommendedFormat: rec.recommendedFormat,
             currentSize: rec.currentSize,
-            projectedSizeWithDM: rec.recommendedSize,
+            projectedSize: rec.recommendedSize,
+
+            // Savings (unified)
             savingsBytes: bandwidthSavingsBytes,
             savingsKB: bandwidthSavingsKB,
             savingsMB: bandwidthSavingsMB,
             savingsPercent: rec.savingsPercent,
+
+            // Suggested URL (unified) - points to recommended format
+            suggestedUrl,
+            suggestedUrlExpiry: result.previewExpiry,
+
+            // Non-DM specific
+            requiresMigration: true,
+            verified: true,
+            verificationMethod: 'scene7-snapshot-api',
+
+            // Preview info (for reference)
             previewUrl: result.previewUrl,
             previewExpiry: result.previewExpiry,
+
+            // Format comparison and migration benefit
             formatComparison: result.formats,
             migrationBenefit: {
               automaticFormatOptimization: true,
