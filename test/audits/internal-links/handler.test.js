@@ -226,7 +226,7 @@ describe('Broken internal links audit', () => {
 
     await expect(prepareScrapingStep(context))
       .to.be.rejectedWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skip scraping and suggestion generation`);
-    
+
     // Verify that SiteTopPage.allBySiteIdAndSourceAndGeo was not called since we exit early
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
   }).timeout(5000);
@@ -259,7 +259,7 @@ describe('Broken internal links audit', () => {
       { getUrl: () => 'https://example.com/products' },
       { getUrl: () => 'https://example.com/about' },
     ];
-    
+
     context.dataAccess.SiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPagesOutsideScope),
     };
@@ -342,8 +342,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       getSuggestions: sandbox.stub().resolves([]),
       setAuditId: sandbox.stub(),
       save: sandbox.stub().resolves(),
-      setData: () => {},
-      getData: () => {},
+      setData: () => { },
+      getData: () => { },
       setUpdatedBy: sandbox.stub().returnsThis(),
     };
 
@@ -377,7 +377,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // Stub is already initialized in beforeEach, just update the method
     context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
       .resolves(AUDIT_RESULT_DATA_WITH_SUGGESTIONS.map((data) => (
-        { getData: () => data, getId: () => '1111', save: () => {} })));
+        { getData: () => data, getId: () => '1111', save: () => { } })));
   });
 
   afterEach(() => {
@@ -652,10 +652,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     // Verify SQS was called with only non-PDF URLs
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    const sqsCall = context.sqs.sendMessage.getCall(0);
-    const messageBody = JSON.parse(sqsCall.args[1]);
-    expect(messageBody.alternativeUrls).to.have.lengthOf(1);
-    expect(messageBody.alternativeUrls[0]).to.equal('https://example.com/page1');
+    const messageArg = context.sqs.sendMessage.getCall(0).args[1];
+    expect(messageArg.data.alternativeUrls).to.have.lengthOf(1);
+    expect(messageArg.data.alternativeUrls[0]).to.equal('https://example.com/page1');
   }).timeout(5000);
 
   it('Existing opportunity and suggestions are updated if no broken internal links found', async () => {
@@ -794,7 +793,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(opportunity.save).to.have.been.calledOnce;
   }).timeout(5000);
 
-   it('returns original auditData if audit result is unsuccessful', async () => {
+  it('returns original auditData if audit result is unsuccessful', async () => {
     const FailureAuditData = {
       ...auditData,
       getAuditResult: () => ({
@@ -1001,13 +1000,13 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         isHandlerEnabledForSite: () => true,
       }),
     };
-    
+
     // Create opportunity with missing getId()
     const opportunityWithoutId = {
       ...opportunity,
       getId: () => undefined, // Missing ID
     };
-    
+
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunityWithoutId]);
     context.site.getBaseURL = () => 'https://bulk.com';
     context.site.getDeliveryType = () => 'aem_edge';
