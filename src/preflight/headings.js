@@ -124,6 +124,7 @@ export default async function headings(context, auditContext) {
           scrapeJsonObject,
           log,
           seoChecks,
+          context,
         );
 
         return result || { url, checks: [] };

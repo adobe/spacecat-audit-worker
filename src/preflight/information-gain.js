@@ -517,7 +517,10 @@ function correlateTraitsWithMetrics(traitScores, metrics) {
     let impact = 'low';
     let isProblematic = false;
 
-    if (trait === 'quality') {
+    // A very low trait score (< 5.0) indicates high impact regardless of metric
+    if (score < 5.0) {
+      isProblematic = true;
+    } else if (trait === 'quality') {
       // For quality, lower compression_ratio is better
       isProblematic = metricValue > 0.6 && score < 6.0;
     } else {
