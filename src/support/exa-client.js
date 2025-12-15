@@ -65,12 +65,17 @@ export default class ExaClient {
    * @returns {ExaClient} - The Exa client instance
    */
   static createFrom(context) {
+    if (!context) {
+      throw new Error('Context is required to create ExaClient');
+    }
+
     const { log = console } = context;
+    const env = context.env || {};
 
     const {
       EXA_API_KEY: apiKey,
       EXA_API_ENDPOINT: apiEndpoint = EXA_API_BASE_URL,
-    } = context.env;
+    } = env;
 
     if (!hasText(apiKey)) {
       throw new Error('Missing Exa API key (EXA_API_KEY)');

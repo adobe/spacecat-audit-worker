@@ -264,6 +264,18 @@ export async function getBrandGuidelines(healthyTagsObject, log, context) {
  */
 async function getTocDetails($, url, pageTags, log, context, scrapedAt) {
   try {
+    // Validate context before proceeding
+    if (!context) {
+      log.warn(`[TOC Detection] Context is undefined for ${url}, skipping TOC detection`);
+      return {
+        tocPresent: false,
+        TOCCSSSelector: null,
+        confidence: 1,
+        reasoning: 'Context unavailable for TOC detection',
+        suggestedPlacement: null,
+      };
+    }
+
     // Extract first 3000 characters from body
     const bodyElement = $('body')[0];
     const bodyHTML = $(bodyElement).html() || '';
