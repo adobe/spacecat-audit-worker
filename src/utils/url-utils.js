@@ -147,6 +147,20 @@ export function getBaseUrl(url, useHostnameOnly = false) {
   return removeTrailingSlash(url);
 }
 
+/**
+ * Checks if a URL points to a PDF file
+ * @param {string} url - The URL to check
+ * @returns {boolean} True if URL is a PDF, false otherwise
+ */
+export function isPdfUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.pathname.toLowerCase().endsWith('.pdf');
+  } catch {
+    return false;
+  }
+}
+
 export function joinBaseAndPath(baseURL, path) {
   if (path === '-') {
     return baseURL.endsWith('/') ? baseURL : `${baseURL}/`;
