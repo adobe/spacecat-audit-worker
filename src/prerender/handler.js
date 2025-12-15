@@ -118,12 +118,12 @@ function sanitizeImportPath(importPath) {
 /**
 * Transforms a URL into an S3 path for a given identifier and file type.
 * The identifier can be either a scrape job id or a site id.
-* @param {string} url - The URL to transform
+ * @param {string} url - The URL to transform
 * @param {string} id - The identifier - scrapeJobId
-* @param {string} fileName - The file name (e.g., 'scrape.json', 'server-side.html',
-* 'client-side.html')
-* @returns {string} The S3 path to the file
-*/
+ * @param {string} fileName - The file name (e.g., 'scrape.json', 'server-side.html',
+ * 'client-side.html')
+ * @returns {string} The S3 path to the file
+ */
 function getS3Path(url, id, fileName) {
   const rawImportPath = new URL(url).pathname;
   const sanitizedImportPath = sanitizeImportPath(rawImportPath);
@@ -774,6 +774,35 @@ export async function processOpportunityAndSuggestions(
     return `${data.url}|${AUDIT_TYPE}`;
   };
 
+  // Check if a domain-wide suggestion already exists in an active state
+  const existingSuggestions = await opportunity.getSuggestions();
+  const DOMAIN_WIDE_SUGGESTION_KEY = domainWideSuggestion.key;
+  const existingDomainWideSuggestion = existingSuggestions.find(
+    (s) => buildKey(s.getData()) === DOMAIN_WIDE_SUGGESTION_KEY,
+  );
+
+  // Define active statuses that should NOT be replaced
+  const ACTIVE_STATUSES = [
+    Suggestion.STATUSES.NEW,
+    Suggestion.STATUSES.FIXED,
+    Suggestion.STATUSES.PENDING_VALIDATION,
+    Suggestion.STATUSES.SKIPPED,
+  ];
+
+  // Determine if we should include the domain-wide suggestion in the sync
+  let shouldIncludeDomainWideSuggestion = true;
+  if (existingDomainWideSuggestion) {
+    const existingStatus = existingDomainWideSuggestion.getStatus();
+    if (ACTIVE_STATUSES.includes(existingStatus)) {
+      shouldIncludeDomainWideSuggestion = false;
+      log.info(`Prerender - Domain-wide suggestion already exists in ${existingStatus} state, skipping creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+    } else {
+      log.info(`Prerender - Domain-wide suggestion exists in ${existingStatus} state, will update it. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+    }
+  } else {
+    log.info(`Prerender - No existing domain-wide suggestion found, will create new one. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+  }
+
   // Helper function to extract only the fields we want in suggestions
   const mapSuggestionData = (suggestion) => ({
     url: suggestion.url,
@@ -793,7 +822,10 @@ export async function processOpportunityAndSuggestions(
     ),
   });
 
-  const allSuggestions = [...preRenderSuggestions, domainWideSuggestion];
+  // Build allSuggestions array, conditionally including domain-wide suggestion
+  const allSuggestions = shouldIncludeDomainWideSuggestion
+    ? [...preRenderSuggestions, domainWideSuggestion]
+    : [...preRenderSuggestions];
 
   await syncSuggestions({
     opportunity,
