@@ -12,8 +12,9 @@
 
 import { stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { load as cheerioLoad } from 'cheerio';
+import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { saveIntermediateResults } from './utils.js';
-import { sendInformationGainToMystique } from './information-gain-async-mystique.js';
+import { IMPROVEMENT_PROMPTS } from './information-gain-constants.js';
 
 export const PREFLIGHT_INFORMATION_GAIN = 'information-gain';
 
@@ -29,6 +30,7 @@ const FEATURE_ONTOLOGY = {
   quality: ['well-written', 'clear', 'articulate', 'professional'],
   specificity: ['specific', 'precise', 'exact', 'particular', 'concrete'],
   completeness: ['complete', 'comprehensive', 'thorough', 'full coverage'],
+  novelty: ['unique', 'novel', 'distinctive', 'original', 'uncommon', 'rare'],
 };
 
 /**
@@ -344,75 +346,239 @@ export function analyzeContentTraits(content) {
 }
 
 /**
+ * Extract problem examples from content using LLM
+ * @param {Object} azureOpenAIClient - Azure OpenAI client
+ * @param {string} originalContent - Original content to analyze
+ * @param {string} trait - Trait to analyze (e.g., 'specificity', 'completeness')
+ * @param {Array<string>} suggestedKeywords - Suggested keywords for the trait
+ * @param {number} maxExamples - Maximum number of examples to extract
+ * @param {Object} log - Logger
+ * @returns {Promise<Array<string>>} Problem examples
+ */
+async function extractProblemExamplesWithLLM(
+  azureOpenAIClient,
+  originalContent,
+  trait,
+  suggestedKeywords,
+  maxExamples,
+  log,
+) {
+  if (!azureOpenAIClient) {
+    log.warn('[information-gain] No Azure OpenAI client available for problem extraction');
+    return [];
+  }
+
+  // Clean content to remove media references
+  let cleanedContent = originalContent
+    .replace(/!\[.*?\]\(.*?\)/g, '') // Remove markdown images
+    .replace(/<img[^>]*>/g, '') // Remove HTML images
+    .replace(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|svg|mp4|mp3)[^\s]*/gi, '') // Remove media URLs
+    .replace(/\.\/media_[a-f0-9]+\.[a-z]+[^\s]*/g, '') // Remove media paths
+    .replace(/\s+/g, ' ') // Remove excessive whitespace
+    .trim();
+
+  // Truncate if too long
+  cleanedContent = cleanedContent.substring(0, 3000);
+
+  const traitDescriptions = {
+    relevance: 'Content alignment with target topics and search intent',
+    recency: 'Timeliness and currency of information presented',
+    authority: 'Establishment of expertise and authoritative sources',
+    credibility: 'Trustworthiness and reliability indicators',
+    nuance: 'Depth and thoroughness of topic coverage',
+    quality: 'Writing clarity, structure, and professionalism',
+    specificity: 'Use of concrete details, names, and specific references',
+    completeness: 'Coverage of key facts, data points, and information',
+    novelty: 'Uniqueness and originality of information provided',
+  };
+
+  const traitGuidance = {
+    specificity: 'lacks concrete details, specific names, numbers, version numbers, or precise references',
+    completeness: 'is vague, incomplete, uses general terms like "some", "many", "various" without specifics',
+    relevance: 'is generic, boilerplate, or tangential to the main topic',
+    quality: 'is overly verbose, unclear, redundant, or poorly structured',
+    nuance: 'lacks depth, misses important distinctions, or oversimplifies complex topics',
+    authority: 'lacks authoritative sources, expert citations, or credible references',
+    credibility: 'lacks verifiable facts, data sources, or trustworthiness indicators',
+    recency: 'lacks current dates, recent information, or up-to-date references',
+    novelty: 'lacks unique information, uncommon facts, or distinctive insights',
+  };
+
+  const keywordsStr = suggestedKeywords.join(', ');
+  const guidance = traitGuidance[trait] || `demonstrates weakness in ${trait}`;
+  const description = traitDescriptions[trait] || '';
+
+  const prompt = `Analyze this content and extract ${maxExamples} meaningful passages (2-3 sentences each) that demonstrate problems with "${trait}".
+
+TRAIT: ${trait}
+DEFINITION: ${description}
+LOOK FOR: Passages that ${guidance}
+SUGGESTED KEYWORDS TO CONSIDER: ${keywordsStr}
+
+REQUIREMENTS:
+- Each example should be 2-3 complete sentences (minimum 50 words)
+- Focus on substantial text content that shows the weakness clearly
+- Avoid image captions, media references, or single-word examples
+- Select passages that provide enough context to understand the problem
+
+CONTENT:
+${cleanedContent}
+
+Extract EXACTLY ${maxExamples} problematic passages that best demonstrate the weakness in "${trait}".
+Each should be a direct quote from the content with enough context to be meaningful.
+
+Return ONLY a JSON array of strings, nothing else:
+["passage 1 with 2-3 sentences...", "passage 2 with 2-3 sentences..."]`;
+
+  try {
+    const response = await azureOpenAIClient.fetchChatCompletion(prompt, {
+      systemPrompt: `You are an expert content analyst. Extract meaningful 2-3 sentence passages that demonstrate weakness in ${trait}. Return only valid JSON array with substantial, contextual examples.`,
+    });
+
+    const resultText = response.choices[0].message.content.trim();
+
+    // Parse JSON response
+    let examples = JSON.parse(resultText);
+
+    // Validate structure
+    if (!Array.isArray(examples)) {
+      log.warn('[information-gain] Problem examples response is not an array');
+      return [];
+    }
+
+    // Filter and validate examples
+    examples = examples
+      .filter((ex) => typeof ex === 'string'
+        && ex.length > 50 // Minimum 50 characters
+        && !ex.match(/!\[.*?\]\(.*?\)/) // No markdown images
+        && !ex.match(/<img/) // No HTML images
+        && !ex.match(/\.\/media_/)) // No media paths
+      .slice(0, maxExamples);
+
+    log.info(`[information-gain] Extracted ${examples.length} problem examples for trait: ${trait}`);
+    return examples;
+  } catch (error) {
+    log.error(`[information-gain] Problem extraction failed for ${trait}: ${error.message}`);
+    return [];
+  }
+}
+
+/**
  * Identify weak aspects based on metrics
  * @param {Object} metrics - InfoGain metrics
  * @param {Object} traitScores - Content trait scores
- * @returns {Array<Object>} Weak aspects
+ * @param {Object} azureOpenAIClient - Azure OpenAI client (optional)
+ * @param {string} originalContent - Original content (optional, for problem extraction)
+ * @param {Object} log - Logger
+ * @returns {Promise<Array<Object>>} Weak aspects
  */
-function identifyWeakAspects(metrics, traitScores) {
+async function identifyWeakAspects(metrics, traitScores, azureOpenAIClient, originalContent, log) {
   const weakAspects = [];
   const tenPoint = metrics.ten_point_score;
 
-  // Only suggest improvements if score is below 7.0 (good threshold)
-  if (tenPoint >= 7.0) {
+  // Only suggest improvements if score is below 9.0 (excellent threshold)
+  if (tenPoint >= 9.0) {
+    log.info(`[information-gain] Score is excellent (${tenPoint}/10), no improvements suggested`);
     return weakAspects;
   }
 
-  if (metrics.entity_preservation < 0.5) {
-    weakAspects.push({
-      aspect: 'specificity',
-      reason: `Low entity preservation (${(metrics.entity_preservation * 100).toFixed(0)}%). Content lacks specific names, products, or concrete references for SEO keywords.`,
-      current_score: metrics.entity_preservation,
-      trait_score: traitScores.specificity || 0,
-      seoImpact: 'High',
-      seoRecommendation: 'Add specific product names, version numbers, and named entities. Include precise metrics and exact terminology.',
-    });
+  // Define trait-to-metric mapping for correlation analysis
+  const traitToMetricMapping = {
+    specificity: 'entity_preservation',
+    completeness: 'fact_coverage',
+    relevance: 'semantic_similarity',
+    quality: 'compression_ratio',
+    nuance: 'infogain_score',
+    authority: 'entity_preservation',
+    credibility: 'fact_coverage',
+    recency: 'semantic_similarity',
+    novelty: 'novel_info_items',
+  };
+
+  // Reason templates for each trait
+  const reasonMap = {
+    specificity: (value) => `Low entity preservation (${(value * 100).toFixed(0)}%). Content lacks specific names, products, or concrete references for SEO keywords.`,
+    completeness: (value) => `Low fact coverage (${(value * 100).toFixed(0)}%). Content is missing key facts, numbers, or detailed information needed for authority.`,
+    relevance: (value) => `Low semantic similarity (${(value * 100).toFixed(0)}%). Content may not accurately represent key topics for search engines.`,
+    quality: (value) => `High compression ratio (${(value * 100).toFixed(0)}%). Content may be verbose or contain unnecessary information that dilutes SEO value.`,
+    authority: (value) => `Low authority indicators (${(value * 100).toFixed(0)}%). Content lacks expert sources, official references, or authoritative citations.`,
+    credibility: (value) => `Low credibility signals (${(value * 100).toFixed(0)}%). Content needs more verifiable facts, reliable sources, or trustworthiness indicators.`,
+    nuance: () => `Limited depth and nuance (InfoGain: ${metrics.infogain_score.toFixed(2)}). Content would benefit from more comprehensive and detailed coverage.`,
+    recency: (value) => `Limited timeliness indicators (${(value * 100).toFixed(0)}%). Content lacks current dates, recent information, or up-to-date references.`,
+    novelty: () => 'Limited novel information. Content would benefit from unique insights or uncommon facts.',
+  };
+
+  // SEO recommendation templates for each trait
+  const seoRecommendationMap = {
+    specificity: 'Add specific product names, version numbers, and named entities. Include precise metrics and exact terminology.',
+    completeness: 'Include relevant statistics, data points, and quantitative information. Add dates, measurements, and specific examples.',
+    relevance: 'Focus more directly on core topics. Remove tangential information and strengthen connection to main themes.',
+    quality: 'Remove redundancy and filler words. Make writing more clear and concise while preserving key information.',
+    authority: 'Add citations from authoritative sources, expert quotes, and references to official documentation.',
+    credibility: 'Include verifiable facts with sources, specific evidence, and trustworthy references.',
+    nuance: 'Add more detailed explanations, expert-level insights, and technical details to increase content value.',
+    recency: 'Add current dates, reference latest versions, and include recent developments or contemporary examples.',
+    novelty: 'Include unique insights, uncommon facts, and distinctive information not commonly found elsewhere.',
+  };
+
+  // Correlate traits with metrics to identify high-impact weaknesses
+  for (const [trait, mappedMetric] of Object.entries(traitToMetricMapping)) {
+    const traitScore = traitScores[trait] || 0;
+    let metricValue = metrics[mappedMetric] || 0;
+
+    // Handle special cases
+    if (mappedMetric === 'novel_info_items') {
+      // Normalize to 0-1 scale (assume 10 as good baseline)
+      metricValue = Array.isArray(metrics.novel_info_items)
+        ? metrics.novel_info_items.length / 10
+        : 0;
+    }
+
+    // Determine if this trait is problematic
+    let isProblematic = false;
+    if (trait === 'quality') {
+      // For quality, lower compression_ratio is better
+      isProblematic = metricValue > 0.6 && traitScore < 6.0;
+    } else {
+      // For other traits, higher is better
+      isProblematic = metricValue < 0.5 && traitScore < 6.0;
+    }
+
+    if (isProblematic) {
+      const suggestedKeywords = FEATURE_ONTOLOGY[trait] || [];
+
+      // Extract problem examples using LLM if content is available
+      let problemExamples = [];
+      if (azureOpenAIClient && originalContent && originalContent.length > 100) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          problemExamples = await extractProblemExamplesWithLLM(
+            azureOpenAIClient,
+            originalContent,
+            trait,
+            suggestedKeywords.slice(0, 5),
+            2, // max 2 examples per trait
+            log,
+          );
+        } catch (error) {
+          log.error(`[information-gain] Failed to extract problem examples for ${trait}: ${error.message}`);
+        }
+      }
+
+      weakAspects.push({
+        aspect: trait,
+        reason: reasonMap[trait] ? reasonMap[trait](metricValue) : `Trait "${trait}" needs improvement for better SEO performance.`,
+        current_score: metricValue,
+        trait_score: traitScore,
+        seoImpact: isProblematic && metricValue < 0.4 ? 'High' : 'Moderate',
+        seoRecommendation: seoRecommendationMap[trait] || `Improve ${trait} by focusing on relevant keywords and adding more specific content.`,
+        suggestedKeywords: suggestedKeywords.slice(0, 5),
+        problemExamples: problemExamples || [],
+      });
+    }
   }
 
-  if (metrics.fact_coverage < 0.5) {
-    weakAspects.push({
-      aspect: 'completeness',
-      reason: `Low fact coverage (${(metrics.fact_coverage * 100).toFixed(0)}%). Content is missing key facts, numbers, or detailed information needed for authority.`,
-      current_score: metrics.fact_coverage,
-      trait_score: traitScores.completeness || 0,
-      seoImpact: 'High',
-      seoRecommendation: 'Include relevant statistics, data points, and quantitative information. Add dates, measurements, and specific examples.',
-    });
-  }
-
-  if (metrics.semantic_similarity < 0.7) {
-    weakAspects.push({
-      aspect: 'relevance',
-      reason: `Low semantic similarity (${(metrics.semantic_similarity * 100).toFixed(0)}%). Content may not accurately represent key topics for search engines.`,
-      current_score: metrics.semantic_similarity,
-      trait_score: traitScores.relevance || 0,
-      seoImpact: 'Moderate',
-      seoRecommendation: 'Focus more directly on core topics. Remove tangential information and strengthen connection to main themes.',
-    });
-  }
-
-  if (metrics.compression_ratio > 0.6) {
-    weakAspects.push({
-      aspect: 'quality',
-      reason: `High compression ratio (${(metrics.compression_ratio * 100).toFixed(0)}%). Content may be verbose or contain unnecessary information that dilutes SEO value.`,
-      current_score: metrics.compression_ratio,
-      trait_score: traitScores.quality || 0,
-      seoImpact: 'Moderate',
-      seoRecommendation: 'Remove redundancy and filler words. Make writing more clear and concise while preserving key information.',
-    });
-  }
-
-  if (weakAspects.length === 0 && tenPoint < 7.0) {
-    weakAspects.push({
-      aspect: 'nuance',
-      reason: `Content could benefit from more depth and detail to improve SEO score to 7.0+ (currently ${tenPoint}/10).`,
-      current_score: tenPoint,
-      trait_score: traitScores.nuance || 0,
-      seoImpact: 'Moderate',
-      seoRecommendation: 'Add more detailed explanations, expert-level insights, and technical details to increase content value.',
-    });
-  }
-
+  log.info(`[information-gain] Identified ${weakAspects.length} weak aspects for score ${tenPoint}/10`);
   return weakAspects;
 }
 
@@ -446,6 +612,75 @@ function analyzeContent(text) {
 }
 
 /**
+ * Generate improved content for a specific aspect using Azure OpenAI
+ * @param {Object} azureOpenAIClient - Azure OpenAI client
+ * @param {string} originalContent - Original content to improve
+ * @param {string} aspect - Aspect to improve (e.g., 'specificity', 'completeness')
+ * @param {Object} log - Logger
+ * @returns {Promise<Object>} Improvement result with new content and metrics
+ */
+async function generateImprovement(azureOpenAIClient, originalContent, aspect, log) {
+  if (!azureOpenAIClient) {
+    throw new Error('Azure OpenAI client is required for content improvement');
+  }
+
+  if (!IMPROVEMENT_PROMPTS[aspect]) {
+    throw new Error(`Unknown aspect: ${aspect}`);
+  }
+
+  const promptTemplate = IMPROVEMENT_PROMPTS[aspect];
+  const userPrompt = `Original content:\n${originalContent}\n\n${promptTemplate}`;
+  const systemPrompt = `You are a content improvement specialist focused on enhancing ${aspect}.`;
+
+  try {
+    log.info(`[information-gain] Generating improvement for aspect: ${aspect}`);
+
+    const response = await azureOpenAIClient.fetchChatCompletion(userPrompt, {
+      systemPrompt,
+    });
+
+    const improvedContent = response.choices[0].message.content.trim();
+
+    // Analyze the improved content to get new metrics
+    const improvedAnalysis = analyzeContent(improvedContent);
+
+    // Calculate entity improvement
+    const origEntities = new Set(extractEntities(originalContent));
+    const improvedEntities = new Set(extractEntities(improvedContent));
+    const entityImprovement = (
+      improvedEntities.size - origEntities.size
+    ) / Math.max(origEntities.size, 1);
+
+    const entityCountMsg = `${origEntities.size} -> ${improvedEntities.size} entities`;
+    const percentMsg = `(${(entityImprovement * 100).toFixed(1)}%)`;
+    log.info(`[information-gain] Entity improvement for ${aspect}: ${entityCountMsg} ${percentMsg}`);
+
+    // Calculate original analysis for delta
+    const originalAnalysis = analyzeContent(originalContent);
+    const improvementDelta = (
+      improvedAnalysis.metrics.ten_point_score - originalAnalysis.metrics.ten_point_score
+    );
+
+    return {
+      aspect,
+      improvedContent,
+      newSummary: improvedAnalysis.summary,
+      newScore: improvedAnalysis.metrics.ten_point_score,
+      newScoreCategory: improvedAnalysis.score_category,
+      newMetrics: improvedAnalysis.metrics,
+      newTraitScores: improvedAnalysis.trait_scores,
+      entityImprovement,
+      improvedContentEntityCount: improvedEntities.size,
+      improvementDelta,
+      aiRationale: `Content improved to enhance ${aspect}, resulting in better information density and SEO value.`,
+    };
+  } catch (error) {
+    log.error(`[information-gain] Content improvement failed for ${aspect}: ${error.message}`);
+    throw new Error(`Failed to generate improvement: ${error.message}`);
+  }
+}
+
+/**
  * Information Gain preflight handler
  * @param {Object} context - Audit context
  * @param {Object} auditContext - Preflight audit context
@@ -466,6 +701,15 @@ export default async function informationGain(context, auditContext) {
   const infoGainStartTime = Date.now();
   const infoGainStartTimestamp = new Date().toISOString();
 
+  // Initialize Azure OpenAI client for LLM-based analysis
+  let azureOpenAIClient = null;
+  try {
+    azureOpenAIClient = AzureOpenAIClient.createFrom(context);
+    log.info('[information-gain] Azure OpenAI client initialized successfully');
+  } catch (error) {
+    log.warn(`[information-gain] Azure OpenAI client initialization failed: ${error.message}. Problem extraction and improvements will be limited.`);
+  }
+
   // Create information-gain audit entries for all pages
   previewUrls.forEach((url) => {
     const pageResult = audits.get(url);
@@ -473,7 +717,7 @@ export default async function informationGain(context, auditContext) {
   });
 
   // Process each scraped page
-  scrapedObjects.forEach(({ data }) => {
+  for (const { data } of scrapedObjects) {
     const { finalUrl, scrapeResult: { rawBody } } = data;
     const pageResult = audits.get(stripTrailingSlash(finalUrl));
     const infoGainAudit = pageResult.audits.find((a) => a.name === PREFLIGHT_INFORMATION_GAIN);
@@ -496,100 +740,135 @@ export default async function informationGain(context, auditContext) {
         seoImpact: 'High',
         seoRecommendation: 'Add more substantive content to the page',
       });
-      return;
-    }
+    } else {
+      // Analyze content
+      const analysis = analyzeContent(textContent);
 
-    // Analyze content
-    const analysis = analyzeContent(textContent);
-
-    if (analysis.error) {
-      infoGainAudit.opportunities.push({
-        check: 'analysis-error',
-        issue: analysis.error,
-        seoImpact: 'Moderate',
-        seoRecommendation: 'Ensure page has sufficient text content',
-      });
-      return;
-    }
-
-    // For identify step, add metrics and basic analysis
-    if (step === 'identify') {
-      infoGainAudit.opportunities.push({
-        check: 'information-gain-score',
-        score: analysis.metrics.ten_point_score,
-        scoreCategory: analysis.score_category,
-        metrics: {
-          compression_ratio: analysis.metrics.compression_ratio.toFixed(2),
-          semantic_similarity: analysis.metrics.semantic_similarity.toFixed(2),
-          entity_preservation: analysis.metrics.entity_preservation.toFixed(2),
-          fact_coverage: analysis.metrics.fact_coverage.toFixed(2),
-          entropy_ratio: analysis.metrics.entropy_ratio.toFixed(2),
-          infogain_score: analysis.metrics.infogain_score.toFixed(2),
-        },
-        traitScores: analysis.trait_scores,
-        summary: analysis.summary,
-        seoImpact: analysis.score_category === 'excellent' || analysis.score_category === 'good' ? 'Low' : 'High',
-        seoRecommendation: analysis.score_category === 'excellent' || analysis.score_category === 'good'
-          ? 'Content has good information density and SEO value'
-          : 'Content needs improvement in information density and specificity',
-      });
-    }
-
-    // For suggest step, identify weak aspects and send to Mystique for improvements
-    if (step === 'suggest') {
-      const weakAspects = identifyWeakAspects(analysis.metrics, analysis.trait_scores);
-
-      // Mark each weak aspect as processing initially
-      const weakAspectsWithStatus = weakAspects.map((aspect) => ({
-        aspect: aspect.aspect,
-        reason: aspect.reason,
-        currentScore: aspect.current_score.toFixed(2),
-        traitScore: aspect.trait_score.toFixed(1),
-        seoImpact: aspect.seoImpact,
-        seoRecommendation: aspect.seoRecommendation,
-        suggestionStatus: 'processing',
-        suggestionMessage: 'AI-powered content improvements are being generated by Mystique. Suggestions will be available shortly.',
-      }));
-
-      infoGainAudit.opportunities.push({
-        check: 'information-gain-analysis',
-        score: analysis.metrics.ten_point_score,
-        scoreCategory: analysis.score_category,
-        metrics: {
-          compression_ratio: analysis.metrics.compression_ratio.toFixed(2),
-          semantic_similarity: analysis.metrics.semantic_similarity.toFixed(2),
-          entity_preservation: analysis.metrics.entity_preservation.toFixed(2),
-          fact_coverage: analysis.metrics.fact_coverage.toFixed(2),
-          infogain_score: analysis.metrics.infogain_score.toFixed(2),
-        },
-        traitScores: analysis.trait_scores,
-        weakAspects: weakAspectsWithStatus,
-        summary: analysis.summary,
-        seoImpact: weakAspects.length > 0 ? 'High' : 'Low',
-        seoRecommendation: weakAspects.length > 0
-          ? `Focus on improving: ${weakAspects.map((a) => a.aspect).join(', ')}`
-          : 'Content has good information density and SEO value',
-      });
-
-      // Store weak aspects for Mystique processing
-      if (weakAspects.length > 0) {
-        if (!auditContext.improvementRequests) {
-          // eslint-disable-next-line no-param-reassign
-          auditContext.improvementRequests = [];
-        }
-        weakAspects.forEach((aspect) => {
-          auditContext.improvementRequests.push({
-            pageUrl: stripTrailingSlash(finalUrl),
-            aspect: aspect.aspect,
-            originalContent: textContent,
-            reason: aspect.reason,
-            currentScore: aspect.current_score,
-            seoImpact: aspect.seoImpact,
-          });
+      if (analysis.error) {
+        infoGainAudit.opportunities.push({
+          check: 'analysis-error',
+          issue: analysis.error,
+          seoImpact: 'Moderate',
+          seoRecommendation: 'Ensure page has sufficient text content',
         });
+      } else {
+        // For identify step, add metrics and basic analysis
+        if (step === 'identify') {
+          infoGainAudit.opportunities.push({
+            check: 'information-gain-score',
+            score: analysis.metrics.ten_point_score,
+            scoreCategory: analysis.score_category,
+            metrics: {
+              compression_ratio: analysis.metrics.compression_ratio.toFixed(2),
+              semantic_similarity: analysis.metrics.semantic_similarity.toFixed(2),
+              entity_preservation: analysis.metrics.entity_preservation.toFixed(2),
+              fact_coverage: analysis.metrics.fact_coverage.toFixed(2),
+              entropy_ratio: analysis.metrics.entropy_ratio.toFixed(2),
+              infogain_score: analysis.metrics.infogain_score.toFixed(2),
+            },
+            traitScores: analysis.trait_scores,
+            summary: analysis.summary,
+            seoImpact: analysis.score_category === 'excellent' || analysis.score_category === 'good' ? 'Low' : 'High',
+            seoRecommendation: analysis.score_category === 'excellent' || analysis.score_category === 'good'
+              ? 'Content has good information density and SEO value'
+              : 'Content needs improvement in information density and specificity',
+          });
+        }
+
+        // For suggest step, identify weak aspects and generate improvements
+        if (step === 'suggest') {
+          // eslint-disable-next-line no-await-in-loop
+          const weakAspects = await identifyWeakAspects(
+            analysis.metrics,
+            analysis.trait_scores,
+            azureOpenAIClient,
+            textContent,
+            log,
+          );
+
+          // Generate improvements for each weak aspect using Azure OpenAI
+          const weakAspectsWithImprovements = [];
+          for (const aspect of weakAspects) {
+            const aspectData = {
+              aspect: aspect.aspect,
+              reason: aspect.reason,
+              currentScore: aspect.current_score.toFixed(2),
+              traitScore: aspect.trait_score.toFixed(1),
+              seoImpact: aspect.seoImpact,
+              seoRecommendation: aspect.seoRecommendation,
+              suggestedKeywords: aspect.suggestedKeywords || [],
+              problemExamples: aspect.problemExamples || [],
+            };
+
+            if (azureOpenAIClient) {
+              try {
+                log.info(`[information-gain suggest] Generating improvement for aspect: ${aspect.aspect}`);
+                // eslint-disable-next-line no-await-in-loop
+                const improvement = await generateImprovement(
+                  azureOpenAIClient,
+                  textContent,
+                  aspect.aspect,
+                  log,
+                );
+
+                weakAspectsWithImprovements.push({
+                  ...aspectData,
+                  improvedContent: improvement.improvedContent,
+                  newSummary: improvement.newSummary,
+                  newScore: improvement.newScore,
+                  newScoreCategory: improvement.newScoreCategory,
+                  improvementDelta: improvement.improvementDelta.toFixed(2),
+                  newMetrics: {
+                    compression_ratio: improvement.newMetrics.compression_ratio.toFixed(2),
+                    semantic_similarity: improvement.newMetrics.semantic_similarity.toFixed(2),
+                    entity_preservation: improvement.newMetrics.entity_preservation.toFixed(2),
+                    fact_coverage: improvement.newMetrics.fact_coverage.toFixed(2),
+                    infogain_score: improvement.newMetrics.infogain_score.toFixed(2),
+                  },
+                  newTraitScores: improvement.newTraitScores,
+                  aiRationale: improvement.aiRationale,
+                  suggestionStatus: 'completed',
+                });
+              } catch (error) {
+                log.error(`[information-gain suggest] Failed to generate improvement for ${aspect.aspect}: ${error.message}`);
+                weakAspectsWithImprovements.push({
+                  ...aspectData,
+                  suggestionStatus: 'failed',
+                  suggestionMessage: `Failed to generate improvement: ${error.message}`,
+                });
+              }
+            } else {
+              weakAspectsWithImprovements.push({
+                ...aspectData,
+                suggestionStatus: 'unavailable',
+                suggestionMessage: 'Azure OpenAI client not available. Problem extraction completed but improvements cannot be generated.',
+              });
+            }
+          }
+
+          infoGainAudit.opportunities.push({
+            check: 'information-gain-analysis',
+            score: analysis.metrics.ten_point_score,
+            scoreCategory: analysis.score_category,
+            metrics: {
+              compression_ratio: analysis.metrics.compression_ratio.toFixed(2),
+              semantic_similarity: analysis.metrics.semantic_similarity.toFixed(2),
+              entity_preservation: analysis.metrics.entity_preservation.toFixed(2),
+              fact_coverage: analysis.metrics.fact_coverage.toFixed(2),
+              infogain_score: analysis.metrics.infogain_score.toFixed(2),
+            },
+            traitScores: analysis.trait_scores,
+            weakAspects: weakAspectsWithImprovements,
+            summary: analysis.summary,
+            seoImpact: weakAspects.length > 0 ? 'High' : 'Low',
+            seoRecommendation: weakAspects.length > 0
+              ? `Focus on improving: ${weakAspects.map((a) => a.aspect).join(', ')}`
+              : 'Content has good information density and SEO value',
+          });
+        }
       }
     }
-  });
+  }
 
   const infoGainEndTime = Date.now();
   const infoGainEndTimestamp = new Date().toISOString();
@@ -606,74 +885,6 @@ export default async function informationGain(context, auditContext) {
 
   await saveIntermediateResults(context, auditsResult, 'information gain audit');
 
-  // For suggest step, send improvement requests to Mystique
-  let isProcessing = false;
-  if (step === 'suggest' && auditContext.improvementRequests && auditContext.improvementRequests.length > 0) {
-    try {
-      // Check if we already have improvements from previous Mystique run
-      const { dataAccess } = context;
-      const { AsyncJob: AsyncJobEntity } = dataAccess;
-      const jobEntity = await AsyncJobEntity.findById(job.getId());
-      const jobMetadata = jobEntity?.getMetadata() || {};
-      const infoGainMetadata = jobMetadata.payload?.informationGainMetadata || {};
-      const existingImprovements = infoGainMetadata.improvements || [];
-
-      if (existingImprovements.length > 0) {
-        log.info(`[information-gain suggest] Found ${existingImprovements.length} existing improvements from Mystique`);
-
-        // Update audit results with existing improvements
-        auditsResult.forEach((pageResult) => {
-          const infoGainAudit = pageResult
-            .audits?.find((a) => a.name === PREFLIGHT_INFORMATION_GAIN);
-          if (infoGainAudit) {
-            const pageImprovements = existingImprovements.filter(
-              (imp) => imp.pageUrl === pageResult.pageUrl,
-            );
-
-            infoGainAudit.opportunities.forEach((opp) => {
-              if (opp.check === 'information-gain-analysis' && opp.weakAspects) {
-                // eslint-disable-next-line no-param-reassign
-                opp.weakAspects = opp.weakAspects.map((aspect) => {
-                  const improvement = pageImprovements.find((imp) => imp.aspect === aspect.aspect);
-                  if (improvement) {
-                    return {
-                      ...aspect,
-                      improvedContent: improvement.improvedContent,
-                      newSummary: improvement.newSummary,
-                      newScore: improvement.newScore,
-                      newScoreCategory: improvement.newScoreCategory,
-                      improvementDelta: improvement.improvementDelta,
-                      newMetrics: improvement.newMetrics,
-                      newTraitScores: improvement.newTraitScores,
-                      aiRationale: improvement.aiRationale,
-                      suggestionStatus: 'completed',
-                    };
-                  }
-                  return aspect;
-                });
-              }
-            });
-          }
-        });
-      } else {
-        // No existing improvements, send to Mystique
-        log.debug(`[information-gain suggest] Sending ${auditContext.improvementRequests.length} improvement requests to Mystique...`);
-
-        await sendInformationGainToMystique(
-          site.getBaseURL(),
-          auditContext.improvementRequests,
-          site.getId(),
-          job.getId(),
-          context,
-        );
-
-        log.debug(`[information-gain suggest] Successfully sent ${auditContext.improvementRequests.length} improvement requests to Mystique`);
-        isProcessing = true;
-      }
-    } catch (error) {
-      log.error(`[information-gain suggest] Failed to process Mystique integration: ${error.message}`);
-    }
-  }
-
-  return { processing: isProcessing };
+  // Information Gain audit completes synchronously with Azure OpenAI
+  return { processing: false };
 }

@@ -37,7 +37,7 @@ The audit generates a summary of the content and measures several key metrics:
 
 ### 3. Content Trait Analysis
 
-The audit also analyzes content across 8 key traits:
+The audit also analyzes content across 9 key traits:
 
 - **Relevance**: Content alignment with target topics and search intent
 - **Recency**: Timeliness and currency of information
@@ -47,6 +47,7 @@ The audit also analyzes content across 8 key traits:
 - **Quality**: Writing clarity, structure, and professionalism
 - **Specificity**: Use of concrete details, names, and specific references
 - **Completeness**: Coverage of key facts, data points, and information
+- **Novelty**: Uniqueness and originality of information provided
 
 ## Audit Steps
 
@@ -60,31 +61,65 @@ In the identify step, the audit calculates all metrics and provides:
 
 ### Suggest Step
 
-In the suggest step, the audit identifies weak aspects and provides actionable recommendations:
+In the suggest step, the audit identifies weak aspects and generates AI-powered content improvements:
 
-#### Weak Aspect Detection
+#### Weak Aspect Detection with LLM
 
-The audit identifies issues based on metric thresholds:
+The audit uses Azure OpenAI to perform sophisticated trait analysis:
+
+1. **Correlation Analysis**: Maps content traits to InfoGain metrics to identify problematic areas
+2. **Problem Extraction**: Uses LLM to extract 2-3 sentence passages from the content that demonstrate specific weaknesses
+3. **Content Improvement**: Generates improved versions of the content using Azure OpenAI targeted at specific aspects
+4. **Re-analysis**: Calculates new metrics for the improved content to show the impact delta
+
+#### Supported Improvement Aspects
+
+The audit can identify and improve the following aspects:
 
 1. **Specificity Issues** (entity_preservation < 0.5)
    - **Problem**: Content lacks specific names, products, or concrete references
    - **Recommendation**: Add specific product names, version numbers, and named entities. Include precise metrics and exact terminology.
+   - **AI Improvement**: Generates content with high specificity including concrete details
 
 2. **Completeness Issues** (fact_coverage < 0.5)
    - **Problem**: Content is missing key facts, numbers, or detailed information
    - **Recommendation**: Include relevant statistics, data points, and quantitative information. Add dates, measurements, and specific examples.
+   - **AI Improvement**: Expands content with additional facts and supporting information
 
 3. **Relevance Issues** (semantic_similarity < 0.7)
    - **Problem**: Content may not accurately represent key topics for search engines
    - **Recommendation**: Focus more directly on core topics. Remove tangential information and strengthen connection to main themes.
+   - **AI Improvement**: Refocuses content on core topics with better organization
 
 4. **Quality Issues** (compression_ratio > 0.6)
    - **Problem**: Content may be verbose or contain unnecessary information
    - **Recommendation**: Remove redundancy and filler words. Make writing more clear and concise while preserving key information.
+   - **AI Improvement**: Creates clearer, more concise version while preserving key information
 
-5. **Nuance Issues** (score < 7.0 with no other issues)
-   - **Problem**: Content could benefit from more depth and detail
+5. **Nuance Issues** (detected through trait correlation)
+   - **Problem**: Content lacks depth and detailed explanations
    - **Recommendation**: Add more detailed explanations, expert-level insights, and technical details to increase content value.
+   - **AI Improvement**: Adds depth, subtleties, and expert-level insights
+
+6. **Authority Issues** (entity_preservation < 0.5 with low trait score)
+   - **Problem**: Content lacks authoritative sources and expert references
+   - **Recommendation**: Add citations from authoritative sources, expert quotes, and references to official documentation.
+   - **AI Improvement**: Establishes authority with expert sources and official references
+
+7. **Credibility Issues** (fact_coverage < 0.5 with low trait score)
+   - **Problem**: Content lacks verifiable facts and trustworthy sources
+   - **Recommendation**: Include verifiable facts with sources, specific evidence, and trustworthy references.
+   - **AI Improvement**: Enhances credibility with verifiable facts and reliable sources
+
+8. **Recency Issues** (semantic_similarity < 0.7 with low recency trait)
+   - **Problem**: Content lacks current dates and recent information
+   - **Recommendation**: Add current dates, reference latest versions, and include recent developments or contemporary examples.
+   - **AI Improvement**: Updates content with current information and recent developments
+
+9. **Novelty Issues** (detected through novel_info_items metric)
+   - **Problem**: Content lacks unique insights or uncommon information
+   - **Recommendation**: Include unique insights, uncommon facts, and distinctive information not commonly found elsewhere.
+   - **AI Improvement**: Adds unique perspectives and lesser-known details
 
 ## Output Format
 
@@ -142,15 +177,31 @@ The audit adds opportunities to the preflight response with the following struct
       "currentScore": "0.45",
       "traitScore": "4.2",
       "seoImpact": "High",
-      "seoRecommendation": "Add specific product names, version numbers, and named entities. Include precise metrics and exact terminology."
-    },
-    {
-      "aspect": "completeness",
-      "reason": "Low fact coverage (48%). Content is missing key facts, numbers, or detailed information needed for authority.",
-      "currentScore": "0.48",
-      "traitScore": "4.5",
-      "seoImpact": "High",
-      "seoRecommendation": "Include relevant statistics, data points, and quantitative information. Add dates, measurements, and specific examples."
+      "seoRecommendation": "Add specific product names, version numbers, and named entities. Include precise metrics and exact terminology.",
+      "suggestedKeywords": ["specific", "precise", "exact", "particular", "concrete"],
+      "problemExamples": [
+        "We have various products that can help with different tasks. Our solutions are designed to meet your needs.",
+        "Many features are available in our software. Users can access tools through an intuitive interface."
+      ],
+      "improvedContent": "Adobe Premiere Pro 24.1 delivers 73% faster rendering with CUDA GPU acceleration. After Effects 2024 includes 500+ new particle effects and 8x improved RAM performance. Character Animator 24.0 supports 98.2% facial tracking accuracy with new neural engine.",
+      "newSummary": "Adobe Creative Cloud apps deliver significant performance improvements with specific version numbers and quantifiable metrics.",
+      "newScore": 8.5,
+      "newScoreCategory": "excellent",
+      "improvementDelta": "+3.30",
+      "newMetrics": {
+        "compression_ratio": "0.32",
+        "semantic_similarity": "0.88",
+        "entity_preservation": "0.92",
+        "fact_coverage": "0.87",
+        "infogain_score": "0.89"
+      },
+      "newTraitScores": {
+        "specificity": 9.2,
+        "completeness": 8.8,
+        "relevance": 8.5
+      },
+      "aiRationale": "Content improved to enhance specificity, resulting in better information density and SEO value.",
+      "suggestionStatus": "completed"
     }
   ],
   "summary": "The page discusses products and services...",
@@ -167,12 +218,35 @@ The information-gain audit can be enabled for a site by configuring the `informa
 
 The audit is implemented in `/src/preflight/information-gain.js` and includes:
 
+### Core Analysis Functions
+
 - **Entity Extraction**: Identifies named entities using capitalization patterns and version numbers
 - **Number Extraction**: Finds percentages, multipliers, and numerical data
 - **Fact Extraction**: Identifies factual statements using linguistic patterns
 - **Entropy Calculation**: Measures information density using Shannon entropy
 - **Extractive Summarization**: Creates summaries using sentence scoring and selection
 - **Cosine Similarity**: Calculates semantic similarity using token overlap
+
+### LLM-Powered Features
+
+- **Azure OpenAI Integration**: Uses Azure OpenAI GPT models for sophisticated content analysis and generation
+- **Problem Extraction**: LLM extracts meaningful 2-3 sentence passages demonstrating specific weaknesses
+- **Content Improvement Generation**: LLM generates improved content versions targeting specific traits
+- **Trait Correlation Analysis**: Maps content traits to metrics to identify high-impact improvements
+
+### Supporting Files
+
+- `/src/preflight/information-gain-constants.js`: Improvement prompts for each trait
+- Tests: `/test/audits/preflight/information-gain.test.js`
+
+### Environment Variables Required
+
+```bash
+AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com/
+AZURE_OPENAI_KEY=your-api-key
+AZURE_API_VERSION=2024-08-01-preview
+AZURE_COMPLETION_DEPLOYMENT=your-deployment-name
+```
 
 ## Example Use Cases
 
@@ -226,12 +300,36 @@ Run tests with:
 npm run test:spec -- test/audits/preflight/information-gain.test.js
 ```
 
+## Migration Notes
+
+**Breaking Change from Research Project (v1.0)**:
+
+The suggest step now generates content improvements synchronously using Azure OpenAI instead of asynchronously via Mystique. This provides:
+
+- ✅ Immediate results in the same API response
+- ✅ Better correlation between problem identification and improvement generation
+- ✅ LLM-extracted problem examples showing specific weaknesses
+- ✅ Complete metrics analysis for improved content (before/after comparison)
+- ✅ Support for all 9 content traits including novelty
+
+### Migration from Mystique
+
+The previous Mystique-based async flow has been replaced with direct Azure OpenAI integration:
+
+- **Before**: Identify weak aspects → Send to Mystique → Wait for callback → Update results
+- **After**: Identify weak aspects (with LLM problem extraction) → Generate improvements (synchronous) → Return complete results
+
+This change eliminates the need for:
+- `information-gain-async-mystique.js`
+- `information-gain-guidance-handler.js`
+- AsyncJob metadata storage for improvement tracking
+
 ## Future Enhancements
 
 Potential improvements:
-- Integration with LLM for more sophisticated summarization
 - Multi-language support using language-specific tokenizers
 - Custom thresholds per site or content type
 - Historical trending of InfoGain scores
 - Competitive benchmarking against similar pages
+- Integration with Exa AI for novel information discovery (similar to research project's NoveltyService)
 

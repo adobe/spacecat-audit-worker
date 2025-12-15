@@ -57,6 +57,42 @@ Return ONLY the improved content with high quality (clear, concise, well-written
 - Include technical details and mechanisms
 
 Return ONLY the improved content with high nuance (detailed and in-depth).`,
+
+  authority: `Improve this content by establishing authority:
+- Add citations from authoritative sources and experts
+- Include references to official documentation or standards
+- Mention recognized institutions or organizations
+- Add expert quotes or professional endorsements
+- Reference industry best practices and guidelines
+
+Return ONLY the improved content with high authority (credible and expert-backed).`,
+
+  credibility: `Improve this content by enhancing credibility:
+- Add verifiable facts and data with sources
+- Include specific evidence and proof points
+- Reference reliable and trustworthy sources
+- Add transparency about methods and processes
+- Include real-world validation or case studies
+
+Return ONLY the improved content with high credibility (trustworthy and verifiable).`,
+
+  recency: `Improve this content by adding recency indicators:
+- Include current dates, years, or timeframes
+- Reference latest versions, updates, or releases
+- Mention recent developments or trends
+- Add contemporary examples and use cases
+- Update outdated information with current data
+
+Return ONLY the improved content with high recency (current and up-to-date).`,
+
+  novelty: `Improve this content by adding unique and novel information:
+- Include uncommon facts or lesser-known details
+- Add unique perspectives or insights
+- Reference rare or distinctive examples
+- Provide original analysis or viewpoints
+- Include information not commonly found elsewhere
+
+Return ONLY the improved content with high novelty (unique and distinctive).`,
 };
 
 /**
