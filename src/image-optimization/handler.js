@@ -34,7 +34,7 @@ const AUDIT_TYPE = 'image-optimization';
 // const { AUDIT_STEP_DESTINATIONS } = Audit; // Uncomment for full pipeline
 
 // Limit number of pages to process (set to 0 or null for no limit)
-const MAX_PAGES_TO_PROCESS = 5;
+const MAX_PAGES_TO_PROCESS = 100;
 
 /**
  * Build a unique key for suggestion deduplication

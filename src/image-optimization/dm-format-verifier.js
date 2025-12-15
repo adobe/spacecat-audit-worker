@@ -22,6 +22,9 @@ const DM_FORMATS = ['avif', 'webp', 'jpeg', 'png'];
 // Timeout for HEAD requests (ms)
 const REQUEST_TIMEOUT = 10000;
 
+// Browser-like Accept header for detecting Smart Imaging
+const BROWSER_ACCEPT_HEADER = 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8';
+
 /**
  * Extracts the base DM URL without format parameters.
  * Handles both Scene7 and AEM Assets Delivery API patterns.
@@ -180,6 +183,76 @@ async function getImageSize(url, log) {
 }
 
 /**
+ * Detects if Smart Imaging is enabled on a Dynamic Media server.
+ * Smart Imaging automatically serves optimized formats (WebP/AVIF) based on browser Accept headers,
+ * regardless of the fmt parameter in the URL.
+ *
+ * Detection method:
+ * 1. Request the image with ?fmt=jpeg (explicit JPEG format)
+ * 2. Include browser-like Accept header that supports WebP/AVIF
+ * 3. If the server returns a different format than JPEG, Smart Imaging is active
+ *
+ * @param {string} baseUrl - The base DM URL without format parameters
+ * @param {Object} log - Logger object
+ * @returns {Promise<Object>} Smart Imaging detection result
+ */
+async function detectSmartImaging(baseUrl, log) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+  // Request JPEG format explicitly
+  const jpegUrl = constructFormatUrl(baseUrl, 'jpeg');
+
+  try {
+    const response = await fetch(jpegUrl, {
+      method: 'HEAD',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        Accept: BROWSER_ACCEPT_HEADER,
+      },
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      return {
+        detected: false,
+        error: `HTTP ${response.status}`,
+      };
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    const contentLength = response.headers.get('content-length');
+
+    // Parse the actual format from Content-Type
+    const actualFormatMatch = contentType.match(/image\/([a-z0-9]+)/i);
+    const actualFormat = actualFormatMatch ? actualFormatMatch[1].toLowerCase() : null;
+
+    // Smart Imaging is active if we requested JPEG but got a different format
+    // This indicates the server is doing automatic format negotiation based on Accept headers
+    const isSmartImagingActive = actualFormat && actualFormat !== 'jpeg';
+
+    log.info(`[dm-format-verifier] 🔍 Smart Imaging detection: requested=jpeg, received=${actualFormat}, active=${isSmartImagingActive}`);
+
+    return {
+      detected: isSmartImagingActive,
+      requestedFormat: 'jpeg',
+      actualFormat,
+      actualSize: contentLength ? parseInt(contentLength, 10) : null,
+      contentType,
+    };
+  } catch (error) {
+    clearTimeout(timeoutId);
+    log.debug(`[dm-format-verifier] Smart Imaging detection failed: ${error.message}`);
+    return {
+      detected: false,
+      error: error.message,
+    };
+  }
+}
+
+/**
  * Tests a DM image URL with all supported formats and returns size comparison.
  *
  * @param {string} imageUrl - The Dynamic Media image URL
@@ -198,13 +271,44 @@ export async function verifyDmFormats(imageUrl, log) {
     largestFormat: null,
     currentFormat: null,
     recommendations: [],
+    smartImaging: null,
   };
 
-  // Detect current format from URL
+  // Check for Smart Imaging first
+  const smartImagingResult = await detectSmartImaging(baseUrl, log);
+  results.smartImaging = smartImagingResult;
+
+  if (smartImagingResult.detected) {
+    log.info(`[dm-format-verifier] ✅ Smart Imaging is ACTIVE - browsers already receive ${smartImagingResult.actualFormat.toUpperCase()} (${Math.round(smartImagingResult.actualSize / 1024)} KB)`);
+    log.info('[dm-format-verifier] ⚪ Skipping format optimization recommendations - Smart Imaging handles this automatically');
+
+    // Still collect format data for reference, but don't generate recommendations
+    results.smartImagingActive = true;
+    results.browserFormat = smartImagingResult.actualFormat;
+    results.browserSize = smartImagingResult.actualSize;
+  }
+
+  // Detect current format from URL parameters or file extension
   const currentFormatMatch = imageUrl.match(/[?&]fmt=([a-z]+)/i)
     || imageUrl.match(/\.([a-z]+)(?:\?|$)/i);
   if (currentFormatMatch) {
     results.currentFormat = currentFormatMatch[1].toLowerCase();
+  }
+
+  // If format not detected from URL, try HEAD request to get Content-Type
+  if (!results.currentFormat) {
+    log.info('[dm-format-verifier] Format not in URL, detecting via HEAD request...');
+    const baseResult = await getImageSize(baseUrl, log);
+    if (baseResult.success && baseResult.contentType) {
+      // Parse format from content-type (e.g., "image/webp" → "webp", "image/jpeg" → "jpeg")
+      const contentTypeMatch = baseResult.contentType.match(/image\/([a-z0-9]+)/i);
+      if (contentTypeMatch) {
+        results.currentFormat = contentTypeMatch[1].toLowerCase();
+        // Store the base URL size as reference for the current format
+        results.baseUrlSize = baseResult.size;
+        log.info(`[dm-format-verifier] Format detected from Content-Type: ${results.currentFormat}`);
+      }
+    }
   }
 
   log.info(`[dm-format-verifier] Current format detected: ${results.currentFormat || 'UNKNOWN'}`);
@@ -258,8 +362,14 @@ export async function verifyDmFormats(imageUrl, log) {
     }
   });
 
-  // Generate recommendations - only if savings > 10%
-  log.info(`[dm-format-verifier] 📊 Analysis: smallestFormat=${results.smallestFormat}, currentFormat=${results.currentFormat}`);
+  // Generate recommendations - only if savings > 10% AND Smart Imaging is not active
+  log.info(`[dm-format-verifier] 📊 Analysis: smallestFormat=${results.smallestFormat}, currentFormat=${results.currentFormat}, smartImaging=${results.smartImagingActive || false}`);
+
+  // Skip recommendations if Smart Imaging is active - browsers already get optimized format
+  if (results.smartImagingActive) {
+    log.info('[dm-format-verifier] 🏁 Verification complete: 0 recommendations (Smart Imaging active)');
+    return results;
+  }
 
   if (results.smallestFormat && results.currentFormat) {
     const currentSize = results.formats[results.currentFormat]?.size;
@@ -298,16 +408,33 @@ export async function verifyDmFormats(imageUrl, log) {
   }
 
   // If no current format detected, recommend the smallest available
+  // Calculate savings using the largest format as baseline if current format unknown
   if (!results.currentFormat && results.smallestFormat) {
     log.info(`[dm-format-verifier] ℹ️ No current format detected, recommending smallest: ${results.smallestFormat}`);
     const smallestResult = results.formats[results.smallestFormat];
-    results.recommendations.push({
-      type: 'format-optimization',
-      recommendedFormat: results.smallestFormat,
-      recommendedSize: smallestResult.size,
-      recommendedUrl: smallestResult.url,
-      message: `Use ${results.smallestFormat.toUpperCase()} format for optimal size (${smallestResult.sizeKB} KB)`,
-    });
+
+    // Use base URL size (from HEAD request) or largest format as baseline for savings calculation
+    const baselineSize = results.baseUrlSize || largestSize;
+    const savingsBytes = baselineSize && smallestResult.size
+      ? baselineSize - smallestResult.size : 0;
+    const savingsPercent = baselineSize ? Math.round((savingsBytes / baselineSize) * 100) : 0;
+
+    // Only recommend if there are actual savings
+    if (savingsPercent > 10) {
+      results.recommendations.push({
+        type: 'format-optimization',
+        currentFormat: 'unknown',
+        recommendedFormat: results.smallestFormat,
+        currentSize: baselineSize,
+        recommendedSize: smallestResult.size,
+        savingsBytes,
+        savingsPercent,
+        recommendedUrl: smallestResult.url,
+        message: `Use ${results.smallestFormat.toUpperCase()} format for optimal size (${smallestResult.sizeKB} KB), saving ${savingsPercent}% (${Math.round(savingsBytes / 1024)} KB)`,
+      });
+    } else {
+      log.info(`[dm-format-verifier] ⚪ No recommendation: savings ${savingsPercent}% < 10% threshold`);
+    }
   }
 
   log.info(`[dm-format-verifier] 🏁 Verification complete: ${results.recommendations.length} recommendations`);
@@ -401,6 +528,7 @@ export function createVerificationSummary(verificationResults) {
   const summary = {
     totalImagesVerified: verificationResults.length,
     imagesWithRecommendations: 0,
+    imagesWithSmartImaging: 0,
     totalPotentialSavingsBytes: 0,
     formatDistribution: {
       avif: { available: 0, recommended: 0 },
@@ -412,6 +540,10 @@ export function createVerificationSummary(verificationResults) {
   };
 
   verificationResults.forEach((result) => {
+    // Count Smart Imaging instances
+    if (result.smartImagingActive) {
+      summary.imagesWithSmartImaging += 1;
+    }
     // Count format availability
     Object.keys(result.formats).forEach((format) => {
       if (result.formats[format].success) {
