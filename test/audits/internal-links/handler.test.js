@@ -608,6 +608,39 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(result.status).to.equal('complete');
   }).timeout(5000);
 
+  it('filters out PDF URLs from alternative URLs and logs when PDFs are found', async () => {
+    const validSuggestions = AUDIT_RESULT_DATA_WITH_SUGGESTIONS.map((data) => ({
+      getData: () => data,
+      getId: () => '1111',
+      save: () => {},
+    }));
+    if (!context.dataAccess) {
+      context.dataAccess = {};
+    }
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    // Include PDF URLs in top pages to trigger filtering
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves([
+        { getUrl: () => 'https://example.com/page1' },
+        { getUrl: () => 'https://example.com/brochure.pdf' },
+        { getUrl: () => 'https://example.com/page2' },
+        { getUrl: () => 'https://example.com/document.PDF' },
+      ]);
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(result.status).to.equal('complete');
+
+    // Verify the log message about filtering PDFs was called
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/Filtered out 2 PDF URLs from alternative URLs before sending to Mystique/),
+    );
+  }).timeout(5000);
+
   it('Existing opportunity and suggestions are updated if no broken internal links found', async () => {
     // Create mock suggestions
     const mockSuggestions = [{}];
