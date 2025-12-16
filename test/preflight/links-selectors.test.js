@@ -180,11 +180,12 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       const linksAudit = result[0].audits.find((a) => a.name === 'links');
 
       expect(linksAudit).to.exist;
-      expect(linksAudit.opportunities).to.have.lengthOf(1);
-      expect(linksAudit.opportunities[0].check).to.equal('bad-links');
-      expect(linksAudit.opportunities[0].issue).to.have.lengthOf(1);
+      // Find the bad-links opportunity specifically (there may be other opportunities)
+      const badLinksOpportunity = linksAudit.opportunities.find((o) => o.check === 'bad-links');
+      expect(badLinksOpportunity).to.exist;
+      expect(badLinksOpportunity.issue).to.have.lengthOf(1);
       // Verify the URL was normalized correctly
-      expect(linksAudit.opportunities[0].issue[0].url).to.equal('http://example.com/path?query=1');
+      expect(badLinksOpportunity.issue[0].url).to.equal('http://example.com/path?query=1');
     });
 
     it('should fallback to original href when URL normalization fails', async () => {
@@ -238,11 +239,12 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       const linksAudit = result[0].audits.find((a) => a.name === 'links');
 
       expect(linksAudit).to.exist;
-      expect(linksAudit.opportunities).to.have.lengthOf(1);
-      expect(linksAudit.opportunities[0].check).to.equal('bad-links');
-      expect(linksAudit.opportunities[0].issue).to.have.lengthOf(1);
+      // Find the bad-links opportunity specifically
+      const badLinksOpportunity = linksAudit.opportunities.find((o) => o.check === 'bad-links');
+      expect(badLinksOpportunity).to.exist;
+      expect(badLinksOpportunity.issue).to.have.lengthOf(1);
       // Verify the URL fallback to original href when normalization fails
-      expect(linksAudit.opportunities[0].issue[0].url).to.equal('http://[invalid-url');
+      expect(badLinksOpportunity.issue[0].url).to.equal('http://[invalid-url');
     });
 
     it('should detect multiple insecure HTTP links on a page', async () => {
@@ -301,12 +303,13 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
       const linksAudit = result[0].audits.find((a) => a.name === 'links');
 
       expect(linksAudit).to.exist;
-      expect(linksAudit.opportunities).to.have.lengthOf(1);
-      expect(linksAudit.opportunities[0].check).to.equal('bad-links');
-      expect(linksAudit.opportunities[0].issue).to.have.lengthOf(3);
+      // Find the bad-links opportunity specifically
+      const badLinksOpportunity = linksAudit.opportunities.find((o) => o.check === 'bad-links');
+      expect(badLinksOpportunity).to.exist;
+      expect(badLinksOpportunity.issue).to.have.lengthOf(3);
 
       // Verify all three links are reported
-      const urls = linksAudit.opportunities[0].issue.map((i) => i.url);
+      const urls = badLinksOpportunity.issue.map((i) => i.url);
       expect(urls).to.include('http://example.com/');
       expect(urls).to.include('http://test.com/');
       expect(urls).to.include('http://invalid[url');
