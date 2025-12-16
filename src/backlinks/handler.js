@@ -240,7 +240,7 @@ export const generateSuggestionData = async (context) => {
 
     // If filtering resulted in no matches, fall back to all URLs
     if (alternativeUrls.length === 0) {
-      log.warn('No locale-specific alternatives found, using all top pages');
+      log.warn(`[Site: ${site.getId()}] No locale-specific alternatives found, using all top pages`);
       alternativeUrls = allTopPageUrls;
     }
   } else {

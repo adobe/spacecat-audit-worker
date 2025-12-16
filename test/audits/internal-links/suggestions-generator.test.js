@@ -1163,6 +1163,159 @@ describe('generateSuggestionData', async function test() {
     expect(result).to.have.lengthOf(2);
     expect(context.log.error).to.have.been.calledWithMatch(/Final suggestion error for/);
   });
+
+  it('should handle AI call failure in batch processing', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        ...Array.from({ length: 301 }, (_, i) => ({ Key: `scrapes/site-id/scrape${i}.json` })),
+      ],
+      IsTruncated: false,
+      NextContinuationToken: 'token',
+    });
+    context.s3Client.send.resolves(mockFileResponse);
+    configuration.isHandlerEnabledForSite.returns(true);
+
+    let callCount = 0;
+    azureOpenAIClient.fetchChatCompletion.callsFake(async () => {
+      callCount++;
+      // Headers succeed
+      if (callCount <= 2) {
+        return {
+          choices: [{
+            message: {
+              content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+            },
+            finish_reason: 'stop',
+          }],
+        };
+      }
+      // First batch throws error - caught by inner try-catch at line 139-142
+      if (callCount === 3) {
+        throw new Error('Batch processing failed');
+      }
+      // Remaining calls succeed
+      return {
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+          },
+          finish_reason: 'stop',
+        }],
+      };
+    });
+
+    const result = await generateSuggestionData('https://example.com', brokenInternalLinksData, context, site);
+
+    expect(result).to.have.lengthOf(2);
+    // Error is caught by inner try-catch which logs "AI call failed for"
+    expect(context.log.error).to.have.been.calledWithMatch(/AI call failed for/);
+  });
+
+  it('should handle getPrompt failure in batch processing to trigger outer catch', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        ...Array.from({ length: 301 }, (_, i) => ({ Key: `scrapes/site-id/scrape${i}.json` })),
+      ],
+      IsTruncated: false,
+      NextContinuationToken: 'token',
+    });
+    context.s3Client.send.resolves(mockFileResponse);
+    configuration.isHandlerEnabledForSite.returns(true);
+
+    const getPromptStub = sinon.stub();
+    let promptCallCount = 0;
+
+    // First two calls for headers succeed
+    getPromptStub.onCall(0).resolves('header-prompt-1');
+    getPromptStub.onCall(1).resolves('header-prompt-2');
+    // Call 2 (first batch for first link) throws to trigger outer catch at line 155-156
+    getPromptStub.onCall(2).throws(new Error('getPrompt failed in batch'));
+    // Remaining calls succeed
+    for (let i = 3; i < 20; i++) {
+      getPromptStub.onCall(i).resolves(`batch-prompt-${i}`);
+    }
+
+    azureOpenAIClient.fetchChatCompletion.callsFake(async () => {
+      return {
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+          },
+          finish_reason: 'stop',
+        }],
+      };
+    });
+
+    // Need to mock getPrompt using esmock
+    const { generateSuggestionData: generateWithMock } = await esmock(
+      '../../../src/internal-links/suggestions-generator.js',
+      {
+        '@adobe/spacecat-shared-utils': {
+          getPrompt: getPromptStub,
+          isNonEmptyArray: (arr) => Array.isArray(arr) && arr.length > 0,
+        },
+      },
+    );
+
+    const result = await generateWithMock('https://example.com', brokenInternalLinksData, context, site);
+
+    expect(result).to.have.lengthOf(2);
+    expect(context.log.error).to.have.been.calledWithMatch(/Batch processing error/);
+  });
+
+  it('should handle getPrompt failure in final suggestion processing', async () => {
+    context.s3Client.send.onCall(0).resolves({
+      Contents: [
+        ...Array.from({ length: 301 }, (_, i) => ({ Key: `scrapes/site-id/scrape${i}.json` })),
+      ],
+      IsTruncated: false,
+      NextContinuationToken: 'token',
+    });
+    context.s3Client.send.resolves(mockFileResponse);
+    configuration.isHandlerEnabledForSite.returns(true);
+
+    const getPromptStub = sinon.stub();
+    let callCount = 0;
+
+    // First two calls for headers succeed
+    getPromptStub.onCall(0).resolves('header-prompt-1');
+    getPromptStub.onCall(1).resolves('header-prompt-2');
+    // Next 8 calls for batches succeed (4 batches per link x 2 links)
+    for (let i = 0; i < 8; i++) {
+      getPromptStub.onCall(2 + i).resolves(`batch-prompt-${i}`);
+    }
+    // Calls 10 and 11 are for final suggestions - make them throw to trigger lines 209-211
+    getPromptStub.onCall(10).throws(new Error('getPrompt failed for final suggestion'));
+    getPromptStub.onCall(11).throws(new Error('getPrompt failed for final suggestion'));
+
+    azureOpenAIClient.fetchChatCompletion.callsFake(async () => {
+      callCount++;
+      return {
+        choices: [{
+          message: {
+            content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
+          },
+          finish_reason: 'stop',
+        }],
+      };
+    });
+
+    // Need to mock getPrompt using esmock
+    const { generateSuggestionData: generateWithMock } = await esmock(
+      '../../../src/internal-links/suggestions-generator.js',
+      {
+        '@adobe/spacecat-shared-utils': {
+          getPrompt: getPromptStub,
+          isNonEmptyArray: (arr) => Array.isArray(arr) && arr.length > 0,
+        },
+      },
+    );
+
+    const result = await generateWithMock('https://example.com', brokenInternalLinksData, context, site);
+
+    expect(result).to.have.lengthOf(2);
+    expect(context.log.error).to.have.been.calledWithMatch(/Final suggestion error for/);
+  });
 });
 
 describe('syncBrokenInternalLinksSuggestions', () => {

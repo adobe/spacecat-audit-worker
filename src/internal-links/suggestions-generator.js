@@ -185,7 +185,12 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
           const finalResponse = await azureOpenAIClient
             .fetchChatCompletion(finalRequestBody, azureOpenAIOptions);
 
-          if (finalResponse.choices?.length >= 1 && finalResponse.choices[0].finish_reason !== 'stop') {
+          if (!finalResponse.choices?.length) {
+            log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Final suggestion error for ${link.urlTo}: No choices returned`);
+            return { ...link };
+          }
+
+          if (finalResponse.choices[0].finish_reason !== 'stop') {
             log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No final suggestions found for ${link.urlTo}`);
             return { ...link };
           }
@@ -231,7 +236,7 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
         requestBody,
         azureOpenAIOptions,
       );
-      if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
+      if (!response.choices?.length || response.choices[0].finish_reason !== 'stop') {
         log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No header suggestions for ${link.urlTo}`);
         headerSuggestionsResults.push(null);
         // eslint-disable-next-line no-continue
