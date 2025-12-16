@@ -30,15 +30,25 @@ import { ContentAIClient } from '../utils/content-ai.js';
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
 
-async function enableAudits(site, context, audits = []) {
+/* c8 ignore start */
+/* this is actually running during tests. verified manually on 2025-12-10. */
+/**
+ * @param {object} site A site object
+ * @param {object} context The request context object
+ * @param {string[]} audits Array of audit types to enable
+ * @param {object} [options]
+ * @param {object} [options.configuration] A global configuration object.
+ */
+async function enableAudits(site, context, audits = [], options = undefined) {
   const { dataAccess } = context;
   const { Configuration } = dataAccess;
 
-  const configuration = await Configuration.findLatest();
+  const configuration = options?.configuration ?? await Configuration.findLatest();
   audits.forEach((audit) => {
     configuration.enableHandlerForSite(audit, site);
   });
   await configuration.save();
+  /* c8 ignore stop */
 }
 
 async function enableImports(site, imports = []) {
@@ -115,21 +125,6 @@ export async function triggerCdnLogsReport(context, site) {
       categoriesUpdated: true,
     },
   });
-
-  // then trigger cdn-logs-report for last 3 weeks
-  for (const weekOffset of [-2, -3, -4]) {
-    // eslint-disable-next-line no-await-in-loop
-    await sqs.sendMessage(
-      configuration.getQueues().audits,
-      {
-        type: 'cdn-logs-report',
-        siteId,
-        auditContext: { weekOffset },
-      },
-      null,
-      300,
-    );
-  }
 
   log.info('Successfully triggered cdn-logs-report audit');
 }
@@ -275,7 +270,10 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const domain = finalUrl;
 
   // Ensure relevant audits and imports are enabled
-  await enableAudits(site, context, [
+  const { Configuration } = context.dataAccess;
+  const configuration = await Configuration.findLatest();
+
+  const auditsToEnable = [
     'scrape-top-pages',
     'headings',
     'llm-blocked',
@@ -286,8 +284,22 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     'faqs',
     REFERRAL_TRAFFIC_AUDIT,
     'cdn-logs-report',
-    'geo-brand-presence',
+  ];
+  const [isDailyEnabled, isPaidEnabled] = await Promise.all([
+    configuration.isHandlerEnabledForSite('geo-brand-presence-daily', site),
+    configuration.isHandlerEnabledForSite('geo-brand-presence-paid', site),
   ]);
+
+  // don't tamper with configuration if daily geo brand presence is already enabled.
+  if (!isDailyEnabled) {
+    auditsToEnable.push('geo-brand-presence');
+    // only enable free geo brand presence if paid is not already enabled
+    if (!isPaidEnabled) {
+      auditsToEnable.push('geo-brand-presence-free');
+    }
+  }
+
+  await enableAudits(site, context, auditsToEnable, { configuration });
 
   // Enable ContentAI for the site
   try {

@@ -1218,6 +1218,72 @@ describe('Preflight Audit', () => {
       })));
     });
 
+    // eslint-disable-next-line func-names
+    it('handles invalid http:// URLs gracefully in insecure link detection', async function () {
+      this.timeout(10000);
+      const head = '<head><link rel="canonical" href="https://main--example--page.aem.page/page1"/></head>';
+      // Include invalid http:// URL (malformed IPv6) to trigger catch block in URL parsing
+      const body = '<body><a href="http://[::1">invalid url</a></body>';
+      const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/page1/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        } else {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify({
+                scrapeResult: {
+                  rawBody: html,
+                  tags: {
+                    title: 'Page 1 Title',
+                    description: 'Page 1 Description',
+                    h1: [],
+                  },
+                },
+                finalUrl: 'https://main--example--page.aem.page/page1',
+              })),
+            },
+          });
+        }
+      });
+
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_IDENTIFY,
+          urls: ['https://main--example--page.aem.page/page1'],
+          enableAuthentication: false,
+        },
+      });
+
+      configuration.isHandlerEnabledForSite.returns(true);
+
+      await preflightAuditFunction(context);
+
+      // Verify that the audit completed without throwing
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
+
+      // Verify the invalid URL was detected as insecure link with original href preserved
+      const actualResult = finalJobEntity.setResult.getCall(0).args[0];
+      const linksAudit = actualResult[0].audits.find((a) => a.name === 'links');
+      expect(linksAudit).to.exist;
+      const badLinksOpportunity = linksAudit.opportunities.find((o) => o.check === 'bad-links');
+      expect(badLinksOpportunity).to.exist;
+      expect(badLinksOpportunity.issue[0].url).to.equal('http://[::1');
+      expect(badLinksOpportunity.issue[0].issue).to.equal('Link using HTTP instead of HTTPS');
+    });
+
     it('completes successfully on the happy path for the identify step with readability check', async () => {
       const head = '<head><title>Readability Test Page</title></head>';
       const body = '<body><p>The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience. Furthermore, the multifaceted infrastructure exemplifies sophisticated aesthetic considerations. Such complex arrangements require meticulous coordination.</p></body>';
@@ -1572,7 +1638,7 @@ describe('Preflight Audit', () => {
       expect(audits.find((a) => a.name === AUDIT_LOREM_IPSUM)).to.not.exist;
     });
 
-    it('should keep job in progress when audit handler returns processing: true (lines 273-275)', async () => {
+    it('should keep job in progress when audit handler returns processing: true', async () => {
       // Create a new test with its own setup that mocks readability to return processing: true
       const mockContext = new MockContextBuilder()
         .withSandbox(sinon.createSandbox())
@@ -1650,7 +1716,7 @@ describe('Preflight Audit', () => {
       expect(finalJobEntity.save).to.have.been.called;
     });
 
-    it('should handle null handlerResults and use fallback (line 269)', async () => {
+    it('should handle null handlerResults and use fallback', async () => {
       // This test covers the || [] fallback on line 269 when handlerResults is null/undefined
       const mockContext = new MockContextBuilder()
         .withSandbox(sinon.createSandbox())

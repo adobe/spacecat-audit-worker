@@ -491,7 +491,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with undefined update_from property (line 207 fallback)', () => {
+  it('should handle htmlWithIssues with undefined update_from property', () => {
     // This test targets line 207 - the final fallback to empty string
     // when item.update_from is undefined
     const result = formatIssue('aria-allowed-attr', {
@@ -508,7 +508,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with empty string update_from (line 207 fallback)', () => {
+  it('should handle htmlWithIssues with empty string update_from', () => {
     // This test targets line 207 - the final fallback to empty string
     // when item.update_from is an empty string (falsy)
     const result = formatIssue('aria-allowed-attr', {
@@ -524,7 +524,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with object without update_from (line 208)', () => {
+  it('should handle htmlWithIssues with object without update_from', () => {
     // This test verifies line 208 - the final fallback to empty string
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -538,7 +538,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].update_from).to.equal('');
   });
 
-  it('should handle htmlWithIssues with object having falsy update_from (line 208)', () => {
+  it('should handle htmlWithIssues with object having falsy update_from', () => {
     // This test also targets line 208 with a falsy update_from value
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -554,7 +554,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].update_from).to.equal('');
   });
 
-  it('should handle htmlWithIssues with empty object (line 208)', () => {
+  it('should handle htmlWithIssues with empty object', () => {
     // This test specifically targets line 208 with an empty object
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -569,7 +569,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with null item (line 208)', () => {
+  it('should handle htmlWithIssues with null item', () => {
     // This test specifically targets line 208 with a null item
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -584,7 +584,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with undefined item (line 208)', () => {
+  it('should handle htmlWithIssues with undefined item', () => {
     // This test specifically targets line 208 with an undefined item
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -599,7 +599,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with false item (line 208)', () => {
+  it('should handle htmlWithIssues with false item', () => {
     // This test specifically targets line 208 with false value
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -661,7 +661,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with false values (line 207)', () => {
+  it('should handle htmlWithIssues with false values', () => {
     // This test specifically targets line 207 - the final || ''
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -676,7 +676,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with zero values (line 205)', () => {
+  it('should handle htmlWithIssues with zero values', () => {
     // This test specifically targets line 205 - the final || ''
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -691,7 +691,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with NaN values (line 205)', () => {
+  it('should handle htmlWithIssues with NaN values', () => {
     // This test specifically targets line 205 - the final || '' fallback
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -4020,7 +4020,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     );
   });
 
-  it('should log success message when metrics are saved successfully (line 889 coverage)', async () => {
+  it('should log success message when metrics are saved successfully', async () => {
     // Mock both the scrape-utils and mystique-data-processing modules
     // to ensure saveMystiqueValidationMetricsToS3 succeeds
     const mockScrapeUtils = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
@@ -4145,9 +4145,9 @@ describe('createMystiqueForwardPayload', () => {
       siteId: 'site-456',
       auditId: 'audit-789',
       deliveryType: 'aem-sites',
-      aggregationKey: 'aggregation-key-123',
     });
     expect(result.data).to.deep.equal({
+      aggregationKey: 'aggregation-key-123',
       url: 'https://example.com/page',
       opportunityId: 'opportunity-123',
       issuesList: [{ issueName: 'aria-allowed-attr' }],

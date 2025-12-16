@@ -563,10 +563,6 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       }));
     });
 
-
-
-
-
     it('should warn and skip when bucket configuration is missing', async () => {
       // Remove bucket configuration
       delete context.env.S3_MYSTIQUE_BUCKET_NAME;

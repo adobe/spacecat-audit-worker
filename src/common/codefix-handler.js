@@ -13,7 +13,11 @@
 /* eslint-disable max-classes-per-file */
 
 import { createHash } from 'crypto';
-import { isNonEmptyArray, buildAggregationKeyFromSuggestion } from '@adobe/spacecat-shared-utils';
+import {
+  isNonEmptyArray,
+  buildAggregationKey,
+  buildKey,
+} from '@adobe/spacecat-shared-utils';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 
 /**
@@ -134,18 +138,27 @@ async function updateSuggestionsWithCodeChange(
       const suggestionSource = suggestionData.source;
 
       let suggestionMatchKey;
+      let suggestionsMatch = false;
+
       if (useAggregationKey) {
-        // Build aggregation key from suggestion data
-        suggestionMatchKey = buildAggregationKeyFromSuggestion(suggestionData);
+        const issueType = suggestionData.issues?.[0]?.type || '';
+        const targetSelector = suggestionData.issues?.[0]?.htmlWithIssues?.[0]?.target_selector || '';
+        suggestionMatchKey = buildAggregationKey(
+          issueType,
+          suggestionUrl,
+          targetSelector,
+          suggestionSource,
+        );
+        suggestionsMatch = suggestionMatchKey === matchKey && !!reportData.diff;
       } else {
-        // Use issue type (ruleId) for backwards compatibility
-        suggestionMatchKey = suggestionData.issues?.[0]?.type;
+        suggestionMatchKey = buildKey(suggestionUrl, suggestionSource);
+        const issueType = suggestionData.issues?.[0]?.type;
+        suggestionsMatch = suggestionMatchKey === buildKey(url, source)
+          && issueType === matchKey
+          && !!reportData.diff;
       }
 
-      if (suggestionUrl === url
-            && (!source || suggestionSource === source)
-            && suggestionMatchKey === matchKey
-            && !!reportData.diff) {
+      if (suggestionsMatch) {
         log.info(`Updating suggestion ${suggestion.getId()} with code change data`);
 
         // Update suggestion data with diff content and availability flag
@@ -231,7 +244,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
   }
 
   // Default bucket name from environment
-  const defaultBucketName = env.S3_MYSTIQUE_BUCKET_NAME || 'spacecat-prod-mystique-assets';
+  const defaultBucketName = env.S3_MYSTIQUE_BUCKET_NAME;
 
   let totalUpdatedSuggestions = 0;
 
@@ -272,7 +285,9 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
         }
         bucketName = defaultBucketName;
         const urlSourceHash = generateUrlSourceHash(url, source || '');
-        reportKey = `fixes/${siteId}/${urlSourceHash}/${aggregationKey}/report.json`;
+        // Sanitize aggregation key for S3 path (replace slashes with underscores)
+        const sanitizedAggregationKey = aggregationKey.replace(/[/\\]/g, '_');
+        reportKey = `fixes/${siteId}/${urlSourceHash}/${sanitizedAggregationKey}/report.json`;
         log.info(`[CodeFixProcessor] Using default S3 path: s3://${bucketName}/${reportKey}`);
       }
 

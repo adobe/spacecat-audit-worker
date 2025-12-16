@@ -260,7 +260,7 @@ describe('LLM Blocked Audit', () => {
           'If the URLs are intentionally blocked, ignore the suggestion.',
         ],
       },
-      tags: ['llm', 'isElmo'],
+      tags: ['llm', 'isElmo', 'tech-geo'],
       data: {
         fullRobots: 'User-Agent: *\nDisallow: /',
         numProcessedUrls: 10,
