@@ -91,3 +91,4 @@ describe('Wikipedia Analysis Opportunity Data Mapper', () => {
   });
 });
 
+
