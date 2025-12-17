@@ -369,7 +369,7 @@ export async function validatePageHeadingFromScrapeJson(
           scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
         },
         pageTags,
-        selectors: h1Selector ? [h1Selector] : [],
+        selectors: [h1Selector],
       });
     }
 
@@ -397,7 +397,7 @@ export async function validatePageHeadingFromScrapeJson(
             tagName,
             pageTags,
             headingContext,
-            selectors: headingSelector ? [headingSelector] : [],
+            selectors: [headingSelector],
           };
         }
       }

@@ -203,7 +203,7 @@ class SeoChecks {
     // store tag data in all tags object to be used in later checks like uniqueness
     this.addToAllTags(urlPath, TITLE, pageTags[TITLE]);
     this.addToAllTags(urlPath, DESCRIPTION, pageTags[DESCRIPTION]);
-    (pageTags[H1] || []).forEach((tagContent) => this.addToAllTags(urlPath, H1, tagContent));
+    (pageTags[H1]).forEach((tagContent) => this.addToAllTags(urlPath, H1, tagContent));
   }
 
   /**

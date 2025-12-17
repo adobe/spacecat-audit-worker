@@ -233,7 +233,7 @@ export default async function readability(context, auditContext) {
             language: detectedLanguage,
             seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
             textContent: text, // Store full text for AI processing
-            ...(selector ? { elements: toElementTargets(selector) } : {}),
+            elements: toElementTargets(selector),
           });
         }
       } catch (error) {

@@ -263,8 +263,72 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
 
       await headingsModule.default(context, auditContext);
 
-      // Verify toElementTargets was called with null
-      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(null);
+      // Verify toElementTargets was called with []
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith([]);
+    });
+
+    it('should use transformRules.selector when check.selectors is not present', async () => {
+      // Setup check with transformRules but no selectors
+      const checkWithTransformRules = {
+        success: false,
+        check: 'heading-h1-length',
+        checkTitle: 'H1 Too Long',
+        description: 'H1 exceeds recommended length',
+        explanation: 'Shorten the H1',
+        transformRules: {
+          selector: 'h1.long-heading',
+          action: 'replace',
+        },
+      };
+
+      mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
+        url: 'https://main--example--page.aem.page/page1',
+        checks: [checkWithTransformRules],
+      });
+
+      // Return mock elements
+      mockDomSelector.toElementTargets.returns([{ selector: 'h1.long-heading' }]);
+
+      const headingsModule = await esmock('../../src/preflight/headings.js', {
+        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/metatags/seo-checks.js': {
+          default: class {
+            // eslint-disable-next-line class-methods-use-this
+            getFewHealthyTags() {
+              return { title: [], description: [], h1: [] };
+            }
+          },
+        },
+      });
+
+      const auditContext = {
+        previewUrls: ['https://main--example--page.aem.page/page1'],
+        step: 'identify',
+        audits: new Map([
+          ['https://main--example--page.aem.page/page1', {
+            audits: [],
+          }],
+        ]),
+        auditsResult: [{
+          pageUrl: 'https://main--example--page.aem.page/page1',
+          audits: [],
+        }],
+        scrapedObjects: [{
+          data: {
+            scrapeResult: {
+              rawBody: '<body><h1 class="long-heading">Very Long H1 Heading Text</h1></body>',
+            },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          },
+        }],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModule.default(context, auditContext);
+
+      // Verify toElementTargets was called with [transformRules.selector]
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['h1.long-heading']);
     });
   });
 });

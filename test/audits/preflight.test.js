@@ -4221,18 +4221,6 @@ describe('Preflight Audit', () => {
         timeExecutionBreakdown: [],
       };
 
-      it('should skip AI enhancement during identify step', async () => {
-        // Change step to 'identify'
-        auditContext.step = 'identify';
-
-        await headings(context, auditContext);
-
-        // Verify that getBrandGuidelines was never called (no AI enhancement)
-        expect(getBrandGuidelinesStub).to.not.have.been.called;
-        expect(getH1HeadingASuggestionStub).to.not.have.been.called;
-      });
-
-
       await headings(context, modifiedAuditContext);
       expect(context.log.warn).to.have.been.called;
       const warnCalls = context.log.warn.getCalls();
@@ -4240,6 +4228,17 @@ describe('Preflight Audit', () => {
         call.args[0] && call.args[0].includes('No audit entry found for https://example.com/page2')
       );
       expect(relevantCall).to.exist;
+    });
+
+    it('should skip AI enhancement during identify step', async () => {
+      // Change step to 'identify'
+      auditContext.step = 'identify';
+
+      await headings(context, auditContext);
+
+      // Verify that getBrandGuidelines was never called (no AI enhancement)
+      expect(getBrandGuidelinesStub).to.not.have.been.called;
+      expect(getH1HeadingASuggestionStub).to.not.have.been.called;
     });
 
     it('should add aiSuggestion when AI suggestion is available', async () => {

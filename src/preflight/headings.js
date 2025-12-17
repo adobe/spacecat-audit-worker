@@ -40,7 +40,7 @@ function getSeoImpact(checkType) {
 
 function getElementsFromCheck(check) {
   const selectorSources = check.selectors
-    || (check.transformRules?.selector ? [check.transformRules.selector] : null);
+    || (check.transformRules?.selector ? [check.transformRules.selector] : []);
   const elements = toElementTargets(selectorSources);
   return elements.length ? elements : undefined;
 }

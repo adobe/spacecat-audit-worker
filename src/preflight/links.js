@@ -107,7 +107,7 @@ export default async function links(context, auditContext) {
       const selectorKey = (hrefValue, urlValue) => `${normalizeHref(hrefValue)}|${normalizeUrlTo(urlValue)}`;
       const selectorsByLink = new Map();
       auditResult.brokenInternalLinks.forEach((link) => {
-        selectorsByLink.set(selectorKey(link.href, link.urlTo), link.elements || []);
+        selectorsByLink.set(selectorKey(link.href, link.urlTo), link.elements);
       });
       const brokenLinks = auditResult.brokenInternalLinks.map((link) => ({
         urlTo: normalizeUrlTo(link.urlTo),
@@ -146,7 +146,7 @@ export default async function links(context, auditContext) {
           issue: `Status ${status}`,
           seoImpact: 'High',
           seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-          ...(elements && elements.length ? { elements } : {}),
+          elements,
         });
       });
     }
@@ -165,7 +165,7 @@ export default async function links(context, auditContext) {
         issue: `Status ${status}`,
         seoImpact: 'High',
         seoRecommendation: 'Fix or remove broken links to improve user experience',
-        ...(elements && elements.length ? { elements } : {}),
+        elements,
       });
     });
   }
@@ -223,7 +223,7 @@ export default async function links(context, auditContext) {
           issue: 'Link using HTTP instead of HTTPS',
           seoImpact: 'High',
           seoRecommendation: 'Update all links to use HTTPS protocol',
-          ...(selector ? { elements: toElementTargets(selector) } : {}),
+          elements: toElementTargets(selector),
         };
       }
       return null;

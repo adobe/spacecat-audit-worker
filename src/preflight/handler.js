@@ -241,17 +241,20 @@ export const preflightAudit = async (context) => {
         if (loremIpsumEnabled && /lorem ipsum/i.test(textContent)) {
           const loremElements = $('p, div, span, li, section, article, h1, h2, h3, h4, h5, h6')
             .toArray()
-            .filter((el) => /lorem ipsum/i.test($(el).text() || ''));
+            .filter((el) => /lorem ipsum/i.test($(el).text()));
           const loremSelectors = loremElements.map(
             (el) => getDomElementSelector(el),
           ).filter(Boolean);
+          const fallbackSelector = loremSelectors.length === 0
+            ? getDomElementSelector($('body').get(0))
+            : null;
           auditsByName[AUDIT_LOREM_IPSUM].opportunities.push({
             check: 'placeholder-text',
             issue: 'Found Lorem ipsum placeholder text in the page content',
             seoImpact: 'High',
             seoRecommendation: 'Replace placeholder text with meaningful content',
             elements: toElementTargets(
-              loremSelectors.length > 0 ? loremSelectors : getDomElementSelector($('body').get(0)),
+              loremSelectors.length > 0 ? loremSelectors : fallbackSelector,
               10,
             ),
           });
@@ -266,7 +269,7 @@ export const preflightAudit = async (context) => {
               .map((el) => getDomElementSelector(el))
               .filter(Boolean);
             const fallbackElement = $('body > main').get(0) || $('body').get(0);
-            const fallbackSelector = (fallbackElement && getDomElementSelector(fallbackElement)) || 'body';
+            const fallbackSelector = getDomElementSelector(fallbackElement);
 
             auditsByName[AUDIT_H1_COUNT].opportunities.push({
               check: headingCount > 1 ? 'multiple-h1' : 'missing-h1',
