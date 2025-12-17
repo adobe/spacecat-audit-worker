@@ -29,7 +29,8 @@ export function isPreviewPage(url) {
 }
 
 export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
-  const baseDomain = new URL(baseURL).hostname;
+  // Strip www from both sides for consistent domain comparison
+  const baseDomain = stripWWW(new URL(baseURL).hostname);
   const checks = suggestedUrls.map(async (suggestedUrl) => {
     try {
       const schemaPrependedUrl = prependSchema(stripWWW(suggestedUrl));
