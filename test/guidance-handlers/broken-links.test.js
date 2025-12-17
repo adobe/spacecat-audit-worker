@@ -536,9 +536,9 @@ describe('guidance-broken-links-remediation handler', () => {
       }),
       save: mockSave,
     });
-    // Mock successful HEAD request for the suggested URL
+    // Mock successful GET request for the suggested URL
     nock('https://qualcomm.com')
-      .head('/fixed')
+      .get('/fixed')
       .reply(200);
 
     const response = await brokenLinksGuidanceHandler(messageWithOverride, mockContext);

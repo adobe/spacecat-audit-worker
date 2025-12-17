@@ -33,9 +33,10 @@ export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
   const baseDomain = stripWWW(new URL(baseURL).hostname);
   const checks = suggestedUrls.map(async (suggestedUrl) => {
     try {
-      const schemaPrependedUrl = prependSchema(stripWWW(suggestedUrl));
+      const schemaPrependedUrl = prependSchema(suggestedUrl);
       const suggestedURLObj = new URL(schemaPrependedUrl);
-      if (suggestedURLObj.hostname === baseDomain) {
+      const suggestedDomain = stripWWW(suggestedURLObj.hostname);
+      if (suggestedDomain === baseDomain) {
         const response = await fetch(schemaPrependedUrl);
         if (response.ok) {
           return suggestedUrl;
