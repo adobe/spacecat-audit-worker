@@ -766,7 +766,6 @@ export async function processOpportunityAndSuggestions(
   );
 
   // Build key function that handles both individual and domain-wide suggestions
-  /* c8 ignore next 7 */
   const buildKey = (data) => {
     if (data.key) {
       return data.key;

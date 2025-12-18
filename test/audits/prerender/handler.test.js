@@ -1815,6 +1815,29 @@ describe('Prerender Audit', () => {
         expect(individualSuggestion).to.exist;
         const mappedIndividual = mapNewSuggestion(individualSuggestion);
         expect(mappedIndividual).to.have.property('rank', 0);
+
+        // Test buildKey function to cover all branches (coverage for lines 508-517)
+        const { buildKey } = syncCall.args[0];
+
+        // Test case 1: data.key exists (coverage for lines 509-510)
+        const dataWithKey = { key: 'custom-key-123' };
+        const keyFromKey = buildKey(dataWithKey);
+        expect(keyFromKey).to.equal('custom-key-123');
+
+        // Test case 2: data.isDomainWide is true (coverage for lines 513-514)
+        const domainWideData = { isDomainWide: true };
+        const domainWideKey = buildKey(domainWideData);
+        expect(domainWideKey).to.equal('domain-wide-aggregate|prerender');
+
+        // Test case 3: neither key nor isDomainWide (coverage for lines 515-517)
+        const plainUrlData = { url: 'https://example.com/test-page' };
+        const plainUrlKey = buildKey(plainUrlData);
+        expect(plainUrlKey).to.equal('https://example.com/test-page|prerender');
+
+        // Test with actual individual suggestion data from newData
+        const individualSuggestionData = individualSuggestion;
+        const individualKey = buildKey(individualSuggestionData);
+        expect(individualKey).to.equal('https://example.com/page1|prerender');
       });
 
       it('should skip domain-wide suggestion creation when existing suggestion has active status (NEW)', async () => {
