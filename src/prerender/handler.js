@@ -35,6 +35,8 @@ import {
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
+const IS_DOMAIN_WIDE_FIELD = 'isDomainWide';
+
 async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIMIT) {
   const { dataAccess, log, site } = context;
   let topPagesUrls = [];
@@ -435,7 +437,7 @@ async function prepareDomainWideAggregateSuggestion(
     wordCountAfter: totalWordCountAfter,
     aiReadablePercent: totalAiReadablePercent,
     // Domain-wide configuration metadata
-    isDomainWide: true,
+    [IS_DOMAIN_WIDE_FIELD]: true,
     allowedRegexPatterns,
     pathPattern: '/*',
   };
@@ -514,9 +516,11 @@ export async function processOpportunityAndSuggestions(
 
   // Check if a domain-wide suggestion already exists in an active state
   const existingSuggestions = await opportunity.getSuggestions();
-  const DOMAIN_WIDE_SUGGESTION_KEY = domainWideSuggestion.key;
   const existingDomainWideSuggestion = existingSuggestions.find(
-    (s) => buildKey(s.getData()) === DOMAIN_WIDE_SUGGESTION_KEY,
+    (s) => {
+      const data = s.getData();
+      return data?.[IS_DOMAIN_WIDE_FIELD] === true;
+    },
   );
 
   // Define active statuses that should NOT be replaced
