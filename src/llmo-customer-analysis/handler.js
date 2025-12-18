@@ -284,6 +284,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     'faqs',
     REFERRAL_TRAFFIC_AUDIT,
     'cdn-logs-report',
+    'readability',
   ];
   const [isDailyEnabled, isPaidEnabled] = await Promise.all([
     configuration.isHandlerEnabledForSite('geo-brand-presence-daily', site),
