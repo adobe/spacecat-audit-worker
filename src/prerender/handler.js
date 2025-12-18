@@ -768,9 +768,12 @@ export async function processOpportunityAndSuggestions(
   // Build key function that handles both individual and domain-wide suggestions
   /* c8 ignore next 7 */
   const buildKey = (data) => {
-    // Domain-wide suggestion has a special key field
     if (data.key) {
       return data.key;
+    }
+
+    if (data?.[IS_DOMAIN_WIDE_FIELD] === true) {
+      return domainWideSuggestion.key;
     }
     // Individual suggestions use URL-based key
     return `${data.url}|${AUDIT_TYPE}`;
@@ -793,12 +796,14 @@ export async function processOpportunityAndSuggestions(
     Suggestion.STATUSES.SKIPPED,
   ];
 
-  // Determine if we should include the domain-wide suggestion in the sync
-  let shouldIncludeDomainWideSuggestion = true;
+  let shouldCreateNewDomainWideSuggestion = true;
+  let existingDomainWideSuggestionData = null;
+
   if (existingDomainWideSuggestion) {
     const existingStatus = existingDomainWideSuggestion.getStatus();
     if (ACTIVE_STATUSES.includes(existingStatus)) {
-      shouldIncludeDomainWideSuggestion = false;
+      shouldCreateNewDomainWideSuggestion = false;
+      existingDomainWideSuggestionData = existingDomainWideSuggestion.getData();
       log.info(`Prerender - Domain-wide suggestion already exists in ${existingStatus} state, skipping creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
     } else {
       log.info(`Prerender - Domain-wide suggestion exists in ${existingStatus} state, will update it. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
@@ -826,10 +831,20 @@ export async function processOpportunityAndSuggestions(
     ),
   });
 
-  // Build allSuggestions array, conditionally including domain-wide suggestion
-  const allSuggestions = shouldIncludeDomainWideSuggestion
-    ? [...preRenderSuggestions, domainWideSuggestion]
-    : [...preRenderSuggestions];
+  // Build allSuggestions array, always including domain-wide suggestion (either new or existing)
+  // This ensures syncSuggestions can match it and won't mark it as OUTDATED
+  let allSuggestions = [...preRenderSuggestions];
+  if (shouldCreateNewDomainWideSuggestion) {
+    allSuggestions = [...preRenderSuggestions, domainWideSuggestion];
+  } else if (existingDomainWideSuggestionData) {
+    allSuggestions = [
+      ...preRenderSuggestions,
+      {
+        key: domainWideSuggestion.key,
+        data: existingDomainWideSuggestionData,
+      },
+    ];
+  }
 
   await syncSuggestions({
     opportunity,

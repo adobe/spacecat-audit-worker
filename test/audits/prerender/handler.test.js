@@ -1880,17 +1880,19 @@ describe('Prerender Audit', () => {
         // Verify syncSuggestions was called once
         expect(syncSuggestionsStub).to.have.been.calledOnce;
 
-        // Get the call and verify domain-wide suggestion is NOT included
+        // Get the call and verify domain-wide suggestion IS included (to prevent OUTDATED status)
         const syncCall = syncSuggestionsStub.getCall(0);
         const { newData } = syncCall.args[0];
 
-        // Domain-wide suggestion should NOT be in newData
+        // Domain-wide suggestion SHOULD be in newData (with existing data) to prevent it from being marked OUTDATED
         const domainWideSuggestion = newData.find((item) => item.key);
-        expect(domainWideSuggestion).to.not.exist;
+        expect(domainWideSuggestion).to.exist;
+        expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
+        expect(domainWideSuggestion.data.isDomainWide).to.be.true;
 
         // Individual suggestions should still be present
-        expect(newData.length).to.equal(2);
-        expect(newData.every((item) => !item.key)).to.be.true;
+        expect(newData.length).to.equal(3); // 2 individual + 1 domain-wide
+        expect(newData.filter((item) => !item.key).length).to.equal(2);
 
         // Verify log message about skipping creation
         expect(context.log.info).to.have.been.calledWith(
@@ -1954,8 +1956,11 @@ describe('Prerender Audit', () => {
         const syncCall = syncSuggestionsStub.getCall(0);
         const { newData } = syncCall.args[0];
 
+        // Domain-wide suggestion SHOULD be in newData (with existing data) to prevent it from being marked OUTDATED
         const domainWideSuggestion = newData.find((item) => item.key);
-        expect(domainWideSuggestion).to.not.exist;
+        expect(domainWideSuggestion).to.exist;
+        expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
+        expect(domainWideSuggestion.data.isDomainWide).to.be.true;
 
         expect(context.log.info).to.have.been.calledWith(
           sinon.match(/Domain-wide suggestion already exists in FIXED state, skipping creation/),
@@ -2018,8 +2023,11 @@ describe('Prerender Audit', () => {
         const syncCall = syncSuggestionsStub.getCall(0);
         const { newData } = syncCall.args[0];
 
+        // Domain-wide suggestion SHOULD be in newData (with existing data) to prevent it from being marked OUTDATED
         const domainWideSuggestion = newData.find((item) => item.key);
-        expect(domainWideSuggestion).to.not.exist;
+        expect(domainWideSuggestion).to.exist;
+        expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
+        expect(domainWideSuggestion.data.isDomainWide).to.be.true;
 
         expect(context.log.info).to.have.been.calledWith(
           sinon.match(/Domain-wide suggestion already exists in PENDING_VALIDATION state, skipping creation/),
@@ -2082,8 +2090,11 @@ describe('Prerender Audit', () => {
         const syncCall = syncSuggestionsStub.getCall(0);
         const { newData } = syncCall.args[0];
 
+        // Domain-wide suggestion SHOULD be in newData (with existing data) to prevent it from being marked OUTDATED
         const domainWideSuggestion = newData.find((item) => item.key);
-        expect(domainWideSuggestion).to.not.exist;
+        expect(domainWideSuggestion).to.exist;
+        expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
+        expect(domainWideSuggestion.data.isDomainWide).to.be.true;
 
         expect(context.log.info).to.have.been.calledWith(
           sinon.match(/Domain-wide suggestion already exists in SKIPPED state, skipping creation/),
