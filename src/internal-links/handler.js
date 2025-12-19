@@ -16,7 +16,7 @@ import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { isPdfUrl } from '../utils/url-utils.js';
+import { isUnscrapeable } from '../utils/url-utils.js';
 import { syncBrokenInternalLinksSuggestions } from './suggestions-generator.js';
 import {
   isLinkInaccessible,
@@ -152,10 +152,10 @@ export async function prepareScrapingStep(context) {
 
   const urls = filteredTopPages
     .map((page) => page.getUrl())
-    .filter((url) => !isPdfUrl(url))
+    .filter((url) => !isUnscrapeable(url))
     .map((url) => ({ url }));
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Sending ${urls.length} non-PDF URLs for scraping`);
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Sending ${urls.length} scrapeable URLs (filtered out PDFs and other file types) for scraping`);
 
   return {
     urls,
@@ -302,11 +302,11 @@ export const opportunityAndSuggestionsStep = async (context) => {
       alternativeUrls = allTopPageUrls;
     }
 
-    // Filter out PDF URLs before sending to Mystique
+    // Filter out unscrape-able file types before sending to Mystique
     const originalCount = alternativeUrls.length;
-    alternativeUrls = alternativeUrls.filter((url) => !isPdfUrl(url));
+    alternativeUrls = alternativeUrls.filter((url) => !isUnscrapeable(url));
     if (alternativeUrls.length < originalCount) {
-      log.info(`[${AUDIT_TYPE}] Filtered out ${originalCount - alternativeUrls.length} PDF URLs from alternative URLs before sending to Mystique`);
+      log.info(`[${AUDIT_TYPE}] Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs (PDFs, Office docs, etc.) from alternative URLs before sending to Mystique`);
     }
 
     // Validate before sending to Mystique

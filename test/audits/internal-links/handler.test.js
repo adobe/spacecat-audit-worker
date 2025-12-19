@@ -608,7 +608,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(result.status).to.equal('complete');
   }).timeout(5000);
 
-  it('filters out PDF URLs from alternative URLs and logs when PDFs are found', async () => {
+  it('filters out unscrape-able file types (PDFs, Office docs) from alternative URLs', async () => {
     // Use root-level URLs (no path prefix) to ensure all alternatives are included
     const validSuggestions = [
       {
@@ -630,12 +630,15 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // Stub allBySiteIdAndStatus to return empty array so a new opportunity is created
     context.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
-    // Include PDF URLs in top pages to trigger filtering
+    // Include various unscrape-able file types in top pages to trigger filtering
     context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
       .resolves([
         { getUrl: () => 'https://example.com/page1' },
         { getUrl: () => 'https://example.com/brochure.pdf' },
         { getUrl: () => 'https://example.com/document.PDF' },
+        { getUrl: () => 'https://example.com/data.xlsx' },
+        { getUrl: () => 'https://example.com/presentation.pptx' },
+        { getUrl: () => 'https://example.com/report.docx' },
       ]);
     // Ensure audit is set with proper broken links data
     context.site.getLatestAuditByAuditType = () => auditData;
@@ -645,12 +648,12 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     expect(result.status).to.equal('complete');
 
-    // Verify the log message about filtering PDFs was called
+    // Verify the log message about filtering file types was called
     expect(context.log.info).to.have.been.calledWith(
-      sinon.match(/Filtered out 2 PDF URLs from alternative URLs before sending to Mystique/),
+      sinon.match(/Filtered out 5 unscrape-able file URLs \(PDFs, Office docs, etc\.\) from alternative URLs before sending to Mystique/),
     );
 
-    // Verify SQS was called with only non-PDF URLs
+    // Verify SQS was called with only scrapeable URLs
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
     const messageArg = context.sqs.sendMessage.getCall(0).args[1];
     expect(messageArg.data.alternativeUrls).to.have.lengthOf(1);

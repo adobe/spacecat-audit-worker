@@ -254,6 +254,42 @@ describe('filterBrokenSuggestedUrls', () => {
   });
 });
 
+describe('isUnscrapeable', () => {
+  it('should return true for PDF files', () => {
+    expect(utils.isUnscrapeable('https://example.com/document.pdf')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/document.PDF')).to.be.true;
+  });
+
+  it('should return true for Office files', () => {
+    expect(utils.isUnscrapeable('https://example.com/data.xls')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/data.xlsx')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/slides.ppt')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/slides.pptx')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/report.doc')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/report.docx')).to.be.true;
+  });
+
+  it('should return true for other document types', () => {
+    expect(utils.isUnscrapeable('https://example.com/file.rtf')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/file.ps')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/drawing.dwf')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/map.kml')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/map.kmz')).to.be.true;
+    expect(utils.isUnscrapeable('https://example.com/animation.swf')).to.be.true;
+  });
+
+  it('should return false for HTML pages', () => {
+    expect(utils.isUnscrapeable('https://example.com/page.html')).to.be.false;
+    expect(utils.isUnscrapeable('https://example.com/page')).to.be.false;
+    expect(utils.isUnscrapeable('https://example.com/')).to.be.false;
+  });
+
+  it('should handle invalid URLs gracefully', () => {
+    expect(utils.isUnscrapeable('not-a-url')).to.be.false;
+    expect(utils.isUnscrapeable('')).to.be.false;
+  });
+});
+
 describe('url-utils.findBestMatchingPath', () => {
   const sectionData = {
     default: {},

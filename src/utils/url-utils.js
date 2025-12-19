@@ -163,6 +163,33 @@ export function isPdfUrl(url) {
   }
 }
 
+/**
+ * File types that cannot be scraped by Puppeteer but may appear in search results.
+ * These are file types that Google indexes and may appear in Ahrefs top pages.
+ * @see https://github.com/adobe/spacecat-audit-worker/blob/main/src/structured-data/handler.js#L203-L205
+ */
+const UNSCRAPE_ABLE_FILE_TYPES = [
+  'pdf', 'ps', 'dwf', 'kml', 'kmz', // Documents & Maps
+  'xls', 'xlsx', 'ppt', 'pptx', // Office spreadsheets & presentations
+  'doc', 'docx', 'rtf', 'swf', // Word documents & Flash
+];
+
+/**
+ * Checks if a URL points to a file type that cannot be scraped.
+ * These file types are indexed by Google but cannot be processed by Puppeteer.
+ * @param {string} url - The URL to check
+ * @returns {boolean} True if URL is an unscrape-able file type, false otherwise
+ */
+export function isUnscrapeable(url) {
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname.toLowerCase();
+    return UNSCRAPE_ABLE_FILE_TYPES.some((type) => pathname.endsWith(`.${type}`));
+  } catch {
+    return false;
+  }
+}
+
 export function joinBaseAndPath(baseURL, path) {
   if (path === '-') {
     return baseURL.endsWith('/') ? baseURL : `${baseURL}/`;
