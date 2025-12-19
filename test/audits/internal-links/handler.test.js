@@ -608,6 +608,58 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(result.status).to.equal('complete');
   }).timeout(5000);
 
+  it('filters out unscrape-able file types (PDFs, Office docs) from alternative URLs', async () => {
+    // Use root-level URLs (no path prefix) to ensure all alternatives are included
+    const validSuggestions = [
+      {
+        getData: () => ({
+          urlFrom: 'https://example.com/',
+          urlTo: 'https://example.com/',
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+    if (!context.dataAccess) {
+      context.dataAccess = {};
+    }
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    // Stub allBySiteIdAndStatus to return empty array so a new opportunity is created
+    context.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+    // Include various unscrape-able file types in top pages to trigger filtering
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves([
+        { getUrl: () => 'https://example.com/page1' },
+        { getUrl: () => 'https://example.com/brochure.pdf' },
+        { getUrl: () => 'https://example.com/document.PDF' },
+        { getUrl: () => 'https://example.com/data.xlsx' },
+        { getUrl: () => 'https://example.com/presentation.pptx' },
+        { getUrl: () => 'https://example.com/report.docx' },
+      ]);
+    // Ensure audit is set with proper broken links data
+    context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(result.status).to.equal('complete');
+
+    // Verify the log message about filtering file types was called
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/Filtered out 5 unscrape-able file URLs \(PDFs, Office docs, etc\.\) from alternative URLs before sending to Mystique/),
+    );
+
+    // Verify SQS was called with only scrapeable URLs
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const messageArg = context.sqs.sendMessage.getCall(0).args[1];
+    expect(messageArg.data.alternativeUrls).to.have.lengthOf(1);
+    expect(messageArg.data.alternativeUrls[0]).to.equal('https://example.com/page1');
+  }).timeout(5000);
+
   it('Existing opportunity and suggestions are updated if no broken internal links found', async () => {
     // Create mock suggestions
     const mockSuggestions = [{}];
