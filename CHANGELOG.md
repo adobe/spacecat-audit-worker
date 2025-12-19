@@ -1,3 +1,10 @@
+## [1.273.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.2...v1.273.3) (2025-12-19)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** gracefully fail enabling of imports and audits ([#1808](https://github.com/adobe/spacecat-audit-worker/issues/1808)) ([2267ce4](https://github.com/adobe/spacecat-audit-worker/commit/2267ce40998a4084252e111558e7ea7735d71b7f))
+
 ## [1.273.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.1...v1.273.2) (2025-12-12)
 
 
