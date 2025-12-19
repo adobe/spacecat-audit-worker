@@ -11,6 +11,7 @@
  */
 
 import { DATA_SOURCES } from '../common/constants.js';
+import { CONTENT_GAIN_THRESHOLD } from './utils/constants.js';
 
 /**
  * Creates opportunity data for prerender audit results
@@ -37,11 +38,11 @@ export function createOpportunityData(auditData) {
         },
       ],
     },
-    tags: ['isElmo'],
+    tags: ['isElmo', 'tech-geo'],
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
       thresholds: {
-        contentGainRatio: 1.2,
+        contentGainRatio: CONTENT_GAIN_THRESHOLD,
       },
       benefits: [
         'Improved LLM visibility and brand presence',

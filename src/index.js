@@ -82,6 +82,7 @@ import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
+import vulnerabilitiesCodeFix from './vulnerabilities-code-fix/handler.js';
 import prerender from './prerender/handler.js';
 import productMetatags from './product-metatags/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
@@ -94,6 +95,9 @@ import faqs from './faqs/handler.js';
 import faqsGuidance from './faqs/guidance-handler.js';
 import highValuePages from './high-value-pages/handler.js';
 import pageCitability from './page-citability/handler.js';
+import healthCheck from './health-check/handler.js';
+import wikipediaAnalysis from './wikipedia-analysis/handler.js';
+import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -131,6 +135,8 @@ const HANDLERS = {
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'geo-brand-presence': geoBrandPresence,
+  'geo-brand-presence-free': geoBrandPresence,
+  'geo-brand-presence-paid': geoBrandPresence,
   'category:geo-brand-presence': handleCategorizationResponseHandler,
   'detect:geo-brand-presence': detectGeoBrandPresence,
   'refresh:geo-brand-presence': detectGeoBrandPresence,
@@ -168,6 +174,7 @@ const HANDLERS = {
   prerender,
   'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,
+  'codefix:security-vulnerabilities': vulnerabilitiesCodeFix,
   'codefix:form-accessibility': accessibilityCodeFixHandler,
   'security-permissions': permissions,
   'security-permissions-redundant': permissionsRedundant,
@@ -175,6 +182,9 @@ const HANDLERS = {
   'guidance:faqs': faqsGuidance,
   'high-value-pages': highValuePages,
   'page-citability': pageCitability,
+  'health-check': healthCheck,
+  'wikipedia-analysis': wikipediaAnalysis,
+  'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
   dummy: (message) => ok(message),
 };
 

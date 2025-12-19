@@ -22,6 +22,7 @@ export const CDN_TYPES = {
   CLOUDFLARE: 'cloudflare',
   CLOUDFRONT: 'cloudfront',
   FRONTDOOR: 'frontdoor',
+  OTHER: 'other',
 };
 
 export const SERVICE_PROVIDER_TYPES = {
@@ -32,6 +33,7 @@ export const SERVICE_PROVIDER_TYPES = {
   BYOCDN_CLOUDFLARE: 'byocdn-cloudflare',
   BYOCDN_CLOUDFRONT: 'byocdn-cloudfront',
   BYOCDN_FRONTDOOR: 'byocdn-frontdoor',
+  BYOCDN_OTHER: 'byocdn-other',
   AMS_CLOUDFRONT: 'ams-cloudfront',
   AMS_FRONTDOOR: 'ams-frontdoor',
 };
@@ -45,6 +47,7 @@ export const SERVICE_TO_CDN_MAPPING = {
   [SERVICE_PROVIDER_TYPES.BYOCDN_CLOUDFLARE]: CDN_TYPES.CLOUDFLARE,
   [SERVICE_PROVIDER_TYPES.BYOCDN_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
   [SERVICE_PROVIDER_TYPES.BYOCDN_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
+  [SERVICE_PROVIDER_TYPES.BYOCDN_OTHER]: CDN_TYPES.OTHER,
   [SERVICE_PROVIDER_TYPES.AMS_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
   [SERVICE_PROVIDER_TYPES.AMS_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
 };
@@ -354,7 +357,8 @@ export function buildSiteFilters(filters, site) {
   if (!filters || filters.length === 0) {
     const baseURL = site.getBaseURL();
     const { host } = new URL(baseURL);
-    return `REGEXP_LIKE(host, '(?i)(${host})')`;
+    const rootHost = host.replace(/^www\./, '');
+    return `REGEXP_LIKE(host, '(?i)^(www.)?${rootHost}$')`;
   }
 
   const clauses = filters.map(({ key, value, type }) => {
@@ -394,7 +398,7 @@ export function buildDateFilter(startDate, endDate) {
  */
 export function buildUserAgentFilter() {
   const {
-    chatgpt, perplexity, google, claude, mistralai,
+    chatgpt, perplexity, google, claude, mistralai, amazon,
   } = PROVIDER_USER_AGENT_PATTERNS;
 
   return `(
@@ -402,7 +406,8 @@ export function buildUserAgentFilter() {
     REGEXP_LIKE(user_agent, '${perplexity}') OR 
     REGEXP_LIKE(user_agent, '${google}') OR
     REGEXP_LIKE(user_agent, '${claude}') OR
-    REGEXP_LIKE(user_agent, '${mistralai}')
+    REGEXP_LIKE(user_agent, '${mistralai}') OR
+    REGEXP_LIKE(user_agent, '${amazon}')
   )`;
 }
 /* c8 ignore end */
