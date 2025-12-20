@@ -58,7 +58,6 @@ describe('AemClientAdapter', () => {
   let mockRequest;
   let mockPathIndex;
   let mockCache;
-  let mockManagement;
   let mockBuiltClient;
   let mockAemClientBuilder;
   let mockPathUtils;
@@ -106,30 +105,16 @@ describe('AemClientAdapter', () => {
       isAvailable: sandbox.stub().returns(true),
     };
 
-    mockManagement = {
-      resolveFragmentId: sandbox.stub(),
-      getFragment: sandbox.stub(),
-      getFragmentById: sandbox.stub(),
-      createFragment: sandbox.stub(),
-      patchFragment: sandbox.stub(),
-      deleteFragment: sandbox.stub(),
-    };
-
     mockBuiltClient = {
       client: {
         request: mockRequest,
         log: context.log,
       },
-      management: mockManagement,
-      versioning: null,
-      tagging: null,
     };
 
     mockAemClientBuilder = {
       create: sandbox.stub().returns({
-        withManagement: sandbox.stub().returns({
-          build: sandbox.stub().returns(mockBuiltClient),
-        }),
+        build: sandbox.stub().returns(mockBuiltClient),
       }),
     };
 
@@ -165,20 +150,20 @@ describe('AemClientAdapter', () => {
     it('should create adapter with cache strategy', () => {
       const adapter = new AemClientAdapter(context, mockBuiltClient, mockCache);
 
-      expect(adapter.management).to.equal(mockManagement);
+      expect(adapter).to.be.instanceOf(AemClientAdapter);
     });
 
     it('should create adapter with NoOpCache by default', () => {
       const adapter = new AemClientAdapter(context, mockBuiltClient);
 
-      expect(adapter.management).to.equal(mockManagement);
+      expect(adapter).to.be.instanceOf(AemClientAdapter);
     });
 
     it('should create adapter with PathIndexCache', () => {
       const cache = new PathIndexCache(mockPathIndex);
       const adapter = new AemClientAdapter(context, mockBuiltClient, cache);
 
-      expect(adapter.management).to.equal(mockManagement);
+      expect(adapter).to.be.instanceOf(AemClientAdapter);
     });
   });
 
@@ -187,22 +172,14 @@ describe('AemClientAdapter', () => {
       const adapter = AemClientAdapter.createFrom(context, mockCache);
 
       expect(mockAemClientBuilder.create).to.have.been.calledOnce;
-      expect(adapter.management).to.equal(mockManagement);
+      expect(adapter).to.be.instanceOf(AemClientAdapter);
     });
 
     it('should create adapter with NoOpCache by default', () => {
       const adapter = AemClientAdapter.createFrom(context);
 
       expect(mockAemClientBuilder.create).to.have.been.calledOnce;
-      expect(adapter.management).to.equal(mockManagement);
-    });
-  });
-
-  describe('management getter', () => {
-    it('should expose fragment management capability', () => {
-      const adapter = new AemClientAdapter(context, mockBuiltClient, mockCache);
-
-      expect(adapter.management).to.equal(mockManagement);
+      expect(adapter).to.be.instanceOf(AemClientAdapter);
     });
   });
 

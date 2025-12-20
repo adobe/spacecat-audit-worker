@@ -31,8 +31,6 @@ export class AemClientAdapter {
 
   #client;
 
-  #management;
-
   #cache;
 
   /**
@@ -40,13 +38,11 @@ export class AemClientAdapter {
    * @param {Object} context - The execution context.
    * @param {Object} builtClient - The built client from AemClientBuilder.
    * @param {Object} builtClient.client - The base AEM client.
-   * @param {Object} builtClient.management - The fragment management capability.
    * @param {Object} cache - Cache implementation for storing fragment data.
    */
   constructor(context, builtClient, cache = new NoOpCache()) {
     this.#context = context;
     this.#client = builtClient.client;
-    this.#management = builtClient.management;
     this.#cache = cache;
   }
 
@@ -60,9 +56,7 @@ export class AemClientAdapter {
    * @returns {AemClientAdapter} A configured adapter instance.
    */
   static createFrom(context, cache = new NoOpCache()) {
-    const builtClient = AemClientBuilder.create(context)
-      .withManagement()
-      .build();
+    const builtClient = AemClientBuilder.create(context).build();
 
     return new AemClientAdapter(context, builtClient, cache);
   }
@@ -106,14 +100,6 @@ export class AemClientAdapter {
     return new Promise((resolve) => {
       setTimeout(() => resolve(), ms);
     });
-  }
-
-  /**
-   * Exposes the fragment management capability for CRUD operations.
-   * @returns {Object} The FragmentManagement instance.
-   */
-  get management() {
-    return this.#management;
   }
 
   /**
