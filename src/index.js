@@ -81,6 +81,9 @@ import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
+import contentFragment404 from './content-fragment-404/handler.js';
+import contentFragment404Guidance from './content-fragment-404/guidance-handler.js';
+import cdnContentFragment404 from './cdn-content-fragment-404/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
 import vulnerabilitiesCodeFix from './vulnerabilities-code-fix/handler.js';
 import prerender from './prerender/handler.js';
@@ -170,6 +173,9 @@ const HANDLERS = {
   'guidance:summarization': summarizationGuidance,
   hreflang,
   headings,
+  'cdn-content-fragment-404': cdnContentFragment404,
+  'content-fragment-404': contentFragment404,
+  'guidance:content-fragment-404': contentFragment404Guidance,
   prerender,
   'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,

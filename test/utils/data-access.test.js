@@ -385,6 +385,57 @@ describe('data-access', () => {
       expect(existingSuggestions[0].save).to.have.been.calledOnce;
     });
 
+    it('should update rank when getRank function is provided', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'title 1', rank: 5 },
+        { key: '2', title: 'title 2', rank: 10 },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub(),
+        getStatus: sinon.stub().returns('NEW'),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }, {
+        id: '2',
+        data: suggestionsData[1],
+        getData: sinon.stub().returns(suggestionsData[1]),
+        setData: sinon.stub(),
+        setRank: sinon.stub(),
+        save: sinon.stub(),
+        getStatus: sinon.stub().returns('NEW'),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+      const newData = [
+        { key: '1', title: 'updated title 1', rank: 15 },
+        { key: '2', title: 'updated title 2', rank: 20 },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      const getRank = (data) => data.rank;
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        getRank,
+      });
+
+      expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+      expect(existingSuggestions[0].setRank).to.have.been.calledOnceWith(15);
+      expect(existingSuggestions[1].setRank).to.have.been.calledOnceWith(20);
+      expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
+      expect(existingSuggestions[1].setData).to.have.been.calledOnceWith(newData[1]);
+      expect(existingSuggestions[0].save).to.have.been.calledOnce;
+      expect(existingSuggestions[1].save).to.have.been.calledOnce;
+    });
+
     it('should log errors if there are items with errors', async () => {
       const suggestionsData = [{ key: '1' }];
       const existingSuggestions = [{

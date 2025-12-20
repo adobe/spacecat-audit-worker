@@ -212,6 +212,8 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * @param {Array} params.newData - Array of new data objects to sync.
  * @param {Function} params.buildKey - Function to generate a unique key for each item.
  * @param {Function} params.mapNewSuggestion - Function to map new data to suggestion objects.
+ * @param {Function} [params.getRank] - Function to extract rank from data item.
+ *   If provided, rank will be updated for existing suggestions.
  * @param {Function} [params.mergeDataFunction] - Function to merge existing and new data.
  *   Defaults to shallow merge.
  * @param {string} [params.statusToSetForOutdated] - Status to set for outdated suggestions.
@@ -223,6 +225,7 @@ export async function syncSuggestions({
   newData,
   buildKey,
   mapNewSuggestion,
+  getRank = null,
   mergeDataFunction = defaultMergeDataFunction,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
@@ -255,7 +258,16 @@ export async function syncSuggestions({
       })
       .map((existing) => {
         const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
+
+        if (getRank && newDataItem) {
+          const rank = getRank(newDataItem);
+          if (rank !== undefined && rank !== null) {
+            existing.setRank(rank);
+          }
+        }
+
         existing.setData(mergeDataFunction(existing.getData(), newDataItem));
+
         if ([SuggestionDataAccess.STATUSES.OUTDATED].includes(existing.getStatus())) {
           log.warn('Resolved suggestion found in audit. Possible regression.');
           const { site } = context;
@@ -264,6 +276,7 @@ export async function syncSuggestions({
             ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
             : SuggestionDataAccess.STATUSES.NEW);
         }
+
         existing.setUpdatedBy('system');
         return existing.save();
       }),
