@@ -17,7 +17,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { AnalysisStrategy } from './analysis/analysis-strategy.js';
 import { PathIndexCache } from './cache/path-index-cache.js';
-import { AemClient } from './clients/aem-client.js';
+import { AemClientAdapter } from './clients/aem-client-adapter.js';
 import { AthenaCollector } from './collectors/athena-collector.js';
 import { PathIndex } from './domain/index/path-index.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
@@ -45,7 +45,7 @@ async function analyzeContentFragment404s(context, contentFragment404s) {
 
   const pathIndex = new PathIndex(context);
   const cache = new PathIndexCache(pathIndex);
-  const aemClient = AemClient.createFrom(context, cache);
+  const aemClient = AemClientAdapter.createFrom(context, cache);
   const strategy = new AnalysisStrategy(context, aemClient, pathIndex);
 
   // Extract URLs for analysis while keeping the full contentFragment404s data

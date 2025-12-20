@@ -10,44 +10,77 @@
  * governing permissions and limitations under the License.
  */
 
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+// eslint-disable-next-line import/no-unresolved -- TODO: Package pending publication
+import { AemClientBuilder, API_SITES_CF_FRAGMENTS } from '@adobe/spacecat-shared-aem-client';
 import { NoOpCache } from '../cache/noop-cache.js';
 import { PathUtils } from '../utils/path-utils.js';
 
-export class AemClient {
-  static API_SITES_BASE = '/adobe/sites';
-
-  static API_SITES_FRAGMENTS = `${AemClient.API_SITES_BASE}/cf/fragments`;
-
+/**
+ * Adapter that wraps the shared AEM client package and provides specialized
+ * functionality for the content-fragment-404 audit, including fragment listing,
+ * availability checks, and cache integration.
+ */
+export class AemClientAdapter {
   // Safety limit to prevent too many paginated queries
   static MAX_PAGES = 10;
 
   // Delay between pagination requests for rate limiting
   static PAGINATION_DELAY_MS = 100;
 
-  constructor(context, authorUrl, authToken, cache = new NoOpCache()) {
-    this.context = context;
-    this.authorUrl = authorUrl;
-    this.authToken = authToken;
-    this.cache = cache;
+  #context;
+
+  #client;
+
+  #management;
+
+  #cache;
+
+  /**
+   * Creates a new AemClientAdapter instance.
+   * @param {Object} context - The execution context.
+   * @param {Object} builtClient - The built client from AemClientBuilder.
+   * @param {Object} builtClient.client - The base AEM client.
+   * @param {Object} builtClient.management - The fragment management capability.
+   * @param {Object} cache - Cache implementation for storing fragment data.
+   */
+  constructor(context, builtClient, cache = new NoOpCache()) {
+    this.#context = context;
+    this.#client = builtClient.client;
+    this.#management = builtClient.management;
+    this.#cache = cache;
   }
 
+  /**
+   * Factory method to create an AemClientAdapter from a context object.
+   * @param {Object} context - The execution context.
+   * @param {Object} context.site - Site object with getDeliveryConfig() method.
+   * @param {Object} context.env - Environment variables containing IMS configuration.
+   * @param {Object} context.log - Logger instance.
+   * @param {Object} [cache] - Optional cache implementation.
+   * @returns {AemClientAdapter} A configured adapter instance.
+   */
   static createFrom(context, cache = new NoOpCache()) {
-    const { site, env } = context;
-    const authorUrl = site.getDeliveryConfig().authorURL;
-    const authToken = env.AEM_AUTHOR_TOKEN;
+    const builtClient = AemClientBuilder.create(context)
+      .withManagement()
+      .build();
 
-    if (!authorUrl || !authToken) {
-      throw new Error('AEM Author configuration missing: AEM_AUTHOR_URL and AEM_AUTHOR_TOKEN required');
-    }
-
-    return new AemClient(context, authorUrl, authToken, cache);
+    return new AemClientAdapter(context, builtClient, cache);
   }
 
+  /**
+   * Checks if a path is a breaking point for hierarchy traversal.
+   * @param {string} path - The path to check.
+   * @returns {boolean} True if the path is a breaking point.
+   */
   static isBreakingPoint(path) {
     return !path || !path.startsWith('/content/dam/') || path === '/content/dam';
   }
 
+  /**
+   * Parses content status from the API response.
+   * @param {string} status - The status string from the API.
+   * @returns {string} Normalized status value.
+   */
   static parseContentStatus(status) {
     if (!status) {
       return 'UNKNOWN';
@@ -65,8 +98,8 @@ export class AemClient {
   }
 
   /**
-   * Simple delay utility for rate limiting
-   * @param {number} ms - Milliseconds to delay
+   * Simple delay utility for rate limiting.
+   * @param {number} ms - Milliseconds to delay.
    * @returns {Promise<void>}
    */
   static async delay(ms) {
@@ -75,49 +108,61 @@ export class AemClient {
     });
   }
 
+  /**
+   * Exposes the fragment management capability for CRUD operations.
+   * @returns {Object} The FragmentManagement instance.
+   */
+  get management() {
+    return this.#management;
+  }
+
+  /**
+   * Checks if content exists at the specified path.
+   * @param {string} path - The fragment path to check.
+   * @returns {Promise<boolean>} True if content exists at the path.
+   */
   async isAvailable(path) {
-    const { log } = this.context;
+    const { log } = this.#context;
 
     try {
-      const response = await fetch(this.createUrl(path).toString(), {
-        headers: this.createAuthHeaders(),
-      });
+      const url = `${API_SITES_CF_FRAGMENTS}?path=${encodeURIComponent(path)}&projection=minimal`;
+      const data = await this.#client.request('GET', url);
 
-      if (!response.ok) {
-        log.error(`AEM Author returned ${response.status} for ${path}: ${response.statusText}`);
-        return false;
-      }
-
-      const data = await response.json();
       // Sites API returns 200 with empty items array when path doesn't exist
       const isAvailable = data?.items && data.items.length !== 0;
 
       // If there is content, cache it
       if (data?.items) {
-        this.cache.cacheItems(data.items, AemClient.parseContentStatus);
+        this.#cache.cacheItems(data.items, AemClientAdapter.parseContentStatus);
       }
 
       return isAvailable;
     } catch (error) {
-      throw new Error(`Failed to check AEM Author availability for ${path}: ${error.message}`);
+      log.error(`AEM Author request failed for ${path}: ${error.message}`);
+      return false;
     }
   }
 
+  /**
+   * Fetches all content from a path using cursor-based pagination.
+   * @param {string} path - The path to fetch content from.
+   * @returns {Promise<Array>} All content items found.
+   */
   async fetchContent(path) {
     try {
-      return await this.fetchContentWithPagination(path);
+      return await this.#fetchContentWithPagination(path);
     } catch (error) {
       throw new Error(`Failed to fetch AEM Author content for ${path}: ${error.message}`);
     }
   }
 
   /**
-   * Crawl all content from a path using cursor-based pagination
-   * @param {string} path - The path to crawl
-   * @returns {Promise<Array>} - All content items found
+   * Crawl all content from a path using cursor-based pagination.
+   * @param {string} path - The path to crawl.
+   * @returns {Promise<Array>} All content items found.
    */
-  async fetchContentWithPagination(path) {
-    const { log } = this.context;
+  async #fetchContentWithPagination(path) {
+    const { log } = this.#context;
 
     const allItems = [];
     let cursor = null;
@@ -132,7 +177,7 @@ export class AemClient {
         log.debug(`Fetching page ${pageCount} for path: ${path}${cursor ? ` (cursor: ${cursor})` : ''}`);
 
         // eslint-disable-next-line no-await-in-loop
-        const response = await this.fetchWithPagination(path, cursor);
+        const response = await this.#fetchWithPagination(path, cursor);
 
         if (response.items && response.items.length > 0) {
           allItems.push(...response.items);
@@ -144,62 +189,64 @@ export class AemClient {
         // Add small delay to implement rate limiting
         if (cursor) {
           // eslint-disable-next-line no-await-in-loop
-          await AemClient.delay(AemClient.PAGINATION_DELAY_MS);
+          await AemClientAdapter.delay(AemClientAdapter.PAGINATION_DELAY_MS);
         }
       } catch (error) {
         log.error(`Error fetching page ${pageCount} for path ${path}: ${error.message}`);
         // Return what we have so far instead of failing completely
         break;
       }
-    } while (cursor && pageCount < AemClient.MAX_PAGES);
+    } while (cursor && pageCount < AemClientAdapter.MAX_PAGES);
 
     // Cache items
-    this.cache.cacheItems(allItems, AemClient.parseContentStatus);
+    this.#cache.cacheItems(allItems, AemClientAdapter.parseContentStatus);
 
     log.info(`Complete crawl finished for path: ${path}. Found ${allItems.length} total items across ${pageCount} pages`);
     return allItems;
   }
 
   /**
-   * Fetch a single page of content with optional cursor
-   * @param {string} path - The path to fetch
-   * @param {string|null} cursor - The cursor for pagination
-   * @returns {Promise<{items: Array, cursor: string|null}>} - Response with items and next cursor
+   * Fetch a single page of content with optional cursor.
+   * @param {string} path - The path to fetch.
+   * @param {string|null} cursor - The cursor for pagination.
+   * @returns {Promise<{items: Array, cursor: string|null}>} Response with items and next cursor.
    */
-  async fetchWithPagination(path, cursor = null) {
-    const url = this.createUrlWithPagination(path, cursor);
+  async #fetchWithPagination(path, cursor = null) {
+    let url = `${API_SITES_CF_FRAGMENTS}?path=${encodeURIComponent(path)}&projection=minimal`;
 
-    const response = await fetch(url.toString(), {
-      headers: this.createAuthHeaders(),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    if (cursor) {
+      url += `&cursor=${encodeURIComponent(cursor)}`;
     }
 
-    const data = await response.json();
+    const data = await this.#client.request('GET', url);
+
     return {
       items: data?.items || [],
       cursor: data?.cursor || null,
     };
   }
 
+  /**
+   * Gets children paths from a parent path, traversing up the hierarchy if needed.
+   * @param {string} parentPath - The parent path to get children from.
+   * @returns {Promise<Array>} Array of child content paths.
+   */
   async getChildrenFromPath(parentPath) {
-    const { log } = this.context;
+    const { log } = this.#context;
 
     log.debug(`Getting children paths from parent: ${parentPath}`);
 
-    if (!this.cache.isAvailable()) {
+    if (!this.#cache.isAvailable()) {
       log.debug('Cache not available, returning empty list');
       return [];
     }
 
-    if (AemClient.isBreakingPoint(parentPath)) {
+    if (AemClientAdapter.isBreakingPoint(parentPath)) {
       log.debug(`Reached breaking point: ${parentPath}`);
       return [];
     }
 
-    const cachedChildren = this.cache.findChildren(parentPath);
+    const cachedChildren = this.#cache.findChildren(parentPath);
     if (cachedChildren.length > 0) {
       log.debug(`Found ${cachedChildren.length} children in cache for parent: ${parentPath}`);
       return cachedChildren;
@@ -227,7 +274,7 @@ export class AemClient {
         // Continue with cached data if available
       }
 
-      return this.cache.findChildren(parentPath);
+      return this.#cache.findChildren(parentPath);
     }
 
     const nextParent = PathUtils.getParentPath(parentPath);
@@ -239,35 +286,5 @@ export class AemClient {
     // Try the next parent up the hierarchy
     log.debug(`Parent path not available, trying next parent up: ${nextParent}`);
     return this.getChildrenFromPath(nextParent);
-  }
-
-  /**
-   * Create URL with pagination parameters
-   * @param {string} path - The path to fetch
-   * @param {string|null} cursor - The cursor for pagination
-   * @returns {string} - Complete URL with pagination
-   */
-  createUrlWithPagination(fragmentPath, cursor = null) {
-    const url = this.createUrl(fragmentPath);
-
-    if (cursor) {
-      url.searchParams.set('cursor', cursor);
-    }
-
-    return url;
-  }
-
-  createUrl(fragmentPath) {
-    const url = new URL(AemClient.API_SITES_FRAGMENTS, this.authorUrl);
-    url.searchParams.set('path', fragmentPath);
-    url.searchParams.set('projection', 'minimal');
-    return url;
-  }
-
-  createAuthHeaders() {
-    return {
-      Authorization: `Bearer ${this.authToken}`,
-      Accept: 'application/json',
-    };
   }
 }

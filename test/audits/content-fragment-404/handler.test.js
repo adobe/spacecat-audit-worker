@@ -157,8 +157,8 @@ describe('Broken Content Fragment Links Handler', () => {
           return pathIndexStub;
         },
       },
-      '../../../src/content-fragment-404/clients/aem-client.js': {
-        AemClient: {
+      '../../../src/content-fragment-404/clients/aem-client-adapter.js': {
+        AemClientAdapter: {
           createFrom: sandbox.stub().returns(aemClientStub),
         },
       },
