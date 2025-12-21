@@ -23,8 +23,9 @@ use(chaiAsPromised);
 
 describe('AemAnalyzer', () => {
   let AemAnalyzer;
-  let mockAemClient;
+  let mockBuiltClient;
   let mockFragmentAnalyzer;
+  let mockAemClientBuilder;
   let log;
 
   beforeEach(async () => {
@@ -35,21 +36,34 @@ describe('AemAnalyzer', () => {
       error: sinon.spy(),
     };
 
-    mockAemClient = {
-      getFragments: sinon.stub(),
-      isTokenExpired: sinon.stub().returns(false),
+    // The built client has { client, management, versioning, tagging } structure
+    mockBuiltClient = {
+      client: {
+        isTokenExpired: sinon.stub().returns(false),
+      },
+      management: {
+        getFragments: sinon.stub(),
+      },
+      versioning: null,
+      tagging: null,
     };
 
     mockFragmentAnalyzer = {
       findUnusedFragments: sinon.stub(),
     };
 
+    // Mock the builder chain
+    mockAemClientBuilder = {
+      withManagement: sinon.stub().returnsThis(),
+      build: sinon.stub().returns(mockBuiltClient),
+    };
+
     const AemAnalyzerModule = await esmock(
       '../../../src/content-fragment-insights/aem-analyzer.js',
       {
-        '../../../src/content-fragment-insights/clients/aem-client.js': {
-          AemClient: {
-            createFrom: sinon.stub().resolves(mockAemClient),
+        '@adobe/spacecat-shared-aem-client': {
+          AemClientBuilder: {
+            create: sinon.stub().returns(mockAemClientBuilder),
           },
         },
         '../../../src/content-fragment-insights/fragment-analyzer.js': {
@@ -67,34 +81,33 @@ describe('AemAnalyzer', () => {
 
   describe('constructor', () => {
     it('should initialize with default values', () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
       expect(analyzer.log).to.equal(log);
-      expect(analyzer.aemClient).to.equal(mockAemClient);
+      expect(analyzer.aemClient).to.equal(mockBuiltClient);
       expect(analyzer.rootPath).to.equal(AemAnalyzer.DEFAULT_FRAGMENT_ROOT_PATH);
       expect(analyzer.fragments).to.be.an('array').that.is.empty;
     });
   });
 
   describe('createFrom', () => {
-    it('should create analyzer from context', async () => {
+    it('should create analyzer from context', () => {
       const context = { log };
 
-      const analyzer = await AemAnalyzer.createFrom(context);
+      const analyzer = AemAnalyzer.createFrom(context);
 
       expect(analyzer).to.be.instanceOf(AemAnalyzer);
       expect(analyzer.log).to.equal(log);
-      expect(analyzer.aemClient).to.equal(mockAemClient);
+      expect(analyzer.aemClient).to.equal(mockBuiltClient);
     });
 
-    it('should pass context to AemClient.createFrom', async () => {
+    it('should use builder pattern with management capability', () => {
       const context = { log, site: {}, env: {} };
 
-      await AemAnalyzer.createFrom(context);
+      AemAnalyzer.createFrom(context);
 
-      // Access the mock through esmock - it's available on the module
-      // The AemClient.createFrom was called with context
-      expect(mockAemClient).to.exist;
+      expect(mockAemClientBuilder.withManagement).to.have.been.calledOnce;
+      expect(mockAemClientBuilder.build).to.have.been.calledOnce;
     });
   });
 
@@ -213,9 +226,9 @@ describe('AemAnalyzer', () => {
 
   describe('fetchAllFragments', () => {
     it('should fetch single page of fragments', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
-      mockAemClient.getFragments.resolves({
+      mockBuiltClient.management.getFragments.resolves({
         items: [
           {
             path: '/content/dam/fragment1',
@@ -235,9 +248,9 @@ describe('AemAnalyzer', () => {
     });
 
     it('should fetch multiple pages of fragments', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
-      mockAemClient.getFragments
+      mockBuiltClient.management.getFragments
         .onFirstCall()
         .resolves({
           items: [
@@ -268,13 +281,13 @@ describe('AemAnalyzer', () => {
       await analyzer.fetchAllFragments();
 
       expect(analyzer.fragments).to.have.lengthOf(2);
-      expect(mockAemClient.getFragments).to.have.been.calledTwice;
+      expect(mockBuiltClient.management.getFragments).to.have.been.calledTwice;
     });
 
     it('should continue fetching until cursor is null', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
-      mockAemClient.getFragments
+      mockBuiltClient.management.getFragments
         .onFirstCall()
         .resolves({
           items: [
@@ -317,14 +330,14 @@ describe('AemAnalyzer', () => {
 
       await analyzer.fetchAllFragments();
 
-      expect(mockAemClient.getFragments.callCount).to.equal(3);
+      expect(mockBuiltClient.management.getFragments.callCount).to.equal(3);
       expect(analyzer.fragments).to.have.lengthOf(3);
     });
 
     it('should skip null fragments from parseFragment', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
-      mockAemClient.getFragments.resolves({
+      mockBuiltClient.management.getFragments.resolves({
         items: [
           null,
           {
@@ -344,25 +357,25 @@ describe('AemAnalyzer', () => {
     });
 
     it('should pass correct parameters to getFragments', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
-      mockAemClient.getFragments.resolves({
+      mockBuiltClient.management.getFragments.resolves({
         items: [],
         cursor: null,
       });
 
       await analyzer.fetchAllFragments();
 
-      expect(mockAemClient.getFragments).to.have.been.calledWith(
+      expect(mockBuiltClient.management.getFragments).to.have.been.calledWith(
         '/content/dam/',
         { cursor: null, projection: 'minimal' },
       );
     });
 
     it('should pass cursor on subsequent calls', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
-      mockAemClient.getFragments
+      mockBuiltClient.management.getFragments
         .onFirstCall()
         .resolves({
           items: [],
@@ -376,16 +389,16 @@ describe('AemAnalyzer', () => {
 
       await analyzer.fetchAllFragments();
 
-      expect(mockAemClient.getFragments.secondCall).to.have.been.calledWith(
+      expect(mockBuiltClient.management.getFragments.secondCall).to.have.been.calledWith(
         '/content/dam/',
         { cursor: 'cursor-abc', projection: 'minimal' },
       );
     });
 
     it('should handle empty items array', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
-      mockAemClient.getFragments.resolves({
+      mockBuiltClient.management.getFragments.resolves({
         items: [],
         cursor: null,
       });
@@ -396,12 +409,12 @@ describe('AemAnalyzer', () => {
     });
 
     it('should retry on timeout error and succeed', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
       const timeoutError = new Error('Timeout');
       timeoutError.code = 'ETIMEOUT';
 
-      mockAemClient.getFragments
+      mockBuiltClient.management.getFragments
         .onFirstCall()
         .rejects(timeoutError)
         .onSecondCall()
@@ -420,44 +433,44 @@ describe('AemAnalyzer', () => {
 
       await analyzer.fetchAllFragments();
 
-      expect(mockAemClient.getFragments).to.have.been.calledTwice;
+      expect(mockBuiltClient.management.getFragments).to.have.been.calledTwice;
       expect(analyzer.fragments).to.have.lengthOf(1);
       expect(log.warn).to.have.been.called;
     });
 
     it('should return empty result after max retry attempts on timeout', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
       const timeoutError = new Error('Timeout');
       timeoutError.code = 'ETIMEOUT';
 
-      mockAemClient.getFragments.rejects(timeoutError);
+      mockBuiltClient.management.getFragments.rejects(timeoutError);
 
       await analyzer.fetchAllFragments();
 
-      expect(mockAemClient.getFragments.callCount).to.equal(AemAnalyzer.MAX_FETCH_ATTEMPTS);
+      expect(mockBuiltClient.management.getFragments.callCount).to.equal(AemAnalyzer.MAX_FETCH_ATTEMPTS);
       expect(analyzer.fragments).to.be.an('array').that.is.empty;
       expect(log.warn.callCount).to.equal(AemAnalyzer.MAX_FETCH_ATTEMPTS);
     });
 
     it('should throw non-timeout error immediately without retry', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
       const genericError = new Error('Some other error');
 
-      mockAemClient.getFragments.rejects(genericError);
+      mockBuiltClient.management.getFragments.rejects(genericError);
 
       await expect(analyzer.fetchAllFragments()).to.be.rejectedWith('Some other error');
 
-      expect(mockAemClient.getFragments).to.have.been.calledOnce;
+      expect(mockBuiltClient.management.getFragments).to.have.been.calledOnce;
     });
 
     it('should retry on token expired and succeed', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
       const apiError = new Error('Unauthorized');
 
-      mockAemClient.getFragments
+      mockBuiltClient.management.getFragments
         .onFirstCall()
         .rejects(apiError)
         .onSecondCall()
@@ -475,7 +488,7 @@ describe('AemAnalyzer', () => {
         });
 
       // First call fails, isTokenExpired returns true triggering retry
-      mockAemClient.isTokenExpired
+      mockBuiltClient.client.isTokenExpired
         .onFirstCall()
         .returns(true)
         .onSecondCall()
@@ -483,7 +496,7 @@ describe('AemAnalyzer', () => {
 
       await analyzer.fetchAllFragments();
 
-      expect(mockAemClient.getFragments).to.have.been.calledTwice;
+      expect(mockBuiltClient.management.getFragments).to.have.been.calledTwice;
       expect(analyzer.fragments).to.have.lengthOf(1);
       expect(log.warn).to.have.been.calledWith(
         sinon.match(/Token expired. Refreshing and retrying/),
@@ -493,9 +506,9 @@ describe('AemAnalyzer', () => {
 
   describe('findUnusedFragments', () => {
     it('should return unused fragments with totals', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
-      mockAemClient.getFragments.resolves({
+      mockBuiltClient.management.getFragments.resolves({
         items: [
           {
             path: '/content/dam/fragment1',
@@ -526,9 +539,9 @@ describe('AemAnalyzer', () => {
     });
 
     it('should return empty unused fragments when none found', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
-      mockAemClient.getFragments.resolves({
+      mockBuiltClient.management.getFragments.resolves({
         items: [],
         cursor: null,
       });
@@ -543,9 +556,9 @@ describe('AemAnalyzer', () => {
     });
 
     it('should call fetchAllFragments before analysis', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
-      mockAemClient.getFragments.resolves({
+      mockBuiltClient.management.getFragments.resolves({
         items: [],
         cursor: null,
       });
@@ -554,13 +567,13 @@ describe('AemAnalyzer', () => {
 
       await analyzer.findUnusedFragments();
 
-      expect(mockAemClient.getFragments).to.have.been.called;
+      expect(mockBuiltClient.management.getFragments).to.have.been.called;
     });
 
     it('should pass fragments to analyzer', async () => {
-      const analyzer = new AemAnalyzer(mockAemClient, log);
+      const analyzer = new AemAnalyzer(mockBuiltClient, log);
 
-      mockAemClient.getFragments.resolves({
+      mockBuiltClient.management.getFragments.resolves({
         items: [
           {
             path: '/content/dam/fragment1',
@@ -597,4 +610,3 @@ describe('AemAnalyzer', () => {
     });
   });
 });
-

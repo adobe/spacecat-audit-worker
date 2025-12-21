@@ -60,7 +60,7 @@ describe('Content Fragment Unused Handler', () => {
       {
         '../../../src/content-fragment-insights/aem-analyzer.js': {
           AemAnalyzer: {
-            createFrom: sandbox.stub().resolves(mockAemAnalyzer),
+            createFrom: sandbox.stub().returns(mockAemAnalyzer),
           },
         },
         '../../../src/common/opportunity.js': {

@@ -10,7 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import { AemClient } from './clients/aem-client.js';
+// eslint-disable-next-line import/no-unresolved -- TODO: Package pending publication
+import { AemClientBuilder } from '@adobe/spacecat-shared-aem-client';
 import { FragmentAnalyzer } from './fragment-analyzer.js';
 
 export class AemAnalyzer {
@@ -28,9 +29,11 @@ export class AemAnalyzer {
     this.fragments = [];
   }
 
-  static async createFrom(context) {
+  static createFrom(context) {
     const { log } = context;
-    const aemClient = await AemClient.createFrom(context);
+    const aemClient = AemClientBuilder.create(context)
+      .withManagement()
+      .build();
     return new AemAnalyzer(aemClient, log);
   }
 
@@ -112,11 +115,11 @@ export class AemAnalyzer {
     for (let attempt = 0; attempt < AemAnalyzer.MAX_FETCH_ATTEMPTS; attempt += 1) {
       try {
         // eslint-disable-next-line no-await-in-loop
-        result = await this.aemClient.getFragments(this.rootPath, options);
+        result = await this.aemClient.management.getFragments(this.rootPath, options);
         break;
       } catch (error) {
         const isTimeout = error?.code === AemAnalyzer.ERROR_CODE_TIMEOUT;
-        const isTokenExpired = this.aemClient.isTokenExpired();
+        const isTokenExpired = this.aemClient.client.isTokenExpired();
 
         if (!isTimeout && !isTokenExpired) {
           throw error;
