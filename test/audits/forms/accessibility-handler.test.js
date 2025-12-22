@@ -1778,11 +1778,13 @@ describe('Forms Opportunities - Accessibility Handler', () => {
     let isAuditEnabledForSiteStub;
     let createIndividualOpportunitySuggestionsStub;
     let sendCodeFixMessagesToMystiqueStub;
+    let sendMessageToMystiqueForRemediationStub;
 
     beforeEach(async () => {
       isAuditEnabledForSiteStub = sandbox.stub().resolves(false); // Default: auto-fix disabled
       createIndividualOpportunitySuggestionsStub = sandbox.stub().resolves();
       sendCodeFixMessagesToMystiqueStub = sandbox.stub().resolves();
+      sendMessageToMystiqueForRemediationStub = sandbox.stub().resolves();
       mockOpportunityData = {
         accessibility: [{
           form: 'https://example.com/form1',
@@ -1876,6 +1878,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
         '../../../src/accessibility/utils/generate-individual-opportunities.js': {
           createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+          sendMessageToMystiqueForRemediation: sendMessageToMystiqueForRemediationStub,
         },
         '../../../src/accessibility/utils/data-processing.js': {
           sendCodeFixMessagesToMystique: sendCodeFixMessagesToMystiqueStub,
