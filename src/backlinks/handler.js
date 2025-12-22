@@ -12,12 +12,12 @@
 
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion as SuggestionModel, FixEntity } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestions } from '../utils/data-access.js';
+import { syncSuggestions, publishDeployedFixesForFixedSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -176,6 +176,25 @@ export const generateSuggestionData = async (context) => {
     Audit.AUDIT_TYPES.BROKEN_BACKLINKS,
     kpiDeltas,
   );
+
+  // Publish any DEPLOYED fixes whose associated suggestion targets are no longer broken.
+  try {
+    await publishDeployedFixesForFixedSuggestions({
+      opportunityId: opportunity.getId(),
+      FixEntity,
+      log,
+      isSuggestionStillBrokenInLive: async (suggestion) => {
+        const url = suggestion?.getData?.()?.url_to;
+        if (!url) {
+          return true;
+        }
+        const stillBrokenItems = await filterOutValidBacklinks([{ url_to: url }], log);
+        return stillBrokenItems.length > 0;
+      },
+    });
+  } catch (err) {
+    log.warn(`Failed to publish fix entities for FIXED suggestions: ${err.message}`);
+  }
 
   const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
   await syncSuggestions({
