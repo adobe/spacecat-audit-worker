@@ -23,7 +23,7 @@ import {
   getBucketInfo,
   discoverCdnProviders,
   isStandardAdobeCdnBucket,
-  shouldRecreateRawTable,
+  shouldRecreateTable,
   buildSiteFilters,
   mapServiceToCdnProvider,
 } from '../../src/utils/cdn-utils.js';
@@ -287,14 +287,17 @@ describe('CDN Utils', () => {
     });
   });
 
-  describe('shouldRecreateRawTable', () => {
+  describe('shouldRecreateTable', () => {
     let athenaClient;
+    let log;
     const database = 'test-database';
     const rawTable = 'test-raw-table';
     const expectedLocation = 's3://test-bucket/raw/';
+    const sqlTemplate = "TBLPROPERTIES ('schema_version' = '1')";
 
     beforeEach(() => {
       athenaClient = { query: sandbox.stub(), execute: sandbox.stub() };
+      log = { info: sandbox.stub() };
     });
 
     afterEach(() => {
@@ -304,40 +307,78 @@ describe('CDN Utils', () => {
     it('returns true if table does not exist', async () => {
       athenaClient.query.resolves([]);
 
-      const result = await shouldRecreateRawTable(
+      const result = await shouldRecreateTable(
         athenaClient,
         database,
         rawTable,
         expectedLocation,
+        sqlTemplate,
+        log,
       );
 
       expect(result).to.be.true;
     });
 
     it('returns true if table exists and location does not match', async () => {
-      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}/other'` }]);
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}/other' TBLPROPERTIES ('schema_version' = '1')` }]);
 
-      const result = await shouldRecreateRawTable(
+      const result = await shouldRecreateTable(
         athenaClient,
         database,
         rawTable,
         expectedLocation,
+        sqlTemplate,
+        log,
       );
 
       expect(result).to.be.true;
     });
 
-    it('returns false if table exists and location matches', async () => {
-      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}'` }]);
+    it('returns false if table exists and location and schema version match', async () => {
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}' TBLPROPERTIES ('schema_version' = '1')` }]);
 
-      const result = await shouldRecreateRawTable(
+      const result = await shouldRecreateTable(
         athenaClient,
         database,
         rawTable,
         expectedLocation,
+        sqlTemplate,
+        log,
       );
 
       expect(result).to.be.false;
+    });
+
+    it('returns true if schema version mismatch', async () => {
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}' TBLPROPERTIES ('schema_version' = '0')` }]);
+
+      const result = await shouldRecreateTable(
+        athenaClient,
+        database,
+        rawTable,
+        expectedLocation,
+        sqlTemplate,
+        log,
+      );
+
+      expect(result).to.be.true;
+      expect(athenaClient.execute.calledOnce).to.be.true;
+    });
+
+    it('returns true if table has no schema version (legacy table)', async () => {
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}'` }]);
+
+      const result = await shouldRecreateTable(
+        athenaClient,
+        database,
+        rawTable,
+        expectedLocation,
+        sqlTemplate,
+        log,
+      );
+
+      expect(result).to.be.true;
+      expect(athenaClient.execute.calledOnce).to.be.true;
     });
   });
 

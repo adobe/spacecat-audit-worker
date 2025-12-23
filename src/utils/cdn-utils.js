@@ -323,18 +323,27 @@ export function resolveConsolidatedBucketName(context) {
 }
 
 /**
- * Checks if raw table location matches expected location and recreates if needed
+ * Extracts schema_version from SQL or CREATE TABLE statement
+ */
+function extractSchemaVersion(str) {
+  const match = str?.match(/'schema_version'\s*=\s*'([^']+)'/i);
+  return match?.[1] || '0';
+}
+
+/**
+ * Checks if table needs recreation based on location or schema version mismatch.
  * @returns {Promise<boolean>} True if table needs to be created
  */
-export async function shouldRecreateRawTable(
+export async function shouldRecreateTable(
   athenaClient,
   database,
   rawTable,
   expectedLocation,
+  sqlTemplate,
   log,
 ) {
   try {
-    const result = await athenaClient.query(`SHOW CREATE TABLE ${database}.${rawTable}`, database, `[Athena Query] Check raw table location ${database}.${rawTable}`);
+    const result = await athenaClient.query(`SHOW CREATE TABLE ${database}.${rawTable}`, database, `[Athena Query] Check raw table ${database}.${rawTable}`);
     const createStatement = result?.map((row) => row.createtab_stmt).join('\n');
     const locationMatch = createStatement?.match(/LOCATION\s*['"]([^'"]+)['"]/i);
 
@@ -343,6 +352,16 @@ export async function shouldRecreateRawTable(
     const normalize = (loc) => (loc.endsWith('/') ? loc : `${loc}/`);
     if (normalize(locationMatch[1]) !== normalize(expectedLocation)) {
       log.info(`Table location mismatch. Dropping table ${database}.${rawTable}`);
+      await athenaClient.execute(`DROP TABLE IF EXISTS ${database}.${rawTable}`, database, `[Athena Query] Drop raw table ${database}.${rawTable}`);
+      return true;
+    }
+
+    // Check schema version mismatch
+    const currentVersion = extractSchemaVersion(createStatement);
+    const expectedVersion = extractSchemaVersion(sqlTemplate);
+
+    if (currentVersion !== expectedVersion) {
+      log.info(`Schema version mismatch for ${database}.${rawTable} (current: ${currentVersion}, expected: ${expectedVersion}). Dropping table.`);
       await athenaClient.execute(`DROP TABLE IF EXISTS ${database}.${rawTable}`, database, `[Athena Query] Drop raw table ${database}.${rawTable}`);
       return true;
     }
