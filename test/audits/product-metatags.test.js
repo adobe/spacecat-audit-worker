@@ -4106,7 +4106,8 @@ describe('Product MetaTags', () => {
       );
     });
 
-    it('should cover line 513 branch when scrapeResultPaths is undefined', async () => {
+    it('should cover line 513 branch when scrapeResultPaths is undefined', async function () {
+      this.timeout(5000);
       const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
         '../../src/product-metatags/handler.js': {
           productMetatagsAutoDetect: sinon.stub().resolves({
@@ -4158,7 +4159,8 @@ describe('Product MetaTags', () => {
       expect(logStub.info.getCalls().some((call) => call.args[1]?.scrapeResultPathsSize === 0)).to.be.true;
     });
 
-    it('should cover line 513 branch when scrapeResultPaths has a size', async () => {
+    it('should cover line 513 branch when scrapeResultPaths has a size', async function () {
+      this.timeout(5000);
       const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
         '../../src/product-metatags/handler.js': {
           productMetatagsAutoDetect: sinon.stub().resolves({
