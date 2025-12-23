@@ -19,10 +19,14 @@ PARTITIONED BY (
 )
 ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
 WITH SERDEPROPERTIES (
-  'paths'='date,time,x-edge-location,cs-method,cs(Host),cs-uri-stem,sc-status,cs(Referer),cs(User-Agent),time-to-first-byte,sc-content-type,x-host-header'
+  'ignore.malformed.json' = 'true',
+  'dots.in.keys'          = 'false',
+  'case.insensitive'      = 'true',
+  'paths'                 = 'date,time,x-edge-location,cs-method,cs(Host),cs-uri-stem,sc-status,cs(Referer),cs(User-Agent),time-to-first-byte,sc-content-type,x-host-header'
 )
 LOCATION '{{rawLocation}}'
 TBLPROPERTIES (
+  'schema_version'            = '1',
   'projection.enabled'        = 'true',
   'storage.location.template' = '{{rawLocation}}${year}/${month}/${day}/${hour}/',
   'projection.year.type'      = 'integer',
