@@ -278,13 +278,15 @@ export function generateSuggestions(auditUrl, auditData, context) {
       }
 
       checkResult.urls.forEach((url) => {
+        // eslint-disable-next-line no-use-before-define
+        const recommendedAction = generateRecommendedAction(checkType);
         const suggestion = {
           type: 'CODE_CHANGE',
           checkType,
           explanation: checkResult.explanation,
           url,
-          // eslint-disable-next-line no-use-before-define
-          recommendedAction: generateRecommendedAction(checkType),
+          recommendedAction,
+          suggestion: recommendedAction,
         };
         suggestionsByType[checkType].push(suggestion);
         allSuggestions.push(suggestion);
@@ -383,6 +385,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         checkType: suggestion.checkType,
         explanation: suggestion.explanation,
         recommendedAction: suggestion.recommendedAction,
+        suggestion: suggestion.suggestion || suggestion.recommendedAction,
       },
     }),
   });
