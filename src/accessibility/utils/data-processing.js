@@ -396,8 +396,10 @@ export async function aggregateAccessibilityData(
       return { success: false, aggregatedData: null, message };
     }
 
+    log.info(`[${logIdentifier}] PROCESSING: About to process ${results.length} files`);
+
     // Process the results
-    results.forEach((result) => {
+    results.forEach((result, index) => {
       const { data } = result;
       const {
         violations, traffic, url: siteUrl, source,
@@ -407,6 +409,8 @@ export async function aggregateAccessibilityData(
       const key = source ? `${siteUrl}${URL_SOURCE_SEPARATOR}${source}` : siteUrl;
       aggregatedData[key] = { violations, traffic };
 
+      log.debug(`[${logIdentifier}] PROCESSING: File ${index + 1}/${results.length} - Added URL: ${key}`);
+
       // Update overall data
       aggregatedData = updateViolationData(aggregatedData, violations, 'critical');
       aggregatedData = updateViolationData(aggregatedData, violations, 'serious');
@@ -414,6 +418,11 @@ export async function aggregateAccessibilityData(
         aggregatedData.overall.violations.total += violations.total;
       }
     });
+
+    log.info(`[${logIdentifier}] PROCESSING COMPLETE: Processed ${results.length} files`);
+    log.info(`[${logIdentifier}] PROCESSING COMPLETE: aggregatedData now has ${Object.keys(aggregatedData).length} keys`);
+    log.info(`[${logIdentifier}] PROCESSING COMPLETE: URLs in aggregatedData: ${Object.keys(aggregatedData).filter((k) => k !== 'overall').length}`);
+    log.info(`[${logIdentifier}] PROCESSING COMPLETE: Total violations: ${aggregatedData.overall.violations.total}`);
 
     // Save aggregated data to S3
     await s3Client.send(new PutObjectCommand({
