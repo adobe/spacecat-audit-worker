@@ -281,6 +281,9 @@ export async function runAuditAndGenerateSuggestions(context) {
     };
   }
 
+  log.info('[debug] detectedTags ', JSON.stringify(detectedTags, null, 2));
+  log.info('[debug] extractedTags ', JSON.stringify(extractedTags, null, 2));
+
   // Calculate projected traffic lost
   const {
     projectedTrafficLost,
