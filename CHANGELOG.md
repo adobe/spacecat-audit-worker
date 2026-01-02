@@ -1,3 +1,10 @@
+## [1.273.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.3...v1.273.4) (2026-01-02)
+
+
+### Bug Fixes
+
+* merge winter-shutdown-dev-work to main ([#1814](https://github.com/adobe/spacecat-audit-worker/issues/1814)) ([7f0ca0f](https://github.com/adobe/spacecat-audit-worker/commit/7f0ca0f49606c586e21bc5176c6aa34c1ca2c9a4))
+
 ## [1.273.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.2...v1.273.3) (2025-12-19)
 
 
