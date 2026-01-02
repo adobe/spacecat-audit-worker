@@ -17,13 +17,13 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getIssueRanking, trimTagValue, normalizeTagValue } from '../utils/seo-utils.js';
 import { getBaseUrl } from '../utils/url-utils.js';
 import {
   DESCRIPTION,
   H1,
+  MYSTIQUE_BATCH_SIZE,
   PROJECTED_VALUE_THRESHOLD,
   TITLE,
 } from './constants.js';
@@ -35,6 +35,14 @@ const auditType = Audit.AUDIT_TYPES.META_TAGS;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 export const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent || ''}`;
+
+export const chunkArray = (array, chunkSize) => {
+  const chunks = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize));
+  }
+  return chunks;
+};
 
 export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const opportunity = await convertToOpportunity(
@@ -298,21 +306,134 @@ export async function runAuditAndGenerateSuggestions(context) {
     healthyTags: seoChecks.getFewHealthyTags(),
     extractedTags,
   };
-  const updatedDetectedTags = await metatagsAutoSuggest(allTags, context, site);
 
-  const auditResult = {
-    detectedTags: updatedDetectedTags,
-    sourceS3Folder: `${context.env.S3_SCRAPER_BUCKET_NAME}/scrapes/${site.getId()}/`,
-    fullAuditRef: '',
+  // Mystique (asynchronous with chunking)
+  // Create opportunity first (needed for Mystique)
+  const opportunity = await convertToOpportunity(
     finalUrl,
-    ...(projectedTrafficLost && { projectedTrafficLost }),
-    ...(projectedTrafficValue && { projectedTrafficValue }),
-  };
-  await opportunityAndSuggestions(finalUrl, {
-    siteId: site.getId(),
-    auditId: audit.getId(),
-    auditResult,
-  }, context);
+    { siteId: site.getId(), id: audit.getId() },
+    context,
+    createOpportunityData,
+    auditType,
+    {
+      projectedTrafficLost,
+      projectedTrafficValue,
+    },
+  );
+
+  // Get useHostnameOnly setting
+  let useHostnameOnly = false;
+  try {
+    const siteId = opportunity.getSiteId();
+    const siteObj = await context.dataAccess.Site.findById(siteId);
+    useHostnameOnly = siteObj?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
+  } catch (error) {
+    log.error('Error in meta-tags configuration:', error);
+  }
+
+  // Build ALL suggestions list first
+  const suggestionsList = [];
+  Object.keys(validatedDetectedTags).forEach((endpoint) => {
+    [TITLE, DESCRIPTION, H1].forEach((tag) => {
+      if (validatedDetectedTags[endpoint]?.[tag]?.issue) {
+        suggestionsList.push({
+          ...validatedDetectedTags[endpoint][tag],
+          tagName: tag,
+          url: getBaseUrl(finalUrl, useHostnameOnly) + endpoint,
+          rank: getIssueRanking(tag, validatedDetectedTags[endpoint][tag].issue),
+        });
+      }
+    });
+  });
+
+  log.info(`[metatags] Built ${suggestionsList.length} suggestions for Mystique`);
+
+  // Sync ALL suggestions to database first (before chunking)
+  await syncSuggestions({
+    opportunity,
+    newData: suggestionsList,
+    context,
+    buildKey,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: 'METADATA_UPDATE',
+      rank: suggestion.rank,
+      data: { ...suggestion },
+    }),
+  });
+
+  // Get synced suggestions from database (with IDs)
+  const { Suggestion, Configuration } = context.dataAccess;
+  const configuration = await Configuration.findLatest();
+  if (!configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site)) {
+    log.info('Metatags auto-suggest is disabled for site');
+    return {
+      status: 'complete',
+    };
+  }
+
+  const syncedSuggestions = await Suggestion.allByOpportunityIdAndStatus(
+    opportunity.getId(),
+    Suggestion.STATUSES.NEW,
+  );
+
+  // Build suggestion map with actual DB IDs
+  const suggestionMap = syncedSuggestions.map((s) => {
+    const suggestionUrl = s.getData().url;
+    // Extract endpoint from full URL (e.g., "https://example.com/page1" -> "/page1")
+    const endpoint = new URL(suggestionUrl).pathname;
+    return {
+      suggestionId: s.getId(),
+      endpoint,
+      tagName: s.getData().tagName,
+    };
+  });
+
+  // Chunk suggestions into batches for Mystique
+  const suggestionChunks = chunkArray(suggestionMap, MYSTIQUE_BATCH_SIZE);
+  log.info(`[metatags] Sending ${suggestionMap.length} suggestions to Mystique in ${suggestionChunks.length} chunk(s) (batch size: ${MYSTIQUE_BATCH_SIZE})`);
+
+  // Send all chunks as separate SQS messages in parallel
+  const { sqs, env } = context;
+  await Promise.all(suggestionChunks.map(async (chunk, i) => {
+    // Build detectedTags for this chunk (only relevant endpoints)
+    const chunkDetectedTags = {};
+    chunk.forEach((s) => {
+      if (!chunkDetectedTags[s.endpoint]) {
+        chunkDetectedTags[s.endpoint] = validatedDetectedTags[s.endpoint];
+      }
+    });
+
+    // Build unique pageUrls for this chunk
+    const chunkPageUrls = [...new Set(chunk.map((s) => `${site.getBaseURL()}${s.endpoint}`))];
+
+    const message = {
+      type: 'guidance:metatags',
+      siteId: site.getId(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {
+        detectedTags: chunkDetectedTags,
+        healthyTags: allTags.healthyTags, // Same for all chunks
+        suggestionMap: chunk,
+        baseUrl: site.getBaseURL(),
+        pageUrls: chunkPageUrls,
+        opportunityId: opportunity.getId(),
+        chunkInfo: { // Metadata for tracking
+          chunkIndex: i,
+          totalChunks: suggestionChunks.length,
+          chunkSize: chunk.length,
+          totalSuggestions: suggestionMap.length,
+        },
+      },
+    };
+
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    log.info(`[metatags] Sent chunk ${i + 1}/${suggestionChunks.length} with ${chunk.length} suggestions to Mystique`);
+  }));
+
+  log.info(`[metatags] All ${suggestionChunks.length} chunks sent to Mystique successfully in parallel`);
 
   log.info(`[metatags] Finish runAuditAndGenerateSuggestions step for: ${site.getId()}`);
 

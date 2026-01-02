@@ -55,3 +55,5 @@ export const TAG_LENGTHS = {
     idealMaxLength: 70,
   },
 };
+
+export const MYSTIQUE_BATCH_SIZE = 25;
