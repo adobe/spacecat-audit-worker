@@ -1,3 +1,10 @@
+## [1.273.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.4...v1.273.5) (2026-01-03)
+
+
+### Bug Fixes
+
+* use correct year in the reports ([#1812](https://github.com/adobe/spacecat-audit-worker/issues/1812)) ([2a09cdd](https://github.com/adobe/spacecat-audit-worker/commit/2a09cdd924e524f4a21b72071c338f890dd5786f))
+
 ## [1.273.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.3...v1.273.4) (2026-01-02)
 
 
