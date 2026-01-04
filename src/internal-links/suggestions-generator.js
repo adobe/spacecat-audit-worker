@@ -13,7 +13,7 @@
 import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
-import { getScrapedDataForSiteId } from '../support/utils.js';
+import { getScrapedDataForSiteId, limitConcurrency } from '../support/utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from './subpath-filter.js';
 
@@ -24,7 +24,8 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
 
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
   const azureOpenAIOptions = { responseFormat: 'json_object' };
-  const BATCH_SIZE = 300;
+  const BATCH_SIZE = 100;
+  const MAX_CONCURRENT_AI_CALLS = 5;
 
   // Ensure brokenInternalLinks is an array
   if (!Array.isArray(brokenInternalLinks)) {
@@ -100,14 +101,40 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
   }
 
   const processBatch = async (batch, urlTo) => {
-    const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
+    // Extract only URLs from batch (items can be strings or objects with url property)
+    const urls = batch.map((item) => (typeof item === 'string' ? item : item.url));
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Processing batch of ${urls.length} URLs for broken URL: ${urlTo}`);
+
+    // Skip if no valid URLs
+    if (urls.length === 0) {
+      log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No valid URLs in batch for ${urlTo}`);
+      return null;
+    }
+
+    const requestBody = await getPrompt({ alternative_urls: urls, broken_url: urlTo }, 'broken-backlinks', log);
+
+    // Check if prompt was loaded successfully
+    if (!requestBody) {
+      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Failed to load prompt for ${urlTo}`);
+      return null;
+    }
+
     const response = await azureOpenAIClient.fetchChatCompletion(requestBody, azureOpenAIOptions);
-    if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
+
+    // Return null if NO choices OR finish_reason is not 'stop'
+    if (!response.choices?.length || response.choices[0].finish_reason !== 'stop') {
       log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No suggestions found for ${urlTo}`);
       return null;
     }
 
-    return JSON.parse(response.choices[0].message.content);
+    // Check for empty content
+    const content = response.choices[0].message?.content;
+    if (!content || content.trim().length === 0) {
+      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Empty response content for ${urlTo}`);
+      return null;
+    }
+
+    return JSON.parse(content);
   };
 
   async function processBatches(batches, urlTo) {
@@ -184,8 +211,10 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     try {
       // Use link-specific filtered header links
       const linkHeaderLinks = link.filteredHeaderLinks || filteredHeaderLinks;
+      // Extract only URLs from header links (items can be strings or objects with url property)
+      const headerUrls = linkHeaderLinks.map((item) => (typeof item === 'string' ? item : item.url));
       // eslint-disable-next-line no-await-in-loop
-      const requestBody = await getPrompt({ alternative_urls: linkHeaderLinks, broken_url: link.urlTo }, 'broken-backlinks', log);
+      const requestBody = await getPrompt({ alternative_urls: headerUrls, broken_url: link.urlTo }, 'broken-backlinks', log);
       // eslint-disable-next-line no-await-in-loop
       const response = await azureOpenAIClient.fetchChatCompletion(
         requestBody,
@@ -205,19 +234,20 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     }
   }
 
-  const updatedInternalLinks = [];
-  for (let index = 0; index < brokenLinksWithFilteredData.length; index += 1) {
-    const link = brokenLinksWithFilteredData[index];
-    const headerSuggestions = headerSuggestionsResults[index];
-    // eslint-disable-next-line no-await-in-loop
-    const updatedLink = await processLink(link, headerSuggestions);
-    // Remove filtered data before returning (not needed in final result)
-    const cleanLink = { ...updatedLink };
-    delete cleanLink.filteredSiteData;
-    delete cleanLink.filteredHeaderLinks;
-    updatedInternalLinks.push(cleanLink);
-  }
-  return updatedInternalLinks;
+  return limitConcurrency(
+    brokenLinksWithFilteredData.map(
+      (link, index) => async () => {
+        const headerSuggestions = headerSuggestionsResults[index];
+        const updatedLink = await processLink(link, headerSuggestions);
+        // Remove filtered data before returning (not needed in final result)
+        const cleanLink = { ...updatedLink };
+        delete cleanLink.filteredSiteData;
+        delete cleanLink.filteredHeaderLinks;
+        return cleanLink;
+      },
+    ),
+    MAX_CONCURRENT_AI_CALLS,
+  );
 };
 
 export async function syncBrokenInternalLinksSuggestions({

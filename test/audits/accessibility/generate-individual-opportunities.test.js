@@ -20,9 +20,10 @@ import esmock from 'esmock';
 import {
   formatWcagRule,
   formatIssue,
-  aggregateAccessibilityIssues,
+  aggregateA11yIssuesByOppType,
   createIndividualOpportunity,
   calculateAccessibilityMetrics,
+  createMystiqueForwardPayload,
 } from '../../../src/accessibility/utils/generate-individual-opportunities.js';
 import * as constants from '../../../src/accessibility/utils/constants.js';
 import * as generateIndividualOpportunitiesModule from '../../../src/accessibility/utils/generate-individual-opportunities.js';
@@ -490,7 +491,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with undefined update_from property (line 207 fallback)', () => {
+  it('should handle htmlWithIssues with undefined update_from property', () => {
     // This test targets line 207 - the final fallback to empty string
     // when item.update_from is undefined
     const result = formatIssue('aria-allowed-attr', {
@@ -507,7 +508,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with empty string update_from (line 207 fallback)', () => {
+  it('should handle htmlWithIssues with empty string update_from', () => {
     // This test targets line 207 - the final fallback to empty string
     // when item.update_from is an empty string (falsy)
     const result = formatIssue('aria-allowed-attr', {
@@ -523,7 +524,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with object without update_from (line 208)', () => {
+  it('should handle htmlWithIssues with object without update_from', () => {
     // This test verifies line 208 - the final fallback to empty string
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -537,7 +538,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].update_from).to.equal('');
   });
 
-  it('should handle htmlWithIssues with object having falsy update_from (line 208)', () => {
+  it('should handle htmlWithIssues with object having falsy update_from', () => {
     // This test also targets line 208 with a falsy update_from value
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -553,7 +554,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].update_from).to.equal('');
   });
 
-  it('should handle htmlWithIssues with empty object (line 208)', () => {
+  it('should handle htmlWithIssues with empty object', () => {
     // This test specifically targets line 208 with an empty object
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -568,7 +569,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with null item (line 208)', () => {
+  it('should handle htmlWithIssues with null item', () => {
     // This test specifically targets line 208 with a null item
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -583,7 +584,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with undefined item (line 208)', () => {
+  it('should handle htmlWithIssues with undefined item', () => {
     // This test specifically targets line 208 with an undefined item
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -598,7 +599,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with false item (line 208)', () => {
+  it('should handle htmlWithIssues with false item', () => {
     // This test specifically targets line 208 with false value
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -660,7 +661,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with false values (line 207)', () => {
+  it('should handle htmlWithIssues with false values', () => {
     // This test specifically targets line 207 - the final || ''
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -675,7 +676,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with zero values (line 205)', () => {
+  it('should handle htmlWithIssues with zero values', () => {
     // This test specifically targets line 205 - the final || ''
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -690,7 +691,7 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
-  it('should handle htmlWithIssues with NaN values (line 205)', () => {
+  it('should handle htmlWithIssues with NaN values', () => {
     // This test specifically targets line 205 - the final || '' fallback
     const result = formatIssue('aria-allowed-attr', {
       successCriteriaTags: ['wcag412'],
@@ -804,12 +805,12 @@ describe('aggregateAccessibilityIssues', () => {
   });
 
   it('should return empty data array for null input', () => {
-    const result = aggregateAccessibilityIssues(null);
+    const result = aggregateA11yIssuesByOppType(null);
     expect(result).to.deep.equal({ data: [] });
   });
 
   it('should return empty data array for undefined input', () => {
-    const result = aggregateAccessibilityIssues(undefined);
+    const result = aggregateA11yIssuesByOppType(undefined);
     expect(result).to.deep.equal({ data: [] });
   });
 
@@ -822,7 +823,7 @@ describe('aggregateAccessibilityIssues', () => {
         },
       },
     };
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.be.empty;
   });
 
@@ -845,7 +846,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive']).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com');
@@ -876,7 +877,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive']).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com');
@@ -918,7 +919,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     const opportunity = result.data[0];
     expect(opportunity['a11y-assistive']).to.have.lengthOf(2); // Now creates separate URL objects
@@ -968,7 +969,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     const opportunity = result.data[0];
     expect(opportunity['a11y-assistive']).to.have.lengthOf(2);
@@ -1002,7 +1003,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive']).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com/page2');
@@ -1013,7 +1014,7 @@ describe('aggregateAccessibilityIssues', () => {
       'https://example.com': {},
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.be.empty;
   });
 
@@ -1027,7 +1028,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.be.empty;
   });
 
@@ -1049,7 +1050,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.be.empty;
   });
 
@@ -1073,7 +1074,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
 
     expect(result.data).to.have.lengthOf(1);
     const opportunity = result.data[0];
@@ -1114,10 +1115,10 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     const opportunity = result.data[0];
-    expect(opportunity['a11y-assistive']).to.have.lengthOf(3); // Creates 3 separate URL objects
+    expect(opportunity['a11y-assistive']).to.have.lengthOf(3); // Creates 3 separate URL objects (one per HTML element)
 
     // Verify each URL object has one issue with one HTML element
     opportunity['a11y-assistive'].forEach((urlObject) => {
@@ -1127,21 +1128,17 @@ describe('aggregateAccessibilityIssues', () => {
       expect(urlObject.issues[0].htmlWithIssues).to.have.lengthOf(1);
     });
 
-    // Verify specific HTML content
-    expect(opportunity['a11y-assistive'][0].issues[0].htmlWithIssues[0].update_from)
-      .to.equal('<div aria-fake="true">Content 1</div>');
-    expect(opportunity['a11y-assistive'][1].issues[0].htmlWithIssues[0].update_from)
-      .to.equal('<span aria-invalid-attr="value">Content 2</span>');
-    expect(opportunity['a11y-assistive'][2].issues[0].htmlWithIssues[0].update_from)
-      .to.equal('<p aria-made-up="test">Content 3</p>');
+    // Verify all HTML elements are present across the URL objects (order may vary)
+    const allUpdateFromValues = opportunity['a11y-assistive'].map((obj) => obj.issues[0].htmlWithIssues[0].update_from);
+    const allTargetSelectors = opportunity['a11y-assistive'].map((obj) => obj.issues[0].htmlWithIssues[0].target_selector);
 
-    // Verify specific target
-    expect(opportunity['a11y-assistive'][0].issues[0].htmlWithIssues[0].target_selector)
-      .to.equal('div[aria-fake]');
-    expect(opportunity['a11y-assistive'][1].issues[0].htmlWithIssues[0].target_selector)
-      .to.equal('span[aria-invalid-attr]');
-    expect(opportunity['a11y-assistive'][2].issues[0].htmlWithIssues[0].target_selector)
-      .to.equal('p[aria-made-up]');
+    expect(allUpdateFromValues).to.include('<div aria-fake="true">Content 1</div>');
+    expect(allUpdateFromValues).to.include('<span aria-invalid-attr="value">Content 2</span>');
+    expect(allUpdateFromValues).to.include('<p aria-made-up="test">Content 3</p>');
+
+    expect(allTargetSelectors).to.include('div[aria-fake]');
+    expect(allTargetSelectors).to.include('span[aria-invalid-attr]');
+    expect(allTargetSelectors).to.include('p[aria-made-up]');
   });
 
   it('should return original url if URL parsing fails', () => {
@@ -1163,7 +1160,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com:port');
   });
@@ -1187,7 +1184,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive']).to.have.lengthOf(1);
     // URL should be cleaned
@@ -1330,6 +1327,7 @@ describe('createIndividualOpportunitySuggestions', () => {
         sendMessage: sandbox.stub().resolves(),
       },
       env: {
+        IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
@@ -1628,6 +1626,8 @@ describe('createIndividualOpportunitySuggestions', () => {
     // Test the buildKey function with missing target_selector
     const result = buildKey(aggregatedData.data[0]);
 
+    // buildKey always uses INDIVIDUAL granularity for database uniqueness: url|type|selector
+    // Empty selector results in trailing pipe for backwards compatibility
     expect(result).to.equal('https://example.com/page3|image-alt|');
   });
 
@@ -1664,6 +1664,8 @@ describe('createIndividualOpportunitySuggestions', () => {
     // Test the buildKey function with null target_selector
     const result = buildKey(aggregatedData.data[0]);
 
+    // buildKey always uses INDIVIDUAL granularity: url|type|selector
+    // Null selector results in trailing pipe
     expect(result).to.equal('https://example.com/page4|button-name|');
   });
 
@@ -1695,6 +1697,8 @@ describe('createIndividualOpportunitySuggestions', () => {
     // Test the buildKey function with empty htmlWithIssues
     const result = buildKey(aggregatedData.data[0]);
 
+    // buildKey always uses INDIVIDUAL granularity: url|type|selector
+    // Empty htmlWithIssues results in empty selector and trailing pipe
     expect(result).to.equal('https://example.com/page5|label|');
   });
 
@@ -1915,6 +1919,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
         sendMessage: sandbox.stub().resolves(),
       },
       env: {
+        IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
@@ -2676,14 +2681,14 @@ describe('createAccessibilityIndividualOpportunities', () => {
   });
 });
 
-describe('createMystiqueMessage', () => {
+describe('createDirectMystiqueMessage', () => {
   it('should create a message object with all required fields', () => {
     const fakeOpportunity = { getId: () => 'oppty-123' };
     const issuesList = [{ type: 'color-contrast', description: 'desc' }];
     const siteId = 'site-789';
     const auditId = 'audit-101';
     const deliveryType = 'aem_edge';
-    const result = generateIndividualOpportunitiesModule.createMystiqueMessage({
+    const result = generateIndividualOpportunitiesModule.createDirectMystiqueMessage({
       url: 'https://example.com',
       issuesList,
       opportunity: fakeOpportunity,
@@ -2708,7 +2713,7 @@ describe('createMystiqueMessage', () => {
   it('should default siteId and auditId to empty string if not provided', () => {
     const fakeOpportunity = { getId: () => 'oppty-123' };
     const issuesList = [];
-    const result = generateIndividualOpportunitiesModule.createMystiqueMessage({
+    const result = generateIndividualOpportunitiesModule.createDirectMystiqueMessage({
       url: 'https://example.com',
       issuesList,
       opportunity: fakeOpportunity,
@@ -2719,87 +2724,35 @@ describe('createMystiqueMessage', () => {
     expect(result.siteId).to.equal('');
     expect(result.auditId).to.equal('');
   });
-});
 
-describe('sendMystiqueMessage', () => {
-  let sandbox;
-  let fakeSqs;
-  let fakeEnv;
-  let fakeLog;
-  let fakeOpportunity;
-
-  beforeEach(() => {
-    sandbox = sinon.createSandbox();
-    fakeSqs = { sendMessage: sandbox.stub().resolves() };
-    fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
-    fakeLog = { info: sandbox.stub(), error: sandbox.stub() };
-    fakeOpportunity = { getId: () => 'oppty-1' };
-  });
-
-  afterEach(() => {
-    sandbox.restore();
-  });
-
-  it('should send a message and log info on success', async () => {
-    const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
-      url: 'https://example.com',
-      issuesList: [{ type: 'color-contrast' }],
-      opportunity: fakeOpportunity,
-      siteId: 'site-1',
-      auditId: 'audit-1',
-      deliveryType: 'aem_edge',
-      sqs: fakeSqs,
-      env: fakeEnv,
-      log: fakeLog,
-    });
-    expect(fakeSqs.sendMessage).to.have.been.calledOnce;
-    expect(fakeLog.info).to.have.been.calledWithMatch('[A11yIndividual] Sent message to Mystique');
-    expect(result).to.deep.include({ success: true, url: 'https://example.com' });
-  });
-
-  it('should log error and return failure object on error', async () => {
-    fakeSqs.sendMessage.rejects(new Error('SQS error'));
-    const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
-      url: 'https://example.com',
-      issuesList: [{ type: 'color-contrast' }],
-      opportunity: fakeOpportunity,
-      siteId: 'site-1',
-      auditId: 'audit-1',
-      deliveryType: 'aem_edge',
-      sqs: fakeSqs,
-      env: fakeEnv,
-      log: fakeLog,
-    });
-    expect(fakeSqs.sendMessage).to.have.been.calledOnce;
-    expect(fakeLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Failed to send message to Mystique');
-    expect(result).to.deep.include({ success: false, url: 'https://example.com' });
-    expect(result.error).to.equal('SQS error');
-  });
-});
-
-describe('sendMystiqueMessage error path (coverage)', () => {
-  it('should return failure object and log error if sqs.sendMessage rejects', async () => {
-    const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('Simulated SQS failure')) };
-    const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
-    const fakeLog = { info: sinon.stub(), error: sinon.stub() };
+  it('should default siteId and auditId to empty string when null', () => {
     const fakeOpportunity = { getId: () => 'oppty-456' };
-    const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
+    const issuesList = [];
+    const result = generateIndividualOpportunitiesModule.createDirectMystiqueMessage({
       url: 'https://example.com',
-      issuesList: [{ issue_name: 'aria-allowed-attr' }],
+      issuesList,
       opportunity: fakeOpportunity,
-      siteId: 'site-123',
-      auditId: 'audit-456',
+      siteId: null,
+      auditId: null,
       deliveryType: 'aem_edge',
-      sqs: fakeSqs,
-      env: fakeEnv,
-      log: fakeLog,
     });
-    expect(result.success).to.be.false;
-    expect(result.url).to.equal('https://example.com');
-    expect(result.error).to.equal('Simulated SQS failure');
-    expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://example.com',
-    );
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('');
+  });
+
+  it('should default siteId and auditId to empty string when empty string', () => {
+    const fakeOpportunity = { getId: () => 'oppty-789' };
+    const issuesList = [];
+    const result = generateIndividualOpportunitiesModule.createDirectMystiqueMessage({
+      url: 'https://example.com',
+      issuesList,
+      opportunity: fakeOpportunity,
+      siteId: '',
+      auditId: '',
+      deliveryType: 'aem_edge',
+    });
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('');
   });
 });
 
@@ -2846,6 +2799,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
         sendMessage: sandbox.stub().resolves(),
       },
       env: {
+        IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
@@ -2973,6 +2927,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
         sendMessage: sandbox.stub().resolves(),
       },
       env: {
+        IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
@@ -3098,12 +3053,161 @@ describe('sendMessageToMystiqueForRemediation', () => {
       mockLog,
     );
 
-    expect(mockLog.debug).to.have.been.calledWithMatch(
-      '[A11yIndividual] Sending 1 messages to Mystique queue: test-queue',
+    // The log message now says either "code fix" or "legacy" flow
+    expect(mockLog.info).to.have.been.calledWith(
+      sinon.match(/\[A11yIndividual\] Sending 1 messages to Mystique \(via (code fix|legacy) flow\)/),
     );
     expect(mockLog.debug).to.have.been.calledWithMatch(
       '[A11yIndividual] Message sending completed: 1 successful, 0 failed, 0 rejected',
     );
+  });
+
+  it('should send messages directly to Mystique with code info for code fix issues', async () => {
+    const sendMessageSpy = sandbox.spy();
+    mockContext.sqs.sendMessage = sendMessageSpy;
+    mockOpportunity.getSuggestions = sandbox.stub().resolves([
+      {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [
+            {
+              type: 'aria-allowed-attr',
+              occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-fake]',
+                },
+              ],
+            },
+          ],
+        }),
+        getStatus: () => 'NEW',
+        getId: () => 'suggestion-1',
+      },
+    ]);
+
+    const mockGetCodeInfo = sandbox.stub().resolves({
+      codeBucket: 'test-importer-bucket',
+      codePath: 'code/site-1/github/owner/repo/main/repository.zip',
+    });
+
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com',
+            issuesList: [{ issueName: 'aria-allowed-attr' }], // This is in issueTypesForCodeFix
+          },
+        ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+      '../../../src/accessibility/utils/data-processing.js': {
+        getCodeInfo: mockGetCodeInfo,
+      },
+    });
+
+    await module.sendMessageToMystiqueForRemediation(
+      mockOpportunity,
+      mockContext,
+      mockLog,
+    );
+
+    // Verify message sent directly to Mystique (new flow)
+    expect(sendMessageSpy).to.have.been.calledOnce;
+    const [queueUrl, message] = sendMessageSpy.firstCall.args;
+    
+    // Verify correct queue URL (directly to Mystique)
+    expect(queueUrl).to.equal('test-queue');
+    
+    // Verify message structure
+    expect(message).to.have.property('type', 'guidance:accessibility-remediation');
+    expect(message).to.have.property('siteId', 'site-1');
+    expect(message).to.have.property('auditId', 'audit-1');
+    expect(message).to.have.property('deliveryType', 'aem_edge');
+    expect(message).to.have.property('data');
+    expect(message.data).to.have.property('url', 'https://example.com');
+    expect(message.data).to.have.property('opportunityId', 'oppty-1');
+    expect(message.data).to.have.property('issuesList').that.is.an('array');
+    
+    // Verify codeBucket and codePath are included in the message data
+    expect(message.data).to.have.property('codeBucket', 'test-importer-bucket');
+    expect(message.data).to.have.property('codePath', 'code/site-1/github/owner/repo/main/repository.zip');
+    
+    // Verify getCodeInfo was called with correct parameters
+    expect(mockGetCodeInfo).to.have.been.calledOnceWith(
+      mockContext.site,
+      'accessibility',
+      mockContext,
+    );
+  });
+
+  it('should send messages directly to Mystique for non-code-fix issues', async () => {
+    const sendMessageSpy = sandbox.spy();
+    mockContext.sqs.sendMessage = sendMessageSpy;
+    mockOpportunity.getSuggestions = sandbox.stub().resolves([
+      {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [
+            {
+              type: 'color-contrast',
+              occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div',
+                },
+              ],
+            },
+          ],
+        }),
+        getStatus: () => 'NEW',
+        getId: () => 'suggestion-1',
+      },
+    ]);
+
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com',
+            issuesList: [{ issueName: 'color-contrast' }], // This is NOT in issueTypesForCodeFix
+          },
+        ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    await module.sendMessageToMystiqueForRemediation(
+      mockOpportunity,
+      mockContext,
+      mockLog,
+    );
+
+    // Verify message sent directly to Mystique (legacy flow)
+    expect(sendMessageSpy).to.have.been.calledOnce;
+    const [queueUrl, message] = sendMessageSpy.firstCall.args;
+    
+    // Verify correct queue URL (directly to Mystique for legacy flow)
+    expect(queueUrl).to.equal('test-queue');
+    
+    // Verify message structure (direct Mystique message)
+    expect(message).to.have.property('type', 'guidance:accessibility-remediation');
+    expect(message).to.have.property('siteId', 'site-1');
+    expect(message).to.have.property('auditId', 'audit-1');
+    expect(message).to.have.property('deliveryType', 'aem_edge');
+    expect(message).to.have.property('data');
+    expect(message.data).to.have.property('url', 'https://example.com');
+    expect(message.data).to.have.property('opportunityId', 'oppty-1');
+    expect(message.data).to.have.property('issuesList').that.is.an('array');
+    
+    // In legacy flow, there's no forward configuration
+    expect(message).to.not.have.property('forward');
   });
 
   it('should handle errors in main try block and throw with proper logging', async () => {
@@ -3133,77 +3237,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
       );
     }
   });
-});
 
-
-describe('sendMystiqueMessage error handling', () => {
-  let testModule;
-
-  beforeEach(async () => {
-    testModule = await import('../../../src/accessibility/utils/generate-individual-opportunities.js');
-  });
-
-  it('should handle sendMessage errors and return failure object', async () => {
-    const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('SQS connection failed')) };
-    const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
-    const fakeLog = { info: sinon.stub(), error: sinon.stub() };
-    const fakeOpportunity = { getId: () => 'oppty-456' };
-
-    const result = await testModule.sendMystiqueMessage({
-      url: 'https://example.com',
-      issuesList: [{ issue_name: 'aria-allowed-attr' }],
-      opportunity: fakeOpportunity,
-      siteId: 'site-123',
-      auditId: 'audit-456',
-      deliveryType: 'aem_edge',
-      sqs: fakeSqs,
-      env: fakeEnv,
-      log: fakeLog,
-    });
-
-    // Should return failure object
-    expect(result).to.deep.equal({
-      success: false,
-      url: 'https://example.com',
-      error: 'SQS connection failed',
-    });
-
-    // Should log the error
-    expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://example.com',
-    );
-  });
-
-  it('should handle sendMessage errors with different URL', async () => {
-    const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('Network error')) };
-    const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
-    const fakeLog = { info: sinon.stub(), error: sinon.stub() };
-    const fakeOpportunity = { getId: () => 'oppty-456' };
-
-    const result = await testModule.sendMystiqueMessage({
-      url: 'https://test.com',
-      issuesList: [{ issue_name: 'color-contrast' }],
-      opportunity: fakeOpportunity,
-      siteId: 'site-123',
-      auditId: 'audit-456',
-      deliveryType: 'aem_edge',
-      sqs: fakeSqs,
-      env: fakeEnv,
-      log: fakeLog,
-    });
-
-    // Should return failure object
-    expect(result).to.deep.equal({
-      success: false,
-      url: 'https://test.com',
-      error: 'Network error',
-    });
-
-    // Should log the error
-    expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://test.com',
-    );
-  });
 });
 
 describe('handleAccessibilityRemediationGuidance', () => {
@@ -3986,7 +4020,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     );
   });
 
-  it('should log success message when metrics are saved successfully (line 889 coverage)', async () => {
+  it('should log success message when metrics are saved successfully', async () => {
     // Mock both the scrape-utils and mystique-data-processing modules
     // to ensure saveMystiqueValidationMetricsToS3 succeeds
     const mockScrapeUtils = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
@@ -4085,5 +4119,835 @@ describe('handleAccessibilityRemediationGuidance', () => {
     expect(mockLog.debug).to.have.been.calledWith(
       '[A11yRemediationGuidance] Saved complete Mystique validation metrics for opportunity oppty-123, page https://example.com/page1: sent=1, received=1',
     );
+  });
+});
+
+describe('createMystiqueForwardPayload', () => {
+  it('should create payload with valid siteId and auditId', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: 'site-456',
+      auditId: 'audit-789',
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result).to.deep.include({
+      type: 'guidance:accessibility-remediation',
+      siteId: 'site-456',
+      auditId: 'audit-789',
+      deliveryType: 'aem-sites',
+    });
+    expect(result.data).to.deep.equal({
+      aggregationKey: 'aggregation-key-123',
+      url: 'https://example.com/page',
+      opportunityId: 'opportunity-123',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+    });
+    expect(result.time).to.be.a('string');
+  });
+
+  it('should default siteId to empty string when undefined', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: undefined,
+      auditId: 'audit-789',
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('audit-789');
+  });
+
+  it('should default siteId to empty string when null', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: null,
+      auditId: 'audit-789',
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('audit-789');
+  });
+
+  it('should default siteId to empty string when empty string', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: '',
+      auditId: 'audit-789',
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('audit-789');
+  });
+
+  it('should default auditId to empty string when undefined', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: 'site-456',
+      auditId: undefined,
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('site-456');
+    expect(result.auditId).to.equal('');
+  });
+
+  it('should default auditId to empty string when null', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: 'site-456',
+      auditId: null,
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('site-456');
+    expect(result.auditId).to.equal('');
+  });
+
+  it('should default auditId to empty string when empty string', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: 'site-456',
+      auditId: '',
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('site-456');
+    expect(result.auditId).to.equal('');
+  });
+
+  it('should default both siteId and auditId to empty string when undefined', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: undefined,
+      auditId: undefined,
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('');
+  });
+
+  it('should default both siteId and auditId to empty string when null', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: null,
+      auditId: null,
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('');
+  });
+
+  it('should default both siteId and auditId to empty string when empty strings', () => {
+    const mockOpportunity = {
+      getId: () => 'opportunity-123',
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      aggregationKey: 'aggregation-key-123',
+      siteId: '',
+      auditId: '',
+      deliveryType: 'aem-sites',
+    };
+
+    const result = createMystiqueForwardPayload(params);
+
+    expect(result.siteId).to.equal('');
+    expect(result.auditId).to.equal('');
+  });
+});
+
+describe('sendMystiqueMessage', () => {
+  let sandbox;
+  let mockContext;
+  let mockLog;
+  let mockSqs;
+  let mockEnv;
+  let mockOpportunity;
+  let mockIsAuditEnabledForSite;
+  let mockGetCodeInfo;
+  let sendMystiqueMessageModule;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+
+    mockLog = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    mockSqs = {
+      sendMessage: sandbox.stub().resolves(),
+    };
+
+    mockEnv = {
+      QUEUE_SPACECAT_TO_MYSTIQUE: 'test-mystique-queue',
+      S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+    };
+
+    mockOpportunity = {
+      getId: sandbox.stub().returns('oppty-123'),
+    };
+
+    mockIsAuditEnabledForSite = sandbox.stub();
+    mockGetCodeInfo = sandbox.stub();
+
+    mockContext = {
+      site: {
+        getId: sandbox.stub().returns('site-123'),
+        getDeliveryType: sandbox.stub().returns('aem_edge'),
+        getCode: sandbox.stub().returns({
+          type: 'github',
+          owner: 'test-owner',
+          repo: 'test-repo',
+          ref: 'main',
+        }),
+      },
+      log: mockLog,
+      sqs: mockSqs,
+      env: mockEnv,
+      s3Client: {},
+    };
+
+    // Mock the module with dependencies
+    sendMystiqueMessageModule = await esmock(
+      '../../../src/accessibility/utils/generate-individual-opportunities.js',
+      {
+        '../../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: mockIsAuditEnabledForSite,
+        },
+        '../../../src/accessibility/utils/data-processing.js': {
+          getCodeInfo: mockGetCodeInfo,
+        },
+      },
+    );
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  describe('Legacy flow (without code fix)', () => {
+    it('should send message to Mystique successfully when autoFixEnabled is false', async () => {
+      mockIsAuditEnabledForSite.resolves(false);
+
+      const params = {
+        url: 'https://example.com/page1',
+        issuesList: [{ issueName: 'color-contrast' }],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-1',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(result).to.deep.equal({
+        success: true,
+        url: 'https://example.com/page1',
+      });
+
+      expect(mockSqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.type).to.equal('guidance:accessibility-remediation');
+      expect(sentMessage.data).to.not.have.property('codeBucket');
+      expect(sentMessage.data).to.not.have.property('codePath');
+      expect(mockGetCodeInfo).to.not.have.been.called;
+    });
+
+    it('should send message to Mystique successfully when issue type does not require code fix', async () => {
+      mockIsAuditEnabledForSite.resolves(true);
+
+      const params = {
+        url: 'https://example.com/page2',
+        issuesList: [{ issueName: 'color-contrast' }, { issueName: 'heading-order' }],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-2',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(result).to.deep.equal({
+        success: true,
+        url: 'https://example.com/page2',
+      });
+
+      expect(mockSqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data).to.not.have.property('codeBucket');
+      expect(sentMessage.data).to.not.have.property('codePath');
+      expect(mockGetCodeInfo).to.not.have.been.called;
+    });
+
+    it('should return error when SQS sendMessage fails in legacy flow', async () => {
+      mockIsAuditEnabledForSite.resolves(false);
+      mockSqs.sendMessage.rejects(new Error('SQS connection failed'));
+
+      const params = {
+        url: 'https://example.com/page3',
+        issuesList: [{ issueName: 'color-contrast' }],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-3',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(result).to.deep.equal({
+        success: false,
+        url: 'https://example.com/page3',
+        error: 'SQS connection failed',
+      });
+
+      expect(mockLog.error).to.have.been.calledWithMatch(
+        /\[A11yIndividual\]\[A11yProcessingError\] Failed to send message to Mystique for url https:\/\/example\.com\/page3 with error: SQS connection failed/,
+      );
+    });
+  });
+
+  describe('Code fix flow', () => {
+    it('should send message with codeBucket and codePath when code fix is enabled and code info is available', async () => {
+      mockIsAuditEnabledForSite.resolves(true);
+      mockGetCodeInfo.resolves({
+        codeBucket: 'test-bucket',
+        codePath: 'code/site-123/github/test-owner/test-repo/main/repository.zip',
+      });
+
+      const params = {
+        url: 'https://example.com/page4',
+        issuesList: [{ issueName: 'aria-allowed-attr' }],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-4',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(result).to.deep.equal({
+        success: true,
+        url: 'https://example.com/page4',
+      });
+
+      expect(mockGetCodeInfo).to.have.been.calledOnceWith(
+        mockContext.site,
+        'accessibility',
+        mockContext,
+      );
+
+      expect(mockSqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.type).to.equal('guidance:accessibility-remediation');
+      expect(sentMessage.data.codeBucket).to.equal('test-bucket');
+      expect(sentMessage.data.codePath).to.equal('code/site-123/github/test-owner/test-repo/main/repository.zip');
+    });
+
+    it('should send message without code info when codePath is empty string (falsy)', async () => {
+      mockIsAuditEnabledForSite.resolves(true);
+      mockGetCodeInfo.resolves({
+        codeBucket: 'test-bucket',
+        codePath: '',
+      });
+
+      const params = {
+        url: 'https://example.com/page5',
+        issuesList: [{ issueName: 'aria-required-attr' }],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-5',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(result).to.deep.equal({
+        success: true,
+        url: 'https://example.com/page5',
+      });
+
+      const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+      // Empty string is falsy, so code info is not added
+      expect(sentMessage.data).to.not.have.property('codeBucket');
+      expect(sentMessage.data).to.not.have.property('codePath');
+    });
+
+    it('should send message without code info when getCodeInfo returns null', async () => {
+      mockIsAuditEnabledForSite.resolves(true);
+      mockGetCodeInfo.resolves(null);
+
+      const params = {
+        url: 'https://example.com/page6',
+        issuesList: [{ issueName: 'button-name' }],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'other',
+        aggregationKey: 'agg-key-6',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(result).to.deep.equal({
+        success: true,
+        url: 'https://example.com/page6',
+      });
+
+      expect(mockGetCodeInfo).to.have.been.calledOnce;
+      const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data).to.not.have.property('codeBucket');
+      expect(sentMessage.data).to.not.have.property('codePath');
+    });
+
+    it('should send message without code info when getCodeInfo returns undefined', async () => {
+      mockIsAuditEnabledForSite.resolves(true);
+      mockGetCodeInfo.resolves(undefined);
+
+      const params = {
+        url: 'https://example.com/page7',
+        issuesList: [{ issueName: 'link-name' }],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-7',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(result).to.deep.equal({
+        success: true,
+        url: 'https://example.com/page7',
+      });
+
+      const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data).to.not.have.property('codeBucket');
+      expect(sentMessage.data).to.not.have.property('codePath');
+    });
+
+    it('should not add code info when only codeBucket is present (codePath is missing)', async () => {
+      mockIsAuditEnabledForSite.resolves(true);
+      mockGetCodeInfo.resolves({
+        codeBucket: 'test-bucket',
+      });
+
+      const params = {
+        url: 'https://example.com/page8',
+        issuesList: [{ issueName: 'aria-roles' }],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-8',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(result.success).to.be.true;
+
+      const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data).to.not.have.property('codeBucket');
+      expect(sentMessage.data).to.not.have.property('codePath');
+    });
+
+    it('should not add code info when only codePath is present (codeBucket is missing)', async () => {
+      mockIsAuditEnabledForSite.resolves(true);
+      mockGetCodeInfo.resolves({
+        codePath: 'code/site-123/github/test-owner/test-repo/main/repository.zip',
+      });
+
+      const params = {
+        url: 'https://example.com/page9',
+        issuesList: [{ issueName: 'select-name' }],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-9',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(result.success).to.be.true;
+
+      const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data).to.not.have.property('codeBucket');
+      expect(sentMessage.data).to.not.have.property('codePath');
+    });
+
+    it('should handle multiple issue types eligible for code fix', async () => {
+      mockIsAuditEnabledForSite.resolves(true);
+      mockGetCodeInfo.resolves({
+        codeBucket: 'test-bucket',
+        codePath: 'code/site-123/github/test-owner/test-repo/main/repository.zip',
+      });
+
+      const params = {
+        url: 'https://example.com/page10',
+        issuesList: [
+          { issueName: 'aria-allowed-attr' },
+          { issueName: 'aria-required-attr' },
+          { issueName: 'button-name' },
+        ],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-10',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(result.success).to.be.true;
+      expect(mockGetCodeInfo).to.have.been.calledOnce;
+
+      const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.codeBucket).to.equal('test-bucket');
+      expect(sentMessage.data.codePath).to.equal('code/site-123/github/test-owner/test-repo/main/repository.zip');
+    });
+
+    it('should return error when SQS sendMessage fails in code fix flow', async () => {
+      mockIsAuditEnabledForSite.resolves(true);
+      mockGetCodeInfo.resolves({
+        codeBucket: 'test-bucket',
+        codePath: 'code/site-123/github/test-owner/test-repo/main/repository.zip',
+      });
+      mockSqs.sendMessage.rejects(new Error('Network timeout'));
+
+      const params = {
+        url: 'https://example.com/page11',
+        issuesList: [{ issueName: 'aria-prohibited-attr' }],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-11',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(result).to.deep.equal({
+        success: false,
+        url: 'https://example.com/page11',
+        error: 'Network timeout',
+      });
+
+      expect(mockLog.error).to.have.been.calledWithMatch(
+        /\[A11yIndividual\]\[A11yProcessingError\] Failed to send message to Mystique for url https:\/\/example\.com\/page11 with error: Network timeout/,
+      );
+    });
+
+    it('should handle getCodeInfo throwing an error gracefully', async () => {
+      mockIsAuditEnabledForSite.resolves(true);
+      mockGetCodeInfo.rejects(new Error('S3 access denied'));
+
+      const params = {
+        url: 'https://example.com/page12',
+        issuesList: [{ issueName: 'aria-hidden-focus' }],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-12',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      await expect(sendMystiqueMessageModule.sendMystiqueMessage(params)).to.be.rejectedWith('S3 access denied');
+    });
+  });
+
+  describe('Message structure validation', () => {
+    it('should create correct message structure with all required fields', async () => {
+      mockIsAuditEnabledForSite.resolves(false);
+
+      const params = {
+        url: 'https://example.com/page13',
+        issuesList: [{ issueName: 'color-contrast', details: 'Low contrast' }],
+        opportunity: mockOpportunity,
+        siteId: 'site-789',
+        auditId: 'audit-999',
+        deliveryType: 'aem_cs',
+        aggregationKey: 'agg-key-13',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(mockSqs.sendMessage).to.have.been.calledOnce;
+      const [queueUrl, message] = mockSqs.sendMessage.firstCall.args;
+
+      expect(queueUrl).to.equal('test-mystique-queue');
+      expect(message).to.have.property('type', 'guidance:accessibility-remediation');
+      expect(message).to.have.property('siteId', 'site-789');
+      expect(message).to.have.property('auditId', 'audit-999');
+      expect(message).to.have.property('deliveryType', 'aem_cs');
+      expect(message).to.have.property('time');
+      expect(message).to.have.property('aggregationKey', 'agg-key-13');
+      expect(message.data).to.deep.include({
+        url: 'https://example.com/page13',
+        opportunityId: 'oppty-123',
+        issuesList: [{ issueName: 'color-contrast', details: 'Low contrast' }],
+      });
+    });
+
+    it('should handle empty siteId and auditId gracefully', async () => {
+      mockIsAuditEnabledForSite.resolves(false);
+
+      const params = {
+        url: 'https://example.com/page14',
+        issuesList: [{ issueName: 'heading-order' }],
+        opportunity: mockOpportunity,
+        siteId: '',
+        auditId: '',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-14',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(result.success).to.be.true;
+
+      const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.siteId).to.equal('');
+      expect(sentMessage.auditId).to.equal('');
+    });
+
+    it('should include timestamp in ISO format', async () => {
+      mockIsAuditEnabledForSite.resolves(false);
+      const beforeTime = new Date().toISOString();
+
+      const params = {
+        url: 'https://example.com/page15',
+        issuesList: [{ issueName: 'image-alt' }],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-15',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      const afterTime = new Date().toISOString();
+      const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+
+      expect(sentMessage.time).to.be.a('string');
+      expect(sentMessage.time).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      expect(sentMessage.time >= beforeTime).to.be.true;
+      expect(sentMessage.time <= afterTime).to.be.true;
+    });
+  });
+
+  describe('Edge cases', () => {
+    it('should handle empty issuesList', async () => {
+      mockIsAuditEnabledForSite.resolves(true);
+
+      const params = {
+        url: 'https://example.com/page16',
+        issuesList: [],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-16',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(result.success).to.be.true;
+      expect(mockGetCodeInfo).to.not.have.been.called;
+
+      const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.issuesList).to.deep.equal([]);
+    });
+
+    it('should handle issuesList with mixed code-fix and non-code-fix issues', async () => {
+      mockIsAuditEnabledForSite.resolves(true);
+
+      const params = {
+        url: 'https://example.com/page17',
+        issuesList: [
+          { issueName: 'aria-allowed-attr' },
+          { issueName: 'color-contrast' },
+        ],
+        opportunity: mockOpportunity,
+        siteId: 'site-123',
+        auditId: 'audit-456',
+        deliveryType: 'aem_edge',
+        aggregationKey: 'agg-key-17',
+        sqs: mockSqs,
+        env: mockEnv,
+        log: mockLog,
+        context: mockContext,
+      };
+
+      const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+      expect(result.success).to.be.true;
+      // Should not use code fix flow because not all issues are code-fix eligible
+      expect(mockGetCodeInfo).to.not.have.been.called;
+
+      const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data).to.not.have.property('codeBucket');
+      expect(sentMessage.data).to.not.have.property('codePath');
+    });
   });
 });

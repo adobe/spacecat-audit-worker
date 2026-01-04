@@ -282,4 +282,14 @@ describe('createLowFormViewsOpportunities handler method', () => {
     expect(dataAccessStub.Opportunity.create).to.not.be.called;
     expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] successfully synced opportunity for site: site-id and high page views low form views audit type.');
   });
+
+  it('should handle when auditContext has data', async () => {
+    const contextWithAuditData = {
+      ...context,
+      auditContext: { data: 'test-123' },
+    };
+    await createLowViewsOpportunities(auditUrl, auditData, undefined, contextWithAuditData);
+    // Should work normally with auditContext.data defined
+    expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] successfully synced opportunity for site: site-id and high page views low form views audit type.');
+  });
 });

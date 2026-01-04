@@ -18,9 +18,14 @@ import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
   getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
-import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
+import {
+  FORM_OPPORTUNITY_TYPES,
+  successCriteriaLinks,
+  FORM_TYPES_TO_IGNORE,
+} from './constants.js';
 import { calculateCPCValue } from '../support/utils.js';
 import { getPresignedUrl as getPresignedUrlUtil } from '../utils/getPresignedUrl.js';
+import { isAuditEnabledForSite } from '../common/audit-utils.js';
 
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
@@ -265,10 +270,12 @@ export async function generateOpptyData(
   context,
   opportunityTypes = [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
     FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION, FORM_OPPORTUNITY_TYPES.LOW_VIEWS],
+  opptyOptions = null,
 ) {
   const formVitalsCollection = formVitals.filter(
     (row) => row.formengagement && row.formsubmit && row.formview,
   );
+
   return Promise.all(
     Object.entries({
       [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]: getHighFormViewsLowConversionMetrics,
@@ -276,7 +283,10 @@ export async function generateOpptyData(
       [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]: getHighPageViewsLowFormViewsMetrics,
     })
       .filter(([opportunityType]) => opportunityTypes.includes(opportunityType))
-      .flatMap(([opportunityType, metricsMethod]) => metricsMethod(formVitalsCollection)
+      .flatMap(([opportunityType, metricsMethod]) => metricsMethod(
+        formVitalsCollection,
+        opptyOptions,
+      )
         .map((metric) => convertToOpportunityData(opportunityType, metric, context))),
   );
 }
@@ -296,6 +306,24 @@ export function shouldExcludeForm(scrapedFormData) {
     || containsOnlyNumericInputField
     || containsNoInputField
     || doesNotHaveButton;
+}
+
+/**
+ * Check if a form should be ignored based on form details criteria.
+ * Forms are ignored if they match certain form types (defined in FORM_TYPES_TO_IGNORE)
+ * and are not lead generation forms.
+ *
+ * @param {Object} formDetails - The form details object containing form_type and is_lead_gen
+ * @returns {boolean} - True if the form should be ignored, false otherwise
+ */
+export function shouldIgnoreFormByDetails(formDetails) {
+  if (!formDetails || typeof formDetails !== 'object') {
+    return false;
+  }
+  // Normalize form_type to lowercase for case-insensitive comparison
+  const formType = formDetails.form_type?.toLowerCase();
+  // Ignore forms that match specified types and are not lead generation (boolean check)
+  return FORM_TYPES_TO_IGNORE.includes(formType) && formDetails.is_lead_gen === false;
 }
 
 /**
@@ -520,17 +548,15 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
   if (opportunity) {
     log.debug(`Received forms opportunity for guidance: ${JSON.stringify(opportunity)}`);
     const opptyData = JSON.parse(JSON.stringify(opportunity));
-    // Normalize type: convert forms-accessibility → forms-a11y
-    const normalizedType = opptyData.type === 'form-accessibility' ? 'forms-a11y' : opptyData.type;
     const mystiqueMessage = {
-      type: `guidance:${normalizedType}`,
+      type: `guidance:${opptyData.type}`,
       siteId: opptyData.siteId,
       auditId: opptyData.auditId,
       deliveryType: site ? site.getDeliveryType() : 'aem_cs',
       time: new Date().toISOString(),
       // keys inside data should follow snake case and outside should follow camel case
       data: {
-        url: opptyData.type === 'form-accessibility' ? opptyData.data?.accessibility?.[0]?.form || '' : opptyData.data?.form || '',
+        url: opptyData.data?.form,
         cr: opptyData.data?.trackedFormKPIValue || 0,
         metrics: opptyData.data?.metrics || [],
         cta_source: opptyData.data?.formNavigation?.source || '',
@@ -654,4 +680,97 @@ export function applyOpportunityFilters(
     .slice(0, maxLimit);
 
   return opportunities;
+}
+
+/**
+ * Groups suggestions by URL, source, and issue type, then sends messages
+ * to the importer worker for code-fix generation
+ *
+ * @param {Object} opportunity - The opportunity object containing suggestions
+ * @param {string} auditId - The audit ID
+ * @param {Object} context - The context object containing log, sqs, env, and site
+ * @param {string} forwardMessageType - The message type to use in the forward object
+ *   (default: 'codefix:accessibility')
+ * @returns {Promise<void>}
+ */
+export async function sendCodeFixMessagesToImporter(opportunity, auditId, context, forwardMessageType = 'codefix:accessibility') {
+  const {
+    log, sqs, env, site,
+  } = context;
+
+  const siteId = opportunity.getSiteId();
+  const baseUrl = site.getBaseURL();
+  try {
+    const isAutoFixEnabled = await isAuditEnabledForSite(`${opportunity.getType()}-auto-fix`, site, context);
+    if (!isAutoFixEnabled) {
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] ${opportunity.getType()}-auto-fix is disabled for site, skipping code-fix generation`);
+      return;
+    }
+
+    // Get all suggestions from the opportunity
+    const suggestions = await opportunity.getSuggestions();
+    if (!suggestions || suggestions.length === 0) {
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] No suggestions found for code-fix generation`);
+      return;
+    }
+
+    // Group suggestions by URL, source, and issueType
+    const groupedSuggestions = new Map();
+
+    suggestions.forEach((suggestion) => {
+      const suggestionData = suggestion.getData();
+      const { url, source = 'default', issues } = suggestionData;
+
+      // By design, data.issues will always have length 1
+      if (issues && issues.length > 0) {
+        const issueType = issues[0].type;
+        const groupKey = `${url}|${source}|${issueType}`;
+        if (!groupedSuggestions.has(groupKey)) {
+          groupedSuggestions.set(groupKey, {
+            url,
+            source,
+            issueType,
+            suggestionIds: [],
+          });
+        }
+
+        // Add the suggestion ID to the group
+        groupedSuggestions.get(groupKey).suggestionIds.push(suggestion.getId());
+      }
+    });
+
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] Grouped suggestions into ${groupedSuggestions.size} groups for code-fix generation`);
+
+    const messagePromises = Array.from(groupedSuggestions.values()).map(async (group) => {
+      const message = {
+        type: 'code',
+        siteId,
+        forward: {
+          queue: env.QUEUE_SPACECAT_TO_MYSTIQUE,
+          payload: {
+            type: forwardMessageType,
+            siteId,
+            auditId,
+            url: baseUrl,
+            data: {
+              opportunityId: opportunity.getId(),
+              suggestionIds: group.suggestionIds,
+            },
+          },
+        },
+      };
+
+      try {
+        await sqs.sendMessage(env.IMPORT_WORKER_QUEUE_URL, message);
+        log.info(`[Form Opportunity] [Site Id: ${siteId}] Sent code-fix message (forward type: ${forwardMessageType}) to importer for URL: ${group.url}, source: ${group.source}, issueType: ${group.issueType}, suggestions: ${group.suggestionIds.length}`);
+      } catch (error) {
+        log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to send code-fix message for URL: ${group.url}, error: ${error.message}`);
+      }
+    });
+
+    await Promise.all(messagePromises);
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] Completed sending ${messagePromises.length} code-fix messages to importer`);
+  } catch (error) {
+    log.error(`[Form Opportunity] [Site Id: ${siteId}] Error in sendCodeFixMessagesToImporter: ${error.message}`);
+  }
 }

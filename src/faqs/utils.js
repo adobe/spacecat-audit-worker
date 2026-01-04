@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { ContentAIClient } from '../utils/content-ai.js';
+
 /**
  * Column indices for the brand presence spreadsheet.
  * Excel uses 1-based indexing for columns.
@@ -64,27 +66,27 @@ function normalizeSources(sources) {
 
 /**
  * Generates JSON FAQ suggestions with transform rules for code changes
- * Each question becomes a separate suggestion
- * @param {Array} faqs - Array of FAQ objects from Mystique
+ * Each suggestion has nested FAQs array
+ * @param {Array} suggestions - Array of suggestions from Mystique
  * @returns {Array} Array of FAQ suggestion objects with transform rules
  */
-export function getJsonFaqSuggestion(faqs) {
+export function getJsonFaqSuggestion(suggestions) {
   const suggestionValues = [];
 
-  faqs.forEach((faq) => {
-    const { url, topic, suggestions } = faq;
+  suggestions.forEach((suggestion) => {
+    const { url, topic, faqs } = suggestion;
 
-    // Filter only suitable suggestions
-    const suitableSuggestions = (suggestions || []).filter(
-      (s) => s.isAnswerSuitable && s.isQuestionRelevant,
+    // Filter only suitable FAQs
+    const suitableFaqs = (faqs || []).filter(
+      (faq) => faq.isAnswerSuitable && faq.isQuestionRelevant,
     );
 
-    if (suitableSuggestions.length === 0) {
+    if (suitableFaqs.length === 0) {
       return;
     }
 
     // Create one suggestion per FAQ question
-    suitableSuggestions.forEach((suggestion) => {
+    suitableFaqs.forEach((faq) => {
       suggestionValues.push({
         headingText: 'FAQs',
         shouldOptimize: true, // Default to true, will be updated based on analysis
@@ -95,16 +97,93 @@ export function getJsonFaqSuggestion(faqs) {
           action: 'appendChild',
         },
         item: {
-          question: suggestion.question,
-          answer: suggestion.answer,
-          sources: normalizeSources(suggestion.sources),
-          questionRelevanceReason: suggestion.questionRelevanceReason,
-          answerSuitabilityReason: suggestion.answerSuitabilityReason,
-          scrapedAt: suggestion.scrapedAt || new Date().toISOString(),
+          question: faq.question,
+          answer: faq.answer,
+          sources: normalizeSources(faq.sources),
+          questionRelevanceReason: faq.questionRelevanceReason,
+          answerSuitabilityReason: faq.answerSuitabilityReason,
+          scrapedAt: faq.scrapedAt || new Date().toISOString(),
         },
       });
     });
   });
 
   return suggestionValues;
+}
+
+/**
+ * Validates if Content AI configuration exists and is working for a site
+ * by checking for the configuration and testing the search endpoint
+ * @param {Object} site - The site object
+ * @param {Object} context - The context object with env and log
+ * @returns {Promise<{uid: string|null, indexName: string|null,
+ *   genSearchEnabled: boolean, isWorking: boolean}>}
+ */
+export async function validateContentAI(site, context) {
+  const { log } = context;
+
+  try {
+    // Initialize Content AI client once (token generated once)
+    const client = new ContentAIClient(context);
+    await client.initialize();
+
+    const existingConf = await client.getConfigurationForSite(site);
+    const baseURL = site.getBaseURL();
+
+    if (!existingConf) {
+      log.warn(`[ContentAI] No configuration found for site ${baseURL}`);
+      return {
+        uid: null,
+        indexName: null,
+        genSearchEnabled: false,
+        isWorking: false,
+      };
+    }
+
+    // Extract UID and index name from configuration
+    const uid = existingConf.uid || null;
+    const indexStep = existingConf.steps?.find((step) => step.type === 'index');
+    const indexName = indexStep?.name;
+
+    if (!indexName) {
+      log.warn(`[ContentAI] No index name found in configuration for site ${baseURL}`);
+      return {
+        uid,
+        indexName: null,
+        genSearchEnabled: false,
+        isWorking: false,
+      };
+    }
+
+    log.info(`[ContentAI] Found configuration with UID: ${uid}, index name: ${indexName}`);
+
+    // Check if generative search is enabled (generative step exists and is not empty)
+    const generativeStep = existingConf.steps?.find((step) => step.type === 'generative');
+    const genSearchEnabled = !!(generativeStep && Object.keys(generativeStep).length > 1);
+
+    // Test the search endpoint with a simple query (reuses token from client)
+    const searchOptions = {
+      numCandidates: 3,
+      boost: 1,
+    };
+    const searchResponse = await client.runSemanticSearch('website', 'vector', indexName, searchOptions, 1);
+
+    const isWorking = searchResponse.ok;
+    log.info(`[ContentAI] Search endpoint validation: ${searchResponse.status} (${isWorking ? 'working' : 'not working'})`);
+
+    return {
+      uid,
+      indexName,
+      genSearchEnabled,
+      isWorking,
+    };
+  } catch (error) {
+    log.error(`[ContentAI] Validation failed: ${error.message}`);
+    return {
+      uid: null,
+      indexName: null,
+      genSearchEnabled: false,
+      isWorking: false,
+    };
+  }
 }

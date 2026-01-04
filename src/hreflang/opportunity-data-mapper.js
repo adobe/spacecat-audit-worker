@@ -27,7 +27,7 @@ const OpptyData = {
       'Consider adding "x-default" hreflang for pages targeting users who speak languages not specifically targeted.',
     ],
   },
-  tags: ['Traffic Acquisition'],
+  tags: ['Traffic Acquisition', 'tech-seo'],
   data: {
     dataSources: [DATA_SOURCES.SITE],
   },

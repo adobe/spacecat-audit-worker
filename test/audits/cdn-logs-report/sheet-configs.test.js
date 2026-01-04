@@ -31,6 +31,23 @@ describe('CDN Logs Sheet Configs', () => {
   });
 
   describe('agentic sheet config', () => {
+    let mockSite;
+    let mockDataAccess;
+
+    beforeEach(() => {
+      mockSite = {
+        getId: () => 'test-site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({ getFetchConfig: () => null }),
+      };
+
+      mockDataAccess = {
+        PageCitability: {
+          allBySiteId: sandbox.stub().resolves([]),
+        },
+      };
+    });
+
     it('generates correct headers', () => {
       const headers = SHEET_CONFIGS.agentic.getHeaders();
       expect(headers)
@@ -46,10 +63,11 @@ describe('CDN Logs Sheet Configs', () => {
           'URL',
           'Product',
           'Category',
+          'Citability Score',
         ]);
     });
 
-    it('processes agentic flat data correctly', () => {
+    it('processes agentic flat data correctly', async () => {
       const testData = [
         {
           agent_type: 'Chatbots',
@@ -58,7 +76,7 @@ describe('CDN Logs Sheet Configs', () => {
           number_of_hits: 100,
           avg_ttfb_ms: 250.5,
           country_code: 'US',
-          url: 'https://example.com/test',
+          url: '/test',
           product: 'firefly',
           category: 'Products',
         },
@@ -75,12 +93,21 @@ describe('CDN Logs Sheet Configs', () => {
         },
       ];
 
-      const result = SHEET_CONFIGS.agentic.processData(testData);
+      // Setup specific citability data for this test
+      mockDataAccess.PageCitability.allBySiteId.resolves([
+        {
+          getUrl: () => 'https://example.com/test',
+          getCitabilityScore: () => 85,
+          getUpdatedAt: () => '2025-01-15T10:00:00Z',
+        },
+      ]);
+
+      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
 
       expect(result)
         .to
         .have
-        .length(2);
+        .lengthOf(2);
       expect(result[0])
         .to
         .deep
@@ -91,9 +118,10 @@ describe('CDN Logs Sheet Configs', () => {
           100,
           250.5,
           'US',
-          'https://example.com/test',
+          '/test',
           'Firefly',
           'Products',
+          85,
         ]);
       expect(result[1])
         .to
@@ -108,18 +136,19 @@ describe('CDN Logs Sheet Configs', () => {
           '/',
           'Other',
           'Uncategorized',
+          'N/A',
         ]);
     });
 
-    it('handles null data gracefully', () => {
-      const result = SHEET_CONFIGS.agentic.processData(null);
+    it('handles null data gracefully', async () => {
+      const result = await SHEET_CONFIGS.agentic.processData(null);
       expect(result)
         .to
         .deep
         .equal([]);
     });
 
-    it('handles data with missing fields', () => {
+    it('handles data with missing fields', async () => {
       const testData = [
         {
           // Missing agent_type, user_agent_display, etc.
@@ -133,7 +162,7 @@ describe('CDN Logs Sheet Configs', () => {
         },
       ];
 
-      const result = SHEET_CONFIGS.agentic.processData(testData);
+      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
 
       expect(result)
         .to
@@ -152,15 +181,56 @@ describe('CDN Logs Sheet Configs', () => {
           '',
           'Other',
           'Uncategorized',
+          'N/A',
         ]);
     });
 
-    it('handles empty array data', () => {
-      const result = SHEET_CONFIGS.agentic.processData([]);
+    it('handles empty array data', async () => {
+      const result = await SHEET_CONFIGS.agentic.processData([], mockSite, mockDataAccess);
       expect(result)
         .to
         .deep
         .equal([]);
+    });
+
+    it('uses the latest updated citability score when multiple scores exist for same pathname', async () => {
+      const testData = [
+        {
+          agent_type: 'Chatbots',
+          user_agent_display: 'ChatGPT-User',
+          status: 200,
+          number_of_hits: 100,
+          avg_ttfb_ms: 250.5,
+          country_code: 'US',
+          url: '/test',
+          product: 'firefly',
+          category: 'Products',
+        },
+      ];
+
+      // Setup multiple citability scores for the same pathname with different update times
+      mockDataAccess.PageCitability.allBySiteId.resolves([
+        {
+          getUrl: () => 'https://example.com/test',
+          getCitabilityScore: () => 75,
+          getUpdatedAt: () => '2025-01-10T10:00:00Z', // Older
+        },
+        {
+          getUrl: () => 'https://example.com/test',
+          getCitabilityScore: () => 90,
+          getUpdatedAt: () => '2025-01-15T10:00:00Z', // Newer - should be used
+        },
+      ]);
+
+      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
+
+      expect(result)
+        .to
+        .have
+        .lengthOf(1);
+      expect(result[0][9]) // Citability Score is at index 9
+        .to
+        .equal(90); // Should use the newer score
     });
 
     it('has required properties', () => {
@@ -242,13 +312,13 @@ describe('CDN Logs Sheet Configs', () => {
     it('referral traffic post processes valid data', () => {
       const testData = [{
         path: 'some/path/first',
-        referrer: '',
+        referrer: 'gemini.google.com',
         utm_source: 'google',
-        utm_medium: 'cpc',
-        tracking_param: 'paid',
+        utm_medium: '',
+        tracking_param: '',
         device: 'mobile',
         date: '2025-07-18',
-        pageviews: '200',
+        pageviews: '250',
         region: 'UK',
       }, {
         path: 'some/path/first',
@@ -262,7 +332,7 @@ describe('CDN Logs Sheet Configs', () => {
         region: 'UK',
       }, {
         path: '/another/path',
-        referrer: 'https://facebook.com',
+        referrer: 'https://l.meta.ai',
         utm_source: '',
         utm_medium: '',
         tracking_param: '',
@@ -297,12 +367,12 @@ describe('CDN Logs Sheet Configs', () => {
 
       expect(result).to.deep.include.members([[
         'some/path/first',
-        'paid',
-        'display',
+        'earned',
+        'llm',
         'google',
         'mobile',
         '2025-07-18',
-        500,
+        250,
         '',
         '',
         'UK',
@@ -310,8 +380,8 @@ describe('CDN Logs Sheet Configs', () => {
       ], [
         '/another/path',
         'earned',
-        'social',
-        'facebook',
+        'llm',
+        'meta',
         'desktop',
         '2025-07-19',
         23,
@@ -319,19 +389,7 @@ describe('CDN Logs Sheet Configs', () => {
         '',
         'US',
         '',
-      ], [
-        '',
-        'paid',
-        'social',
-        'tiktok',
-        'mobile',
-        '2025-07-19',
-        23,
-        '',
-        '',
-        'FR',
-        '',
-      ],
+      ], 
       ]);
     });
 

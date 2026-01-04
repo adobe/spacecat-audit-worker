@@ -225,7 +225,7 @@ describe('data-access', () => {
 
       await syncSuggestions({
         context: {
-          log: { debug: () => {} },
+          log: { debug: () => {}, info: () => {} },
           dataAccess: { Suggestion: { bulkUpdateStatus: () => {} } },
         },
         opportunity: mockOpportunity,
@@ -411,12 +411,16 @@ describe('data-access', () => {
           mapNewSuggestion,
         });
       } catch (e) {
-        expect(e.message).to.equal('Failed to create suggestions for siteId site-id');
+        expect(e.message).to.match(/Failed to create suggestions for siteId (site-id|unknown)/);
+        expect(e.message).to.include('Sample error: some error');
       }
 
-      expect(mockLogger.error).to.have.been.calledTwice;
-      expect(mockLogger.error.firstCall.args[0]).to.include('contains 1 items with errors');
-      expect(mockLogger.error.secondCall.args[0]).to.include('failed with error: some error');
+      // Now logs summary + detailed error + failed item data + error items array = 4 calls
+      expect(mockLogger.error).to.have.callCount(4);
+      expect(mockLogger.error.firstCall.args[0]).to.match(/contains 1 items with errors/);
+      expect(mockLogger.error.secondCall.args[0]).to.include('Error 1/1: some error');
+      expect(mockLogger.error.thirdCall.args[0]).to.include('Failed item data');
+      expect(mockLogger.error.getCall(3).args[0]).to.equal('[suggestions.errorItems]');
     });
 
     it('should throw an error if all items fail to be created', async () => {
@@ -445,6 +449,286 @@ describe('data-access', () => {
       })).to.be.rejectedWith('Failed to create suggestions for siteId');
     });
 
+    it('should log partial success when some items are created and some fail', async () => {
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        remove: sinon.stub(),
+        getData: sinon.stub().returns(suggestionsData[0]),
+        getStatus: sinon.stub().returns('NEW'),
+      }];
+      const newData = [{ key: '2' }, { key: '3' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({
+        errorItems: [{ item: { key: '2' }, error: 'some error' }],
+        createdItems: [{ key: '3' }],
+      });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(mockLogger.warn).to.have.been.calledWith('Partial success: Created 1 suggestions, 1 failed');
+    });
+
+    it('should log "... and more errors" when there are more than 5 errors', async () => {
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        remove: sinon.stub(),
+        getData: sinon.stub().returns(suggestionsData[0]),
+        getStatus: sinon.stub().returns('NEW'),
+      }];
+      const newData = Array.from({ length: 7 }, (_, i) => ({ key: `new-${i + 2}` }));
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({
+        errorItems: Array.from({ length: 7 }, (_, i) => ({
+          item: { key: `new-${i + 2}` },
+          error: `error ${i + 1}`,
+        })),
+        createdItems: [],
+      });
+
+      try {
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+      } catch (e) {
+        // Expected to throw
+      }
+
+      // Should log first 5 errors individually, then "... and 2 more errors"
+      expect(mockLogger.error).to.have.been.calledWith('... and 2 more errors');
+    });
+
+    describe('scrapedUrlsSet filtering', () => {
+      it('should preserve suggestions when their URLs were not scraped', async () => {
+        const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+        // Existing suggestions for URLs that weren't in this audit run
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { url: 'https://example.com/page1', key: 'page1' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+          {
+            id: '2',
+            data: { url: 'https://example.com/page2', key: 'page2' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+        ];
+
+        // New audit data only has page3 (page1 and page2 were not scraped)
+        const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+        const scrapedUrlsSet = new Set(['https://example.com/page3']);
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey: buildKeyWithUrl,
+          mapNewSuggestion,
+          scrapedUrlsSet,
+        });
+
+        // Verify that bulkUpdateStatus was NOT called (suggestions preserved)
+        expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 0');
+      });
+
+      it('should mark suggestions as outdated when their URLs were scraped but issues are gone', async () => {
+        const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+        // Existing suggestions for URLs that were scraped
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { url: 'https://example.com/page1', key: 'page1' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+          {
+            id: '2',
+            data: { url: 'https://example.com/page2', key: 'page2' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+        ];
+
+        // New audit data has page3, but not page1 or page2 (they were scraped but issues are gone)
+        const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+        const scrapedUrlsSet = new Set([
+          'https://example.com/page1',
+          'https://example.com/page2',
+          'https://example.com/page3',
+        ]);
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey: buildKeyWithUrl,
+          mapNewSuggestion,
+          scrapedUrlsSet,
+        });
+
+        // Verify that bulkUpdateStatus WAS called to mark them as outdated
+        expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+          existingSuggestions,
+          'OUTDATED',
+        );
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 2');
+      });
+
+      it('should handle mixed scenario: some URLs scraped, some not', async () => {
+        const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { url: 'https://example.com/page1', key: 'page1' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+          {
+            id: '2',
+            data: { url: 'https://example.com/page2', key: 'page2' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+          {
+            id: '3',
+            data: { url: 'https://example.com/page3', key: 'page3' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page3', key: 'page3' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+        ];
+
+        // New audit: page4 has issues, page2 was scraped but no issues, page1 and page3 not scraped
+        const newData = [{ url: 'https://example.com/page4', key: 'page4' }];
+        const scrapedUrlsSet = new Set([
+          'https://example.com/page2', // scraped, no issues (should be marked OUTDATED)
+          'https://example.com/page4', // scraped, has issues (new suggestion)
+        ]);
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey: buildKeyWithUrl,
+          mapNewSuggestion,
+          scrapedUrlsSet,
+        });
+
+        // Only page2 should be marked as outdated (it was scraped but issue is gone)
+        // page1 and page3 should be preserved (not scraped)
+        expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnce;
+        const markedOutdated = context.dataAccess.Suggestion.bulkUpdateStatus.firstCall.args[0];
+        expect(markedOutdated).to.have.length(1);
+        expect(markedOutdated[0].id).to.equal('2');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+      });
+
+      it('should work without scrapedUrlsSet (backward compatibility)', async () => {
+        // When scrapedUrlsSet is not provided, all non-matching suggestions
+        // should be marked outdated
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { key: '1' },
+            getData: sinon.stub().returns({ key: '1' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+          {
+            id: '2',
+            data: { key: '2' },
+            getData: sinon.stub().returns({ key: '2' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+        ];
+
+        const newData = [{ key: '3' }];
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+          // scrapedUrlsSet not provided
+        });
+
+        // Without scrapedUrlsSet, all non-matching suggestions should be marked outdated
+        expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+          existingSuggestions,
+          'OUTDATED',
+        );
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 2');
+      });
+
+      it('should use FIXED status when statusToSetForOutdated is specified', async () => {
+        const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { url: 'https://example.com/page1', key: 'page1' },
+            getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+            getStatus: sinon.stub().returns('NEW'),
+          },
+        ];
+
+        const newData = [{ url: 'https://example.com/page2', key: 'page2' }];
+        const scrapedUrlsSet = new Set(['https://example.com/page1', 'https://example.com/page2']);
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey: buildKeyWithUrl,
+          mapNewSuggestion,
+          scrapedUrlsSet,
+          statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
+        });
+
+        // Verify FIXED status is used instead of OUTDATED
+        expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+          existingSuggestions,
+          SuggestionDataAccess.STATUSES.FIXED,
+        );
+      });
+    });
+
     describe('debug logging for large datasets', () => {
       it('should log count only when there are 0 outdated suggestions', async () => {
         const newData = [{ key: '1' }];
@@ -460,7 +744,7 @@ describe('data-access', () => {
         });
 
         // Check that outdated count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 0');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 0');
         // Verify no sample logs for empty array
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
         expect(debugCalls.some((msg) => msg.includes('Outdated suggestions sample'))).to.be.false;
@@ -487,7 +771,7 @@ describe('data-access', () => {
         });
 
         // Check that outdated count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 5');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 5');
         // Check that full sample is logged (all 5 items)
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
         const sampleLog = debugCalls.find((msg) => msg.includes('Outdated suggestions sample:'));
@@ -516,7 +800,7 @@ describe('data-access', () => {
         });
 
         // Check that outdated count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 15');
+        expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 15');
         // Check that only first 10 are logged
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
         const sampleLog = debugCalls.find((msg) => msg.includes('Outdated suggestions sample (first 10):'));
@@ -744,6 +1028,165 @@ describe('data-access', () => {
         const sampleLog = debugCalls.find((msg) => /New suggestions\s*=\s*15:/.test(msg));
         expect(sampleLog).to.exist;
       });
+    });
+
+    it('should handle large arrays without JSON.stringify errors', async () => {
+      // Create a very large array of suggestions (simulate the theplayers.com case)
+      const largeNewData = Array.from({ length: 1000 }, (_, i) => ({
+        key: `new${i}`,
+        textContent: 'x'.repeat(5000), // Large text content
+      }));
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({
+        createdItems: largeNewData.map((data) => ({ id: `suggestion-${data.key}` })),
+        errorItems: [],
+        length: largeNewData.length,
+      });
+
+      // This should not throw "Invalid string length" error
+      await expect(syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: largeNewData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+      })).to.not.be.rejected;
+
+      // Verify that debug was called (safeStringify should have prevented the error)
+      expect(mockLogger.debug).to.have.been.called;
+    });
+
+    it('should handle unstringifiable data gracefully via safeStringify', async () => {
+      // Create existing suggestions with BigInt to trigger safeStringify catch block
+      // (JSON.stringify cannot serialize BigInt values)
+      const unstringifiableData = { key: '1', bigValue: BigInt(9007199254740991) };
+
+      const existingSuggestions = [{
+        id: '1',
+        data: unstringifiableData,
+        getData: sinon.stub().returns(unstringifiableData),
+        getStatus: sinon.stub().returns('NEW'),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [{ key: '1', title: 'updated' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      // This should not throw - safeStringify catches JSON.stringify errors
+      await expect(syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+      })).to.not.be.rejected;
+
+      // Verify debug was called and contains the error message from safeStringify
+      const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
+      const hasUnavailableStringify = debugCalls.some((msg) => msg.includes('[Unable to stringify:'));
+      expect(hasUnavailableStringify).to.be.true;
+    });
+
+    it('should handle unstringifiable non-array data via safeStringify', async () => {
+      // Test safeStringify catch block with non-array data to cover the 'N/A' branch
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        remove: sinon.stub(),
+        getData: sinon.stub().returns(suggestionsData[0]),
+        getStatus: sinon.stub().returns('NEW'),
+      }];
+      const newData = [{ key: '2' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      // errorItem.item contains BigInt, which is a non-array object
+      mockOpportunity.addSuggestions.resolves({
+        errorItems: [{ item: { key: '2', bigValue: BigInt(123) }, error: 'some error' }],
+        createdItems: [],
+      });
+
+      try {
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+      } catch (e) {
+        // Expected to throw
+      }
+
+      // Verify the N/A branch was hit (errorItem.item is not an array)
+      const errorCalls = mockLogger.error.getCalls().map((call) => call.args[0]);
+      const hasNAStringify = errorCalls.some((msg) => msg.includes('N/A'));
+      expect(hasNAStringify).to.be.true;
+    });
+
+    it('should handle undefined createdItems', async () => {
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        remove: sinon.stub(),
+        getData: sinon.stub().returns(suggestionsData[0]),
+        getStatus: sinon.stub().returns('NEW'),
+      }];
+      const newData = [{ key: '2' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      // Return array-like object with errorItems and empty createdItems
+      // When createdItems.length is 0, the condition `createdItems?.length <= 0` is true
+      const mockSuggestions = [];
+      mockSuggestions.errorItems = [{ item: { key: '2' }, error: 'some error' }];
+      mockSuggestions.createdItems = [];
+      mockOpportunity.addSuggestions.resolves(mockSuggestions);
+
+      // Should throw because no items were created
+      await expect(syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+      })).to.be.rejectedWith(/Failed to create suggestions for siteId/);
+    });
+
+    it('should use "Unknown error" fallback when errorItems[0].error is falsy', async () => {
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        remove: sinon.stub(),
+        getData: sinon.stub().returns(suggestionsData[0]),
+        getStatus: sinon.stub().returns('NEW'),
+      }];
+      const newData = [{ key: '2' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      // errorItems[0].error is undefined/falsy to trigger 'Unknown error' fallback
+      // Return array-like object with errorItems and empty createdItems
+      const mockSuggestions = [];
+      mockSuggestions.errorItems = [{ item: { key: '2' }, error: undefined }];
+      mockSuggestions.createdItems = [];
+      mockOpportunity.addSuggestions.resolves(mockSuggestions);
+
+      try {
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+      } catch (e) {
+        expect(e.message).to.include('Sample error: Unknown error');
+      }
     });
   });
 

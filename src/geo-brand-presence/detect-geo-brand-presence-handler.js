@@ -19,7 +19,7 @@ import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { GetObjectCommand, NoSuchKey, PutObjectCommand } from '@aws-sdk/client-s3';
 import { ZodError } from 'zod';
 import { OPPTY_TYPES } from './handler.js';
-import { createLLMOSharepointClient, uploadAndPublishFile } from '../utils/report-uploader.js';
+import { createLLMOSharepointClient, uploadToSharePoint, bulkPublishToAdminHlx } from '../utils/report-uploader.js';
 import {
   loadJSONFromS3,
   refreshDirectoryS3Key,
@@ -104,7 +104,11 @@ export default async function handler(message, context) {
   if (subType === 'refresh:geo-brand-presence' || subType === 'refresh:geo-brand-presence-daily') {
     log.info(`%s: Handling refresh for auditId: ${auditId}, siteId: ${siteId}, subType: ${subType}`, AUDIT_NAME);
     return handleRefresh({
-      auditId, siteId, outputLocations, presignedURL,
+      auditId,
+      siteId,
+      outputLocations,
+      mainOutputLocation,
+      presignedURL,
     }, context);
   }
 
@@ -140,7 +144,7 @@ export default async function handler(message, context) {
     );
     const locationStartTime = Date.now();
 
-    await uploadAndPublishFile(sheet, xlsxName, outputLocation, sharepointClient, log);
+    await uploadToSharePoint(sheet, xlsxName, outputLocation, sharepointClient, log);
 
     const locationDuration = Date.now() - locationStartTime;
     log.info(`%s: Upload completed for location ${index + 1}/${outputLocations.length} in ${locationDuration}ms, auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
@@ -148,6 +152,10 @@ export default async function handler(message, context) {
 
   const totalUploadDuration = Date.now() - uploadStartTime;
   log.info(`%s: All SharePoint uploads completed for auditId: ${auditId}, siteId: ${siteId} (${outputLocations.length} locations in ${totalUploadDuration}ms)`, AUDIT_NAME);
+
+  // Bulk preview and publish (only root directory, not config-version-specific)
+  const reports = [{ filename: xlsxName, outputLocation: mainOutputLocation }];
+  await bulkPublishToAdminHlx(reports, log);
 
   return ok();
 }
@@ -157,6 +165,7 @@ async function handleRefresh(
     auditId,
     siteId,
     outputLocations,
+    mainOutputLocation,
     presignedURL,
   },
   context,
@@ -294,6 +303,8 @@ async function handleRefresh(
     const sharepointClient = await createLLMOSharepointClient(context);
 
     const sharepointStartTime = Date.now();
+    const reports = [];
+
     for (let i = 0; i < resultFiles.length; i += 1) {
       const s = resultFiles[i];
       const { name } = files[i];
@@ -328,12 +339,17 @@ async function handleRefresh(
       for (let locIndex = 0; locIndex < outputLocations.length; locIndex += 1) {
         const outDir = outputLocations[locIndex];
         log.debug(`%s REFRESH: Uploading sheet ${name} to location ${locIndex + 1}/${outputLocations.length}, auditId: ${auditId}, siteId: ${siteId}, location: ${outDir}`, AUDIT_NAME);
-        await uploadAndPublishFile(xlsxBuffer.buffer, name, outDir, sharepointClient, log);
+        const arrayBuffer = /** @type {ArrayBuffer} */ (xlsxBuffer.buffer);
+        await uploadToSharePoint(arrayBuffer, name, outDir, sharepointClient, log);
       }
+      reports.push({ filename: name, outputLocation: mainOutputLocation });
     }
 
     const sharepointDuration = Date.now() - sharepointStartTime;
     log.info(`%s REFRESH: Successfully uploaded all ${files.length} sheets for auditId: ${auditId}, siteId: ${siteId} to SharePoint in ${sharepointDuration}ms`, AUDIT_NAME);
+
+    // Bulk preview and publish
+    await bulkPublishToAdminHlx(reports, log);
   } catch (e) {
     log.error(`%s REFRESH: Failed to upload to SharePoint for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME, {
       auditId,

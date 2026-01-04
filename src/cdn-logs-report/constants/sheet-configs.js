@@ -13,6 +13,7 @@
 
 import { classifyTrafficSource } from '@adobe/spacecat-shared-rum-api-client/src/common/traffic.js';
 import { validateCountryCode } from '../utils/report-utils.js';
+import { joinBaseAndPath } from '../../utils/url-utils.js';
 
 const HEADER_COLOR = 'FFE6E6FA';
 
@@ -33,20 +34,51 @@ export const SHEET_CONFIGS = {
       'URL',
       'Product',
       'Category',
+      'Citability Score',
     ],
     headerColor: HEADER_COLOR,
     numberColumns: [2, 3, 4],
-    processData: (data) => data?.map((row) => [
-      row.agent_type || 'Other',
-      row.user_agent_display || 'Unknown',
-      Number(row.status) || 'N/A',
-      Number(row.number_of_hits) || 0,
-      Number(row.avg_ttfb_ms) || 0,
-      validateCountryCode(row.country_code),
-      row.url === '-' ? '/' : (row.url || ''),
-      capitalizeFirstLetter(row.product) || 'Other',
-      row.category || 'Uncategorized',
-    ]) || [],
+    processData: async (data, site, dataAccess) => {
+      if (!data || !site || !dataAccess) return [];
+
+      // Fetch citability scores from database
+      const { PageCitability } = dataAccess;
+      const citabilityScores = await PageCitability.allBySiteId(site.getId());
+      const citabilityMap = citabilityScores.reduce((acc, score) => {
+        const { pathname } = new URL(score.getUrl());
+        const existingScore = acc[pathname];
+
+        if (!existingScore || new Date(score.getUpdatedAt()) > new Date(existingScore.updatedAt)) {
+          acc[pathname] = {
+            score: score.getCitabilityScore(),
+            updatedAt: score.getUpdatedAt(),
+          };
+        }
+        return acc;
+      }, {});
+
+      /* c8 ignore next */
+      const baseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL || site.getBaseURL();
+
+      return data.map((row) => {
+        const urlPath = row.url === '-' ? '/' : (row.url || '');
+        const path = new URL(joinBaseAndPath(baseURL, urlPath)).pathname;
+        const citabilityScore = citabilityMap[path]?.score || 'N/A';
+
+        return [
+          row.agent_type || 'Other',
+          row.user_agent_display || 'Unknown',
+          Number(row.status) || 'N/A',
+          Number(row.number_of_hits) || 0,
+          Number(row.avg_ttfb_ms) || 0,
+          validateCountryCode(row.country_code),
+          urlPath,
+          capitalizeFirstLetter(row.product) || 'Other',
+          row.category || 'Uncategorized',
+          citabilityScore,
+        ];
+      });
+    },
   },
   referral: {
     getHeaders: () => [
@@ -120,7 +152,7 @@ export const SHEET_CONFIGS = {
       });
 
       return Object.values(grouped)
-        .filter((row) => ['paid', 'earned'].includes(row[1]))
+        .filter((row) => ['earned'].includes(row[1]) && ['llm'].includes(row[2])) // filter out non earned:llm
         .sort((a, b) => b[6] - a[6]); // sort by pageviews (descending)
     },
   },

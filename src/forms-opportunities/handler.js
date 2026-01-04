@@ -54,13 +54,13 @@ export async function formsAuditRunner(auditUrl, context) {
 
 export async function runAuditAndSendUrlsForScrapingStep(context) {
   const {
-    site, log, finalUrl, dataAccess,
+    site, log, finalUrl, dataAccess, data,
   } = context;
 
   const { SiteTopForm } = dataAccess;
   const topForms = await SiteTopForm.allBySiteId(site.getId());
 
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting audit`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting audit${data ? ` with option: ${JSON.stringify(data)}` : ''}`);
   const formsAuditRunnerResult = await formsAuditRunner(finalUrl, context);
   const { formVitals } = formsAuditRunnerResult.auditResult;
 
@@ -99,7 +99,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   }
 
   // generating opportunity data from audit to be send to scraper
-  const formOpportunities = await generateOpptyData(formVitals, context);
+  const formOpportunities = await generateOpptyData(formVitals, context, undefined, data);
   const uniqueUrls = new Set();
   for (const opportunity of formOpportunities) {
     uniqueUrls.add(opportunity.form);
@@ -110,7 +110,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     const url = topForm.getUrl();
     const formSource = topForm.getFormSource();
 
-    // Add URL if it doesn't have a formSource
+    // Add URL if it doesn't have a formSource, as it will be added from form vitals
     if (!formSource) {
       uniqueUrls.add(url);
     }
@@ -140,6 +140,26 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     };
   });
 
+  // Add form that are included in top forms and have formSource.
+  // This is to ensure if RUM data is not available, scraper should run atleast on imported forms
+  for (const topForm of topForms) {
+    const url = topForm.getUrl();
+    const formSource = topForm.getFormSource();
+    if (formSource) {
+      const existingItem = urlsData.find((item) => item.url === url);
+      if (existingItem && !existingItem.formSources) {
+        existingItem.formSources = [formSource];
+      } else if (existingItem && !existingItem.formSources.includes(formSource)) {
+        existingItem.formSources.push(formSource);
+      } else {
+        urlsData.push({
+          url,
+          formSources: [formSource],
+        });
+      }
+    }
+  }
+
   const result = {
     processingType: 'form',
     allowCache: true,
@@ -148,6 +168,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     siteId: site.getId(),
     auditResult: formsAuditRunnerResult.auditResult,
     fullAuditRef: formsAuditRunnerResult.fullAuditRef,
+    ...(data && { auditContext: { data } }),
   };
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping: ${JSON.stringify(urlsData)}`);
@@ -156,7 +177,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
 
 export async function sendA11yUrlsForScrapingStep(context) {
   const {
-    log, site, dataAccess,
+    log, site, dataAccess, auditContext,
   } = context;
   const { SiteTopForm } = dataAccess;
   const topForms = await SiteTopForm.allBySiteId(site.getId());
@@ -201,6 +222,7 @@ export async function sendA11yUrlsForScrapingStep(context) {
     jobId: site.getId(),
     urls: urlsData,
     siteId: site.getId(),
+    ...(auditContext?.data && { auditContext: { data: auditContext.data } }),
   };
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] sending urls for form-accessibility audit: ${JSON.stringify(urlsData)}`);
@@ -209,7 +231,7 @@ export async function sendA11yUrlsForScrapingStep(context) {
 
 export async function codeImportStep(context) {
   const {
-    log, site,
+    log, site, auditContext,
   } = context;
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting code import step`);
@@ -217,6 +239,8 @@ export async function codeImportStep(context) {
   return {
     type: 'code',
     siteId: site.getId(),
+    allowCache: false,
+    ...(auditContext?.data && { auditContext: { data: auditContext.data } }),
   };
 }
 

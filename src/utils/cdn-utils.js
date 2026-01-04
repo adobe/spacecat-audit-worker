@@ -13,6 +13,7 @@
 import { HeadBucketCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 import zlib from 'zlib';
 import { hasText } from '@adobe/spacecat-shared-utils';
+import { PROVIDER_USER_AGENT_PATTERNS } from '../common/user-agent-classification.js';
 
 /* c8 ignore start */
 export const CDN_TYPES = {
@@ -21,6 +22,7 @@ export const CDN_TYPES = {
   CLOUDFLARE: 'cloudflare',
   CLOUDFRONT: 'cloudfront',
   FRONTDOOR: 'frontdoor',
+  OTHER: 'other',
 };
 
 export const SERVICE_PROVIDER_TYPES = {
@@ -31,6 +33,7 @@ export const SERVICE_PROVIDER_TYPES = {
   BYOCDN_CLOUDFLARE: 'byocdn-cloudflare',
   BYOCDN_CLOUDFRONT: 'byocdn-cloudfront',
   BYOCDN_FRONTDOOR: 'byocdn-frontdoor',
+  BYOCDN_OTHER: 'byocdn-other',
   AMS_CLOUDFRONT: 'ams-cloudfront',
   AMS_FRONTDOOR: 'ams-frontdoor',
 };
@@ -44,6 +47,7 @@ export const SERVICE_TO_CDN_MAPPING = {
   [SERVICE_PROVIDER_TYPES.BYOCDN_CLOUDFLARE]: CDN_TYPES.CLOUDFLARE,
   [SERVICE_PROVIDER_TYPES.BYOCDN_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
   [SERVICE_PROVIDER_TYPES.BYOCDN_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
+  [SERVICE_PROVIDER_TYPES.BYOCDN_OTHER]: CDN_TYPES.OTHER,
   [SERVICE_PROVIDER_TYPES.AMS_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
   [SERVICE_PROVIDER_TYPES.AMS_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
 };
@@ -347,5 +351,63 @@ export async function shouldRecreateRawTable(
   } catch (error) {
     return true;
   }
+}
+
+export function buildSiteFilters(filters, site) {
+  if (!filters || filters.length === 0) {
+    const baseURL = site.getBaseURL();
+    const { host } = new URL(baseURL);
+    const rootHost = host.replace(/^www\./, '');
+    return `REGEXP_LIKE(host, '(?i)^(www.)?${rootHost}$')`;
+  }
+
+  const clauses = filters.map(({ key, value, type }) => {
+    const regexPattern = value.join('|');
+    if (type === 'exclude') {
+      return `NOT REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+    }
+    return `REGEXP_LIKE(${key}, '(?i)(${regexPattern})')`;
+  });
+
+  const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
+  return `(${filterConditions})`;
+}
+
+/**
+ * Builds date filter for Athena queries using UTC dates
+ */
+export function buildDateFilter(startDate, endDate) {
+  const formatPart = (date) => ({
+    year: date.getUTCFullYear().toString(),
+    month: (date.getUTCMonth() + 1).toString().padStart(2, '0'),
+    day: date.getUTCDate().toString().padStart(2, '0'),
+  });
+
+  const start = formatPart(startDate);
+  const end = formatPart(endDate);
+
+  return start.year === end.year && start.month === end.month
+    ? `(year = '${start.year}' AND month = '${start.month}' AND day >= '${start.day}' AND day <= '${end.day}')`
+    : `((year = '${start.year}' AND month = '${start.month}' AND day >= '${start.day}')
+       OR (year = '${end.year}' AND month = '${end.month}' AND day <= '${end.day}'))`;
+}
+
+/**
+ * Builds user agent filter for AI agents (ChatGPT, Perplexity, Google, Claude)
+ * Reusable across different audit modules for CDN log analysis
+ */
+export function buildUserAgentFilter() {
+  const {
+    chatgpt, perplexity, google, claude, mistralai, amazon,
+  } = PROVIDER_USER_AGENT_PATTERNS;
+
+  return `(
+    REGEXP_LIKE(user_agent, '${chatgpt}') OR 
+    REGEXP_LIKE(user_agent, '${perplexity}') OR 
+    REGEXP_LIKE(user_agent, '${google}') OR
+    REGEXP_LIKE(user_agent, '${claude}') OR
+    REGEXP_LIKE(user_agent, '${mistralai}') OR
+    REGEXP_LIKE(user_agent, '${amazon}')
+  )`;
 }
 /* c8 ignore end */

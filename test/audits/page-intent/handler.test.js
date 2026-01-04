@@ -51,6 +51,9 @@ describe('Page Intent Handler', () => {
       getId: sandbox.stub().returns(siteId),
       getBaseURL: sandbox.stub().returns(baseURL),
       getPageIntents: sandbox.stub().resolves([]),
+      getConfig: sandbox.stub().returns({
+        getFetchConfig: sandbox.stub().returns({}),
+      }),
     };
 
     // Mock audit
@@ -219,6 +222,25 @@ describe('Page Intent Handler', () => {
       expect(result.urls).to.deep.equal([{ url: baseURL }]);
       expect(result.processingType).to.equal('minimal-content');
       expect(result.siteId).to.equal(siteId);
+    });
+
+    it('should handle existing page intents with invalid URLs', async () => {
+      mockSite.getPageIntents.resolves([
+        { getUrl: () => 'invalid-url-without-protocol' },
+        { getUrl: () => `${baseURL}/page1` },
+      ]);
+
+      mockAthenaClient.query.resolves([
+        { path: '/page1' },
+        { path: '/page2' },
+        { path: 'invalid-url-without-protocol' },
+      ]);
+
+      const result = await handlerModule.getPathsOfLastWeek(context);
+
+      // /page1 and invalid-url-without-protocol are filtered out as existing
+      expect(result.urls).to.have.lengthOf(1);
+      expect(result.urls[0].url).to.equal(`${baseURL}/page2`);
     });
   });
 

@@ -18,6 +18,8 @@ import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
+import { isUnscrapeable } from '../utils/url-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -41,7 +43,7 @@ async function filterOutValidBacklinks(backlinks, log) {
   const isStillBrokenBacklink = async (backlink) => {
     const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
     if (!response.ok && response.status !== 404
-        && response.status >= 400 && response.status < 500) {
+      && response.status >= 400 && response.status < 500) {
       log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
     }
     return !response.ok;
@@ -108,7 +110,7 @@ export async function runAuditAndImportTopPages(context) {
 
 export async function submitForScraping(context) {
   const {
-    site, dataAccess, audit,
+    site, dataAccess, audit, log,
   } = context;
   const { SiteTopPage } = dataAccess;
   const auditResult = audit.getAuditResult();
@@ -116,8 +118,23 @@ export async function submitForScraping(context) {
     throw new Error('Audit failed, skipping scraping and suggestions generation');
   }
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+  // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
+  const baseURL = site.getBaseURL();
+  const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
+
+  log.info(`Found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope`);
+
+  if (filteredTopPages.length === 0) {
+    if (topPages.length === 0) {
+      throw new Error(`No top pages found in database for site ${site.getId()}. Ahrefs import required.`);
+    } else {
+      throw new Error(`All ${topPages.length} top pages filtered out by audit scope. BaseURL: ${baseURL} requires subpath match but no pages match scope.`);
+    }
+  }
+
   return {
-    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    urls: filteredTopPages.map((topPage) => ({ url: topPage.getUrl() })),
     siteId: site.getId(),
     type: 'broken-backlinks',
   };
@@ -183,7 +200,71 @@ export const generateSuggestionData = async (context) => {
     opportunity.getId(),
     SuggestionModel.STATUSES.NEW,
   );
+
+  // Build broken links array
+  const brokenLinks = suggestions
+    .map((suggestion) => ({
+      urlFrom: suggestion?.getData()?.url_from,
+      urlTo: suggestion?.getData()?.url_to,
+      suggestionId: suggestion?.getId(),
+    }))
+    .filter((link) => link.urlFrom && link.urlTo && link.suggestionId); // Filter invalid entries
+
+  // Get top pages and filter by audit scope
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const baseURL = site.getBaseURL();
+  const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
+
+  // Filter alternatives by locales/subpaths present in broken links
+  // This limits suggestions to relevant locales only
+  const allTopPageUrls = filteredTopPages.map((page) => page.getUrl());
+
+  // Extract unique locales/subpaths from broken links
+  const brokenLinkLocales = new Set();
+  brokenLinks.forEach((link) => {
+    const locale = extractPathPrefix(link.urlTo);
+    if (locale) {
+      brokenLinkLocales.add(locale);
+    }
+  });
+
+  // Filter alternatives to only include URLs matching broken links' locales
+  // If no locales found (no subpath), include all alternatives
+  // Always ensure alternativeUrls is an array (even if empty)
+  let alternativeUrls = [];
+  if (brokenLinkLocales.size > 0) {
+    alternativeUrls = allTopPageUrls.filter((url) => {
+      const urlLocale = extractPathPrefix(url);
+      // Include if URL matches one of the broken links' locales, or has no locale
+      return !urlLocale || brokenLinkLocales.has(urlLocale);
+    });
+  } else {
+    // No locale prefixes found, include all alternatives
+    alternativeUrls = allTopPageUrls;
+  }
+
+  // Filter out unscrape-able file types before sending to Mystique
+  const originalCount = alternativeUrls.length;
+  alternativeUrls = alternativeUrls.filter((url) => !isUnscrapeable(url));
+  if (alternativeUrls.length < originalCount) {
+    log.info(`Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs (PDFs, Office docs, etc.) from alternative URLs before sending to Mystique`);
+  }
+
+  // Validate before sending to Mystique
+  if (brokenLinks.length === 0) {
+    log.warn('No valid broken links to send to Mystique. Skipping message.');
+    return {
+      status: 'complete',
+    };
+  }
+
+  if (alternativeUrls.length === 0) {
+    log.warn('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
+    return {
+      status: 'complete',
+    };
+  }
+
   const message = {
     type: 'guidance:broken-links',
     siteId: site.getId(),
@@ -191,16 +272,13 @@ export const generateSuggestionData = async (context) => {
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
     data: {
-      alternativeUrls: topPages.map((page) => page.getUrl()),
+      alternativeUrls,
       opportunityId: opportunity?.getId(),
-      brokenLinks: suggestions.map((suggestion) => ({
-        urlFrom: suggestion?.getData()?.url_from,
-        urlTo: suggestion?.getData()?.url_to,
-        suggestionId: suggestion?.getId(),
-      })),
+      brokenLinks,
     },
   };
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+  log.debug(`Message sent to Mystique: ${JSON.stringify(message)}`);
   return {
     status: 'complete',
   };

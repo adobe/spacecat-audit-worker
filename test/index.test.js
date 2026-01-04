@@ -16,7 +16,8 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { Request } from '@adobe/fetch';
-import { main } from '../src/index.js';
+
+import { main } from './utils.js';
 
 use(sinonChai);
 
@@ -71,7 +72,11 @@ describe('Index Tests', () => {
     const resp = await main(request, context);
 
     expect(resp.status).to.equal(404);
-    expect(errorSpy).to.have.been.calledWith('no such audit type: unknown-type');
+    // Check that an error containing 'no such audit type: unknown-type' was logged
+    expect(errorSpy.args.some((args) => args.some(
+      (arg) => (typeof arg === 'string' && arg.includes('no such audit type: unknown-type'))
+        || (typeof arg === 'object' && arg?.message?.includes('no such audit type: unknown-type')),
+    ))).to.be.true;
   });
 
   it('rejects when a new type audit fails', async () => {

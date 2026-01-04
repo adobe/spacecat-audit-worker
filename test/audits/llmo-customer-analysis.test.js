@@ -17,6 +17,8 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 
+import chaiAsPromised from 'chai-as-promised';
+use(chaiAsPromised);
 use(sinonChai);
 
 describe('LLMO Customer Analysis Handler', () => {
@@ -53,18 +55,6 @@ describe('LLMO Customer Analysis Handler', () => {
       setConfig: sandbox.stub().resolves(),
     };
 
-    dataAccess = {
-      Configuration: {
-        findLatest: sandbox.stub().resolves(configuration),
-      },
-      Site: {
-        allByOrganizationId: sandbox.stub().resolves([]),
-      },
-      LatestAudit: {
-        findBySiteIdAndAuditType: sandbox.stub().resolves({ getAuditResult: () => ({}) }),
-      },
-    };
-
     const siteConfig = {
       enableImport: sandbox.stub().resolves(),
       isImportEnabled: sandbox.stub().returns(false),
@@ -77,6 +67,19 @@ describe('LLMO Customer Analysis Handler', () => {
       getConfig: sandbox.stub().returns(siteConfig),
       save: sandbox.stub().resolves(),
       setConfig: sandbox.stub().returns(),
+    };
+
+    dataAccess = {
+      Configuration: {
+        findLatest: sandbox.stub().resolves(configuration),
+      },
+      Site: {
+        allByOrganizationId: sandbox.stub().resolves([]),
+        findById: sandbox.stub().resolves(site),
+      },
+      LatestAudit: {
+        findBySiteIdAndAuditType: sandbox.stub().resolves({ getAuditResult: () => ({}) }),
+      },
     };
 
     context = {
@@ -157,8 +160,11 @@ describe('LLMO Customer Analysis Handler', () => {
             return Promise.resolve();
           }),
         },
-        '../../src/llmo-customer-analysis/content-ai.js': {
-          enableContentAI: sandbox.stub().resolves(),
+        '../../src/utils/content-ai.js': {
+          ContentAIClient: class {
+            async initialize() { return this; }
+            async createConfiguration() { return; }
+          },
         },
         '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
           Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
@@ -171,6 +177,73 @@ describe('LLMO Customer Analysis Handler', () => {
           },
         },
       });
+    });
+
+    it('should trigger geo-brand-presence-refresh when changes are AI categorization only', async () => {
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
+          entities: {},
+          categories: {
+            'cat-1': { name: 'AI Generated Category', region: 'us', origin: 'ai' },
+          },
+          topics: {},
+          ai_topics: {
+            'topic-1': {
+              name: 'AI Generated Topic',
+              category: 'cat-1',
+              prompts: [
+                {
+                  prompt: 'AI Generated Prompt',
+                  regions: ['us'],
+                  origin: 'ai',
+                  source: 'api',
+                },
+              ],
+            },
+          },
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          ai_topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should trigger cdn-logs-report (1 call) + geo-brand-presence-refresh (1 call)
+      expect(sqs.sendMessage).to.have.callCount(2);
+      expect(sqs.sendMessage).to.have.been.calledWith(
+        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
+        sinon.match({ type: 'cdn-logs-report' }),
+      );
+      expect(sqs.sendMessage).to.have.been.calledWith(
+        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
+        sinon.match({ type: 'geo-brand-presence-trigger-refresh' }),
+      );
+      expect(result.auditResult.status).to.equal('completed');
+      expect(result.auditResult.configChangesDetected).to.equal(true);
+      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
+      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-refresh');
+      expect(log.info).to.have.been.calledWith(sinon.match(/AI categorization flow.*triggering geo-brand-presence refresh/));
     });
 
     it('should trigger referral traffic imports on first-time onboarding with OpTel data', async () => {
@@ -491,7 +564,7 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(sqs.sendMessage).to.have.callCount(6);
+      expect(sqs.sendMessage).to.have.callCount(3);
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
@@ -617,7 +690,7 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(sqs.sendMessage).to.have.callCount(5);
+      expect(sqs.sendMessage).to.have.callCount(2);
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
         sinon.match({ type: 'cdn-logs-report' }),
@@ -798,10 +871,10 @@ describe('LLMO Customer Analysis Handler', () => {
 
       // Should trigger:
       // - 4 referral traffic imports (one for each of the 4 weeks)
-      // - 4 cdn-logs-report (categories changed)
+      // - 1 cdn-logs-report (categories changed)
       // - 1 geo-brand-presence (brands and categories changed)
       // Total: 6 SQS messages
-      expect(sqs.sendMessage).to.have.callCount(9);
+      expect(sqs.sendMessage).to.have.callCount(6);
 
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/imports-queue',
@@ -912,8 +985,11 @@ describe('LLMO Customer Analysis Handler', () => {
         '../../src/llmo-customer-analysis/cdn-config-handler.js': {
           handleCdnBucketConfigChanges: sandbox.stub().resolves(),
         },
-        '../../src/llmo-customer-analysis/content-ai.js': {
-          enableContentAI: sandbox.stub().resolves(),
+        '../../src/utils/content-ai.js': {
+          ContentAIClient: class {
+            async initialize() { return this; }
+            async createConfiguration() { return; }
+          },
         },
         '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
           Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
@@ -961,8 +1037,11 @@ describe('LLMO Customer Analysis Handler', () => {
         '../../src/llmo-customer-analysis/cdn-config-handler.js': {
           handleCdnBucketConfigChanges: sandbox.stub().resolves(),
         },
-        '../../src/llmo-customer-analysis/content-ai.js': {
-          enableContentAI: sandbox.stub().resolves(),
+        '../../src/utils/content-ai.js': {
+          ContentAIClient: class {
+            async initialize() { return this; }
+            async createConfiguration() { return; }
+          },
         },
         '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
           Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
@@ -1092,8 +1171,11 @@ describe('LLMO Customer Analysis Handler', () => {
         '../../src/llmo-customer-analysis/cdn-config-handler.js': {
           handleCdnBucketConfigChanges: sandbox.stub().resolves(),
         },
-        '../../src/llmo-customer-analysis/content-ai.js': {
-          enableContentAI: sandbox.stub().rejects(new Error('ContentAI service unavailable')),
+        '../../src/utils/content-ai.js': {
+          ContentAIClient: class {
+            async initialize() { return this; }
+            async createConfiguration() { throw new Error('ContentAI service unavailable'); }
+          },
         },
         '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
           Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
@@ -1119,6 +1201,247 @@ describe('LLMO Customer Analysis Handler', () => {
 
       // Should still complete successfully despite the error
       expect(result.auditResult.status).to.equal('completed');
+    });
+
+    it('should handle errors from enableAudits gracefully', async () => {
+      // Use previousConfigVersion to skip first-time onboarding path
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      // Create a context with Configuration.findLatest that throws an error
+      const errorConfiguration = {
+        findLatest: sandbox.stub().rejects(new Error('Configuration service unavailable')),
+      };
+
+      const errorContext = {
+        sqs,
+        log,
+        dataAccess: {
+          Configuration: errorConfiguration,
+          Site: dataAccess.Site,
+          LatestAudit: dataAccess.LatestAudit,
+        },
+        s3Client: {},
+        env: context.env,
+      };
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        errorContext,
+        site,
+        auditContext,
+      );
+
+      // Should log the error
+      expect(log.error).to.have.been.calledWith('Failed to enable audits for site site-123: Configuration service unavailable');
+
+      // Should still complete successfully despite the error
+      expect(result.auditResult.status).to.equal('completed');
+    });
+
+    it('should handle errors from enableImports gracefully', async () => {
+      // Use previousConfigVersion to skip first-time onboarding path
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      // Create a context with Site.findById that throws an error for enableImports
+      const errorSite = {
+        findById: sandbox.stub().rejects(new Error('Import service unavailable')),
+      };
+
+      const errorContext = {
+        sqs,
+        log,
+        dataAccess: {
+          Configuration: dataAccess.Configuration,
+          Site: errorSite,
+          LatestAudit: dataAccess.LatestAudit,
+        },
+        s3Client: {},
+        env: context.env,
+      };
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        errorContext,
+        site,
+        auditContext,
+      );
+
+      // Should log the error
+      expect(log.error).to.have.been.calledWith('Failed to enable imports for site site-123: Import service unavailable');
+
+      // Should still complete successfully despite the error
+      expect(result.auditResult.status).to.equal('completed');
+    });
+
+    it('should handle null oldConfig with nullish coalescing operator', async () => {
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      // First call returns a valid new config
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      // Second call returns null config to test nullish coalescing on line 369
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: null,
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should complete successfully with null oldConfig handled by ??
+      expect(result.auditResult.status).to.equal('completed');
+      expect(result.auditResult.configChangesDetected).to.equal(false);
+    });
+
+    it('should handle null newConfig with nullish coalescing operator', async () => {
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      // First call returns null new config to test nullish coalescing on line 369
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: null,
+      });
+
+      // Second call returns a valid old config
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should complete successfully with null newConfig handled by ??
+      expect(result.auditResult.status).to.equal('completed');
+      expect(result.auditResult.configChangesDetected).to.equal(false);
+    });
+
+    it('should handle undefined oldConfig from defaultConfig with nullish coalescing operator', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+        // No previousConfigVersion, so defaultConfig will be used
+      };
+
+      // New config is valid
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      // defaultConfig returns undefined to test nullish coalescing on line 369
+      mockLlmoConfig.defaultConfig.returns(undefined);
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should complete successfully with undefined oldConfig handled by ??
+      expect(result.auditResult.status).to.equal('completed');
+    });
+
+    it('should enable audits and save configuration when enableAudits is called', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Verify enableHandlerForSite was called for each expected audit type
+      const expectedAudits = [
+        'scrape-top-pages',
+        'headings',
+        'llm-blocked',
+        'llm-error-pages',
+        'canonical',
+        'hreflang',
+        'summarization',
+        'faqs',
+        'llmo-referral-traffic',
+        'cdn-logs-report',
+        'geo-brand-presence',
+        'geo-brand-presence-free',
+      ];
+
+      for (const audit of expectedAudits) {
+        expect(configuration.enableHandlerForSite).to.have.been.calledWith(audit, site);
+      }
+
+      // Verify configuration.save was called
+      expect(configuration.save).to.have.been.called;
     });
 
   });
@@ -1169,8 +1492,11 @@ describe('LLMO Customer Analysis Handler', () => {
         '../../src/llmo-customer-analysis/cdn-config-handler.js': {
           handleCdnBucketConfigChanges: sandbox.stub().resolves(),
         },
-        '../../src/llmo-customer-analysis/content-ai.js': {
-          enableContentAI: sandbox.stub().resolves(),
+        '../../src/utils/content-ai.js': {
+          ContentAIClient: class {
+            async initialize() { return this; }
+            async createConfiguration() { return; }
+          },
         },
         '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
           Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
