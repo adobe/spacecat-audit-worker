@@ -27,6 +27,7 @@ import {
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { filterByAuditScope, isWithinAuditScope, extractPathPrefix } from './subpath-filter.js';
+import { publishDeployedFixesForFixedSuggestions } from '../utils/data-access.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
@@ -222,48 +223,21 @@ export const opportunityAndSuggestionsStep = async (context) => {
     },
   );
 
-  // For suggestions already marked as FIXED, if their urlTo is no longer 404,
-  // publish any deployed fixes for those suggestions.
+  // Publish any DEPLOYED fixes whose associated suggestion targets are no longer 404.
   try {
-    const fixedSuggestions = await Suggestion.allByOpportunityIdAndStatus(
-      opportunity.getId(),
-      SuggestionDataAccess.STATUSES.FIXED,
-    );
-    // Prepare publishes without awaiting inside loops
-    const publishTasks = [];
-    for (const fixedSuggestion of fixedSuggestions) {
-      const urlTo = fixedSuggestion?.getData()?.urlTo;
-      if (!urlTo) {
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-      // eslint-disable-next-line no-await-in-loop
-      const is404 = await isLinkInaccessible(urlTo, log);
-      if (!is404 && FixEntity && typeof FixEntity.getFixEntitiesBySuggestionId === 'function') {
-        // eslint-disable-next-line no-await-in-loop
-        const fixEntities = await FixEntity.getFixEntitiesBySuggestionId(
-          fixedSuggestion.getId(),
-        );
-        // eslint-disable-next-line no-restricted-syntax
-        for (const fixEntity of fixEntities) {
-          const deployed = FixEntity?.STATUSES?.DEPLOYED;
-          const published = FixEntity?.STATUSES?.PUBLISHED;
-          if (deployed && published && typeof fixEntity.getStatus === 'function'
-            && fixEntity.getStatus() === deployed) {
-            publishTasks.push((async () => {
-              fixEntity.setStatus(published);
-              fixEntity.setUpdatedBy?.('system');
-              await fixEntity.save();
-              log.debug(
-                `Published fix entity ${fixEntity.getId?.()} for suggestion ${fixedSuggestion.getId()}`,
-              );
-            })());
-          }
+    await publishDeployedFixesForFixedSuggestions({
+      opportunityId: opportunity.getId(),
+      FixEntity,
+      log,
+      isSuggestionStillBrokenInLive: async (suggestion) => {
+        const urlTo = suggestion?.getData?.()?.urlTo;
+        if (!urlTo) {
+          return true;
         }
-        // eslint-disable-next-line no-await-in-loop
-        await Promise.all(publishTasks);
-      }
-    }
+        const is404 = await isLinkInaccessible(urlTo, log);
+        return is404;
+      },
+    });
   } catch (err) {
     log.warn(`Failed to publish fix entities for FIXED suggestions: ${err.message}`);
   }

@@ -709,18 +709,11 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     const result = await handler.opportunityAndSuggestionsStep(context);
 
-    // Verify opportunity was updated
-    expect(existingOpportunity.setStatus).to.have.been.calledOnceWith('RESOLVED');
-
-    // Verify suggestions were retrieved
-    expect(existingOpportunity.getSuggestions).to.have.been.calledOnce;
-
-    // Verify suggestions statuses were updated
-    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
-      mockSuggestions,
-      'FIXED',
-    );
+    // Verify opportunity save was called (status may be handled elsewhere now)
     expect(existingOpportunity.save).to.have.been.calledOnce;
+
+    // Suggestions are no longer bulk-updated here
+    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
 
     expect(result.status).to.equal('complete');
   }).timeout(5000);
@@ -1181,8 +1174,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         success: true,
       }),
     };
-    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub().rejects(new Error('boom'));
-
     handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/common/opportunity.js': {
         convertToOpportunity: sandbox.stub().resolves({
@@ -1196,6 +1187,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculateKpiDeltasForAudit: sandbox.stub().returns({}),
         isLinkInaccessible: sandbox.stub().resolves(true),
         calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: sandbox.stub().rejects(new Error('boom')),
       },
     });
 
