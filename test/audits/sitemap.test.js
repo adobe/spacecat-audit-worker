@@ -608,7 +608,7 @@ describe('Sitemap Audit', () => {
       expect(result.success).to.equal(false);
     });
 
-    it('should handle missing details properties with fallback defaults (lines 41-42)', async () => {
+    it('should handle missing details properties with fallback defaults', async () => {
       // Test the exact fallback logic directly by simulating the specific scenario
       // This is what the code does on lines 41-42:
       // const extractedPaths = siteMapUrlsResult.details?.extractedPaths || {};
@@ -668,6 +668,66 @@ describe('Sitemap Audit', () => {
       const result = await mockedSitemapHandler.findSitemap(url);
       expect(result.success).to.equal(false);
       expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
+    });
+
+    it('should filter page URLs by subpath - include /foo URLs and exclude /foobar URLs', async () => {
+      const subpathUrl = `${url}/foo`;
+      const sitemapWithMixedPaths = '<?xml version="1.0" encoding="UTF-8"?>\n'
+        + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + `<url> <loc>${url}/foo/page1.html</loc></url>\n`
+        + `<url> <loc>${url}/foo/about.html</loc></url>\n`
+        + `<url> <loc>${url}/foobar/page99.html</loc></url>\n`
+        + `<url> <loc>${url}/bar/other.html</loc></url>\n`
+        + '</urlset>';
+
+      // Mock robots.txt pointing to root sitemap
+      nock(url).get('/robots.txt').reply(200, `Sitemap: ${url}/sitemap.xml`);
+
+      // Mock the root sitemap with mixed URLs
+      nock(url).get('/sitemap.xml').reply(200, sitemapWithMixedPaths);
+
+      // Mock HEAD requests for the URLs that should be included (under /foo)
+      nock(url).head('/foo/page1.html').reply(200);
+      nock(url).head('/foo/about.html').reply(200);
+
+      // Note: We don't need to mock /foobar/page99.html or /bar/other.html
+      // because they should be filtered out before the HEAD requests
+
+      const result = await findSitemap(subpathUrl);
+
+      expect(result.success).to.equal(true);
+      expect(result.reasons).to.deep.equal([
+        { value: 'Sitemaps found and checked.' },
+      ]);
+
+      // Verify the audit result details
+      expect(result.details.issues).to.deep.equal({});
+    });
+
+    it('should process root sitemap for subpath URL and filter correctly', async () => {
+      const subpathUrl = `${url}/en/us`;
+      const rootSitemapWithMultipleLocales = '<?xml version="1.0" encoding="UTF-8"?>\n'
+        + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + `<url> <loc>${url}/en/us/home</loc></url>\n`
+        + `<url> <loc>${url}/en/us/products</loc></url>\n`
+        + `<url> <loc>${url}/en/ca/home</loc></url>\n`
+        + `<url> <loc>${url}/fr/home</loc></url>\n`
+        + '</urlset>';
+
+      // Mock robots.txt pointing to root sitemap
+      nock(url).get('/robots.txt').reply(200, `Sitemap: ${url}/sitemap.xml`);
+
+      // Mock the root sitemap
+      nock(url).get('/sitemap.xml').reply(200, rootSitemapWithMultipleLocales);
+
+      // Mock HEAD requests only for /en/us URLs
+      nock(url).head('/en/us/home').reply(200);
+      nock(url).head('/en/us/products').reply(200);
+
+      const result = await findSitemap(subpathUrl);
+
+      expect(result.success).to.equal(true);
+      // The URLs from /en/ca and /fr should be filtered out, not audited
     });
   });
 

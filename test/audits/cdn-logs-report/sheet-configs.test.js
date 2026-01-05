@@ -98,6 +98,7 @@ describe('CDN Logs Sheet Configs', () => {
         {
           getUrl: () => 'https://example.com/test',
           getCitabilityScore: () => 85,
+          getUpdatedAt: () => '2025-01-15T10:00:00Z',
         },
       ]);
 
@@ -192,6 +193,46 @@ describe('CDN Logs Sheet Configs', () => {
         .equal([]);
     });
 
+    it('uses the latest updated citability score when multiple scores exist for same pathname', async () => {
+      const testData = [
+        {
+          agent_type: 'Chatbots',
+          user_agent_display: 'ChatGPT-User',
+          status: 200,
+          number_of_hits: 100,
+          avg_ttfb_ms: 250.5,
+          country_code: 'US',
+          url: '/test',
+          product: 'firefly',
+          category: 'Products',
+        },
+      ];
+
+      // Setup multiple citability scores for the same pathname with different update times
+      mockDataAccess.PageCitability.allBySiteId.resolves([
+        {
+          getUrl: () => 'https://example.com/test',
+          getCitabilityScore: () => 75,
+          getUpdatedAt: () => '2025-01-10T10:00:00Z', // Older
+        },
+        {
+          getUrl: () => 'https://example.com/test',
+          getCitabilityScore: () => 90,
+          getUpdatedAt: () => '2025-01-15T10:00:00Z', // Newer - should be used
+        },
+      ]);
+
+      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
+
+      expect(result)
+        .to
+        .have
+        .lengthOf(1);
+      expect(result[0][9]) // Citability Score is at index 9
+        .to
+        .equal(90); // Should use the newer score
+    });
+
     it('has required properties', () => {
       const config = SHEET_CONFIGS.agentic;
       expect(config)
@@ -271,13 +312,13 @@ describe('CDN Logs Sheet Configs', () => {
     it('referral traffic post processes valid data', () => {
       const testData = [{
         path: 'some/path/first',
-        referrer: '',
+        referrer: 'gemini.google.com',
         utm_source: 'google',
-        utm_medium: 'cpc',
-        tracking_param: 'paid',
+        utm_medium: '',
+        tracking_param: '',
         device: 'mobile',
         date: '2025-07-18',
-        pageviews: '200',
+        pageviews: '250',
         region: 'UK',
       }, {
         path: 'some/path/first',
@@ -291,7 +332,7 @@ describe('CDN Logs Sheet Configs', () => {
         region: 'UK',
       }, {
         path: '/another/path',
-        referrer: 'https://facebook.com',
+        referrer: 'https://l.meta.ai',
         utm_source: '',
         utm_medium: '',
         tracking_param: '',
@@ -326,12 +367,12 @@ describe('CDN Logs Sheet Configs', () => {
 
       expect(result).to.deep.include.members([[
         'some/path/first',
-        'paid',
-        'display',
+        'earned',
+        'llm',
         'google',
         'mobile',
         '2025-07-18',
-        500,
+        250,
         '',
         '',
         'UK',
@@ -339,8 +380,8 @@ describe('CDN Logs Sheet Configs', () => {
       ], [
         '/another/path',
         'earned',
-        'social',
-        'facebook',
+        'llm',
+        'meta',
         'desktop',
         '2025-07-19',
         23,
@@ -348,19 +389,7 @@ describe('CDN Logs Sheet Configs', () => {
         '',
         'US',
         '',
-      ], [
-        '',
-        'paid',
-        'social',
-        'tiktok',
-        'mobile',
-        '2025-07-19',
-        23,
-        '',
-        '',
-        'FR',
-        '',
-      ],
+      ], 
       ]);
     });
 

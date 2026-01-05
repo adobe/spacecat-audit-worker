@@ -121,9 +121,9 @@ function createMystiqueForwardPayload({
     auditId: auditId || '',
     deliveryType,
     time: new Date().toISOString(),
-    aggregationKey,
     data: {
       url,
+      aggregationKey,
       opportunityId: opportunity.getId(),
       issuesList,
     },

@@ -11,13 +11,14 @@
  */
 
 export const PROVIDER_USER_AGENT_PATTERNS = {
-  chatgpt: '(?i)ChatGPT|GPTBot|OAI-SearchBot',
+  chatgpt: '(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))',
   perplexity: '(?i)Perplexity',
   claude: '(?i)Claude(?!-web)',
   google: '(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|GoogleAgent)',
   mistralai: '(?i)MistralAI-User',
   copilot: '(?i)Copilot',
   bing: '(?i)Bingbot',
+  amazon: '(?i)Amzn-User',
 };
 
 /**
@@ -35,6 +36,7 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   // Perplexity
   { pattern: '%perplexitybot%', displayName: 'PerplexityBot' },
   { pattern: '%perplexity-user%', displayName: 'Perplexity-User' },
+  { pattern: '%perplexity/%', displayName: 'Perplexity Clients' },
 
   // Google
   { pattern: '%gemini-deep-research%', displayName: 'Gemini-Deep-Research' },
@@ -50,6 +52,8 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%claude-searchbot%', displayName: 'Claude-SearchBot' },
   // MistralAI
   { pattern: '%mistralai-user%', displayName: 'MistralAI-User' },
+  // Amazon
+  { pattern: '%amzn-user%', displayName: 'Amzn-User' },
 ];
 
 /**
@@ -76,10 +80,10 @@ export function buildAgentTypeClassificationSQL() {
     // Perplexity
     { pattern: '%perplexitybot%', result: 'Web search crawlers' },
     { pattern: '%perplexity-user%', result: 'Chatbots' },
-    { pattern: '%perplexity%', result: 'Chatbots' },
+    { pattern: '%perplexity/%', result: 'Media fetchers' },
     // Google
     { pattern: '%gemini-deep-research%', result: 'Research' },
-    { pattern: 'google', result: 'Web search crawlers' },
+    { pattern: 'google', result: 'Chatbots' },
     { pattern: '%googleagent-urlcontext%', result: 'Chatbots' },
     { pattern: '%googleagent-chrome%', result: 'Action agents' },
     { pattern: '%googleagent-shopping%', result: 'Shopping agents' },
@@ -91,6 +95,8 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%claude-user%', result: 'Chatbots' },
     // MistralAI
     { pattern: '%mistralai-user%', result: 'Chatbots' },
+    // Amazon
+    { pattern: '%amzn-user%', result: 'Chatbots' },
   ];
 
   const cases = patterns.map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.result}'`).join('\n          ');

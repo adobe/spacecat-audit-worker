@@ -35,10 +35,10 @@ describe('FAQ Opportunity Data Mapper', () => {
       expect(result.type).to.equal('faq');
       expect(result.origin).to.equal('AUTOMATION');
       expect(result.status).to.equal('NEW');
-      expect(result.title).to.equal('LLM prompt improvement: Add FAQs to pages');
+      expect(result.title).to.equal('Add Relevant FAQs');
       expect(result.description).to.equal('Add the relevant FAQs listed below to the corresponding pages to improve content discoverability in LLMs.');
       expect(result.guidance).to.deep.equal(guidance);
-      expect(result.tags).to.deep.equal(['isElmo']);
+      expect(result.tags).to.deep.equal(['isElmo', 'content']);
     });
 
     it('should include correct runbook URL', () => {
