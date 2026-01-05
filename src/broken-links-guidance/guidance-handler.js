@@ -11,6 +11,7 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { isValidUrl } from '@adobe/spacecat-shared-utils';
 import { filterBrokenSuggestedUrls } from '../utils/url-utils.js';
 
 export default async function handler(message, context) {
@@ -77,10 +78,16 @@ export default async function handler(message, context) {
     }
 
     // Filter and validate suggested URLs
+    // Use overrideBaseURL if configured to ensure consistency with data collection
+    const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+    const effectiveBaseURL = (overrideBaseURL && isValidUrl(overrideBaseURL))
+      ? overrideBaseURL
+      : site.getBaseURL();
+
     const validSuggestedUrls = Array.isArray(suggestedUrls) ? suggestedUrls : [];
     const filteredSuggestedUrls = await filterBrokenSuggestedUrls(
       validSuggestedUrls,
-      site.getBaseURL(),
+      effectiveBaseURL,
     );
 
     // Handle AI rationale - clear it if all URLs were filtered out
