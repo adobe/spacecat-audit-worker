@@ -1,3 +1,24 @@
+## [1.273.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.4...v1.273.5) (2026-01-03)
+
+
+### Bug Fixes
+
+* use correct year in the reports ([#1812](https://github.com/adobe/spacecat-audit-worker/issues/1812)) ([2a09cdd](https://github.com/adobe/spacecat-audit-worker/commit/2a09cdd924e524f4a21b72071c338f890dd5786f))
+
+## [1.273.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.3...v1.273.4) (2026-01-02)
+
+
+### Bug Fixes
+
+* merge winter-shutdown-dev-work to main ([#1814](https://github.com/adobe/spacecat-audit-worker/issues/1814)) ([7f0ca0f](https://github.com/adobe/spacecat-audit-worker/commit/7f0ca0f49606c586e21bc5176c6aa34c1ca2c9a4))
+
+## [1.273.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.2...v1.273.3) (2025-12-19)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** gracefully fail enabling of imports and audits ([#1808](https://github.com/adobe/spacecat-audit-worker/issues/1808)) ([2267ce4](https://github.com/adobe/spacecat-audit-worker/commit/2267ce40998a4084252e111558e7ea7735d71b7f))
+
 ## [1.273.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.1...v1.273.2) (2025-12-12)
 
 
