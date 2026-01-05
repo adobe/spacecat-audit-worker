@@ -1,3 +1,10 @@
+## [1.274.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.274.0...v1.274.1) (2026-01-05)
+
+
+### Bug Fixes
+
+* **readability:** add explicit importing ([#1778](https://github.com/adobe/spacecat-audit-worker/issues/1778)) ([ac20c6b](https://github.com/adobe/spacecat-audit-worker/commit/ac20c6b09bfc4b5e1bf74f0c8ab9f04e8856b9bd))
+
 # [1.274.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.5...v1.274.0) (2026-01-05)
 
 
