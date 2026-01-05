@@ -454,6 +454,62 @@ async function prepareDomainWideAggregateSuggestion(
 }
 
 /**
+ * Determines whether to create a new domain-wide suggestion or update an existing one
+ * based on the current status of any existing domain-wide suggestion.
+ * @param {Object} opportunity - The opportunity object
+ * @param {string} auditUrl - Audited URL
+ * @param {Object} auditData - Audit data with results
+ * @param {Object} context - Processing context
+ * @returns {Promise<Object>} Object with shouldCreateNewDomainWideSuggestion boolean
+ *   and existingDomainWideSuggestionData object (or null)
+ */
+async function determineDomainWideSuggestionAction(
+  opportunity,
+  auditUrl,
+  auditData,
+  context,
+) {
+  const { log } = context;
+
+  const existingSuggestions = await opportunity.getSuggestions();
+  const existingDomainWideSuggestion = existingSuggestions.find(
+    (s) => {
+      const data = s.getData();
+      return data?.[IS_DOMAIN_WIDE_FIELD] === true;
+    },
+  );
+
+  // Define active statuses that should NOT be replaced
+  const ACTIVE_STATUSES = [
+    Suggestion.STATUSES.NEW,
+    Suggestion.STATUSES.FIXED,
+    Suggestion.STATUSES.PENDING_VALIDATION,
+    Suggestion.STATUSES.SKIPPED,
+  ];
+
+  let shouldCreateNewDomainWideSuggestion = true;
+  let existingDomainWideSuggestionData = null;
+
+  if (existingDomainWideSuggestion) {
+    const existingStatus = existingDomainWideSuggestion.getStatus();
+    if (ACTIVE_STATUSES.includes(existingStatus)) {
+      shouldCreateNewDomainWideSuggestion = false;
+      existingDomainWideSuggestionData = existingDomainWideSuggestion.getData();
+      log.info(`Prerender - Domain-wide suggestion already exists in ${existingStatus} state, skipping creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+    } else {
+      log.info(`Prerender - Domain-wide suggestion exists in ${existingStatus} state, will update it. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+    }
+  } else {
+    log.info(`Prerender - No existing domain-wide suggestion found, will create new one. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+  }
+
+  return {
+    shouldCreateNewDomainWideSuggestion,
+    existingDomainWideSuggestionData,
+  };
+}
+
+/**
  * Processes opportunities and suggestions for prerender audit results
  * @param {string} auditUrl - Audited URL
  * @param {Object} auditData - Audit data with results
@@ -516,38 +572,16 @@ export async function processOpportunityAndSuggestions(
     return `${data.url}|${AUDIT_TYPE}`;
   };
 
-  // Check if a domain-wide suggestion already exists in an active state
-  const existingSuggestions = await opportunity.getSuggestions();
-  const existingDomainWideSuggestion = existingSuggestions.find(
-    (s) => {
-      const data = s.getData();
-      return data?.[IS_DOMAIN_WIDE_FIELD] === true;
-    },
+  // Determine whether to create a new domain-wide suggestion or update an existing one
+  const {
+    shouldCreateNewDomainWideSuggestion,
+    existingDomainWideSuggestionData,
+  } = await determineDomainWideSuggestionAction(
+    opportunity,
+    auditUrl,
+    auditData,
+    context,
   );
-
-  // Define active statuses that should NOT be replaced
-  const ACTIVE_STATUSES = [
-    Suggestion.STATUSES.NEW,
-    Suggestion.STATUSES.FIXED,
-    Suggestion.STATUSES.PENDING_VALIDATION,
-    Suggestion.STATUSES.SKIPPED,
-  ];
-
-  let shouldCreateNewDomainWideSuggestion = true;
-  let existingDomainWideSuggestionData = null;
-
-  if (existingDomainWideSuggestion) {
-    const existingStatus = existingDomainWideSuggestion.getStatus();
-    if (ACTIVE_STATUSES.includes(existingStatus)) {
-      shouldCreateNewDomainWideSuggestion = false;
-      existingDomainWideSuggestionData = existingDomainWideSuggestion.getData();
-      log.info(`Prerender - Domain-wide suggestion already exists in ${existingStatus} state, skipping creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-    } else {
-      log.info(`Prerender - Domain-wide suggestion exists in ${existingStatus} state, will update it. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-    }
-  } else {
-    log.info(`Prerender - No existing domain-wide suggestion found, will create new one. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-  }
 
   // Helper function to extract only the fields we want in suggestions
   const mapSuggestionData = (suggestion) => ({
