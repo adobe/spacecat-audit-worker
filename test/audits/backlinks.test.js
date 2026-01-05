@@ -110,8 +110,8 @@ describe('Backlinks Tests', function () {
       getSuggestions: sinon.stub().returns([]),
       addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
       getType: () => 'broken-backlinks',
-      setData: () => {},
-      getData: () => {},
+      setData: () => { },
+      getData: () => { },
       setUpdatedBy: sinon.stub().returnsThis(),
     };
 
@@ -230,7 +230,7 @@ describe('Backlinks Tests', function () {
 
   it('should throw error when all top pages filtered out by audit scope', async () => {
     context.audit.getAuditResult.returns({ success: true });
-    
+
     // Mock site with subpath
     const siteWithSubpath = {
       ...contextSite,
@@ -424,11 +424,11 @@ describe('Backlinks Tests', function () {
       const result = await generateSuggestionData(context);
 
       expect(result.status).to.deep.equal('complete');
-      
+
       // Verify no warnings were called (meaning both brokenLinks and alternativeUrls have items)
       expect(context.log.warn).to.not.have.been.calledWith('No valid broken links to send to Mystique. Skipping message.');
       expect(context.log.warn).to.not.have.been.calledWith('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
-      
+
       // Verify message was sent with correct structure
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
@@ -445,7 +445,7 @@ describe('Backlinks Tests', function () {
         urlTo: 'https://example.com',
         suggestionId: 'test-suggestion-1',
       });
-      
+
       expect(context.log.debug).to.have.been.calledWith(sinon.match(/Message sent to Mystique/));
     });
 
@@ -488,6 +488,53 @@ describe('Backlinks Tests', function () {
       expect(sentMessage.data.alternativeUrls).to.include('https://example.com/uk/en/page2');
       expect(sentMessage.data.alternativeUrls).to.not.include('https://example.com/fr/page1');
       expect(sentMessage.data.alternativeUrls).to.not.include('https://example.com/de/page1');
+    });
+
+    it('should filter out unscrape-able file types from alternative URLs', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const suggestionsWithRootUrl = [
+        {
+          getId: () => 'test-suggestion-1',
+          getData: () => ({
+            url_from: 'https://from.com/from-1',
+            url_to: 'https://example.com', // Root-level URL to include all alternatives
+          }),
+        },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+        .withArgs('opportunity-id', sinon.match.any)
+        .resolves(suggestionsWithRootUrl);
+
+      // Mock top pages including various unscrape-able file types
+      const topPagesWithFiles = [
+        { getUrl: () => 'https://example.com/page1' },
+        { getUrl: () => 'https://example.com/doc.pdf' },
+        { getUrl: () => 'https://example.com/data.xlsx' },
+        { getUrl: () => 'https://example.com/slides.pptx' },
+      ];
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPagesWithFiles);
+
+      const result = await generateSuggestionData(context);
+
+      expect(result.status).to.deep.equal('complete');
+
+      // Verify the filtering log was called
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Filtered out 3 unscrape-able file URLs \(PDFs, Office docs, etc\.\) from alternative URLs before sending to Mystique/),
+      );
+
+      // Verify message was sent with only the valid page
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.alternativeUrls).to.deep.equal(['https://example.com/page1']);
+      expect(sentMessage.data.alternativeUrls).to.have.lengthOf(1);
     });
 
     it('should skip sending message when no valid broken links', async () => {

@@ -371,7 +371,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$')");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe.com$'))");
     });
 
     it('normalizes www prefix to optional pattern', () => {
@@ -381,7 +381,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$')");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe.com$'))");
     });
 
     it('keeps subdomain and adds optional www prefix', () => {
@@ -391,7 +391,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?business.adobe.com$')");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?business.adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?business.adobe.com$'))");
     });
   });
 });
