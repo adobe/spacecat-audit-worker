@@ -1,3 +1,10 @@
+# [1.274.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.5...v1.274.0) (2026-01-05)
+
+
+### Features
+
+* use x_forwarded_host as fallback to filter ([#1804](https://github.com/adobe/spacecat-audit-worker/issues/1804)) ([fda255f](https://github.com/adobe/spacecat-audit-worker/commit/fda255f982624749dcdf171ddbd8903703f9e453))
+
 ## [1.273.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.4...v1.273.5) (2026-01-03)
 
 
