@@ -16,6 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import {
   CDN_TYPES,
+  SERVICE_PROVIDER_TYPES,
   extractCustomerDomain,
   resolveCdnBucketName,
   buildCdnPaths,
@@ -24,6 +25,7 @@ import {
   isStandardAdobeCdnBucket,
   shouldRecreateRawTable,
   buildSiteFilters,
+  mapServiceToCdnProvider,
 } from '../../src/utils/cdn-utils.js';
 
 use(sinonChai);
@@ -47,7 +49,16 @@ describe('CDN Utils', () => {
         CLOUDFLARE: 'cloudflare',
         CLOUDFRONT: 'cloudfront',
         FRONTDOOR: 'frontdoor',
+        OTHER: 'other',
       });
+    });
+  });
+
+  describe('mapServiceToCdnProvider', () => {
+    it('maps byocdn-other to OTHER cdn type', () => {
+      expect(
+        mapServiceToCdnProvider(SERVICE_PROVIDER_TYPES.BYOCDN_OTHER),
+      ).to.equal(CDN_TYPES.OTHER);
     });
   });
 
@@ -187,6 +198,8 @@ describe('CDN Utils', () => {
 
   describe('getBucketInfo', () => {
     let s3Client;
+    const bucketName = 'cdn-logs-adobe-prod';
+    const pathId = 'ims-org-123';
 
     beforeEach(() => {
       s3Client = { send: sandbox.stub() };
@@ -208,6 +221,17 @@ describe('CDN Utils', () => {
 
       expect(result.isLegacy).to.be.true;
       expect(result.providers).to.deep.equal([]);
+    });
+
+    it('returns modern bucket info when byocdn-other prefix exists', async () => {
+      s3Client.send.resolves({
+        CommonPrefixes: [{ Prefix: `${pathId}/raw/byocdn-other/` }],
+      });
+
+      const result = await getBucketInfo(s3Client, bucketName, pathId);
+
+      expect(result.isLegacy).to.be.false;
+      expect(result.providers).to.deep.equal(['byocdn-other']);
     });
   });
 
@@ -347,27 +371,27 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(adobe.com)')");
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$')");
     });
 
-    it('keeps www prefix when already present', () => {
+    it('normalizes www prefix to optional pattern', () => {
       const mockSite = {
         getBaseURL: () => 'https://www.adobe.com',
       };
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(www.adobe.com)')");
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$')");
     });
 
-    it('keeps subdomain as-is without adding www', () => {
+    it('keeps subdomain and adds optional www prefix', () => {
       const mockSite = {
         getBaseURL: () => 'https://business.adobe.com',
       };
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(business.adobe.com)')");
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?business.adobe.com$')");
     });
   });
 });

@@ -283,11 +283,14 @@ describe('Page Citability Handler', () => {
   describe('Analyze Citability Step', () => {
     it('should handle empty scrapeResultPaths', async () => {
       context.scrapeResultPaths = new Map();
+      mockPageCitability.allBySiteId.resolves([]);
+
       const result = await handler.steps['analyze-citability'].handler(context);
 
       expect(result.auditResult.successfulPages).to.equal(0);
       expect(result.auditResult.failedPages).to.equal(0);
       expect(result.fullAuditRef).to.equal(`${baseURL}/audit-ref`);
+      expect(mockPageCitability.allBySiteId).to.have.been.calledOnce;
     });
 
     it('should process URLs successfully and create citability records', async () => {
@@ -300,11 +303,16 @@ describe('Page Citability Handler', () => {
         humanView: { rawPage: '<html><body><p>Human content with different text</p></body></html>' }
       });
 
+      // Mock allBySiteId to return empty array (no existing records)
+      mockPageCitability.allBySiteId.resolves([]);
+
       const result = await handler.steps['analyze-citability'].handler(context);
 
       expect(result.auditResult.successfulPages).to.equal(1);
       expect(result.auditResult.failedPages).to.equal(0);
       expect(result.fullAuditRef).to.equal(`${baseURL}/audit-ref`);
+      expect(mockPageCitability.allBySiteId).to.have.been.calledOnce;
+      expect(mockPageCitability.allBySiteId).to.have.been.calledWith(siteId);
       expect(mockPageCitability.create).to.have.been.calledOnce;
       expect(mockPageCitability.create).to.have.been.calledWith(
         sinon.match({
@@ -315,7 +323,7 @@ describe('Page Citability Handler', () => {
           wordDifference: sinon.match.number,
           botWords: sinon.match.number,
           normalWords: sinon.match.number,
-        })
+        }),
       );
     });
 
@@ -328,6 +336,8 @@ describe('Page Citability Handler', () => {
         botView: { rawPage: null },
         humanView: { rawPage: '<html><body><p>Human content</p></body></html>' }
       });
+
+      mockPageCitability.allBySiteId.resolves([]);
 
       const result = await handler.steps['analyze-citability'].handler(context);
 
@@ -343,6 +353,8 @@ describe('Page Citability Handler', () => {
         [`${baseURL}/page2`, 's3-key-2'],
       ]);
 
+      mockPageCitability.allBySiteId.resolves([]);
+
       const result = await handler.steps['analyze-citability'].handler(context);
 
       expect(result.auditResult.successfulPages).to.equal(0);
@@ -357,10 +369,50 @@ describe('Page Citability Handler', () => {
       ]);
       context.scrapeResultPaths = new Map(urls);
 
+      mockPageCitability.allBySiteId.resolves([]);
+
       const result = await handler.steps['analyze-citability'].handler(context);
 
       expect(result.auditResult.successfulPages).to.equal(0);
       expect(result.auditResult.failedPages).to.equal(15);
+    });
+
+    it('should update existing citability records instead of creating duplicates', async () => {
+      context.scrapeResultPaths = new Map([
+        [`${baseURL}/page1`, 's3-key-1'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        botView: { rawPage: '<html><body><p>Bot content with text</p></body></html>' },
+        humanView: { rawPage: '<html><body><p>Human content with different text</p></body></html>' }
+      });
+
+      // Mock existing record
+      const mockExistingRecord = {
+        getUrl: () => `${baseURL}/page1`,
+        setCitabilityScore: sandbox.stub(),
+        setContentRatio: sandbox.stub(),
+        setWordDifference: sandbox.stub(),
+        setBotWords: sandbox.stub(),
+        setNormalWords: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockPageCitability.allBySiteId.resolves([mockExistingRecord]);
+
+      const result = await handler.steps['analyze-citability'].handler(context);
+
+      expect(result.auditResult.successfulPages).to.equal(1);
+      expect(result.auditResult.failedPages).to.equal(0);
+      expect(mockPageCitability.allBySiteId).to.have.been.calledOnce;
+      expect(mockPageCitability.allBySiteId).to.have.been.calledWith(siteId);
+      expect(mockExistingRecord.setCitabilityScore).to.have.been.calledOnce;
+      expect(mockExistingRecord.setContentRatio).to.have.been.calledOnce;
+      expect(mockExistingRecord.setWordDifference).to.have.been.calledOnce;
+      expect(mockExistingRecord.setBotWords).to.have.been.calledOnce;
+      expect(mockExistingRecord.setNormalWords).to.have.been.calledOnce;
+      expect(mockExistingRecord.save).to.have.been.calledOnce;
+      expect(mockPageCitability.create).to.not.have.been.called;
     });
   });
 

@@ -717,9 +717,9 @@ export async function headingsAuditRunner(baseURL, context, site) {
           if (!aggregatedResultsToc[TOC_CHECK.check].urls.find((urlObj) => urlObj.url === url)) {
             aggregatedResultsToc[TOC_CHECK.check].urls.push({
               url,
-              explanation: `${TOC_CHECK.explanation} (Confidence: ${tocDetails.confidence}/10)`,
+              explanation: TOC_CHECK.explanation,
               suggestion: TOC_CHECK.suggestion,
-              isAISuggested: true,
+              isAISuggested: false,
               checkTitle: TOC_CHECK.title,
               tagName: 'nav',
               transformRules: tocDetails.transformRules,
@@ -906,6 +906,17 @@ export async function opportunityAndSuggestionsForToc(auditUrl, auditData, conte
     tocAuditType,
   );
 
+  const mergeDataFunction = (existingSuggestion, newSuggestion) => {
+    const mergedSuggestion = {
+      ...existingSuggestion,
+      ...newSuggestion,
+    };
+    if (existingSuggestion.isEdited && existingSuggestion.transformRules?.value !== undefined) {
+      mergedSuggestion.transformRules.value = existingSuggestion.transformRules.value;
+    }
+    return mergedSuggestion;
+  };
+
   const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
 
   await syncSuggestions({
@@ -934,6 +945,8 @@ export async function opportunityAndSuggestionsForToc(auditUrl, auditData, conte
         }),
       },
     }),
+    mergeDataFunction,
+    log,
   });
 
   log.info(`TOC opportunity created for Site Optimizer and ${auditData.suggestions.toc.length} suggestions synced for ${auditUrl}`);

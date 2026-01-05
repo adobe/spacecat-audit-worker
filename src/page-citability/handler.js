@@ -168,7 +168,7 @@ async function fetchScrapedData(s3Path, context) {
   return scrapeData || null;
 }
 
-async function processUrl(url, scrapeResult, context) {
+async function processUrl(url, scrapeResult, context, existingRecordsMap) {
   try {
     /* c8 ignore next 3 */
     if (!scrapeResult?.location) {
@@ -192,17 +192,31 @@ async function processUrl(url, scrapeResult, context) {
 
     const scores = await calculateCitabilityScore(botHtml, humanHtml);
 
-    // Store in database
+    // Store in database - find existing record or create new one
     const { PageCitability } = context.dataAccess;
-    await PageCitability.create({
-      siteId: context.site.getId(),
-      url,
-      citabilityScore: scores.citabilityScore,
-      contentRatio: scores.contentRatio,
-      wordDifference: scores.wordDifference,
-      botWords: scores.botWords,
-      normalWords: scores.normalWords,
-    });
+    const siteId = context.site.getId();
+    const existingRecord = existingRecordsMap.get(url);
+
+    if (existingRecord) {
+      // Update existing record
+      existingRecord.setCitabilityScore(scores.citabilityScore);
+      existingRecord.setContentRatio(scores.contentRatio);
+      existingRecord.setWordDifference(scores.wordDifference);
+      existingRecord.setBotWords(scores.botWords);
+      existingRecord.setNormalWords(scores.normalWords);
+      await existingRecord.save();
+    } else {
+      // Create new record
+      await PageCitability.create({
+        siteId,
+        url,
+        citabilityScore: scores.citabilityScore,
+        contentRatio: scores.contentRatio,
+        wordDifference: scores.wordDifference,
+        botWords: scores.botWords,
+        normalWords: scores.normalWords,
+      });
+    }
 
     return { url, success: true, ...scores };
     /* c8 ignore next 3 */
@@ -212,9 +226,19 @@ async function processUrl(url, scrapeResult, context) {
 }
 
 export async function analyzeCitability(context) {
-  const { audit, scrapeResultPaths, log } = context;
+  const {
+    audit, scrapeResultPaths, log, site, dataAccess,
+  } = context;
 
   log.info(`${LOG_PREFIX} Analyzing ${scrapeResultPaths.size} scrapes`);
+
+  // Fetch all existing records once to avoid repeated database calls
+  const { PageCitability } = dataAccess;
+  const siteId = site.getId();
+  const existingScores = await PageCitability.allBySiteId(siteId);
+  const existingRecordsMap = new Map(
+    existingScores.map((score) => [score.getUrl(), score]),
+  );
 
   const results = [];
   const entries = Array.from(scrapeResultPaths.entries());
@@ -224,7 +248,12 @@ export async function analyzeCitability(context) {
     const batch = entries.slice(i, i + BATCH_SIZE);
     // eslint-disable-next-line no-await-in-loop
     const batchResults = await Promise.all(
-      batch.map(([url, s3Path]) => processUrl(url, { location: s3Path }, context)),
+      batch.map(([url, s3Path]) => processUrl(
+        url,
+        { location: s3Path },
+        context,
+        existingRecordsMap,
+      )),
     );
     results.push(...batchResults);
     log.info(`${LOG_PREFIX} Processed batch ${i / BATCH_SIZE + 1}/${Math.ceil(entries.length / BATCH_SIZE)}`);

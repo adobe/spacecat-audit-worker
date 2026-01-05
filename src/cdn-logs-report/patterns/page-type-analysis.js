@@ -40,7 +40,8 @@ For each URL path, break it down:
 Ask yourself systematically (GROUP BY SECTION, not by function):
 1. "Is this the homepage?" → Check for /, /home, /index - **ALWAYS CHECK THIS FIRST!**
 2. "What section does this belong to?" → Look for keywords in the URL
-   - Contains "product", "shop", "store", "item" → product
+   - Contains "product", "shop", "store", "category", "collection" WITHOUT specific item → product listing page
+   - Contains "product", "shop", "store" WITH specific item slug/ID → product detail page
    - Contains "blog", "article", "news", "post" → blog
    - Contains "help", "support", "faq", "docs", "guide" → help
    - Contains "about", "company", "team" → about
@@ -49,28 +50,44 @@ Ask yourself systematically (GROUP BY SECTION, not by function):
 4. "Is this legal/policy?" → Check for /legal, /privacy, /terms, /cookies
 5. "Cannot determine?" → Default to "other" (use this sparingly)
 
+### IMPORTANT: product listing page vs product detail page Distinction
+- **product listing page**: Category/listing pages showing multiple products (e.g., /products, /shop/electronics, /category/shoes)
+- **product detail page**: Individual product pages with specific item identifier/slug (e.g., /products/iphone-15, /p/12345)
+- Key indicator: Does the URL end with a specific product identifier (slug, SKU, ID)? → product detail page
+- Key indicator: Is it a browsing/filtering page without specific item? → product listing page
+
 ### STEP 4: PATTERN MATCHING WITH EXAMPLES
 Examples of thinking process:
 
 Example A: "/products/nike-air-max-270"
-- Thinking: "products" → e-commerce section, "nike-air-max-270" → specific product slug
-- ID/Slug: Has descriptive slug (specific item identifier)
-- Result: pageType = "product"
+- Thinking: "products" → e-commerce section, "nike-air-max-270" → specific product slug/identifier
+- ID/Slug: Has descriptive slug (specific item identifier) → this is a DETAIL page
+- Result: pageType = "product detail page"
 
 Example B: "/products"
-- Thinking: "products" → products section, listing page but still product-related
-- Pattern: Anything in /products/ is product content
-- Result: pageType = "product"
+- Thinking: "products" → products section, listing page showing multiple products
+- Pattern: No specific item identifier, this is a LISTING page
+- Result: pageType = "product listing page"
 
 Example C: "/shop/electronics/laptops"
-- Thinking: URL contains "shop" keyword → product-related
-- Pattern: Keyword-based matching, any URL with "shop" = product type
-- Result: pageType = "product"
+- Thinking: URL contains "shop" keyword → product-related, "laptops" is a category not a specific item
+- Pattern: Category/filtering path without specific product identifier
+- Result: pageType = "product listing page"
 
-Example C2: "/en-us/products/photoshop/features"  
-- Thinking: URL contains "product" keyword → product page
-- Pattern: Keyword found in middle of URL, not just first segment
-- Result: pageType = "product"
+Example C2: "/shop/electronics/laptops/macbook-pro-16"
+- Thinking: "macbook-pro-16" is a specific product slug/identifier
+- Pattern: Has specific item at the end → detail page
+- Result: pageType = "product detail page"
+
+Example C3: "/en-us/products/photoshop"  
+- Thinking: URL contains "product" keyword, "photoshop" is a specific product
+- Pattern: Specific product identifier present
+- Result: pageType = "product detail page"
+
+Example C4: "/category/shoes" or "/collections/summer-sale"
+- Thinking: Category or collection page showing multiple items
+- Pattern: No specific product identifier
+- Result: pageType = "product listing page"
 
 Example D: "/blog/how-to-improve-seo-2024"
 - Thinking: "blog" → content section, "how-to-improve-seo-2024" → article slug
@@ -103,8 +120,8 @@ Ask yourself:
 ## PAGE TYPE CLASSIFICATION APPROACH
 You are FREE to discover and create page types based on what you see in the URLs. Common types include:
 - homepage - root/landing pages
-- product - shopping/product pages
-- category - category/collection pages
+- product listing page - category/listing pages showing multiple products
+- product detail page - individual product pages with specific item identifier
 - blog - content/articles
 - about - company info
 - help - support/documentation
@@ -372,7 +389,7 @@ export async function analyzePageTypes(domain, paths, context) {
       }, {});
 
     // Order page types: homepage first, then common types, then discovered types alphabetically
-    const commonPageTypes = ['homepage', 'product', 'category', 'blog', 'about', 'help', 'contact', 'search', 'cart', 'checkout', 'legal'];
+    const commonPageTypes = ['homepage', 'product listing page', 'product detail page', 'blog', 'about', 'help', 'contact', 'search', 'cart', 'checkout', 'legal'];
     const orderedRegexes = {};
 
     commonPageTypes.forEach((pageType) => {

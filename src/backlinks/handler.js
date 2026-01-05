@@ -19,6 +19,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions, publishDeployedFixesForFixedSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
+import { isUnscrapeable } from '../utils/url-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -42,7 +43,7 @@ async function filterOutValidBacklinks(backlinks, log) {
   const isStillBrokenBacklink = async (backlink) => {
     const response = await fetchWithTimeout(backlink.url_to, TIMEOUT);
     if (!response.ok && response.status !== 404
-        && response.status >= 400 && response.status < 500) {
+      && response.status >= 400 && response.status < 500) {
       log.warn(`Backlink ${backlink.url_to} returned status ${response.status}`);
     }
     return !response.ok;
@@ -259,6 +260,13 @@ export const generateSuggestionData = async (context) => {
   } else {
     // No locale prefixes found, include all alternatives
     alternativeUrls = allTopPageUrls;
+  }
+
+  // Filter out unscrape-able file types before sending to Mystique
+  const originalCount = alternativeUrls.length;
+  alternativeUrls = alternativeUrls.filter((url) => !isUnscrapeable(url));
+  if (alternativeUrls.length < originalCount) {
+    log.info(`Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs (PDFs, Office docs, etc.) from alternative URLs before sending to Mystique`);
   }
 
   // Validate before sending to Mystique
