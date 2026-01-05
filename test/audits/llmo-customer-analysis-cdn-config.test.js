@@ -15,11 +15,13 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import * as cdnConfigHandler from '../../src/llmo-customer-analysis/cdn-config-handler.js';
 
 use(sinonChai);
+use(chaiAsPromised);
 
 describe('CDN Config Handler', () => {
   let sandbox;
@@ -317,9 +319,17 @@ describe('CDN Config Handler', () => {
         .to.be.rejectedWith('Site with ID site-123 not found');
     });
 
-    it('should throw error when cdnProvider is not provided', async () => {
+    it('should throw error when cdnProvider is not provided and disable handlers', async () => {
+      mockConfiguration.disableHandlerForSite = sandbox.stub();
+
       await expect(cdnConfigHandler.handleCdnBucketConfigChanges(context, {}))
         .to.be.rejectedWith('CDN provider is required for CDN configuration');
+
+      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({});
+      expect(mockSite.save).to.have.been.called;
+      expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('cdn-logs-analysis', mockSite);
+      expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('page-citability', mockSite);
+      expect(mockConfiguration.save).to.have.been.called;
     });
 
     it('should handle commerce-fastly provider with service found', async () => {

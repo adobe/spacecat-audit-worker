@@ -358,7 +358,7 @@ export function buildSiteFilters(filters, site) {
     const baseURL = site.getBaseURL();
     const { host } = new URL(baseURL);
     const rootHost = host.replace(/^www\./, '');
-    return `REGEXP_LIKE(host, '(?i)^(www.)?${rootHost}$')`;
+    return `(REGEXP_LIKE(host, '(?i)^(www.)?${rootHost}$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?${rootHost}$'))`;
   }
 
   const clauses = filters.map(({ key, value, type }) => {

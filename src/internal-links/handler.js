@@ -16,6 +16,7 @@ import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { isUnscrapeable } from '../utils/url-utils.js';
 import { syncBrokenInternalLinksSuggestions } from './suggestions-generator.js';
 import {
   isLinkInaccessible,
@@ -73,7 +74,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
         // Filter broken links to only include those within audit scope
         // Both url_from and url_to should be within scope
         isWithinAuditScope(result.link.url_from, baseURL)
-          && isWithinAuditScope(result.link.url_to, baseURL)
+        && isWithinAuditScope(result.link.url_to, baseURL)
       ))
       .map((result) => ({
         urlFrom: result.link.url_from,
@@ -149,7 +150,13 @@ export async function prepareScrapingStep(context) {
     }
   }
 
-  const urls = filteredTopPages.map((page) => ({ url: page.getUrl() }));
+  const urls = filteredTopPages
+    .map((page) => page.getUrl())
+    .filter((url) => !isUnscrapeable(url))
+    .map((url) => ({ url }));
+
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Sending ${urls.length} scrapeable URLs (filtered out PDFs and other file types) for scraping`);
+
   return {
     urls,
     siteId: site.getId(),
@@ -293,6 +300,13 @@ export const opportunityAndSuggestionsStep = async (context) => {
     } else {
       // No locale prefixes found, include all alternatives
       alternativeUrls = allTopPageUrls;
+    }
+
+    // Filter out unscrape-able file types before sending to Mystique
+    const originalCount = alternativeUrls.length;
+    alternativeUrls = alternativeUrls.filter((url) => !isUnscrapeable(url));
+    if (alternativeUrls.length < originalCount) {
+      log.info(`[${AUDIT_TYPE}] Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs (PDFs, Office docs, etc.) from alternative URLs before sending to Mystique`);
     }
 
     // Validate before sending to Mystique

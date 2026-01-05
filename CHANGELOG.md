@@ -1,3 +1,38 @@
+## [1.274.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.274.0...v1.274.1) (2026-01-05)
+
+
+### Bug Fixes
+
+* **readability:** add explicit importing ([#1778](https://github.com/adobe/spacecat-audit-worker/issues/1778)) ([ac20c6b](https://github.com/adobe/spacecat-audit-worker/commit/ac20c6b09bfc4b5e1bf74f0c8ab9f04e8856b9bd))
+
+# [1.274.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.5...v1.274.0) (2026-01-05)
+
+
+### Features
+
+* use x_forwarded_host as fallback to filter ([#1804](https://github.com/adobe/spacecat-audit-worker/issues/1804)) ([fda255f](https://github.com/adobe/spacecat-audit-worker/commit/fda255f982624749dcdf171ddbd8903703f9e453))
+
+## [1.273.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.4...v1.273.5) (2026-01-03)
+
+
+### Bug Fixes
+
+* use correct year in the reports ([#1812](https://github.com/adobe/spacecat-audit-worker/issues/1812)) ([2a09cdd](https://github.com/adobe/spacecat-audit-worker/commit/2a09cdd924e524f4a21b72071c338f890dd5786f))
+
+## [1.273.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.3...v1.273.4) (2026-01-02)
+
+
+### Bug Fixes
+
+* merge winter-shutdown-dev-work to main ([#1814](https://github.com/adobe/spacecat-audit-worker/issues/1814)) ([7f0ca0f](https://github.com/adobe/spacecat-audit-worker/commit/7f0ca0f49606c586e21bc5176c6aa34c1ca2c9a4))
+
+## [1.273.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.2...v1.273.3) (2025-12-19)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** gracefully fail enabling of imports and audits ([#1808](https://github.com/adobe/spacecat-audit-worker/issues/1808)) ([2267ce4](https://github.com/adobe/spacecat-audit-worker/commit/2267ce40998a4084252e111558e7ea7735d71b7f))
+
 ## [1.273.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.273.1...v1.273.2) (2025-12-12)
 
 
