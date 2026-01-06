@@ -55,9 +55,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
   let dummyAudit;
 
-  const createdOpportunity = {
-    getId: sinon.stub().returns(newOpportunityId),
-  };
+  let createdOpportunity;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -71,6 +69,12 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     Audit = {
       findById: sandbox.stub().resolves(dummyAudit),
+    };
+
+    createdOpportunity = {
+      getId: () => newOpportunityId,
+      getTitle: () => 'Paid Traffic Weekly Report – Week 2 / 2025',
+      getType: () => 'paid-traffic',
     };
 
     Opportunity = {
@@ -140,7 +144,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     const firstSug = Suggestion.create.getCall(0).args[0];
     expect(firstSug).to.include({
-      opportunityId: newOpportunityId, type: 'AI_INSIGHTS', rank: 1, status: 'PENDING_VALIDATION',
+      opportunityId: newOpportunityId, type: 'AI_INSIGHTS', rank: 1, status: 'NEW',
     });
     expect(firstSug.data.parentReport).to.equal('PAID_CAMPAIGN_PERFORMANCE');
     expect(firstSug.data.recommendations).to.have.length(2);
@@ -365,6 +369,25 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     expect(Suggestion.create).to.have.been.called;
     const firstCall = Suggestion.create.getCall(0).args[0];
+    expect(firstCall).to.have.property('status', 'NEW');
+  });
+
+  it('creates suggestions with status NEW for paid traffic reports even when requiresValidation is true', async () => {
+    // Set requiresValidation to true - but should still be NEW for reports
+    context.site = { requiresValidation: true };
+    const message = {
+      auditId,
+      siteId,
+      data: {
+        url: 'https://example.com', guidance: guidancePayload,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(Suggestion.create).to.have.been.called;
+    const firstCall = Suggestion.create.getCall(0).args[0];
+    // Paid traffic reports should always be NEW, regardless of requiresValidation
     expect(firstCall).to.have.property('status', 'NEW');
   });
 });

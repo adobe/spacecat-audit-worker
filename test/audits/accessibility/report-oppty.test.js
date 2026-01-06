@@ -122,7 +122,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         {
           type: 'CODE_CHANGE',
           rank: 1,
-          status: 'PENDING_VALIDATION',
+          status: 'NEW',
           data: {
             suggestionValue: 'Test accessibility suggestion content',
           },
@@ -146,7 +146,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         {
           type: 'CODE_CHANGE',
           rank: 1,
-          status: 'PENDING_VALIDATION', // Should use the fallback string literal
+          status: 'NEW',
           data: {
             suggestionValue: 'Test accessibility suggestion content',
           },
@@ -218,7 +218,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         {
           type: 'CODE_CHANGE', // Should use the fallback string literal
           rank: 1,
-          status: 'PENDING_VALIDATION',
+          status: 'NEW',
           data: {
             suggestionValue: 'Test accessibility suggestion content',
           },
@@ -250,7 +250,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         {
           type: 'CODE_CHANGE', // Should use the fallback string literal
           rank: 1,
-          status: 'PENDING_VALIDATION',
+          status: 'NEW',
           data: {
             suggestionValue: 'Test accessibility suggestion content',
           },
@@ -266,7 +266,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         {
           type: 'CODE_CHANGE',
           rank: 1,
-          status: 'PENDING_VALIDATION',
+          status: 'NEW',
           data: {
             suggestionValue: undefined,
           },
@@ -299,7 +299,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         {
           type: 'CODE_CHANGE',
           rank: 1,
-          status: 'PENDING_VALIDATION',
+          status: 'NEW',
           data: {
             suggestionValue: 'Test accessibility suggestion content',
           },
