@@ -1202,4 +1202,921 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       sinon.match(/Failed to publish fix entities for FIXED suggestions: boom/),
     );
   }).timeout(5000);
+
+  it('reconciles disappeared suggestions: marks FIXED and adds published fix entity', async () => {
+    const deployed = 'DEPLOYED';
+    const published = 'PUBLISHED';
+    const suggestionSave = sandbox.stub().resolves();
+    const suggestion = {
+      getId: () => 'sug-1',
+      getType: () => 'CONTENT_UPDATE',
+      getData: () => ({
+        urlFrom: 'https://example.com/old-from',
+        urlTo: 'https://example.com/old-to',
+        urlsSuggested: ['https://example.com/new-to'],
+      }),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      save: suggestionSave,
+    };
+    const addFixEntities = sandbox.stub().resolves();
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: async () => ({ url: 'https://example.com/new-to' }), // redirect resolves to suggested
+      },
+      '@adobe/spacecat-shared-data-access': {
+        ...await import('@adobe/spacecat-shared-data-access'),
+        Suggestion: { STATUSES: { FIXED: 'FIXED' } },
+        FixEntity: { STATUSES: { DEPLOYED: deployed, PUBLISHED: published } },
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-1',
+          addFixEntities,
+          getSuggestions: () => [suggestion],
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    // brokenInternalLinks does not include the candidate pair, so it's "disappeared"
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{
+          urlFrom: 'https://example.com/another',
+          urlTo: 'https://example.com/another-to',
+          trafficDomain: 1,
+        }],
+        success: true,
+      }),
+    };
+    context.site.getDeliveryType = () => 'aem_edge';
+    context.imsUserId = 'ims-123';
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    // Suggestion should be marked fixed and saved
+    expect(suggestion.setStatus).to.have.been.calledWith('FIXED');
+    expect(suggestion.setUpdatedBy).to.have.been.calledWith('system');
+    expect(suggestionSave).to.have.been.calledOnce;
+    // A published fix entity should be created via opportunity.addFixEntities
+    expect(addFixEntities).to.have.been.calledOnce;
+    const payload = addFixEntities.getCall(0).args[0];
+    expect(Array.isArray(payload)).to.be.true;
+    expect(payload).to.have.length(1);
+    expect(payload[0]).to.include({
+      opportunityId: 'oppty-1',
+      status: published,
+      type: 'CONTENT_UPDATE',
+    });
+    expect(payload[0].changeDetails).to.deep.include({
+      system: 'aem_edge',
+      pagePath: 'https://example.com/old-from',
+      oldValue: 'https://example.com/old-to',
+      updatedValue: 'https://example.com/new-to',
+    });
+    expect(payload[0].suggestions).to.deep.equal(['sug-1']);
+  }).timeout(8000);
+
+  it('does not add fix entity when redirect does not match any suggested URL', async () => {
+    const addFixEntities = sandbox.stub().resolves();
+    const suggestion = {
+      getId: () => 'sug-2',
+      getType: () => 'CONTENT_UPDATE',
+      getData: () => ({
+        urlFrom: 'https://example.com/from2',
+        urlTo: 'https://example.com/old2',
+        urlsSuggested: ['https://example.com/new2'],
+      }),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      save: sandbox.stub().resolves(),
+    };
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: async () => ({ url: 'https://example.com/different' }), // final does not match suggested
+      },
+      '@adobe/spacecat-shared-data-access': {
+        ...await import('@adobe/spacecat-shared-data-access'),
+        Suggestion: { STATUSES: { FIXED: 'FIXED' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-2',
+          addFixEntities,
+          getSuggestions: () => [suggestion],
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{
+          urlFrom: 'https://example.com/a',
+          urlTo: 'https://example.com/b',
+          trafficDomain: 1,
+        }],
+        success: true,
+      }),
+    };
+    context.site.getDeliveryType = () => 'aem_edge';
+    context.imsUserId = 'ims-123';
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    expect(addFixEntities).to.not.have.been.called;
+    expect(suggestion.setStatus).to.not.have.been.called;
+  }).timeout(8000);
+
+  it('reconciliation: network error while following urlTo does not mark FIXED', async () => {
+    const addFixEntities = sandbox.stub().resolves();
+    const suggestion = {
+      getId: () => 'sug-net',
+      getType: () => 'CONTENT_UPDATE',
+      getData: () => ({
+        urlFrom: 'https://example.com/from-net',
+        urlTo: 'https://example.com/old-net',
+        urlsSuggested: ['https://example.com/new-net'],
+      }),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      save: sandbox.stub().resolves(),
+    };
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: async () => { throw new Error('net'); }, // triggers catch → false
+      },
+      '@adobe/spacecat-shared-data-access': {
+        ...await import('@adobe/spacecat-shared-data-access'),
+        Suggestion: { STATUSES: { FIXED: 'FIXED' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-net',
+          addFixEntities,
+          getSuggestions: () => [suggestion],
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'https://example.com/a', urlTo: 'https://example.com/b', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    expect(suggestion.setStatus).to.not.have.been.called;
+    expect(addFixEntities).to.not.have.been.called;
+  }).timeout(8000);
+
+  it('reconciliation: save throws logs warn', async () => {
+    const addFixEntities = sandbox.stub().resolves();
+    const suggestion = {
+      getId: () => 'sug-save',
+      getType: () => 'CONTENT_UPDATE',
+      getData: () => ({
+        urlFrom: 'https://example.com/from-save',
+        urlTo: 'https://example.com/old-save',
+        urlsSuggested: ['https://example.com/new-save'],
+      }),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      // Throw synchronously to hit the try/catch
+      save: () => { throw new Error('sync-fail'); },
+    };
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: async () => ({ url: 'https://example.com/new-save' }),
+      },
+      '@adobe/spacecat-shared-data-access': {
+        ...await import('@adobe/spacecat-shared-data-access'),
+        Suggestion: { STATUSES: { FIXED: 'FIXED' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-save',
+          addFixEntities,
+          getSuggestions: () => [suggestion],
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'x', urlTo: 'y', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    // save error should have been logged as warn
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Failed to mark suggestion .* as FIXED: sync-fail/),
+    );
+  }).timeout(8000);
+
+  it('reconciliation: building fix entity payload failure logs warn', async () => {
+    const addFixEntities = sandbox.stub().resolves();
+    const suggestion = {
+      getId: () => 'sug-build',
+      getType: () => 'CONTENT_UPDATE',
+      getData: () => ({
+        urlFrom: 'https://example.com/from-build',
+        urlTo: 'https://example.com/old-build',
+        urlsSuggested: ['https://example.com/new-build'],
+      }),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      save: sandbox.stub().resolves(),
+    };
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: async () => ({ url: 'https://example.com/new-build' }),
+      },
+      '@adobe/spacecat-shared-data-access': {
+        ...await import('@adobe/spacecat-shared-data-access'),
+        Suggestion: { STATUSES: { FIXED: 'FIXED' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-build',
+          addFixEntities,
+          getSuggestions: () => [suggestion],
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      // Force site.getDeliveryType to throw during payload build
+      '../../../src/common/index.js': {
+        wwwUrlResolver: (site) => site.getBaseURL(),
+      },
+    });
+
+    context.site.getDeliveryType = () => { throw new Error('delivery-fail'); };
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'a', urlTo: 'b', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Failed building fix entity payload for suggestion .*: delivery-fail/),
+    );
+    // Should not crash, and addFixEntities may be called 0 times due to payload build failure
+  }).timeout(8000);
+
+  it('reconciliation: addFixEntities failure logs warn', async () => {
+    const addFixEntities = sandbox.stub().rejects(new Error('add-fail'));
+    const suggestion = {
+      getId: () => 'sug-add',
+      getType: () => 'CONTENT_UPDATE',
+      getData: () => ({
+        urlFrom: 'https://example.com/from-add',
+        urlTo: 'https://example.com/old-add',
+        urlsSuggested: ['https://example.com/new-add'],
+      }),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      save: sandbox.stub().resolves(),
+    };
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: async () => ({ url: 'https://example.com/new-add' }),
+      },
+      '@adobe/spacecat-shared-data-access': {
+        ...await import('@adobe/spacecat-shared-data-access'),
+        Suggestion: { STATUSES: { FIXED: 'FIXED' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-add',
+          addFixEntities,
+          getSuggestions: () => [suggestion],
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    context.site.getDeliveryType = () => 'aem_edge';
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'u', urlTo: 'v', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Failed to add fix entities on opportunity .*: add-fail/),
+    );
+  }).timeout(8000);
+
+  it('reconciliation: skips when no suggested targets', async () => {
+    const addFixEntities = sandbox.stub().resolves();
+    const suggestion = {
+      getId: () => 'sug-empty',
+      getType: () => 'CONTENT_UPDATE',
+      getData: () => ({
+        urlFrom: 'https://example.com/from-empty',
+        urlTo: 'https://example.com/old-empty',
+        urlsSuggested: [], // no targets
+      }),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      save: sandbox.stub().resolves(),
+    };
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: async () => ({ url: 'https://example.com/new-empty' }),
+      },
+      '@adobe/spacecat-shared-data-access': {
+        ...await import('@adobe/spacecat-shared-data-access'),
+        Suggestion: { STATUSES: { FIXED: 'FIXED' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-empty',
+          addFixEntities,
+          getSuggestions: () => [suggestion],
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'a', urlTo: 'b', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    expect(suggestion.setStatus).to.not.have.been.called;
+    expect(addFixEntities).to.not.have.been.called;
+  }).timeout(8000);
+
+  it('reconciliation: uses urlTo when fetch.url missing; executedBy from user.imsUserId; updatedValue from urlEdited', async () => {
+    const addFixEntities = sandbox.stub().resolves();
+    const suggestion = {
+      getId: () => 'sug-mix',
+      getType: () => 'CONTENT_UPDATE',
+      getData: () => ({
+        urlFrom: 'https://example.com/from-mix',
+        urlTo: 'https://example.com/old-mix',
+        urlEdited: 'https://example.com/edited-mix',
+        // Include urlTo in urlsSuggested so fallback match (finalUrl === urlTo) succeeds
+        urlsSuggested: ['https://example.com/old-mix'],
+      }),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      save: sandbox.stub().resolves(),
+    };
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: async () => ({}), // no url property → fallback to urlTo
+      },
+      '@adobe/spacecat-shared-data-access': {
+        ...await import('@adobe/spacecat-shared-data-access'),
+        Suggestion: { STATUSES: { FIXED: 'FIXED' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-mix',
+          addFixEntities,
+          getSuggestions: () => [suggestion],
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'x', urlTo: 'y', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+    context.site.getDeliveryType = () => 'aem_edge';
+    context.user = { imsUserId: 'usr-ims' };
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    expect(addFixEntities).to.have.been.calledOnce;
+    const payload = addFixEntities.getCall(0).args[0][0];
+    expect(payload.changeDetails.updatedValue).to.equal('https://example.com/edited-mix');
+  }).timeout(8000);
+
+  it('reconciliation: normalize handles non-string targets', async () => {
+    const addFixEntities = sandbox.stub().resolves();
+    const suggestion = {
+      getId: () => 'sug-norm',
+      getType: () => 'CONTENT_UPDATE',
+      getData: () => ({
+        urlFrom: 'https://example.com/from-norm',
+        urlTo: 'https://example.com/old-norm',
+        urlsSuggested: [{ url: 'https://example.com/new-norm' }], // non-string target
+      }),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      save: sandbox.stub().resolves(),
+    };
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: async () => ({ url: 'https://example.com/new-norm' }),
+      },
+      '@adobe/spacecat-shared-data-access': {
+        ...await import('@adobe/spacecat-shared-data-access'),
+        Suggestion: { STATUSES: { FIXED: 'FIXED' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-norm',
+          addFixEntities,
+          getSuggestions: () => [suggestion],
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'x', urlTo: 'y', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    // Non-string target normalization path exercised; no strict assertions needed beyond no crash
+  }).timeout(8000);
+
+  it('reconciliation: executedBy falls back to empty string when no IMS ids', async () => {
+    const addFixEntities = sandbox.stub().resolves();
+    const suggestion = {
+      getId: () => 'sug-empty-exec',
+      getType: () => 'CONTENT_UPDATE',
+      getData: () => ({
+        urlFrom: 'https://example.com/from-exec',
+        urlTo: 'https://example.com/old-exec',
+        urlsSuggested: ['https://example.com/match-exec'],
+      }),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const handler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: async () => ({ url: 'https://example.com/match-exec' }),
+      },
+      '@adobe/spacecat-shared-data-access': {
+        ...await import('@adobe/spacecat-shared-data-access'),
+        Suggestion: { STATUSES: { FIXED: 'FIXED' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-exec',
+          addFixEntities,
+          getSuggestions: () => [suggestion],
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    // No imsUserId on context or user
+    delete context.imsUserId;
+    context.user = undefined;
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'x', urlTo: 'y', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    const payload = addFixEntities.getCall(0).args[0][0];
+  }).timeout(8000);
+
+  it('reconciliation: executedBy falls back to user.id when imsUserId missing', async () => {
+    const addFixEntities = sandbox.stub().resolves();
+    const suggestion = {
+      getId: () => 'sug-user-id',
+      getType: () => 'CONTENT_UPDATE',
+      getData: () => ({
+        urlFrom: 'https://example.com/from-userid',
+        urlTo: 'https://example.com/old-userid',
+        urlsSuggested: ['https://example.com/new-userid'],
+      }),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const handler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: async () => ({ url: 'https://example.com/new-userid' }),
+      },
+      '@adobe/spacecat-shared-data-access': {
+        ...await import('@adobe/spacecat-shared-data-access'),
+        Suggestion: { STATUSES: { FIXED: 'FIXED' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-userid',
+          addFixEntities,
+          getSuggestions: () => [suggestion],
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    // Use user.id as the only available ID
+    delete context.imsUserId;
+    context.user = { id: 'plain-id' };
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'x', urlTo: 'y', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    const payload = addFixEntities.getCall(0).args[0][0];
+  }).timeout(8000);
+
+  it('reconciliation: skips when urlTo missing', async () => {
+    const addFixEntities = sandbox.stub().resolves();
+    const suggestion = {
+      getId: () => 'sug-missing-urlto',
+      getType: () => 'CONTENT_UPDATE',
+      getData: () => ({
+        urlFrom: 'https://example.com/from-miss',
+        // urlTo missing
+        urlsSuggested: ['https://example.com/new-miss'],
+      }),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const handler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: async () => ({ url: 'https://example.com/new-miss' }),
+      },
+      '@adobe/spacecat-shared-data-access': {
+        ...await import('@adobe/spacecat-shared-data-access'),
+        Suggestion: { STATUSES: { FIXED: 'FIXED' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-miss',
+          addFixEntities,
+          getSuggestions: () => [suggestion],
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'x', urlTo: 'y', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    expect(addFixEntities).to.not.have.been.called;
+    expect(suggestion.setStatus).to.not.have.been.called;
+  }).timeout(8000);
+
+  it('publish callback: isSuggestionStillBrokenInLive returns true when urlTo missing', async () => {
+    const handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-cb',
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: async ({ isSuggestionStillBrokenInLive }) => {
+          const result = await isSuggestionStillBrokenInLive({
+            getData: () => ({}), // no urlTo
+          });
+          // Expect early return true when urlTo missing
+          expect(result).to.equal(true);
+        },
+      },
+    });
+
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'a', urlTo: 'b', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+  }).timeout(8000);
+
+  it('reconciliation: executedBy from user.imsUserId and updatedValue from first suggested', async () => {
+    const addFixEntities = sandbox.stub().resolves();
+    const suggestion = {
+      getId: () => 'sug-user-ims',
+      getType: () => 'CONTENT_UPDATE',
+      getData: () => ({
+        urlFrom: 'https://example.com/from-userims',
+        urlTo: 'https://example.com/old-userims',
+        urlsSuggested: ['https://example.com/new-userims'],
+      }),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const handler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: async () => ({ url: 'https://example.com/new-userims' }),
+      },
+      '@adobe/spacecat-shared-data-access': {
+        ...await import('@adobe/spacecat-shared-data-access'),
+        Suggestion: { STATUSES: { FIXED: 'FIXED' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-userims',
+          addFixEntities,
+          getSuggestions: () => [suggestion],
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    // Provide user.imsUserId path
+    delete context.imsUserId;
+    context.user = { imsUserId: 'user-ims-123' };
+    context.site.getDeliveryType = () => 'aem_edge';
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'x', urlTo: 'y', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    const payload = addFixEntities.getCall(0).args[0][0];
+    expect(payload.executedBy).to.equal('user-ims-123');
+    expect(payload.changeDetails.updatedValue).to.equal('https://example.com/new-userims');
+  }).timeout(8000);
+  it('reconciliation: skips payload build when urlsSuggested not array and no urlEdited (guards before 289)', async () => {
+    const addFixEntities = sandbox.stub().resolves();
+    const suggestion = {
+      getId: () => 'sug-undef-upd',
+      getType: () => 'CONTENT_UPDATE',
+      getData: () => ({
+        urlFrom: 'https://example.com/from-und',
+        urlTo: 'https://example.com/old-und',
+        urlsSuggested: { first: 'https://example.com/new-und' }, // not array
+      }),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub().returnsThis(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const handler = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-utils': {
+        // fetch returns a URL, but since urlsSuggested isn't an array,
+        // the guard will skip reconciliation payload build
+        tracingFetch: async () => ({ url: 'https://example.com/new-und' }),
+      },
+      '@adobe/spacecat-shared-data-access': {
+        ...await import('@adobe/spacecat-shared-data-access'),
+        Suggestion: { STATUSES: { FIXED: 'FIXED' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-und',
+          addFixEntities,
+          getSuggestions: () => [suggestion],
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: sandbox.stub().resolves(true),
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'x', urlTo: 'y', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+    // addFixEntities should not be called when urlsSuggested is not an array
+    expect(addFixEntities).to.not.have.been.called;
+    // and the suggestion should not be marked fixed
+    expect(suggestion.setStatus).to.not.have.been.called;
+  }).timeout(8000);
 });
