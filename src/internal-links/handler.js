@@ -286,7 +286,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
       try {
         const published = FixEntity?.STATUSES?.PUBLISHED;
         if (published && typeof opportunity.addFixEntities === 'function') {
-          const updatedValue = data?.urlEdited || (Array.isArray(data?.urlsSuggested) ? data.urlsSuggested[0] : '');
+          const updatedValue = data?.urlEdited || data?.urlsSuggested[0] || '';
           fixEntityObjects.push({
             opportunityId: opportunity.getId(),
             status: published,
