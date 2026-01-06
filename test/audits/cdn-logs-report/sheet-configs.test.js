@@ -332,7 +332,7 @@ describe('CDN Logs Sheet Configs', () => {
         region: 'UK',
       }, {
         path: '/another/path',
-        referrer: 'https://l.meta.ai',
+        referrer: 'perplexity.ai',
         utm_source: '',
         utm_medium: '',
         tracking_param: '',
@@ -381,7 +381,7 @@ describe('CDN Logs Sheet Configs', () => {
         '/another/path',
         'earned',
         'llm',
-        'meta',
+        'perplexity',
         'desktop',
         '2025-07-19',
         23,
@@ -389,8 +389,7 @@ describe('CDN Logs Sheet Configs', () => {
         '',
         'US',
         '',
-      ], 
-      ]);
+      ]]);
     });
 
     it('has required properties', () => {
