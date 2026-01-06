@@ -21,6 +21,8 @@ import { syncSuggestions, publishDeployedFixesForFixedSuggestions } from '../uti
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
 import { isUnscrapeable } from '../utils/url-utils.js';
 
+const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_BACKLINKS;
+
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 const TIMEOUT = 3000;
@@ -177,6 +179,103 @@ export const generateSuggestionData = async (context) => {
     Audit.AUDIT_TYPES.BROKEN_BACKLINKS,
     kpiDeltas,
   );
+
+  // Before publishing fix entities, reconcile suggestions that disappeared
+  // from current audit results.
+  // If a previous suggestion's url_to now redirects to one of its urlsSuggested, mark it FIXED
+  // and ensure a PUBLISHED fix entity exists.
+  try {
+    const existingSuggestions = await opportunity.getSuggestions();
+    const currentKeys = new Set(
+      auditResult.brokenBacklinks.map((l) => `${l.url_from}|${l.url_to}`),
+    );
+    const candidates = existingSuggestions.filter((s) => {
+      const data = s?.getData?.() || {};
+      const key = `${data.url_from}|${data.url_to}`;
+      return !currentKeys.has(key);
+    });
+
+    const normalize = (u) => {
+      if (typeof u !== 'string') return '';
+      return u.replace(/\/+$/, '');
+    };
+
+    // Helper: returns true if url_to eventually resolves to any candidate URL
+    const redirectsToAny = async (urlTo, targets) => {
+      try {
+        const resp = await fetch(urlTo, { redirect: 'follow' });
+        const finalResolvedUrl = normalize(resp?.url || urlTo);
+        return targets.some((t) => normalize(t) === finalResolvedUrl);
+      } catch (e) {
+        // treat network errors as not matching
+        return false;
+      }
+    };
+
+    const fixEntityObjects = [];
+    const updatePromises = [];
+
+    for (const suggestion of candidates) {
+      // eslint-disable-next-line no-await-in-loop
+      const data = suggestion?.getData?.();
+      const urlTo = data?.url_to;
+      const targets = Array.isArray(data?.urlsSuggested) ? data.urlsSuggested : [];
+      if (!urlTo || targets.length === 0) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      const matches = await redirectsToAny(urlTo, targets);
+      if (!matches) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      // Mark suggestion as FIXED and prepare a PUBLISHED fix entity on the opportunity
+      try {
+        suggestion.setStatus?.(SuggestionModel.STATUSES.FIXED);
+        suggestion.setUpdatedBy?.('system');
+        updatePromises.push(suggestion.save?.());
+      } catch (e) {
+        log.warn(`[${AUDIT_TYPE}] Failed to mark suggestion ${suggestion?.getId?.()} as FIXED: ${e.message}`);
+      }
+
+      try {
+        const published = FixEntity?.STATUSES?.PUBLISHED;
+        if (published && typeof opportunity.addFixEntities === 'function') {
+          const updatedValue = data?.urlEdited || data?.urlsSuggested[0] || '';
+          fixEntityObjects.push({
+            opportunityId: opportunity.getId(),
+            status: published,
+            type: suggestion?.getType?.(),
+            executedAt: new Date().toISOString(),
+            changeDetails: {
+              system: site.getDeliveryType(),
+              pagePath: data?.url_from,
+              oldValue: data?.url_to,
+              updatedValue,
+            },
+            suggestions: [suggestion?.getId?.()],
+          });
+        }
+      } catch (e) {
+        log.warn(`[${AUDIT_TYPE}] Failed building fix entity payload for suggestion ${suggestion?.getId?.()}: ${e.message}`);
+      }
+    }
+
+    if (fixEntityObjects.length > 0 && typeof opportunity.addFixEntities === 'function') {
+      try {
+        await opportunity.addFixEntities(fixEntityObjects);
+      } catch (e) {
+        log.warn(`[${AUDIT_TYPE}] Failed to add fix entities on opportunity ${opportunity.getId?.()}: ${e.message}`);
+      }
+    }
+    if (updatePromises.length > 0) {
+      await Promise.all(updatePromises);
+    }
+  } catch (e) {
+    log.warn(`[${AUDIT_TYPE}] Failed reconciliation for disappeared suggestions: ${e.message}`);
+  }
 
   // Publish any DEPLOYED fixes whose associated suggestion targets are no longer broken.
   try {
