@@ -53,15 +53,15 @@ describe('Bot Protection Utils', () => {
       expect(error.url).to.equal('https://example.com/page');
     });
 
-    it('creates error with empty botProtection when not provided', () => {
-      const error = new BotProtectionError('Test error', {
+    it('creates error with default empty botProtection when not provided', () => {
+      const error = new BotProtectionError('Test error without botProtection', {
         siteUrl: 'https://example.com',
         url: 'https://example.com/page',
       });
 
       expect(error).to.be.instanceOf(Error);
       expect(error.name).to.equal('BotProtectionError');
-      expect(error.message).to.equal('Test error');
+      expect(error.message).to.equal('Test error without botProtection');
       expect(error.botProtection).to.deep.equal({});
       expect(error.siteUrl).to.equal('https://example.com');
       expect(error.url).to.equal('https://example.com/page');
