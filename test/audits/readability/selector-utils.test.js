@@ -174,7 +174,7 @@ describe('getElementSelector', () => {
       expect(result).to.equal('div.wrapper > section.content > p.text');
     });
 
-    it('should limit path to 3 levels maximum', () => {
+    it('should traverse up to body for unique selectors', () => {
       $('body').html(`
         <div class="level1">
           <div class="level2">
@@ -189,10 +189,8 @@ describe('getElementSelector', () => {
       const target = $('p')[0];
 
       const result = getElementSelector(target);
-      // Should only go up 3 levels
-      const parts = result.split(' > ');
-      expect(parts.length).to.be.at.most(4); // target + 3 parent levels
-      expect(result).to.include('p.target');
+      // Should include all levels up to body for uniqueness
+      expect(result).to.equal('div.level1 > div.level2 > div.level3 > div.level4 > p.target');
     });
 
     it('should stop path building when parent has ID', () => {
@@ -267,9 +265,8 @@ describe('getElementSelector', () => {
       const p = $('p')[0];
 
       const result = getElementSelector(p);
-      // Should respect 3-level limit
-      expect(result).to.include('p');
-      expect(result).to.include(' > ');
+      // Should traverse up to body for unique selector
+      expect(result).to.equal('article.post > main.content > section.body > div.text-block > p');
     });
 
     it('should handle element with special characters in class names', () => {
@@ -278,6 +275,58 @@ describe('getElementSelector', () => {
 
       const result = getElementSelector(div);
       expect(result).to.include('div.class-with-dash.class_with_underscore');
+    });
+
+    it('should escape special characters in class names', () => {
+      $('body').html('<div class="foo:bar baz[0]"></div>');
+      const div = $('div')[0];
+
+      const result = getElementSelector(div);
+      // Special characters should be escaped
+      expect(result).to.include('div.foo\\:bar.baz\\[0\\]');
+    });
+
+    it('should use data-testid attribute for uniqueness', () => {
+      $('body').html('<div><p data-testid="unique-test"></p><p></p></div>');
+      const p1 = $('p').eq(0)[0];
+
+      const result = getElementSelector(p1);
+      expect(result).to.include('[data-testid="unique-test"]');
+      expect(result).to.not.include('nth-of-type');
+    });
+
+    it('should use role attribute for uniqueness when no data-testid', () => {
+      $('body').html('<div><button role="submit"></button><button></button></div>');
+      const btn = $('button').eq(0)[0];
+
+      const result = getElementSelector(btn);
+      expect(result).to.include('[role="submit"]');
+      expect(result).to.not.include('nth-of-type');
+    });
+
+    it('should fall back to nth-of-type when no unique attributes', () => {
+      $('body').html('<div><p class="text"></p><p class="text"></p></div>');
+      const p2 = $('p').eq(1)[0];
+
+      const result = getElementSelector(p2);
+      expect(result).to.include(':nth-of-type(2)');
+    });
+
+    it('should handle case-insensitive tag matching for siblings', () => {
+      // Use cheerio to create real elements, then modify tag name case
+      $('body').html('<div><p class="first"></p><p class="second"></p></div>');
+
+      const div = $('div')[0];
+      const p1 = div.children[0];
+      const p2 = div.children[1];
+
+      // Simulate mixed case tag names (edge case from some parsers)
+      p1.name = 'P';
+      p2.name = 'p';
+
+      const result = getElementSelector(p2);
+      // Should treat P and p as the same tag type
+      expect(result).to.include(':nth-of-type(2)');
     });
 
     it('should generate unique selector for different elements', () => {
@@ -328,6 +377,50 @@ describe('getElementSelector', () => {
       // Verify the selector can be used to find the element
       const found = $(selector)[0];
       expect(found).to.equal(target);
+    });
+
+    it('should escape NULL character in class names', () => {
+      $('body').html('<div></div>');
+      const div = $('div')[0];
+      // Set class with NULL character (U+0000)
+      div.attribs.class = 'foo\x00bar';
+
+      const result = getElementSelector(div);
+      // NULL should be replaced with U+FFFD replacement character
+      expect(result).to.include('.foo\uFFFDbar');
+    });
+
+    it('should escape control characters in class names', () => {
+      $('body').html('<div></div>');
+      const div = $('div')[0];
+      // Set class with control character (U+001F - unit separator)
+      div.attribs.class = 'foo\x1Fbar';
+
+      const result = getElementSelector(div);
+      // Control character should be escaped as hex
+      expect(result).to.include('.foo\\1f bar');
+    });
+
+    it('should escape DEL character in class names', () => {
+      $('body').html('<div></div>');
+      const div = $('div')[0];
+      // Set class with DEL character (U+007F)
+      div.attribs.class = 'foo\x7Fbar';
+
+      const result = getElementSelector(div);
+      // DEL should be escaped as hex
+      expect(result).to.include('.foo\\7f bar');
+    });
+
+    it('should escape single hyphen class name', () => {
+      $('body').html('<div></div>');
+      const div = $('div')[0];
+      // Set class to just a hyphen
+      div.attribs.class = '-';
+
+      const result = getElementSelector(div);
+      // Single hyphen should be escaped
+      expect(result).to.include('.\\-');
     });
   });
 
