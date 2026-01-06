@@ -156,6 +156,117 @@ describe('Audit Utils Tests', () => {
       const result = await isAuditEnabledForSite('test-handler', site, context);
       expect(result).to.be.true;
     });
+
+    it('bypasses enabled check when slackContext is present', async () => {
+      configuration.getHandlers = () => ({
+        'test-handler': {
+          enabledByDefault: true,
+          productCodes: ['ASO'],
+        },
+      });
+      configuration.isHandlerEnabledForSite.returns(false);
+
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const auditContext = {
+        slackContext: {
+          channelId: 'C123',
+          threadTs: '1234567',
+        },
+      };
+
+      const result = await isAuditEnabledForSite('test-handler', site, context, auditContext);
+      expect(result).to.be.true;
+      expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
+      expect(context.log.info).to.have.been.calledWith('Slack one-off audit detected for test-handler, bypassing enabled check for site site-123');
+    });
+
+    it('checks entitlements even when slackContext is present', async () => {
+      configuration.getHandlers = () => ({
+        'test-handler': {
+          enabledByDefault: true,
+          productCodes: ['ASO'],
+        },
+      });
+
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: false }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const auditContext = {
+        slackContext: {
+          channelId: 'C123',
+          threadTs: '1234567',
+        },
+      };
+
+      const result = await isAuditEnabledForSite('test-handler', site, context, auditContext);
+      expect(result).to.be.false;
+      expect(mockTierClient.checkValidEntitlement).to.have.been.calledOnce;
+      expect(context.log.error).to.have.been.calledWith(sinon.match(/No valid entitlement for handler test-handler/));
+    });
+
+    it('uses regular flow when auditContext is empty', async () => {
+      configuration.getHandlers = () => ({
+        'test-handler': {
+          enabledByDefault: true,
+          productCodes: ['ASO'],
+        },
+      });
+      configuration.isHandlerEnabledForSite.returns(true);
+
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const auditContext = {};
+
+      const result = await isAuditEnabledForSite('test-handler', site, context, auditContext);
+      expect(result).to.be.true;
+      expect(configuration.isHandlerEnabledForSite).to.have.been.calledWith('test-handler', site);
+    });
+
+    it('uses regular flow when auditContext is undefined', async () => {
+      configuration.getHandlers = () => ({
+        'test-handler': {
+          enabledByDefault: true,
+          productCodes: ['ASO'],
+        },
+      });
+      configuration.isHandlerEnabledForSite.returns(false);
+
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+      const result = await isAuditEnabledForSite('test-handler', site, context);
+      expect(result).to.be.false;
+      expect(configuration.isHandlerEnabledForSite).to.have.been.calledWith('test-handler', site);
+    });
+
+    it('returns false for handler without productCodes even when slackContext is present', async () => {
+      configuration.getHandlers = () => ({
+        'test-handler': {
+          enabledByDefault: true,
+        },
+      });
+
+      const auditContext = {
+        slackContext: {
+          channelId: 'C123',
+          threadTs: '1234567',
+        },
+      };
+
+      const result = await isAuditEnabledForSite('test-handler', site, context, auditContext);
+      expect(result).to.be.false;
+      expect(context.log.error).to.have.been.calledWith('Handler test-handler has no product codes');
+    });
   });
 
   describe('checkProductCodeEntitlements', () => {

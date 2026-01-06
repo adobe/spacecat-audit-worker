@@ -108,7 +108,7 @@ export class StepAudit extends BaseAudit {
     try {
       const site = await this.siteProvider(siteId, context);
 
-      if (!(await isAuditEnabledForSite(type, site, context))) {
+      if (!(await isAuditEnabledForSite(type, site, context, auditContext))) {
         log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
         return ok();
       }
