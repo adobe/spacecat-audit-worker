@@ -1,3 +1,24 @@
+# [1.276.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.275.0...v1.276.0) (2026-01-06)
+
+
+### Features
+
+* Revert "SITES-37055: Migrate to async suggestions through mystique ([#1797](https://github.com/adobe/spacecat-audit-worker/issues/1797))" ([#1821](https://github.com/adobe/spacecat-audit-worker/issues/1821)) ([bd96a8a](https://github.com/adobe/spacecat-audit-worker/commit/bd96a8a18780240b32f187e59ccaa04a53e47034))
+
+# [1.275.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.274.2...v1.275.0) (2026-01-06)
+
+
+### Features
+
+* new improved selector gen ([#1819](https://github.com/adobe/spacecat-audit-worker/issues/1819)) ([2a14107](https://github.com/adobe/spacecat-audit-worker/commit/2a14107a4c79342cd746c3722e4d46d35cc34b28))
+
+## [1.274.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.274.1...v1.274.2) (2026-01-06)
+
+
+### Bug Fixes
+
+* adding constant to filter forms from creating oppties ([#1816](https://github.com/adobe/spacecat-audit-worker/issues/1816)) ([fa7865a](https://github.com/adobe/spacecat-audit-worker/commit/fa7865aedec26683462d02969561409fc1a9eac6))
+
 ## [1.274.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.274.0...v1.274.1) (2026-01-05)
 
 
