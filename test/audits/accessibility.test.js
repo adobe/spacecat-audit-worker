@@ -76,6 +76,11 @@ describe('Accessibility Audit Handler', () => {
       })
       .build();
 
+    mockContext.scrapeResultPaths = new Map([
+      ['https://example.com/page1', 'scrapes/test-site-id/page1.json'],
+      ['https://example.com/page2', 'scrapes/test-site-id/page2.json'],
+    ]);
+
     // Mock the data-processing utils and import the function
     getUrlsForAuditStub = sandbox.stub();
     aggregateAccessibilityDataStub = sandbox.stub();
@@ -156,7 +161,6 @@ describe('Accessibility Audit Handler', () => {
         fullAuditRef: 'https://example.com',
         urls: mockUrls,
         siteId: 'test-site-id',
-        jobId: 'test-site-id',
         processingType: 'accessibility',
         options: {
           accessibilityScrapingParams: null,
@@ -251,7 +255,7 @@ describe('Accessibility Audit Handler', () => {
       );
     });
 
-    it('should use site ID for both siteId and jobId fields', async () => {
+    it('should include site ID and omit deprecated jobId field', async () => {
       // Arrange
       const mockUrls = [
         { url: 'https://example.com/another', urlId: 'example.com/another', traffic: 25 },
@@ -263,7 +267,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(result.siteId).to.equal('test-site-id');
-      expect(result.jobId).to.equal('test-site-id');
+      expect(result).to.not.have.property('jobId');
       expect(mockSite.getId).to.have.been.calledOnce;
     });
 
@@ -1063,6 +1067,18 @@ describe('Accessibility Audit Handler', () => {
       expect(createAccessibilityIndividualOpportunitiesStub).to.have.been.called;
     });
 
+    it('should return failure when scrapeResultPaths are missing', async () => {
+      mockContext.scrapeResultPaths = undefined;
+
+      const result = await processAccessibilityOpportunities(mockContext);
+
+      expect(result).to.deep.equal({
+        status: 'PROCESSING_FAILED',
+        error: 'Missing scrape result paths for accessibility audit',
+      });
+      expect(aggregateAccessibilityDataStub).to.not.have.been.called;
+    });
+
     it('should return NO_OPPORTUNITIES when no issues are found', async () => {
       // Arrange
       const mockAggregationResult = {
@@ -1644,6 +1660,19 @@ describe('Accessibility Audit Handler', () => {
       expect(logCalls).to.include('[A11yAudit] Step 2: Processing scraped data for mobile on site test-site-id (https://example.com)');
       expect(logCalls).to.include('[A11yAudit] Skipping individual opportunities (Step 2c) for mobile audit on site test-site-id');
       expect(logCalls).to.include('[A11yAudit] Found 3 mobile accessibility issues across 1 unique URLs for site test-site-id (https://example.com)');
+    });
+
+    it('should return failure when scrapeResultPaths missing for device audits', async () => {
+      const processMobileOpportunities = createProcessAccessibilityOpportunitiesWithDevice('mobile');
+      mockContext.scrapeResultPaths = undefined;
+
+      const result = await processMobileOpportunities(mockContext);
+
+      expect(result).to.deep.equal({
+        status: 'PROCESSING_FAILED',
+        error: 'Missing scrape result paths for mobile accessibility audit',
+      });
+      expect(aggregateAccessibilityDataStub).to.not.have.been.called;
     });
 
     it('should count device-specific issues correctly for desktop', async () => {

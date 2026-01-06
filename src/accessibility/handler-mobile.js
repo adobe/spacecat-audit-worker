@@ -34,7 +34,7 @@ export default new AuditBuilder()
   .addStep(
     'scrapeAccessibilityData',
     scrapeAccessibilityDataMobile,
-    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+    AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT,
   )
   .addStep('processAccessibilityOpportunities', createProcessAccessibilityOpportunitiesWithDevice('mobile'))
   .build();
