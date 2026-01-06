@@ -72,13 +72,12 @@ export function createBaseReportOpportunity(week, year, deviceType = 'Desktop') 
   };
 }
 
-export function createReportOpportunitySuggestionInstance(suggestionValue, context) {
+export function createReportOpportunitySuggestionInstance(suggestionValue) {
   return [
     {
       type: 'CODE_CHANGE',
       rank: 1,
-      status: context?.site?.requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
-        : SuggestionDataAccess.STATUSES.NEW,
+      status: SuggestionDataAccess.STATUSES.NEW,
       data: {
         suggestionValue,
       },
