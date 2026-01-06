@@ -420,4 +420,4 @@ npm run test:spec -- test/audits/preflight/canonical.test.js
 ## Resources
 - [ASO Preflight module Wiki](https://wiki.corp.adobe.com/display/AEMSites/ASO+Preflight+module)
 - [Prerequisites for a site](https://wiki.corp.adobe.com/display/AEMSites/AEM+Sites+Optimizer+%7C+Preflight+Onboarding+Steps)
-- - [Customer Requests](https://wiki.corp.adobe.com/display/AEMSites/ASO+Preflight+%7C+Customer+Requests)
+- [Customer Requests](https://wiki.corp.adobe.com/display/AEMSites/ASO+Preflight+%7C+Customer+Requests)
