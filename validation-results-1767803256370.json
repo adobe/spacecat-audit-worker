@@ -1,0 +1,3748 @@
+{
+  "metadata": {
+    "inputFile": "bhg-top-pages.json",
+    "timestamp": "2026-01-07T16:28:33.231Z",
+    "totalUrls": 93,
+    "cleanUrls": 89,
+    "blockedUrls": 4,
+    "blockerSummary": {
+      "noindex": 2,
+      "redirect-chain": 2,
+      "canonical-mismatch": 2
+    }
+  },
+  "cleanUrls": [
+    {
+      "url": "https://bhgfinancial.com/",
+      "primaryKeyword": "bhg financial",
+      "trafficValue": 9977,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": false
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans",
+      "primaryKeyword": "bhg financial",
+      "trafficValue": 917,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/working-capital/inventory-financing",
+      "primaryKeyword": "warehouse inventory financing",
+      "trafficValue": 9,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/working-capital/inventory-financing",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/working-capital/inventory-financing",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/best-way-to-pay-off-multiple-credit-cards",
+      "primaryKeyword": "best way to pay off multiple credit cards",
+      "trafficValue": 9,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/best-way-to-pay-off-multiple-credit-cards",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/best-way-to-pay-off-multiple-credit-cards",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/application-loan-purpose",
+      "primaryKeyword": "bhg financial loans",
+      "trafficValue": 9,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/application-loan-purpose",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/application-loan-purpose",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/how-to-start-a-financial-advisor-business",
+      "primaryKeyword": "financial planning business",
+      "trafficValue": 86,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/how-to-start-a-financial-advisor-business",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/how-to-start-a-financial-advisor-business",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/can-you-consolidate-debt-without-a-loan",
+      "primaryKeyword": "debt consolidation without a loan",
+      "trafficValue": 8,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/can-you-consolidate-debt-without-a-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/can-you-consolidate-debt-without-a-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-consolidation-vs-heloc",
+      "primaryKeyword": "debt consolidation loan vs heloc",
+      "trafficValue": 8,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-consolidation-vs-heloc",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-consolidation-vs-heloc",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation",
+      "primaryKeyword": "10 year debt consolidation loan",
+      "trafficValue": 729,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-relief-or-consolidation",
+      "primaryKeyword": "debt relief vs consolidation",
+      "trafficValue": 7,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-relief-or-consolidation",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-relief-or-consolidation",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/venture-capital",
+      "primaryKeyword": "bhg ventures",
+      "trafficValue": 6,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/venture-capital",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/venture-capital",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-much-credit-card-debt-is-too-much",
+      "primaryKeyword": "what is considered a lot of credit card debt",
+      "trafficValue": 6,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-much-credit-card-debt-is-too-much",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-much-credit-card-debt-is-too-much",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/what-is-business-collateral",
+      "primaryKeyword": "collateral meaning in business",
+      "trafficValue": 6,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/what-is-business-collateral",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/what-is-business-collateral",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/resources/personal-finance/passive-income-a-path-to-financial-freedom",
+      "primaryKeyword": "physician passive income",
+      "trafficValue": 6,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/resources/personal-finance/passive-income-a-path-to-financial-freedom",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/resources/personal-finance/passive-income-a-path-to-financial-freedom",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/principal-loan",
+      "primaryKeyword": "principal definition personal finance",
+      "trafficValue": 6,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/principal-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/principal-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/when-to-pay-credit-card-bill-to-increase-credit-score",
+      "primaryKeyword": "when to pay credit card",
+      "trafficValue": 598,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/when-to-pay-credit-card-bill-to-increase-credit-score",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/when-to-pay-credit-card-bill-to-increase-credit-score",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/loans-for-medical-professionals",
+      "primaryKeyword": "loans for medical professionals",
+      "trafficValue": 582,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/loans-for-medical-professionals",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/loans-for-medical-professionals",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/loans-for-medical-professionals/practice-loans",
+      "primaryKeyword": "medical business loan",
+      "trafficValue": 57,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/practice-loans",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/practice-loans",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/resources/personal-finance/passive-income-tax-considerations",
+      "primaryKeyword": "how is passive income taxed",
+      "trafficValue": 50,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/resources/personal-finance/passive-income-tax-considerations",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/resources/personal-finance/passive-income-tax-considerations",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/why-high-earners-struggle-with-credit-card-debt",
+      "primaryKeyword": "credit card debt crisis",
+      "trafficValue": 5,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/why-high-earners-struggle-with-credit-card-debt",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/why-high-earners-struggle-with-credit-card-debt",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/business-loan-vs-personal-loan",
+      "primaryKeyword": "personal loan vs business loan",
+      "trafficValue": 5,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/business-loan-vs-personal-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/business-loan-vs-personal-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/nalupay",
+      "primaryKeyword": "bhg financial login",
+      "trafficValue": 463,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/nalupay",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/nalupay",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/loans-for-medical-professionals/dentists",
+      "primaryKeyword": "loan for dentist",
+      "trafficValue": 46,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/dentists",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/dentists",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/careers",
+      "primaryKeyword": "bhg financial careers",
+      "trafficValue": 458,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/careers",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/careers",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/working-capital",
+      "primaryKeyword": "working capital business loans",
+      "trafficValue": 456,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/working-capital",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/working-capital",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/100000-personal-loan",
+      "primaryKeyword": "100k personal loan",
+      "trafficValue": 450,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/100000-personal-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/100000-personal-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/faqs/company",
+      "primaryKeyword": "bhg financial customer service",
+      "trafficValue": 44,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/faqs/company",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/faqs/company",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/why-heloc-costs-more-than-you-think",
+      "primaryKeyword": "heloc for debt consolidation",
+      "trafficValue": 41,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/why-heloc-costs-more-than-you-think",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/why-heloc-costs-more-than-you-think",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/50000-personal-loan",
+      "primaryKeyword": "50000 loan",
+      "trafficValue": 40,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/50000-personal-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/50000-personal-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/best-way-to-move-credit-card-balance",
+      "primaryKeyword": "transfer credit card debt to personal loan",
+      "trafficValue": 4,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/best-way-to-move-credit-card-balance",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/best-way-to-move-credit-card-balance",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/working-capital/working-capital-management-what-is-it-and-how-does-it-work",
+      "primaryKeyword": "goal of working capital management",
+      "trafficValue": 4,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/working-capital/working-capital-management-what-is-it-and-how-does-it-work",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/working-capital/working-capital-management-what-is-it-and-how-does-it-work",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/loans-for-medical-professionals/physicians-doctors",
+      "primaryKeyword": "loans for physicians",
+      "trafficValue": 387,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/physicians-doctors",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/physicians-doctors",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/company",
+      "primaryKeyword": "bhg financial",
+      "trafficValue": 368,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/company",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/company",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/institutional-network",
+      "primaryKeyword": "bhg financial login",
+      "trafficValue": 36,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/institutional-network",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/institutional-network",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/company/leadership",
+      "primaryKeyword": "albert crawford",
+      "trafficValue": 34,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/company/leadership",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/company/leadership",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/401k-loan-vs-personal-loan",
+      "primaryKeyword": "401k loan vs personal loan",
+      "trafficValue": 32,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/401k-loan-vs-personal-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/401k-loan-vs-personal-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/is-debt-consolidation-a-good-idea",
+      "primaryKeyword": "is debt consolidation a good idea",
+      "trafficValue": 32,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/is-debt-consolidation-a-good-idea",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/is-debt-consolidation-a-good-idea",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/best-personal-loans-for-prime-credit-borrowers-with-debt",
+      "primaryKeyword": "prime credit personal loan",
+      "trafficValue": 3,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/best-personal-loans-for-prime-credit-borrowers-with-debt",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/best-personal-loans-for-prime-credit-borrowers-with-debt",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/how-to-get-a-business-loan",
+      "primaryKeyword": "bhg financial business loans",
+      "trafficValue": 3,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/how-to-get-a-business-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/how-to-get-a-business-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/business-acquisition/loan-to-buy-a-business",
+      "primaryKeyword": "what is an acquisition loan",
+      "trafficValue": 3,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/business-acquisition/loan-to-buy-a-business",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/business-acquisition/loan-to-buy-a-business",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/will-checking-credit-score-lower-it",
+      "primaryKeyword": "will checking credit score lower it",
+      "trafficValue": 3,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/will-checking-credit-score-lower-it",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/will-checking-credit-score-lower-it",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/how-to-apply-for-a-personal-loan",
+      "primaryKeyword": "bhg financial phone number",
+      "trafficValue": 3,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/how-to-apply-for-a-personal-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/how-to-apply-for-a-personal-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/institutional-network/testimonials",
+      "primaryKeyword": "bhg financial reviews",
+      "trafficValue": 29,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/institutional-network/testimonials",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/institutional-network/testimonials",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/faqs/application-process",
+      "primaryKeyword": "bhg financial login",
+      "trafficValue": 28,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/faqs/application-process",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/faqs/application-process",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/loans-for-medical-professionals/medical-equipment-loan",
+      "primaryKeyword": "medical equipment finance",
+      "trafficValue": 27,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/medical-equipment-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/medical-equipment-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/credit-card-refinancing",
+      "primaryKeyword": "refinance credit card debt",
+      "trafficValue": 260,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/credit-card-refinancing",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/credit-card-refinancing",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/40000-loan",
+      "primaryKeyword": "bhg financial reviews",
+      "trafficValue": 224,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/40000-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/40000-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/are-business-loans-tax-deductible",
+      "primaryKeyword": "are business loans tax deductible",
+      "trafficValue": 223,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/are-business-loans-tax-deductible",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/are-business-loans-tax-deductible",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/llc-business-loan",
+      "primaryKeyword": "is it hard to get a business loan with an llc",
+      "trafficValue": 22,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/llc-business-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/llc-business-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/secured-vs-unsecured-personal-loan",
+      "primaryKeyword": "are secured loans easier to get",
+      "trafficValue": 2,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/secured-vs-unsecured-personal-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/secured-vs-unsecured-personal-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/company/what-is-a-loan-concierge-service",
+      "primaryKeyword": "home loan concierge",
+      "trafficValue": 2,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/company/what-is-a-loan-concierge-service",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/company/what-is-a-loan-concierge-service",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/institutional-network/regulatory/fraud-prevention",
+      "primaryKeyword": "bhg financial scams",
+      "trafficValue": 2,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/institutional-network/regulatory/fraud-prevention",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/institutional-network/regulatory/fraud-prevention",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/consolidate-credit-card-debt",
+      "primaryKeyword": "bankers healthcare group credit card",
+      "trafficValue": 2,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/consolidate-credit-card-debt",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/consolidate-credit-card-debt",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/tax-implications-of-debt-consolidation-what-high-credit-customers-need-to-know",
+      "primaryKeyword": "tax debt consolidation loans",
+      "trafficValue": 2,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/tax-implications-of-debt-consolidation-what-high-credit-customers-need-to-know",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/tax-implications-of-debt-consolidation-what-high-credit-customers-need-to-know",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/how-to-build-business-credit",
+      "primaryKeyword": "bhg business credit card",
+      "trafficValue": 2,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/how-to-build-business-credit",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/how-to-build-business-credit",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/avoid-high-interest-debt",
+      "primaryKeyword": "high interest debt",
+      "trafficValue": 2,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/avoid-high-interest-debt",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/avoid-high-interest-debt",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/fraud-prevention",
+      "primaryKeyword": "bhg financial scams",
+      "trafficValue": 2,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/fraud-prevention",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/fraud-prevention",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/personal-loan-vs-line-of-credit-liquidity",
+      "primaryKeyword": "personal loan vs line of credit",
+      "trafficValue": 2,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-line-of-credit-liquidity",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-line-of-credit-liquidity",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/working-capital/grant-vs-loan-whats-the-difference",
+      "primaryKeyword": "grant vs loan",
+      "trafficValue": 2,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/working-capital/grant-vs-loan-whats-the-difference",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/working-capital/grant-vs-loan-whats-the-difference",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/how-to-get-a-personal-loan",
+      "primaryKeyword": "bhg loan requirements",
+      "trafficValue": 19,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/how-to-get-a-personal-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/how-to-get-a-personal-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/smarter-balance-transfer-personal-loan",
+      "primaryKeyword": "balance transfer loans",
+      "trafficValue": 185,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/smarter-balance-transfer-personal-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/smarter-balance-transfer-personal-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/200000-loan",
+      "primaryKeyword": "200000 loan",
+      "trafficValue": 184,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/200000-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/200000-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/term-loan",
+      "primaryKeyword": "medium term loan",
+      "trafficValue": 18,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/term-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/term-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/commercial-loans",
+      "primaryKeyword": "bhg business loan",
+      "trafficValue": 17,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/commercial-loans",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/commercial-loans",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-does-debt-consolidation-work",
+      "primaryKeyword": "bhg debt consolidation",
+      "trafficValue": 17,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-does-debt-consolidation-work",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-does-debt-consolidation-work",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/loans-for-medical-professionals/practice-loans/working-capital",
+      "primaryKeyword": "working capital loans for doctors",
+      "trafficValue": 17,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/practice-loans/working-capital",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/practice-loans/working-capital",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/faqs/existing-customers",
+      "primaryKeyword": "bhg financial login",
+      "trafficValue": 163,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/faqs/existing-customers",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/faqs/existing-customers",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-to-income-ratio",
+      "primaryKeyword": "income to debt ratio",
+      "trafficValue": 16,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-to-income-ratio",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-to-income-ratio",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/personal-loan-prequalification",
+      "primaryKeyword": "personal loan prequalification",
+      "trafficValue": 15,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-prequalification",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-prequalification",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/business-acquisition",
+      "primaryKeyword": "business acquisition loans",
+      "trafficValue": 148,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/business-acquisition",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/business-acquisition",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/manage-large-tax-bills-efficiently",
+      "primaryKeyword": "personal loan to pay taxes",
+      "trafficValue": 14,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/manage-large-tax-bills-efficiently",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/manage-large-tax-bills-efficiently",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/personal-loan-vs-debt-consolidation-loan",
+      "primaryKeyword": "debt consolidation vs personal loan",
+      "trafficValue": 14,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-debt-consolidation-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-debt-consolidation-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-to-get-credit-card-to-lower-your-interest-rate",
+      "primaryKeyword": "companies that lower credit card interest rates",
+      "trafficValue": 13,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-to-get-credit-card-to-lower-your-interest-rate",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-to-get-credit-card-to-lower-your-interest-rate",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/business-credit-vs-personal-credit",
+      "primaryKeyword": "what is personal credit",
+      "trafficValue": 13,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/business-credit-vs-personal-credit",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/business-credit-vs-personal-credit",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/the-real-cost-of-credit-card-perks",
+      "primaryKeyword": "bhg credit card",
+      "trafficValue": 13,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/the-real-cost-of-credit-card-perks",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/the-real-cost-of-credit-card-perks",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/is-a-small-business-loan-secured-or-unsecured",
+      "primaryKeyword": "is a small business loan secured or unsecured",
+      "trafficValue": 126,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/is-a-small-business-loan-secured-or-unsecured",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/is-a-small-business-loan-secured-or-unsecured",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/business-debt-consolidation",
+      "primaryKeyword": "business debt consolidation loan",
+      "trafficValue": 1231,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/business-debt-consolidation",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/business-debt-consolidation",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/faqs",
+      "primaryKeyword": "bhg financial login",
+      "trafficValue": 12,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/faqs",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/faqs",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/personal-loan-vs-line-of-credit",
+      "primaryKeyword": "personal line of credit vs personal loan",
+      "trafficValue": 12,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-line-of-credit",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-line-of-credit",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/consumer-loans",
+      "primaryKeyword": "bhg financial interest rates",
+      "trafficValue": 118,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/consumer-loans",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/consumer-loans",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans",
+      "primaryKeyword": "bhg business loans",
+      "trafficValue": 116,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/contact-us",
+      "primaryKeyword": "bhg financial",
+      "trafficValue": 1012,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/contact-us",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/contact-us",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/will-debt-consolidation-loan-affect-credit-score",
+      "primaryKeyword": "does debt consolidation hurt your credit",
+      "trafficValue": 10,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/will-debt-consolidation-loan-affect-credit-score",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/will-debt-consolidation-loan-affect-credit-score",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/personal-loan-vs-credit-card",
+      "primaryKeyword": "is a credit card a loan",
+      "trafficValue": 10,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-credit-card",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-credit-card",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-to-pay-off-debt",
+      "primaryKeyword": "कर्ज कैसे चुकाएं",
+      "trafficValue": 1,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-to-pay-off-debt",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-to-pay-off-debt",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/privacy-policy",
+      "primaryKeyword": "mail from bankers healthcare group",
+      "trafficValue": 1,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/privacy-policy",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/privacy-policy",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/3-unexpected-benefits-of-longer-term-loan",
+      "primaryKeyword": "what are the benefits of a long term loan",
+      "trafficValue": 1,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/3-unexpected-benefits-of-longer-term-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/3-unexpected-benefits-of-longer-term-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/business-line-of-credit-vs-loan",
+      "primaryKeyword": "business loan vs line of credit",
+      "trafficValue": 1,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/business-line-of-credit-vs-loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/business-line-of-credit-vs-loan",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    },
+    {
+      "url": "https://bhgfinancial.com/small-business-loans/business-acquisition/what-is-total-addressable-market-tam",
+      "primaryKeyword": "finance tam",
+      "trafficValue": 1,
+      "indexable": true,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/business-acquisition/what-is-total-addressable-market-tam",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": "https://bhgfinancial.com/small-business-loans/business-acquisition/what-is-total-addressable-market-tam",
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": []
+    }
+  ],
+  "blockedUrls": [
+    {
+      "url": "https://bhgfinancial.com/opt-out",
+      "primaryKeyword": "mail from bankers healthcare group",
+      "trafficValue": 8,
+      "indexable": false,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/opt-out",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": null,
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": false,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": true,
+          "blocker": "noindex"
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": [
+        "noindex"
+      ]
+    },
+    {
+      "url": "https://bhgfinancial.com/personal-loans/simple-interest-vs-compound-interest",
+      "primaryKeyword": "interest vs compound interest",
+      "trafficValue": 7,
+      "indexable": false,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": false,
+          "redirectCount": 2,
+          "redirectChain": "https://bhgfinancial.com/personal-loans/simple-interest-vs-compound-interest -> https://bhgfinancial.com/personal-loans.html -> https://bhgfinancial.com/personal-loans",
+          "finalUrl": "https://bhgfinancial.com/personal-loans",
+          "blocker": "redirect-chain"
+        },
+        "canonical": {
+          "passed": false,
+          "canonicalUrl": "https://bhgfinancial.com/personal-loans",
+          "isSelfReferencing": false,
+          "blocker": "canonical-mismatch"
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": [
+        "redirect-chain",
+        "canonical-mismatch"
+      ]
+    },
+    {
+      "url": "https://bhgfinancial.com/loan",
+      "primaryKeyword": "bhg financial personal loan",
+      "trafficValue": 18,
+      "indexable": false,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": true,
+          "redirectCount": 0,
+          "redirectChain": null,
+          "finalUrl": "https://bhgfinancial.com/loan",
+          "blocker": null
+        },
+        "canonical": {
+          "passed": true,
+          "canonicalUrl": null,
+          "isSelfReferencing": true,
+          "blocker": null
+        },
+        "noindex": {
+          "passed": false,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": true,
+          "blocker": "noindex"
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": [
+        "noindex"
+      ]
+    },
+    {
+      "url": "https://bhgfinancial.com/commercial-eligibility-estimator",
+      "primaryKeyword": "bhg loan calculator",
+      "trafficValue": 10,
+      "indexable": false,
+      "checks": {
+        "httpStatus": {
+          "passed": true,
+          "statusCode": 200,
+          "blocker": null
+        },
+        "redirects": {
+          "passed": false,
+          "redirectCount": 2,
+          "redirectChain": "https://bhgfinancial.com/commercial-eligibility-estimator -> https://bhgfinancial.com/commercial-loans.html -> https://bhgfinancial.com/commercial-loans",
+          "finalUrl": "https://bhgfinancial.com/commercial-loans",
+          "blocker": "redirect-chain"
+        },
+        "canonical": {
+          "passed": false,
+          "canonicalUrl": "https://bhgfinancial.com/commercial-loans",
+          "isSelfReferencing": false,
+          "blocker": "canonical-mismatch"
+        },
+        "noindex": {
+          "passed": true,
+          "hasNoindexHeader": false,
+          "hasNoindexMeta": false,
+          "blocker": null
+        },
+        "robotsTxt": {
+          "passed": true,
+          "blocker": null,
+          "googlebot": true,
+          "general": true,
+          "cached": true
+        }
+      },
+      "blockers": [
+        "redirect-chain",
+        "canonical-mismatch"
+      ]
+    }
+  ]
+}
