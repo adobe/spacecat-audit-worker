@@ -233,7 +233,7 @@ export const preflightAudit = async (context) => {
               issue: 'Body content length is below 100 characters',
               seoImpact: 'Moderate',
               seoRecommendation: 'Add more meaningful content to the page',
-              elements: toElementTargets(getDomElementSelector($('body').get(0))),
+              ...toElementTargets(getDomElementSelector($('body').get(0))),
             });
           }
         }
@@ -253,7 +253,7 @@ export const preflightAudit = async (context) => {
             issue: 'Found Lorem ipsum placeholder text in the page content',
             seoImpact: 'High',
             seoRecommendation: 'Replace placeholder text with meaningful content',
-            elements: toElementTargets(
+            ...toElementTargets(
               loremSelectors.length > 0 ? loremSelectors : fallbackSelector,
               10,
             ),
@@ -280,7 +280,7 @@ export const preflightAudit = async (context) => {
               seoImpact: 'High',
               seoRecommendation:
                 'Use exactly one H1 tag per page for better SEO structure',
-              elements: toElementTargets(
+              ...toElementTargets(
                 headingCount > 0 ? h1Selectors : fallbackSelector,
               ),
             });

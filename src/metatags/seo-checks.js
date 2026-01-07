@@ -239,8 +239,7 @@ class SeoChecks {
     if (options.firstOnly && Array.isArray(selectors)) {
       normalizedSelectors = selectors.length > 0 ? selectors[0] : null;
     }
-    const elements = toElementTargets(normalizedSelectors);
-    return elements.length ? { elements } : {};
+    return toElementTargets(normalizedSelectors);
   }
 }
 

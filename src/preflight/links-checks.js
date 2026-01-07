@@ -54,7 +54,7 @@ async function checkLinkStatus(href, pageUrl, context, options = {
         urlTo: href,
         href: pageUrl,
         status: res.status,
-        elements: toElementTargets(selectors),
+        ...toElementTargets(selectors),
       };
     }
 
@@ -75,7 +75,7 @@ async function checkLinkStatus(href, pageUrl, context, options = {
           urlTo: href,
           href: pageUrl,
           status: res.status,
-          elements: toElementTargets(selectors),
+          ...toElementTargets(selectors),
         };
       }
 

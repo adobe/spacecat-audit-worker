@@ -223,7 +223,7 @@ export default async function links(context, auditContext) {
           issue: 'Link using HTTP instead of HTTPS',
           seoImpact: 'High',
           seoRecommendation: 'Update all links to use HTTPS protocol',
-          elements: toElementTargets(selector),
+          ...toElementTargets(selector),
         };
       }
       return null;

@@ -4230,15 +4230,15 @@ describe('Preflight Audit', () => {
       expect(relevantCall).to.exist;
     });
 
-    it('should skip AI enhancement during identify step', async () => {
-      // Change step to 'identify'
-      auditContext.step = 'identify';
+      it('should skip AI enhancement during identify step', async () => {
+        // Change step to 'identify'
+        auditContext.step = 'identify';
 
-      await headings(context, auditContext);
+        await headings(context, auditContext);
 
-      // Verify that getBrandGuidelines was never called (no AI enhancement)
-      expect(getBrandGuidelinesStub).to.not.have.been.called;
-      expect(getH1HeadingASuggestionStub).to.not.have.been.called;
+        // Verify that getBrandGuidelines was never called (no AI enhancement)
+        expect(getBrandGuidelinesStub).to.not.have.been.called;
+        expect(getH1HeadingASuggestionStub).to.not.have.been.called;
     });
 
     it('should add aiSuggestion when AI suggestion is available', async () => {

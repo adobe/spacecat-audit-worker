@@ -41,8 +41,7 @@ function getSeoImpact(checkType) {
 function getElementsFromCheck(check) {
   const selectorSources = check.selectors
     || (check.transformRules?.selector ? [check.transformRules.selector] : []);
-  const elements = toElementTargets(selectorSources);
-  return elements.length ? elements : undefined;
+  return toElementTargets(selectorSources);
 }
 
 /**
@@ -184,9 +183,9 @@ export default async function headings(context, auditContext) {
             opportunity.suggestion = check.suggestion;
           }
 
-          const elements = getElementsFromCheck(check);
-          if (elements) {
-            opportunity.elements = elements;
+          const elementData = getElementsFromCheck(check);
+          if (elementData && (elementData.elements?.length > 0 || elementData.selector)) {
+            Object.assign(opportunity, elementData);
           }
 
           audit.opportunities.push(opportunity);
