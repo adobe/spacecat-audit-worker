@@ -280,7 +280,10 @@ export async function runAuditAndSendToMystique(context) {
           };
 
           await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-          log.info(`[LLM-ERROR-PAGES] Sent ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
+          log.info(
+            '[LLM-ERROR-PAGES] Sent %d consolidated 404 URLs to Mystique for AI processing',
+            urlToUserAgentsMap.size,
+          );
         } else {
           log.warn('[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message');
         }
