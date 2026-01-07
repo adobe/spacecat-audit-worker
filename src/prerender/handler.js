@@ -30,10 +30,12 @@ import {
   CONTENT_GAIN_THRESHOLD,
   TOP_AGENTIC_URLS_LIMIT,
   TOP_ORGANIC_URLS_LIMIT,
+  MODE_AI_ONLY,
 } from './utils/constants.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+const LOG_PREFIX = 'Prerender -';
 
 async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIMIT) {
   const { dataAccess, log, site } = context;
@@ -295,6 +297,25 @@ async function compareHtmlContent(url, context) {
 }
 
 /**
+ * Parses the mode from the data field
+ * @param {string|Object} data - The data field from the message
+ * @returns {string|null} - The mode value or null
+ */
+function getModeFromData(data) {
+  if (!data) {
+    return null;
+  }
+
+  try {
+    const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+    return parsedData.mode || null;
+  } catch (e) {
+    // Ignore parse errors
+    return null;
+  }
+}
+
+/**
  * Fetches the latest scrapeJobId from the status.json file in S3
  * @param {string} siteId - The site ID
  * @param {Object} context - Audit context with s3Client and env
@@ -307,7 +328,7 @@ async function fetchLatestScrapeJobId(siteId, context) {
     const bucketName = env.S3_SCRAPER_BUCKET_NAME;
     const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
 
-    log.info(`[${AUDIT_TYPE}:ai-only] Fetching status.json from s3://${bucketName}/${statusKey}`);
+    log.info(`${LOG_PREFIX} ai-only: Fetching status.json from s3://${bucketName}/${statusKey}`);
 
     const response = await s3Client.send(new GetObjectCommand({
       Bucket: bucketName,
@@ -318,17 +339,17 @@ async function fetchLatestScrapeJobId(siteId, context) {
     const statusData = JSON.parse(statusContent);
 
     if (statusData.scrapeJobId) {
-      log.info(`[${AUDIT_TYPE}:ai-only] Found scrapeJobId: ${statusData.scrapeJobId}`);
+      log.info(`${LOG_PREFIX} ai-only: Found scrapeJobId: ${statusData.scrapeJobId}`);
       return statusData.scrapeJobId;
     }
 
-    log.warn(`[${AUDIT_TYPE}:ai-only] No scrapeJobId found in status.json`);
+    log.warn(`${LOG_PREFIX} ai-only: No scrapeJobId found in status.json`);
     return null;
   } catch (error) {
     if (error.name === 'NoSuchKey') {
-      log.warn(`[${AUDIT_TYPE}:ai-only] status.json not found for siteId=${siteId}`);
+      log.warn(`${LOG_PREFIX} ai-only: status.json not found for siteId=${siteId}`);
     } else {
-      log.error(`[${AUDIT_TYPE}:ai-only] Error fetching status.json: ${error.message}`);
+      log.error(`${LOG_PREFIX} ai-only: Error fetching status.json: ${error.message}`);
     }
     return null;
   }
@@ -475,23 +496,34 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
  */
 async function handleAiOnlyMode(context) {
   const {
-    site, log, dataAccess, auditContext,
+    site, log, dataAccess, data,
   } = context;
   const { Opportunity } = dataAccess;
   const siteId = site.getId();
-  const { opportunityId } = auditContext;
-  let { scrapeJobId } = auditContext;
 
-  log.info(`[${AUDIT_TYPE}:ai-only] Processing AI summary request for siteId=${siteId}, opportunityId=${opportunityId || 'latest'}`);
+  // Parse optional params from data field (opportunityId, scrapeJobId)
+  let opportunityId = null;
+  let scrapeJobId = null;
+  if (data) {
+    try {
+      const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+      opportunityId = parsedData.opportunityId;
+      scrapeJobId = parsedData.scrapeJobId;
+    } catch (e) {
+      // Ignore parse errors
+    }
+  }
+
+  log.info(`${LOG_PREFIX} ai-only: Processing AI summary request for siteId=${siteId}, opportunityId=${opportunityId || 'latest'}`);
 
   // Fetch scrapeJobId from status.json if not provided
   if (!scrapeJobId) {
-    log.info(`[${AUDIT_TYPE}:ai-only] scrapeJobId not provided, fetching from status.json`);
+    log.info(`${LOG_PREFIX} ai-only: scrapeJobId not provided, fetching from status.json`);
     scrapeJobId = await fetchLatestScrapeJobId(siteId, context);
 
     if (!scrapeJobId) {
-      const error = 'scrapeJobId not found. Either provide it in auditContext or ensure a prerender audit has run recently.';
-      log.error(`[${AUDIT_TYPE}:ai-only] ${error}`);
+      const error = 'scrapeJobId not found. Either provide it in data or ensure a prerender audit has run recently.';
+      log.error(`${LOG_PREFIX} ai-only: ${error}`);
       return { error, status: 'failed' };
     }
   }
@@ -502,7 +534,7 @@ async function handleAiOnlyMode(context) {
     opportunity = await Opportunity.findById(opportunityId);
     if (!opportunity) {
       const error = `Opportunity not found: ${opportunityId}`;
-      log.error(`[${AUDIT_TYPE}:ai-only] ${error}`);
+      log.error(`${LOG_PREFIX} ai-only: ${error}`);
       return { error, status: 'failed' };
     }
   } else {
@@ -512,17 +544,17 @@ async function handleAiOnlyMode(context) {
 
     if (!opportunity) {
       const error = `No NEW prerender opportunity found for site: ${siteId}`;
-      log.error(`[${AUDIT_TYPE}:ai-only] ${error}`);
+      log.error(`${LOG_PREFIX} ai-only: ${error}`);
       return { error, status: 'failed' };
     }
 
-    log.info(`[${AUDIT_TYPE}:ai-only] Found latest NEW opportunity: ${opportunity.getId()}`);
+    log.info(`${LOG_PREFIX} ai-only: Found latest NEW opportunity: ${opportunity.getId()}`);
   }
 
   // Verify opportunity belongs to the site
   if (opportunity.getSiteId() !== siteId) {
     const error = `Opportunity ${opportunity.getId()} does not belong to site ${siteId}`;
-    log.error(`[${AUDIT_TYPE}:ai-only] ${error}`);
+    log.error(`${LOG_PREFIX} ai-only: ${error}`);
     return { error, status: 'failed' };
   }
 
@@ -541,18 +573,18 @@ async function handleAiOnlyMode(context) {
       context,
     );
 
-    log.info(`[${AUDIT_TYPE}:ai-only] Successfully queued AI summary request for opportunityId=${opportunity.getId()}`);
+    log.info(`${LOG_PREFIX} ai-only: Successfully queued AI summary request for opportunityId=${opportunity.getId()}`);
 
     return {
       status: 'complete',
-      mode: 'ai-only',
+      mode: MODE_AI_ONLY,
       opportunityId: opportunity.getId(),
       auditResult: {
         message: 'AI summary generation queued successfully',
       },
     };
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}:ai-only] Failed to queue AI summary request: ${error.message}`, error);
+    log.error(`${LOG_PREFIX} ai-only: Failed to queue AI summary request: ${error.message}`, error);
     return {
       status: 'failed',
       error: error.message,
@@ -567,12 +599,13 @@ async function handleAiOnlyMode(context) {
  */
 export async function importTopPages(context) {
   const {
-    site, finalUrl, auditContext, log,
+    site, finalUrl, data, log,
   } = context;
 
-  // Check for AI-only mode - skip ALL audit steps
-  if (auditContext?.mode === 'ai-only') {
-    log.info(`[${AUDIT_TYPE}] Detected ai-only mode in step 1, skipping import/scraping/processing`);
+  // Check for AI-only mode (from command like: audit:prerender mode:ai-only)
+  const mode = getModeFromData(data);
+  if (mode === MODE_AI_ONLY) {
+    log.info(`${LOG_PREFIX} Detected ai-only mode in step 1, skipping import/scraping/processing`);
     return handleAiOnlyMode(context);
   }
 
@@ -586,15 +619,23 @@ export async function importTopPages(context) {
 }
 
 /**
- * Step 2: Submit URLs for scraping
+ * Step 2: Submit URLs for scraping OR skip if in ai-only mode
  * @param {Object} context - Audit context with site and dataAccess
- * @returns {Promise<Object>} - URLs to scrape and metadata
+ * @returns {Promise<Object>} - URLs to scrape and metadata OR ai-only result
  */
 export async function submitForScraping(context) {
   const {
     site,
     log,
+    data,
   } = context;
+
+  // Check for AI-only mode - skip scraping step (step 1 already triggered Mystique)
+  const mode = getModeFromData(data);
+  if (mode === MODE_AI_ONLY) {
+    log.info(`${LOG_PREFIX} Detected ai-only mode in step 2, skipping scraping (already handled in step 1)`);
+    return { status: 'skipped', mode: MODE_AI_ONLY };
+  }
 
   const siteId = site.getId();
   const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
@@ -910,13 +951,21 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
 
 /**
  * Step 3: Process scraped content and compare server-side vs client-side HTML
+ * OR skip if ai-only mode
  * @param {Object} context - Audit context with site, audit, and other dependencies
- * @returns {Promise<Object>} - Audit results with opportunities
+ * @returns {Promise<Object>} - Audit results with opportunities OR ai-only result
  */
 export async function processContentAndGenerateOpportunities(context) {
   const {
-    site, audit, log, scrapeResultPaths,
+    site, audit, log, scrapeResultPaths, data,
   } = context;
+
+  // Check for AI-only mode - skip processing step (step 1 already triggered Mystique)
+  const mode = getModeFromData(data);
+  if (mode === MODE_AI_ONLY) {
+    log.info(`${LOG_PREFIX} Detected ai-only mode in step 3, skipping processing (already handled in step 1)`);
+    return { status: 'skipped', mode: MODE_AI_ONLY };
+  }
 
   const siteId = site.getId();
   const startTime = process.hrtime();

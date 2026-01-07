@@ -12,7 +12,7 @@
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 
-const AUDIT_TYPE = 'prerender';
+const LOG_PREFIX = 'Prerender -';
 
 /**
  * Handles Mystique responses for prerender guidance.
@@ -62,7 +62,7 @@ export default async function handler(message, context) {
   const { suggestions, opportunityId } = data || {};
 
   log.info(
-    `[${AUDIT_TYPE}] Received Mystique guidance for prerender: ${JSON.stringify(
+    `${LOG_PREFIX} Received Mystique guidance for prerender: ${JSON.stringify(
       message,
       null,
       2,
@@ -72,30 +72,30 @@ export default async function handler(message, context) {
   // Validate audit exists
   const audit = await Audit.findById(auditId);
   if (!audit) {
-    log.warn(`[${AUDIT_TYPE}] No audit found for auditId: ${auditId}`);
+    log.warn(`${LOG_PREFIX} No audit found for auditId: ${auditId}`);
     return notFound();
   }
 
   // Validate site exists
   const site = await Site.findById(siteId);
   if (!site) {
-    log.error(`[${AUDIT_TYPE}] Site not found for siteId: ${siteId}`);
+    log.error(`${LOG_PREFIX} Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
 
   log.info(
-    `[${AUDIT_TYPE}] Processing AI guidance for siteId=${siteId}, auditId=${auditId}, opportunityId=${opportunityId}`,
+    `${LOG_PREFIX} Processing AI guidance for siteId=${siteId}, auditId=${auditId}, opportunityId=${opportunityId}`,
   );
 
   if (!Array.isArray(suggestions) || suggestions.length === 0) {
     log.warn(
-      `[${AUDIT_TYPE}] No suggestions provided in Mystique response for siteId=${siteId}`,
+      `${LOG_PREFIX} No suggestions provided in Mystique response for siteId=${siteId}`,
     );
     return ok();
   }
 
   if (!opportunityId) {
-    const msg = `[${AUDIT_TYPE}] Missing opportunityId in Mystique response for siteId=${siteId}, auditId=${auditId}`;
+    const msg = `${LOG_PREFIX} Missing opportunityId in Mystique response for siteId=${siteId}, auditId=${auditId}`;
     log.error(msg);
     return badRequest(msg);
   }
@@ -103,7 +103,7 @@ export default async function handler(message, context) {
   // Look up the existing prerender opportunity by ID
   const opportunity = await Opportunity.findById(opportunityId);
   if (!opportunity) {
-    const msg = `[${AUDIT_TYPE}] Opportunity not found for opportunityId=${opportunityId}, siteId=${siteId}`;
+    const msg = `${LOG_PREFIX} Opportunity not found for opportunityId=${opportunityId}, siteId=${siteId}`;
     log.error(msg);
     return notFound('Opportunity not found');
   }
@@ -112,7 +112,7 @@ export default async function handler(message, context) {
   const existingSuggestions = await opportunity.getSuggestions();
   if (!existingSuggestions || existingSuggestions.length === 0) {
     log.warn(
-      `[${AUDIT_TYPE}] No existing suggestions found for opportunityId=${opportunityId}, siteId=${siteId}`,
+      `${LOG_PREFIX} No existing suggestions found for opportunityId=${opportunityId}, siteId=${siteId}`,
     );
     return ok();
   }
@@ -126,13 +126,13 @@ export default async function handler(message, context) {
 
   if (updateableSuggestions.length === 0) {
     log.info(
-      `[${AUDIT_TYPE}] No updateable suggestions found (all are OUTDATED) for opportunityId=${opportunityId}, siteId=${siteId}`,
+      `${LOG_PREFIX} No updateable suggestions found (all are OUTDATED) for opportunityId=${opportunityId}, siteId=${siteId}`,
     );
     return ok();
   }
 
   log.info(
-    `[${AUDIT_TYPE}] Found ${updateableSuggestions.length}/${existingSuggestions.length} updateable suggestions (excluding OUTDATED) for opportunityId=${opportunityId}`,
+    `${LOG_PREFIX} Found ${updateableSuggestions.length}/${existingSuggestions.length} updateable suggestions (excluding OUTDATED) for opportunityId=${opportunityId}`,
   );
 
   // Index updateable suggestions by URL for quick lookup
@@ -152,7 +152,7 @@ export default async function handler(message, context) {
 
     if (!url) {
       log.warn(
-        `[${AUDIT_TYPE}] Skipping Mystique suggestion without URL: ${JSON.stringify(
+        `${LOG_PREFIX} Skipping Mystique suggestion without URL: ${JSON.stringify(
           incoming,
         )}`,
       );
@@ -162,7 +162,7 @@ export default async function handler(message, context) {
     const existing = suggestionsByUrl.get(url);
     if (!existing) {
       log.warn(
-        `[${AUDIT_TYPE}] No existing suggestion found for URL=${url} on opportunityId=${opportunityId}`,
+        `${LOG_PREFIX} No existing suggestion found for URL=${url} on opportunityId=${opportunityId}`,
       );
       return;
     }
@@ -186,16 +186,16 @@ export default async function handler(message, context) {
       await Suggestion._saveMany(suggestionsToSave);
 
       log.info(
-        `[${AUDIT_TYPE}] Successfully batch updated ${suggestionsToSave.length}/${suggestions.length} suggestions with AI summaries for opportunityId=${opportunityId}, siteId=${siteId}`,
+        `${LOG_PREFIX} Successfully batch updated ${suggestionsToSave.length}/${suggestions.length} suggestions with AI summaries for opportunityId=${opportunityId}, siteId=${siteId}`,
       );
     } catch (error) {
       log.error(
-        `[${AUDIT_TYPE}] Error batch saving suggestions: ${error.message}`,
+        `${LOG_PREFIX} Error batch saving suggestions: ${error.message}`,
       );
     }
   } else {
     log.warn(
-      `[${AUDIT_TYPE}] No valid suggestions to update for opportunityId=${opportunityId}, siteId=${siteId}`,
+      `${LOG_PREFIX} No valid suggestions to update for opportunityId=${opportunityId}, siteId=${siteId}`,
     );
   }
 
