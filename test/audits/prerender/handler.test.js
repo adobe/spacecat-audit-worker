@@ -2178,16 +2178,21 @@ describe('Prerender Audit', () => {
 
         expect(syncSuggestionsStub).to.have.been.calledOnce;
         const syncCall = syncSuggestionsStub.getCall(0);
-        const { newData } = syncCall.args[0];
+        const { newData, shouldUpdateSuggestion } = syncCall.args[0];
 
-        // Domain-wide suggestion should NOT be included when status is OUTDATED
-        // OUTDATED suggestions should not be modified
+        // Domain-wide suggestion IS included in newData when all are OUTDATED
+        // but shouldUpdateSuggestion callback prevents updates to OUTDATED suggestions
         const domainWideSuggestion = newData.find((item) => item.key);
-        expect(domainWideSuggestion).to.not.exist;
+        expect(domainWideSuggestion).to.exist;
 
-        expect(context.log.info).to.have.been.calledWith(
-          sinon.match(/Domain-wide suggestion exists in OUTDATED state, skipping modification/),
-        );
+        // Verify shouldUpdateSuggestion callback is passed and works correctly
+        expect(shouldUpdateSuggestion).to.be.a('function');
+        // Test that OUTDATED domain-wide suggestions are filtered
+        const result = shouldUpdateSuggestion(existingDomainWideSuggestion);
+        expect(result).to.be.false;
+
+        // Domain-wide suggestion is included in newData but shouldUpdateSuggestion filters it out
+        // The log message about skipping modification was removed with the allOutdated check
       });
 
       it('should include domain-wide suggestion when existing suggestion has inactive status (ERROR)', async () => {
@@ -2251,9 +2256,7 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion).to.exist;
         expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
 
-        expect(context.log.info).to.have.been.calledWith(
-          sinon.match(/Domain-wide suggestion exists in ERROR state, will update it/),
-        );
+        // Log message about inactive status was removed with the inactive suggestions handling branch
       });
 
       it('should include domain-wide suggestion when existing suggestion has inactive status (APPROVED)', async () => {
@@ -2317,9 +2320,7 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion).to.exist;
         expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
 
-        expect(context.log.info).to.have.been.calledWith(
-          sinon.match(/Domain-wide suggestion exists in APPROVED state, will update it/),
-        );
+        // Log message about inactive status was removed with the inactive suggestions handling branch
       });
 
       it('should include domain-wide suggestion when existing suggestion has inactive status (IN_PROGRESS)', async () => {
@@ -2383,9 +2384,99 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion).to.exist;
         expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
 
-        expect(context.log.info).to.have.been.calledWith(
-          sinon.match(/Domain-wide suggestion exists in IN_PROGRESS state, will update it/),
-        );
+        // Log message about inactive status was removed with the inactive suggestions handling branch
+      });
+
+      it('should exercise all branches of shouldUpdateSuggestion callback', async () => {
+        // Test that shouldUpdateSuggestion callback handles all cases correctly
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'test-audit-id',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.5,
+                wordCountBefore: 100,
+                wordCountAfter: 250,
+              },
+            ],
+          },
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: () => Promise.resolve([]),
+        };
+
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+        });
+
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+          },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const syncCall = syncSuggestionsStub.getCall(0);
+        const { shouldUpdateSuggestion } = syncCall.args[0];
+
+        expect(shouldUpdateSuggestion).to.be.a('function');
+
+        // Test 1: OUTDATED domain-wide suggestion should return false
+        const outdatedDomainWideSuggestion = {
+          getStatus: () => Suggestion.STATUSES.OUTDATED,
+          getData: () => ({
+            isDomainWide: true,
+          }),
+        };
+        expect(shouldUpdateSuggestion(outdatedDomainWideSuggestion)).to.be.false;
+
+        // Test 2: Non-OUTDATED domain-wide suggestion should return true
+        const newDomainWideSuggestion = {
+          getStatus: () => Suggestion.STATUSES.NEW,
+          getData: () => ({
+            isDomainWide: true,
+          }),
+        };
+        expect(shouldUpdateSuggestion(newDomainWideSuggestion)).to.be.true;
+
+        // Test 3: OUTDATED non-domain-wide suggestion should return true
+        const outdatedNonDomainWideSuggestion = {
+          getStatus: () => Suggestion.STATUSES.OUTDATED,
+          getData: () => ({
+            isDomainWide: false,
+          }),
+        };
+        expect(shouldUpdateSuggestion(outdatedNonDomainWideSuggestion)).to.be.true;
+
+        // Test 4: Suggestion without isDomainWide field should return true
+        const suggestionWithoutField = {
+          getStatus: () => Suggestion.STATUSES.OUTDATED,
+          getData: () => ({}),
+        };
+        expect(shouldUpdateSuggestion(suggestionWithoutField)).to.be.true;
+
+        // Test 5: Suggestion with null/undefined data should return true
+        const suggestionWithNullData = {
+          getStatus: () => Suggestion.STATUSES.OUTDATED,
+          getData: () => null,
+        };
+        expect(shouldUpdateSuggestion(suggestionWithNullData)).to.be.true;
       });
 
       it('should store raw numeric values (totals) for domain-wide suggestions', async () => {

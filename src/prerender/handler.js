@@ -733,8 +733,8 @@ async function prepareDomainWideAggregateSuggestion(
  * @param {string} auditUrl - Audited URL
  * @param {Object} auditData - Audit data with results
  * @param {Object} context - Processing context
- * @returns {Promise<Object>} Object with shouldCreateNewDomainWideSuggestion boolean,
- *   existingDomainWideSuggestionData object (or null), and isOutdated boolean
+ * @returns {Promise<Object>} Object with shouldCreateNewDomainWideSuggestion boolean
+ *   and existingDomainWideSuggestionData object (or null)
  */
 async function determineDomainWideSuggestionAction(
   opportunity,
@@ -759,7 +759,6 @@ async function determineDomainWideSuggestionAction(
 
   let shouldCreateNewDomainWideSuggestion = true;
   let existingDomainWideSuggestionData = null;
-  let isOutdated = false;
 
   if (allDomainWideSuggestions.length > 0) {
     // Find the first active domain-wide suggestion (if any)
@@ -864,7 +863,6 @@ export async function processOpportunityAndSuggestions(
   const {
     shouldCreateNewDomainWideSuggestion,
     existingDomainWideSuggestionData,
-    isOutdated,
   } = await determineDomainWideSuggestionAction(
     opportunity,
     auditUrl,
@@ -892,15 +890,17 @@ export async function processOpportunityAndSuggestions(
   });
 
   const allSuggestions = [...preRenderSuggestions];
-  if (isOutdated) {
-    // Skip adding domain-wide suggestion when OUTDATED exists - don't modify it
-  } else if (!shouldCreateNewDomainWideSuggestion && existingDomainWideSuggestionData) {
-    // Active suggestion exists - use existing data to preserve status
+  if (!shouldCreateNewDomainWideSuggestion && existingDomainWideSuggestionData) {
+    // Active or inactive suggestion exists - use existing data to preserve status
+    // Note: OUTDATED suggestions will be filtered out by shouldUpdateSuggestion callback
     allSuggestions.push({
       key: domainWideSuggestion.key,
       data: existingDomainWideSuggestionData,
     });
   } else {
+    // No existing suggestion or creating new one
+    // Note: If all are OUTDATED, shouldUpdateSuggestion will prevent updates
+    // and key matching will prevent duplicate creation
     allSuggestions.push(domainWideSuggestion);
   }
 
