@@ -128,8 +128,8 @@ export function createAccessibilityAssistiveOpportunity() {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
     origin: 'AUTOMATION',
     type: 'a11y-assistive',
-    title: 'Accessibility - Assistive technology is incompatible on site',
-    description: 'This report provides a structured overview of all detected accessibility issues across your website, organized by severity and page. Each issue includes WCAG guidelines, impact assessment, and actionable recommendations for improvement.',
+    title: 'Make your site clearer for assistive tech users — we\'ll fix your aria label issues',
+    description: 'Clear ARIA labels help screen readers convey content accurately — improving inclusivity and usability.',
     tags: [
       'a11y',
     ],
@@ -145,8 +145,8 @@ export function createAccessibilityColorContrastOpportunity() {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
     origin: 'AUTOMATION',
     type: 'a11y-color-contrast',
-    title: 'Accessibility - Color contrast is insufficient on site',
-    description: 'This report provides a structured overview of all detected accessibility issues across your website, organized by severity and page. Each issue includes WCAG guidelines, impact assessment, and actionable recommendations for improvement.',
+    title: 'Color contrast ratio fixes may help visitors view your content and help the site stay ADA/WCAG compliant',
+    description: 'Sufficient color contrast ensures legibility for all users — supporting accessibility and brand reputation.',
     tags: [
       'a11y',
     ],
