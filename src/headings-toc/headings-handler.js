@@ -195,8 +195,6 @@ export async function validatePageHeadingFromScrapeJson(
     } else if (h1Elements.length > 1) {
       log.debug(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
       // For multiple H1s, provide transformRules for the first extra H1 (second H1 element)
-      const extraH1Selector = getHeadingSelector(h1Elements[1]);
-      const h1Text = getTextContent(h1Elements[1], $);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
         checkTitle: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.title,
@@ -205,24 +203,6 @@ export async function validatePageHeadingFromScrapeJson(
         explanation: `Found ${h1Elements.length} h1 elements: ${HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation}`,
         suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
         count: h1Elements.length,
-        transformRules: {
-          action: 'replaceWith',
-          selector: extraH1Selector,
-          currValue: h1Text,
-          scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
-          valueFormat: 'hast',
-          value: {
-            type: 'root',
-            children: [
-              {
-                type: 'element',
-                tagName: 'h2',
-                properties: {},
-                children: [{ type: 'text', value: h1Text }],
-              },
-            ],
-          },
-        },
       });
     } else if (getTextContent(h1Elements[0], $).length === 0
       || getTextContent(h1Elements[0], $).length > H1_LENGTH_CHARS) {
