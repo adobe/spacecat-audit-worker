@@ -13,10 +13,10 @@
 import { stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import {
   validatePageHeadingFromScrapeJson,
-  getBrandGuidelines,
   getH1HeadingASuggestion,
   HEADINGS_CHECKS,
-} from '../headings/handler.js';
+} from '../headings-toc/headings-handler.js';
+import { getBrandGuidelines } from '../headings-toc/shared-utils.js';
 import { saveIntermediateResults } from './utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
 
