@@ -337,13 +337,13 @@ function extractSchemaVersion(str) {
 export async function shouldRecreateTable(
   athenaClient,
   database,
-  rawTable,
+  tableName,
   expectedLocation,
   sqlTemplate,
   log,
 ) {
   try {
-    const result = await athenaClient.query(`SHOW CREATE TABLE ${database}.${rawTable}`, database, `[Athena Query] Check raw table ${database}.${rawTable}`);
+    const result = await athenaClient.query(`SHOW CREATE TABLE ${database}.${tableName}`, database, `[Athena Query] Check table ${database}.${tableName}`);
     const createStatement = result?.map((row) => row.createtab_stmt).join('\n');
     const locationMatch = createStatement?.match(/LOCATION\s*['"]([^'"]+)['"]/i);
 
@@ -351,8 +351,8 @@ export async function shouldRecreateTable(
 
     const normalize = (loc) => (loc.endsWith('/') ? loc : `${loc}/`);
     if (normalize(locationMatch[1]) !== normalize(expectedLocation)) {
-      log.info(`Table location mismatch. Dropping table ${database}.${rawTable}`);
-      await athenaClient.execute(`DROP TABLE IF EXISTS ${database}.${rawTable}`, database, `[Athena Query] Drop raw table ${database}.${rawTable}`);
+      log.info(`Table location mismatch. Dropping table ${database}.${tableName}`);
+      await athenaClient.execute(`DROP TABLE IF EXISTS ${database}.${tableName}`, database, `[Athena Query] Drop raw table ${database}.${tableName}`);
       return true;
     }
 
@@ -361,8 +361,8 @@ export async function shouldRecreateTable(
     const expectedVersion = extractSchemaVersion(sqlTemplate);
 
     if (currentVersion !== expectedVersion) {
-      log.info(`Schema version mismatch for ${database}.${rawTable} (current: ${currentVersion}, expected: ${expectedVersion}). Dropping table.`);
-      await athenaClient.execute(`DROP TABLE IF EXISTS ${database}.${rawTable}`, database, `[Athena Query] Drop raw table ${database}.${rawTable}`);
+      log.info(`Schema version mismatch for ${database}.${tableName} (current: ${currentVersion}, expected: ${expectedVersion}). Dropping table.`);
+      await athenaClient.execute(`DROP TABLE IF EXISTS ${database}.${tableName}`, database, `[Athena Query] Drop raw table ${database}.${tableName}`);
       return true;
     }
 
