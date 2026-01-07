@@ -97,7 +97,6 @@ export function createOrUpdateDeviceSpecificSuggestion(
   suggestionValue,
   deviceType,
   markdownContent,
-  context,
 ) {
   let updatedSuggestionValue;
 
@@ -119,7 +118,7 @@ export function createOrUpdateDeviceSpecificSuggestion(
     updatedSuggestionValue[`accessibility-${deviceType}`] = markdownContent;
   }
 
-  return createReportOpportunitySuggestionInstance(updatedSuggestionValue, context);
+  return createReportOpportunitySuggestionInstance(updatedSuggestionValue);
 }
 
 export function createAccessibilityAssistiveOpportunity() {

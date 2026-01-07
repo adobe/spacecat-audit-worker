@@ -13,7 +13,6 @@ import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
-import { isPaidTrafficReport } from '../utils/report-detection.js';
 
 const GUIDANCE_TYPE = 'guidance:traffic-analysis';
 const TRAFFIC_OPP_TYPE = 'paid-traffic';
@@ -116,14 +115,11 @@ export default async function handler(message, context) {
   // Map AI Insights suggestions from guidance (already in expected structure)
   const suggestions = mapToAIInsightsSuggestions(opportunity.getId(), guidance);
   if (suggestions.length) {
-    // If this is a paid traffic report, always set status to NEW, ele use requiresValidation logic
-    let status = SuggestionModel.STATUSES.NEW;
-    if (!isPaidTrafficReport(opportunity)) {
-      const requiresValidation = Boolean(context.site?.requiresValidation);
-      status = requiresValidation
-        ? SuggestionModel.STATUSES.PENDING_VALIDATION
-        : SuggestionModel.STATUSES.NEW;
-    }
+    // If this is a paid traffic report, always set status to NEW, else use requiresValidation logic
+    const requiresValidation = Boolean(context.site?.requiresValidation);
+    const status = opportunity.getType() !== 'paid-traffic' && requiresValidation
+      ? SuggestionModel.STATUSES.PENDING_VALIDATION
+      : SuggestionModel.STATUSES.NEW;
 
     await Promise.all(suggestions.map((s) => Suggestion.create({
       ...s,

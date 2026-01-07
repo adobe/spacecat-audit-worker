@@ -1089,7 +1089,7 @@ describe('data-processing utility functions', () => {
       log,
       context = {}
     ) => {
-      const suggestions = createReportOpportunitySuggestionInstanceStub(reportMarkdown, context);
+      const suggestions = createReportOpportunitySuggestionInstanceStub(reportMarkdown);
 
       try {
         const suggestion = await opportunity.addSuggestions(suggestions);
@@ -1119,7 +1119,7 @@ describe('data-processing utility functions', () => {
 
       expect(result.suggestion).to.deep.equal(createdSuggestion);
       expect(createReportOpportunitySuggestionInstanceStub.calledOnce).to.be.true;
-      expect(createReportOpportunitySuggestionInstanceStub.calledWith(reportMarkdown, sinon.match.any)).to.be.true;
+      expect(createReportOpportunitySuggestionInstanceStub.calledWith(reportMarkdown)).to.be.true;
       expect(mockOpportunity.addSuggestions.calledOnce).to.be.true;
       expect(mockOpportunity.addSuggestions.calledWith(mockSuggestions)).to.be.true;
     });
@@ -1167,7 +1167,7 @@ describe('data-processing utility functions', () => {
       );
 
       expect(result.suggestion).to.deep.equal(createdSuggestion);
-      expect(createReportOpportunitySuggestionInstanceStub.calledWith('', sinon.match.any)).to.be.true;
+      expect(createReportOpportunitySuggestionInstanceStub.calledWith('')).to.be.true;
     });
 
     it('should handle complex report markdown', async () => {
@@ -1202,11 +1202,10 @@ describe('data-processing utility functions', () => {
         reportMarkdown,
         mockAuditData,
         mockLog,
-        { site: { requiresValidation: true } }
       );
 
       expect(result.suggestion).to.deep.equal(createdSuggestion);
-      expect(createReportOpportunitySuggestionInstanceStub.calledWith(reportMarkdown, sinon.match.any)).to.be.true;
+      expect(createReportOpportunitySuggestionInstanceStub.calledWith(reportMarkdown)).to.be.true;
     });
 
     it('should handle different audit data formats', async () => {
