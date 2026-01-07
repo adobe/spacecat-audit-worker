@@ -608,7 +608,7 @@ describe('Backlinks Tests', function () {
             url_to: 'https://example.com/', // Root URL - no locale prefix extracted
             traffic_domain: 1000,
             anchor: 'test anchor',
-            domain_rating: 50,
+            domain_rating_source: 50,
           },
         ],
       });

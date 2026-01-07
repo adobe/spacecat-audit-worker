@@ -189,7 +189,7 @@ export const generateSuggestionData = async (context) => {
       // Rank formula: DR² × log10(traffic + 1)
       // This weights Domain Rating more heavily than traffic volume
       // High DR sites (authority) are prioritized over high traffic (volume)
-      const dr = backlink.domain_rating || 30;
+      const dr = backlink.domain_rating_source || 30;
       const traffic = backlink.traffic_domain || 1;
       const rank = Math.round((dr ** 2) * Math.log10(traffic + 1));
 
@@ -203,7 +203,7 @@ export const generateSuggestionData = async (context) => {
           url_to: backlink.url_to,
           traffic_domain: backlink.traffic_domain,
           anchor: backlink.anchor || '',
-          domain_rating: backlink.domain_rating || 0,
+          domain_rating: backlink.domain_rating_source || 0,
         },
       };
     },
