@@ -891,16 +891,11 @@ export async function processOpportunityAndSuggestions(
 
   const allSuggestions = [...preRenderSuggestions];
   if (!shouldCreateNewDomainWideSuggestion && existingDomainWideSuggestionData) {
-    // Active or inactive suggestion exists - use existing data to preserve status
-    // Note: OUTDATED suggestions will be filtered out by shouldUpdateSuggestion callback
     allSuggestions.push({
       key: domainWideSuggestion.key,
       data: existingDomainWideSuggestionData,
     });
   } else {
-    // No existing suggestion or creating new one
-    // Note: If all are OUTDATED, shouldUpdateSuggestion will prevent updates
-    // and key matching will prevent duplicate creation
     allSuggestions.push(domainWideSuggestion);
   }
 
