@@ -472,7 +472,7 @@ async function determineDomainWideSuggestionAction(
   const { log } = context;
 
   const existingSuggestions = await opportunity.getSuggestions();
-  const existingDomainWideSuggestion = existingSuggestions.find(
+  const allDomainWideSuggestions = existingSuggestions.filter(
     (s) => {
       const data = s.getData();
       return data?.[IS_DOMAIN_WIDE_FIELD] === true;
@@ -491,19 +491,21 @@ async function determineDomainWideSuggestionAction(
   let existingDomainWideSuggestionData = null;
   let isOutdated = false;
 
-  if (existingDomainWideSuggestion) {
-    const existingStatus = existingDomainWideSuggestion.getStatus();
-    if (ACTIVE_STATUSES.includes(existingStatus)) {
+  if (allDomainWideSuggestions.length > 0) {
+    // Find the first active domain-wide suggestion (if any)
+    const activeDomainWideSuggestion = allDomainWideSuggestions.find(
+      (s) => ACTIVE_STATUSES.includes(s.getStatus()),
+    );
+
+    if (activeDomainWideSuggestion) {
       shouldCreateNewDomainWideSuggestion = false;
-      existingDomainWideSuggestionData = existingDomainWideSuggestion.getData();
-      log.info(`Prerender - Domain-wide suggestion already exists in ${existingStatus} state, skipping creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-    } else if (existingStatus === Suggestion.STATUSES.OUTDATED) {
-      // OUTDATED suggestions should not be modified
+      existingDomainWideSuggestionData = activeDomainWideSuggestion.getData();
+      const activeStatus = activeDomainWideSuggestion.getStatus();
+      log.info(`Prerender - Domain-wide suggestion already exists in ${activeStatus} state, skipping creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}, totalDomainWideSuggestions=${allDomainWideSuggestions.length}`);
+    } else {
       shouldCreateNewDomainWideSuggestion = false;
       isOutdated = true;
-      log.info(`Prerender - Domain-wide suggestion exists in ${existingStatus} state, skipping modification. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-    } else {
-      log.info(`Prerender - Domain-wide suggestion exists in ${existingStatus} state, will update it. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+      log.info(`Prerender - All domain-wide suggestions are OUTDATED (${allDomainWideSuggestions.length} total), skipping modification. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
     }
   } else {
     log.info(`Prerender - No existing domain-wide suggestion found, will create new one. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
@@ -645,6 +647,17 @@ export async function processOpportunityAndSuggestions(
         ...existingData,
         ...mapSuggestionData(newDataItem),
       };
+    },
+
+    shouldUpdateSuggestion: (existing) => {
+      const existingData = existing.getData();
+      const isDomainWide = existingData?.[IS_DOMAIN_WIDE_FIELD] === true;
+      const existingIsOutdated = existing.getStatus() === Suggestion.STATUSES.OUTDATED;
+
+      if (isDomainWide && existingIsOutdated) {
+        return false;
+      }
+      return true;
     },
   });
 
