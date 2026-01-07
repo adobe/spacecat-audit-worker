@@ -1,3 +1,10 @@
+## [1.274.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.274.1...v1.274.2) (2026-01-06)
+
+
+### Bug Fixes
+
+* adding constant to filter forms from creating oppties ([#1816](https://github.com/adobe/spacecat-audit-worker/issues/1816)) ([fa7865a](https://github.com/adobe/spacecat-audit-worker/commit/fa7865aedec26683462d02969561409fc1a9eac6))
+
 ## [1.274.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.274.0...v1.274.1) (2026-01-05)
 
 
