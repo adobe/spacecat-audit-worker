@@ -183,7 +183,7 @@ export async function runAuditAndSendToMystique(context) {
       const writeCategoryExcel = async (code, errors) => {
         if (!errors || errors.length === 0) return;
 
-        /* c8 ignore next */
+        /* c8 ignore next 2 */
         const sorted = [...errors].sort(
           (a, b) => (b.total_requests || 0) - (a.total_requests || 0),
         );
