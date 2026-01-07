@@ -242,7 +242,7 @@ export async function runAuditAndSendToMystique(context) {
 
         // Fallback to Ahrefs if Athena returns no data
         if (!alternativeUrls || alternativeUrls.length === 0) {
-          log.info('[LLM-ERROR-PAGES] No agentic URLs from Athena for alternatives, falling back to Ahrefs');
+          log.info('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs');
           const { SiteTopPage } = dataAccess;
           const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
           alternativeUrls = topPages.map((page) => page.getUrl());
