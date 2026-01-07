@@ -84,6 +84,7 @@ import headings from './headings/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
 import vulnerabilitiesCodeFix from './vulnerabilities-code-fix/handler.js';
 import prerender from './prerender/handler.js';
+import prerenderGuidance from './prerender/guidance-handler.js';
 import productMetatags from './product-metatags/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import summarization from './summarization/handler.js';
@@ -171,6 +172,7 @@ const HANDLERS = {
   hreflang,
   headings,
   prerender,
+  'guidance:prerender': prerenderGuidance,
   'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,
   'codefix:security-vulnerabilities': vulnerabilitiesCodeFix,
