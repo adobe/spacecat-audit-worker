@@ -92,8 +92,10 @@ describe('collectCWVDataStep Tests', () => {
 
   describe('codeImportStep', () => {
     it('should create code import message for import worker', async () => {
-      const result = await codeImportStep({ site, log: context.log });
+      const result = await codeImportStep({ site, log: context.log, finalUrl: auditUrl });
 
+      expect(result.auditResult).to.deep.equal({ status: 'preparing', finalUrl: auditUrl });
+      expect(result.fullAuditRef).to.equal(auditUrl);
       expect(result.type).to.equal('code');
       expect(result.siteId).to.equal('test-site-id');
       expect(result.allowCache).to.equal(false);

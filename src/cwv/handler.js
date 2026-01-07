@@ -32,17 +32,19 @@ const TOP_PAGES_COUNT = 15;
 /**
  * Step 1: Code Import Step
  * Triggers import worker to fetch and store repository code in S3
- * @param {Object} context - Context object containing site and log
- * @returns {Promise<Object>} Message for import worker
+ * @param {Object} context - Context object containing site, finalUrl and log
+ * @returns {Promise<Object>} Message for import worker with audit result
  */
 export async function codeImportStep(context) {
   const {
-    log, site,
+    log, site, finalUrl,
   } = context;
 
   log.info(`[CWVAudit] [Site Id: ${site.getId()}] starting code import step`);
 
   return {
+    auditResult: { status: 'preparing', finalUrl },
+    fullAuditRef: finalUrl,
     type: 'code',
     siteId: site.getId(),
     allowCache: false,
@@ -52,7 +54,7 @@ export async function codeImportStep(context) {
 /**
  * Step 2: CWV Data Collection and Analysis
  * Collects RUM data, filters URLs, and prepares audit result
- * @param {Object} context - Context object containing site, finalUrl, audit, log
+ * @param {Object} context - Context object containing site, finalUrl, log
  * @returns {Promise<Object>} Audit result with CWV data
  */
 export async function collectCWVDataStep(context) {
