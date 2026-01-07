@@ -14,76 +14,48 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { validateUrls } from '../seo-indexability-check/validators.js';
 
 /**
- * Sends validation results back to Mystique via SQS
- * Sends two separate messages:
- * 1. Clean URLs - for H1/meta optimization
- * 2. Blocked URLs - for Tech SEO team review
+ * Sends validation results back to Mystique
  *
  * @param {string} siteId - Site ID
  * @param {string} auditId - Audit ID (optional)
  * @param {string} requestId - Request ID for correlation
  * @param {Array} cleanUrls - URLs that passed validation
- * @param {Array} blockedUrls - URLs that failed validation
+ * @param {Array} blockedUrls - URLs that failed validation (for info/tracking)
  * @param {Object} context - Audit context containing sqs, env, log
  * @returns {Promise<void>}
  */
 async function sendResultsToMystique(siteId, auditId, requestId, cleanUrls, blockedUrls, context) {
   const { sqs, env, log } = context;
 
-  // Message 1: Clean URLs for H1/Meta optimization
-  if (cleanUrls.length > 0) {
-    const cleanMessage = {
-      type: 'detect:seo-indexability',
-      siteId,
-      auditId,
-      requestId,
-      time: new Date().toISOString(),
-      data: {
-        status: 'clean',
-        urls: cleanUrls.map((u) => ({
-          url: u.url,
-          primaryKeyword: u.primaryKeyword,
-          position: u.position,
-          trafficValue: u.trafficValue,
-          intent: u.intent,
-          checks: u.checks,
-        })),
-      },
-    };
+  const message = {
+    type: 'detect:seo-indexability',
+    siteId,
+    auditId,
+    requestId,
+    time: new Date().toISOString(),
+    data: {
+      cleanUrls: cleanUrls.map((u) => ({
+        url: u.url,
+        primaryKeyword: u.primaryKeyword,
+        position: u.position,
+        trafficValue: u.trafficValue,
+        intent: u.intent,
+        checks: u.checks,
+      })),
+      blockedUrls: blockedUrls.map((u) => ({
+        url: u.url,
+        primaryKeyword: u.primaryKeyword,
+        position: u.position,
+        trafficValue: u.trafficValue,
+        intent: u.intent,
+        blockers: u.blockers,
+        checks: u.checks,
+      })),
+    },
+  };
 
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, cleanMessage);
-    log.info(`Sent ${cleanUrls.length} clean URLs to Mystique for H1/meta optimization`);
-  }
-
-  // Message 2: Blocked URLs for Tech SEO review
-  if (blockedUrls.length > 0) {
-    const blockedMessage = {
-      type: 'detect:seo-indexability',
-      siteId,
-      auditId,
-      requestId,
-      time: new Date().toISOString(),
-      data: {
-        status: 'blocked',
-        urls: blockedUrls.map((u) => ({
-          url: u.url,
-          primaryKeyword: u.primaryKeyword,
-          position: u.position,
-          trafficValue: u.trafficValue,
-          intent: u.intent,
-          blockers: u.blockers,
-          checks: u.checks,
-        })),
-      },
-    };
-
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, blockedMessage);
-    log.info(`Sent ${blockedUrls.length} blocked URLs to Mystique for Tech SEO review`);
-  }
-
-  if (cleanUrls.length === 0 && blockedUrls.length === 0) {
-    log.warn(`No URLs to send for requestId=${requestId}`);
-  }
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+  log.info(`Sent ${cleanUrls.length} clean and ${blockedUrls.length} blocked URLs to Mystique`);
 }
 
 /**
@@ -125,24 +97,24 @@ export async function validateSeoOpportunitiesStep(context) {
   // Validate all URLs (reuses existing indexability validation logic)
   const validationResults = await validateUrls(urls, context);
 
-  // Separate clean vs blocked URLs
   const cleanUrls = validationResults.filter((r) => r.indexable);
   const blockedUrls = validationResults.filter((r) => !r.indexable);
 
   log.info(`Validation complete for ${site.getBaseURL()}: ${cleanUrls.length} clean, ${blockedUrls.length} blocked`);
 
-  // Log blocker summary for debugging
+  // Blocker summary (for logging)
+  const blockerSummary = blockedUrls.length > 0 ? blockedUrls.reduce((acc, url) => {
+    url.blockers.forEach((blocker) => {
+      acc[blocker] = (acc[blocker] || 0) + 1;
+    });
+    return acc;
+  }, {}) : {};
+
   if (blockedUrls.length > 0) {
-    const blockerSummary = blockedUrls.reduce((acc, url) => {
-      url.blockers.forEach((blocker) => {
-        acc[blocker] = (acc[blocker] || 0) + 1;
-      });
-      return acc;
-    }, {});
     log.info(`Blocker summary: ${JSON.stringify(blockerSummary)}`);
   }
 
-  // Send results back to Mystique
+  // Send both clean and blocked URLs to Mystique
   await sendResultsToMystique(
     site.getId(),
     context.audit?.getId?.(),
@@ -152,19 +124,13 @@ export async function validateSeoOpportunitiesStep(context) {
     context,
   );
 
-  // Return audit result (stored in audit history)
   return {
     auditResult: {
       success: true,
       totalUrls: urls.length,
       cleanUrls: cleanUrls.length,
       blockedUrls: blockedUrls.length,
-      blockerSummary: blockedUrls.length > 0 ? blockedUrls.reduce((acc, url) => {
-        url.blockers.forEach((blocker) => {
-          acc[blocker] = (acc[blocker] || 0) + 1;
-        });
-        return acc;
-      }, {}) : {},
+      blockerSummary,
       timestamp: new Date().toISOString(),
     },
     fullAuditRef: site.getBaseURL(),
@@ -173,11 +139,6 @@ export async function validateSeoOpportunitiesStep(context) {
 
 /**
  * Export audit using AuditBuilder pattern
- * This makes it a standard SpaceCat audit that can be:
- * - Triggered via API
- * - Scheduled
- * - Monitored in audit dashboard
- * - Extended with additional steps
  */
 export default new AuditBuilder()
   .addStep('validateSeoOpportunities', validateSeoOpportunitiesStep)

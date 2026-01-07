@@ -187,6 +187,7 @@ const HANDLERS = {
   'wikipedia-analysis': wikipediaAnalysis,
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
   'seo-opportunities': seoOpportunities,
+  'detect:seo-indexability': seoOpportunities,
   dummy: (message) => ok(message),
 };
 

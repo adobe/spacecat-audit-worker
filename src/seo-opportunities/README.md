@@ -18,35 +18,37 @@ Validates that URLs are indexable by search engines before sending them for H1/m
      │                          │
      ├─────────────────────────>│
      │ 2. Send URLs via SQS     │
-     │    AUDIT_JOBS_QUEUE      │
+     │    type: detect:seo-     │
+     │         indexability      │
+     │    MYSTIQUE_TO_SPACECAT  │
      │                          │
      │                          │ 3. Validate indexability
-     │                          │    ✓ HTTP status (200 OK?)
+     │                          │    ✓ HTTP status (200?)
      │                          │    ✓ No redirects?
      │                          │    ✓ Self-canonical?
      │                          │    ✓ Not noindexed?
      │                          │    ✓ robots.txt allows?
      │                          │
-     │◄─────────────────────────┤
-     │ 4a. Clean URLs           │
-     │     (via SQS)            │
-     │                          │
-     │◄─────────────────────────┤
-     │ 4b. Blocked URLs         │
-     │     (via SQS)            │
-     │                          │
-     │ 5. Mystique processes:   │
-     │    • Clean → Generate    │
-     │      H1/meta with AI     │
-     │    • Blocked → Notify    │
-     │      Tech SEO team       │
-     │                          │
-     ├─────────────────────────>│
-     │ 6. Send guidance back    │
-     │    (for clean URLs)      │
-     │                          │
-     │                          │ 7. Create opportunities
-     │                          │    (Store in DynamoDB)
+     │                          │ 4. Split results
+     │                          │          │          
+     │                          |    CLEAN   BLOCKED     
+     │                          │          │          
+     │◄─────────────────────────┴──────────┘          
+     │ 5. Send results (SQS)    │                     
+     │    type: detect:seo-     │
+     │         indexability      │
+     │    SPACECAT_TO_MYSTIQUE  │
+     │    - cleanUrls           │                     
+     │    - blockedUrls (info)  │                     
+     │                          │                     
+     │ 6. Process               │                     
+     │    • Clean → AI optimize │                     
+     │    • Blocked → Log only  │                     
+     │                          │                     
+     ├─────────────────────────>│                     
+     │ 7. Send guidance back    │                     
+     │    (TBD - future step)   │                     
+
 ```
 
 ---
@@ -62,10 +64,11 @@ Validates that URLs are indexable by search engines before sending them for H1/m
 - Checks noindex (meta tag + X-Robots-Tag header)
 - Checks robots.txt blocking (using existing `llm-blocked` logic)
 
-**`handler.js`** - Message handler
-- Receives URLs from Mystique
-- Runs validation
-- Sends results back to Mystique
+**`handler.js`** - Audit handler (dual registration)
+- Receives URLs from Mystique (via `detect:seo-indexability` message type)
+- Runs validation using `validators.js`
+- Sends results back to Mystique via `SPACECAT_TO_MYSTIQUE` queue
+- Also registered as `seo-opportunities` for API/scheduled triggers
 
 ---
 
@@ -73,12 +76,14 @@ Validates that URLs are indexable by search engines before sending them for H1/m
 
 ### Step 1: Mystique Sends URLs to SpaceCat
 
-**Queue:** `AUDIT_JOBS_QUEUE`
+**Queue:** `MYSTIQUE_TO_SPACECAT` (via existing `SQSClient`)
+
+**Pattern:** Uses the `detect:` prefix pattern, same as `detect:geo-brand-presence`, `detect:form-details`, etc.
 
 **Message Format:**
 ```json
 {
-  "type": "seo-opportunities",
+  "type": "detect:seo-indexability",
   "siteId": "abc-123",
   "data": {
     "requestId": "seo-oppty-abc-123-1234567890",
@@ -102,8 +107,26 @@ Validates that URLs are indexable by search engines before sending them for H1/m
 }
 ```
 
+**Python Example (Mystique):**
+```python
+from connectors.sqs_client import SQSClient
+
+sqs_client = SQSClient()
+
+message = {
+    "type": "detect:seo-indexability",  # ← Follows detect: pattern
+    "siteId": "abc-123",
+    "data": {
+        "requestId": "seo-oppty-abc-123-1234567890",
+        "urls": [...]
+    }
+}
+
+await sqs_client.send_message(message)  # → MYSTIQUE_TO_SPACECAT
+```
+
 **Required Fields:**
-- `type`: Must be `"seo-opportunities"`
+- `type`: Must be `"detect:seo-indexability"`
 - `siteId`: SpaceCat site ID
 - `data.urls`: Array of URL objects
   - `url` (required): The page URL to validate
@@ -115,15 +138,21 @@ Validates that URLs are indexable by search engines before sending them for H1/m
 **Optional Fields:**
 - `data.requestId`: Correlation ID for tracking (recommended)
 
+**Alternative Method:** The audit can also be triggered via SpaceCat API using `type: "seo-opportunities"` and `AUDIT_JOBS_QUEUE`, but the recommended method for Mystique is using the `detect:` message handler pattern shown above.
+
 ---
 
 ### Step 2: SpaceCat Sends Results Back to Mystique
 
 **Queue:** `QUEUE_SPACECAT_TO_MYSTIQUE`
 
-SpaceCat sends **TWO separate messages** - one for clean URLs, one for blocked URLs.
+SpaceCat sends **BOTH clean and blocked URLs** to Mystique:
+- **Clean URLs**: Ready for AI-powered H1/meta optimization
+- **Blocked URLs**: Informational only (for tracking/retry logic)
 
-#### Message 1: Clean URLs (Ready for Optimization)
+**Note:** Blocked URLs do NOT trigger opportunity creation in SpaceCat. Other audits (`redirect-chains`, `canonical`, etc.) will create opportunities when they run.
+
+#### Message Format
 
 ```json
 {
@@ -133,8 +162,7 @@ SpaceCat sends **TWO separate messages** - one for clean URLs, one for blocked U
   "requestId": "seo-oppty-abc-123-1234567890",
   "time": "2025-01-05T10:30:00Z",
   "data": {
-    "status": "clean",
-    "urls": [
+    "cleanUrls": [
       {
         "url": "https://example.com/cruises",
         "primaryKeyword": "norwegian cruises",
@@ -142,87 +170,28 @@ SpaceCat sends **TWO separate messages** - one for clean URLs, one for blocked U
         "trafficValue": 150.5,
         "intent": "commercial",
         "checks": {
-          "httpStatus": {
-            "passed": true,
-            "statusCode": 200
-          },
-          "redirects": {
-            "passed": true,
-            "redirectCount": 0
-          },
-          "canonical": {
-            "passed": true,
-            "isCanonical": true
-          },
-          "noindex": {
-            "passed": true,
-            "hasNoindexHeader": false,
-            "hasNoindexMeta": false
-          },
-          "robotsTxt": {
-            "passed": true,
-            "details": {
-              "googlebot": true,
-              "general": true
-            }
-          }
+          "httpStatus": { "passed": true, "statusCode": 200 },
+          "redirects": { "passed": true, "redirectCount": 0 },
+          "canonical": { "passed": true, "isSelfReferencing": true, "canonicalUrl": null },
+          "noindex": { "passed": true, "hasNoindexHeader": false, "hasNoindexMeta": false },
+          "robotsTxt": { "passed": true, "details": { "googlebot": true, "general": true, "cached": false } }
         }
       }
-    ]
-  }
-}
-```
-
-**Mystique Action:** Send these URLs to AI agents for H1/meta optimization.
-
----
-
-#### Message 2: Blocked URLs (Needs Tech SEO Review)
-
-```json
-{
-  "type": "detect:seo-indexability",
-  "siteId": "abc-123",
-  "auditId": "audit-uuid-here",
-  "requestId": "seo-oppty-abc-123-1234567890",
-  "time": "2025-01-05T10:30:00Z",
-  "data": {
-    "status": "blocked",
-    "urls": [
+    ],
+    "blockedUrls": [
       {
         "url": "https://example.com/old-page",
         "primaryKeyword": "example keyword",
         "position": 8,
         "trafficValue": 200.0,
         "intent": "commercial",
-        "blockers": ["redirect-detected", "canonical-mismatch"],
+        "blockers": ["redirect-chain", "canonical-mismatch"],
         "checks": {
-          "httpStatus": {
-            "passed": true,
-            "statusCode": 200
-          },
-          "redirects": {
-            "passed": false,
-            "redirectCount": 2,
-            "finalUrl": "https://example.com/new-page"
-          },
-          "canonical": {
-            "passed": false,
-            "isCanonical": false,
-            "canonicalUrl": "https://example.com/new-page"
-          },
-          "noindex": {
-            "passed": true,
-            "hasNoindexHeader": false,
-            "hasNoindexMeta": false
-          },
-          "robotsTxt": {
-            "passed": true,
-            "details": {
-              "googlebot": true,
-              "general": true
-            }
-          }
+          "httpStatus": { "passed": true, "statusCode": 200 },
+          "redirects": { "passed": false, "redirectCount": 2, "redirectChain": "https://example.com/old-page -> https://example.com/temp -> https://example.com/new-page", "finalUrl": "https://example.com/new-page" },
+          "canonical": { "passed": false, "isSelfReferencing": false, "canonicalUrl": "https://example.com/new-page" },
+          "noindex": { "passed": true, "hasNoindexHeader": false, "hasNoindexMeta": false },
+          "robotsTxt": { "passed": true, "details": { "googlebot": true, "general": true, "cached": true } }
         }
       }
     ]
@@ -230,7 +199,82 @@ SpaceCat sends **TWO separate messages** - one for clean URLs, one for blocked U
 }
 ```
 
-**Mystique Action:** Route to Tech SEO team (Slack/Jira). Do NOT proceed with optimization.
+**Mystique Actions:**
+- **Clean URLs**: Send to AI agents for H1/meta optimization
+- **Blocked URLs**: Log for tracking, optionally notify team, wait for other audits to fix
+
+---
+
+### Audit Result (Saved to Database)
+
+The audit result is saved to SpaceCat's database for historical tracking and analytics:
+
+```json
+{
+  "success": true,
+  "totalUrls": 10,
+  "cleanUrls": 7,
+  "blockedUrls": 3,
+  "blockerSummary": {
+    "redirect-chain": 2,
+    "canonical-mismatch": 1
+  },
+  "timestamp": "2025-01-06T12:00:00Z"
+}
+```
+
+**Why `blockerSummary` is included:**
+- **Analytics**: Track blocker trends over time
+- **Monitoring**: Alert on spike in specific blocker types
+- **Dashboard**: Visualize blocker distribution
+- **Historical**: Compare improvements week-over-week
+
+**Example use case:**
+```
+Week 1: { "redirect-chain": 50, "noindex": 10 }
+Week 2: { "redirect-chain": 20, "noindex": 5 }  ← Improvement!
+```
+
+---
+
+## Handler Registration
+
+This audit is registered **twice** in `src/index.js` to support both use cases:
+
+```javascript
+const HANDLERS = {
+  'seo-opportunities': seoOpportunities,       // For API/scheduled triggers
+  'detect:seo-indexability': seoOpportunities, // For Mystique messages ✅
+};
+```
+
+**When to use each:**
+- **`detect:seo-indexability`** ✅ (Recommended): Mystique sends this message type via `MYSTIQUE_TO_SPACECAT` queue using the existing `SQSClient`. Follows the standard `detect:` pattern like `detect:geo-brand-presence`, `detect:form-details`, and `detect:forms-a11y`.
+- **`seo-opportunities`**: Use for API triggers or scheduled audits via `AUDIT_JOBS_QUEUE`.
+
+---
+
+### Step 3: Blocked URLs - What Happens?
+
+**Blocked URLs are NOT handled by this audit.** They are sent to Mystique for tracking/information purposes only.
+
+#### Other SpaceCat Audits Will Create Opportunities
+
+Blocked URLs will be caught by regular SpaceCat audits:
+
+| Blocker Type | Handled By | Creates Opportunity |
+|--------------|------------|---------------------|
+| `redirect-detected` | `redirect-chains` audit | ✅ Yes - "Redirect issues found with /redirects.json" |
+| `canonical-mismatch` | `canonical` audit | ✅ Yes - "Canonical URL issues affecting SEO" |
+| `noindex` | Manual review | ❌ No audit - Requires manual review (could be intentional) |
+| `http-error` | Manual review | ❌ No audit - Requires site-wide error check |
+| `robots-txt-blocked` | `llm-blocked` audit (LLM only) | ⚠️ Partial - Only checks LLM crawlers, not Googlebot |
+
+**Why this approach?**
+- ✅ No duplicate opportunities
+- ✅ Other audits provide site-wide context
+- ✅ Existing workflows and runbooks apply
+- ✅ Mystique can track and retry when URLs become clean
 
 ---
 
@@ -380,36 +424,3 @@ aws sqs receive-message \
 ```bash
 npm run test:spec -- test/audits/seo-opportunities/
 ```
-
----
-
-## Configuration
-
-### Environment Variables (SpaceCat)
-- `AUDIT_JOBS_QUEUE_URL` - Queue for receiving validation requests
-- `QUEUE_SPACECAT_TO_MYSTIQUE` - Queue for sending results back
-
-### Environment Variables (Mystique)
-- `SPACECAT_AUDIT_JOBS_QUEUE_URL` - Where to send validation requests
-- `QUEUE_SPACECAT_TO_MYSTIQUE` - Where to receive results
-- `SPACECAT_AWS_ACCESS_KEY_ID` - AWS credentials
-- `SPACECAT_AWS_SECRET_ACCESS_KEY` - AWS credentials
-
----
-
-## Future Enhancements
-
-Potential additions (not currently implemented):
-- ✨ Check site-specific canonicalization patterns
-- ✨ Detect JavaScript-rendered noindex (requires browser)
-- ✨ Check indexation status in Google Search Console
-- ✨ Validate structured data presence
-- ✨ Check page load speed (Core Web Vitals)
-
----
-
-## Support
-
-**Questions?** Contact:
-- SpaceCat Team: #spacecat-support
-- SEO Team: #seo-team

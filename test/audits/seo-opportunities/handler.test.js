@@ -116,12 +116,11 @@ describe('SEO Opportunities Handler', () => {
       expect(result.auditResult.success).to.equal(true);
       expect(result.auditResult.totalUrls).to.equal(1);
 
-      // Should have blocked URLs
+      // Should have blocked URLs (404 error)
       if (result.auditResult.blockedUrls > 0) {
-        expect(sqsSendMessageStub.called).to.equal(true);
-        const sentMessages = sqsSendMessageStub.getCalls();
-        const blockedMessage = sentMessages.find((call) => call.args[1].data.status === 'blocked');
-        expect(blockedMessage).to.exist;
+        expect(result.blockedUrlsData).to.be.an('array');
+        expect(result.blockedUrlsData.length).to.be.greaterThan(0);
+        expect(result.blockedUrlsData[0].blockers).to.include('http-error');
       }
     });
 
@@ -151,6 +150,43 @@ describe('SEO Opportunities Handler', () => {
       expect(urlData.position).to.equal(8);
       expect(urlData.trafficValue).to.equal(200);
       expect(urlData.intent).to.equal('commercial');
+    });
+
+    it('should send both clean and blocked URLs to Mystique', async () => {
+      context.data = {
+        requestId: 'test-request-mixed',
+        urls: [
+          {
+            url: 'https://www.adobe.com/',
+            primaryKeyword: 'adobe',
+            position: 5,
+            trafficValue: 100,
+            intent: 'commercial',
+          },
+          {
+            url: 'https://httpstat.us/404',
+            primaryKeyword: 'test keyword',
+            position: 10,
+            trafficValue: 50,
+            intent: 'commercial',
+          },
+        ],
+      };
+
+      const result = await validateSeoOpportunitiesStep(context);
+
+      expect(result.auditResult.success).to.equal(true);
+      expect(result.auditResult.totalUrls).to.equal(2);
+
+      // Should send one message with both clean and blocked
+      const sentMessages = sqsSendMessageStub.getCalls();
+      expect(sentMessages.length).to.equal(1);
+
+      const message = sentMessages[0].args[1];
+      expect(message.data).to.have.property('cleanUrls');
+      expect(message.data).to.have.property('blockedUrls');
+      expect(message.data.cleanUrls).to.be.an('array');
+      expect(message.data.blockedUrls).to.be.an('array');
     });
   });
 });
