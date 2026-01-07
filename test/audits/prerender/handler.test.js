@@ -24,10 +24,10 @@ import prerenderHandler, {
   processOpportunityAndSuggestions,
   createScrapeForbiddenOpportunity,
   uploadStatusSummaryToS3,
-} from '../../src/prerender/handler.js';
-import { analyzeHtmlForPrerender } from '../../src/prerender/utils/html-comparator.js';
-import { createOpportunityData } from '../../src/prerender/opportunity-data-mapper.js';
-import { TOP_AGENTIC_URLS_LIMIT, TOP_ORGANIC_URLS_LIMIT } from '../../src/prerender/utils/constants.js';
+} from '../../../src/prerender/handler.js';
+import { analyzeHtmlForPrerender } from '../../../src/prerender/utils/html-comparator.js';
+import { createOpportunityData } from '../../../src/prerender/opportunity-data-mapper.js';
+import { TOP_AGENTIC_URLS_LIMIT, TOP_ORGANIC_URLS_LIMIT } from '../../../src/prerender/utils/constants.js';
 
 describe('Prerender Audit', () => {
   let sandbox;
@@ -307,11 +307,11 @@ describe('Prerender Audit', () => {
       });
 
       it('should include includedURLs from site config', async () => {
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {
             AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
           },
-          '../../src/prerender/utils/shared.js': {
+          '../../../src/prerender/utils/shared.js': {
             generateReportingPeriods: () => ({ weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }] }),
             getS3Config: async () => ({ databaseName: 'db', tableName: 'tbl', getAthenaTempLocation: () => 's3://tmp/' }),
             weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
@@ -334,12 +334,12 @@ describe('Prerender Audit', () => {
       });
 
       it('should cap top organic pages to TOP_ORGANIC_URLS_LIMIT', async () => {
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {
             // No agentic urls for this test
             AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
           },
-          '../../src/prerender/utils/shared.js': {
+          '../../../src/prerender/utils/shared.js': {
             generateReportingPeriods: () => ({ weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }] }),
             getS3Config: async () => ({ databaseName: 'db', tableName: 'tbl', getAthenaTempLocation: () => 's3://tmp/' }),
             weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
@@ -368,11 +368,11 @@ describe('Prerender Audit', () => {
 
       it('should fall back to sheet when Athena returns no data and use weekId from shared utils', async () => {
         const athenaQueryStub = sinon.stub().resolves([]);
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {
             AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
           },
-          '../../src/prerender/utils/shared.js': {
+          '../../../src/prerender/utils/shared.js': {
             generateReportingPeriods: () => ({
               weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
               periodIdentifier: 'w45-2025',
@@ -432,11 +432,11 @@ describe('Prerender Audit', () => {
           { url: '/a', number_of_hits: 10 },
           { url: '/b', number_of_hits: 9 },
         ];
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {
             AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
           },
-          '../../src/prerender/utils/shared.js': {
+          '../../../src/prerender/utils/shared.js': {
             generateReportingPeriods: () => ({
               weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
               periodIdentifier: 'w45-2025',
@@ -482,12 +482,12 @@ describe('Prerender Audit', () => {
       });
 
       it('should handle undefined topPages list from SiteTopPage gracefully', async () => {
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {
             // No agentic URLs for this test
             AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
           },
-          '../../src/prerender/utils/shared.js': {
+          '../../../src/prerender/utils/shared.js': {
             generateReportingPeriods: () => ({
               weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
             }),
@@ -600,11 +600,11 @@ describe('Prerender Audit', () => {
       it('should warn when Athena returns no agentic rows and agentic URL fallback fails', async () => {
         const athenaQueryStub = sinon.stub().resolves([]);
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {
             AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
           },
-          '../../src/prerender/utils/shared.js': {
+          '../../../src/prerender/utils/shared.js': {
             generateReportingPeriods: () => ({
               weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
             }),
@@ -740,11 +740,11 @@ describe('Prerender Audit', () => {
         // This test covers line 341 by ensuring the full opportunity processing flow executes
         const mockOpportunity = { getId: () => 'test-opportunity-id' };
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: sinon.stub().resolves(),
           },
         });
@@ -806,8 +806,8 @@ describe('Prerender Audit', () => {
         const convertToOpportunityStub = sinon.stub().resolves(mockOpportunity);
         const createScrapeForbiddenOpportunityStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: convertToOpportunityStub,
           },
         });
@@ -834,11 +834,11 @@ describe('Prerender Audit', () => {
         getObjectFromKeyStub.onCall(1).resolves(null); // No client HTML
         getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata); // scrape.json with 403 error
 
-        const mockHandlerWithS3 = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandlerWithS3 = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: convertToOpportunityStub,
           },
-          '../../src/utils/s3-utils.js': {
+          '../../../src/utils/s3-utils.js': {
             getObjectFromKey: getObjectFromKeyStub,
           },
         });
@@ -890,8 +890,8 @@ describe('Prerender Audit', () => {
         const mockOpportunity = { getId: () => 'test-opportunity-id' };
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: convertToOpportunityStub,
           },
         });
@@ -1060,9 +1060,6 @@ describe('Prerender Audit', () => {
         const mockSyncSuggestions = sandbox.stub().resolves();
 
         // Mock the dependencies - need to use dynamic import to mock ES modules
-        const originalConvertToOpportunity = await import('../../src/common/opportunity.js');
-        const originalSyncSuggestions = await import('../../src/utils/data-access.js');
-
         // Since we can't easily stub ES modules, we'll test the logic indirectly
         // by testing what would happen if the dependencies were available
 
@@ -1343,11 +1340,11 @@ describe('Prerender Audit', () => {
         const mockOpportunity = { getId: () => 'test-opp-id' };
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
@@ -1455,9 +1452,9 @@ describe('Prerender Audit', () => {
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
-          '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+          '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
         });
 
         const context = {
@@ -1518,9 +1515,9 @@ describe('Prerender Audit', () => {
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
-          '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+          '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
         });
 
         const context = {
@@ -1591,9 +1588,9 @@ describe('Prerender Audit', () => {
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
-          '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+          '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
         });
 
         const context = {
@@ -1660,9 +1657,9 @@ describe('Prerender Audit', () => {
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
-          '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+          '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
         });
 
         const context = {
@@ -1716,9 +1713,9 @@ describe('Prerender Audit', () => {
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
-          '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+          '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
         });
 
         const context = {
@@ -1804,9 +1801,9 @@ describe('Prerender Audit', () => {
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
-          '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+          '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
         });
 
         const context = {
@@ -1847,7 +1844,7 @@ describe('Prerender Audit', () => {
     it('should return top agentic URLs from Athena and filter "Other"; uses path fallback when baseUrl invalid (latest week)', async () => {
       let capturedPeriods;
       let capturedLimit;
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: async () => ([
             // SQL now excludes 'Other' in WHERE clause
@@ -1855,7 +1852,7 @@ describe('Prerender Audit', () => {
             { url: '/b', number_of_hits: 3 },
           ]) }) },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           // Provide multiple recent weeks; handler should pick latest week only
           generateReportingPeriods: () => {
             const w1 = { weekNumber: 48, year: 2025, startDate: new Date('2025-11-24'), endDate: new Date('2025-11-30') };
@@ -1906,7 +1903,7 @@ describe('Prerender Audit', () => {
 
     it('should populate agentic traffic for included URLs via Athena (hits-for-urls)', async () => {
       const html = '<html><body><p>x</p></body></html>';
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: async (q) => {
             // Return hits for the specific-URLs query
@@ -1914,7 +1911,7 @@ describe('Prerender Audit', () => {
             return [];
           } }) },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
           }),
@@ -1925,7 +1922,7 @@ describe('Prerender Audit', () => {
           }),
           weeklyBreakdownQueries: { createAgenticReportQuery: async () => 'SELECT 1' },
         },
-        '../../src/utils/s3-utils.js': {
+        '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
       });
@@ -1950,7 +1947,7 @@ describe('Prerender Audit', () => {
     it('should cap agentic URLs in SQL via LIMIT; handler maps rows returned', async () => {
       let capturedPeriods;
       let capturedLimit;
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({
             query: async () => {
@@ -1960,7 +1957,7 @@ describe('Prerender Audit', () => {
             },
           }) },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => {
             const w1 = { weekNumber: 48, year: 2025, startDate: new Date('2025-11-24'), endDate: new Date('2025-11-30') };
             return { weeks: [w1] };
@@ -1995,11 +1992,11 @@ describe('Prerender Audit', () => {
     });
 
     it('should return [] when sheet fallback has no rows', async () => {
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
           }),
@@ -2026,7 +2023,7 @@ describe('Prerender Audit', () => {
   describe('Additional branch coverage (mapping, catches)', () => {
     it('should use catch-path sheet fallback and hit toPath catch in fallback', async () => {
       const html = '<html><body><p>x</p></body></html>';
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: {
             fromContext: () => ({
@@ -2040,7 +2037,7 @@ describe('Prerender Audit', () => {
             }),
           },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
           }),
@@ -2058,7 +2055,7 @@ describe('Prerender Audit', () => {
           }),
           buildSheetHitsMap: (rows) => new Map([[rows[0]?.url || '/inc', rows[0]?.number_of_hits || 0]]),
         },
-        '../../src/utils/s3-utils.js': {
+        '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
       });
@@ -2086,12 +2083,12 @@ describe('Prerender Audit', () => {
     });
     it('should include specific URLs via sheet fallback when Athena returns no rows (no agenticTraffic from backend)', async () => {
       const html = '<html><body><p>x</p></body></html>';
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           // Return empty for specific-URLs query to trigger sheet fallback
           AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
           }),
@@ -2109,7 +2106,7 @@ describe('Prerender Audit', () => {
           }),
           buildSheetHitsMap: (rows) => new Map([['/inc', 12]]),
         },
-        '../../src/utils/s3-utils.js': {
+        '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
       });
@@ -2137,11 +2134,11 @@ describe('Prerender Audit', () => {
     });
     it('should hit toPath catch for malformed included URL', async () => {
       const html = '<html><body><p>x</p></body></html>';
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
           }),
@@ -2155,7 +2152,7 @@ describe('Prerender Audit', () => {
             createAgenticHitsForUrlsQuery: async () => 'SELECT 2',
           },
         },
-        '../../src/utils/s3-utils.js': {
+        '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
       });
@@ -2179,11 +2176,11 @@ describe('Prerender Audit', () => {
     });
 
     it('should hit sheet mapping catch when baseUrl invalid', async () => {
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: async () => [] }) },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
           }),
@@ -2213,13 +2210,13 @@ describe('Prerender Audit', () => {
     it('should cover agenticStats mapping and ranking loop by returning non-empty top list', async () => {
       const serverHtml = '<html><body>Same</body></html>';
       const clientHtml = '<html><body>Same</body></html>';
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: async () => ([
             { url: '/x', number_of_hits: 2 },
           ]) }) },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
           }),
@@ -2232,7 +2229,7 @@ describe('Prerender Audit', () => {
             createAgenticReportQuery: async () => 'SELECT 1',
           },
         },
-        '../../src/utils/s3-utils.js': {
+        '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async (_c, _b, key) => {
             if (key.endsWith('server-side.html')) return serverHtml;
             if (key.endsWith('client-side.html')) return clientHtml;
@@ -2258,13 +2255,13 @@ describe('Prerender Audit', () => {
 
     it('should log error when getIncludedURLs throws (handled by top-level catch)', async () => {
       const html = '<html><body><p>x</p></body></html>';
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: async () => ([
             { url: '/x', number_of_hits: 1 },
           ]) }) },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
           }),
@@ -2277,7 +2274,7 @@ describe('Prerender Audit', () => {
             createAgenticReportQuery: async () => 'SELECT 1',
           },
         },
-        '../../src/utils/s3-utils.js': {
+        '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
       });
@@ -2305,11 +2302,11 @@ describe('Prerender Audit', () => {
 
     it('should handle missing SiteTopPage without errors (no top organic URLs)', async () => {
       const athenaQueryStub = sinon.stub().resolves([]);
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
             periodIdentifier: 'w45-2025',
@@ -2349,7 +2346,7 @@ describe('Prerender Audit', () => {
     });
 
     it('should handle Athena results with missing url fields', async () => {
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: {
             fromContext: () => ({
@@ -2362,7 +2359,7 @@ describe('Prerender Audit', () => {
             }),
           },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
           }),
@@ -2396,11 +2393,11 @@ describe('Prerender Audit', () => {
 
     it('should handle sheet load failures gracefully even when log.warn is missing', async () => {
       const athenaQueryStub = sinon.stub().resolves([]);
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
             periodIdentifier: 'w45-2025',
@@ -2442,7 +2439,7 @@ describe('Prerender Audit', () => {
 
     it('should log detailed fallback message when building URL list from fallbacks', async () => {
       const html = '<html><body><p>x</p></body></html>';
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: {
             fromContext: () => ({
@@ -2452,7 +2449,7 @@ describe('Prerender Audit', () => {
             }),
           },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
           }),
@@ -2466,7 +2463,7 @@ describe('Prerender Audit', () => {
             createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 2'),
           },
         },
-        '../../src/utils/s3-utils.js': {
+        '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
       });
@@ -2511,7 +2508,7 @@ describe('Prerender Audit', () => {
 
     it('should handle missing dataAccess when loading top pages', async () => {
       const html = '<html><body><p>x</p></body></html>';
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: {
             fromContext: () => ({
@@ -2520,7 +2517,7 @@ describe('Prerender Audit', () => {
             }),
           },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
           }),
@@ -2540,7 +2537,7 @@ describe('Prerender Audit', () => {
           }),
           buildSheetHitsMap: (rows) => new Map(rows.map((r) => [r.url, r.number_of_hits])),
         },
-        '../../src/utils/s3-utils.js': {
+        '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
         },
       });
@@ -2563,7 +2560,7 @@ describe('Prerender Audit', () => {
     });
 
     it('should handle missing site.getBaseURL when mapping agentic URLs from Athena', async () => {
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: {
             fromContext: () => ({
@@ -2573,7 +2570,7 @@ describe('Prerender Audit', () => {
             }),
           },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
           }),
@@ -2613,11 +2610,11 @@ describe('Prerender Audit', () => {
       const athenaQueryStub = sinon.stub().resolves([]);
       const warn = sinon.stub();
 
-      const mockHandler = await esmock('../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../src/prerender/handler.js', {
         '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
         },
-        '../../src/prerender/utils/shared.js': {
+        '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
             periodIdentifier: 'w45-2025',
@@ -2670,24 +2667,24 @@ describe('Prerender Audit', () => {
   describe('Shared utils loadLatestAgenticSheet', () => {
     it('returns latest week and calls downloadExistingCdnSheet with correct params', async () => {
       const called = { weekId: null, outputLocation: null };
-      const shared = await esmock('../../src/prerender/utils/shared.js', {
-        '../../src/cdn-logs-report/utils/report-utils.js': {
+      const shared = await esmock('../../../src/prerender/utils/shared.js', {
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') }],
           }),
         },
-        '../../src/llm-error-pages/utils.js': {
+        '../../../src/llm-error-pages/utils.js': {
           downloadExistingCdnSheet: async (weekId, outputLocation) => {
             called.weekId = weekId;
             called.outputLocation = outputLocation;
             return [{ url: '/x', number_of_hits: 1 }];
           },
         },
-        '../../src/utils/report-uploader.js': {
+        '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: async () => ({}),
           readFromSharePoint: async () => ({}),
         },
-        '../../src/utils/cdn-utils.js': {
+        '../../../src/utils/cdn-utils.js': {
           resolveConsolidatedBucketName: () => 'bucket',
           extractCustomerDomain: () => 'acme_com',
         },
@@ -2709,7 +2706,7 @@ describe('Prerender Audit', () => {
 
   describe('Shared utils coverage', () => {
     it('buildSheetHitsMap covers default path and numeric coercion', async () => {
-      const shared = await esmock('../../src/prerender/utils/shared.js', {});
+      const shared = await esmock('../../../src/prerender/utils/shared.js', {});
       const rows = [{}, { url: '', number_of_hits: undefined }, { url: '/a', number_of_hits: '3' }];
       const map = shared.buildSheetHitsMap(rows);
       expect(map.get('/')).to.equal(0); // two defaulted entries sum to 0
@@ -2717,20 +2714,20 @@ describe('Prerender Audit', () => {
     });
 
     it('loadLatestAgenticSheet covers baseUrl fallback when getBaseURL is missing', async () => {
-      const shared = await esmock('../../src/prerender/utils/shared.js', {
-        '../../src/cdn-logs-report/utils/report-utils.js': {
+      const shared = await esmock('../../../src/prerender/utils/shared.js', {
+        '../../../src/cdn-logs-report/utils/report-utils.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') }],
           }),
         },
-        '../../src/llm-error-pages/utils.js': {
+        '../../../src/llm-error-pages/utils.js': {
           downloadExistingCdnSheet: async () => [{ url: '/x', number_of_hits: 1 }],
         },
-        '../../src/utils/report-uploader.js': {
+        '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: async () => ({}),
           readFromSharePoint: async () => ({}),
         },
-        '../../src/utils/cdn-utils.js': {
+        '../../../src/utils/cdn-utils.js': {
           resolveConsolidatedBucketName: () => 'bucket',
           extractCustomerDomain: () => 'acme_com',
         },
@@ -2746,8 +2743,8 @@ describe('Prerender Audit', () => {
   });
   describe('Shared utils coverage', () => {
     it('should return S3 config shape and temp location function', async () => {
-      const shared = await esmock('../../src/prerender/utils/shared.js', {
-        '../../src/utils/cdn-utils.js': {
+      const shared = await esmock('../../../src/prerender/utils/shared.js', {
+        '../../../src/utils/cdn-utils.js': {
           // Avoid depending on env; just return a deterministic bucket
           resolveConsolidatedBucketName: () => 'bucket',
           extractCustomerDomain: () => 'adobe_com',
@@ -2763,8 +2760,8 @@ describe('Prerender Audit', () => {
     });
 
     it('should compute customerName correctly when domain starts with www', async () => {
-      const shared = await esmock('../../src/prerender/utils/shared.js', {
-        '../../src/utils/cdn-utils.js': {
+      const shared = await esmock('../../../src/prerender/utils/shared.js', {
+        '../../../src/utils/cdn-utils.js': {
           resolveConsolidatedBucketName: () => 'bucket',
           extractCustomerDomain: () => 'www.adobe_com',
         },
@@ -3404,8 +3401,8 @@ describe('Prerender Audit', () => {
     describe('Advanced Error Handling Tests', () => {
       it('should trigger getObjectFromKey error handling', async () => {
         // Test the catch block in getScrapedHtmlFromS3 by mocking getObjectFromKey to throw
-        const mockS3Utils = await esmock('../../src/prerender/handler.js', {
-          '../../src/utils/s3-utils.js': {
+        const mockS3Utils = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': {
             getObjectFromKey: sinon.stub().throws(new Error('S3 connection failed')),
           },
         });
@@ -3448,8 +3445,8 @@ describe('Prerender Audit', () => {
         getObjectFromKeyStub.onCall(0).resolves('<html><body>Server content</body></html>'); // Valid server HTML
         getObjectFromKeyStub.onCall(1).resolves(null); // Missing client HTML
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/utils/s3-utils.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': {
             getObjectFromKey: getObjectFromKeyStub,
           },
         });
@@ -3493,13 +3490,13 @@ describe('Prerender Audit', () => {
 
       it('should trigger HTML analysis error handling', async () => {
         // Mock analyzeHtmlForPrerender to throw an error
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/utils/s3-utils.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': {
             getObjectFromKey: sinon.stub()
               .onFirstCall().resolves('<html><body>Valid content</body></html>')
               .onSecondCall().resolves('<html><body>Valid content too</body></html>'),
           },
-          '../../src/prerender/utils/html-comparator.js': {
+          '../../../src/prerender/utils/html-comparator.js': {
             analyzeHtmlForPrerender: sinon.stub().throws(new Error('Mocked analysis error')),
           },
         });
@@ -3541,11 +3538,11 @@ describe('Prerender Audit', () => {
         const mockOpportunity = { getId: () => 'test-opportunity-id' };
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
@@ -3624,11 +3621,11 @@ describe('Prerender Audit', () => {
         const mockOpportunity = { getId: () => 'test-opportunity-id' };
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
@@ -3688,7 +3685,7 @@ describe('Prerender Audit', () => {
           allBySiteIdAndStatus: sinon.stub().resolves([existingOpportunity]),
         };
 
-        const convertToOpportunityModule = await import('../../src/common/opportunity.js');
+        const convertToOpportunityModule = await import('../../../src/common/opportunity.js');
         
         const auditData = {
           siteId: 'test-site-id',
@@ -3754,7 +3751,7 @@ describe('Prerender Audit', () => {
 
       it('should throw when calculateStats fails', async () => {
         // Mock the HTML analysis to throw an error during processing
-        const mockAnalyze = await esmock('../../src/prerender/utils/html-comparator.js', {
+        const mockAnalyze = await esmock('../../../src/prerender/utils/html-comparator.js', {
           '@adobe/spacecat-shared-html-analyzer': {
             calculateStats: sinon.stub().throws(new Error('Stats calculation failed')),
           },
@@ -3781,8 +3778,8 @@ describe('Prerender Audit', () => {
         getObjectFromKeyStub.onCall(0).resolves(''); // Empty server HTML
         getObjectFromKeyStub.onCall(1).resolves('<html><body><p>Valid content</p></body></html>');
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/utils/s3-utils.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': {
             getObjectFromKey: getObjectFromKeyStub,
           },
         });
@@ -3830,8 +3827,8 @@ describe('Prerender Audit', () => {
         getObjectFromKeyStub.onCall(0).rejects(new Error('S3 access denied'));
         getObjectFromKeyStub.onCall(1).rejects(new Error('S3 access denied'));
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/utils/s3-utils.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': {
             getObjectFromKey: getObjectFromKeyStub,
           },
         });
@@ -3879,8 +3876,8 @@ describe('Prerender Audit', () => {
         getObjectFromKeyStub.onCall(0).resolves(null);
         getObjectFromKeyStub.onCall(1).resolves(null);
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/utils/s3-utils.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': {
             getObjectFromKey: getObjectFromKeyStub,
           },
         });
@@ -3930,8 +3927,8 @@ describe('Prerender Audit', () => {
         getObjectFromKeyStub.onCall(0).resolves('<html><body>Valid server content</body></html>');
         getObjectFromKeyStub.onCall(1).resolves(null); // Null client HTML
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/utils/s3-utils.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': {
             getObjectFromKey: getObjectFromKeyStub,
           },
         });
@@ -3980,8 +3977,8 @@ describe('Prerender Audit', () => {
         getObjectFromKeyStub.onCall(1).resolves('<html><body>Client content</body></html>');
         getObjectFromKeyStub.onCall(2).rejects(new Error('S3 GetObject failed for scrape.json'));
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/utils/s3-utils.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': {
             getObjectFromKey: getObjectFromKeyStub,
           },
         });
@@ -4025,8 +4022,8 @@ describe('Prerender Audit', () => {
         getObjectFromKeyStub.onCall(1).resolves('<html><body>Client content</body></html>');
         getObjectFromKeyStub.onCall(2).resolves(null); // getObjectFromKey returns null on parse failure
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/utils/s3-utils.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': {
             getObjectFromKey: getObjectFromKeyStub,
           },
         });
@@ -4073,9 +4070,9 @@ describe('Prerender Audit', () => {
         getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata);
 
         // Mock analyzeHtmlForPrerender to throw an error
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
-          '../../src/prerender/utils/html-comparator.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+          '../../../src/prerender/utils/html-comparator.js': {
             analyzeHtmlForPrerender: sandbox.stub().throws(new Error('Analysis failed')),
           },
         });
