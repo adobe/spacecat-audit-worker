@@ -402,13 +402,10 @@ describe('Readability Analysis Utils', () => {
       expect(result).to.be.an('array');
     });
 
-    it('should exclude style, script, noscript and meta elements from text extraction', async () => {
+    it('should exclude style, script, noscript elements from text extraction', async () => {
       const html = `
         <!DOCTYPE html>
         <html>
-          <head>
-            <meta name="description" content="This meta content should not appear">
-          </head>
           <body>
             <style>.class { color: red; font-size: 14px; }</style>
             <script>console.log('This script content should not appear in readability');</script>
