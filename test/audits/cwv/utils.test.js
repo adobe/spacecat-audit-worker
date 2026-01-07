@@ -102,6 +102,59 @@ describe('CWV Utils', () => {
       expect(message.data.device_type).to.equal('mobile');
     });
 
+    it('should include codeBucket and codePath when available', async () => {
+      // Create a new instance with mocked getCodeInfo
+      const getCodeInfoStub = sandbox.stub().resolves({
+        codeBucket: 'test-bucket',
+        codePath: 'code/test-site-id/github/test-owner/test-repo/main/repository.zip',
+      });
+
+      const { sendSQSMessageForAutoSuggest: sendWithCode } = await esmock('../../../src/cwv/auto-suggest.js', {
+        '../../../src/common/index.js': {
+          isAuditEnabledForSite,
+        },
+        '../../../src/accessibility/utils/data-processing.js': {
+          getCodeInfo: getCodeInfoStub,
+        },
+      });
+
+      const siteWithCode = {
+        getId: () => 'test-site-id',
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+        getDeliveryType: sandbox.stub().returns('aem_cs'),
+        getCode: sandbox.stub().returns({
+          source: 'github',
+          owner: 'test-owner',
+          repo: 'test-repo',
+          ref: 'main',
+        }),
+      };
+
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile' }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await sendWithCode(context, opportunity, siteWithCode);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      const message = sqsStub.firstCall.args[1];
+
+      expect(message.data.codeBucket).to.equal('test-bucket');
+      expect(message.data.codePath).to.equal('code/test-site-id/github/test-owner/test-repo/main/repository.zip');
+    });
+
     it('should skip group-type suggestions and only send URL-type suggestions', async () => {
       const opportunity = {
         getSiteId: () => 'site-123',

@@ -20,7 +20,7 @@ import nock from 'nock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
-import { collectCWVDataStep, opportunityAndSuggestions } from '../../src/cwv/handler.js';
+import { collectCWVDataStep, codeImportStep, opportunityAndSuggestions } from '../../src/cwv/handler.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
 import expectedOpptyWithoutGSC from '../fixtures/cwv/opptyWithoutGSC.json' with { type: 'json' };
 import suggestions from '../fixtures/cwv/suggestions.json' with { type: 'json' };
@@ -88,6 +88,17 @@ describe('collectCWVDataStep Tests', () => {
     nock.cleanAll();
     sinon.restore();
     site.getDeliveryConfig.reset();
+  });
+
+  describe('codeImportStep', () => {
+    it('should create code import message for import worker', async () => {
+      const result = await codeImportStep({ site, log: context.log });
+
+      expect(result.type).to.equal('code');
+      expect(result.siteId).to.equal('test-site-id');
+      expect(result.allowCache).to.equal(false);
+      expect(context.log.info).to.have.been.calledWith('[CWVAudit] [Site Id: test-site-id] starting code import step');
+    });
   });
 
   it('cwv audit runs rum api client cwv query', async () => {
