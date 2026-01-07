@@ -460,8 +460,8 @@ async function prepareDomainWideAggregateSuggestion(
  * @param {string} auditUrl - Audited URL
  * @param {Object} auditData - Audit data with results
  * @param {Object} context - Processing context
- * @returns {Promise<Object>} Object with shouldCreateNewDomainWideSuggestion boolean
- *   and existingDomainWideSuggestionData object (or null)
+ * @returns {Promise<Object>} Object with shouldCreateNewDomainWideSuggestion boolean,
+ *   existingDomainWideSuggestionData object (or null), and isOutdated boolean
  */
 async function determineDomainWideSuggestionAction(
   opportunity,
@@ -485,12 +485,11 @@ async function determineDomainWideSuggestionAction(
     Suggestion.STATUSES.FIXED,
     Suggestion.STATUSES.PENDING_VALIDATION,
     Suggestion.STATUSES.SKIPPED,
-    // Temporary fix: OUTDATED suggestions should not be moved to NEW status
-    Suggestion.STATUSES.OUTDATED,
   ];
 
   let shouldCreateNewDomainWideSuggestion = true;
   let existingDomainWideSuggestionData = null;
+  let isOutdated = false;
 
   if (existingDomainWideSuggestion) {
     const existingStatus = existingDomainWideSuggestion.getStatus();
@@ -498,6 +497,11 @@ async function determineDomainWideSuggestionAction(
       shouldCreateNewDomainWideSuggestion = false;
       existingDomainWideSuggestionData = existingDomainWideSuggestion.getData();
       log.info(`Prerender - Domain-wide suggestion already exists in ${existingStatus} state, skipping creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+    } else if (existingStatus === Suggestion.STATUSES.OUTDATED) {
+      // OUTDATED suggestions should not be modified
+      shouldCreateNewDomainWideSuggestion = false;
+      isOutdated = true;
+      log.info(`Prerender - Domain-wide suggestion exists in ${existingStatus} state, skipping modification. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
     } else {
       log.info(`Prerender - Domain-wide suggestion exists in ${existingStatus} state, will update it. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
     }
@@ -508,6 +512,7 @@ async function determineDomainWideSuggestionAction(
   return {
     shouldCreateNewDomainWideSuggestion,
     existingDomainWideSuggestionData,
+    isOutdated,
   };
 }
 
@@ -578,6 +583,7 @@ export async function processOpportunityAndSuggestions(
   const {
     shouldCreateNewDomainWideSuggestion,
     existingDomainWideSuggestionData,
+    isOutdated,
   } = await determineDomainWideSuggestionAction(
     opportunity,
     auditUrl,
@@ -604,19 +610,17 @@ export async function processOpportunityAndSuggestions(
     ),
   });
 
-  // Build allSuggestions array, always including domain-wide suggestion (either new or existing)
-  // This ensures syncSuggestions can match it and won't mark it as OUTDATED
-  let allSuggestions = [...preRenderSuggestions];
-  if (shouldCreateNewDomainWideSuggestion) {
-    allSuggestions = [...preRenderSuggestions, domainWideSuggestion];
-  } else if (existingDomainWideSuggestionData) {
-    allSuggestions = [
-      ...preRenderSuggestions,
-      {
-        key: domainWideSuggestion.key,
-        data: existingDomainWideSuggestionData,
-      },
-    ];
+  const allSuggestions = [...preRenderSuggestions];
+  if (isOutdated) {
+    // Skip adding domain-wide suggestion when OUTDATED exists - don't modify it
+  } else if (!shouldCreateNewDomainWideSuggestion && existingDomainWideSuggestionData) {
+    // Active suggestion exists - use existing data to preserve status
+    allSuggestions.push({
+      key: domainWideSuggestion.key,
+      data: existingDomainWideSuggestionData,
+    });
+  } else {
+    allSuggestions.push(domainWideSuggestion);
   }
 
   await syncSuggestions({
