@@ -572,8 +572,8 @@ async function handleAiOnlyMode(context) {
   // Send to Mystique using the existing function
   const auditData = {
     siteId,
-    /* c8 ignore next - Optional chaining fallback to null, defensive programming */
-    auditId: opportunity.getAuditId() || null,
+    /* c8 ignore next - Fallback to custom audit ID for ai-only mode tracking */
+    auditId: opportunity.getAuditId() || `prerender-ai-only-${siteId}`,
     scrapeJobId,
   };
 

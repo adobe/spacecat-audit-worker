@@ -17,9 +17,9 @@ const LOG_PREFIX = 'Prerender -';
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const {
-    Audit, Site, Opportunity, Suggestion,
+    Site, Opportunity, Suggestion,
   } = dataAccess;
-  const { siteId, auditId, data } = message;
+  const { siteId, data } = message;
 
   log.info(
     `${LOG_PREFIX} Received Mystique guidance for prerender: ${JSON.stringify(
@@ -31,19 +31,12 @@ export default async function handler(message, context) {
 
   // Validate message structure early - fail fast
   if (!data) {
-    const msg = `${LOG_PREFIX} Missing data in Mystique response for siteId=${siteId}, auditId=${auditId}`;
+    const msg = `${LOG_PREFIX} Missing data in Mystique response for siteId=${siteId}`;
     log.error(msg);
     return badRequest(msg);
   }
 
   const { suggestions, opportunityId } = data;
-
-  // Validate audit exists
-  const audit = await Audit.findById(auditId);
-  if (!audit) {
-    log.warn(`${LOG_PREFIX} No audit found for auditId: ${auditId}`);
-    return notFound();
-  }
 
   // Validate site exists
   const site = await Site.findById(siteId);
@@ -53,7 +46,7 @@ export default async function handler(message, context) {
   }
 
   log.info(
-    `${LOG_PREFIX} Processing AI guidance for siteId=${siteId}, auditId=${auditId}, opportunityId=${opportunityId}`,
+    `${LOG_PREFIX} Processing AI guidance for siteId=${siteId}, opportunityId=${opportunityId}`,
   );
 
   if (!Array.isArray(suggestions) || suggestions.length === 0) {
@@ -64,7 +57,7 @@ export default async function handler(message, context) {
   }
 
   if (!opportunityId) {
-    const msg = `${LOG_PREFIX} Missing opportunityId in Mystique response for siteId=${siteId}, auditId=${auditId}`;
+    const msg = `${LOG_PREFIX} Missing opportunityId in Mystique response for siteId=${siteId}`;
     log.error(msg);
     return badRequest(msg);
   }

@@ -22,11 +22,9 @@ use(sinonChai);
 describe('Prerender Guidance Handler', () => {
   let context;
   let log;
-  let Audit;
   let Site;
   let Opportunity;
   let Suggestion;
-  let mockAudit;
   let mockSite;
   let mockOpportunity;
   let mockSuggestions;
@@ -36,10 +34,6 @@ describe('Prerender Guidance Handler', () => {
       info: sinon.stub(),
       warn: sinon.stub(),
       error: sinon.stub(),
-    };
-
-    mockAudit = {
-      getId: sinon.stub().returns('audit-123'),
     };
 
     mockSite = {
@@ -83,10 +77,6 @@ describe('Prerender Guidance Handler', () => {
       getSuggestions: sinon.stub().resolves(mockSuggestions),
     };
 
-    Audit = {
-      findById: sinon.stub().resolves(mockAudit),
-    };
-
     Site = {
       findById: sinon.stub().resolves(mockSite),
     };
@@ -112,7 +102,6 @@ describe('Prerender Guidance Handler', () => {
     context = {
       log,
       dataAccess: {
-        Audit,
         Site,
         Opportunity,
         Suggestion,
@@ -149,7 +138,6 @@ describe('Prerender Guidance Handler', () => {
       const result = await handler(message, context);
 
       expect(result).to.exist;
-      expect(Audit.findById).to.have.been.calledWith('audit-123');
       expect(Site.findById).to.have.been.calledWith('site-123');
       expect(Opportunity.findById).to.have.been.calledWith('opportunity-123');
       expect(mockOpportunity.getSuggestions).to.have.been.called;
@@ -224,24 +212,6 @@ describe('Prerender Guidance Handler', () => {
 
       expect(result.status).to.equal(400);
       expect(log.error).to.have.been.calledWith(sinon.match(/Missing data in Mystique response/));
-    });
-
-    it('should return 404 if audit not found', async () => {
-      Audit.findById.resolves(null);
-
-      const message = {
-        siteId: 'site-123',
-        auditId: 'non-existent-audit',
-        data: {
-          opportunityId: 'opportunity-123',
-          suggestions: [],
-        },
-      };
-
-      const result = await handler(message, context);
-
-      expect(result).to.exist;
-      expect(log.warn).to.have.been.calledWith(sinon.match(/No audit found/));
     });
 
     it('should return 404 if site not found', async () => {
