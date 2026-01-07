@@ -57,7 +57,7 @@ describe('Headings Audit', () => {
         AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
       },
     };
-    site = { getId: () => 'site-1' };
+    site = { getId: () => 'site-1', getBaseURL: () => 'https://example.com', getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }) };
     allKeys = [];
     allKeys.push('scrapes/site-1/page/scrape.json');
     s3Client = {
@@ -2740,6 +2740,95 @@ describe('Headings Audit', () => {
     );
   });
 
+  it('handles TOC detection with invalid confidence score', async () => {
+    const baseURL = 'https://example.com';
+    const url = 'https://example.com/page';
+    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+    context.log = logSpy;
+
+    // Mock AI client to return invalid confidence score (15, which is > 10)
+    let callCount = 0;
+    const mockClient = {
+      fetchChatCompletion: sinon.stub().callsFake(() => {
+        callCount++;
+        if (callCount === 1) {
+          // First call: TOC detection - return invalid confidence score (15 > 10)
+          return Promise.resolve({
+            choices: [{ message: { content: '{"tocPresent":true,"confidence":15,"TOCCSSSelector":"nav.toc"}' } }],
+          });
+        }
+        if (callCount === 2) {
+          // Second call: Brand guidelines - succeed
+          return Promise.resolve({
+            choices: [{ message: { content: '{"guidelines":"Test guidelines"}' } }],
+          });
+        }
+        // Subsequent calls: H1 suggestion
+        return Promise.resolve({
+          choices: [{ message: { content: '{"h1":{"aiSuggestion":"Test Suggestion"}}' } }],
+        });
+      }),
+    };
+    AzureOpenAIClient.createFrom.restore();
+    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+    // Mock getTopPagesForSiteId
+    const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
+
+    const mockedHandler = await esmock('../../src/headings/handler.js', {
+      '../../src/canonical/handler.js': {
+        getTopPagesForSiteId: getTopPagesForSiteIdStub,
+      },
+    });
+
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
+      },
+    };
+
+    // Mock S3 to return valid HTML
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
+
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () => JSON.stringify({
+              finalUrl: url,
+              scrapedAt: Date.now(),
+              scrapeResult: {
+                rawBody: '<h1>Valid Heading</h1><h2>Section</h2>',
+                tags: {
+                  title: 'Page Title',
+                  description: 'Page Description',
+                  h1: ['Valid Heading'],
+                },
+              },
+            }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+
+      throw new Error('Unexpected command passed to s3Client.send');
+    });
+
+    context.s3Client = s3Client;
+
+    await mockedHandler.headingsAuditRunner(baseURL, context, site);
+
+    // Verify the warning was logged for invalid confidence score
+    expect(logSpy.warn).to.have.been.calledWith(
+      sinon.match(/\[TOC Detection\] Invalid confidence score 15 for.*defaulting to 5/)
+    );
+  });
+
   it('covers catch block at line 660 - error thrown by getH1HeadingASuggestion itself', async () => {
     const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
@@ -4685,6 +4774,81 @@ describe('Headings Audit', () => {
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
       expect(emptyCheck.headingContext).to.exist;
+    });
+  });
+
+  describe('Athena/Ahrefs fallback in headingsAuditRunner', () => {
+    it('should use Athena URLs when available and skip Ahrefs', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/athena-page';
+
+      const mockGetTopAgenticUrlsFromAthena = sinon.stub().resolves([url]);
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+        },
+      });
+
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      const mockSiteTopPage = sinon.stub().resolves([]);
+
+      const testContext = {
+        log: logSpy,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          AZURE_OPENAI_ENDPOINT: 'https://test-endpoint.com',
+          AZURE_OPENAI_KEY: 'test-key',
+          AZURE_API_VERSION: '2024-02-01',
+          AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+        },
+        dataAccess: {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: mockSiteTopPage,
+          },
+        },
+        s3Client: {
+          send: sinon.stub().callsFake((command) => {
+            if (command.constructor.name === 'ListObjectsV2Command') {
+              return Promise.resolve({
+                Contents: [{ Key: `scrapes/site-1/athena-page/scrape.json` }],
+                NextContinuationToken: undefined,
+              });
+            }
+            if (command.constructor.name === 'GetObjectCommand') {
+              return Promise.resolve({
+                Body: {
+                  transformToString: () => JSON.stringify({
+                    finalUrl: url,
+                    scrapedAt: Date.now(),
+                    scrapeResult: {
+                      rawBody: '<h1>Valid Heading</h1><h2>Subheading</h2>',
+                      tags: { title: 'Test', description: 'Test', h1: ['Valid Heading'] },
+                    },
+                  }),
+                },
+                ContentType: 'application/json',
+              });
+            }
+            throw new Error('Unexpected command');
+          }),
+        },
+      };
+
+      const testSite = {
+        getId: () => 'site-1',
+        getBaseURL: () => baseURL,
+        getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
+      };
+
+      const result = await mockedHandler.headingsAuditRunner(baseURL, testContext, testSite);
+
+      // Verify Athena was called
+      expect(mockGetTopAgenticUrlsFromAthena).to.have.been.calledOnce;
+      // Verify Ahrefs was NOT called since Athena returned data
+      expect(mockSiteTopPage).to.not.have.been.called;
+      // Verify result
+      expect(result.fullAuditRef).to.equal(baseURL);
     });
   });
 });
