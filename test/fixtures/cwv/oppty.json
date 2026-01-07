@@ -4,8 +4,8 @@
   "runbook": "https://adobe.sharepoint.com/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_CWV_Runbook.docx?web=1",
   "type": "cwv",
   "origin": "AUTOMATION",
-  "title": "Core Web Vitals",
-  "description": "Core Web Vitals are key metrics Google uses to evaluate website performance, impacting SEO rankings by measuring user experience.",
+  "title": "Opportunities to improve core web vitals — optimization available to improve user experience",
+  "description": "Pages with core web vitals issues increase bounce rates and reduce conversions — keep visitors engaged and improve SEO rankings by optimizing for core web vitals.",
   "guidance": {
     "steps": [
       "Analyze CWV data using RUM and PageSpeed Insights to identify performance bottlenecks.",
