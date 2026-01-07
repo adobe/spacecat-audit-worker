@@ -1,3 +1,11 @@
+## [1.276.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.276.1...v1.276.2) (2026-01-07)
+
+
+### Bug Fixes
+
+* Changed URL resolver for permissions ([#1803](https://github.com/adobe/spacecat-audit-worker/issues/1803)) ([6858925](https://github.com/adobe/spacecat-audit-worker/commit/68589259b735190bd32308891d0a60bab14c694e))
+* changed URL resolver for vulnerabilities ([#1807](https://github.com/adobe/spacecat-audit-worker/issues/1807)) ([e8be5a3](https://github.com/adobe/spacecat-audit-worker/commit/e8be5a30f7a8cea309cbb69a7b336598fed25b89)), closes [#1803](https://github.com/adobe/spacecat-audit-worker/issues/1803)
+
 ## [1.276.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.276.0...v1.276.1) (2026-01-07)
 
 
