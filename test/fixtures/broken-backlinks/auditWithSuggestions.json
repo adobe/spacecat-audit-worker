@@ -11,7 +11,7 @@
         "aiRationale": "The suggested URLs are similar to the original URL and are likely to be the correct destination.",
         "traffic_domain": 550000,
         "anchor": "error page redirect link",
-        "domain_rating_source": 65
+        "domain_rating": 65
       },
       {
         "title": "backlink that returns 429",
@@ -21,7 +21,7 @@
         "aiRationale": "The suggested URLs are similar to the original URL and are likely to be the correct destination.",
         "traffic_domain": 11000,
         "anchor": "rate limited resource",
-        "domain_rating_source": 42
+        "domain_rating": 42
       },
       {
         "title": "backlink that is not excluded",
@@ -31,7 +31,7 @@
         "aiRationale": "The suggested URLs are similar to the original URL and are likely to be the correct destination.",
         "traffic_domain": 5500,
         "anchor": "product comparison guide",
-        "domain_rating_source": 78
+        "domain_rating": 78
       },
       {
         "title": "backlink that returns 404",
@@ -39,7 +39,7 @@
         "url_to": "https://foo.com/returns-404",
         "traffic_domain": 1100000,
         "anchor": "missing page link",
-        "domain_rating_source": 55
+        "domain_rating": 55
       }
     ]
   },
