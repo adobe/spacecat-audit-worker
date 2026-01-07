@@ -755,6 +755,8 @@ async function determineDomainWideSuggestionAction(
     Suggestion.STATUSES.FIXED,
     Suggestion.STATUSES.PENDING_VALIDATION,
     Suggestion.STATUSES.SKIPPED,
+    // Temporary fix: OUTDATED suggestions should not be moved to NEW status
+    Suggestion.STATUSES.OUTDATED,
   ];
 
   let shouldCreateNewDomainWideSuggestion = true;
