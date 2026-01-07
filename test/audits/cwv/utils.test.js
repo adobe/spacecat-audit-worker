@@ -37,6 +37,7 @@ describe('CWV Utils', () => {
       getId: () => 'test-site-id',
       getBaseURL: sandbox.stub().returns('https://example.com'),
       getDeliveryType: sandbox.stub().returns('aem_cs'),
+      getCode: sandbox.stub().returns(null),
     };
 
     sqsStub = sandbox.stub().resolves();
@@ -46,6 +47,7 @@ describe('CWV Utils', () => {
         info: sandbox.stub(),
         error: sandbox.stub(),
         debug: sandbox.stub(),
+        warn: sandbox.stub(),
       },
       sqs: {
         sendMessage: sqsStub,

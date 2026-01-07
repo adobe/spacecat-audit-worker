@@ -20,7 +20,7 @@ import nock from 'nock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
-import { CWVRunner, opportunityAndSuggestions } from '../../src/cwv/handler.js';
+import { collectCWVDataStep, opportunityAndSuggestions } from '../../src/cwv/handler.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
 import expectedOpptyWithoutGSC from '../fixtures/cwv/opptyWithoutGSC.json' with { type: 'json' };
 import suggestions from '../fixtures/cwv/suggestions.json' with { type: 'json' };
@@ -39,7 +39,7 @@ const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   granularity: 'hourly',
 };
 
-describe('CWVRunner Tests', () => {
+describe('collectCWVDataStep Tests', () => {
   const groupedURLs = [{ name: 'test', pattern: 'test/*' }];
   const siteConfig = {
     getGroupedURLs: sandbox.stub().returns(groupedURLs),
@@ -51,6 +51,7 @@ describe('CWVRunner Tests', () => {
     getDeliveryType: sandbox.stub().returns('aem_cs'),
     getDeliveryConfig: sandbox.stub().returns({}),
     hasProductEntitlement: sandbox.stub().resolves(true),
+    getCode: sandbox.stub().returns(null),
   };
 
   const context = {
@@ -91,7 +92,7 @@ describe('CWVRunner Tests', () => {
 
   it('cwv audit runs rum api client cwv query', async () => {
     site.getDeliveryConfig.returns({});
-    const result = await CWVRunner(auditUrl, context, site);
+    const result = await collectCWVDataStep({ site, finalUrl: auditUrl, log: context.log, ...context });
 
     expect(siteConfig.getGroupedURLs.calledWith(Audit.AUDIT_TYPES.CWV)).to.be.true;
     expect(
@@ -118,7 +119,7 @@ describe('CWVRunner Tests', () => {
   it('uses default values when delivery config is null', async () => {
     site.getDeliveryConfig.returns(null);
 
-    const result = await CWVRunner(auditUrl, context, site);
+    const result = await collectCWVDataStep({ site, finalUrl: auditUrl, log: context.log, ...context });
 
     expect(context.rumApiClient.query).to.have.been.calledWith(
       Audit.AUDIT_TYPES.CWV,
@@ -141,7 +142,7 @@ describe('CWVRunner Tests', () => {
 
   it('includes pages beyond top 15 if they meet threshold', async () => {
     // With default threshold (1000 * 7 = 7000), check pages that meet threshold
-    const result = await CWVRunner(auditUrl, context, site);
+    const result = await collectCWVDataStep({ site, finalUrl: auditUrl, log: context.log, ...context });
 
     // At least top 15 should be included
     expect(result.auditResult.cwv.length).to.be.at.least(15);
@@ -232,7 +233,7 @@ describe('CWVRunner Tests', () => {
 
     context.rumApiClient.query.resolves(customData);
 
-    const result = await CWVRunner(auditUrl, context, site);
+    const result = await collectCWVDataStep({ site, finalUrl: auditUrl, log: context.log, ...context });
 
     // Should have 15 (top) + 3 (threshold) = 18 pages
     expect(result.auditResult.cwv).to.have.lengthOf(18);
@@ -272,7 +273,7 @@ describe('CWVRunner Tests', () => {
     const dataWithHomepage = [...rumData, homepageData];
     context.rumApiClient.query.resolves(dataWithHomepage);
 
-    const result = await CWVRunner(auditUrl, context, site);
+    const result = await collectCWVDataStep({ site, finalUrl: auditUrl, log: context.log, ...context });
 
     // Should have top 15 + homepage (16 total)
     expect(result.auditResult.cwv).to.have.lengthOf(16);
@@ -309,7 +310,7 @@ describe('CWVRunner Tests', () => {
     const dataWithGrouped = [...rumData, groupedData];
     context.rumApiClient.query.resolves(dataWithGrouped);
 
-    const result = await CWVRunner(auditUrl, context, site);
+    const result = await collectCWVDataStep({ site, finalUrl: auditUrl, log: context.log, ...context });
     // Should only have top 15 (grouped entry excluded: type !== 'url')
     expect(result.auditResult.cwv).to.have.lengthOf(15);
   });

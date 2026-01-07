@@ -22,12 +22,44 @@ import calculateKpiDeltasForAudit from './kpi-metrics.js';
 import { sendSQSMessageForAutoSuggest } from './auto-suggest.js';
 import { isHomepage } from './utils.js';
 
+const { AUDIT_STEP_DESTINATIONS } = Audit;
+
 const DAILY_THRESHOLD = 1000; // pageviews
 const INTERVAL = 7; // days
 // The number of top pages with issues that will be included in the report
 const TOP_PAGES_COUNT = 15;
 
-export async function CWVRunner(auditUrl, context, site) {
+/**
+ * Step 1: Code Import Step
+ * Triggers import worker to fetch and store repository code in S3
+ * @param {Object} context - Context object containing site and log
+ * @returns {Promise<Object>} Message for import worker
+ */
+export async function codeImportStep(context) {
+  const {
+    log, site,
+  } = context;
+
+  log.info(`[CWVAudit] [Site Id: ${site.getId()}] starting code import step`);
+
+  return {
+    type: 'code',
+    siteId: site.getId(),
+    allowCache: false,
+  };
+}
+
+/**
+ * Step 2: CWV Data Collection and Analysis
+ * Collects RUM data, filters URLs, and prepares audit result
+ * @param {Object} context - Context object containing site, finalUrl, audit, log
+ * @returns {Promise<Object>} Audit result with CWV data
+ */
+export async function collectCWVDataStep(context) {
+  const {
+    site, finalUrl: auditUrl, log,
+  } = context;
+
   const siteId = site.getId();
   const baseURL = removeTrailingSlash(site.getBaseURL());
 
@@ -70,7 +102,7 @@ export async function CWVRunner(auditUrl, context, site) {
       return list;
     }, []);
 
-  context.log.info(
+  log.info(
     `[audit-worker-cwv] siteId: ${siteId} | baseURL: ${baseURL} | Total=${cwvData.length}, Reported=${filteredCwvData.length} | `
     + `Homepage: ${stats.homepage ? 'included' : 'not included'} | `
     + `Top${TOP_PAGES_COUNT} pages: ${stats.topNCount} | `
@@ -128,6 +160,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(CWVRunner)
+  .addStep('codeImport', codeImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('collectCWVData', collectCWVDataStep)
   .withPostProcessors([opportunityAndSuggestions])
   .build();
