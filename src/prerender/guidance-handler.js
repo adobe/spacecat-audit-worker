@@ -55,7 +55,9 @@ const AUDIT_TYPE = 'prerender';
  */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Audit, Site, Opportunity } = dataAccess;
+  const {
+    Audit, Site, Opportunity, Suggestion,
+  } = dataAccess;
   const { siteId, auditId, data } = message;
   const { suggestions, opportunityId } = data || {};
 
@@ -115,17 +117,37 @@ export default async function handler(message, context) {
     return ok();
   }
 
-  // Index existing suggestions by URL for quick lookup
+  // Filter out OUTDATED suggestions (stale data from previous audit runs)
+  // Update all other suggestions regardless of status to enrich them with AI summaries
+  const updateableSuggestions = existingSuggestions.filter((s) => {
+    const status = s.getStatus?.();
+    return status !== 'OUTDATED';
+  });
+
+  if (updateableSuggestions.length === 0) {
+    log.info(
+      `[${AUDIT_TYPE}] No updateable suggestions found (all are OUTDATED) for opportunityId=${opportunityId}, siteId=${siteId}`,
+    );
+    return ok();
+  }
+
+  log.info(
+    `[${AUDIT_TYPE}] Found ${updateableSuggestions.length}/${existingSuggestions.length} updateable suggestions (excluding OUTDATED) for opportunityId=${opportunityId}`,
+  );
+
+  // Index updateable suggestions by URL for quick lookup
   const suggestionsByUrl = new Map();
-  existingSuggestions.forEach((s) => {
+  updateableSuggestions.forEach((s) => {
     const dataObj = s.getData?.() || {};
     if (dataObj.url) {
       suggestionsByUrl.set(dataObj.url, s);
     }
   });
 
-  // Prepare update operations to run in parallel
-  const updateOperations = suggestions.map((incoming) => async () => {
+  // Prepare updates for all suggestions
+  const suggestionsToSave = [];
+
+  suggestions.forEach((incoming) => {
     const { url, aiSummary, valuable } = incoming || {};
 
     if (!url) {
@@ -134,7 +156,7 @@ export default async function handler(message, context) {
           incoming,
         )}`,
       );
-      return false;
+      return;
     }
 
     const existing = suggestionsByUrl.get(url);
@@ -142,39 +164,40 @@ export default async function handler(message, context) {
       log.warn(
         `[${AUDIT_TYPE}] No existing suggestion found for URL=${url} on opportunityId=${opportunityId}`,
       );
-      return false;
+      return;
     }
 
-    try {
-      const currentData = existing.getData?.() || {};
-      const updatedData = {
-        ...currentData,
-        aiSummary: aiSummary || '',
-        // Default to true if not provided, but respect explicit boolean from Mystique
-        valuable: typeof valuable === 'boolean' ? valuable : true,
-      };
+    const currentData = existing.getData?.() || {};
+    const updatedData = {
+      ...currentData,
+      aiSummary: aiSummary || '',
+      // Default to true if not provided, but respect explicit boolean from Mystique
+      valuable: typeof valuable === 'boolean' ? valuable : true,
+    };
 
-      await existing.setData(updatedData);
-      await existing.save();
-
-      log.info(
-        `[${AUDIT_TYPE}] Updated suggestion ${existing.getId?.()} for URL=${url} with aiSummary and valuable=${updatedData.valuable}`,
-      );
-      return true;
-    } catch (error) {
-      log.error(
-        `[${AUDIT_TYPE}] Error updating suggestion for URL=${url}: ${error.message}`,
-      );
-      return false;
-    }
+    existing.setData(updatedData);
+    suggestionsToSave.push(existing);
   });
 
-  const results = await Promise.all(updateOperations.map((op) => op()));
-  const succeeded = results.filter(Boolean).length;
+  // Batch save all suggestions using DynamoDB batch write
+  if (suggestionsToSave.length > 0) {
+    try {
+      // eslint-disable-next-line no-underscore-dangle
+      await Suggestion._saveMany(suggestionsToSave);
 
-  log.info(
-    `[${AUDIT_TYPE}] Successfully updated ${succeeded}/${suggestions.length} suggestions with AI summaries for opportunityId=${opportunityId}, siteId=${siteId}`,
-  );
+      log.info(
+        `[${AUDIT_TYPE}] Successfully batch updated ${suggestionsToSave.length}/${suggestions.length} suggestions with AI summaries for opportunityId=${opportunityId}, siteId=${siteId}`,
+      );
+    } catch (error) {
+      log.error(
+        `[${AUDIT_TYPE}] Error batch saving suggestions: ${error.message}`,
+      );
+    }
+  } else {
+    log.warn(
+      `[${AUDIT_TYPE}] No valid suggestions to update for opportunityId=${opportunityId}, siteId=${siteId}`,
+    );
+  }
 
   return ok();
 }
