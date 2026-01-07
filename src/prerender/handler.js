@@ -361,7 +361,7 @@ async function fetchLatestScrapeJobId(siteId, context) {
  * @param {Object} auditData - Audit data used to build the message
  * @param {Object} opportunity - The prerender opportunity entity
  * @param {Object} context - Processing context
- * @returns {Promise<void>}
+ * @returns {Promise<number>} - Number of suggestions sent to Mystique
  */
 async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, opportunity, context) {
   const {
@@ -370,23 +370,17 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
   const {
     siteId,
     auditId,
-    auditResult,
     scrapeJobId,
   } = auditData || {};
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
     log.warn(`Prerender - SQS or Mystique queue not configured, skipping guidance:prerender message. baseUrl=${auditUrl || site?.getBaseURL?.() || ''}, siteId=${siteId}`);
-    return;
-  }
-
-  if (!auditResult || !Array.isArray(auditResult.results) || auditResult.results.length === 0) {
-    log.info(`Prerender - No audit results available, skipping guidance:prerender message. baseUrl=${auditUrl || site?.getBaseURL?.() || ''}, siteId=${siteId}`);
-    return;
+    return 0;
   }
 
   if (!opportunity || !opportunity.getId) {
     log.warn(`Prerender - Opportunity entity not available, skipping guidance:prerender message. baseUrl=${auditUrl || site?.getBaseURL?.() || ''}, siteId=${siteId}`);
-    return;
+    return 0;
   }
 
   const opportunityId = opportunity.getId();
@@ -401,16 +395,8 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
 
     if (!existingSuggestions || existingSuggestions.length === 0) {
       log.warn(`Prerender - No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${baseUrl}, siteId=${siteId}`);
-      return;
+      return 0;
     }
-
-    // Build a quick lookup of URLs that actually need prerender
-    const needsPrerenderByUrl = new Map();
-    (auditResult.results || []).forEach((result) => {
-      if (result?.url && result.needsPrerender) {
-        needsPrerenderByUrl.set(result.url, true);
-      }
-    });
 
     const suggestionsPayload = [];
 
@@ -425,11 +411,6 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
       // Skip OUTDATED suggestions (stale data from previous audit runs)
       const status = s.getStatus?.();
       if (status === 'OUTDATED') {
-        return;
-      }
-
-      // Only send per-URL suggestions that actually need prerender
-      if (!needsPrerenderByUrl.get(data.url)) {
         return;
       }
 
@@ -457,7 +438,7 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
 
     if (suggestionsPayload.length === 0) {
       log.info(`Prerender - No eligible suggestions to send to Mystique for opportunityId=${opportunityId}. baseUrl=${baseUrl}, siteId=${siteId}`);
-      return;
+      return 0;
     }
 
     const deliveryType = site?.getDeliveryType?.() || 'unknown';
@@ -479,12 +460,14 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
       `Prerender - Queued guidance:prerender message to Mystique for baseUrl=${baseUrl}, `
       + `siteId=${siteId}, opportunityId=${opportunityId}, suggestions=${suggestionsPayload.length}`,
     );
+    return suggestionsPayload.length;
   } catch (error) {
     log.error(
       `Prerender - Failed to send guidance:prerender message to Mystique for opportunityId=${opportunityId}, `
       + `baseUrl=${auditUrl || site?.getBaseURL?.() || ''}, siteId=${siteId}: ${error.message}`,
       error,
     );
+    return 0;
   }
 }
 
@@ -500,6 +483,7 @@ async function handleAiOnlyMode(context) {
   } = context;
   const { Opportunity } = dataAccess;
   const siteId = site.getId();
+  const baseUrl = site.getBaseURL();
 
   // Parse optional params from data field (opportunityId, scrapeJobId)
   let opportunityId = null;
@@ -514,17 +498,22 @@ async function handleAiOnlyMode(context) {
     }
   }
 
-  log.info(`${LOG_PREFIX} ai-only: Processing AI summary request for siteId=${siteId}, opportunityId=${opportunityId || 'latest'}`);
+  log.info(`${LOG_PREFIX} ai-only: Processing AI summary request for baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunityId || 'latest'}`);
 
   // Fetch scrapeJobId from status.json if not provided
   if (!scrapeJobId) {
-    log.info(`${LOG_PREFIX} ai-only: scrapeJobId not provided, fetching from status.json`);
+    log.info(`${LOG_PREFIX} ai-only: scrapeJobId not provided, fetching from status.json for baseUrl=${baseUrl}, siteId=${siteId}`);
     scrapeJobId = await fetchLatestScrapeJobId(siteId, context);
 
     if (!scrapeJobId) {
       const error = 'scrapeJobId not found. Either provide it in data or ensure a prerender audit has run recently.';
-      log.error(`${LOG_PREFIX} ai-only: ${error}`);
-      return { error, status: 'failed' };
+      log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
+      return {
+        error,
+        status: 'failed',
+        fullAuditRef: `${MODE_AI_ONLY}/failed-${siteId}`,
+        auditResult: { error },
+      };
     }
   }
 
@@ -534,8 +523,13 @@ async function handleAiOnlyMode(context) {
     opportunity = await Opportunity.findById(opportunityId);
     if (!opportunity) {
       const error = `Opportunity not found: ${opportunityId}`;
-      log.error(`${LOG_PREFIX} ai-only: ${error}`);
-      return { error, status: 'failed' };
+      log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
+      return {
+        error,
+        status: 'failed',
+        fullAuditRef: `${MODE_AI_ONLY}/failed-${siteId}`,
+        auditResult: { error },
+      };
     }
   } else {
     // Find latest NEW prerender opportunity for this site
@@ -544,18 +538,28 @@ async function handleAiOnlyMode(context) {
 
     if (!opportunity) {
       const error = `No NEW prerender opportunity found for site: ${siteId}`;
-      log.error(`${LOG_PREFIX} ai-only: ${error}`);
-      return { error, status: 'failed' };
+      log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
+      return {
+        error,
+        status: 'failed',
+        fullAuditRef: `${MODE_AI_ONLY}/failed-${siteId}`,
+        auditResult: { error },
+      };
     }
 
-    log.info(`${LOG_PREFIX} ai-only: Found latest NEW opportunity: ${opportunity.getId()}`);
+    log.info(`${LOG_PREFIX} ai-only: Found latest NEW opportunity: ${opportunity.getId()} for baseUrl=${baseUrl}, siteId=${siteId}`);
   }
 
   // Verify opportunity belongs to the site
   if (opportunity.getSiteId() !== siteId) {
     const error = `Opportunity ${opportunity.getId()} does not belong to site ${siteId}`;
-    log.error(`${LOG_PREFIX} ai-only: ${error}`);
-    return { error, status: 'failed' };
+    log.error(`${LOG_PREFIX} ai-only: ${error} baseUrl=${baseUrl}, siteId=${siteId}`);
+    return {
+      error,
+      status: 'failed',
+      fullAuditRef: `${MODE_AI_ONLY}/failed-${siteId}`,
+      auditResult: { error },
+    };
   }
 
   // Send to Mystique using the existing function
@@ -566,28 +570,34 @@ async function handleAiOnlyMode(context) {
   };
 
   try {
-    await sendPrerenderGuidanceRequestToMystique(
+    const suggestionCount = await sendPrerenderGuidanceRequestToMystique(
       site.getBaseURL(),
       auditData,
       opportunity,
       context,
     );
 
-    log.info(`${LOG_PREFIX} ai-only: Successfully queued AI summary request for opportunityId=${opportunity.getId()}`);
+    log.info(`${LOG_PREFIX} ai-only: Successfully queued AI summary request for ${suggestionCount} suggestion(s). baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunity.getId()}`);
 
     return {
       status: 'complete',
       mode: MODE_AI_ONLY,
       opportunityId: opportunity.getId(),
+      fullAuditRef: `${MODE_AI_ONLY}/${opportunity.getId()}`,
       auditResult: {
-        message: 'AI summary generation queued successfully',
+        message: `AI summary generation queued successfully for ${suggestionCount} suggestion(s)`,
+        suggestionCount,
       },
     };
   } catch (error) {
-    log.error(`${LOG_PREFIX} ai-only: Failed to queue AI summary request: ${error.message}`, error);
+    log.error(`${LOG_PREFIX} ai-only: Failed to queue AI summary request: ${error.message} baseUrl=${baseUrl}, siteId=${siteId}`, error);
     return {
       status: 'failed',
       error: error.message,
+      fullAuditRef: `${MODE_AI_ONLY}/failed-${siteId}`,
+      auditResult: {
+        error: error.message,
+      },
     };
   }
 }
