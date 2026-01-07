@@ -1,14 +1,13 @@
 {
   "metadata": {
     "inputFile": "bhg-top-pages.json",
-    "timestamp": "2026-01-07T16:28:33.231Z",
+    "timestamp": "2026-01-07T17:04:59.049Z",
     "totalUrls": 93,
     "cleanUrls": 89,
     "blockedUrls": 4,
     "blockerSummary": {
       "noindex": 2,
-      "redirect-chain": 2,
-      "canonical-mismatch": 2
+      "redirect-chain": 2
     }
   },
   "cleanUrls": [
@@ -33,6 +32,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/",
+          "finalUrl": "https://bhgfinancial.com/",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -73,6 +73,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans",
+          "finalUrl": "https://bhgfinancial.com/personal-loans",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -113,6 +114,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/working-capital/inventory-financing",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/working-capital/inventory-financing",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -153,6 +155,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/best-way-to-pay-off-multiple-credit-cards",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/best-way-to-pay-off-multiple-credit-cards",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -193,6 +196,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/application-loan-purpose",
+          "finalUrl": "https://bhgfinancial.com/application-loan-purpose",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -233,6 +237,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/how-to-start-a-financial-advisor-business",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/how-to-start-a-financial-advisor-business",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -273,6 +278,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/can-you-consolidate-debt-without-a-loan",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/can-you-consolidate-debt-without-a-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -313,6 +319,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-consolidation-vs-heloc",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-consolidation-vs-heloc",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -353,6 +360,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -393,6 +401,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-relief-or-consolidation",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-relief-or-consolidation",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -433,6 +442,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/venture-capital",
+          "finalUrl": "https://bhgfinancial.com/venture-capital",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -473,6 +483,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-much-credit-card-debt-is-too-much",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-much-credit-card-debt-is-too-much",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -513,6 +524,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/what-is-business-collateral",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/what-is-business-collateral",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -553,6 +565,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/resources/personal-finance/passive-income-a-path-to-financial-freedom",
+          "finalUrl": "https://bhgfinancial.com/resources/personal-finance/passive-income-a-path-to-financial-freedom",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -593,6 +606,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/principal-loan",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/principal-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -633,6 +647,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/when-to-pay-credit-card-bill-to-increase-credit-score",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/when-to-pay-credit-card-bill-to-increase-credit-score",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -673,6 +688,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/loans-for-medical-professionals",
+          "finalUrl": "https://bhgfinancial.com/loans-for-medical-professionals",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -713,6 +729,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/practice-loans",
+          "finalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/practice-loans",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -753,6 +770,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/resources/personal-finance/passive-income-tax-considerations",
+          "finalUrl": "https://bhgfinancial.com/resources/personal-finance/passive-income-tax-considerations",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -793,6 +811,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/why-high-earners-struggle-with-credit-card-debt",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/why-high-earners-struggle-with-credit-card-debt",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -833,6 +852,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/business-loan-vs-personal-loan",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/business-loan-vs-personal-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -873,6 +893,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/nalupay",
+          "finalUrl": "https://bhgfinancial.com/nalupay",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -913,6 +934,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/dentists",
+          "finalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/dentists",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -953,6 +975,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/careers",
+          "finalUrl": "https://bhgfinancial.com/careers",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -993,6 +1016,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/working-capital",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/working-capital",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1033,6 +1057,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/100000-personal-loan",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/100000-personal-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1073,6 +1098,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/faqs/company",
+          "finalUrl": "https://bhgfinancial.com/faqs/company",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1113,6 +1139,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/why-heloc-costs-more-than-you-think",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/why-heloc-costs-more-than-you-think",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1153,6 +1180,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/50000-personal-loan",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/50000-personal-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1193,6 +1221,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/best-way-to-move-credit-card-balance",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/best-way-to-move-credit-card-balance",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1233,6 +1262,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/working-capital/working-capital-management-what-is-it-and-how-does-it-work",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/working-capital/working-capital-management-what-is-it-and-how-does-it-work",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1273,6 +1303,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/physicians-doctors",
+          "finalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/physicians-doctors",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1313,6 +1344,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/company",
+          "finalUrl": "https://bhgfinancial.com/company",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1353,6 +1385,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/institutional-network",
+          "finalUrl": "https://bhgfinancial.com/institutional-network",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1393,6 +1426,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/company/leadership",
+          "finalUrl": "https://bhgfinancial.com/company/leadership",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1433,6 +1467,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/401k-loan-vs-personal-loan",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/401k-loan-vs-personal-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1473,6 +1508,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/is-debt-consolidation-a-good-idea",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/is-debt-consolidation-a-good-idea",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1513,6 +1549,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/best-personal-loans-for-prime-credit-borrowers-with-debt",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/best-personal-loans-for-prime-credit-borrowers-with-debt",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1553,6 +1590,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/how-to-get-a-business-loan",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/how-to-get-a-business-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1593,6 +1631,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/business-acquisition/loan-to-buy-a-business",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/business-acquisition/loan-to-buy-a-business",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1633,6 +1672,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/will-checking-credit-score-lower-it",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/will-checking-credit-score-lower-it",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1673,6 +1713,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/how-to-apply-for-a-personal-loan",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/how-to-apply-for-a-personal-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1713,6 +1754,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/institutional-network/testimonials",
+          "finalUrl": "https://bhgfinancial.com/institutional-network/testimonials",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1753,6 +1795,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/faqs/application-process",
+          "finalUrl": "https://bhgfinancial.com/faqs/application-process",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1793,6 +1836,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/medical-equipment-loan",
+          "finalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/medical-equipment-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1833,6 +1877,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/credit-card-refinancing",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/credit-card-refinancing",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1873,6 +1918,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/40000-loan",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/40000-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1913,6 +1959,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/are-business-loans-tax-deductible",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/are-business-loans-tax-deductible",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1953,6 +2000,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/llc-business-loan",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/llc-business-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -1993,6 +2041,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/secured-vs-unsecured-personal-loan",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/secured-vs-unsecured-personal-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2033,6 +2082,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/company/what-is-a-loan-concierge-service",
+          "finalUrl": "https://bhgfinancial.com/company/what-is-a-loan-concierge-service",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2073,6 +2123,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/institutional-network/regulatory/fraud-prevention",
+          "finalUrl": "https://bhgfinancial.com/institutional-network/regulatory/fraud-prevention",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2113,6 +2164,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/consolidate-credit-card-debt",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/consolidate-credit-card-debt",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2153,6 +2205,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/tax-implications-of-debt-consolidation-what-high-credit-customers-need-to-know",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/tax-implications-of-debt-consolidation-what-high-credit-customers-need-to-know",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2193,6 +2246,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/how-to-build-business-credit",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/how-to-build-business-credit",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2233,6 +2287,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/avoid-high-interest-debt",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/avoid-high-interest-debt",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2273,6 +2328,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/fraud-prevention",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/fraud-prevention",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2313,6 +2369,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-line-of-credit-liquidity",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-line-of-credit-liquidity",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2353,6 +2410,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/working-capital/grant-vs-loan-whats-the-difference",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/working-capital/grant-vs-loan-whats-the-difference",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2393,6 +2451,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/how-to-get-a-personal-loan",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/how-to-get-a-personal-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2433,6 +2492,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/smarter-balance-transfer-personal-loan",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/smarter-balance-transfer-personal-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2473,6 +2533,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/200000-loan",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/200000-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2513,6 +2574,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/term-loan",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/term-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2553,6 +2615,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/commercial-loans",
+          "finalUrl": "https://bhgfinancial.com/commercial-loans",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2593,6 +2656,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-does-debt-consolidation-work",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-does-debt-consolidation-work",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2633,6 +2697,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/practice-loans/working-capital",
+          "finalUrl": "https://bhgfinancial.com/loans-for-medical-professionals/practice-loans/working-capital",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2673,6 +2738,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/faqs/existing-customers",
+          "finalUrl": "https://bhgfinancial.com/faqs/existing-customers",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2713,6 +2779,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-to-income-ratio",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/debt-to-income-ratio",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2753,6 +2820,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-prequalification",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-prequalification",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2793,6 +2861,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/business-acquisition",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/business-acquisition",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2833,6 +2902,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/manage-large-tax-bills-efficiently",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/manage-large-tax-bills-efficiently",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2873,6 +2943,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-debt-consolidation-loan",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-debt-consolidation-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2913,6 +2984,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-to-get-credit-card-to-lower-your-interest-rate",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-to-get-credit-card-to-lower-your-interest-rate",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2953,6 +3025,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/business-credit-vs-personal-credit",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/business-credit-vs-personal-credit",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -2993,6 +3066,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/the-real-cost-of-credit-card-perks",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/the-real-cost-of-credit-card-perks",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3033,6 +3107,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/is-a-small-business-loan-secured-or-unsecured",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/is-a-small-business-loan-secured-or-unsecured",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3073,6 +3148,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/business-debt-consolidation",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/business-debt-consolidation",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3113,6 +3189,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/faqs",
+          "finalUrl": "https://bhgfinancial.com/faqs",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3153,6 +3230,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-line-of-credit",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-line-of-credit",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3193,6 +3271,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/consumer-loans",
+          "finalUrl": "https://bhgfinancial.com/consumer-loans",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3233,6 +3312,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3273,6 +3353,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/contact-us",
+          "finalUrl": "https://bhgfinancial.com/contact-us",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3313,6 +3394,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/will-debt-consolidation-loan-affect-credit-score",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/will-debt-consolidation-loan-affect-credit-score",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3353,6 +3435,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-credit-card",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/personal-loan-vs-credit-card",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3393,6 +3476,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-to-pay-off-debt",
+          "finalUrl": "https://bhgfinancial.com/personal-loans/debt-consolidation/how-to-pay-off-debt",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3433,6 +3517,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/privacy-policy",
+          "finalUrl": "https://bhgfinancial.com/privacy-policy",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3473,6 +3558,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/3-unexpected-benefits-of-longer-term-loan",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/3-unexpected-benefits-of-longer-term-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3513,6 +3599,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/business-line-of-credit-vs-loan",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/business-line-of-credit-vs-loan",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3553,6 +3640,7 @@
         "canonical": {
           "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/small-business-loans/business-acquisition/what-is-total-addressable-market-tam",
+          "finalUrl": "https://bhgfinancial.com/small-business-loans/business-acquisition/what-is-total-addressable-market-tam",
           "isSelfReferencing": true,
           "blocker": null
         },
@@ -3635,10 +3723,11 @@
           "blocker": "redirect-chain"
         },
         "canonical": {
-          "passed": false,
+          "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/personal-loans",
-          "isSelfReferencing": false,
-          "blocker": "canonical-mismatch"
+          "finalUrl": "https://bhgfinancial.com/personal-loans",
+          "isSelfReferencing": true,
+          "blocker": null
         },
         "noindex": {
           "passed": true,
@@ -3655,8 +3744,7 @@
         }
       },
       "blockers": [
-        "redirect-chain",
-        "canonical-mismatch"
+        "redirect-chain"
       ]
     },
     {
@@ -3720,10 +3808,11 @@
           "blocker": "redirect-chain"
         },
         "canonical": {
-          "passed": false,
+          "passed": true,
           "canonicalUrl": "https://bhgfinancial.com/commercial-loans",
-          "isSelfReferencing": false,
-          "blocker": "canonical-mismatch"
+          "finalUrl": "https://bhgfinancial.com/commercial-loans",
+          "isSelfReferencing": true,
+          "blocker": null
         },
         "noindex": {
           "passed": true,
@@ -3740,8 +3829,7 @@
         }
       },
       "blockers": [
-        "redirect-chain",
-        "canonical-mismatch"
+        "redirect-chain"
       ]
     }
   ]

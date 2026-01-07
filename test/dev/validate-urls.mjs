@@ -1,29 +1,13 @@
 #!/usr/bin/env node
 /*
- * Copyright 2025 Adobe. All rights reserved.
- * This file is licensed to you under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License. You may obtain a copy
- * of the License at http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software distributed under
- * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
- * OF ANY KIND, either express or implied. See the License for the specific language
- * governing permissions and limitations under the License.
- */
-
-/*
  * Flexible SEO Validator Test - Reads URLs from JSON file
- *
- * Usage (from project root):
- *   node test/dev/validate-urls.mjs <input-file> [output-file]
- *   node test/dev/validate-urls.mjs ~/Desktop/urls.json
- *   node test/dev/validate-urls.mjs ~/Desktop/urls.json results.json
- *   node test/dev/validate-urls.mjs ~/Desktop/urls.json ~/Desktop/results.json
- *
- * Usage (from test/dev directory):
- *   node validate-urls.mjs ~/Desktop/urls.json
- *   node validate-urls.mjs ~/Desktop/urls.json results.json
- *
+ * 
+ * Usage:
+ *   node test-validator-from-file.mjs <input-file> [output-file]
+ *   node test-validator-from-file.mjs ~/Desktop/urls.json
+ *   node test-validator-from-file.mjs ~/Desktop/urls.json results.json
+ *   node test-validator-from-file.mjs ~/Desktop/urls.json ~/Desktop/results.json
+ * 
  * JSON Format:
  *   [
  *     {
@@ -33,9 +17,9 @@
  *     },
  *     ...
  *   ]
- *
+ * 
  * Optional fields: siteTopPageId, position, intent, etc.
- *
+ * 
  * If output-file is not specified, results are saved to:
  *   validation-results-{timestamp}.json
  */
@@ -145,6 +129,9 @@ async function checkCanonical(url) {
       return { passed: true, blocker: null };
     }
     
+    // Capture final URL after redirects (production behavior)
+    const finalUrl = response.url;
+    
     const html = await response.text();
     const canonicalMatch = html.match(/<link\s+rel=["']canonical["']\s+href=["']([^"']+)["']/i);
     
@@ -152,14 +139,16 @@ async function checkCanonical(url) {
       return { passed: true, canonicalUrl: null, isSelfReferencing: true, blocker: null };
     }
     
-    const canonicalUrl = new URL(canonicalMatch[1], url).href;
-    const normalizedUrl = url.replace(/\/$/, '');
+    // Resolve canonical URL relative to final URL (after redirects)
+    const canonicalUrl = new URL(canonicalMatch[1], finalUrl).href;
+    const normalizedFinal = finalUrl.replace(/\/$/, '');
     const normalizedCanonical = canonicalUrl.replace(/\/$/, '');
-    const isSelfReferencing = normalizedUrl === normalizedCanonical;
+    const isSelfReferencing = normalizedFinal === normalizedCanonical;
     
     return {
       passed: isSelfReferencing,
       canonicalUrl,
+      finalUrl,
       isSelfReferencing,
       blocker: !isSelfReferencing ? 'canonical-mismatch' : null
     };
@@ -303,12 +292,12 @@ async function runTest() {
   
   if (args.length === 0) {
     console.error('❌ Error: Please provide a JSON file path');
-    console.error('\nUsage (from project root):');
-    console.error('  node test/dev/validate-urls.mjs <input-file> [output-file]');
+    console.error('\nUsage:');
+    console.error('  node test-validator-from-file.mjs <input-file> [output-file]');
     console.error('\nExamples:');
-    console.error('  node test/dev/validate-urls.mjs ~/Desktop/urls.json');
-    console.error('  node test/dev/validate-urls.mjs ~/Desktop/urls.json results.json');
-    console.error('  node test/dev/validate-urls.mjs ~/Desktop/urls.json ~/Desktop/results.json');
+    console.error('  node test-validator-from-file.mjs ~/Desktop/urls.json');
+    console.error('  node test-validator-from-file.mjs ~/Desktop/urls.json results.json');
+    console.error('  node test-validator-from-file.mjs ~/Desktop/urls.json ~/Desktop/results.json');
     console.error('\nJSON Format:');
     console.error('  [');
     console.error('    {');
