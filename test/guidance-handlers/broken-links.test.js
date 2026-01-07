@@ -54,6 +54,7 @@ describe('guidance-broken-links-remediation handler', () => {
     mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
       getId: () => mockMessage.siteId,
       getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
     });
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
       getId: () => auditDataMock.id,
@@ -204,6 +205,12 @@ describe('guidance-broken-links-remediation handler', () => {
       .get('/invalid-url')
       .reply(200);
 
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+
     const response = await brokenLinksGuidanceHandler(messageWithFilteredUrls, mockContext);
     expect(response.status).to.equal(200);
     expect(mockSetData).to.have.been.calledWith({
@@ -233,6 +240,7 @@ describe('guidance-broken-links-remediation handler', () => {
     mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
       getId: () => mockMessage.siteId,
       getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
     });
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
       getId: () => auditDataMock.id,
@@ -357,6 +365,7 @@ describe('guidance-broken-links-remediation handler', () => {
     mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
       getId: () => mockMessage.siteId,
       getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
     });
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
       getId: () => auditDataMock.id,
@@ -407,6 +416,7 @@ describe('guidance-broken-links-remediation handler', () => {
     mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
       getId: () => mockMessage.siteId,
       getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
     });
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
       getId: () => auditDataMock.id,
@@ -454,6 +464,7 @@ describe('guidance-broken-links-remediation handler', () => {
     mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
       getId: () => mockMessage.siteId,
       getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
     });
     mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
       getId: () => auditDataMock.id,
@@ -485,6 +496,58 @@ describe('guidance-broken-links-remediation handler', () => {
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: ['https://foo.com/redirects-throws-error-1'],
       aiRationale: '', // Empty string when neither field exists
+    });
+  });
+
+  it('should respect overrideBaseURL when validating suggestions', async () => {
+    const messageWithOverride = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          brokenUrl: 'https://qualcomm.com/broken',
+          suggestedUrls: ['https://qualcomm.com/fixed'],
+          aiRationale: 'This URL works',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://www.qualcomm.com',
+      getConfig: () => ({ getFetchConfig: () => ({ overrideBaseURL: 'https://qualcomm.com' }) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    const mockSave = sandbox.stub().resolves();
+    mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({
+      setData: mockSetData,
+      getData: sandbox.stub().returns({
+        url_to: 'https://qualcomm.com/broken',
+        url_from: 'https://qualcomm.com/broken',
+      }),
+      save: mockSave,
+    });
+    // Mock successful GET request for the suggested URL
+    nock('https://qualcomm.com')
+      .get('/fixed')
+      .reply(200);
+
+    const response = await brokenLinksGuidanceHandler(messageWithOverride, mockContext);
+    expect(response.status).to.equal(200);
+    expect(mockSetData).to.have.been.calledWith({
+      url_to: 'https://qualcomm.com/broken',
+      url_from: 'https://qualcomm.com/broken',
+      urlsSuggested: ['https://qualcomm.com/fixed'],
+      aiRationale: 'This URL works',
     });
   });
 });

@@ -16,14 +16,16 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import {
   CDN_TYPES,
+  SERVICE_PROVIDER_TYPES,
   extractCustomerDomain,
   resolveCdnBucketName,
   buildCdnPaths,
   getBucketInfo,
   discoverCdnProviders,
   isStandardAdobeCdnBucket,
-  shouldRecreateRawTable,
+  shouldRecreateTable,
   buildSiteFilters,
+  mapServiceToCdnProvider,
 } from '../../src/utils/cdn-utils.js';
 
 use(sinonChai);
@@ -47,7 +49,16 @@ describe('CDN Utils', () => {
         CLOUDFLARE: 'cloudflare',
         CLOUDFRONT: 'cloudfront',
         FRONTDOOR: 'frontdoor',
+        OTHER: 'other',
       });
+    });
+  });
+
+  describe('mapServiceToCdnProvider', () => {
+    it('maps byocdn-other to OTHER cdn type', () => {
+      expect(
+        mapServiceToCdnProvider(SERVICE_PROVIDER_TYPES.BYOCDN_OTHER),
+      ).to.equal(CDN_TYPES.OTHER);
     });
   });
 
@@ -187,6 +198,8 @@ describe('CDN Utils', () => {
 
   describe('getBucketInfo', () => {
     let s3Client;
+    const bucketName = 'cdn-logs-adobe-prod';
+    const pathId = 'ims-org-123';
 
     beforeEach(() => {
       s3Client = { send: sandbox.stub() };
@@ -208,6 +221,17 @@ describe('CDN Utils', () => {
 
       expect(result.isLegacy).to.be.true;
       expect(result.providers).to.deep.equal([]);
+    });
+
+    it('returns modern bucket info when byocdn-other prefix exists', async () => {
+      s3Client.send.resolves({
+        CommonPrefixes: [{ Prefix: `${pathId}/raw/byocdn-other/` }],
+      });
+
+      const result = await getBucketInfo(s3Client, bucketName, pathId);
+
+      expect(result.isLegacy).to.be.false;
+      expect(result.providers).to.deep.equal(['byocdn-other']);
     });
   });
 
@@ -263,14 +287,17 @@ describe('CDN Utils', () => {
     });
   });
 
-  describe('shouldRecreateRawTable', () => {
+  describe('shouldRecreateTable', () => {
     let athenaClient;
+    let log;
     const database = 'test-database';
     const rawTable = 'test-raw-table';
     const expectedLocation = 's3://test-bucket/raw/';
+    const sqlTemplate = "TBLPROPERTIES ('schema_version' = '1')";
 
     beforeEach(() => {
       athenaClient = { query: sandbox.stub(), execute: sandbox.stub() };
+      log = { info: sandbox.stub() };
     });
 
     afterEach(() => {
@@ -280,40 +307,78 @@ describe('CDN Utils', () => {
     it('returns true if table does not exist', async () => {
       athenaClient.query.resolves([]);
 
-      const result = await shouldRecreateRawTable(
+      const result = await shouldRecreateTable(
         athenaClient,
         database,
         rawTable,
         expectedLocation,
+        sqlTemplate,
+        log,
       );
 
       expect(result).to.be.true;
     });
 
     it('returns true if table exists and location does not match', async () => {
-      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}/other'` }]);
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}/other' TBLPROPERTIES ('schema_version' = '1')` }]);
 
-      const result = await shouldRecreateRawTable(
+      const result = await shouldRecreateTable(
         athenaClient,
         database,
         rawTable,
         expectedLocation,
+        sqlTemplate,
+        log,
       );
 
       expect(result).to.be.true;
     });
 
-    it('returns false if table exists and location matches', async () => {
-      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}'` }]);
+    it('returns false if table exists and location and schema version match', async () => {
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}' TBLPROPERTIES ('schema_version' = '1')` }]);
 
-      const result = await shouldRecreateRawTable(
+      const result = await shouldRecreateTable(
         athenaClient,
         database,
         rawTable,
         expectedLocation,
+        sqlTemplate,
+        log,
       );
 
       expect(result).to.be.false;
+    });
+
+    it('returns true if schema version mismatch', async () => {
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}' TBLPROPERTIES ('schema_version' = '0')` }]);
+
+      const result = await shouldRecreateTable(
+        athenaClient,
+        database,
+        rawTable,
+        expectedLocation,
+        sqlTemplate,
+        log,
+      );
+
+      expect(result).to.be.true;
+      expect(athenaClient.execute.calledOnce).to.be.true;
+    });
+
+    it('returns true if table has no schema version (legacy table)', async () => {
+      athenaClient.query.resolves([{ createtab_stmt: `CREATE TABLE ${database}.${rawTable} LOCATION '${expectedLocation}'` }]);
+
+      const result = await shouldRecreateTable(
+        athenaClient,
+        database,
+        rawTable,
+        expectedLocation,
+        sqlTemplate,
+        log,
+      );
+
+      expect(result).to.be.true;
+      expect(athenaClient.execute.calledOnce).to.be.true;
     });
   });
 
@@ -347,7 +412,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$')");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe.com$'))");
     });
 
     it('normalizes www prefix to optional pattern', () => {
@@ -357,7 +422,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$')");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?adobe.com$'))");
     });
 
     it('keeps subdomain and adds optional www prefix', () => {
@@ -367,7 +432,7 @@ describe('CDN Utils', () => {
 
       const result = buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)^(www.)?business.adobe.com$')");
+      expect(result).to.equal("(REGEXP_LIKE(host, '(?i)^(www.)?business.adobe.com$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?business.adobe.com$'))");
     });
   });
 });

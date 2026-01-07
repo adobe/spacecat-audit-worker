@@ -134,14 +134,20 @@ export async function handleCdnBucketConfigChanges(context, data) {
   const { dataAccess: { Configuration }, log } = context;
 
   if (!siteId) throw new Error('Site ID is required for CDN configuration');
-  if (!cdnProvider) {
-    // if no cdn provider is provided, remove the bucket configuration
-    await handleBucketConfiguration(siteId, null, null, context);
-    throw new Error('CDN provider is required for CDN configuration');
-  }
 
   const site = await context.dataAccess.Site.findById(siteId);
   if (!site) throw new Error(`Site with ID ${siteId} not found`);
+
+  if (!cdnProvider) {
+    // if no cdn provider is provided, remove the bucket configuration
+    await handleBucketConfiguration(siteId, null, null, context);
+    // disable cdn-logs-analysis and page-citability audits
+    const configuration = await Configuration.findLatest();
+    configuration.disableHandlerForSite('cdn-logs-analysis', site);
+    configuration.disableHandlerForSite('page-citability', site);
+    await configuration.save();
+    throw new Error('CDN provider is required for CDN configuration');
+  }
 
   let pathId;
 

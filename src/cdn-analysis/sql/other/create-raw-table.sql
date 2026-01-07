@@ -1,21 +1,18 @@
 CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
-  reqTimeSec        string,
-  country           string,
-  reqHost           string,
-  reqPath           string,
-  queryStr          string,
-  reqMethod         string,
-  ua                string,
-  statusCode        string,
-  referer           string,
-  rspContentType    string,
-  timeToFirstByte   string
+  timestamp             string,
+  host                  string,
+  url                   string,
+  request_method        string,
+  request_user_agent    string,
+  response_status       int,
+  request_referer       string,
+  response_content_type string,
+  time_to_first_byte    int
 )
 PARTITIONED BY (
   year  string,
   month string,
-  day   string,
-  hour  string
+  day   string
 )
 ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
 WITH SERDEPROPERTIES (
@@ -27,7 +24,7 @@ LOCATION '{{rawLocation}}'
 TBLPROPERTIES (
   'schema_version'            = '1',
   'projection.enabled'        = 'true',
-  'storage.location.template' = '{{rawLocation}}${year}/${month}/${day}/${hour}/',
+  'storage.location.template' = '{{rawLocation}}${year}/${month}/${day}/',
   'projection.year.type'      = 'integer',
   'projection.year.range'     = '2024,2030',
   'projection.month.type'     = 'integer',
@@ -36,8 +33,6 @@ TBLPROPERTIES (
   'projection.day.type'       = 'integer',
   'projection.day.range'      = '1,31',
   'projection.day.digits'     = '2',
-  'projection.hour.type'      = 'integer',
-  'projection.hour.range'     = '0,23',
-  'projection.hour.digits'    = '2',
   'has_encrypted_data'        = 'false'
 );
+

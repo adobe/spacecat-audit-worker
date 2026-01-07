@@ -23,7 +23,7 @@ import {
   CDN_TYPES,
   resolveConsolidatedBucketName,
   pathHasData,
-  shouldRecreateRawTable,
+  shouldRecreateTable,
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
@@ -60,6 +60,17 @@ function getHourParts(auditContext) {
 
 async function loadSql(provider, filename, variables) {
   return getStaticContent(variables, `./src/cdn-analysis/sql/${provider}/${filename}.sql`);
+}
+
+/**
+ * Creates or recreates a table if schema version or location changed.
+ */
+async function ensureTable(client, database, table, location, sql, log) {
+  const needsCreation = await shouldRecreateTable(client, database, table, location, sql, log);
+  if (needsCreation) {
+    const msg = `[Athena Query] Create table ${database}.${table}`;
+    await client.execute(sql, database, msg);
+  }
 }
 
 /**
@@ -133,8 +144,11 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   for (const serviceProvider of serviceProviders) {
     const cdnType = mapServiceToCdnProvider(serviceProvider);
 
-    // Skip CloudFlare for hourly analysis - only process daily at end of day
-    if (cdnType.toLowerCase() === CDN_TYPES.CLOUDFLARE && hour !== '23') {
+    const cdnTypeLower = cdnType.toLowerCase();
+    const hasDailyPartitioningOnly = [CDN_TYPES.CLOUDFLARE, CDN_TYPES.OTHER].includes(cdnTypeLower);
+
+    // Skip providers with daily partitioning only (no hourly partitions) unless hour=23
+    if (hasDailyPartitioningOnly && hour !== '23') {
       log.info(`Skipping service provider ${serviceProvider.toUpperCase()} (CDN: ${cdnType.toUpperCase()}) - only processed daily at end of day (hour 23)`);
     } else {
       log.info(`Processing service provider ${serviceProvider.toUpperCase()} (CDN: ${cdnType.toUpperCase()})`);
@@ -158,7 +172,6 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
         // eslint-disable-next-line no-await-in-loop
         await athenaClient.execute(sqlDb, database, `[Athena Query] Create database ${database}`);
 
-        // Create aggregated table
         // eslint-disable-next-line no-await-in-loop
         const sqlAggregatedTable = await loadSql('', 'create-aggregated-table', {
           databaseName: database,
@@ -166,9 +179,10 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
           aggregatedLocation: paths.aggregatedLocation,
         });
         // eslint-disable-next-line no-await-in-loop
-        await athenaClient.execute(sqlAggregatedTable, database, `[Athena Query] Create aggregated table ${database}.${aggregatedTable}`);
+        const aggLoc = paths.aggregatedLocation;
+        // eslint-disable-next-line no-await-in-loop
+        await ensureTable(athenaClient, database, aggregatedTable, aggLoc, sqlAggregatedTable, log);
 
-        // Create aggregated referral table
         // eslint-disable-next-line no-await-in-loop
         const sqlAggregatedReferralTable = await loadSql('', 'create-aggregated-referral-table', {
           databaseName: database,
@@ -176,36 +190,36 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
           aggregatedLocation: paths.aggregatedReferralLocation,
         });
         // eslint-disable-next-line no-await-in-loop
-        await athenaClient.execute(sqlAggregatedReferralTable, database, `[Athena Query] Create aggregated referral table ${database}.${aggregatedReferralTable}`);
+        await ensureTable(
+          athenaClient,
+          database,
+          aggregatedReferralTable,
+          paths.aggregatedReferralLocation,
+          sqlAggregatedReferralTable,
+          log,
+        );
 
         tablesCreated = true;
       }
 
       // eslint-disable-next-line no-await-in-loop
-      const needsCreation = await shouldRecreateRawTable(
-        athenaClient,
-        database,
-        rawTable,
-        paths.rawLocation,
-        log,
-      );
-
-      if (needsCreation) {
-        // eslint-disable-next-line no-await-in-loop
-        const sqlRaw = await loadSql(cdnType, 'create-raw-table', {
-          database,
-          rawTable,
-          rawLocation: paths.rawLocation,
-        });
-        // eslint-disable-next-line no-await-in-loop
-        await athenaClient.execute(sqlRaw, database, `[Athena Query] Create raw logs table ${database}.${rawTable}`);
-      }
+      const sqlRaw = await loadSql(cdnType, 'create-raw-table', {
+        database, rawTable, rawLocation: paths.rawLocation,
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await ensureTable(athenaClient, database, rawTable, paths.rawLocation, sqlRaw, log);
 
       // Check if raw logs exist for this hour/day
       // For CloudFlare, check daily file; for others, check hourly directory
-      const rawDataPath = cdnType.toLowerCase() === CDN_TYPES.CLOUDFLARE
-        ? `${paths.rawLocation}${year}${month}${day}/`
-        : `${paths.rawLocation}${year}/${month}/${day}/${hour}/`;
+      const rawDataPath = (() => {
+        if (cdnTypeLower === CDN_TYPES.CLOUDFLARE) {
+          return `${paths.rawLocation}${year}${month}${day}/`;
+        }
+        if (cdnTypeLower === CDN_TYPES.OTHER) {
+          return `${paths.rawLocation}${year}/${month}/${day}/`;
+        }
+        return `${paths.rawLocation}${year}/${month}/${day}/${hour}/`;
+      })();
 
       // eslint-disable-next-line no-await-in-loop
       const hasRawData = await pathHasData(context.s3Client, rawDataPath);
@@ -217,7 +231,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
       }
 
       // Generate hour filter based on processing mode
-      const hourFilter = auditContext?.processFullDay ? '' : `AND hour = '${hour}'`;
+      const hourFilter = (hasDailyPartitioningOnly || auditContext?.processFullDay) ? '' : `AND hour = '${hour}'`;
 
       // Load SQL queries in parallel
       // eslint-disable-next-line no-await-in-loop

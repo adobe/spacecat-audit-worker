@@ -32,7 +32,7 @@ export const DAILY_PAGEVIEW_THRESHOLD_DEFAULT = 200;
 export const DAILY_PAGEVIEW_THRESHOLD_ALL = 200;
 
 // Form types to ignore when is_lead_gen is false
-export const FORM_TYPES_TO_IGNORE = ['search form', 'login form', 'zip code search form', 'filter form', 'otp form', 'calculator form', 'product listing/selection form', 'cart form', 'file upload form', 'payment form'];
+export const FORM_TYPES_TO_IGNORE = ['search form', 'login form', 'zip code search form', 'filter form', 'otp form', 'calculator form', 'product listing/selection form', 'cart form', 'file upload form', 'payment form', 'password reset form'];
 
 export const successCriteriaLinks = {
   111: {

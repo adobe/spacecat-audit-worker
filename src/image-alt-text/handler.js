@@ -83,8 +83,8 @@ export async function processAltTextWithMystique(context) {
         runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
         type: AUDIT_TYPE,
         origin: 'AUTOMATION',
-        title: 'Missing alt text for images decreases accessibility and discoverability of content',
-        description: 'Missing alt text on images leads to poor seo scores, low accessibility scores and search engine failing to surface such images with keyword search',
+        title: 'Make images on your site accessible (and boost SEO) — alt-text suggestions have been prepared',
+        description: 'Descriptive alt-text improves accessibility and allows search engines to better understand image content.',
         guidance: {
           recommendations: [
             {
