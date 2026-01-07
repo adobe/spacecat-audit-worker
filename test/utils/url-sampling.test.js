@@ -10,13 +10,14 @@
  * governing permissions and limitations under the License.
  */
 
-import { expect } from 'chai';
-import sinon from 'sinon';
 import {
   extractPathPattern,
   groupUrlsByPattern,
   smartSampleUrls,
 } from '../../src/utils/url-sampling.js';
+
+import { expect } from 'chai';
+import sinon from 'sinon';
 
 describe('url-sampling', () => {
   describe('extractPathPattern', () => {
@@ -149,4 +150,3 @@ describe('url-sampling', () => {
     });
   });
 });
-
