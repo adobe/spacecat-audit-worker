@@ -2633,10 +2633,10 @@ describe('Redirect Chains Audit', () => {
         expect(opportunityData.runbook).to.include('edirect'); // Redirect | redirect
 
         expect(opportunityData).to.have.property('origin', 'AUTOMATION');
-        expect(opportunityData).to.have.property('title', 'Redirect issues found with the /redirects.json file');
+        expect(opportunityData).to.have.property('title', 'Redirect chains slowing navigation — cleanup ready to speed up navigation and crawling');
 
         expect(opportunityData).to.have.property('description');
-        expect(opportunityData.description).to.include('This audit identifies issues with the /redirects.json file');
+        expect(opportunityData.description).to.include('Multiple redirects slow pages');
 
         expect(opportunityData).to.have.property('guidance');
         expect(opportunityData.guidance).to.have.property('steps');

@@ -47,10 +47,9 @@ export function createTooStrongOpportunityData(props) {
   return {
     runbook: 'https://wiki.corp.adobe.com/display/WEM/Security+Success',
     origin: 'AUTOMATION',
-    title: 'Your website\'s user and group permissions are insecure or incorrect',
+    title: 'Protect sensitive data and user trust — recommendations for optimized permission settings ready for review',
     tags: ['Security', 'Permissions'],
-    description: 'Your website has insecure user permissions: users hold jcr:all on generic paths like / or /content, which violates the principle of least privilege. According to the OWASP Top 10 (A05:2021 – Security Misconfiguration), excessive privileges increase the likelihood of unauthorized access and system compromise. \n'
-      + 'Review and optimize permissions for website\'s users and group permissions.',
+    description: 'Overly broad permissions risk data exposure — tightening access enhances privacy and compliance confidence.',
     data: {
       howToFix: 'Edit your user or group permissions in the AEM Security Permissions console, or in your code repository if applicable.\n'
         + 'For service users, evaluate their usage in your application code and evaluate what access they actually need and to what paths in the repository. Consider creating multiple service users with restricted permissions on child paths, if the service user is used in multiple places. Delete any unused service user or remove their permissions.',

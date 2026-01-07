@@ -21,6 +21,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityProps } from './opportunity-data-mapper.js';
 import { getImsOrgId, syncSuggestions } from '../utils/data-access.js';
 import { mapVulnerabilityToSuggestion } from './suggestion-data-mapper.js';
+import { noopUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 1; // days
@@ -212,10 +213,7 @@ export const dataContainsCode = (data) => {
 /**
  * Creates opportunities and syncs suggestions.
  *
- * @param {string} auditUrl - The URL that was audited.
- * @param {Object} auditData - The audit data containing results and suggestions.
  * @param {Object} context - The context object containing log, dataAccess, etc.
- * @param {Object} site - The site object
  * @returns {Object} The audit data unchanged (opportunities created as side effect).
  */
 export const opportunityAndSuggestionsStep = async (context) => {
@@ -323,6 +321,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
 export default new AuditBuilder()
 // Note the import worker MUST trigger the next step regardless if code repo is configured
+  .withUrlResolver(noopUrlResolver)
   .addStep('import-from-starfish', extractCodeBucket, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('generate-suggestion-data', opportunityAndSuggestionsStep)
   .build();

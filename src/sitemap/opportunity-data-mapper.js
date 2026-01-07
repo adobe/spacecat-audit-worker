@@ -16,8 +16,8 @@ export function createOpportunityData() {
   return {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
     origin: 'AUTOMATION',
-    title: 'Sitemap issues found',
-    description: '',
+    title: 'Help search engines crawl your site easily — fixes for sitemap issues are queued up',
+    description: 'A clean, error-free sitemap ensures all important pages are indexed efficiently and discovered faster.',
     guidance: {
       steps: [
         'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',

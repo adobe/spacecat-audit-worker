@@ -306,7 +306,7 @@ describe('CDN Logs Report Handler', function test() {
       expect(context.log.debug).to.have.been.calledWith('Starting CDN logs report audit for https://example.com');
 
       // Verify Athena interactions
-      expect(context.athenaClient.execute).to.have.been.callCount(3);
+      expect(context.athenaClient.execute).to.have.been.callCount(1);
       expect(context.athenaClient.query).to.have.been.callCount(2);
     });
 
@@ -377,19 +377,6 @@ describe('CDN Logs Report Handler', function test() {
       expect(result.auditResult).to.have.length.greaterThan(0);
       
       expect(context.log.error).to.have.been.calledWith('Failed to bulk publish reports:', sinon.match.instanceOf(Error));
-    });
-
-    it('handles table creation errors', async () => {
-      context.athenaClient.execute.onSecondCall().rejects(new Error('Table creation failed'));
-      const auditContext = createAuditContext(sandbox);
-
-      try {
-        await handler.runner('https://example.com', context, site, auditContext);
-        expect.fail('Expected error to be thrown');
-      } catch (error) {
-        expect(error.message).to.equal('Table creation failed');
-        expect(context.log.error).to.have.been.calledWith('Failed to ensure table exists: Table creation failed');
-      }
     });
 
     describe('LLMO pattern fetch scenarios', () => {

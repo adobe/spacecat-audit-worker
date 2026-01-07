@@ -151,53 +151,6 @@ describe('CDN Logs Report Utils', () => {
     });
   });
 
-  describe('ensureTableExists', () => {
-    it('creates table successfully', async () => {
-      const mockAthenaClient = {
-        execute: sandbox.stub().resolves(),
-      };
-      const mockS3Config = {
-        tableName: 'test_table',
-        databaseName: 'test_db',
-        aggregatedLocation: 's3://test-bucket/data/',
-      };
-      const mockLog = {
-        debug: sandbox.stub(),
-        error: sandbox.stub(),
-      };
-
-      await reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, referralConfig, mockLog);
-
-      expect(mockAthenaClient.execute).to.have.been.calledOnce;
-      expect(mockLog.debug).to.have.been.calledWith('Creating or checking table: aggregated_referral_logs_example_com_consolidated');
-      expect(mockLog.debug).to.have.been.calledWith('Table aggregated_referral_logs_example_com_consolidated is ready');
-    });
-
-    it('handles table creation errors', async () => {
-      const mockAthenaClient = {
-        execute: sandbox.stub().rejects(new Error('Table creation failed')),
-      };
-      const mockS3Config = {
-        tableName: 'test_table',
-        databaseName: 'test_db',
-        aggregatedLocation: 's3://test-bucket/data/',
-      };
-      const mockLog = {
-        info: sandbox.stub(),
-        error: sandbox.stub(),
-        debug: sandbox.stub(),
-      };
-
-      await expect(
-        reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, referralConfig, mockLog),
-      ).to.be.rejectedWith('Table creation failed');
-
-      expect(mockLog.error).to.have.been.calledWith(
-        'Failed to ensure table exists: Table creation failed',
-      );
-    });
-  });
-
   describe('getConfigCategories', () => {
     let mockLlmoConfig;
     let mockedReportUtils;

@@ -140,7 +140,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     const firstSug = Suggestion.create.getCall(0).args[0];
     expect(firstSug).to.include({
-      opportunityId: newOpportunityId, type: 'AI_INSIGHTS', rank: 1, status: 'PENDING_VALIDATION',
+      opportunityId: newOpportunityId, type: 'AI_INSIGHTS', rank: 1, status: 'NEW',
     });
     expect(firstSug.data.parentReport).to.equal('PAID_CAMPAIGN_PERFORMANCE');
     expect(firstSug.data.recommendations).to.have.length(2);
@@ -350,9 +350,9 @@ describe('Paid-traffic-analysis guidance handler', () => {
     expect(old.setStatus).to.not.have.been.called;
   });
 
-  it('creates suggestions with status NEW when site does not require validation', async () => {
-    // Set requiresValidation to false
-    context.site = { requiresValidation: false };
+  it('creates suggestions with status NEW regardless of site validation requirement', async () => {
+    // See SITES-38066: Traffic analysis reports should be automatically approved
+    context.site = { requiresValidation: true };
     const message = {
       auditId,
       siteId,

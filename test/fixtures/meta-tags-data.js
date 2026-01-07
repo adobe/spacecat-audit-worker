@@ -371,8 +371,8 @@ const testData = {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7B27CF48AA-5492-435D-B17C-01E38332A5CA%7D&file=Experience_Success_Studio_Metatags_Runbook.docx&action=default&mobileredirect=true',
     type: 'meta-tags',
     origin: 'AUTOMATION',
-    title: 'Pages have metadata issues, including missing and invalid tags.',
-    description: 'Fixing metadata issues like missing or invalid tags boosts SEO by improving content visibility, search rankings, and user engagement.',
+    title: 'Stand out in search results with clean meta tags — fixes ready for the missing or invalid ones',
+    description: 'Well-structured meta tags increase click-through rates and help search engines display accurate, appealing results.',
     guidance: {
       steps: [
         'Review the detected meta-tags with issues, the AI-generated suggestions, and the provided rationale behind each recommendation.',

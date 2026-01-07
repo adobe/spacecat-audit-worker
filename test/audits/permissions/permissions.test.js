@@ -1357,9 +1357,9 @@ describe('Permissions Handler Tests', () => {
 
         expect(result).to.have.property('runbook', 'https://wiki.corp.adobe.com/display/WEM/Security+Success');
         expect(result).to.have.property('origin', 'AUTOMATION');
-        expect(result).to.have.property('title', 'Your website\'s user and group permissions are insecure or incorrect');
+        expect(result).to.have.property('title', 'Protect sensitive data and user trust — recommendations for optimized permission settings ready for review');
         expect(result).to.have.property('tags').that.deep.includes('Security', 'Permissions');
-        expect(result).to.have.property('description').that.includes('insecure user permissions');
+        expect(result).to.have.property('description').that.includes('Overly broad permissions');
         expect(result.data).to.have.property('howToFix');
         expect(result.data).to.have.property('dataSources');
         expect(result.data).to.have.property('securityType', 'CS-ACL-ALL');
