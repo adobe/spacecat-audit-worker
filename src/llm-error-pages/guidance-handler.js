@@ -52,8 +52,10 @@ export default async function handler(message, context) {
   // Read-modify-write the weekly 404 Excel file in SharePoint
   try {
     const sharepointClient = await createLLMOSharepointClient(context);
-    const week = generateReportingPeriods().weeks[0];
-    const derivedPeriod = `w${week.weekNumber}-${week.year}`;
+
+    // Try to recover the period identifier without requiring Mystique payload changes
+    const derivedPeriod = derivePeriodFromBrokenLinks(brokenLinks)
+      || generateReportingPeriods(new Date(), [-1]).weeks[0].periodIdentifier;
     const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
     const outputDir = `${llmoFolder}/agentic-traffic`;
     const filename = `agentictraffic-errors-404-${derivedPeriod}.xlsx`;
@@ -122,4 +124,16 @@ export default async function handler(message, context) {
   }
 
   return ok();
+}
+
+function derivePeriodFromBrokenLinks(brokenLinks = []) {
+  // Expect suggestionId like: llm-404-suggestion-w35-2025-<idx>
+  const periodRegex = /llm-404-suggestion-(w\d{2}-\d{4})-/;
+  for (const link of brokenLinks) {
+    const match = periodRegex.exec(link.suggestionId || '');
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  return null;
 }

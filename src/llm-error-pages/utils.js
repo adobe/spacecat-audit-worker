@@ -326,28 +326,33 @@ export function generatePeriodIdentifier(startDate, endDate) {
   return `${start}_to_${end}`;
 }
 
-export function generateReportingPeriods(referenceDate = new Date()) {
-  const { weekStart, weekEnd } = getWeekRange(-1, referenceDate);
+export function generateReportingPeriods(referenceDate = new Date(), weekOffsets = [-1]) {
+  const offsets = Array.isArray(weekOffsets) ? weekOffsets : [weekOffsets];
 
-  const weekNumber = getWeekNumber(weekStart);
-  const year = weekStart.getUTCFullYear();
+  const weeks = offsets.map((offset) => {
+    const { weekStart, weekEnd } = getWeekRange(offset, referenceDate);
 
-  const weeks = [{
-    weekNumber,
-    year,
-    weekLabel: `Week ${weekNumber}`,
-    startDate: weekStart,
-    endDate: weekEnd,
-    dateRange: {
-      start: formatDateString(weekStart),
-      end: formatDateString(weekEnd),
-    },
-  }];
+    const weekNumber = getWeekNumber(weekStart);
+    const year = weekStart.getUTCFullYear();
+
+    return {
+      weekNumber,
+      year,
+      weekLabel: `Week ${weekNumber}`,
+      startDate: weekStart,
+      endDate: weekEnd,
+      dateRange: {
+        start: formatDateString(weekStart),
+        end: formatDateString(weekEnd),
+      },
+      periodIdentifier: `w${String(weekNumber).padStart(2, '0')}-${year}`,
+    };
+  });
 
   return {
     weeks,
     referenceDate: referenceDate.toISOString(),
-    columns: [`Week ${weekNumber}`],
+    columns: weeks.map((w) => w.weekLabel),
   };
 }
 

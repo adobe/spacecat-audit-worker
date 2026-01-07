@@ -109,6 +109,7 @@ describe('LLM Error Pages Handler', function () {
         year: 2025,
         startDate: new Date('2025-08-18T00:00:00Z'),
         endDate: new Date('2025-08-24T23:59:59Z'),
+        periodIdentifier: 'w34-2025',
       }],
     });
 
@@ -338,13 +339,14 @@ describe('LLM Error Pages Handler', function () {
   describe('runAuditAndSendToMystique', () => {
     it('should run audit, generate reports, and send to Mystique successfully', async () => {
       const result = await runAuditAndSendToMystique(context);
+      const first = result.auditResult[0];
 
       expect(result.type).to.equal('audit-result');
       expect(result.siteId).to.equal('site-id-123');
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
-      expect(result.auditResult.totalErrors).to.equal(3);
-      expect(result.auditResult.categorizedResults).to.exist;
+      expect(first.success).to.be.true;
+      expect(first.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      expect(first.totalErrors).to.equal(3);
+      expect(first.categorizedResults).to.exist;
       expect(result.fullAuditRef).to.equal('https://example.com');
 
       expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] Starting audit for https://example.com');
@@ -359,9 +361,10 @@ describe('LLM Error Pages Handler', function () {
       mockAthenaClient.query.rejects(new Error('Database error'));
 
       const result = await runAuditAndSendToMystique(context);
+      const first = result.auditResult[0];
 
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('Database error');
+      expect(first.success).to.be.false;
+      expect(first.error).to.equal('Database error');
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/\[LLM-ERROR-PAGES\] Audit failed: Database error/),
         sinon.match.instanceOf(Error),
@@ -374,7 +377,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message',
       );
@@ -385,7 +388,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message',
       );
@@ -400,7 +403,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message',
       );
@@ -424,7 +427,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const [, message] = context.sqs.sendMessage.firstCall.args;
       expect(message.data.brokenLinks.length).to.be.at.most(50);
@@ -462,6 +465,24 @@ describe('LLM Error Pages Handler', function () {
       expect(brokenLink.urlFrom).to.include('Perplexity');
     });
 
+    it('respects auditContext.weekOffset and returns multiple periods', async () => {
+      context.auditContext = { weekOffset: 2 };
+      mockGenerateReportingPeriods.resetHistory();
+      mockGenerateReportingPeriods.returns({
+        weeks: [
+          { weekNumber: 10, year: 2025, startDate: new Date('2025-03-03'), endDate: new Date('2025-03-09'), periodIdentifier: 'w10-2025' },
+          { weekNumber: 11, year: 2025, startDate: new Date('2025-03-10'), endDate: new Date('2025-03-16'), periodIdentifier: 'w11-2025' },
+        ],
+      });
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.instanceOf(Date), [2]);
+      expect(result.auditResult).to.be.an('array').with.lengthOf(2);
+      expect(result.auditResult[0].periodIdentifier).to.equal('w10-2025');
+      expect(result.auditResult[1].periodIdentifier).to.equal('w11-2025');
+    });
+
     it('should generate separate Excel files for 404, 403, and 5xx', async () => {
       mockProcessResults.returns({
         totalErrors: 6,
@@ -478,8 +499,26 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(mockSaveExcelReport).to.have.been.calledThrice;
+    });
+
+    it('runs dual weeks on Monday when no auditContext override', async () => {
+      const clock = sandbox.useFakeTimers({ now: new Date('2025-03-03T10:00:00Z') }); // Monday
+      mockGenerateReportingPeriods.resetHistory();
+      mockGenerateReportingPeriods.returns({
+        weeks: [
+          { weekNumber: 9, year: 2025, startDate: new Date('2025-02-24'), endDate: new Date('2025-03-02'), periodIdentifier: 'w09-2025' },
+          { weekNumber: 10, year: 2025, startDate: new Date('2025-03-03'), endDate: new Date('2025-03-09'), periodIdentifier: 'w10-2025' },
+        ],
+      });
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(mockGenerateReportingPeriods).to.have.been.calledWith(sinon.match.instanceOf(Date), [-1, 0]);
+      expect(result.auditResult).to.have.length(2);
+
+      clock.restore();
     });
 
     it('should apply fallbacks and sort when fields are missing', async () => {
@@ -559,7 +598,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(mockBuildSiteFilters).to.have.been.calledWith([], site);
     });
 
@@ -568,7 +607,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
     });
 
     it('should use fallback delivery type when not available', async () => {
@@ -636,7 +675,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await runAuditAndSendToMystique(context);
 
-      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult[0].success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message',
       );
