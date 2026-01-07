@@ -40,6 +40,11 @@
         "traffic_domain": 1100000,
         "anchor": "missing page link",
         "domain_rating": 55
+      },
+      {
+        "title": "backlink with missing optional fields",
+        "url_from": "https://from.com/from-missing",
+        "url_to": "https://foo.com/missing-fields"
       }
     ]
   },
