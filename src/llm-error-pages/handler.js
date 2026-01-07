@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+/* eslint-disable no-await-in-loop */
 
 import ExcelJS from 'exceljs';
 import { Audit } from '@adobe/spacecat-shared-data-access';
@@ -128,7 +129,6 @@ export async function runAuditAndSendToMystique(context) {
   try {
     const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
 
-    // Determine which weeks to run (mirror cdn-logs-report behavior)
     const isMonday = new Date().getUTCDay() === 1;
     let weekOffsets;
     if (context?.auditContext?.weekOffset !== undefined) {
@@ -139,7 +139,7 @@ export async function runAuditAndSendToMystique(context) {
       weekOffsets = [0];
     }
 
-    const weeks = generateReportingPeriods(new Date(), weekOffsets).weeks;
+    const { weeks } = generateReportingPeriods(new Date(), weekOffsets);
     const auditResults = [];
 
     for (const week of weeks) {
@@ -184,7 +184,9 @@ export async function runAuditAndSendToMystique(context) {
         if (!errors || errors.length === 0) return;
 
         /* c8 ignore next */
-        const sorted = [...errors].sort((a, b) => (b.total_requests || 0) - (a.total_requests || 0));
+        const sorted = [...errors].sort(
+          (a, b) => (b.total_requests || 0) - (a.total_requests || 0),
+        );
 
         const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet('data');
@@ -226,7 +228,11 @@ export async function runAuditAndSendToMystique(context) {
         writeCategoryExcel('5xx', categorizedResults['5xx']),
       ]);
 
-      log.info(`[LLM-ERROR-PAGES] Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
+      log.info(
+        '[LLM-ERROR-PAGES] Found %d total errors across %d unique URLs',
+        processedResults.totalErrors,
+        processedResults.summary.uniqueUrls,
+      );
 
       // Send to Mystique if configured
       const {
