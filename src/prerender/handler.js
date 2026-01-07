@@ -452,11 +452,14 @@ async function prepareDomainWideAggregateSuggestion(
 }
 
 /**
- * Processes opportunities and suggestions for prerender audit results
+ * Processes opportunities and suggestions for prerender audit results.
+ * Persists suggestions in the database so they can later be enriched
+ * with AI guidance from Mystique.
+ *
  * @param {string} auditUrl - Audited URL
  * @param {Object} auditData - Audit data with results
  * @param {Object} context - Processing context
- * @returns {Promise<void>}
+ * @returns {Promise<Object>} The created/updated opportunity entity
  */
 export async function processOpportunityAndSuggestions(
   auditUrl,
@@ -471,7 +474,7 @@ export async function processOpportunityAndSuggestions(
   /* c8 ignore next 4 */
   if (urlsNeedingPrerender === 0) {
     log.info(`Prerender - No prerender opportunities found, skipping opportunity creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-    return;
+    return null;
   }
 
   const preRenderSuggestions = auditResult.results
@@ -480,7 +483,7 @@ export async function processOpportunityAndSuggestions(
   /* c8 ignore next 4 */
   if (preRenderSuggestions.length === 0) {
     log.info(`Prerender - No URLs needing prerender found, skipping opportunity creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-    return;
+    return null;
   }
 
   log.debug(`Prerender - Generated ${preRenderSuggestions.length} prerender suggestions for baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
@@ -559,6 +562,139 @@ export async function processOpportunityAndSuggestions(
   });
 
   log.info(`Prerender - Successfully synced ${allSuggestions.length} suggestions for baseUrl: ${auditUrl}, siteId: ${auditData.siteId}`);
+
+  return opportunity;
+}
+
+/**
+ * Sends a minimal prerender guidance request message to Mystique SQS.
+ * This happens only after suggestions have been persisted for the
+ * target opportunity, so Mystique can focus solely on AI summarization
+ * while Audit Worker owns the full suggestion shape.
+ *
+ * @param {string} auditUrl - Audited URL (site base URL)
+ * @param {Object} auditData - Audit data used to build the message
+ * @param {Object} opportunity - The prerender opportunity entity
+ * @param {Object} context - Processing context
+ * @returns {Promise<void>}
+ */
+async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, opportunity, context) {
+  const {
+    log, sqs, env, site,
+  } = context;
+  const {
+    siteId,
+    auditId,
+    auditResult,
+    scrapeJobId,
+  } = auditData || {};
+
+  if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
+    log.warn(`Prerender - SQS or Mystique queue not configured, skipping guidance:prerender message. baseUrl=${auditUrl || site?.getBaseURL?.() || ''}, siteId=${siteId}`);
+    return;
+  }
+
+  if (!auditResult || !Array.isArray(auditResult.results) || auditResult.results.length === 0) {
+    log.info(`Prerender - No audit results available, skipping guidance:prerender message. baseUrl=${auditUrl || site?.getBaseURL?.() || ''}, siteId=${siteId}`);
+    return;
+  }
+
+  if (!opportunity || !opportunity.getId) {
+    log.warn(`Prerender - Opportunity entity not available, skipping guidance:prerender message. baseUrl=${auditUrl || site?.getBaseURL?.() || ''}, siteId=${siteId}`);
+    return;
+  }
+
+  const opportunityId = opportunity.getId();
+
+  try {
+    const baseUrl = auditUrl || site?.getBaseURL?.() || '';
+
+    // Load the suggestions we just synced so that we can:
+    // - include real suggestion IDs
+    // - filter out domain-wide aggregate suggestions
+    const existingSuggestions = await opportunity.getSuggestions();
+
+    if (!existingSuggestions || existingSuggestions.length === 0) {
+      log.warn(`Prerender - No existing suggestions found for opportunityId=${opportunityId}, skipping Mystique message. baseUrl=${baseUrl}, siteId=${siteId}`);
+      return;
+    }
+
+    // Build a quick lookup of URLs that actually need prerender
+    const needsPrerenderByUrl = new Map();
+    (auditResult.results || []).forEach((result) => {
+      if (result?.url && result.needsPrerender) {
+        needsPrerenderByUrl.set(result.url, true);
+      }
+    });
+
+    const suggestionsPayload = [];
+
+    existingSuggestions.forEach((s) => {
+      const data = s.getData?.() || {};
+
+      // Skip domain-wide aggregate suggestion and anything without URL
+      if (!data.url || data.isDomainWide) {
+        return;
+      }
+
+      // Only send per-URL suggestions that actually need prerender
+      if (!needsPrerenderByUrl.get(data.url)) {
+        return;
+      }
+
+      const suggestionId = s.getId?.();
+
+      // Build markdown-based S3 keys for Mystique to consume
+      const originalHtmlMarkdownKey = getS3Path(
+        data.url,
+        scrapeJobId,
+        'server-side-html.md',
+      );
+      const markdownDiffKey = getS3Path(
+        data.url,
+        scrapeJobId,
+        'markdown-diff.md',
+      );
+
+      suggestionsPayload.push({
+        suggestionId,
+        url: data.url,
+        originalHtmlMarkdownKey,
+        markdownDiffKey,
+      });
+    });
+
+    if (suggestionsPayload.length === 0) {
+      log.info(`Prerender - No eligible suggestions to send to Mystique for opportunityId=${opportunityId}. baseUrl=${baseUrl}, siteId=${siteId}`);
+      return;
+    }
+
+    const deliveryType = site?.getDeliveryType?.() || 'unknown';
+
+    const message = {
+      type: 'guidance:prerender',
+      siteId,
+      auditId,
+      deliveryType,
+      time: new Date().toISOString(),
+      data: {
+        opportunityId,
+        suggestions: suggestionsPayload,
+      },
+    };
+
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    log.info(
+      `Prerender - Queued guidance:prerender message to Mystique for baseUrl=${baseUrl}, `
+      + `siteId=${siteId}, opportunityId=${opportunityId}, suggestions=${suggestionsPayload.length}`,
+    );
+  } catch (error) {
+    log.error(
+      `Prerender - Failed to send guidance:prerender message to Mystique for opportunityId=${opportunityId}, `
+      + `baseUrl=${auditUrl || site?.getBaseURL?.() || ''}, siteId=${siteId}: ${error.message}`,
+      error,
+    );
+  }
 }
 
 /**
@@ -719,13 +855,19 @@ export async function processContentAndGenerateOpportunities(context) {
     const { auditContext } = context;
     const { scrapeJobId } = auditContext;
 
+    let opportunityForGuidance = null;
+
     if (urlsNeedingPrerender.length > 0) {
-      await processOpportunityAndSuggestions(site.getBaseURL(), {
-        siteId,
-        auditId: audit.getId(),
-        auditResult,
-        scrapeJobId,
-      }, context);
+      opportunityForGuidance = await processOpportunityAndSuggestions(
+        site.getBaseURL(),
+        {
+          siteId,
+          auditId: audit.getId(),
+          auditResult,
+          scrapeJobId,
+        },
+        context,
+      );
       /* c8 ignore next 12 */
     } else if (scrapeForbidden) {
       // Create a dummy opportunity when scraping is forbidden (403)
@@ -745,7 +887,6 @@ export async function processContentAndGenerateOpportunities(context) {
 
     log.info(`Prerender - Audit completed in ${elapsedSeconds}s. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
 
-    // Upload status summary to S3 (post-processing)
     const auditData = {
       siteId,
       auditId: audit.getId(),
@@ -754,6 +895,18 @@ export async function processContentAndGenerateOpportunities(context) {
       auditResult,
       scrapeJobId,
     };
+
+    // After syncing suggestions, send a minimal guidance request to Mystique.
+    if (opportunityForGuidance) {
+      await sendPrerenderGuidanceRequestToMystique(
+        site.getBaseURL(),
+        auditData,
+        opportunityForGuidance,
+        context,
+      );
+    }
+
+    // Upload status summary to S3 (post-processing)
     await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
 
     return {
