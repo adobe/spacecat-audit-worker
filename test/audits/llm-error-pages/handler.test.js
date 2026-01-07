@@ -991,11 +991,11 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
     expect(result.auditResult.success).to.be.true;
     // Verify Ahrefs URLs were used as fallback
     const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-    expect(sentMessage.data.alternativeUrls).to.deep.equal(['https://example.com/ahrefs-alt1']);
-    expect(context.log.info).to.have.been.calledWith(
-      '[LLM-ERROR-PAGES] No agentic URLs from Athena for alternatives, falling back to Ahrefs',
-    );
-  });
+      expect(sentMessage.data.alternativeUrls).to.deep.equal(['https://example.com/ahrefs-alt1']);
+      expect(context.log.info).to.have.been.calledWith(
+        '[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs',
+      );
+    });
 });
 
 describe('LLM Error Pages Handler (isolated)', function () {
