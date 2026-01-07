@@ -1,3 +1,10 @@
+# [1.278.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.277.0...v1.278.0) (2026-01-07)
+
+
+### Features
+
+* remove unnecessary tags from the analysis ([#1828](https://github.com/adobe/spacecat-audit-worker/issues/1828)) ([7ddbfdb](https://github.com/adobe/spacecat-audit-worker/commit/7ddbfdbff5aa46d2ba41c5a38b4bcd355899c869))
+
 # [1.277.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.276.2...v1.277.0) (2026-01-07)
 
 
