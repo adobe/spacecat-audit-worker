@@ -147,8 +147,8 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/EU_cqrV92jNIlz8q9gxGaOMBSRbcwT9FPpQX84bRKQ9Phw?e=Nw9ZRz',
         type: FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
         origin: 'AUTOMATION',
-        title: 'Form has low conversions',
-        description: 'Form has high views but low conversions',
+        title: 'Turn more visitors into leads and customers — optimizations for form conversion rate are ready',
+        description: 'A smoother, more intuitive form experience boosts conversions and ROI from existing traffic.',
         tags: ['Form Conversion'],
         data: {
           ...opptyData,

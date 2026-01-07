@@ -141,8 +141,8 @@ async function createOpportunity(auditId, siteId, context) {
       runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
       type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
       origin: 'AUTOMATION',
-      title: 'Accessibility - Assistive technology is incompatible on form',
-      description: '',
+      title: 'Forms missing key accessibility attributes — enhancements prepared to support all users',
+      description: 'Improving accessibility for forms ensures assistive technologies can correctly interpret each input, helps users understand what\'s required, and makes form completion more intuitive for everyone.',
       tags: [
         'Forms Accessibility',
       ],
