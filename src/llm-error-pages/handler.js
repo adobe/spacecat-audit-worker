@@ -44,9 +44,17 @@ export async function importTopPagesAndScrape(context) {
   const { SiteTopPage } = dataAccess;
 
   try {
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    // Try to get top agentic URLs from Athena first
+    let topPageUrls = await getTopAgenticUrlsFromAthena(site, context);
 
-    if (topPages.length === 0) {
+    // Fallback to Ahrefs if Athena returns no data
+    if (!topPageUrls || topPageUrls.length === 0) {
+      log.info('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs');
+      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+      topPageUrls = topPages.map((page) => page.getUrl());
+    }
+
+    if (topPageUrls.length === 0) {
       log.warn('[LLM-ERROR-PAGES] No top pages found for site');
       return {
         type: 'top-pages',
@@ -59,14 +67,14 @@ export async function importTopPagesAndScrape(context) {
       };
     }
 
-    log.info(`[LLM-ERROR-PAGES] Found ${topPages.length} top pages for site ${site.getId()}`);
+    log.info(`[LLM-ERROR-PAGES] Found ${topPageUrls.length} top pages for site ${site.getId()}`);
 
     return {
       type: 'top-pages',
       siteId: site.getId(),
       auditResult: {
         success: true,
-        topPages: topPages.map((page) => page.getUrl()),
+        topPages: topPageUrls,
       },
       fullAuditRef: site.getBaseURL(),
     };

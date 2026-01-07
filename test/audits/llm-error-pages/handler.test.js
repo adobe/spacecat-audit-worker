@@ -665,10 +665,54 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
     sandbox.restore();
   });
 
-  it('should use Ahrefs URLs in importTopPagesAndScrape', async () => {
+  it('should use Athena URLs in importTopPagesAndScrape when available', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
+      'https://example.com/athena-page1',
+      'https://example.com/athena-page2',
+    ]);
+
     const handler = await esmock('../../../src/llm-error-pages/handler.js', {
       '@adobe/spacecat-shared-data-access': {
         Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+      },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    const result = await handler.importTopPagesAndScrape(context);
+
+    expect(result.auditResult.success).to.be.true;
+    expect(result.auditResult.topPages).to.deep.equal([
+      'https://example.com/athena-page1',
+      'https://example.com/athena-page2',
+    ]);
+    // Ahrefs should NOT be called when Athena returns data
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+  });
+
+  it('should fall back to Ahrefs in importTopPagesAndScrape when Athena returns empty', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
       },
     });
 
@@ -697,13 +741,19 @@ describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
       'https://example.com/ahrefs-page1',
       'https://example.com/ahrefs-page2',
     ]);
+    expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs');
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith('site-123', 'ahrefs', 'global');
   });
 
-  it('should return failure when no Ahrefs pages in importTopPagesAndScrape', async () => {
+  it('should return failure when both Athena and Ahrefs return empty in importTopPagesAndScrape', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
+
     const handler = await esmock('../../../src/llm-error-pages/handler.js', {
       '@adobe/spacecat-shared-data-access': {
         Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
       },
     });
 
