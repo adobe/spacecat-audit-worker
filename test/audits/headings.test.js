@@ -2476,11 +2476,15 @@ describe('Headings Audit', () => {
 
     // Mock getTopPagesForSiteId
     const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
+    const mockGetTopAgenticUrlsFromAthena = sinon.stub().resolves([url]);
 
     const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
+      '../../src/utils/agentic-urls.js': {
+      getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+    },
     });
 
     context.dataAccess = {
