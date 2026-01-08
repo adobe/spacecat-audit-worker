@@ -19,6 +19,7 @@ import {
 } from '../headings/handler.js';
 import { saveIntermediateResults } from './utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
+import { toElementTargets } from '../utils/dom-selector.js';
 
 export const PREFLIGHT_HEADINGS = 'headings';
 
@@ -35,6 +36,12 @@ function getSeoImpact(checkType) {
   ];
 
   return highImpactChecks.includes(checkType) ? 'High' : 'Moderate';
+}
+
+function getElementsFromCheck(check) {
+  const selectorSources = check.selectors
+    || (check.transformRules?.selector ? [check.transformRules.selector] : []);
+  return toElementTargets(selectorSources);
 }
 
 /**
@@ -174,6 +181,11 @@ export default async function headings(context, auditContext) {
             opportunity.aiSuggestion = check.suggestion;
           } else {
             opportunity.suggestion = check.suggestion;
+          }
+
+          const elementData = getElementsFromCheck(check);
+          if (elementData && (elementData.elements?.length > 0 || elementData.selector)) {
+            Object.assign(opportunity, elementData);
           }
 
           audit.opportunities.push(opportunity);

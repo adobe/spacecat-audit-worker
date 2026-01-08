@@ -14,6 +14,7 @@ import { load as cheerioLoad } from 'cheerio';
 import { saveIntermediateResults } from './utils.js';
 import { runLinksChecks } from './links-checks.js';
 import { generateSuggestionData } from '../internal-links/suggestions-generator.js';
+import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
 
 export const PREFLIGHT_LINKS = 'links';
 
@@ -26,7 +27,14 @@ export const PREFLIGHT_LINKS = 'links';
  * @param {string} aiRationale - Optional AI rationale for suggestions
  * @returns {Object} Issue object with all fields including aiSuggestion
  */
-export function createBrokenLinkIssue(urlTo, status, baseURLOrigin, urlsSuggested, aiRationale) {
+export function createBrokenLinkIssue(
+  urlTo,
+  status,
+  baseURLOrigin,
+  urlsSuggested,
+  aiRationale,
+  elements = [],
+) {
   const aiUrls = (urlsSuggested && urlsSuggested.length > 0)
     ? urlsSuggested.map((url) => stripTrailingSlash(
       url.replace(new URL(url).origin, baseURLOrigin),
@@ -39,6 +47,7 @@ export function createBrokenLinkIssue(urlTo, status, baseURLOrigin, urlsSuggeste
     seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
     aiSuggestion: aiUrls.length > 0 ? aiUrls[0] : undefined,
     aiRationale,
+    ...(elements && elements.length ? { elements } : {}),
   };
 }
 
@@ -91,11 +100,18 @@ export default async function links(context, auditContext) {
   if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
     const baseURLOrigin = new URL(previewBaseURL).origin;
     if (step === 'suggest') {
+      const normalizeHref = (value) => stripTrailingSlash(value);
+      const normalizeUrlTo = (value) => stripTrailingSlash(
+        value.replace(new URL(value).origin, site.getBaseURL()),
+      );
+      const selectorKey = (hrefValue, urlValue) => `${normalizeHref(hrefValue)}|${normalizeUrlTo(urlValue)}`;
+      const selectorsByLink = new Map();
+      auditResult.brokenInternalLinks.forEach((link) => {
+        selectorsByLink.set(selectorKey(link.href, link.urlTo), link.elements);
+      });
       const brokenLinks = auditResult.brokenInternalLinks.map((link) => ({
-        urlTo: stripTrailingSlash(
-          link.urlTo.replace(new URL(link.urlTo).origin, site.getBaseURL()),
-        ),
-        href: link.href,
+        urlTo: normalizeUrlTo(link.urlTo),
+        href: normalizeHref(link.href),
         status: link.status,
       }));
       log.debug(`[preflight-audit] Found ${JSON.stringify(brokenLinks)} broken internal links`);
@@ -114,11 +130,14 @@ export default async function links(context, auditContext) {
           baseURLOrigin,
           urlsSuggested,
           aiRationale,
+          selectorsByLink.get(selectorKey(href, urlTo)),
         );
         brokenInternalLinksByPage.get(href).push(issue);
       });
     } else {
-      auditResult.brokenInternalLinks.forEach(({ urlTo, href, status }) => {
+      auditResult.brokenInternalLinks.forEach(({
+        urlTo, href, status, elements,
+      }) => {
         if (!brokenInternalLinksByPage.has(href)) {
           brokenInternalLinksByPage.set(href, []);
         }
@@ -127,6 +146,7 @@ export default async function links(context, auditContext) {
           issue: `Status ${status}`,
           seoImpact: 'High',
           seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+          elements,
         });
       });
     }
@@ -134,7 +154,9 @@ export default async function links(context, auditContext) {
 
   // Process external links from the same audit auditsResult
   if (isNonEmptyArray(auditResult.brokenExternalLinks)) {
-    auditResult.brokenExternalLinks.forEach(({ urlTo, href, status }) => {
+    auditResult.brokenExternalLinks.forEach(({
+      urlTo, href, status, elements,
+    }) => {
       if (!brokenExternalLinksByPage.has(href)) {
         brokenExternalLinksByPage.set(href, []);
       }
@@ -143,6 +165,7 @@ export default async function links(context, auditContext) {
         issue: `Status ${status}`,
         seoImpact: 'High',
         seoRecommendation: 'Fix or remove broken links to improve user experience',
+        elements,
       });
     });
   }
@@ -179,7 +202,6 @@ export default async function links(context, auditContext) {
     endTime: linksEndTimestamp,
   });
 
-  // Check for insecure links in each scraped page
   scrapedObjects.forEach(({ data }) => {
     const { finalUrl, scrapeResult: { rawBody } } = data;
     const $ = cheerioLoad(rawBody);
@@ -195,11 +217,13 @@ export default async function links(context, auditContext) {
         } catch {
           normalizedUrl = href;
         }
+        const selector = getDomElementSelector(anchor);
         return {
           url: normalizedUrl,
           issue: 'Link using HTTP instead of HTTPS',
           seoImpact: 'High',
           seoRecommendation: 'Update all links to use HTTPS protocol',
+          ...toElementTargets(selector),
         };
       }
       return null;
@@ -209,6 +233,7 @@ export default async function links(context, auditContext) {
       audit.opportunities.push({ check: 'bad-links', issue: insecureLinks });
     }
   });
+  // Check for insecure links in each scraped page
 
   await saveIntermediateResults(context, auditsResult, 'links audit');
 }
