@@ -95,7 +95,7 @@
     "@adobe/spacecat-shared-scrape-client": "2.3.6",
     "@adobe/spacecat-shared-slack-client": "1.5.32",
     "@adobe/spacecat-shared-tier-client": "1.3.10",
-    "@adobe/spacecat-shared-utils": "https://gist.github.com/tkotthakota-adobe/71b6defc0da02288f929c237ff5bdf9b/raw/fd6b320cda582345d15501ba5626c813c23797a5/adobe-spacecat-shared-utils-1.86.0.tgz",
+    "@adobe/spacecat-shared-utils": "https://gist.github.com/tkotthakota-adobe/c0050cc8c445737c94f50f1c3b4de315/raw/67bde778e5d59aef48639f5a166716ef5d31179b/adobe-spacecat-shared-utils-1.86.0.tgz",
     "@adobe/structured-data-validator": "1.5.0",
     "@aws-sdk/client-athena": "3.940.0",
     "@aws-sdk/client-lambda": "3.940.0",

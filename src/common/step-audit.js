@@ -138,6 +138,45 @@ export class StepAudit extends BaseAudit {
         const scrapeClient = ScrapeClient.createFrom(context);
         stepContext.scrapeResultPaths = await scrapeClient
           .getScrapeResultPaths(auditContext.scrapeJobId);
+
+        // Check for bot protection in scrape results
+        const scrapeUrlResults = await scrapeClient
+          .getScrapeJobUrlResults(auditContext.scrapeJobId);
+
+        const botProtectedUrls = scrapeUrlResults.filter((result) => (
+          result.metadata?.botProtectionDetected === true
+        ));
+
+        if (botProtectedUrls.length > 0) {
+          // Log detailed bot protection information
+          botProtectedUrls.forEach((result) => {
+            const botProtection = result.metadata?.botProtection || {};
+            log.warn(
+              `Bot protection detected for URL ${result.url}: `
+              + `type=${botProtection.type || 'unknown'}, `
+              + `confidence=${botProtection.confidence || 'N/A'}, `
+              + `blocked=${botProtection.blocked}, `
+              + `httpStatus=${botProtection.details?.httpStatus || 'N/A'}`,
+            );
+          });
+
+          log.warn(
+            `${type} audit for site ${siteId} skipped: bot protection detected for `
+            + `${botProtectedUrls.length}/${scrapeUrlResults.length} URLs. `
+            + 'Audit cannot proceed due to bot protection blocking access to site content.',
+          );
+
+          return ok({
+            skipped: true,
+            reason: 'bot-protection-detected',
+            botProtectedUrlsCount: botProtectedUrls.length,
+            totalUrlsCount: scrapeUrlResults.length,
+            botProtectedUrls: botProtectedUrls.map((result) => ({
+              url: result.url,
+              botProtection: result.metadata?.botProtection,
+            })),
+          });
+        }
       }
 
       // Run the step

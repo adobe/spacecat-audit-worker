@@ -454,6 +454,23 @@ describe('Step-based Audit Tests', () => {
       ]);
       const mockScrapeClient = {
         getScrapeResultPaths: sandbox.stub().resolves(mockScrapeResultPaths),
+        getScrapeJobUrlResults: sandbox.stub().resolves([
+          {
+            url: 'https://space.cat/',
+            status: 'COMPLETE',
+            metadata: { botProtectionDetected: false },
+          },
+          {
+            url: 'https://space.cat/page1',
+            status: 'COMPLETE',
+            metadata: { botProtectionDetected: false },
+          },
+          {
+            url: 'https://space.cat/page2',
+            status: 'COMPLETE',
+            metadata: { botProtectionDetected: false },
+          },
+        ]),
       };
       sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
 
@@ -498,6 +515,292 @@ describe('Step-based Audit Tests', () => {
       expect(capturedScrapeResultPaths.get('https://space.cat/')).to.equal('s3://bucket/path1.json');
       expect(capturedScrapeResultPaths.get('https://space.cat/page1')).to.equal('s3://bucket/path2.json');
       expect(capturedScrapeResultPaths.get('https://space.cat/page2')).to.equal('s3://bucket/path3.json');
+    });
+
+    it('skips audit when bot protection is detected in scrape results', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      // Setup ScrapeClient mock with bot protection detected
+      // Include multiple URLs: one with full data, one with minimal data to test fallbacks
+      const mockScrapeClient = {
+        getScrapeResultPaths: sandbox.stub().resolves(new Map([
+          ['https://space.cat/', 's3://bucket/path1.json'],
+          ['https://space.cat/page2', 's3://bucket/path2.json'],
+        ])),
+        getScrapeJobUrlResults: sandbox.stub().resolves([
+          {
+            url: 'https://space.cat/',
+            status: 'FAILED',
+            metadata: {
+              botProtectionDetected: true,
+              reason: 'Bot protection blocked access',
+              botProtection: {
+                detected: true,
+                type: 'cloudflare',
+                blocked: true,
+                confidence: 0.99,
+                reason: 'Challenge page detected',
+                details: {
+                  httpStatus: 403,
+                  htmlLength: 1234,
+                },
+              },
+            },
+          },
+          {
+            url: 'https://space.cat/page2',
+            status: 'FAILED',
+            metadata: {
+              botProtectionDetected: true,
+              // Minimal botProtection object to test fallback branches
+              botProtection: {
+                blocked: true,
+                // type, confidence, details missing - will use fallbacks
+              },
+            },
+          },
+        ]),
+      };
+      sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('scrape', async () => ({
+          auditResult: { status: 'scraping' },
+          fullAuditRef: 's3://test/123',
+        }), AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+        .addStep('process-scrape', async () => ({ status: 'processed' }))
+        .build();
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const existingAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.findById.resolves(existingAudit);
+
+      const messageWithScrapeJobId = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          next: 'process-scrape',
+          auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+          scrapeJobId: 'scrape-job-456',
+        },
+      };
+
+      const result = await scrapeResultAudit.run(messageWithScrapeJobId, context);
+
+      // Should return ok status but with skipped flag
+      expect(result.status).to.equal(200);
+      const responseBody = await result.json();
+      expect(responseBody).to.deep.include({
+        skipped: true,
+        reason: 'bot-protection-detected',
+        botProtectedUrlsCount: 2,
+        totalUrlsCount: 2,
+      });
+
+      // Verify botProtectedUrls array is included with full details
+      expect(responseBody.botProtectedUrls).to.be.an('array');
+      expect(responseBody.botProtectedUrls).to.have.lengthOf(2);
+
+      // First URL has full details
+      expect(responseBody.botProtectedUrls[0]).to.deep.equal({
+        url: 'https://space.cat/',
+        botProtection: {
+          detected: true,
+          type: 'cloudflare',
+          blocked: true,
+          confidence: 0.99,
+          reason: 'Challenge page detected',
+          details: {
+            httpStatus: 403,
+            htmlLength: 1234,
+          },
+        },
+      });
+
+      // Second URL has minimal details
+      expect(responseBody.botProtectedUrls[1]).to.deep.equal({
+        url: 'https://space.cat/page2',
+        botProtection: {
+          blocked: true,
+        },
+      });
+
+      // Verify bot protection was checked
+      expect(mockScrapeClient.getScrapeJobUrlResults).to.have.been.calledWith('scrape-job-456');
+
+      // Verify detailed warning was logged for the first URL (with all fields)
+      expect(context.log.warn).to.have.been.calledWithMatch(
+        /Bot protection detected for URL https:\/\/space\.cat\/:/,
+      );
+      expect(context.log.warn).to.have.been.calledWithMatch(
+        /type=cloudflare.*confidence=0.99.*blocked=true.*httpStatus=403/,
+      );
+
+      // Verify detailed warning was logged for the second URL (with fallback values)
+      expect(context.log.warn).to.have.been.calledWithMatch(
+        /Bot protection detected for URL https:\/\/space\.cat\/page2:/,
+      );
+      expect(context.log.warn).to.have.been.calledWithMatch(
+        /type=unknown.*confidence=N\/A.*blocked=true.*httpStatus=N\/A/,
+      );
+
+      // Verify general warning was logged
+      expect(context.log.warn).to.have.been.calledWithMatch(
+        /content-audit audit for site.*skipped: bot protection detected for 2\/2 URLs/,
+      );
+    });
+
+    it('continues audit when no bot protection is detected', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      // Setup ScrapeClient mock without bot protection
+      const mockScrapeClient = {
+        getScrapeResultPaths: sandbox.stub().resolves(new Map([
+          ['https://space.cat/', 's3://bucket/path1.json'],
+        ])),
+        getScrapeJobUrlResults: sandbox.stub().resolves([
+          {
+            url: 'https://space.cat/',
+            status: 'COMPLETE',
+            metadata: {
+              botProtectionDetected: false,
+            },
+          },
+        ]),
+      };
+      sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+
+      let stepWasExecuted = false;
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('scrape', async () => ({
+          auditResult: { status: 'scraping' },
+          fullAuditRef: 's3://test/123',
+        }), AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+        .addStep('process-scrape', async () => {
+          stepWasExecuted = true;
+          return { status: 'processed' };
+        })
+        .build();
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const existingAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.findById.resolves(existingAudit);
+
+      const messageWithScrapeJobId = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          next: 'process-scrape',
+          auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+          scrapeJobId: 'scrape-job-456',
+        },
+      };
+
+      const result = await scrapeResultAudit.run(messageWithScrapeJobId, context);
+
+      // Should complete normally
+      expect(result.status).to.equal(200);
+      expect(stepWasExecuted).to.be.true;
+
+      // Verify bot protection was checked
+      expect(mockScrapeClient.getScrapeJobUrlResults).to.have.been.calledWith('scrape-job-456');
+    });
+
+    it('handles missing botProtection object with fallback to empty object', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      // Setup ScrapeClient mock with botProtectionDetected but no botProtection object
+      const mockScrapeClient = {
+        getScrapeResultPaths: sandbox.stub().resolves(new Map([
+          ['https://space.cat/', 's3://bucket/path1.json'],
+        ])),
+        getScrapeJobUrlResults: sandbox.stub().resolves([
+          {
+            url: 'https://space.cat/',
+            status: 'FAILED',
+            metadata: {
+              botProtectionDetected: true,
+              // botProtection object completely missing - tests || {} fallback
+            },
+          },
+        ]),
+      };
+      sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('scrape', async () => ({
+          auditResult: { status: 'scraping' },
+          fullAuditRef: 's3://test/123',
+        }), AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+        .addStep('process-scrape', async () => ({ status: 'processed' }))
+        .build();
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const existingAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.findById.resolves(existingAudit);
+
+      const messageWithScrapeJobId = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          next: 'process-scrape',
+          auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+          scrapeJobId: 'scrape-job-456',
+        },
+      };
+
+      const result = await scrapeResultAudit.run(messageWithScrapeJobId, context);
+
+      // Should still skip audit
+      expect(result.status).to.equal(200);
+      const responseBody = await result.json();
+      expect(responseBody).to.deep.include({
+        skipped: true,
+        reason: 'bot-protection-detected',
+        botProtectedUrlsCount: 1,
+        totalUrlsCount: 1,
+      });
+
+      // Verify warning was logged with all fallback values (including undefined for blocked)
+      expect(context.log.warn).to.have.been.calledWithMatch(/type=unknown/);
+      expect(context.log.warn).to.have.been.calledWithMatch(/confidence=N\/A/);
+      expect(context.log.warn).to.have.been.calledWithMatch(/httpStatus=N\/A/);
     });
   });
 });

@@ -173,6 +173,21 @@ describe('Bot Protection Utils', () => {
       expect(result).to.not.be.null;
       expect(result.type).to.equal('unknown');
       expect(result.confidence).to.equal(0.5);
+      expect(result.detected).to.be.true; // detected should be true when not false
+    });
+
+    it('sets detected to false when explicitly set to false', () => {
+      const scrapeResult = {
+        botProtection: {
+          blocked: true,
+          detected: false,
+        },
+      };
+
+      const result = checkBotProtectionInScrapeResult(scrapeResult, logStub);
+
+      expect(result).to.not.be.null;
+      expect(result.detected).to.be.false;
     });
   });
 
