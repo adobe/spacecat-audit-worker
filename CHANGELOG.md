@@ -1,3 +1,10 @@
+## [1.279.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.0...v1.279.1) (2026-01-08)
+
+
+### Bug Fixes
+
+* filter out other agent types ([#1832](https://github.com/adobe/spacecat-audit-worker/issues/1832)) ([4b483f6](https://github.com/adobe/spacecat-audit-worker/commit/4b483f664116a0cd6ec45260cefb1cdb2d7fd637))
+
 # [1.279.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.278.0...v1.279.0) (2026-01-08)
 
 
