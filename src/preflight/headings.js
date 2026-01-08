@@ -15,8 +15,8 @@ import {
   validatePageHeadingFromScrapeJson,
   getH1HeadingASuggestion,
   HEADINGS_CHECKS,
-} from '../headings-toc/headings-handler.js';
-import { getBrandGuidelines } from '../headings-toc/shared-utils.js';
+} from '../headings/handler.js';
+import { getBrandGuidelines } from '../headings/shared-utils.js';
 import { saveIntermediateResults } from './utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
 

@@ -28,12 +28,12 @@ import {
   generateSuggestions,
   headingsAuditRunner,
   getH1HeadingASuggestion,
-} from '../../src/headings-toc/headings-handler.js';
+} from '../../src/headings/handler.js';
 import {
   getHeadingSelector,
   getTextContent,
-} from '../../src/headings-toc/shared-utils.js';
-import { createOpportunityData } from '../../src/headings-toc/opportunity-data-mapper.js';
+} from '../../src/headings/shared-utils.js';
+import { createOpportunityData } from '../../src/headings/opportunity-data-mapper.js';
 import { convertToOpportunity } from '../../src/common/opportunity.js';
 
 chaiUse(sinonChai);
@@ -949,7 +949,7 @@ describe('Headings Audit', () => {
       syncSuggestionsStub = sinon.stub().resolves();
 
       // Mock the handler with stubbed dependencies
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1277,7 +1277,7 @@ describe('Headings Audit', () => {
       const baseURL = 'https://example.com';
       const url = 'https://example.com/page';
 
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: sinon.stub().resolves([{ url }])
         }
@@ -1341,7 +1341,7 @@ describe('Headings Audit', () => {
       const baseURL = 'https://example.com';
       const url = 'https://example.com/page';
 
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: sinon.stub().resolves([{ url }])
         }
@@ -1486,7 +1486,7 @@ describe('Headings Audit', () => {
 
       const syncSuggestionsStub = sinon.stub().resolves();
 
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1536,7 +1536,7 @@ describe('Headings Audit', () => {
 
       const syncSuggestionsStub = sinon.stub().resolves();
 
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1661,7 +1661,7 @@ describe('Headings Audit', () => {
     });
 
     // Use esmock to mock cheerio to throw an error during processing
-    const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+    const mockedHandler = await esmock('../../src/headings/handler.js', {
       cheerio: {
         load: () => {
           throw new Error('DOM processing failed');
@@ -1770,7 +1770,7 @@ describe('Headings Audit', () => {
       { url: url }
     ]);
 
-    const mockedHandlerWithStubs = await esmock('../../src/headings-toc/headings-handler.js', {
+    const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
@@ -1865,7 +1865,7 @@ describe('Headings Audit', () => {
       { url: url }
     ]);
 
-    const mockedHandlerWithStubs = await esmock('../../src/headings-toc/headings-handler.js', {
+    const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
@@ -1944,7 +1944,7 @@ describe('Headings Audit', () => {
       { url: url }
     ]);
 
-    const mockedHandlerWithStubs = await esmock('../../src/headings-toc/headings-handler.js', {
+    const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
@@ -2029,7 +2029,7 @@ describe('Headings Audit', () => {
       { url: url }
     ]);
 
-    const mockedHandlerWithStubs = await esmock('../../src/headings-toc/headings-handler.js', {
+    const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
@@ -2110,7 +2110,7 @@ describe('Headings Audit', () => {
       { url: url }
     ]);
 
-    const mockedHandlerWithStubs = await esmock('../../src/headings-toc/headings-handler.js', {
+    const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
@@ -2199,7 +2199,7 @@ describe('Headings Audit', () => {
       { url: url }
     ]);
 
-    const mockedHandlerWithStubs = await esmock('../../src/headings-toc/headings-handler.js', {
+    const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
@@ -2456,7 +2456,7 @@ describe('Headings Audit', () => {
     const getTopPagesForSiteIdStub = sinon.stub().resolves([]);
 
     // Use esmock to replace the import
-    const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+    const mockedHandler = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
@@ -2628,7 +2628,7 @@ describe('Headings Audit', () => {
       syncSuggestionsStub = sinon.stub().resolves();
 
       // Mock the handler with stubbed dependencies
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -2684,7 +2684,7 @@ describe('Headings Audit', () => {
       const syncSuggestionsStub2 = sinon.stub().resolves();
 
       // Mock the dependencies
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub2,
         },
@@ -2740,7 +2740,7 @@ describe('Headings Audit', () => {
       const syncSuggestionsStub3 = sinon.stub().resolves();
 
       // Mock the dependencies
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub3,
         },
@@ -2795,7 +2795,7 @@ describe('Headings Audit', () => {
 
       const syncSuggestionsStub4 = sinon.stub().resolves();
 
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub4,
         },
@@ -2850,7 +2850,7 @@ describe('Headings Audit', () => {
 
       const syncSuggestionsStub5 = sinon.stub().resolves();
 
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub5,
         },
@@ -2904,7 +2904,7 @@ describe('Headings Audit', () => {
 
       const syncSuggestionsStub6 = sinon.stub().resolves();
 
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub6,
         },
@@ -2957,7 +2957,7 @@ describe('Headings Audit', () => {
 
       const syncSuggestionsStub7 = sinon.stub().resolves();
 
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub7,
         },
@@ -3011,7 +3011,7 @@ describe('Headings Audit', () => {
 
       const syncSuggestionsStub8 = sinon.stub().resolves();
 
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub8,
         },
@@ -3066,7 +3066,7 @@ describe('Headings Audit', () => {
 
       const syncSuggestionsStub9 = sinon.stub().resolves();
 
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub9,
         },
@@ -3916,7 +3916,7 @@ describe('Headings Audit', () => {
 
   describe('Shared Utils Coverage Tests', () => {
     it('covers lines 144-146: error in loadScrapeJson', async () => {
-      const { loadScrapeJson } = await import('../../src/headings-toc/shared-utils.js');
+      const { loadScrapeJson } = await import('../../src/headings/shared-utils.js');
       const url = 'https://example.com/page';
       const logSpy = sinon.spy(log);
 
@@ -3942,7 +3942,7 @@ describe('Headings Audit', () => {
 
   describe('Coverage Tests for Missing Lines', () => {
     it('covers lines 157-159: null scrapeJsonObject in validatePageHeadingFromScrapeJson', async () => {
-      const { validatePageHeadingFromScrapeJson } = await import('../../src/headings-toc/headings-handler.js');
+      const { validatePageHeadingFromScrapeJson } = await import('../../src/headings/handler.js');
       const url = 'https://example.com/page';
       const logSpy = sinon.spy(log);
 
@@ -4044,7 +4044,7 @@ describe('Headings Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -4110,7 +4110,7 @@ describe('Headings Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().rejects(new Error('Database error'));
 
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -4127,7 +4127,7 @@ describe('Headings Audit', () => {
 
   describe('Branch Coverage Tests', () => {
     it('covers line 538: fallback to auditResult when headings key does not exist', async () => {
-      const { generateSuggestions } = await import('../../src/headings-toc/headings-handler.js');
+      const { generateSuggestions } = await import('../../src/headings/handler.js');
       const auditUrl = 'https://example.com';
       
       // Create auditData WITHOUT the headings key to trigger fallback
@@ -4153,7 +4153,7 @@ describe('Headings Audit', () => {
     });
 
     it('covers line 566: fallback to empty array when suggestions.headings does not exist', async () => {
-      const { opportunityAndSuggestions } = await import('../../src/headings-toc/headings-handler.js');
+      const { opportunityAndSuggestions } = await import('../../src/headings/handler.js');
       const auditUrl = 'https://example.com';
       
       // Create auditData WITHOUT suggestions.headings to trigger fallback
@@ -4190,7 +4190,7 @@ describe('Headings Audit', () => {
 
       const mockGetTopAgenticUrlsFromAthena = sinon.stub().resolves([url]);
 
-      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/utils/agentic-urls.js': {
           getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
         },

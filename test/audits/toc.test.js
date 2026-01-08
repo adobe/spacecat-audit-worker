@@ -19,7 +19,7 @@ import esmock from 'esmock';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 
-import { generateSuggestions } from '../../src/headings-toc/toc-handler.js';
+import { generateSuggestions } from '../../src/toc/handler.js';
 
 chaiUse(sinonChai);
 
@@ -88,7 +88,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -183,7 +183,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -267,7 +267,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -350,7 +350,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -575,7 +575,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const syncSuggestionsStub = sinon.stub().resolves();
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -623,7 +623,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const syncSuggestionsStub = sinon.stub().resolves();
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -675,7 +675,7 @@ describe('TOC (Table of Contents) Audit', () => {
         getId: () => 'test-opportunity-id',
       });
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -715,7 +715,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -783,7 +783,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -853,7 +853,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -927,7 +927,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -1000,7 +1000,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -1077,7 +1077,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -1146,7 +1146,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -1217,7 +1217,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
   describe('TOC Opportunity Data Mapper', () => {
     it('creates proper TOC opportunity data structure', async () => {
-      const { createOpportunityDataForTOC } = await import('../../src/headings-toc/opportunity-data-mapper.js');
+      const { createOpportunityDataForTOC } = await import('../../src/toc/opportunity-data-mapper.js');
       const opportunityData = createOpportunityDataForTOC();
 
       expect(opportunityData).to.be.an('object');
@@ -1229,7 +1229,7 @@ describe('TOC (Table of Contents) Audit', () => {
     });
 
     it('includes proper guidance steps for TOC', async () => {
-      const { createOpportunityDataForTOC } = await import('../../src/headings-toc/opportunity-data-mapper.js');
+      const { createOpportunityDataForTOC } = await import('../../src/toc/opportunity-data-mapper.js');
       const opportunityData = createOpportunityDataForTOC();
 
       expect(opportunityData).to.have.property('guidance');
@@ -1244,7 +1244,7 @@ describe('TOC (Table of Contents) Audit', () => {
     });
 
     it('has correct tags for TOC', async () => {
-      const { createOpportunityDataForTOC } = await import('../../src/headings-toc/opportunity-data-mapper.js');
+      const { createOpportunityDataForTOC } = await import('../../src/toc/opportunity-data-mapper.js');
       const opportunityData = createOpportunityDataForTOC();
 
       expect(opportunityData).to.have.property('tags');
@@ -1267,7 +1267,7 @@ describe('TOC (Table of Contents) Audit', () => {
         return Promise.resolve();
       });
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1334,7 +1334,7 @@ describe('TOC (Table of Contents) Audit', () => {
         return Promise.resolve();
       });
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1395,7 +1395,7 @@ describe('TOC (Table of Contents) Audit', () => {
         return Promise.resolve();
       });
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1452,7 +1452,7 @@ describe('TOC (Table of Contents) Audit', () => {
         return Promise.resolve();
       });
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1505,7 +1505,7 @@ describe('TOC (Table of Contents) Audit', () => {
         return Promise.resolve();
       });
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1560,7 +1560,7 @@ describe('TOC (Table of Contents) Audit', () => {
         return Promise.resolve();
       });
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1606,7 +1606,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
   describe('Coverage Tests for Missing Lines', () => {
     it('covers lines 162-164: null scrapeJsonObject in validatePageTocFromScrapeJson', async () => {
-      const { validatePageTocFromScrapeJson } = await import('../../src/headings-toc/toc-handler.js');
+      const { validatePageTocFromScrapeJson } = await import('../../src/toc/handler.js');
       const url = 'https://example.com/page';
       const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
 
@@ -1619,7 +1619,7 @@ describe('TOC (Table of Contents) Audit', () => {
     });
 
     it('covers lines 185-190: error in validatePageTocFromScrapeJson', async () => {
-      const { validatePageTocFromScrapeJson } = await import('../../src/headings-toc/toc-handler.js');
+      const { validatePageTocFromScrapeJson } = await import('../../src/toc/handler.js');
       const url = 'https://example.com/page';
       const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
 
@@ -1638,7 +1638,7 @@ describe('TOC (Table of Contents) Audit', () => {
     });
 
     it('covers lines 214-219: null/undefined URL in validatePageToc', async () => {
-      const { validatePageToc } = await import('../../src/headings-toc/toc-handler.js');
+      const { validatePageToc } = await import('../../src/toc/handler.js');
       const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
 
       const result = await validatePageToc(
@@ -1659,7 +1659,7 @@ describe('TOC (Table of Contents) Audit', () => {
     });
 
     it('covers lines 224-225: null scrapeJsonObject returns null in validatePageToc', async () => {
-      const { validatePageToc } = await import('../../src/headings-toc/toc-handler.js');
+      const { validatePageToc } = await import('../../src/toc/handler.js');
       const url = 'https://example.com/page';
       const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
 
@@ -1685,7 +1685,7 @@ describe('TOC (Table of Contents) Audit', () => {
     });
 
     it('covers lines 228-233: error catch block in validatePageToc', async () => {
-      const { validatePageToc } = await import('../../src/headings-toc/toc-handler.js');
+      const { validatePageToc } = await import('../../src/toc/handler.js');
       const url = 'https://example.com/page';
       const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
 
@@ -1740,7 +1740,7 @@ describe('TOC (Table of Contents) Audit', () => {
         },
       };
 
-      const { tocAuditRunner } = await import('../../src/headings-toc/toc-handler.js');
+      const { tocAuditRunner } = await import('../../src/toc/handler.js');
       const result = await tocAuditRunner(baseURL, context, site);
 
       // The result structure is different when no top pages are found
@@ -1757,7 +1757,7 @@ describe('TOC (Table of Contents) Audit', () => {
       // Mock to throw an error
       const getTopPagesForSiteIdStub = sinon.stub().rejects(new Error('Network error'));
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -1772,7 +1772,7 @@ describe('TOC (Table of Contents) Audit', () => {
     });
 
     it('covers lines 360-362: early return when TOC audit has no issues', async () => {
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js');
+      const mockedHandler = await esmock('../../src/toc/handler.js');
       const { generateSuggestions } = mockedHandler;
 
       const auditUrl = 'https://example.com';
@@ -1794,7 +1794,7 @@ describe('TOC (Table of Contents) Audit', () => {
     });
 
     it('covers lines 360-362: early return when TOC audit has error', async () => {
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js');
+      const mockedHandler = await esmock('../../src/toc/handler.js');
       const { generateSuggestions } = mockedHandler;
 
       const auditUrl = 'https://example.com';
@@ -1818,7 +1818,7 @@ describe('TOC (Table of Contents) Audit', () => {
     });
 
     it('covers lines 360-362: early return when TOC check is top-pages', async () => {
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js');
+      const mockedHandler = await esmock('../../src/toc/handler.js');
       const { generateSuggestions } = mockedHandler;
 
       const auditUrl = 'https://example.com';
@@ -1857,7 +1857,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings-toc/toc-handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -1913,7 +1913,7 @@ describe('TOC (Table of Contents) Audit', () => {
     });
 
     it('covers line 381: fallback to empty array when suggestions.toc does not exist', async () => {
-      const { opportunityAndSuggestions } = await import('../../src/headings-toc/toc-handler.js');
+      const { opportunityAndSuggestions } = await import('../../src/toc/handler.js');
       const auditUrl = 'https://example.com';
       
       // Create auditData WITHOUT suggestions.toc to trigger fallback

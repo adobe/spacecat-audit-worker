@@ -4074,7 +4074,7 @@ describe('Preflight Audit', () => {
 
       // Mock the headings handler with stubbed functions
       const headingsModule = await esmock('../../src/preflight/headings.js', {
-        '../../src/headings-toc/headings-handler.js': {
+        '../../src/headings/handler.js': {
           validatePageHeadingFromScrapeJson: async (url, scrapeJsonObject, log, seoChecks) => {
             // Return validation results based on the scraped data
             if (url === 'https://example.com/page1') {
@@ -4117,7 +4117,7 @@ describe('Preflight Audit', () => {
             HEADING_EMPTY: { check: 'heading-empty' },
           },
         },
-        '../../src/headings-toc/shared-utils.js': {
+        '../../src/headings/shared-utils.js': {
           getBrandGuidelines: getBrandGuidelinesStub,
         },
         '../../src/preflight/utils.js': {
@@ -4274,7 +4274,7 @@ describe('Preflight Audit', () => {
 
     it('should return Moderate seoImpact for non-high-impact check types', async () => {
       const headingsModuleWithModerateCheck = await esmock('../../src/preflight/headings.js', {
-        '../../src/headings-toc/headings-handler.js': {
+        '../../src/headings/handler.js': {
           validatePageHeadingFromScrapeJson: async (url) => {
             return {
               url,
@@ -4298,7 +4298,7 @@ describe('Preflight Audit', () => {
             HEADING_EMPTY: { check: 'heading-empty' },
           },
         },
-        '../../src/headings-toc/shared-utils.js': {
+        '../../src/headings/shared-utils.js': {
           getBrandGuidelines: getBrandGuidelinesStub,
         },
         '../../src/preflight/utils.js': {
@@ -4345,7 +4345,7 @@ describe('Preflight Audit', () => {
 
     it('should handle validatePageHeadingFromScrapeJson returning falsy value', async () => {      
       const headingsModuleWithNullReturn = await esmock('../../src/preflight/headings.js', {
-        '../../src/headings-toc/headings-handler.js': {
+        '../../src/headings/handler.js': {
           validatePageHeadingFromScrapeJson: async (url) => {
             return null;
           },
@@ -4357,7 +4357,7 @@ describe('Preflight Audit', () => {
             HEADING_EMPTY: { check: 'heading-empty' },
           },
         },
-        '../../src/headings-toc/shared-utils.js': {
+        '../../src/headings/shared-utils.js': {
           getBrandGuidelines: getBrandGuidelinesStub,
         },
         '../../src/preflight/utils.js': {
@@ -4405,7 +4405,7 @@ describe('Preflight Audit', () => {
 
     it('should generate AI suggestions for HEADING_EMPTY check type', async () => {
       const headingsModuleWithEmptyCheck = await esmock('../../src/preflight/headings.js', {
-        '../../src/headings-toc/headings-handler.js': {
+        '../../src/headings/handler.js': {
           validatePageHeadingFromScrapeJson: async (url) => {
             return {
               url,
@@ -4429,7 +4429,7 @@ describe('Preflight Audit', () => {
             HEADING_EMPTY: { check: 'heading-empty' },
           },
         },
-        '../../src/headings-toc/shared-utils.js': {
+        '../../src/headings/shared-utils.js': {
           getBrandGuidelines: getBrandGuidelinesStub,
         },
         '../../src/preflight/utils.js': {
@@ -4476,7 +4476,7 @@ describe('Preflight Audit', () => {
 
     it('should handle error during headings validation processing', async () => {
       const headingsModuleWithError = await esmock('../../src/preflight/headings.js', {
-        '../../src/headings-toc/headings-handler.js': {
+        '../../src/headings/handler.js': {
           validatePageHeadingFromScrapeJson: async (url) => {
             throw new Error('Validation processing failed');
           },
@@ -4488,7 +4488,7 @@ describe('Preflight Audit', () => {
             HEADING_EMPTY: { check: 'heading-empty' },
           },
         },
-        '../../src/headings-toc/shared-utils.js': {
+        '../../src/headings/shared-utils.js': {
           getBrandGuidelines: getBrandGuidelinesStub,
         },
         '../../src/preflight/utils.js': {
@@ -4529,7 +4529,7 @@ describe('Preflight Audit', () => {
 
     it('should add aiSuggestion when isAISuggested is true', async () => {
       const headingsModuleWithAISuggestion = await esmock('../../src/preflight/headings.js', {
-        '../../src/headings-toc/headings-handler.js': {
+        '../../src/headings/handler.js': {
           validatePageHeadingFromScrapeJson: async (url) => {
             return {
               url,
@@ -4553,7 +4553,7 @@ describe('Preflight Audit', () => {
             HEADING_EMPTY: { check: 'heading-empty' },
           },
         },
-        '../../src/headings-toc/shared-utils.js': {
+        '../../src/headings/shared-utils.js': {
           getBrandGuidelines: getBrandGuidelinesStub,
         },
         '../../src/preflight/utils.js': {

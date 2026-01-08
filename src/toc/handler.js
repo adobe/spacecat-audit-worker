@@ -23,14 +23,14 @@ import {
   extractTocData,
   tocArrayToHast,
   determineTocPlacement,
-} from './utils.js';
+} from '../headings/utils.js';
 import {
   getHeadingSelector,
   cheerioLoad,
   loadScrapeJson,
   getTopPages,
   initializeAuditContext,
-} from './shared-utils.js';
+} from '../headings/shared-utils.js';
 
 const auditType = Audit.AUDIT_TYPES.TOC;
 
