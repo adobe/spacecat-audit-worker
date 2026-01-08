@@ -140,7 +140,7 @@ async function analyzeTextReadability(
  * @returns {Element[]} Array of meaningful text elements for readability analysis and enhancement.
  */
 const getMeaningfulElementsForReadability = ($) => {
-  $('header, footer').remove();
+  $('header, footer, style, script, noscript').remove();
   return $('p, blockquote, li, div').toArray().filter((el) => {
     const text = $(el).text()?.trim();
     return text && text.length >= MIN_TEXT_LENGTH;

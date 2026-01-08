@@ -402,6 +402,46 @@ describe('Readability Analysis Utils', () => {
       expect(result).to.be.an('array');
     });
 
+    it('should exclude style, script, noscript elements from text extraction', async () => {
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <body>
+            <style>.class { color: red; font-size: 14px; }</style>
+            <script>console.log('This script content should not appear in readability');</script>
+            <noscript>Please enable JavaScript to view this content properly.</noscript>
+            <div>
+              <style>.nested { background: blue; }</style>
+              <p>Main content paragraph that should be analyzed for readability issues without CSS or JS.</p>
+            </div>
+          </body>
+        </html>
+      `;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+      mockRs.fleschReadingEase.returns(25);
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.be.an('array');
+      // Verify that CSS/JS content is not in the analyzed text
+      result.forEach((issue) => {
+        expect(issue.textContent).to.not.include('.class');
+        expect(issue.textContent).to.not.include('color: red');
+        expect(issue.textContent).to.not.include('console.log');
+        expect(issue.textContent).to.not.include('Please enable JavaScript');
+        expect(issue.textContent).to.not.include('.nested');
+      });
+    });
+
     it('should handle errors in analyzeTextReadability gracefully', async () => {
       const text = makeLongText('Some text content for testing error handling in readability analysis functions.');
       const html = createHtmlWithParagraph(text);
