@@ -395,8 +395,6 @@ export async function headingsAuditRunner(baseURL, context, site) {
 
     log.debug(`[Headings Audit] Processing ${topPages.length} top pages for headings audit (limited to 200)`);
     log.debug(`[Headings Audit] Top pages sample: ${topPages.slice(0, 3).map((p) => p.url).join(', ')}`);
-
-
     if (topPages.length === 0) {
       log.warn('[Headings Audit] No top pages found, ending audit.');
       return {
