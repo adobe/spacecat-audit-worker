@@ -55,9 +55,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
   let dummyAudit;
 
-  const createdOpportunity = {
-    getId: sinon.stub().returns(newOpportunityId),
-  };
+  let createdOpportunity;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -71,6 +69,12 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     Audit = {
       findById: sandbox.stub().resolves(dummyAudit),
+    };
+
+    createdOpportunity = {
+      getId: () => newOpportunityId,
+      getTitle: () => 'Paid Traffic Weekly Report – Week 2 / 2025',
+      getType: () => 'paid-traffic',
     };
 
     Opportunity = {
@@ -366,5 +370,102 @@ describe('Paid-traffic-analysis guidance handler', () => {
     expect(Suggestion.create).to.have.been.called;
     const firstCall = Suggestion.create.getCall(0).args[0];
     expect(firstCall).to.have.property('status', 'NEW');
+  });
+
+  it('creates suggestions with status NEW for paid traffic reports even when requiresValidation is true', async () => {
+    // Set requiresValidation to true - but should still be NEW for reports
+    context.site = { requiresValidation: true };
+    const message = {
+      auditId,
+      siteId,
+      data: {
+        url: 'https://example.com', guidance: guidancePayload,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(Suggestion.create).to.have.been.called;
+    const firstCall = Suggestion.create.getCall(0).args[0];
+    // Paid traffic reports should always be NEW, regardless of requiresValidation
+    expect(firstCall).to.have.property('status', 'NEW');
+  });
+
+  it('creates suggestions with PENDING_VALIDATION when opportunity is not a paid traffic report and requiresValidation is true', async () => {
+    // Mock an opportunity with a different type (not paid-traffic)
+    const nonReportOpportunity = {
+      getId: () => newOpportunityId,
+      getTitle: () => 'Some Other Opportunity',
+      getType: () => 'generic-opportunity',
+    };
+    Opportunity.create.resolves(nonReportOpportunity);
+
+    context.site = { requiresValidation: true };
+    const message = {
+      auditId,
+      siteId,
+      data: {
+        url: 'https://example.com', guidance: guidancePayload,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(Suggestion.create).to.have.been.called;
+    const firstCall = Suggestion.create.getCall(0).args[0];
+    // Non-report opportunities should use requiresValidation logic
+    expect(firstCall).to.have.property('status', 'PENDING_VALIDATION');
+  });
+
+  it('creates suggestions with NEW when opportunity is not a paid traffic report and requiresValidation is false', async () => {
+    // Mock an opportunity with a different type (not paid-traffic)
+    const nonReportOpportunity = {
+      getId: () => newOpportunityId,
+      getTitle: () => 'Some Other Opportunity',
+      getType: () => 'generic-opportunity',
+    };
+    Opportunity.create.resolves(nonReportOpportunity);
+
+    context.site = { requiresValidation: false };
+    const message = {
+      auditId,
+      siteId,
+      data: {
+        url: 'https://example.com', guidance: guidancePayload,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(Suggestion.create).to.have.been.called;
+    const firstCall = Suggestion.create.getCall(0).args[0];
+    // Non-report opportunities should use requiresValidation logic
+    expect(firstCall).to.have.property('status', 'NEW');
+  });
+
+  it('creates suggestions with NEW when opportunity getType returns undefined and requiresValidation is true', async () => {
+    // Mock an opportunity where getType returns undefined
+    const opportunityWithoutType = {
+      getId: () => newOpportunityId,
+      getTitle: () => 'Some Opportunity',
+      getType: () => undefined,
+    };
+    Opportunity.create.resolves(opportunityWithoutType);
+
+    context.site = { requiresValidation: true };
+    const message = {
+      auditId,
+      siteId,
+      data: {
+        url: 'https://example.com', guidance: guidancePayload,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(Suggestion.create).to.have.been.called;
+    const firstCall = Suggestion.create.getCall(0).args[0];
+    // When getType() returns undefined, !== 'paid-traffic' is true, but we still check requiresValidation
+    expect(firstCall).to.have.property('status', 'PENDING_VALIDATION');
   });
 });
