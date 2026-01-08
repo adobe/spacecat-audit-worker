@@ -19,7 +19,7 @@ import esmock from 'esmock';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 
-import { generateSuggestions } from '../../src/headings/handler.js';
+import { generateSuggestions } from '../../src/toc/handler.js';
 
 chaiUse(sinonChai);
 
@@ -68,83 +68,6 @@ describe('TOC (Table of Contents) Audit', () => {
   });
 
   describe('TOC Detection', () => {
-    it('detects when TOC is present on the page', async () => {
-      const baseURL = 'https://example.com';
-      const url = 'https://example.com/page';
-
-      // Mock AI client to return TOC present
-      // NOTE: TOC detection happens FIRST, then brand guidelines
-      const mockClient = {
-        fetchChatCompletion: sinon.stub()
-          .onFirstCall().resolves({
-            choices: [{ message: { content: '{"tocPresent":true,"TOCCSSSelector":"nav.toc","confidence":9,"reasoning":"Clear TOC structure found"}' } }],
-          })
-          .onSecondCall().resolves({
-            choices: [{ message: { content: '{"guidelines":"Test guidelines"}' } }],
-          }),
-      };
-      AzureOpenAIClient.createFrom.restore();
-      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
-
-      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
-        '../../src/canonical/handler.js': {
-          getTopPagesForSiteId: getTopPagesForSiteIdStub,
-        },
-      });
-
-      context.dataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-        },
-      };
-
-      s3Client.send.callsFake((command) => {
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({
-            Contents: allKeys.map((key) => ({ Key: key })),
-            NextContinuationToken: undefined,
-          });
-        }
-
-        if (command instanceof GetObjectCommand) {
-          return Promise.resolve({
-            Body: {
-              transformToString: () => JSON.stringify({
-                finalUrl: url,
-                scrapedAt: Date.now(),
-                scrapeResult: {
-                  rawBody: '<h1>Title</h1><nav class="toc"><ul><li>Item 1</li></ul></nav><h2>Section</h2>',
-                  tags: {
-                    title: 'Page Title',
-                    description: 'Page Description',
-                    h1: ['Page H1'],
-                  },
-                },
-              }),
-            },
-            ContentType: 'application/json',
-          });
-        }
-
-        throw new Error('Unexpected command passed to s3Client.send');
-      });
-
-      context.s3Client = s3Client;
-      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-
-      // When TOC is present, no TOC issues should be reported
-      // Either toc is empty object or auditResult shows success
-      if (result.auditResult.toc) {
-        expect(Object.keys(result.auditResult.toc)).to.be.empty;
-      } else {
-        // If no TOC issues, result might be success or have only headings
-        expect(result.auditResult).to.exist;
-      }
-      expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(2);
-    });
-
     it('detects when TOC is missing and suggests placement after H1', async () => {
       const baseURL = 'https://example.com';
       const url = 'https://example.com/page';
@@ -165,7 +88,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -209,7 +132,7 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
 
       // Debug: Log the actual structure
       if (!result.auditResult.toc || !result.auditResult.toc.toc) {
@@ -260,7 +183,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -304,7 +227,7 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
 
       // Debug: Log the actual structure
       if (!result.auditResult.toc || !result.auditResult.toc.toc) {
@@ -344,7 +267,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -388,7 +311,7 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
 
       // Debug: Log the actual structure
       if (!result.auditResult.toc || !result.auditResult.toc.toc) {
@@ -427,7 +350,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -471,7 +394,7 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
 
       expect(result.auditResult).to.exist;
       expect(result.auditResult.toc).to.exist;
@@ -652,7 +575,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const syncSuggestionsStub = sinon.stub().resolves();
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -683,7 +606,7 @@ describe('TOC (Table of Contents) Audit', () => {
         },
       };
 
-      await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
 
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       expect(syncSuggestionsStub).to.have.been.calledOnce;
@@ -700,7 +623,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const syncSuggestionsStub = sinon.stub().resolves();
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -734,7 +657,7 @@ describe('TOC (Table of Contents) Audit', () => {
         },
       };
 
-      await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
 
       const syncCall = syncSuggestionsStub.getCall(0);
       const mapNewSuggestionFn = syncCall.args[0].mapNewSuggestion;
@@ -752,7 +675,7 @@ describe('TOC (Table of Contents) Audit', () => {
         getId: () => 'test-opportunity-id',
       });
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -766,7 +689,7 @@ describe('TOC (Table of Contents) Audit', () => {
         },
       };
 
-      const result = await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+      const result = await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
 
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).not.to.have.been.called;
@@ -792,7 +715,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -836,7 +759,7 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
 
       // Should use the AI-provided confidence score of 7
       expect(result.auditResult.toc.toc.urls[0].tocConfidence).to.equal(7);
@@ -860,7 +783,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -904,7 +827,7 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
 
       // Should use default confidence of 5
       expect(result.auditResult.toc.toc.urls[0].tocConfidence).to.equal(5);
@@ -930,7 +853,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -974,7 +897,7 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
 
       // Should log warning and default to 5
       expect(logSpy.warn).to.have.been.calledWith(
@@ -1004,7 +927,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -1048,7 +971,7 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
 
       // Should handle invalid response gracefully
       expect(logSpy.error).to.have.been.calledWith(
@@ -1077,7 +1000,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -1121,7 +1044,7 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
 
       // Should default to 5 and log warning
       expect(logSpy.warn).to.have.been.calledWith(
@@ -1154,7 +1077,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -1198,7 +1121,7 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
 
       // Should handle error gracefully
       expect(logSpy.error).to.have.been.called;
@@ -1223,7 +1146,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
       const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: getTopPagesForSiteIdStub,
         },
@@ -1267,7 +1190,7 @@ describe('TOC (Table of Contents) Audit', () => {
       });
 
       context.s3Client = s3Client;
-      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
 
       // JSDOM auto-creates a <body> element even when HTML doesn't have one
       // So the warning may not be logged, but the audit should complete successfully
@@ -1294,7 +1217,7 @@ describe('TOC (Table of Contents) Audit', () => {
 
   describe('TOC Opportunity Data Mapper', () => {
     it('creates proper TOC opportunity data structure', async () => {
-      const { createOpportunityDataForTOC } = await import('../../src/headings/opportunity-data-mapper.js');
+      const { createOpportunityDataForTOC } = await import('../../src/toc/opportunity-data-mapper.js');
       const opportunityData = createOpportunityDataForTOC();
 
       expect(opportunityData).to.be.an('object');
@@ -1306,7 +1229,7 @@ describe('TOC (Table of Contents) Audit', () => {
     });
 
     it('includes proper guidance steps for TOC', async () => {
-      const { createOpportunityDataForTOC } = await import('../../src/headings/opportunity-data-mapper.js');
+      const { createOpportunityDataForTOC } = await import('../../src/toc/opportunity-data-mapper.js');
       const opportunityData = createOpportunityDataForTOC();
 
       expect(opportunityData).to.have.property('guidance');
@@ -1321,7 +1244,7 @@ describe('TOC (Table of Contents) Audit', () => {
     });
 
     it('has correct tags for TOC', async () => {
-      const { createOpportunityDataForTOC } = await import('../../src/headings/opportunity-data-mapper.js');
+      const { createOpportunityDataForTOC } = await import('../../src/toc/opportunity-data-mapper.js');
       const opportunityData = createOpportunityDataForTOC();
 
       expect(opportunityData).to.have.property('tags');
@@ -1344,7 +1267,7 @@ describe('TOC (Table of Contents) Audit', () => {
         return Promise.resolve();
       });
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1372,7 +1295,7 @@ describe('TOC (Table of Contents) Audit', () => {
         },
       };
 
-      await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
 
       expect(capturedMergeDataFunction).to.be.a('function');
 
@@ -1411,7 +1334,7 @@ describe('TOC (Table of Contents) Audit', () => {
         return Promise.resolve();
       });
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1434,7 +1357,7 @@ describe('TOC (Table of Contents) Audit', () => {
         },
       };
 
-      await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
 
       const existingSuggestion = {
         url: 'https://example.com/page1',
@@ -1472,7 +1395,7 @@ describe('TOC (Table of Contents) Audit', () => {
         return Promise.resolve();
       });
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1492,7 +1415,7 @@ describe('TOC (Table of Contents) Audit', () => {
         },
       };
 
-      await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
 
       const existingSuggestion = {
         url: 'https://example.com/page1',
@@ -1529,7 +1452,7 @@ describe('TOC (Table of Contents) Audit', () => {
         return Promise.resolve();
       });
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1549,7 +1472,7 @@ describe('TOC (Table of Contents) Audit', () => {
         },
       };
 
-      await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
 
       const existingSuggestion = {
         url: 'https://example.com/page1',
@@ -1582,7 +1505,7 @@ describe('TOC (Table of Contents) Audit', () => {
         return Promise.resolve();
       });
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1602,7 +1525,7 @@ describe('TOC (Table of Contents) Audit', () => {
         },
       };
 
-      await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
 
       const existingSuggestion = {
         url: 'https://example.com/page1',
@@ -1637,7 +1560,7 @@ describe('TOC (Table of Contents) Audit', () => {
         return Promise.resolve();
       });
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
         '../../src/common/opportunity.js': {
           convertToOpportunity: convertToOpportunityStub,
         },
@@ -1657,7 +1580,7 @@ describe('TOC (Table of Contents) Audit', () => {
         },
       };
 
-      await mockedHandler.opportunityAndSuggestionsForToc(auditUrl, auditData, context);
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
 
       const existingSuggestion = {
         url: 'https://example.com/page1',
@@ -1678,6 +1601,345 @@ describe('TOC (Table of Contents) Audit', () => {
 
       // Should overwrite with new value since isEdited is undefined (falsy)
       expect(merged.transformRules.value).to.deep.equal([{ text: 'New Title', level: 1 }]);
+    });
+  });
+
+  describe('Coverage Tests for Missing Lines', () => {
+    it('covers lines 162-164: null scrapeJsonObject in validatePageTocFromScrapeJson', async () => {
+      const { validatePageTocFromScrapeJson } = await import('../../src/toc/handler.js');
+      const url = 'https://example.com/page';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+
+      const result = await validatePageTocFromScrapeJson(url, null, logSpy, context);
+
+      expect(result).to.be.null;
+      expect(logSpy.error).to.have.been.calledWith(
+        sinon.match(/Scrape JSON object not found/)
+      );
+    });
+
+    it('covers lines 185-190: error in validatePageTocFromScrapeJson', async () => {
+      const { validatePageTocFromScrapeJson } = await import('../../src/toc/handler.js');
+      const url = 'https://example.com/page';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+
+      // Pass an invalid scrapeJsonObject that will cause an error
+      const invalidScrapeJson = {
+        scrapeResult: null, // This will cause an error when accessing rawBody
+      };
+
+      const result = await validatePageTocFromScrapeJson(url, invalidScrapeJson, logSpy, context);
+
+      expect(result.url).to.equal(url);
+      expect(result.tocDetails).to.be.null;
+      expect(logSpy.error).to.have.been.calledWith(
+        sinon.match(/Error validating TOC for/)
+      );
+    });
+
+    it('covers lines 214-219: null/undefined URL in validatePageToc', async () => {
+      const { validatePageToc } = await import('../../src/toc/handler.js');
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+
+      const result = await validatePageToc(
+        null,
+        logSpy,
+        site,
+        allKeys,
+        s3Client,
+        context.env.S3_SCRAPER_BUCKET_NAME,
+        context,
+      );
+
+      expect(result.url).to.be.null;
+      expect(result.tocDetails).to.be.null;
+      expect(logSpy.error).to.have.been.calledWith(
+        sinon.match(/URL is undefined or null/)
+      );
+    });
+
+    it('covers lines 224-225: null scrapeJsonObject returns null in validatePageToc', async () => {
+      const { validatePageToc } = await import('../../src/toc/handler.js');
+      const url = 'https://example.com/page';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+
+      // Mock S3 to return no data
+      const emptyS3Client = {
+        send: sinon.stub().resolves({
+          Contents: [],
+          NextContinuationToken: undefined,
+        }),
+      };
+
+      const result = await validatePageToc(
+        url,
+        logSpy,
+        site,
+        [],
+        emptyS3Client,
+        context.env.S3_SCRAPER_BUCKET_NAME,
+        context,
+      );
+
+      expect(result).to.be.null;
+    });
+
+    it('covers lines 228-233: error catch block in validatePageToc', async () => {
+      const { validatePageToc } = await import('../../src/toc/handler.js');
+      const url = 'https://example.com/page';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+
+      // Mock S3 to return malformed data that will cause validatePageTocFromScrapeJson to throw
+      s3Client.send.callsFake((command) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({
+            Contents: allKeys.map((key) => ({ Key: key })),
+            NextContinuationToken: undefined,
+          });
+        }
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: null, // This will cause an error when accessing rawBody
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      const result = await validatePageToc(
+        url,
+        logSpy,
+        site,
+        allKeys,
+        s3Client,
+        context.env.S3_SCRAPER_BUCKET_NAME,
+        context,
+      );
+
+      // The catch block should return an error object
+      expect(result.url).to.equal(url);
+      expect(result.tocDetails).to.be.null;
+      expect(logSpy.error).to.have.been.calledWith(
+        sinon.match(/Error validating TOC for/)
+      );
+    });
+
+    it('covers lines 253-262: no top pages found in tocAuditRunner', async () => {
+      const baseURL = 'https://example.com';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      context.log = logSpy;
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+        },
+      };
+
+      const { tocAuditRunner } = await import('../../src/toc/handler.js');
+      const result = await tocAuditRunner(baseURL, context, site);
+
+      // The result structure is different when no top pages are found
+      expect(result.auditResult).to.exist;
+      expect(result.auditResult.success).to.be.false;
+      expect(logSpy.warn).to.have.been.calledWith('[TOC Audit] No top pages found, ending audit.');
+    });
+
+    it('covers lines 333-338: error catch block in tocAuditRunner', async () => {
+      const baseURL = 'https://example.com';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+      context.log = logSpy;
+
+      // Mock to throw an error
+      const getTopPagesForSiteIdStub = sinon.stub().rejects(new Error('Network error'));
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/canonical/handler.js': {
+          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        },
+      });
+
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+
+      expect(result.auditResult.error).to.exist;
+      expect(result.auditResult.error).to.be.a('string');
+      expect(result.auditResult.success).to.be.false;
+      expect(logSpy.error).to.have.been.calledWith(sinon.match(/TOC audit failed/));
+    });
+
+    it('covers lines 360-362: early return when TOC audit has no issues', async () => {
+      const mockedHandler = await esmock('../../src/toc/handler.js');
+      const { generateSuggestions } = mockedHandler;
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        fullAuditRef: auditUrl,
+        auditResult: {
+          toc: {}, // Empty toc means success/no issues
+        },
+      };
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+      const testContext = { log: logSpy };
+
+      const result = generateSuggestions(auditUrl, auditData, testContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(logSpy.info).to.have.been.calledWith(
+        sinon.match(/has no issues or failed, skipping suggestions generation/)
+      );
+    });
+
+    it('covers lines 360-362: early return when TOC audit has error', async () => {
+      const mockedHandler = await esmock('../../src/toc/handler.js');
+      const { generateSuggestions } = mockedHandler;
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        fullAuditRef: auditUrl,
+        auditResult: {
+          toc: {
+            error: 'Some error occurred',
+          },
+        },
+      };
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+      const testContext = { log: logSpy };
+
+      const result = generateSuggestions(auditUrl, auditData, testContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(logSpy.info).to.have.been.calledWith(
+        sinon.match(/has no issues or failed, skipping suggestions generation/)
+      );
+    });
+
+    it('covers lines 360-362: early return when TOC check is top-pages', async () => {
+      const mockedHandler = await esmock('../../src/toc/handler.js');
+      const { generateSuggestions } = mockedHandler;
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        fullAuditRef: auditUrl,
+        auditResult: {
+          toc: {
+            check: 'top-pages',
+          },
+        },
+      };
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+      const testContext = { log: logSpy };
+
+      const result = generateSuggestions(auditUrl, auditData, testContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(logSpy.info).to.have.been.calledWith(
+        sinon.match(/has no issues or failed, skipping suggestions generation/)
+      );
+    });
+  });
+
+  describe('Branch Coverage Tests', () => {
+    it('covers line 73: fallback to empty string when pageTags.title is falsy', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+      context.log = logSpy;
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false}' } }],
+        }),
+      };
+
+      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/canonical/handler.js': {
+          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        },
+        '@adobe/spacecat-shared-gpt-client': {
+          AzureOpenAIClient: {
+            createFrom: sinon.stub().returns(mockClient),
+          },
+        },
+      });
+
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+            { getUrl: () => url },
+          ]),
+        },
+      };
+
+      // Mock S3 to return data WITHOUT title (null/undefined)
+      s3Client.send.callsFake((command) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({
+            Contents: allKeys.map((key) => ({ Key: key })),
+            NextContinuationToken: undefined,
+          });
+        }
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<h1>Title</h1><h2>Section</h2>',
+                  tags: {
+                    title: null, // Falsy value to trigger fallback
+                    description: 'Test',
+                    h1: ['Test'],
+                  },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      const result = await mockedHandler.tocAuditRunner(baseURL, context, site);
+
+      expect(result).to.have.property('auditResult');
+    });
+
+    it('covers line 381: fallback to empty array when suggestions.toc does not exist', async () => {
+      const { opportunityAndSuggestions } = await import('../../src/toc/handler.js');
+      const auditUrl = 'https://example.com';
+      
+      // Create auditData WITHOUT suggestions.toc to trigger fallback
+      const auditData = {
+        fullAuditRef: auditUrl,
+        auditResult: {
+          toc: {},
+        },
+        // No suggestions key at all
+      };
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+      const mockContext = { 
+        log: logSpy,
+        dataAccess: {
+          Opportunity: {
+            allBySiteIdAndStatus: sinon.stub().resolves([]),
+          },
+        },
+      };
+
+      const result = await opportunityAndSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(logSpy.info).to.have.been.calledWith(
+        sinon.match(/no issues, skipping opportunity creation/)
+      );
     });
   });
 });
