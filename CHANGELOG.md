@@ -1,3 +1,10 @@
+## [1.279.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.1...v1.279.2) (2026-01-08)
+
+
+### Bug Fixes
+
+* refactoring headings toc ([#1827](https://github.com/adobe/spacecat-audit-worker/issues/1827)) ([b0fb70e](https://github.com/adobe/spacecat-audit-worker/commit/b0fb70e316462f0c31e570475839cc1b2de99649))
+
 ## [1.279.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.0...v1.279.1) (2026-01-08)
 
 
