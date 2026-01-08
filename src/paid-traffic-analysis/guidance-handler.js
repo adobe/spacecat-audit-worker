@@ -115,10 +115,15 @@ export default async function handler(message, context) {
   // Map AI Insights suggestions from guidance (already in expected structure)
   const suggestions = mapToAIInsightsSuggestions(opportunity.getId(), guidance);
   if (suggestions.length) {
-    // See SITES-38066: Traffic analysis reports should be automatically approved
+    // If this is a paid traffic report, always set status to NEW, else use requiresValidation logic
+    const requiresValidation = Boolean(context.site?.requiresValidation);
+    const status = opportunity.getType() !== 'paid-traffic' && requiresValidation
+      ? SuggestionModel.STATUSES.PENDING_VALIDATION
+      : SuggestionModel.STATUSES.NEW;
+
     await Promise.all(suggestions.map((s) => Suggestion.create({
       ...s,
-      status: SuggestionModel.STATUSES.NEW,
+      status,
     })));
   }
 

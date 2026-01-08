@@ -72,13 +72,12 @@ export function createBaseReportOpportunity(week, year, deviceType = 'Desktop') 
   };
 }
 
-export function createReportOpportunitySuggestionInstance(suggestionValue, context) {
+export function createReportOpportunitySuggestionInstance(suggestionValue) {
   return [
     {
       type: 'CODE_CHANGE',
       rank: 1,
-      status: context?.site?.requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
-        : SuggestionDataAccess.STATUSES.NEW,
+      status: SuggestionDataAccess.STATUSES.NEW,
       data: {
         suggestionValue,
       },
@@ -98,7 +97,6 @@ export function createOrUpdateDeviceSpecificSuggestion(
   suggestionValue,
   deviceType,
   markdownContent,
-  context,
 ) {
   let updatedSuggestionValue;
 
@@ -120,7 +118,7 @@ export function createOrUpdateDeviceSpecificSuggestion(
     updatedSuggestionValue[`accessibility-${deviceType}`] = markdownContent;
   }
 
-  return createReportOpportunitySuggestionInstance(updatedSuggestionValue, context);
+  return createReportOpportunitySuggestionInstance(updatedSuggestionValue);
 }
 
 export function createAccessibilityAssistiveOpportunity() {

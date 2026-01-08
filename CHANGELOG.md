@@ -1,3 +1,24 @@
+## [1.279.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.1...v1.279.2) (2026-01-08)
+
+
+### Bug Fixes
+
+* refactoring headings toc ([#1827](https://github.com/adobe/spacecat-audit-worker/issues/1827)) ([b0fb70e](https://github.com/adobe/spacecat-audit-worker/commit/b0fb70e316462f0c31e570475839cc1b2de99649))
+
+## [1.279.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.0...v1.279.1) (2026-01-08)
+
+
+### Bug Fixes
+
+* filter out other agent types ([#1832](https://github.com/adobe/spacecat-audit-worker/issues/1832)) ([4b483f6](https://github.com/adobe/spacecat-audit-worker/commit/4b483f664116a0cd6ec45260cefb1cdb2d7fd637))
+
+# [1.279.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.278.0...v1.279.0) (2026-01-08)
+
+
+### Features
+
+* Remove manual validation for Reports ([#1818](https://github.com/adobe/spacecat-audit-worker/issues/1818)) ([a61339a](https://github.com/adobe/spacecat-audit-worker/commit/a61339a94a7708f537e71323fd3d3a4a6599c008))
+
 # [1.278.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.277.0...v1.278.0) (2026-01-07)
 
 
