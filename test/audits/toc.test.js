@@ -42,7 +42,7 @@ describe('TOC (Table of Contents) Audit', () => {
         AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
       },
     };
-    site = { getId: () => 'site-1' };
+    site = { getId: () => 'site-1', getBaseURL: () => 'https://example.com', getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }) };
     allKeys = [];
     allKeys.push('scrapes/site-1/page/scrape.json');
     s3Client = {

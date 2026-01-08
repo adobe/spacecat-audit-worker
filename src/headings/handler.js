@@ -22,6 +22,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForTOC } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
+import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 import SeoChecks from '../metatags/seo-checks.js';
 import {
   getHeadingLevel,
@@ -593,10 +594,21 @@ export async function headingsAuditRunner(baseURL, context, site) {
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
 
   try {
-    // Get top 200 pages
+    // Get top 200 pages - try Athena first, fall back to Ahrefs
     log.debug(`[Headings Audit] Fetching top pages for site: ${siteId}`);
-    const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-    const topPages = allTopPages.slice(0, 200);
+
+    let topPages = [];
+
+    // Try to get top agentic URLs from Athena first
+    const athenaUrls = await getTopAgenticUrlsFromAthena(site, context);
+    if (athenaUrls && athenaUrls.length > 0) {
+      topPages = athenaUrls.slice(0, 200).map((url) => ({ url }));
+    } else {
+      // Fallback to Ahrefs if Athena returns no data
+      log.info('[Headings Audit] No agentic URLs from Athena, falling back to Ahrefs');
+      const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
+      topPages = allTopPages.slice(0, 200);
+    }
 
     log.debug(`[Headings Audit] Processing ${topPages.length} top pages for headings audit (limited to 200)`);
     log.debug(`[Headings Audit] Top pages sample: ${topPages.slice(0, 3).map((p) => p.url).join(', ')}`);

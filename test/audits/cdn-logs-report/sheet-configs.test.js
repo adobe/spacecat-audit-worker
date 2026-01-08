@@ -389,8 +389,7 @@ describe('CDN Logs Sheet Configs', () => {
         '',
         'US',
         '',
-      ], 
-      ]);
+      ]]);
     });
 
     it('has required properties', () => {
