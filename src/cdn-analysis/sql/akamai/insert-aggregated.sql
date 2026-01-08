@@ -23,6 +23,10 @@ WHERE year  = '{{year}}'
   AND day   = '{{day}}'
   {{hourFilter}}
 
+  -- only include client requests (exclude ESI fragments and EdgeWorkers sub-requests)
+  -- also allow NULL/empty for customers who don't forward this field
+  AND (requestType IS NULL OR requestType = '' OR requestType = 'CLIENT_REQ')
+
   -- match known LLM-related user-agents
   AND REGEXP_LIKE(ua, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|GoogleAgent|Googlebot|bingbot|Amzn-User|^Google$)')
 
