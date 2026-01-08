@@ -151,7 +151,8 @@ describe('CDN Logs Sheet Configs', () => {
     it('handles data with missing fields', async () => {
       const testData = [
         {
-          // Missing agent_type, user_agent_display, etc.
+          // Missing user_agent_display, etc.
+          agent_type: 'test',
           status: null,
           number_of_hits: 'invalid',
           avg_ttfb_ms: null,
@@ -172,7 +173,7 @@ describe('CDN Logs Sheet Configs', () => {
         .to
         .deep
         .equal([
-          'Other',
+          'test',
           'Unknown',
           'N/A',
           0,
@@ -183,6 +184,29 @@ describe('CDN Logs Sheet Configs', () => {
           'Uncategorized',
           'N/A',
         ]);
+    });
+
+    it('should filter out rows with missing agent_type and other fields', async () => {
+      const testData = [
+        {
+          agent_type: null,
+          user_agent_display: null,
+          status: null,
+          number_of_hits: 'invalid',
+          avg_ttfb_ms: null,
+          country_code: null,
+          url: null,
+          product: null,
+          category: null,
+        },
+      ];
+
+      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
+
+      expect(result)
+        .to
+        .have
+        .length(0);
     });
 
     it('handles empty array data', async () => {
