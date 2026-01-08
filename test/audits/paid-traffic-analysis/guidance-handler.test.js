@@ -354,9 +354,9 @@ describe('Paid-traffic-analysis guidance handler', () => {
     expect(old.setStatus).to.not.have.been.called;
   });
 
-  it('creates suggestions with status NEW when site does not require validation', async () => {
-    // Set requiresValidation to false
-    context.site = { requiresValidation: false };
+  it('creates suggestions with status NEW regardless of site validation requirement', async () => {
+    // See SITES-38066: Traffic analysis reports should be automatically approved
+    context.site = { requiresValidation: true };
     const message = {
       auditId,
       siteId,
