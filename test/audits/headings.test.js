@@ -2477,7 +2477,7 @@ describe('Headings Audit', () => {
     // Mock getTopPagesForSiteId
     const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
 
-    const mockedHandler = await esmock('../../src/headings/handler.js', {
+    const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
       },
@@ -4279,7 +4279,7 @@ describe('Headings Audit', () => {
 
       const mockGetTopAgenticUrlsFromAthena = sinon.stub().resolves([url]);
 
-      const mockedHandler = await esmock('../../src/headings/handler.js', {
+      const mockedHandler = await esmock('../../src/headings-toc/headings-handler.js', {
         '../../src/utils/agentic-urls.js': {
           getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
         },
