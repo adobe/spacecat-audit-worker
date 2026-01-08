@@ -30,6 +30,7 @@ import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
 import { validateCountryCode } from '../cdn-logs-report/utils/report-utils.js';
 import { buildSiteFilters } from '../utils/cdn-utils.js';
+import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -43,9 +44,17 @@ export async function importTopPagesAndScrape(context) {
   const { SiteTopPage } = dataAccess;
 
   try {
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    // Try to get top agentic URLs from Athena first
+    let topPageUrls = await getTopAgenticUrlsFromAthena(site, context);
 
-    if (topPages.length === 0) {
+    // Fallback to Ahrefs if Athena returns no data
+    if (!topPageUrls || topPageUrls.length === 0) {
+      log.info('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs');
+      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+      topPageUrls = topPages.map((page) => page.getUrl());
+    }
+
+    if (topPageUrls.length === 0) {
       log.warn('[LLM-ERROR-PAGES] No top pages found for site');
       return {
         type: 'top-pages',
@@ -58,14 +67,14 @@ export async function importTopPagesAndScrape(context) {
       };
     }
 
-    log.info(`[LLM-ERROR-PAGES] Found ${topPages.length} top pages for site ${site.getId()}`);
+    log.info(`[LLM-ERROR-PAGES] Found ${topPageUrls.length} top pages for site ${site.getId()}`);
 
     return {
       type: 'top-pages',
       siteId: site.getId(),
       auditResult: {
         success: true,
-        topPages: topPages.map((page) => page.getUrl()),
+        topPages: topPageUrls,
       },
       fullAuditRef: site.getBaseURL(),
     };
@@ -219,7 +228,6 @@ export async function runAuditAndSendToMystique(context) {
     const {
       dataAccess, sqs, env, audit,
     } = context;
-    const { SiteTopPage } = dataAccess;
 
     if (sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
       const errors404 = categorizedResults[404] || [];
@@ -228,7 +236,17 @@ export async function runAuditAndSendToMystique(context) {
         const messageBaseUrl = site.getBaseURL?.() || '';
         const consolidated404 = consolidateErrorsByUrl(errors404);
         const sorted404 = sortErrorsByTrafficVolume(consolidated404).slice(0, 50);
-        const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+        // Try to get top agentic URLs from Athena first for alternative URLs
+        let alternativeUrls = await getTopAgenticUrlsFromAthena(site, context);
+
+        // Fallback to Ahrefs if Athena returns no data
+        if (!alternativeUrls || alternativeUrls.length === 0) {
+          log.info('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs');
+          const { SiteTopPage } = dataAccess;
+          const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+          alternativeUrls = topPages.map((page) => page.getUrl());
+        }
 
         // Consolidate by URL and combine user agents
         const urlToUserAgentsMap = new Map();
@@ -255,7 +273,7 @@ export async function runAuditAndSendToMystique(context) {
                 suggestionId: `llm-404-suggestion-${periodIdentifier}-${index}`,
               }))
               .filter((link) => link.urlFrom.length > 0),
-            alternativeUrls: topPages.map((topPage) => topPage.getUrl()),
+            alternativeUrls,
             opportunityId: `llm-404-${periodIdentifier}`,
           },
         };
