@@ -32,8 +32,8 @@ import {
   createReportOpportunitySuggestion,
   getEnvAsoDomain,
   aggregateAccessibilityData,
-  getAuditPrefixes,
   sendRunImportMessage,
+  getAuditPrefixes,
   sendCodeFixMessagesToMystique,
 } from '../../../src/accessibility/utils/data-processing.js';
 
