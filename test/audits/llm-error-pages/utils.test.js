@@ -859,6 +859,22 @@ describe('LLM Error Pages Utils', () => {
       expect(result.referenceDate).to.equal(referenceDate.toISOString());
       expect(result.columns).to.be.an('array');
     });
+
+    it('supports custom weekOffsets array and returns periodIdentifier', () => {
+      const referenceDate = new Date('2024-01-15'); // Tuesday
+      const result = generateReportingPeriods(referenceDate, [-1, 0]);
+      expect(result.weeks).to.have.length(2);
+      expect(result.weeks[0].periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      expect(result.weeks[1].periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      expect(result.columns).to.deep.equal(result.weeks.map((w) => w.weekLabel));
+    });
+
+    it('coerces non-array weekOffsets to array', () => {
+      const referenceDate = new Date('2024-01-15');
+      const result = generateReportingPeriods(referenceDate, -2);
+      expect(result.weeks).to.have.length(1);
+      expect(result.weeks[0].periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
+    });
   });
 
   // ============================================================================

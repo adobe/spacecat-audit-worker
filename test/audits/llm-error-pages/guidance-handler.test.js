@@ -114,6 +114,60 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     expect(publishToAdminHlxStub.calledOnce).to.be.true;
   });
 
+  it('derives period from suggestionId and uses it in filename', async () => {
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+    sheet.addRow(['Chatbots', 'ChatGPT', 10, 200, 'US', '/products/item', 'Adobe Creative', 'Product Page', '', '', '']);
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: {
+        brokenLinks: [{
+          urlFrom: 'ChatGPT',
+          urlTo: 'https://example.com/products/item',
+          suggestedUrls: ['/products'],
+          aiRationale: 'Closest match',
+          suggestionId: 'llm-404-suggestion-w42-2025-0',
+        }],
+      },
+    };
+
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'test-site-id',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getCdnLogsConfig: () => null,
+            getLlmoDataFolder: () => 'test-customer',
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const context = {
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
+      },
+    };
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
+    expect(readFromSharePointStub.firstCall.args[0]).to.equal('agentictraffic-errors-404-w42-2025.xlsx');
+  });
+
   it('returns 404 when site is not found', async () => {
     const message = {
       auditId: 'audit-123',
