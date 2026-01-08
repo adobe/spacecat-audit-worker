@@ -19,6 +19,7 @@ import {
   importTopPages,
   submitForScraping,
   processContentAndGenerateOpportunities,
+  handleAiOnlyMode,
 } from '../../../src/prerender/handler.js';
 
 use(sinonChai);
@@ -434,24 +435,6 @@ describe('Prerender AI-Only Mode', () => {
       expect(message.deliveryType).to.equal('unknown');
     });
 
-    it('should handle missing getData method on suggestion', async () => {
-      mockSuggestions[0].getData = undefined;
-
-      const result = await importTopPages(context);
-
-      // Should skip suggestion without getData
-      expect(result.auditResult.suggestionCount).to.equal(1);
-    });
-
-    it('should handle missing getStatus method on suggestion', async () => {
-      mockSuggestions[0].getStatus = undefined;
-
-      const result = await importTopPages(context);
-
-      // Should include suggestion if getStatus is missing (defaults to not OUTDATED)
-      expect(result.auditResult.suggestionCount).to.equal(2);
-    });
-
     it('should handle missing getId method on suggestion', async () => {
       mockSuggestions[0].getId = undefined;
 
@@ -497,6 +480,40 @@ describe('Prerender AI-Only Mode', () => {
       // Will proceed to normal import flow
       expect(result).to.exist;
     });
+
+    it('should return null when mode is missing from valid JSON', async () => {
+      // This tests the || null branch in getModeFromData (line 312)
+      // JSON is valid but mode field is missing
+      context.data = JSON.stringify({ scrapeJobId: 'test', opportunityId: 'opp-123' });
+      
+      // Mock for normal flow
+      context.dataAccess.SiteTopPage = {
+        allBySiteId: sandbox.stub().resolves([]),
+      };
+
+      const result = await importTopPages(context);
+
+      // Should proceed to normal import flow (not ai-only mode)
+      expect(result).to.exist;
+      // Verify it didn't enter ai-only mode
+      expect(result.mode).to.be.undefined;
+    });
+
+    it('should return null when mode is explicitly null in valid JSON', async () => {
+      // This tests the || null branch when mode is explicitly null
+      context.data = JSON.stringify({ mode: null, scrapeJobId: 'test' });
+      
+      // Mock for normal flow
+      context.dataAccess.SiteTopPage = {
+        allBySiteId: sandbox.stub().resolves([]),
+      };
+
+      const result = await importTopPages(context);
+
+      // Should proceed to normal import flow (not ai-only mode)
+      expect(result).to.exist;
+      expect(result.mode).to.be.undefined;
+    });
   });
 
   describe('sendPrerenderGuidanceRequestToMystique error handling', () => {
@@ -512,6 +529,74 @@ describe('Prerender AI-Only Mode', () => {
       expect(result.auditResult.suggestionCount).to.equal(0);
       expect(context.log.error).to.have.been.calledWith(
         sinon.match(/Failed to send guidance:prerender message/),
+      );
+    });
+  });
+
+  describe('handleAiOnlyMode - malformed JSON handling', () => {
+    it('should handle malformed JSON in data field gracefully', async () => {
+      // This test covers the catch block at lines 501-504 in handleAiOnlyMode
+      // We pass malformed JSON directly to handleAiOnlyMode (bypassing getModeFromData)
+      context.data = '{invalid json}';
+
+      // Mock S3 to return valid status.json (since scrapeJobId will be null from malformed data)
+      const statusJsonBuffer = Buffer.from(JSON.stringify({ scrapeJobId: 'test-scrape-job' }));
+      mockS3Client.send.resolves({
+        Body: {
+          transformToString: sandbox.stub().resolves(statusJsonBuffer.toString()),
+        },
+      });
+
+      const result = await handleAiOnlyMode(context);
+
+      // Should complete successfully despite malformed JSON
+      expect(result.status).to.equal('complete');
+      expect(result.mode).to.equal('ai-only');
+      expect(result.opportunityId).to.equal('opportunity-123');
+
+      // Verify that opportunityId and scrapeJobId were null after parse error
+      // and scrapeJobId was fetched from S3
+      expect(mockS3Client.send).to.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/scrapeJobId not provided, fetching from status.json/),
+      );
+    });
+
+    it('should handle malformed JSON with provided scrapeJobId in object form', async () => {
+      // Edge case: data is an object but opportunityId parsing would fail
+      // (though this is unlikely in practice)
+      context.data = { scrapeJobId: 'test-scrape-job' }; // No opportunityId
+
+      const result = await handleAiOnlyMode(context);
+
+      // Should find latest opportunity since opportunityId is undefined
+      expect(result.status).to.equal('complete');
+      expect(result.mode).to.equal('ai-only');
+      expect(mockDataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith(
+        'site-123',
+        'NEW',
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Found latest NEW opportunity/),
+      );
+    });
+
+    it('should use fallback auditId when opportunity has no auditId', async () => {
+      // Test the fallback: opportunity.getAuditId() || `prerender-ai-only-${siteId}`
+      // This covers old opportunities or test data without auditId
+      mockOpportunity.getAuditId.returns(null); // No auditId
+
+      const result = await handleAiOnlyMode(context);
+
+      // Should complete successfully using the fallback auditId
+      expect(result.status).to.equal('complete');
+      expect(result.mode).to.equal('ai-only');
+      expect(result.opportunityId).to.equal('opportunity-123');
+
+      // Verify the SQS message was sent (the fallback auditId was used internally)
+      expect(mockSqs.sendMessage).to.have.been.calledOnce;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Successfully queued AI summary request for 2 suggestion/),
       );
     });
   });

@@ -500,6 +500,108 @@ describe('Prerender Guidance Handler', () => {
       expect(Suggestion._saveMany).to.not.have.been.called;
     });
 
+    it('should handle null elements in suggestions array gracefully', async () => {
+      // Tests the || {} fallback for malformed data from Mystique
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          opportunityId: 'opportunity-123',
+          suggestions: [
+            { url: 'https://example.com/page1', aiSummary: 'Valid summary', valuable: true },
+            null,  // Malformed element - tests the || {} defensive code
+            { url: 'https://example.com/page2', aiSummary: 'Another valid', valuable: true },
+          ],
+        },
+      };
+
+      await handler(message, context);
+
+      // Should handle gracefully and skip the null element
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Skipping Mystique suggestion without URL/),
+      );
+      // Should still update the valid suggestions
+      expect(Suggestion._saveMany).to.have.been.calledOnce;
+      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      expect(savedSuggestions).to.have.lengthOf(2);
+    });
+
+    it('should handle null/undefined aiSummary by defaulting to empty string', async () => {
+      // Tests the || '' fallback for aiSummary (line 138)
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          opportunityId: 'opportunity-123',
+          suggestions: [
+            { url: 'https://example.com/page1', aiSummary: null, valuable: true },
+            { url: 'https://example.com/page2', valuable: false },  // aiSummary undefined
+          ],
+        },
+      };
+
+      await handler(message, context);
+
+      // Should update suggestions with empty string for aiSummary
+      expect(Suggestion._saveMany).to.have.been.calledOnce;
+      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      expect(savedSuggestions).to.have.lengthOf(2);
+      
+      // Verify aiSummary is set to empty string
+      expect(savedSuggestions[0].setData).to.have.been.calledWith(
+        sinon.match({ aiSummary: '' }),
+      );
+      expect(savedSuggestions[1].setData).to.have.been.calledWith(
+        sinon.match({ aiSummary: '' }),
+      );
+    });
+
+    it('should handle suggestions with null getData() by defaulting to empty object', async () => {
+      // Tests the || {} fallback for getData() (line 134)
+      // getData() is called twice: once for indexing (line 103) and once for merging (line 134)
+      // We mock it to return a valid object first (for indexing), then null (to test the fallback)
+      const getDataStub = sinon.stub();
+      getDataStub.onFirstCall().returns({ url: 'https://example.com/page1' }); // For indexing
+      getDataStub.onSecondCall().returns(null); // For merging - tests || {} fallback
+
+      const setDataStub = sinon.stub();
+      const mockOpp = {
+        getId: () => 'opportunity-123',
+        getSiteId: () => 'site-123',
+        getSuggestions: sinon.stub().resolves([
+          {
+            getId: () => 's1',
+            getData: getDataStub,
+            getStatus: () => 'NEW',
+            setData: setDataStub,
+          },
+        ]),
+      };
+      Opportunity.findById.resolves(mockOpp);
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          opportunityId: 'opportunity-123',
+          suggestions: [
+            { url: 'https://example.com/page1', aiSummary: 'Summary 1', valuable: true },
+          ],
+        },
+      };
+
+      await handler(message, context);
+
+      // Should handle null getData() gracefully and update with new data
+      expect(getDataStub).to.have.been.calledTwice;
+      expect(setDataStub).to.have.been.calledWith({
+        aiSummary: 'Summary 1',
+        valuable: true,
+      });
+      expect(Suggestion._saveMany).to.have.been.calledOnce;
+    });
+
     it('should skip suggestions that do not match existing URLs', async () => {
       const message = {
         siteId: 'site-123',

@@ -308,7 +308,6 @@ function getModeFromData(data) {
 
   try {
     const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
-    /* c8 ignore next 4 - Error handling for malformed JSON data, defensive check */
     return parsedData.mode || null;
   } catch (e) {
     // Ignore parse errors
@@ -389,8 +388,7 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
   const opportunityId = opportunity.getId();
 
   try {
-    /* c8 ignore next - Multiple fallbacks for baseUrl, all branches covered in various tests */
-    const baseUrl = auditUrl || site?.getBaseURL?.() || '';
+    const baseUrl = auditUrl;
 
     // Load the suggestions we just synced so that we can:
     // - include real suggestion IDs
@@ -405,20 +403,20 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
     const suggestionsPayload = [];
 
     existingSuggestions.forEach((s) => {
-      const data = s.getData?.() || {};
+      const data = s.getData();
 
       // Skip domain-wide aggregate suggestion and anything without URL
-      if (!data.url || data.isDomainWide) {
+      if (!data?.url || data?.isDomainWide) {
         return;
       }
 
       // Skip OUTDATED suggestions (stale data from previous audit runs)
-      const status = s.getStatus?.();
+      const status = s.getStatus();
       if (status === 'OUTDATED') {
         return;
       }
 
-      const suggestionId = s.getId?.();
+      const suggestionId = s.getId();
 
       // Build markdown-based S3 keys for Mystique to consume
       const originalHtmlMarkdownKey = getS3Path(
@@ -470,7 +468,7 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
   } catch (error) {
     log.error(
       `Prerender - Failed to send guidance:prerender message to Mystique for opportunityId=${opportunityId}, `
-      + `baseUrl=${auditUrl || site?.getBaseURL?.() || ''}, siteId=${siteId}: ${error.message}`,
+      + `baseUrl=${auditUrl}, siteId=${siteId}: ${error.message}`,
       error,
     );
     return 0;
@@ -483,7 +481,7 @@ async function sendPrerenderGuidanceRequestToMystique(auditUrl, auditData, oppor
  * @param {Object} context - Audit context
  * @returns {Promise<Object>} - Result indicating success/failure
  */
-async function handleAiOnlyMode(context) {
+export async function handleAiOnlyMode(context) {
   const {
     site, log, dataAccess, data,
   } = context;
@@ -499,9 +497,8 @@ async function handleAiOnlyMode(context) {
       const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
       opportunityId = parsedData.opportunityId;
       scrapeJobId = parsedData.scrapeJobId;
-    /* c8 ignore next 3 - Intentional error swallowing for malformed JSON */
     } catch (e) {
-      // Ignore parse errors
+      // Ignore parse errors - graceful degradation for malformed JSON
     }
   }
 
@@ -572,44 +569,30 @@ async function handleAiOnlyMode(context) {
   // Send to Mystique using the existing function
   const auditData = {
     siteId,
-    /* c8 ignore next - Fallback to custom audit ID for ai-only mode tracking */
+    // Fallback to custom audit ID for ai-only mode (for old opportunities without auditId)
     auditId: opportunity.getAuditId() || `prerender-ai-only-${siteId}`,
     scrapeJobId,
   };
 
-  try {
-    const suggestionCount = await sendPrerenderGuidanceRequestToMystique(
-      site.getBaseURL(),
-      auditData,
-      opportunity,
-      context,
-    );
+  const suggestionCount = await sendPrerenderGuidanceRequestToMystique(
+    site.getBaseURL(),
+    auditData,
+    opportunity,
+    context,
+  );
 
-    log.info(`${LOG_PREFIX} ai-only: Successfully queued AI summary request for ${suggestionCount} suggestion(s). baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunity.getId()}`);
+  log.info(`${LOG_PREFIX} ai-only: Successfully queued AI summary request for ${suggestionCount} suggestion(s). baseUrl=${baseUrl}, siteId=${siteId}, opportunityId=${opportunity.getId()}`);
 
-    return {
-      status: 'complete',
-      mode: MODE_AI_ONLY,
-      opportunityId: opportunity.getId(),
-      fullAuditRef: `${MODE_AI_ONLY}/${opportunity.getId()}`,
-      auditResult: {
-        message: `AI summary generation queued successfully for ${suggestionCount} suggestion(s)`,
-        suggestionCount,
-      },
-    };
-  /* c8 ignore next 12 - Error handling for SQS/Mystique failures,
-   * difficult to test reliably in unit tests */
-  } catch (error) {
-    log.error(`${LOG_PREFIX} ai-only: Failed to queue AI summary request: ${error.message} baseUrl=${baseUrl}, siteId=${siteId}`, error);
-    return {
-      status: 'failed',
-      error: error.message,
-      fullAuditRef: `${MODE_AI_ONLY}/failed-${siteId}`,
-      auditResult: {
-        error: error.message,
-      },
-    };
-  }
+  return {
+    status: 'complete',
+    mode: MODE_AI_ONLY,
+    opportunityId: opportunity.getId(),
+    fullAuditRef: `${MODE_AI_ONLY}/${opportunity.getId()}`,
+    auditResult: {
+      message: `AI summary generation queued successfully for ${suggestionCount} suggestion(s)`,
+      suggestionCount,
+    },
+  };
 }
 
 /**

@@ -110,7 +110,7 @@ export default async function handler(message, context) {
   const suggestionsToSave = [];
 
   suggestions.forEach((incoming) => {
-    /* c8 ignore next - Destructuring with default, covered but c8 tracking issue */
+    // Handle potential null/undefined elements in suggestions array (malformed data from Mystique)
     const { url, aiSummary, valuable } = incoming || {};
 
     if (!url) {
@@ -130,11 +130,9 @@ export default async function handler(message, context) {
       return;
     }
 
-    /* c8 ignore next - Destructuring with default, covered but c8 tracking issue */
     const currentData = existing.getData() || {};
     const updatedData = {
       ...currentData,
-      /* c8 ignore next - Fallback to empty string, defensive programming */
       aiSummary: aiSummary || '',
       // Default to true if not provided, but respect explicit boolean from Mystique
       valuable: typeof valuable === 'boolean' ? valuable : true,
