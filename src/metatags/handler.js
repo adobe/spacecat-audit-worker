@@ -11,7 +11,7 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { calculateCPCValue } from '../support/utils.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
@@ -374,7 +374,7 @@ export async function runAuditAndGenerateSuggestions(context) {
 
   const syncedSuggestions = await Suggestion.allByOpportunityIdAndStatus(
     opportunity.getId(),
-    Suggestion.STATUSES.NEW,
+    SuggestionModel.STATUSES.NEW,
   );
 
   // Build suggestion map with actual DB IDs
