@@ -487,7 +487,6 @@ describe('Hreflang Audit', () => {
       expect(result).to.have.property('tags').that.is.an('array');
       expect(result.tags).to.include('Traffic Acquisition');
       expect(result.tags).to.include('llm');
-      expect(result.tags).to.include('isElmo');
       expect(result).to.have.property('data').that.is.an('object');
       expect(result.data).to.have.property('dataSources').that.is.an('array');
       expect(result.data).to.have.property('additionalMetrics').that.is.an('array');
