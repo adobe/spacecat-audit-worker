@@ -96,7 +96,7 @@ describe('CWV Auto-Suggest', () => {
       expect(message.deliveryType).to.equal('aem_cs');
       expect(message.time).to.be.a('string');
 
-      expect(message.data.page).to.equal('https://example.com/page1');
+      expect(message.data.url).to.equal('https://example.com/page1');
       expect(message.data.opportunityId).to.equal('oppty-789');
       expect(message.data.suggestionId).to.equal('sugg-001');
       expect(message.data.device_type).to.equal('mobile');
@@ -189,7 +189,7 @@ describe('CWV Auto-Suggest', () => {
       // Should only send one message (for URL, not group)
       expect(sqsStub.calledOnce).to.be.true;
       const message = sqsStub.firstCall.args[1];
-      expect(message.data.page).to.equal('https://example.com/page1');
+      expect(message.data.url).to.equal('https://example.com/page1');
       expect(message.data.suggestionId).to.equal('sugg-url');
     });
 
@@ -294,8 +294,8 @@ describe('CWV Auto-Suggest', () => {
       await processAutoSuggest(context, opportunity, site);
 
       expect(sqsStub.callCount).to.equal(2);
-      expect(sqsStub.firstCall.args[1].data.page).to.equal('https://example.com/page1');
-      expect(sqsStub.secondCall.args[1].data.page).to.equal('https://example.com/page2');
+      expect(sqsStub.firstCall.args[1].data.url).to.equal('https://example.com/page1');
+      expect(sqsStub.secondCall.args[1].data.url).to.equal('https://example.com/page2');
     });
 
     it('should handle SQS sendMessage error', async () => {

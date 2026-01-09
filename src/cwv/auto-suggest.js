@@ -137,7 +137,7 @@ export async function processAutoSuggest(context, opportunity, site) {
         deliveryType: site ? site.getDeliveryType() : 'aem_cs',
         time: new Date().toISOString(),
         data: {
-          page: url,
+          url,
           opportunityId,
           suggestionId,
           device_type: metrics.deviceType || 'mobile',
