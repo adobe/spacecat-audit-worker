@@ -516,7 +516,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
     });
 
-    it('calls sendSQSMessageForAutoSuggest when suggestions have no guidance', async () => {
+    it('calls processAutoSuggest when suggestions have no guidance', async () => {
       // Mock suggestions without guidance (empty issues array)
       const mockSuggestions = [
         { getId: () => 'sugg-1', getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
@@ -539,7 +539,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(message.siteId).to.equal('site-id');
     });
 
-    it('does not call sendSQSMessageForAutoSuggest when all suggestions have guidance', async () => {
+    it('does not call processAutoSuggest when all suggestions have guidance', async () => {
       // Mock suggestions with existing guidance
       const mockSuggestions = [
         {
@@ -568,7 +568,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
-    it('calls sendSQSMessageForAutoSuggest when some suggestions have guidance and some do not', async () => {
+    it('calls processAutoSuggest when some suggestions have guidance and some do not', async () => {
       // Mock mixed suggestions - some with guidance, some without
       const mockSuggestions = [
         {

@@ -68,7 +68,9 @@ export function shouldSendAutoSuggestForSuggestion(suggestion) {
 }
 
 /**
- * Sends messages to Mystique for CWV auto-suggest processing
+ * Processes CWV auto-suggest for eligible suggestions.
+ * Checks if auto-suggest is enabled, filters suggestions that need guidance,
+ * and sends messages to Mystique for AI-powered guidance generation.
  * Sends one message per suggestion that needs auto-suggest (NEW status, no guidance)
  * Includes code repository information (codeBucket, codePath) if available
  *
@@ -77,7 +79,7 @@ export function shouldSendAutoSuggestForSuggestion(suggestion) {
  * @param {Object} site - Site object with getBaseURL() and getDeliveryType() methods
  * @throws {Error} When SQS message sending fails
  */
-export async function sendSQSMessageForAutoSuggest(context, opportunity, site) {
+export async function processAutoSuggest(context, opportunity, site) {
   const {
     log, sqs, env,
   } = context;

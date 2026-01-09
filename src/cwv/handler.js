@@ -15,7 +15,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { buildCWVAuditResult } from './cwv-audit-result.js';
 import { syncOpportunitiesAndSuggestions } from './opportunity-sync.js';
-import { sendSQSMessageForAutoSuggest } from './auto-suggest.js';
+import { processAutoSuggest } from './auto-suggest.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -58,7 +58,7 @@ export async function syncOpportunityAndSuggestionsStep(context) {
   log.info(`[audit-worker-cwv] siteId: ${siteId} | Step 2: Syncing opportunities and suggestions`);
 
   const opportunity = await syncOpportunitiesAndSuggestions(context);
-  await sendSQSMessageForAutoSuggest(context, opportunity, site);
+  await processAutoSuggest(context, opportunity, site);
 
   return {
     status: 'complete',

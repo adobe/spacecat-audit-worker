@@ -24,10 +24,8 @@ import calculateKpiDeltasForAudit from './kpi-metrics.js';
  */
 export async function syncOpportunitiesAndSuggestions(context) {
   const {
-    site, audit, finalUrl, log,
+    site, audit, finalUrl,
   } = context;
-
-  log.info(`[CWVAudit] [Site Id: ${site.getId()}] syncing opportunities and suggestions`);
 
   const auditResult = audit.getAuditResult();
   const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
@@ -74,8 +72,6 @@ export async function syncOpportunitiesAndSuggestions(context) {
       },
     }),
   });
-
-  log.info(`[CWVAudit] [Site Id: ${site.getId()}] opportunities and suggestions synced successfully`);
 
   return opportunity;
 }

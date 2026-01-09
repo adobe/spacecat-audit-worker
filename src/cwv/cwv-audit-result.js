@@ -13,12 +13,23 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { removeTrailingSlash } from '../utils/url-utils.js';
-import { isHomepage } from './utils.js';
 
 const DAILY_THRESHOLD = 1000; // pageviews
 const INTERVAL = 7; // days
 // The number of top pages with issues that will be included in the report
 const TOP_PAGES_COUNT = 15;
+
+/**
+ * Checks if a CWV data entry URL matches a site baseURL.
+ * Only applies to entries with type 'url' (not 'group').
+ * @param {object} data - CWV data entry with type and url properties
+ * @param {string} baseURL - Normalized baseURL (without trailing slash) to compare against
+ * @returns {boolean} - True if the entry's URL matches the given URL
+ */
+function isHomepage(data, baseURL) {
+  if (data.type !== 'url') return false;
+  return removeTrailingSlash(data.url) === baseURL;
+}
 
 /**
  * Builds CWV audit result by collecting and filtering RUM data
