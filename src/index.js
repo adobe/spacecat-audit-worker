@@ -82,6 +82,7 @@ import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
+import toc from './toc/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
 import vulnerabilitiesCodeFix from './vulnerabilities-code-fix/handler.js';
 import prerender from './prerender/handler.js';
@@ -172,6 +173,7 @@ const HANDLERS = {
   'guidance:summarization': summarizationGuidance,
   hreflang,
   headings,
+  toc,
   prerender,
   'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,

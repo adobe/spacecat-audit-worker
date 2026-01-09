@@ -30,8 +30,8 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%chatgpt-user%', displayName: 'ChatGPT-User' },
   { pattern: '%gptbot%', displayName: 'GPTBot' },
   { pattern: '%oai-searchbot%', displayName: 'OAI-SearchBot' },
-  { pattern: '%chatgpt%20atlas%', displayName: 'ChatGPT Atlas' },
-  { pattern: '%chatgpt%', displayName: 'ChatGPT Clients' },
+  { pattern: '%chatgpt%atlas%', displayName: 'ChatGPT Atlas' },
+  { pattern: '%chatgpt/%', displayName: 'ChatGPT Clients' },
 
   // Perplexity
   { pattern: '%perplexitybot%', displayName: 'PerplexityBot' },
@@ -76,7 +76,8 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%gptbot%', result: 'Training bots' },
     { pattern: '%oai-searchbot%', result: 'Web search crawlers' },
     { pattern: '%chatgpt-user%', result: 'Chatbots' },
-    { pattern: '%chatgpt%', result: 'Media fetchers' },
+    { pattern: '%chatgpt%atlas%', result: 'Media fetcher' },
+    { pattern: '%chatgpt/%', result: 'Media fetchers' },
     // Perplexity
     { pattern: '%perplexitybot%', result: 'Web search crawlers' },
     { pattern: '%perplexity-user%', result: 'Chatbots' },

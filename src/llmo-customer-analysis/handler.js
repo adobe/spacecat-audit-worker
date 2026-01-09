@@ -294,8 +294,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       'headings',
       'llm-blocked',
       'llm-error-pages',
-      'canonical',
-      'hreflang',
       'summarization',
       'faqs',
       REFERRAL_TRAFFIC_AUDIT,
