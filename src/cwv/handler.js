@@ -23,6 +23,7 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
  * Step 1: CWV Data Collection and Code Import
  * Builds CWV audit result and triggers code import
  * @param {Object} context - Context object containing site, finalUrl, log, env
+ *                           (with env.RUM_ADMIN_KEY)
  * @returns {Promise<Object>} Object containing auditResult, fullAuditRef (for persister),
  *                            and import worker parameters (type, siteId, allowCache)
  */
@@ -48,7 +49,8 @@ export async function collectCWVDataAndImportCode(context) {
 /**
  * Step 2: Sync Opportunities and Suggestions
  * Creates opportunities and suggestions in SpaceCat and sends auto-suggest messages to Mystique
- * @param {Object} context - Context object containing site, audit, finalUrl, log, dataAccess
+ * @param {Object} context - Context object containing site, audit, finalUrl, log, dataAccess,
+ *                           sqs, env, s3Client
  * @returns {Promise<Object>} Status object with 'complete' status
  */
 export async function syncOpportunityAndSuggestionsStep(context) {

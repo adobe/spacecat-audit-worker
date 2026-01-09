@@ -105,7 +105,7 @@ export async function processAutoSuggest(context, opportunity, site) {
 
     // Get code repository information (codeBucket, codePath) if available
     const codeInfo = site ? await getCodeInfo(site, 'cwv', context) : null;
-    const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath;
+    const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath !== undefined;
 
     // Send one SQS message per suggestion that needs auto-suggest
     for (const suggestion of suggestions) {
