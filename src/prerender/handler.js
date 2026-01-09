@@ -12,7 +12,6 @@
 
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
-import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -20,9 +19,6 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { analyzeHtmlForPrerender } from './utils/html-comparator.js';
 import {
-  generateReportingPeriods,
-  getS3Config,
-  weeklyBreakdownQueries,
   loadLatestAgenticSheet,
   buildSheetHitsMap,
 } from './utils/shared.js';
@@ -32,6 +28,7 @@ import {
   TOP_ORGANIC_URLS_LIMIT,
   MODE_AI_ONLY,
 } from './utils/constants.js';
+import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -50,62 +47,6 @@ async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIM
     log.warn(`Prerender - Failed to load top pages for fallback: ${error.message}. baseUrl=${site.getBaseURL()}`);
   }
   return topPagesUrls;
-}
-
-/**
- * Fetch top Agentic URLs using Athena (preferred).
- * Find last week's top agentic URLs, filters out pooled 'Other',
- * groups by URL, and returns the top URLs by total hits.
- * @param {any} site
- * @param {any} context
- * @param {number} limit
- * @returns {Promise<Array<string>>}
- */
-async function getTopAgenticUrlsFromAthena(site, context, limit = TOP_AGENTIC_URLS_LIMIT) {
-  const { log } = context;
-  try {
-    const s3Config = await getS3Config(site, context);
-    const periods = generateReportingPeriods();
-    const recentWeeks = periods.weeks;
-    const oneWeekPeriods = { weeks: [recentWeeks[0]] };
-    const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
-    const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit({
-      periods: oneWeekPeriods,
-      databaseName: s3Config.databaseName,
-      tableName: s3Config.tableName,
-      site,
-      limit,
-    });
-    log.info(`Prerender - Executing Athena query for top agentic URLs... baseUrl=${site.getBaseURL()}`);
-    const results = await athenaClient.query(
-      query,
-      s3Config.databaseName,
-      '[Athena Query] Prerender - Top Agentic URLs',
-    );
-
-    if (!Array.isArray(results) || results.length === 0) {
-      log.warn(`Prerender - Athena returned no agentic rows. baseUrl=${site.getBaseURL()}`);
-      return [];
-    }
-
-    const baseUrl = site.getBaseURL?.() || '';
-    const topUrls = results
-      .filter((row) => typeof row?.url === 'string' && row.url.length > 0)
-      .map((row) => {
-        const path = row.url;
-        try {
-          return new URL(path, baseUrl).toString();
-        } catch {
-          return path;
-        }
-      });
-
-    log.info(`Prerender - Selected ${topUrls.length} top agentic URLs via Athena. baseUrl=${site.getBaseURL()}`);
-    return topUrls;
-  } catch (e) {
-    log?.warn?.(`Prerender - Athena agentic URL fetch failed: ${e.message}. baseUrl=${site.getBaseURL()}`);
-    return [];
-  }
 }
 
 /**

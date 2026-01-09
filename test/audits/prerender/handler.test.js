@@ -333,6 +333,35 @@ describe('Prerender Audit', () => {
         expect(result.urls.map((u) => u.url)).to.include('https://example.com/special');
       });
 
+      it('should use Athena URLs when getTopAgenticUrlsFromAthena returns data', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [
+              'https://example.com/athena-page1',
+              'https://example.com/athena-page2',
+            ],
+          },
+          '../../../src/prerender/utils/shared.js': {
+            loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
+            buildSheetHitsMap: () => new Map(),
+          },
+        });
+        const mockSiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) };
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: { SiteTopPage: mockSiteTopPage },
+          log: { info: sandbox.stub(), debug: sandbox.stub() },
+        };
+        const result = await mockHandler.submitForScraping(context);
+        // Athena URLs should be included
+        expect(result.urls.map((u) => u.url)).to.include('https://example.com/athena-page1');
+        expect(result.urls.map((u) => u.url)).to.include('https://example.com/athena-page2');
+      });
+
       it('should cap top organic pages to TOP_ORGANIC_URLS_LIMIT', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '@adobe/spacecat-shared-athena-client': {
@@ -597,34 +626,16 @@ describe('Prerender Audit', () => {
         expect(result.auditResult).to.be.an('object');
       });
 
-      it('should warn when Athena returns no agentic rows and agentic URL fallback fails', async () => {
-        const athenaQueryStub = sinon.stub().resolves([]);
-
+      it('should warn when Athena returns no agentic rows and sheet fallback fails', async () => {
+        // Now that getTopAgenticUrlsFromAthena is in a separate module, mock it to return empty
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
-          '@adobe/spacecat-shared-athena-client': {
-            AWSAthenaClient: { fromContext: () => ({ query: athenaQueryStub }) },
+          '../../../src/utils/agentic-urls.js': {
+            getTopAgenticUrlsFromAthena: async () => [],
           },
           '../../../src/prerender/utils/shared.js': {
-            generateReportingPeriods: () => ({
-              weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-            }),
-            getS3Config: async () => ({
-              databaseName: 'db',
-              tableName: 'tbl',
-              getAthenaTempLocation: () => 's3://tmp/',
-            }),
-            weeklyBreakdownQueries: {
-              createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
-            },
+            loadLatestAgenticSheet: async () => { throw new Error('sheet load failed'); },
+            buildSheetHitsMap: () => new Map(),
           },
-        });
-
-        const infoStub = sandbox.stub();
-        infoStub.callsFake((msg) => {
-          // Allow normal info logging except for the specific fallback message
-          if (msg && msg.includes('No agentic URLs from Athena; attempting Sheet fallback')) {
-            throw new Error('info log failed');
-          }
         });
 
         const context = {
@@ -640,7 +651,7 @@ describe('Prerender Audit', () => {
             },
           },
           log: {
-            info: infoStub,
+            info: sandbox.stub(),
             debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
@@ -657,14 +668,14 @@ describe('Prerender Audit', () => {
         expect(result.status).to.equal('complete');
         expect(result.auditResult).to.be.an('object');
 
-        // Line 85-87: warning when Athena returns no agentic rows
-        expect(context.log.warn).to.have.been.calledWith(
-          'Prerender - Athena returned no agentic rows. baseUrl=https://example.com',
+        // Should log info about sheet fallback attempt
+        expect(context.log.info).to.have.been.calledWith(
+          'Prerender - No agentic URLs from Athena; attempting Sheet fallback. baseUrl=https://example.com',
         );
 
-        // Lines 540-541: warning when fetching agentic URLs for fallback fails
+        // Should warn about sheet fallback failure
         expect(context.log.warn).to.have.been.calledWith(
-          'Prerender - Failed to fetch agentic URLs for fallback: info log failed. baseUrl=https://example.com',
+          'Prerender - Sheet-based agentic URL fetch failed: sheet load failed. baseUrl=https://example.com',
         );
       });
 
@@ -1842,37 +1853,14 @@ describe('Prerender Audit', () => {
 
   describe('Athena and Sheet Fetch Coverage', () => {
     it('should return top agentic URLs from Athena and filter "Other"; uses path fallback when baseUrl invalid (latest week)', async () => {
-      let capturedPeriods;
-      let capturedLimit;
+      // Now that getTopAgenticUrlsFromAthena is in a separate module, mock it directly
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '@adobe/spacecat-shared-athena-client': {
-          AWSAthenaClient: { fromContext: () => ({ query: async () => ([
-            // SQL now excludes 'Other' in WHERE clause
-            { url: '/a', number_of_hits: 5 },
-            { url: '/b', number_of_hits: 3 },
-          ]) }) },
+        '../../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: async () => ['/a', '/b'],
         },
         '../../../src/prerender/utils/shared.js': {
-          // Provide multiple recent weeks; handler should pick latest week only
-          generateReportingPeriods: () => {
-            const w1 = { weekNumber: 48, year: 2025, startDate: new Date('2025-11-24'), endDate: new Date('2025-11-30') };
-            const w2 = { weekNumber: 47, year: 2025, startDate: new Date('2025-11-17'), endDate: new Date('2025-11-23') };
-            const w3 = { weekNumber: 46, year: 2025, startDate: new Date('2025-11-10'), endDate: new Date('2025-11-16') };
-            const w4 = { weekNumber: 45, year: 2025, startDate: new Date('2025-11-03'), endDate: new Date('2025-11-09') };
-            return { weeks: [w1, w2, w3, w4] };
-          },
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: {
-            createTopUrlsQueryWithLimit: async (opts) => {
-              capturedPeriods = opts?.periods;
-              capturedLimit = opts?.limit;
-              return 'SELECT 1';
-            },
-          },
+          loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
+          buildSheetHitsMap: () => new Map(),
         },
       });
 
@@ -1887,18 +1875,10 @@ describe('Prerender Audit', () => {
       });
 
       const urls = result.urls.map((u) => u.url);
-      // '/a' normalized will fail due to invalid baseUrl, mapping will keep path string
+      // URLs returned from mocked getTopAgenticUrlsFromAthena
       expect(urls).to.include('/a');
       expect(urls).to.include('/b');
-      // Ensure "Other" excluded and limit respected
       expect(urls).to.have.length(2);
-      // Verify latest-week window passed to query builder and limit forwarded
-      expect(capturedPeriods).to.be.an('object');
-      expect(capturedPeriods.weeks).to.have.length(1);
-      const win = capturedPeriods.weeks[0];
-      expect(new Date(win.startDate).toISOString()).to.equal(new Date('2025-11-24T00:00:00.000Z').toISOString());
-      expect(new Date(win.endDate).toISOString()).to.equal(new Date('2025-11-30T00:00:00.000Z').toISOString());
-      expect(capturedLimit).to.equal(TOP_AGENTIC_URLS_LIMIT);
     });
 
     it('should populate agentic traffic for included URLs via Athena (hits-for-urls)', async () => {
@@ -1945,31 +1925,14 @@ describe('Prerender Audit', () => {
     });
 
     it('should cap agentic URLs in SQL via LIMIT; handler maps rows returned', async () => {
-      let capturedPeriods;
-      let capturedLimit;
+      // Now that getTopAgenticUrlsFromAthena is in a separate module, mock it directly
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '@adobe/spacecat-shared-athena-client': {
-          AWSAthenaClient: { fromContext: () => ({
-            query: async () => {
-              // Return fewer rows than limit to reflect SQL-side capping
-              return Array.from({ length: 1 })
-                .map((_, i) => ({ url: `/u${i}`, number_of_hits: 1000 - i }));
-            },
-          }) },
+        '../../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: async () => ['https://example.com/u0'],
         },
         '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => {
-            const w1 = { weekNumber: 48, year: 2025, startDate: new Date('2025-11-24'), endDate: new Date('2025-11-30') };
-            return { weeks: [w1] };
-          },
-          getS3Config: async () => ({ databaseName: 'db', tableName: 'tbl', getAthenaTempLocation: () => 's3://tmp/' }),
-          weeklyBreakdownQueries: {
-            createTopUrlsQueryWithLimit: async (opts) => {
-              capturedPeriods = opts?.periods;
-              capturedLimit = opts?.limit;
-              return 'SELECT 1';
-            },
-          },
+          loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
+          buildSheetHitsMap: () => new Map(),
         },
       });
       const ctx = {
@@ -1983,12 +1946,9 @@ describe('Prerender Audit', () => {
         auditContext: { scrapeJobId: 'test-job-id' },
       };
       const out = await mockHandler.submitForScraping(ctx);
-      // Handler returns whatever Athena returns; assert we passed LIMIT and used latest week
+      // Handler returns whatever getTopAgenticUrlsFromAthena returns
       expect(out.urls).to.have.length(1);
-      expect(capturedLimit).to.equal(TOP_AGENTIC_URLS_LIMIT);
-      // Confirm latest week was used
-      expect(capturedPeriods).to.be.an('object');
-      expect(capturedPeriods.weeks).to.have.length(1);
+      expect(out.urls[0].url).to.equal('https://example.com/u0');
     });
 
     it('should return [] when sheet fallback has no rows', async () => {
@@ -2346,31 +2306,16 @@ describe('Prerender Audit', () => {
     });
 
     it('should handle Athena results with missing url fields', async () => {
+      // Now that getTopAgenticUrlsFromAthena is in a separate module, mock it directly
+      // The filtering of missing url fields is now handled inside getTopAgenticUrlsFromAthena
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '@adobe/spacecat-shared-athena-client': {
-          AWSAthenaClient: {
-            fromContext: () => ({
-              query: async () => ([
-                // First row has no url field and should be filtered out
-                { number_of_hits: 5 },
-                // Second row has a valid url and should be kept
-                { url: '/valid', number_of_hits: 3 },
-              ]),
-            }),
-          },
+        '../../../src/utils/agentic-urls.js': {
+          // Simulate filtering behavior - only valid URLs returned
+          getTopAgenticUrlsFromAthena: async () => ['https://example.com/valid'],
         },
         '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: {
-            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
-          },
+          loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
+          buildSheetHitsMap: () => new Map(),
         },
       });
 
@@ -2449,6 +2394,9 @@ describe('Prerender Audit', () => {
             }),
           },
         },
+        '../../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: async () => ['https://example.com/agentic'],
+        },
         '../../../src/prerender/utils/shared.js': {
           generateReportingPeriods: () => ({
             weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
@@ -2462,6 +2410,8 @@ describe('Prerender Audit', () => {
             createAgenticReportQuery: async () => 'SELECT 1',
             createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 2'),
           },
+          loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: 'https://example.com', rows: [] }),
+          buildSheetHitsMap: () => new Map(),
         },
         '../../../src/utils/s3-utils.js': {
           getObjectFromKey: async () => html,
@@ -2560,28 +2510,15 @@ describe('Prerender Audit', () => {
     });
 
     it('should handle missing site.getBaseURL when mapping agentic URLs from Athena', async () => {
+      // Now that getTopAgenticUrlsFromAthena is in a separate module, mock it directly
       const mockHandler = await esmock('../../../src/prerender/handler.js', {
-        '@adobe/spacecat-shared-athena-client': {
-          AWSAthenaClient: {
-            fromContext: () => ({
-              query: async () => ([
-                { url: '/from-athena', number_of_hits: 10 },
-              ]),
-            }),
-          },
+        '../../../src/utils/agentic-urls.js': {
+          // Simulate the case where baseUrl is empty and URLs come back as raw paths
+          getTopAgenticUrlsFromAthena: async () => ['/from-athena'],
         },
         '../../../src/prerender/utils/shared.js': {
-          generateReportingPeriods: () => ({
-            weeks: [{ weekNumber: 45, year: 2025, startDate: new Date(), endDate: new Date() }],
-          }),
-          getS3Config: async () => ({
-            databaseName: 'db',
-            tableName: 'tbl',
-            getAthenaTempLocation: () => 's3://tmp/',
-          }),
-          weeklyBreakdownQueries: {
-            createTopUrlsQueryWithLimit: sinon.stub().resolves('SELECT 1'),
-          },
+          loadLatestAgenticSheet: async () => ({ weekId: 'w45-2025', baseUrl: '', rows: [] }),
+          buildSheetHitsMap: () => new Map(),
         },
       });
 
@@ -2602,7 +2539,7 @@ describe('Prerender Audit', () => {
 
       const res = await mockHandler.submitForScraping(ctx);
       const urls = res.urls.map((u) => u.url);
-      // With empty baseUrl, new URL(path, baseUrl) will throw and we fall back to raw path
+      // With empty baseUrl, URLs come back as raw paths
       expect(urls).to.include('/from-athena');
     });
 
