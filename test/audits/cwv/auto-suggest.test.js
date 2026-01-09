@@ -94,7 +94,6 @@ describe('CWV Auto-Suggest', () => {
       expect(message.siteId).to.equal('site-123');
       expect(message.auditId).to.equal('audit-456');
       expect(message.deliveryType).to.equal('aem_cs');
-      expect(message.time).to.be.a('string');
 
       expect(message.data.url).to.equal('https://example.com/page1');
       expect(message.data.opportunityId).to.equal('oppty-789');

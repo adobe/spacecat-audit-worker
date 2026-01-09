@@ -135,7 +135,6 @@ export async function processAutoSuggest(context, opportunity, site) {
         siteId,
         auditId,
         deliveryType: site ? site.getDeliveryType() : 'aem_cs',
-        time: new Date().toISOString(),
         data: {
           url,
           opportunityId,
