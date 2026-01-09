@@ -13,7 +13,7 @@
 import { isAuditEnabledForSite } from '../common/index.js';
 import { getCodeInfo } from '../accessibility/utils/data-processing.js';
 
-const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv-analysis';
+const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv';
 const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
 
 /**

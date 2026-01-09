@@ -535,7 +535,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
       // Verify that SQS sendMessage was called twice (once per suggestion)
       expect(context.sqs.sendMessage).to.have.been.calledTwice;
       const message = context.sqs.sendMessage.firstCall.args[1];
-      expect(message.type).to.equal('guidance:cwv-analysis');
+      expect(message.type).to.equal('guidance:cwv');
       expect(message.siteId).to.equal('site-id');
     });
 

@@ -90,7 +90,7 @@ describe('CWV Auto-Suggest', () => {
       expect(sqsStub.calledOnce).to.be.true;
       const message = sqsStub.firstCall.args[1];
 
-      expect(message.type).to.equal('guidance:cwv-analysis');
+      expect(message.type).to.equal('guidance:cwv');
       expect(message.siteId).to.equal('site-123');
       expect(message.auditId).to.equal('audit-456');
       expect(message.deliveryType).to.equal('aem_cs');
