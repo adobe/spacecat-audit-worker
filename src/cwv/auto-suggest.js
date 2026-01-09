@@ -11,8 +11,9 @@
  */
 
 import { isAuditEnabledForSite } from '../common/index.js';
+import { getCodeInfo } from '../accessibility/utils/data-processing.js';
 
-const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv-analysis';
+const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv';
 const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
 
 /**
@@ -67,15 +68,18 @@ export function shouldSendAutoSuggestForSuggestion(suggestion) {
 }
 
 /**
- * Sends messages to Mystique for CWV auto-suggest processing
+ * Processes CWV auto-suggest for eligible suggestions.
+ * Checks if auto-suggest is enabled, filters suggestions that need guidance,
+ * and sends messages to Mystique for AI-powered guidance generation.
  * Sends one message per suggestion that needs auto-suggest (NEW status, no guidance)
+ * Includes code repository information (codeBucket, codePath) if available
  *
- * @param {Object} context - Context object containing log, sqs, env
+ * @param {Object} context - Context object containing log, sqs, env, s3Client
  * @param {Object} opportunity - Opportunity object with siteId, auditId, opportunityId, and data
  * @param {Object} site - Site object with getBaseURL() and getDeliveryType() methods
  * @throws {Error} When SQS message sending fails
  */
-export async function sendSQSMessageForAutoSuggest(context, opportunity, site) {
+export async function processAutoSuggest(context, opportunity, site) {
   const {
     log, sqs, env,
   } = context;
@@ -98,6 +102,10 @@ export async function sendSQSMessageForAutoSuggest(context, opportunity, site) {
     const suggestions = await opportunity.getSuggestions();
 
     log.info(`[audit-worker-cwv] siteId: ${siteId} | Processing ${suggestions.length} suggestions for CWV auto-suggest, opportunityId: ${opportunityId}`);
+
+    // Get code repository information (codeBucket, codePath) if available
+    const codeInfo = site ? await getCodeInfo(site, 'cwv', context) : null;
+    const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath !== undefined;
 
     // Send one SQS message per suggestion that needs auto-suggest
     for (const suggestion of suggestions) {
@@ -127,12 +135,16 @@ export async function sendSQSMessageForAutoSuggest(context, opportunity, site) {
         siteId,
         auditId,
         deliveryType: site ? site.getDeliveryType() : 'aem_cs',
-        time: new Date().toISOString(),
         data: {
-          page: url,
+          url,
           opportunityId,
           suggestionId,
           device_type: metrics.deviceType || 'mobile',
+          // Add code repository information if available
+          ...(hasCodeInfo && {
+            codeBucket: codeInfo.codeBucket,
+            codePath: codeInfo.codePath,
+          }),
         },
       };
 

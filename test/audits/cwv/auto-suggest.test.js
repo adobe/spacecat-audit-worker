@@ -15,8 +15,8 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import esmock from 'esmock';
 
-describe('CWV Utils', () => {
-  let sendSQSMessageForAutoSuggest;
+describe('CWV Auto-Suggest', () => {
+  let processAutoSuggest;
   let shouldSendAutoSuggestForSuggestion;
   let isAuditEnabledForSite;
   let context;
@@ -27,7 +27,7 @@ describe('CWV Utils', () => {
   beforeEach(async () => {
     isAuditEnabledForSite = sandbox.stub().resolves(true);
 
-    ({ sendSQSMessageForAutoSuggest, shouldSendAutoSuggestForSuggestion } = await esmock('../../../src/cwv/auto-suggest.js', {
+    ({ processAutoSuggest, shouldSendAutoSuggestForSuggestion } = await esmock('../../../src/cwv/auto-suggest.js', {
       '../../../src/common/index.js': {
         isAuditEnabledForSite,
       },
@@ -37,6 +37,7 @@ describe('CWV Utils', () => {
       getId: () => 'test-site-id',
       getBaseURL: sandbox.stub().returns('https://example.com'),
       getDeliveryType: sandbox.stub().returns('aem_cs'),
+      getCode: sandbox.stub().returns(null),
     };
 
     sqsStub = sandbox.stub().resolves();
@@ -46,6 +47,7 @@ describe('CWV Utils', () => {
         info: sandbox.stub(),
         error: sandbox.stub(),
         debug: sandbox.stub(),
+        warn: sandbox.stub(),
       },
       sqs: {
         sendMessage: sqsStub,
@@ -60,7 +62,7 @@ describe('CWV Utils', () => {
     sandbox.restore();
   });
 
-  describe('sendSQSMessageForAutoSuggest', () => {
+  describe('processAutoSuggest', () => {
     it('should send CWV auto-suggest message with correct structure', async () => {
       const opportunity = {
         getSiteId: () => 'site-123',
@@ -83,21 +85,73 @@ describe('CWV Utils', () => {
         }]),
       };
 
-      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      await processAutoSuggest(context, opportunity, site);
 
       expect(sqsStub.calledOnce).to.be.true;
       const message = sqsStub.firstCall.args[1];
 
-      expect(message.type).to.equal('guidance:cwv-analysis');
+      expect(message.type).to.equal('guidance:cwv');
       expect(message.siteId).to.equal('site-123');
       expect(message.auditId).to.equal('audit-456');
       expect(message.deliveryType).to.equal('aem_cs');
-      expect(message.time).to.be.a('string');
 
-      expect(message.data.page).to.equal('https://example.com/page1');
+      expect(message.data.url).to.equal('https://example.com/page1');
       expect(message.data.opportunityId).to.equal('oppty-789');
       expect(message.data.suggestionId).to.equal('sugg-001');
       expect(message.data.device_type).to.equal('mobile');
+    });
+
+    it('should include codeBucket and codePath when available', async () => {
+      // Create a new instance with mocked getCodeInfo
+      const getCodeInfoStub = sandbox.stub().resolves({
+        codeBucket: 'test-bucket',
+        codePath: 'code/test-site-id/github/test-owner/test-repo/main/repository.zip',
+      });
+
+      const { processAutoSuggest: processWithCode } = await esmock('../../../src/cwv/auto-suggest.js', {
+        '../../../src/common/index.js': {
+          isAuditEnabledForSite,
+        },
+        '../../../src/accessibility/utils/data-processing.js': {
+          getCodeInfo: getCodeInfoStub,
+        },
+      });
+
+      const siteWithCode = {
+        getId: () => 'test-site-id',
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+        getDeliveryType: sandbox.stub().returns('aem_cs'),
+        getCode: sandbox.stub().returns({
+          source: 'github',
+          owner: 'test-owner',
+          repo: 'test-repo',
+          ref: 'main',
+        }),
+      };
+
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile' }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await processWithCode(context, opportunity, siteWithCode);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      const message = sqsStub.firstCall.args[1];
+
+      expect(message.data.codeBucket).to.equal('test-bucket');
+      expect(message.data.codePath).to.equal('code/test-site-id/github/test-owner/test-repo/main/repository.zip');
     });
 
     it('should skip group-type suggestions and only send URL-type suggestions', async () => {
@@ -129,12 +183,12 @@ describe('CWV Utils', () => {
         ]),
       };
 
-      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      await processAutoSuggest(context, opportunity, site);
 
       // Should only send one message (for URL, not group)
       expect(sqsStub.calledOnce).to.be.true;
       const message = sqsStub.firstCall.args[1];
-      expect(message.data.page).to.equal('https://example.com/page1');
+      expect(message.data.url).to.equal('https://example.com/page1');
       expect(message.data.suggestionId).to.equal('sugg-url');
     });
 
@@ -157,7 +211,7 @@ describe('CWV Utils', () => {
         }]),
       };
 
-      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      await processAutoSuggest(context, opportunity, site);
 
       expect(sqsStub.called).to.be.false;
       expect(context.log.info).to.have.been.calledWith('[audit-worker-cwv] siteId: test-site-id | baseURL: https://example.com | CWV auto-suggest is disabled, skipping');
@@ -180,7 +234,7 @@ describe('CWV Utils', () => {
         }]),
       };
 
-      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      await processAutoSuggest(context, opportunity, site);
 
       expect(sqsStub.called).to.be.false;
     });
@@ -202,7 +256,7 @@ describe('CWV Utils', () => {
         }]),
       };
 
-      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      await processAutoSuggest(context, opportunity, site);
 
       expect(sqsStub.called).to.be.false;
     });
@@ -236,11 +290,11 @@ describe('CWV Utils', () => {
         ]),
       };
 
-      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      await processAutoSuggest(context, opportunity, site);
 
       expect(sqsStub.callCount).to.equal(2);
-      expect(sqsStub.firstCall.args[1].data.page).to.equal('https://example.com/page1');
-      expect(sqsStub.secondCall.args[1].data.page).to.equal('https://example.com/page2');
+      expect(sqsStub.firstCall.args[1].data.url).to.equal('https://example.com/page1');
+      expect(sqsStub.secondCall.args[1].data.url).to.equal('https://example.com/page2');
     });
 
     it('should handle SQS sendMessage error', async () => {
@@ -263,7 +317,7 @@ describe('CWV Utils', () => {
       };
 
       try {
-        await sendSQSMessageForAutoSuggest(context, opportunity, site);
+        await processAutoSuggest(context, opportunity, site);
         expect.fail('Should have thrown an error');
       } catch (error) {
         expect(error.message).to.equal('SQS send failed');
@@ -288,7 +342,7 @@ describe('CWV Utils', () => {
         }]),
       };
 
-      await sendSQSMessageForAutoSuggest(context, opportunity, null);
+      await processAutoSuggest(context, opportunity, null);
 
       expect(sqsStub.calledOnce).to.be.true;
       const message = sqsStub.firstCall.args[1];
@@ -297,7 +351,7 @@ describe('CWV Utils', () => {
 
     it('should handle error when opportunity is undefined', async () => {
       try {
-        await sendSQSMessageForAutoSuggest(context, undefined, site);
+        await processAutoSuggest(context, undefined, site);
         expect.fail('Should have thrown an error');
       } catch (error) {
         expect(context.log.error.calledOnce).to.be.true;
