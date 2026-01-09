@@ -626,6 +626,45 @@ describe('Hreflang Audit', () => {
       expect(result.suggestions).to.be.an('array').that.is.empty;
     });
 
+    it('should handle malformed URLs gracefully in x-default suggestions', () => {
+      const auditData = {
+        auditResult: {
+          'hreflang-x-default-missing': {
+            success: false,
+            explanation: 'Missing x-default hreflang tag',
+            urls: ['not-a-valid-url'],
+          },
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result.suggestions).to.have.length(1);
+      expect(result.suggestions[0].recommendedAction).to.equal('Add x-default hreflang tag: <link rel="alternate" href="[base-url]" hreflang="x-default" />');
+      expect(result.suggestions[0].suggestion).to.equal('Add x-default hreflang tag: <link rel="alternate" href="[base-url]" hreflang="x-default" />');
+    });
+
+    it('should use fallback when URL parsing fails for x-default', () => {
+      const auditData = {
+        auditResult: {
+          'hreflang-x-default-missing': {
+            success: false,
+            explanation: 'Missing x-default hreflang tag',
+            urls: ['/relative/path', '   ', 'ht!tp://invalid'],
+          },
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result.suggestions).to.have.length(3);
+      // All should fall back to placeholder
+      result.suggestions.forEach((suggestion) => {
+        expect(suggestion.recommendedAction).to.include('[base-url]');
+        expect(suggestion.suggestion).to.include('[base-url]');
+      });
+    });
+
     it('should generate default recommended action for unknown check types', () => {
       const auditData = {
         auditResult: {
