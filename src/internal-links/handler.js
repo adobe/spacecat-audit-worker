@@ -11,9 +11,11 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
+import {
+  Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess, FixEntity,
+}
   from '@adobe/spacecat-shared-data-access';
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { isUnscrapeable } from '../utils/url-utils.js';
@@ -25,6 +27,7 @@ import {
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { filterByAuditScope, isWithinAuditScope, extractPathPrefix } from './subpath-filter.js';
+import { publishDeployedFixesForFixedSuggestions } from '../utils/data-access.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
@@ -200,17 +203,6 @@ export const opportunityAndSuggestionsStep = async (context) => {
       // no broken internal links found, update opportunity status to RESOLVED
       log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal
   links found, but found opportunity, updating status to RESOLVED`);
-      await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
-
-      // We also need to update all suggestions inside this opportunity
-      // Get all suggestions for this opportunity
-      const suggestions = await opportunity.getSuggestions();
-
-      // If there are suggestions, update their status to fixed
-      if (isNonEmptyArray(suggestions)) {
-        await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.FIXED);
-      }
-      opportunity.setUpdatedBy('system');
       await opportunity.save();
     }
     return {
@@ -230,6 +222,123 @@ export const opportunityAndSuggestionsStep = async (context) => {
       kpiDeltas,
     },
   );
+
+  // Before publishing fix entities, reconcile suggestions that disappeared
+  // from current audit results.
+  // If a previous suggestion's urlTo now redirects to one of its urlsSuggested, mark it FIXED
+  // and ensure a PUBLISHED fix entity exists.
+  try {
+    const existingSuggestions = await opportunity.getSuggestions();
+    const currentKeys = new Set(
+      brokenInternalLinks.map((l) => `${l.urlFrom}-${l.urlTo}`),
+    );
+    const candidates = existingSuggestions.filter((s) => {
+      const data = s?.getData?.() || {};
+      const key = `${data.urlFrom}-${data.urlTo}`;
+      return !currentKeys.has(key);
+    });
+
+    const normalize = (u) => {
+      if (typeof u !== 'string') return '';
+      return u.replace(/\/+$/, '');
+    };
+
+    // Helper: returns true if urlTo eventually resolves to any candidate URL
+    const redirectsToAny = async (urlTo, targets) => {
+      try {
+        const resp = await fetch(urlTo, { redirect: 'follow' });
+        const finalResolvedUrl = normalize(resp?.url || urlTo);
+        return targets.some((t) => normalize(t) === finalResolvedUrl);
+      } catch (e) {
+        // treat network errors as not matching
+        return false;
+      }
+    };
+
+    const fixEntityObjects = [];
+    const updatePromises = [];
+
+    for (const suggestion of candidates) {
+      // eslint-disable-next-line no-await-in-loop
+      const data = suggestion?.getData?.();
+      const urlTo = data?.urlTo;
+      const targets = Array.isArray(data?.urlsSuggested) ? data.urlsSuggested : [];
+      if (!urlTo || targets.length === 0) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      const matches = await redirectsToAny(urlTo, targets);
+      if (!matches) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      // Mark suggestion as FIXED and prepare a PUBLISHED fix entity on the opportunity
+      try {
+        suggestion.setStatus?.(SuggestionDataAccess.STATUSES.FIXED);
+        suggestion.setUpdatedBy?.('system');
+        updatePromises.push(suggestion.save?.());
+      } catch (e) {
+        log.warn(`[${AUDIT_TYPE}] Failed to mark suggestion ${suggestion?.getId?.()} as FIXED: ${e.message}`);
+      }
+
+      try {
+        const published = FixEntity?.STATUSES?.PUBLISHED;
+        if (published && typeof opportunity.addFixEntities === 'function') {
+          const updatedValue = data?.urlEdited || data?.urlsSuggested[0] || '';
+          fixEntityObjects.push({
+            opportunityId: opportunity.getId(),
+            status: published,
+            type: suggestion?.getType?.(),
+            executedAt: new Date().toISOString(),
+            changeDetails: {
+              system: site.getDeliveryType(),
+              pagePath: data?.urlFrom,
+              oldValue: data?.urlTo,
+              updatedValue,
+            },
+            suggestions: [suggestion?.getId?.()],
+          });
+        }
+      } catch (e) {
+        log.warn(`[${AUDIT_TYPE}] Failed building fix entity payload for suggestion ${suggestion?.getId?.()}: ${e.message}`);
+      }
+    }
+
+    if (fixEntityObjects.length > 0 && typeof opportunity.addFixEntities === 'function') {
+      try {
+        await opportunity.addFixEntities(fixEntityObjects);
+      } catch (e) {
+        log.warn(`[${AUDIT_TYPE}] Failed to add fix entities on opportunity ${opportunity.getId?.()}: ${e.message}`);
+      }
+    }
+    if (updatePromises.length > 0) {
+      await Promise.all(updatePromises);
+    }
+  } catch (e) {
+    log.warn(`[${AUDIT_TYPE}] Failed reconciliation for disappeared suggestions: ${e.message}`);
+  }
+
+  // Publish any DEPLOYED fixes whose associated suggestion targets are no longer 404.
+  try {
+    await publishDeployedFixesForFixedSuggestions({
+      opportunityId: opportunity.getId(),
+      FixEntity,
+      log,
+      isSuggestionStillBrokenInLive: async (suggestion) => {
+        const urlTo = suggestion?.getData?.()?.urlTo;
+        if (!urlTo) {
+          return true;
+        }
+        const is404 = await isLinkInaccessible(urlTo, log);
+        return is404;
+      },
+    });
+  } catch (err) {
+    log.warn(`Failed to publish fix entities for FIXED suggestions: ${err.message}`);
+  }
+
   await syncBrokenInternalLinksSuggestions({
     opportunity,
     brokenInternalLinks,

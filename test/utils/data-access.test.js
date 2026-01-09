@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import esmock from 'esmock';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import {
   retrieveSiteBySiteId,
@@ -29,6 +30,246 @@ import { MockContextBuilder } from '../shared.js';
 
 use(sinonChai);
 use(chaiAsPromised);
+
+describe('utils/data-access', () => {
+  const sandbox = sinon.createSandbox();
+  let utils;
+
+  afterEach(async () => {
+    sandbox.restore();
+    if (utils) {
+      await esmock.purge(utils);
+      utils = undefined;
+    }
+  });
+
+  it('syncSuggestions logs safely when JSON.stringify would throw (circular data)', async () => {
+    utils = await esmock('../../src/utils/data-access.js');
+    const { syncSuggestions: mockedSyncSuggestions } = utils;
+
+    const existingSuggestion = {
+      getData: () => ({ url: 'https://example.com' }),
+      getStatus: () => 'NEW',
+      setData: sandbox.stub(),
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+    // Make the suggestion object self-referential so JSON.stringify throws
+    existingSuggestion.self = existingSuggestion;
+    const existingSuggestions = [existingSuggestion];
+
+    const context = {
+      dataAccess: {
+        Suggestion: {
+          bulkUpdateStatus: sandbox.stub().resolves(),
+        },
+      },
+      log: {
+        info: sandbox.stub(),
+        warn: sandbox.stub(),
+        debug: sandbox.stub(),
+        error: sandbox.stub(),
+      },
+    };
+
+    const opportunity = {
+      getSuggestions: sandbox.stub().resolves(existingSuggestions),
+      addSuggestions: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
+      getSiteId: () => 'site-1',
+    };
+
+    await mockedSyncSuggestions({
+      context,
+      opportunity,
+      // Provide matching newData so the existing item is NOT marked outdated,
+      // avoiding the JSON.stringify path inside handleOutdatedSuggestions while
+      // still exercising safeStringify on existing suggestions in later logs.
+      newData: [{ url: 'https://example.com' }],
+      buildKey: (d) => d?.url || 'none',
+      mapNewSuggestion: (d) => ({ data: d }),
+    });
+
+    expect(context.log.debug).to.have.been.called; // safeStringify path exercised
+  });
+
+  it('syncSuggestions logs partial success and "... and N more errors"', async () => {
+    utils = await esmock('../../src/utils/data-access.js');
+    const { syncSuggestions: mockedSyncSuggestions } = utils;
+
+    const context = {
+      dataAccess: {
+        Suggestion: {
+          bulkUpdateStatus: sandbox.stub().resolves(),
+        },
+      },
+      site: {},
+      log: {
+        info: sandbox.stub(),
+        warn: sandbox.stub(),
+        debug: sandbox.stub(),
+        error: sandbox.stub(),
+      },
+    };
+    const opportunity = {
+      getSuggestions: sandbox.stub().resolves([]),
+      addSuggestions: sandbox.stub().resolves({
+        createdItems: [1],
+        errorItems: new Array(6).fill(0).map((_, i) => ({ error: `e${i}`, item: { id: i } })),
+      }),
+      getSiteId: () => 'site-1',
+    };
+    await mockedSyncSuggestions({
+      context,
+      opportunity,
+      newData: [{ id: 1 }],
+      buildKey: (d) => String(d.id),
+      mapNewSuggestion: (d) => ({ data: d }),
+    });
+
+    expect(context.log.error).to.have.been.calledWith(sinon.match(/\.\.\. and 1 more errors/));
+    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Partial success/));
+  });
+
+  it('publishDeployedFixesForFixedSuggestions returns early when STATUSES missing', async () => {
+    utils = await esmock('../../src/utils/data-access.js');
+    const { publishDeployedFixesForFixedSuggestions } = utils;
+    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
+    await publishDeployedFixesForFixedSuggestions({
+      opportunityId: 'op1',
+      FixEntity: {},
+      log,
+      isSuggestionStillBrokenInLive: async () => false,
+    });
+    expect(log.debug).to.have.been.calledWith(sinon.match(/status constants not available/));
+  });
+
+  it('publishDeployedFixesForFixedSuggestions returns when no deployed fix entities', async () => {
+    utils = await esmock('../../src/utils/data-access.js');
+    const { publishDeployedFixesForFixedSuggestions } = utils;
+    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
+    const FixEntity = {
+      STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+      allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+      getSuggestionsByFixEntityId: sandbox.stub(),
+    };
+    await publishDeployedFixesForFixedSuggestions({
+      opportunityId: 'op1',
+      FixEntity,
+      log,
+      isSuggestionStillBrokenInLive: async () => false,
+    });
+    expect(FixEntity.getSuggestionsByFixEntityId).to.not.have.been.called;
+  });
+
+  it('publishDeployedFixesForFixedSuggestions continues when fix has no suggestions', async () => {
+    utils = await esmock('../../src/utils/data-access.js');
+    const { publishDeployedFixesForFixedSuggestions } = utils;
+    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
+    const fe = {
+      getId: () => 'fe1',
+      getStatus: () => 'DEPLOYED',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub(),
+    };
+    const FixEntity = {
+      STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+      allByOpportunityIdAndStatus: sandbox.stub().resolves([fe]),
+      getSuggestionsByFixEntityId: sandbox.stub().resolves({ data: [] }),
+    };
+    await publishDeployedFixesForFixedSuggestions({
+      opportunityId: 'op1',
+      FixEntity,
+      log,
+      isSuggestionStillBrokenInLive: async () => false,
+    });
+    expect(fe.save).to.not.have.been.called;
+  });
+
+  it('publishDeployedFixesForFixedSuggestions publishes when all suggestions are fixed', async () => {
+    utils = await esmock('../../src/utils/data-access.js');
+    const { publishDeployedFixesForFixedSuggestions } = utils;
+    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
+    const fe = {
+      getId: () => 'fe1',
+      getStatus: () => 'DEPLOYED',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+    const FixEntity = {
+      STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+      allByOpportunityIdAndStatus: sandbox.stub().resolves([fe]),
+      getSuggestionsByFixEntityId: sandbox.stub().resolves({
+        data: [{}, {}],
+      }),
+    };
+    await publishDeployedFixesForFixedSuggestions({
+      opportunityId: 'op1',
+      FixEntity,
+      log,
+      isSuggestionStillBrokenInLive: async () => false,
+    });
+    expect(fe.setStatus).to.have.been.calledWith('PUBLISHED');
+    expect(fe.setUpdatedBy).to.have.been.calledWith('system');
+    expect(fe.save).to.have.been.calledOnce;
+    expect(log.debug).to.have.been.calledWith(sinon.match(/Published fix entity/));
+  });
+
+  it('publishDeployedFixesForFixedSuggestions skips publish when any suggestion check throws', async () => {
+    utils = await esmock('../../src/utils/data-access.js');
+    const { publishDeployedFixesForFixedSuggestions } = utils;
+    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
+    const fe = {
+      getId: () => 'fe1',
+      getStatus: () => 'DEPLOYED',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub(),
+    };
+    const FixEntity = {
+      STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+      allByOpportunityIdAndStatus: sandbox.stub().resolves([fe]),
+      getSuggestionsByFixEntityId: sandbox.stub().resolves({
+        data: [{}, {}],
+      }),
+    };
+    let first = true;
+    await publishDeployedFixesForFixedSuggestions({
+      opportunityId: 'op1',
+      FixEntity,
+      log,
+      isSuggestionStillBrokenInLive: async () => {
+        if (first) {
+          first = false;
+          throw new Error('network');
+        }
+        return false;
+      },
+    });
+    expect(fe.save).to.not.have.been.called;
+    expect(log.debug).to.have.been.calledWith(sinon.match(/Live check failed/));
+  });
+
+  it('publishDeployedFixesForFixedSuggestions warns when outer flow throws', async () => {
+    utils = await esmock('../../src/utils/data-access.js');
+    const { publishDeployedFixesForFixedSuggestions } = utils;
+    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
+    const FixEntity = {
+      STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+      allByOpportunityIdAndStatus: sandbox.stub().rejects(new Error('db')),
+      getSuggestionsByFixEntityId: sandbox.stub(),
+    };
+    await publishDeployedFixesForFixedSuggestions({
+      opportunityId: 'op1',
+      FixEntity,
+      log,
+      isSuggestionStillBrokenInLive: async () => false,
+    });
+    expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to publish DEPLOYED fix entities/));
+  });
+});
 
 describe('data-access', () => {
   describe('retrieveSiteBySiteId', () => {

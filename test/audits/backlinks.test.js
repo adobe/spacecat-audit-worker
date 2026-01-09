@@ -49,12 +49,12 @@ describe('Backlinks Tests', function () {
   let message;
   let context;
   const topPages = [
-    { getUrl: () => 'https://example.com/blog/page1' },
-    { getUrl: () => 'https://example.com/blog/page2' },
+    { getUrl: () => 'https://test-example.com/blog/page1' },
+    { getUrl: () => 'https://test-example.com/blog/page2' },
   ];
   const topPagesNoPrefix = [
-    { getUrl: () => 'https://example.com/page1' },
-    { getUrl: () => 'https://example.com/page2' },
+    { getUrl: () => 'https://test-example.com/page1' },
+    { getUrl: () => 'https://test-example.com/page2' },
   ];
   const auditUrl = 'https://audit.url';
   const audit = {
@@ -66,7 +66,7 @@ describe('Backlinks Tests', function () {
   const contextSite = {
     getId: () => 'site-id',
     getDeliveryType: () => 'aem_cs',
-    getBaseURL: () => 'https://example.com',
+    getBaseURL: () => 'https://test-example.com',
   };
   let brokenBacklinksOpportunity;
   const sandbox = sinon.createSandbox();
@@ -190,14 +190,14 @@ describe('Backlinks Tests', function () {
     context.audit.getAuditResult.returns({ success: true });
     const siteWithSubpath = {
       ...contextSite,
-      getBaseURL: () => 'https://example.com/uk',
+      getBaseURL: () => 'https://test-example.com/uk',
     };
     context.site = siteWithSubpath;
 
     const topPagesWithSubpaths = [
-      { getUrl: () => 'https://example.com/uk/page1' },
-      { getUrl: () => 'https://example.com/uk/page2' },
-      { getUrl: () => 'https://example.com/fr/page1' }, // Should be filtered out
+      { getUrl: () => 'https://test-example.com/uk/page1' },
+      { getUrl: () => 'https://test-example.com/uk/page2' },
+      { getUrl: () => 'https://test-example.com/fr/page1' }, // Should be filtered out
     ];
     context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPagesWithSubpaths);
 
@@ -205,9 +205,9 @@ describe('Backlinks Tests', function () {
 
     // Should only include URLs within /uk subpath
     expect(result.urls).to.have.length(2);
-    expect(result.urls.map((u) => u.url)).to.include('https://example.com/uk/page1');
-    expect(result.urls.map((u) => u.url)).to.include('https://example.com/uk/page2');
-    expect(result.urls.map((u) => u.url)).to.not.include('https://example.com/fr/page1');
+    expect(result.urls.map((u) => u.url)).to.include('https://test-example.com/uk/page1');
+    expect(result.urls.map((u) => u.url)).to.include('https://test-example.com/uk/page2');
+    expect(result.urls.map((u) => u.url)).to.not.include('https://test-example.com/fr/page1');
   });
 
   it('should not submit urls for scraping step when audit was not successful', async () => {
@@ -407,7 +407,7 @@ describe('Backlinks Tests', function () {
           rank: 550000,
           getData: () => ({
             url_from: 'https://from.com/from-2',
-            url_to: 'https://example.com', // Root-level URL - extractPathPrefix returns ''
+            url_to: 'https://test-example.com', // Root-level URL - extractPathPrefix returns ''
           }),
         },
       ];
@@ -442,7 +442,7 @@ describe('Backlinks Tests', function () {
       expect(sentMessage.data.brokenLinks.length).to.equal(1);
       expect(sentMessage.data.brokenLinks[0]).to.deep.include({
         urlFrom: 'https://from.com/from-2',
-        urlTo: 'https://example.com',
+        urlTo: 'https://test-example.com',
         suggestionId: 'test-suggestion-1',
       });
 
@@ -464,7 +464,7 @@ describe('Backlinks Tests', function () {
           getId: () => 'test-suggestion-1',
           getData: () => ({
             url_from: 'https://from.com/from-1',
-            url_to: 'https://example.com/uk/en/old-page',
+            url_to: 'https://test-example.com/uk/en/old-page',
           }),
         },
       ];
@@ -472,10 +472,10 @@ describe('Backlinks Tests', function () {
 
       // Mock top pages with different locales
       const topPagesWithLocales = [
-        { getUrl: () => 'https://example.com/uk/en/page1' },
-        { getUrl: () => 'https://example.com/uk/en/page2' },
-        { getUrl: () => 'https://example.com/fr/page1' }, // Should be filtered out
-        { getUrl: () => 'https://example.com/de/page1' }, // Should be filtered out
+        { getUrl: () => 'https://test-example.com/uk/en/page1' },
+        { getUrl: () => 'https://test-example.com/uk/en/page2' },
+        { getUrl: () => 'https://test-example.com/fr/page1' }, // Should be filtered out
+        { getUrl: () => 'https://test-example.com/de/page1' }, // Should be filtered out
       ];
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPagesWithLocales);
 
@@ -484,10 +484,10 @@ describe('Backlinks Tests', function () {
       expect(result.status).to.deep.equal('complete');
       const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
       expect(sentMessage.data.alternativeUrls).to.have.length(2);
-      expect(sentMessage.data.alternativeUrls).to.include('https://example.com/uk/en/page1');
-      expect(sentMessage.data.alternativeUrls).to.include('https://example.com/uk/en/page2');
-      expect(sentMessage.data.alternativeUrls).to.not.include('https://example.com/fr/page1');
-      expect(sentMessage.data.alternativeUrls).to.not.include('https://example.com/de/page1');
+      expect(sentMessage.data.alternativeUrls).to.include('https://test-example.com/uk/en/page1');
+      expect(sentMessage.data.alternativeUrls).to.include('https://test-example.com/uk/en/page2');
+      expect(sentMessage.data.alternativeUrls).to.not.include('https://test-example.com/fr/page1');
+      expect(sentMessage.data.alternativeUrls).to.not.include('https://test-example.com/de/page1');
     });
 
     it('should filter out unscrape-able file types from alternative URLs', async () => {
@@ -552,7 +552,7 @@ describe('Backlinks Tests', function () {
           getId: () => 'test-suggestion-1',
           getData: () => ({
             url_from: '', // Invalid - empty
-            url_to: 'https://example.com/page',
+            url_to: 'https://test-example.com/page',
           }),
         },
       ];
@@ -580,7 +580,7 @@ describe('Backlinks Tests', function () {
           getId: () => 'test-suggestion-1',
           getData: () => ({
             url_from: 'https://from.com/from-1',
-            url_to: 'https://example.com/uk/en/old-page',
+            url_to: 'https://test-example.com/uk/en/old-page',
           }),
         },
       ];
@@ -594,6 +594,40 @@ describe('Backlinks Tests', function () {
       expect(result.status).to.deep.equal('complete');
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(context.log.warn).to.have.been.calledWith('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
+    });
+
+    it('should warn when publishing FIXED suggestions fails', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      // NEW suggestions returned (single call in new flow)
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([{
+        getId: () => 'new-1',
+        getData: () => ({ url_from: 'https://test-example.com/from', url_to: 'https://test-example.com/' }),
+      }]);
+
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+        .resolves([{ getUrl: () => 'https://test-example.com/page1' }]);
+
+      // Re-import handler with failing publish helper
+      const handler = await (await import('esmock')).default('../../src/backlinks/handler.js', {
+        '../../src/utils/data-access.js': {
+          publishDeployedFixesForFixedSuggestions: sandbox.stub().rejects(new Error('boom')),
+          syncSuggestions: async (...args) => (await import('../../src/utils/data-access.js')).syncSuggestions(...args),
+        },
+      });
+
+      const result = await handler.generateSuggestionData(context);
+
+      expect(result.status).to.deep.equal('complete');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to publish fix entities for FIXED suggestions: boom/),
+      );
     });
   });
 
