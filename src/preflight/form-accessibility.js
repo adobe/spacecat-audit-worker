@@ -154,10 +154,10 @@ export async function processFormAccessibilityOpportunities(context, auditContex
         const accessibilityData = await getObjectFromKey(s3Client, bucketName, fileKey, log);
 
         if (!accessibilityData) {
-          log.warn(`[preflight-audit] ${siteId}  No form accessibility data found for ${url} at key: ${fileKey}`);
+          log.warn(`[preflight-audit] ${siteId} No form accessibility data found for ${url} at key: ${fileKey}`);
           // Skip to next URL if no data found
         } else {
-          log.info(`[preflight-audit] ${siteId}  Successfully loaded form accessibility data for ${url}`);
+          log.info(`[preflight-audit] ${siteId} Successfully loaded form accessibility data for ${url}`);
 
           // Get the page result for this URL
           const pageResult = audits.get(url);
@@ -180,9 +180,9 @@ export async function processFormAccessibilityOpportunities(context, auditContex
             }));
             accessibilityAudit.opportunities.push(...issues);
 
-            log.debug(`[preflight-audit] ${siteId}  Form accessibility audit details for ${url}:`, JSON.stringify(accessibilityAudit, null, 2));
+            log.debug(`[preflight-audit] ${siteId} Form accessibility audit details for ${url}:`, JSON.stringify(accessibilityAudit, null, 2));
           } else {
-            log.warn(`[preflight-audit]  ${siteId}  No accessibility audit found for URL: ${url}`);
+            log.warn(`[preflight-audit] ${siteId} No accessibility audit found for URL: ${url}`);
           }
         }
       } catch (error) {
@@ -242,13 +242,13 @@ Form Accessibility audit completed in ${accessibilityElapsed} seconds`,
       });
 
       await s3Client.send(deleteCommand);
-      log.info(`[preflight-audit] ${siteId}  Successfully cleaned up ${filesToDelete.length} form accessibility files`);
+      log.info(`[preflight-audit] ${siteId} Successfully cleaned up ${filesToDelete.length} form accessibility files`);
     } catch (cleanupError) {
-      log.warn(`[preflight-audit] ${siteId}  Failed to clean up form accessibility files: ${cleanupError.message}`);
+      log.warn(`[preflight-audit] ${siteId} Failed to clean up form accessibility files: ${cleanupError.message}`);
       // Don't fail the entire audit if cleanup fails
     }
   } catch (error) {
-    log.error(`[preflight-audit] ${siteId}  not able to delete prefight files, site: ${site.getId()}, job: ${jobId}, step: ${step}. error ${error.message}`, error);
+    log.error(`[preflight-audit] ${siteId} not able to delete prefight files, site: ${site.getId()}, job: ${jobId}, step: ${step}. error ${error.message}`, error);
   }
 }
 
@@ -256,122 +256,120 @@ Form Accessibility audit completed in ${accessibilityElapsed} seconds`,
  * Form Accessibility preflight handler
  */
 export default async function formAccessibility(context, auditContext) {
-  const { checks, previewUrls, timeExecutionBreakdown } = auditContext;
+  const { previewUrls, timeExecutionBreakdown } = auditContext;
   const { log, site, job } = context;
 
   const siteId = site.getId();
 
-  if (!checks || checks.includes(PREFLIGHT_FORM_ACCESSIBILITY)) {
-    // Check if we have URLs to process
-    if (!isNonEmptyArray(previewUrls)) {
-      log.warn(`[preflight-audit] ${siteId} No URLs to process for form accessibility audit, skipping`);
+  // Check if we have URLs to process
+  if (!isNonEmptyArray(previewUrls)) {
+    log.warn(`[preflight-audit] ${siteId} No URLs to process for form accessibility audit, skipping`);
+    return;
+  }
+
+  // Start timing for the entire form accessibility scraping process
+  // (sending to mystique + polling)
+  const scrapeStartTime = Date.now();
+  const scrapeStartTimestamp = new Date().toISOString();
+
+  // Step 1: Send URLs to mystique to detect form accessibility issues
+  await detectFormAccessibility(context, auditContext);
+
+  // Poll for mystique to process the URLs
+  const { s3Client, env } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const jobId = context.job?.getId();
+
+  log.debug('[preflight-audit] Starting to poll for form accessibility data');
+  log.debug(`[preflight-audit] S3 Bucket: ${bucketName}`);
+  log.debug(`[preflight-audit] Site ID: ${siteId}`);
+  log.debug(`[preflight-audit] Job ID: ${jobId}`);
+  log.debug(`[preflight-audit] Looking for data in path: form-accessibility-preflight/${siteId}/`);
+
+  const maxWaitTime = 10 * 60 * 1000;
+  // 1 second poll interval
+  const pollInterval = 1 * 1000;
+
+  // Generate expected filenames based on preview URLs
+  const expectedFiles = previewUrls.map((url) => generateAccessibilityFilename(url));
+
+  log.info(`[preflight-audit] ${siteId}  Expected files: ${JSON.stringify(expectedFiles)}`);
+
+  // Recursive polling function to check for accessibility files
+  const pollForFormAccessibilityFiles = async () => {
+    if (Date.now() - scrapeStartTime >= maxWaitTime) {
+      log.info('[preflight-audit] Maximum wait time reached, stopping polling');
       return;
     }
 
-    // Start timing for the entire form accessibility scraping process
-    // (sending to mystique + polling)
-    const scrapeStartTime = Date.now();
-    const scrapeStartTimestamp = new Date().toISOString();
+    try {
+      log.info(`[preflight-audit] Polling attempt - checking S3 bucket: ${bucketName}`);
 
-    // Step 1: Send URLs to mystique to detect form accessibility issues
-    await detectFormAccessibility(context, auditContext);
+      // Check if form accessibility data files exist in S3 using helper function
+      const objectKeys = await getObjectKeysUsingPrefix(
+        s3Client,
+        bucketName,
+        `form-accessibility-preflight/${siteId}/`,
+        log,
+        100,
+        '.json',
+      );
 
-    // Poll for mystique to process the URLs
-    const { s3Client, env } = context;
-    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-    const jobId = context.job?.getId();
+      // Check if we have the expected accessibility files
+      const foundFiles = objectKeys.filter((key) => {
+        // Extract filename from the S3 key
+        const pathParts = key.split('/');
+        const filename = pathParts[pathParts.length - 1];
 
-    log.debug('[preflight-audit] Starting to poll for form accessibility data');
-    log.debug(`[preflight-audit] S3 Bucket: ${bucketName}`);
-    log.debug(`[preflight-audit] Site ID: ${siteId}`);
-    log.debug(`[preflight-audit] Job ID: ${jobId}`);
-    log.debug(`[preflight-audit] Looking for data in path: form-accessibility-preflight/${siteId}/`);
+        // Check if this is one of our expected files
+        return expectedFiles.includes(filename);
+      });
 
-    const maxWaitTime = 10 * 60 * 1000;
-    // 1 second poll interval
-    const pollInterval = 1 * 1000;
+      if (foundFiles && foundFiles.length >= expectedFiles.length) {
+        log.info(`[preflight-audit] Found ${foundFiles.length} accessibility files out of ${expectedFiles.length} expected, form accessibility processing complete`);
 
-    // Generate expected filenames based on preview URLs
-    const expectedFiles = previewUrls.map((url) => generateAccessibilityFilename(url));
-
-    log.info(`[preflight-audit] ${siteId}  Expected files: ${JSON.stringify(expectedFiles)}`);
-
-    // Recursive polling function to check for accessibility files
-    const pollForFormAccessibilityFiles = async () => {
-      if (Date.now() - scrapeStartTime >= maxWaitTime) {
-        log.info('[preflight-audit] Maximum wait time reached, stopping polling');
+        // Log the found files for debugging
+        foundFiles.forEach((key) => {
+          log.debug(`[preflight-audit] Form accessibility file: ${key}`);
+        });
         return;
       }
 
-      try {
-        log.info(`[preflight-audit] Polling attempt - checking S3 bucket: ${bucketName}`);
+      log.info(`[preflight-audit] Found ${foundFiles.length} out of ${expectedFiles.length} expected form accessibility files, continuing to wait...`);
+      log.info('[preflight-audit] No form accessibility data yet, waiting...');
+      await sleep(pollInterval);
 
-        // Check if form accessibility data files exist in S3 using helper function
-        const objectKeys = await getObjectKeysUsingPrefix(
-          s3Client,
-          bucketName,
-          `form-accessibility-preflight/${siteId}/`,
-          log,
-          100,
-          '.json',
-        );
+      // Recursively call to continue polling
+      await pollForFormAccessibilityFiles();
+    } catch (error) {
+      log.error(`[preflight-audit] Error polling for form accessibility data: ${error.message}`);
+      await sleep(pollInterval);
 
-        // Check if we have the expected accessibility files
-        const foundFiles = objectKeys.filter((key) => {
-          // Extract filename from the S3 key
-          const pathParts = key.split('/');
-          const filename = pathParts[pathParts.length - 1];
+      // Recursively call to continue polling after error
+      await pollForFormAccessibilityFiles();
+    }
+  };
 
-          // Check if this is one of our expected files
-          return expectedFiles.includes(filename);
-        });
+  // Start the polling process
+  await pollForFormAccessibilityFiles();
 
-        if (foundFiles && foundFiles.length >= expectedFiles.length) {
-          log.info(`[preflight-audit] Found ${foundFiles.length} accessibility files out of ${expectedFiles.length} expected, form accessibility processing complete`);
+  // End timing for the entire scraping process (sending to scraper + polling)
+  const scrapeEndTime = Date.now();
+  const scrapeEndTimestamp = new Date().toISOString();
+  const scrapeElapsed = ((scrapeEndTime - scrapeStartTime) / 1000).toFixed(2);
 
-          // Log the found files for debugging
-          foundFiles.forEach((key) => {
-            log.debug(`[preflight-audit] Form accessibility file: ${key}`);
-          });
-          return;
-        }
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${job?.getId()}, step: ${auditContext.step}. `
+    + `Form accessibility scraping process completed in ${scrapeElapsed} seconds`);
 
-        log.info(`[preflight-audit] Found ${foundFiles.length} out of ${expectedFiles.length} expected form accessibility files, continuing to wait...`);
-        log.info('[preflight-audit] No form accessibility data yet, waiting...');
-        await sleep(pollInterval);
+  timeExecutionBreakdown.push({
+    name: 'form-accessibility-scraping',
+    duration: `${scrapeElapsed} seconds`,
+    startTime: scrapeStartTimestamp,
+    endTime: scrapeEndTimestamp,
+  });
 
-        // Recursively call to continue polling
-        await pollForFormAccessibilityFiles();
-      } catch (error) {
-        log.error(`[preflight-audit] Error polling for form accessibility data: ${error.message}`);
-        await sleep(pollInterval);
+  log.info(`[preflight-audit] ${siteId} Polling completed, proceeding to process form accessibility data`);
 
-        // Recursively call to continue polling after error
-        await pollForFormAccessibilityFiles();
-      }
-    };
-
-    // Start the polling process
-    await pollForFormAccessibilityFiles();
-
-    // End timing for the entire scraping process (sending to scraper + polling)
-    const scrapeEndTime = Date.now();
-    const scrapeEndTimestamp = new Date().toISOString();
-    const scrapeElapsed = ((scrapeEndTime - scrapeStartTime) / 1000).toFixed(2);
-
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job?.getId()}, step: ${auditContext.step}. `
-      + `Form accessibility scraping process completed in ${scrapeElapsed} seconds`);
-
-    timeExecutionBreakdown.push({
-      name: 'form-accessibility-scraping',
-      duration: `${scrapeElapsed} seconds`,
-      startTime: scrapeStartTimestamp,
-      endTime: scrapeEndTimestamp,
-    });
-
-    log.info(`[preflight-audit] ${siteId}  Polling completed, proceeding to process form accessibility data`);
-
-    // Step 2: Process scraped data and create opportunities
-    await processFormAccessibilityOpportunities(context, auditContext);
-  }
+  // Step 2: Process scraped data and create opportunities
+  await processFormAccessibilityOpportunities(context, auditContext);
 }
