@@ -139,27 +139,16 @@ export class StepAudit extends BaseAudit {
         stepContext.scrapeResultPaths = await scrapeClient
           .getScrapeResultPaths(auditContext.scrapeJobId);
 
-        // Check for bot protection in scrape results
+        // Check for bot protection from scrape metadata
+        // Content scraper sends botProtectionDetected flag in completion message
         const scrapeUrlResults = await scrapeClient
           .getScrapeJobUrlResults(auditContext.scrapeJobId);
 
-        const botProtectedUrls = scrapeUrlResults.filter((result) => (
-          result.metadata?.botProtectionDetected === true
-        ));
+        const botProtectedUrls = scrapeUrlResults
+          .filter((result) => result.metadata?.botProtectionDetected === true)
+          .map((result) => result.url);
 
         if (botProtectedUrls.length > 0) {
-          // Log detailed bot protection information
-          botProtectedUrls.forEach((result) => {
-            const botProtection = result.metadata?.botProtection || {};
-            log.warn(
-              `Bot protection detected for URL ${result.url}: `
-              + `type=${botProtection.type || 'unknown'}, `
-              + `confidence=${botProtection.confidence || 'N/A'}, `
-              + `blocked=${botProtection.blocked}, `
-              + `httpStatus=${botProtection.details?.httpStatus || 'N/A'}`,
-            );
-          });
-
           log.warn(
             `${type} audit for site ${siteId} skipped: bot protection detected for `
             + `${botProtectedUrls.length}/${scrapeUrlResults.length} URLs. `
@@ -171,10 +160,7 @@ export class StepAudit extends BaseAudit {
             reason: 'bot-protection-detected',
             botProtectedUrlsCount: botProtectedUrls.length,
             totalUrlsCount: scrapeUrlResults.length,
-            botProtectedUrls: botProtectedUrls.map((result) => ({
-              url: result.url,
-              botProtection: result.metadata?.botProtection,
-            })),
+            botProtectedUrls: botProtectedUrls.map((url) => ({ url })),
           });
         }
       }
