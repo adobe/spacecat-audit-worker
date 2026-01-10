@@ -25,6 +25,7 @@ export default defineConfig([
     'scripts/*',
     'test/*/fixtures/*',
     'test/audits/**/*.test.js',
+    'test/dev/*.mjs',
   ]),
   {
     languageOptions: {
