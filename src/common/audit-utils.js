@@ -48,10 +48,11 @@ export async function checkProductCodeEntitlements(productCodes, site, context) 
   }
 }
 
-export async function isAuditEnabledForSite(type, site, context) {
+export async function isAuditEnabledForSite(type, site, context, auditContext = {}) {
   const { Configuration } = context.dataAccess;
   const configuration = await Configuration.findLatest();
   const handler = configuration.getHandlers()?.[type];
+
   // Check if handler has productCodes and verify entitlements
   if (isNonEmptyArray(handler?.productCodes)) {
     const hasValidEntitlement = await checkProductCodeEntitlements(
@@ -67,6 +68,12 @@ export async function isAuditEnabledForSite(type, site, context) {
   } else {
     context.log.error(`Handler ${type} has no product codes`);
     return false;
+  }
+
+  // Bypass enabled check if triggered from Slack
+  if (auditContext?.slackContext) {
+    context.log.info(`Slack one-off audit detected for ${type}, bypassing enabled check for site ${site.getId()}`);
+    return true;
   }
 
   return configuration.isHandlerEnabledForSite(type, site);
