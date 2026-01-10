@@ -9,7 +9,9 @@
         "url_to": "https://foo.com/redirects-throws-error",
         "urlsSuggested": ["https://foo.com/redirects-throws-error-1", "https://foo.com/redirects-throws-error-2"],
         "aiRationale": "The suggested URLs are similar to the original URL and are likely to be the correct destination.",
-        "traffic_domain": 550000
+        "traffic_domain": 550000,
+        "anchor": "error page redirect link",
+        "domain_rating_source": 65
       },
       {
         "title": "backlink that returns 429",
@@ -17,7 +19,9 @@
         "url_to": "https://foo.com/returns-429",
         "urlsSuggested": ["https://foo.com/returns-429-suggestion-1", "https://foo.com/returns-429-suggestion-2"],
         "aiRationale": "The suggested URLs are similar to the original URL and are likely to be the correct destination.",
-        "traffic_domain": 11000
+        "traffic_domain": 11000,
+        "anchor": "rate limited resource",
+        "domain_rating_source": 42
       },
       {
         "title": "backlink that is not excluded",
@@ -25,13 +29,22 @@
         "url_to": "https://foo.com/not-excluded",
         "urlsSuggested": ["https://foo.com/not-excluded-suggestion-1", "https://foo.com/not-excluded-suggestion-2"],
         "aiRationale": "The suggested URLs are similar to the original URL and are likely to be the correct destination.",
-        "traffic_domain": 5500
+        "traffic_domain": 5500,
+        "anchor": "product comparison guide",
+        "domain_rating_source": 78
       },
       {
         "title": "backlink that returns 404",
         "url_from": "https://from.com/from-1",
         "url_to": "https://foo.com/returns-404",
-        "traffic_domain": 1100000
+        "traffic_domain": 1100000,
+        "anchor": "missing page link",
+        "domain_rating_source": 55
+      },
+      {
+        "title": "backlink with missing optional fields",
+        "url_from": "https://from.com/from-missing",
+        "url_to": "https://foo.com/missing-fields"
       }
     ]
   },

@@ -595,6 +595,59 @@ describe('Backlinks Tests', function () {
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(context.log.warn).to.have.been.calledWith('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
     });
+
+    it('should apply smart sampling when more than 200 alternative URLs', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      // Use broken backlink to root URL so locale set stays empty (all alternatives pass filter)
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: [
+          {
+            title: 'Test Page',
+            url_from: 'https://external.com/link',
+            url_to: 'https://example.com/', // Root URL - no locale prefix extracted
+            traffic_domain: 1000,
+            anchor: 'test anchor',
+            domain_rating_source: 50,
+          },
+        ],
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      // Mock suggestions with valid data
+      const validSuggestions = [
+        {
+          getId: () => 'test-suggestion-1',
+          getData: () => ({
+            url_from: 'https://external.com/link',
+            url_to: 'https://example.com/',
+            anchor: 'test anchor',
+          }),
+        },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(validSuggestions);
+
+      // Generate 250 top pages with different path patterns to trigger smart sampling
+      const manyTopPages = [];
+      for (let i = 0; i < 250; i += 1) {
+        const idx = i; // Capture for closure
+        manyTopPages.push({
+          getUrl: () => `https://example.com/category${idx % 5}/item${idx}`,
+        });
+      }
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyTopPages);
+
+      const result = await generateSuggestionData(context);
+
+      expect(result.status).to.deep.equal('complete');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Smart sampled \d+ URLs from 250 to ensure content diversity/),
+      );
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.alternativeUrls).to.have.lengthOf(200);
+    });
   });
 
   describe('calculateKpiMetrics', () => {
