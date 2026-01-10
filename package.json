@@ -98,6 +98,7 @@
     "@adobe/spacecat-shared-utils": "https://gist.github.com/tkotthakota-adobe/5c0d682a53ec36acd705d99dd6f1f144/raw/746baa2999c74031803aab641f1f81ba3ea1736f/adobe-spacecat-shared-utils-1.86.0.tgz",
     "@adobe/structured-data-validator": "1.5.0",
     "@aws-sdk/client-athena": "3.940.0",
+    "@aws-sdk/client-cloudwatch-logs": "3.940.0",
     "@aws-sdk/client-lambda": "3.940.0",
     "@aws-sdk/client-s3": "3.940.0",
     "@aws-sdk/client-sqs": "3.940.0",
