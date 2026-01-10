@@ -87,6 +87,7 @@ function createDirectMystiqueMessage({
       url,
       opportunityId: opportunity.getId(),
       issuesList,
+      opportunityType: opportunity.getType(),
     },
   };
 }
@@ -543,8 +544,10 @@ export async function sendMessageToMystiqueForRemediation(
   opportunity,
   context,
   log,
+  options = {},
 ) {
   try {
+    const { useCodeFixFlow = true } = options;
     // Check if mystique suggestions are enabled for this site
     const isMystiqueEnabled = await isAuditEnabledForSite('a11y-mystique-auto-suggest', context.site, context);
     if (!isMystiqueEnabled) {
@@ -581,28 +584,34 @@ export async function sendMessageToMystiqueForRemediation(
     });
 
     // Determine if code fix flow should be used
-    const autoFixEnabled = await isAuditEnabledForSite('a11y-mystique-auto-fix', context.site, context);
+    let applyCodeFixFlow = false;
+    let autoFixEnabled = false;
     let hasCodeFixEligibleIssues = false;
-    if (autoFixEnabled) {
-      for (const suggestion of suggestions) {
-        const suggestionData = suggestion.getData();
-        if (isNonEmptyArray(suggestionData.issues)) {
-          const eligibleIssues = suggestionData.issues
-            .filter((issue) => issueTypesForCodeFix.includes(issue.type))
-            .filter((issue) => isNonEmptyArray(issue.htmlWithIssues));
-          if (eligibleIssues.length > 0) {
-            hasCodeFixEligibleIssues = true;
-            break;
+
+    if (useCodeFixFlow) {
+      autoFixEnabled = await isAuditEnabledForSite('a11y-mystique-auto-fix', context.site, context);
+      if (autoFixEnabled) {
+        for (const suggestion of suggestions) {
+          const suggestionData = suggestion.getData();
+          if (isNonEmptyArray(suggestionData.issues)) {
+            const eligibleIssues = suggestionData.issues
+              .filter((issue) => issueTypesForCodeFix.includes(issue.type))
+              .filter((issue) => isNonEmptyArray(issue.htmlWithIssues));
+            if (eligibleIssues.length > 0) {
+              hasCodeFixEligibleIssues = true;
+              break;
+            }
           }
         }
       }
+      applyCodeFixFlow = autoFixEnabled && hasCodeFixEligibleIssues;
     }
-    const useCodeFixFlow = autoFixEnabled && hasCodeFixEligibleIssues;
-    log.debug(`[A11yIndividual] Code fix flow enabled: ${autoFixEnabled}, has eligible issues: ${hasCodeFixEligibleIssues}, using code fix flow: ${useCodeFixFlow}`);
+
+    log.debug(`[A11yIndividual] Code fix flow enabled: ${autoFixEnabled}, has eligible issues: ${hasCodeFixEligibleIssues}, using code fix flow: ${applyCodeFixFlow}`);
 
     // Process the suggestions directly to create Mystique messages
-    // Pass useCodeFixFlow to determine aggregation strategy
-    const mystiqueData = processSuggestionsForMystique(suggestions, useCodeFixFlow);
+    // Pass applyCodeFixFlow to determine aggregation strategy
+    const mystiqueData = processSuggestionsForMystique(suggestions, applyCodeFixFlow);
 
     log.debug(`[A11yIndividual] Mystique data processed: ${mystiqueData.length} messages to send`);
 
@@ -617,7 +626,7 @@ export async function sendMessageToMystiqueForRemediation(
       return { success: false, error: 'Missing SQS context or queue configuration' };
     }
 
-    log.info(`[A11yIndividual] Sending ${mystiqueData.length} messages to Mystique (via ${useCodeFixFlow ? 'code fix' : 'legacy'} flow)`);
+    log.info(`[A11yIndividual] Sending ${mystiqueData.length} messages to Mystique (via ${applyCodeFixFlow ? 'code fix' : 'legacy'} flow)`);
 
     const messagePromises = mystiqueData.map(({
       url, issuesList, aggregationKey,
@@ -633,7 +642,7 @@ export async function sendMessageToMystiqueForRemediation(
       env,
       log,
       context,
-      useCodeFixFlow,
+      useCodeFixFlow: applyCodeFixFlow,
     }));
     // Wait for all messages to be sent (successfully or with errors)
     const results = await Promise.allSettled(messagePromises);
