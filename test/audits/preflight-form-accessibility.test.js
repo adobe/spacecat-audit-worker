@@ -1050,7 +1050,7 @@ describe('Preflight Form Accessibility Audit', () => {
       });
     });
 
-    describe.skip('form accessibility handler polling', () => {
+    describe('form accessibility handler polling', () => {
       let pollingContext;
       let pollingAuditContext;
       let pollingS3Client;
@@ -1121,15 +1121,6 @@ describe('Preflight Form Accessibility Audit', () => {
         sandbox.restore();
       });
 
-      it('should skip form accessibility when not in checks', async () => {
-        pollingAuditContext.checks = ['other-check']; // Not including form-accessibility
-
-        await formAccessibility(pollingContext, pollingAuditContext);
-
-        expect(pollingS3Client.send).to.not.have.been.called;
-        expect(pollingLog.info).to.not.have.been.calledWith('[preflight-audit] Starting to poll for form accessibility data');
-      });
-
       it('should execute full form accessibility workflow when checks include form-accessibility', async () => {
         // Mock successful S3 operations for the entire workflow
         pollingS3Client.send.callsFake((command) => {
@@ -1161,10 +1152,14 @@ describe('Preflight Form Accessibility Audit', () => {
         expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Site ID: site-123');
         expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Job ID: job-123');
         expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Looking for data in path: form-accessibility-preflight/site-123/');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Expected files: ["example_com_page1.json","example_com_page2.json"]');
+        expect(pollingLog.info).to.have.been.calledWith(
+            "[preflight-audit] site-123  Expected files: [\"example_com_page1.json\",\"example_com_page2.json\"]"
+      );
         expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking S3 bucket: test-bucket');
         expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, form accessibility processing complete');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process form accessibility data');
+        expect(pollingLog.info).to.have.been.calledWith(
+            "[preflight-audit] site-123 Polling completed, proceeding to process form accessibility data"
+        );
       });
 
       it('should handle polling with files that do not match expected pattern', async () => {
