@@ -138,6 +138,73 @@ export class StepAudit extends BaseAudit {
         const scrapeClient = ScrapeClient.createFrom(context);
         stepContext.scrapeResultPaths = await scrapeClient
           .getScrapeResultPaths(auditContext.scrapeJobId);
+
+        // Check for bot protection by querying CloudWatch logs
+        // Content scraper logs bot protection events, making CloudWatch the source of truth
+        const { queryBotProtectionLogs } = await import('../utils/cloudwatch-utils.js');
+
+        const auditCreatedAt = new Date(stepContext.audit.getAuditedAt()).getTime();
+        log.info(`[BOT-BLOCKED] Checking bot protection for scrape job: ${auditContext.scrapeJobId}, auditCreatedAt: ${new Date(auditCreatedAt).toISOString()}`);
+
+        const logEvents = await queryBotProtectionLogs(
+          auditContext.scrapeJobId,
+          context,
+          auditCreatedAt,
+        );
+
+        log.info(`[BOT-BLOCKED] Bot protection check result: found ${logEvents.length} bot protection events for job ${auditContext.scrapeJobId}`);
+
+        if (logEvents.length > 0) {
+          const scrapeUrlResults = await scrapeClient
+            .getScrapeJobUrlResults(auditContext.scrapeJobId);
+
+          const totalUrlsCount = scrapeUrlResults.length;
+          const botProtectedUrls = logEvents.map((event) => ({
+            url: event.url,
+            blockerType: event.blockerType,
+            httpStatus: event.httpStatus,
+            confidence: event.confidence,
+          }));
+
+          // Aggregate bot protection statistics
+          const stats = {
+            totalCount: logEvents.length,
+            byHttpStatus: {},
+            byBlockerType: {},
+          };
+
+          for (const event of logEvents) {
+            const status = event.httpStatus || 'unknown';
+            const blockerType = event.blockerType || 'unknown';
+            stats.byHttpStatus[status] = (stats.byHttpStatus[status] || 0) + 1;
+            stats.byBlockerType[blockerType] = (stats.byBlockerType[blockerType] || 0) + 1;
+          }
+
+          // Format detailed log message with HTTP status counts
+          const statusDetails = Object.entries(stats.byHttpStatus)
+            .map(([status, count]) => `${status}: ${count}`)
+            .join(', ');
+          const blockerDetails = Object.entries(stats.byBlockerType)
+            .map(([blockerType, count]) => `${blockerType}: ${count}`)
+            .join(', ');
+
+          log.warn(
+            `[BOT-BLOCKED] ${type} audit for site ${siteId} aborted: bot protection detected for `
+            + `${botProtectedUrls.length}/${totalUrlsCount} URLs. `
+            + `HTTP Status Counts: [${statusDetails}]. `
+            + `Blocker Types: [${blockerDetails}]. `
+            + 'Audit cannot proceed due to bot protection blocking access to site content.',
+          );
+
+          return ok({
+            skipped: true,
+            reason: 'bot-protection-detected',
+            botProtectedUrlsCount: botProtectedUrls.length,
+            totalUrlsCount,
+            botProtectedUrls,
+            stats,
+          });
+        }
       }
 
       // Run the step

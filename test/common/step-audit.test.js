@@ -15,6 +15,7 @@
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
+import { CloudWatchLogsClient } from '@aws-sdk/client-cloudwatch-logs';
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -446,6 +447,11 @@ describe('Step-based Audit Tests', () => {
         .get('/')
         .reply(200, 'Success');
 
+      // Mock CloudWatch client to return no bot protection events
+      sandbox.stub(CloudWatchLogsClient.prototype, 'send').resolves({
+        events: [],
+      });
+
       // Mock ScrapeClient - getScrapeResultPaths returns a Map of URL to Path pairs
       const mockScrapeResultPaths = new Map([
         ['https://space.cat/', 's3://bucket/path1.json'],
@@ -454,6 +460,20 @@ describe('Step-based Audit Tests', () => {
       ]);
       const mockScrapeClient = {
         getScrapeResultPaths: sandbox.stub().resolves(mockScrapeResultPaths),
+        getScrapeJobUrlResults: sandbox.stub().resolves([
+          {
+            url: 'https://space.cat/',
+            status: 'COMPLETE',
+          },
+          {
+            url: 'https://space.cat/page1',
+            status: 'COMPLETE',
+          },
+          {
+            url: 'https://space.cat/page2',
+            status: 'COMPLETE',
+          },
+        ]),
       };
       sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
 
@@ -471,6 +491,7 @@ describe('Step-based Audit Tests', () => {
         getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
         getAuditType: () => 'content-audit',
         getFullAuditRef: () => 's3://test/123',
+        getAuditedAt: () => '2024-01-01T00:00:00.000Z',
       };
       context.dataAccess.Audit.findById.resolves(existingAudit);
 
@@ -498,6 +519,273 @@ describe('Step-based Audit Tests', () => {
       expect(capturedScrapeResultPaths.get('https://space.cat/')).to.equal('s3://bucket/path1.json');
       expect(capturedScrapeResultPaths.get('https://space.cat/page1')).to.equal('s3://bucket/path2.json');
       expect(capturedScrapeResultPaths.get('https://space.cat/page2')).to.equal('s3://bucket/path3.json');
+    });
+
+    it('skips audit when bot protection is detected in scrape results', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      // Stub CloudWatch Logs Client to return bot protection events
+      const mockEvents = [
+        {
+          message: 'Bot Protection Detection in Scraper: {"jobId":"scrape-job-456","url":"https://space.cat/","blockerType":"cloudflare","httpStatus":403,"confidence":0.99,"errorCategory":"bot-protection"}',
+          timestamp: Date.now(),
+        },
+        {
+          message: 'Bot Protection Detection in Scraper: {"jobId":"scrape-job-456","url":"https://space.cat/page2","blockerType":"cloudflare","httpStatus":403,"confidence":0.99,"errorCategory":"bot-protection"}',
+          timestamp: Date.now(),
+        },
+      ];
+
+      const sendStub = sandbox.stub(CloudWatchLogsClient.prototype, 'send').resolves({
+        events: mockEvents,
+      });
+
+      // Setup ScrapeClient mock
+      const mockScrapeClient = {
+        getScrapeResultPaths: sandbox.stub().resolves(new Map([
+          ['https://space.cat/', 's3://bucket/path1.json'],
+          ['https://space.cat/page2', 's3://bucket/path2.json'],
+        ])),
+        getScrapeJobUrlResults: sandbox.stub().resolves([
+          {
+            url: 'https://space.cat/',
+            path: 'scrapes/site-id/path1/scrape.json',
+            status: 'FAILED',
+          },
+          {
+            url: 'https://space.cat/page2',
+            path: 'scrapes/site-id/path2/scrape.json',
+            status: 'FAILED',
+          },
+        ]),
+      };
+      sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('scrape', async () => ({
+          auditResult: { status: 'scraping' },
+          fullAuditRef: 's3://test/123',
+        }), AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+        .addStep('process-scrape', async () => ({ status: 'processed' }))
+        .build();
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const existingAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+        getAuditedAt: () => '2024-01-01T00:00:00.000Z',
+      };
+      context.dataAccess.Audit.findById.resolves(existingAudit);
+
+      const messageWithScrapeJobId = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          next: 'process-scrape',
+          auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+          scrapeJobId: 'scrape-job-456',
+        },
+      };
+
+      const result = await scrapeResultAudit.run(messageWithScrapeJobId, context);
+
+      // Should return ok status but with skipped flag
+      expect(result.status).to.equal(200);
+      const responseBody = await result.json();
+      expect(responseBody).to.deep.include({
+        skipped: true,
+        reason: 'bot-protection-detected',
+        botProtectedUrlsCount: 2,
+        totalUrlsCount: 2,
+      });
+
+      // Verify botProtectedUrls array is included with URLs and bot protection details
+      expect(responseBody.botProtectedUrls).to.be.an('array');
+      expect(responseBody.botProtectedUrls).to.have.lengthOf(2);
+      expect(responseBody.botProtectedUrls[0]).to.deep.equal({
+        url: 'https://space.cat/',
+        blockerType: 'cloudflare',
+        httpStatus: 403,
+        confidence: 0.99,
+      });
+
+      // Verify stats are included
+      expect(responseBody.stats).to.exist;
+      expect(responseBody.stats.byHttpStatus['403']).to.equal(2);
+      expect(responseBody.stats.byBlockerType.cloudflare).to.equal(2);
+
+      // Verify CloudWatch was queried
+      expect(sendStub).to.have.been.called;
+
+      // Verify bot protection was checked
+      expect(mockScrapeClient.getScrapeJobUrlResults).to.have.been.calledWith('scrape-job-456');
+
+      // Verify warning was logged with details
+      expect(context.log.warn).to.have.been.calledWithMatch(
+        /content-audit audit for site.*aborted: bot protection detected for 2\/2 URLs/,
+      );
+      expect(context.log.warn).to.have.been.calledWithMatch(/HTTP Status Counts: \[403: 2\]/);
+      expect(context.log.warn).to.have.been.calledWithMatch(/Blocker Types: \[cloudflare: 2\]/);
+    });
+
+    it('handles bot protection events with missing httpStatus and blockerType', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      // Stub CloudWatch with events missing httpStatus and blockerType
+      const mockEvents = [
+        {
+          message: 'Bot Protection Detection in Scraper: {"jobId":"scrape-job-456","url":"https://space.cat/","errorCategory":"bot-protection"}',
+          timestamp: Date.now(),
+        },
+      ];
+
+      sandbox.stub(CloudWatchLogsClient.prototype, 'send').resolves({
+        events: mockEvents,
+      });
+
+      // Setup ScrapeClient mock
+      const mockScrapeClient = {
+        getScrapeResultPaths: sandbox.stub().resolves(new Map([
+          ['https://space.cat/', 's3://bucket/path1.json'],
+        ])),
+        getScrapeJobUrlResults: sandbox.stub().resolves([
+          {
+            url: 'https://space.cat/',
+            status: 'FAILED',
+          },
+        ]),
+      };
+      sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('scrape', async () => ({
+          auditResult: { status: 'scraping' },
+          fullAuditRef: 's3://test/123',
+        }), AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+        .addStep('process-scrape', async () => ({ status: 'processed' }))
+        .build();
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const existingAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+        getAuditedAt: () => '2024-01-01T00:00:00.000Z',
+      };
+      context.dataAccess.Audit.findById.resolves(existingAudit);
+
+      const messageWithScrapeJobId = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          next: 'process-scrape',
+          auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+          scrapeJobId: 'scrape-job-456',
+        },
+      };
+
+      const result = await scrapeResultAudit.run(messageWithScrapeJobId, context);
+      const responseBody = await result.json();
+
+      // Verify stats handle unknown values correctly
+      expect(responseBody.stats.byHttpStatus.unknown).to.equal(1);
+      expect(responseBody.stats.byBlockerType.unknown).to.equal(1);
+
+      // Verify log message includes unknown values
+      expect(context.log.warn).to.have.been.calledWithMatch(/HTTP Status Counts: \[unknown: 1\]/);
+      expect(context.log.warn).to.have.been.calledWithMatch(/Blocker Types: \[unknown: 1\]/);
+    });
+
+    it('continues audit when no bot protection is detected', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      // Stub CloudWatch to return no bot protection events
+      const sendStub = sandbox.stub(CloudWatchLogsClient.prototype, 'send').resolves({
+        events: [],
+      });
+
+      // Setup ScrapeClient mock without bot protection
+      const mockScrapeClient = {
+        getScrapeResultPaths: sandbox.stub().resolves(new Map([
+          ['https://space.cat/', 's3://bucket/path1.json'],
+        ])),
+        getScrapeJobUrlResults: sandbox.stub().resolves([
+          {
+            url: 'https://space.cat/',
+            status: 'COMPLETE',
+            path: 's3://bucket/path1.json',
+          },
+        ]),
+      };
+      sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+
+      let stepWasExecuted = false;
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('scrape', async () => ({
+          auditResult: { status: 'scraping' },
+          fullAuditRef: 's3://test/123',
+        }), AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+        .addStep('process-scrape', async () => {
+          stepWasExecuted = true;
+          return { status: 'processed' };
+        })
+        .build();
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      const existingAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+        getAuditedAt: () => '2024-01-01T00:00:00.000Z',
+      };
+      context.dataAccess.Audit.findById.resolves(existingAudit);
+
+      const messageWithScrapeJobId = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          next: 'process-scrape',
+          auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+          scrapeJobId: 'scrape-job-456',
+        },
+      };
+
+      const result = await scrapeResultAudit.run(messageWithScrapeJobId, context);
+
+      // Should complete normally
+      expect(result.status).to.equal(200);
+      expect(stepWasExecuted).to.be.true;
+
+      // Verify CloudWatch was queried
+      expect(sendStub).to.have.been.called;
+
+      // Verify scrape results were fetched for the normal audit flow
+      expect(mockScrapeClient.getScrapeResultPaths).to.have.been.calledWith('scrape-job-456');
     });
   });
 });
