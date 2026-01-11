@@ -26,6 +26,7 @@ import links from './links.js';
 import readability from '../readability/preflight/handler.js';
 import accessibility from './accessibility.js';
 import headings from './headings.js';
+import formAccessibility from './form-accessibility.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const PREFLIGHT_STEP_IDENTIFY = 'identify';
@@ -48,6 +49,7 @@ export const AUDIT_H1_COUNT = 'h1-count';
 export const AUDIT_ACCESSIBILITY = 'accessibility';
 export const AUDIT_READABILITY = 'readability';
 export const AUDIT_HEADINGS = 'headings';
+export const AUDIT_FORM_ACCESSIBILITY = 'form-accessibility';
 
 const AVAILABLE_CHECKS = [
   AUDIT_CANONICAL,
@@ -59,6 +61,7 @@ const AVAILABLE_CHECKS = [
   AUDIT_ACCESSIBILITY,
   AUDIT_READABILITY,
   AUDIT_HEADINGS,
+  AUDIT_FORM_ACCESSIBILITY,
 ];
 
 export const PREFLIGHT_HANDLERS = {
@@ -68,6 +71,7 @@ export const PREFLIGHT_HANDLERS = {
   headings,
   readability,
   accessibility,
+  'form-accessibility': formAccessibility,
 };
 
 export async function scrapePages(context) {
