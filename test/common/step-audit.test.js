@@ -447,6 +447,11 @@ describe('Step-based Audit Tests', () => {
         .get('/')
         .reply(200, 'Success');
 
+      // Mock CloudWatch client to return no bot protection events
+      sandbox.stub(CloudWatchLogsClient.prototype, 'send').resolves({
+        events: [],
+      });
+
       // Mock ScrapeClient - getScrapeResultPaths returns a Map of URL to Path pairs
       const mockScrapeResultPaths = new Map([
         ['https://space.cat/', 's3://bucket/path1.json'],

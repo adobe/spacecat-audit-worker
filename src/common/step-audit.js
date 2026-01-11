@@ -144,12 +144,15 @@ export class StepAudit extends BaseAudit {
         const { queryBotProtectionLogs } = await import('../utils/cloudwatch-utils.js');
 
         const auditCreatedAt = new Date(stepContext.audit.getAuditedAt()).getTime();
+        log.info(`[BOT-BLOCKED] Checking bot protection for scrape job: ${auditContext.scrapeJobId}, auditCreatedAt: ${new Date(auditCreatedAt).toISOString()}`);
 
         const logEvents = await queryBotProtectionLogs(
           auditContext.scrapeJobId,
           context,
           auditCreatedAt,
         );
+
+        log.info(`[BOT-BLOCKED] Bot protection check result: found ${logEvents.length} bot protection events for job ${auditContext.scrapeJobId}`);
 
         if (logEvents.length > 0) {
           const scrapeUrlResults = await scrapeClient
@@ -186,7 +189,7 @@ export class StepAudit extends BaseAudit {
             .join(', ');
 
           log.warn(
-            `${type} audit for site ${siteId} aborted: bot protection detected for `
+            `[BOT-BLOCKED] ${type} audit for site ${siteId} aborted: bot protection detected for `
             + `${botProtectedUrls.length}/${totalUrlsCount} URLs. `
             + `HTTP Status Counts: [${statusDetails}]. `
             + `Blocker Types: [${blockerDetails}]. `
