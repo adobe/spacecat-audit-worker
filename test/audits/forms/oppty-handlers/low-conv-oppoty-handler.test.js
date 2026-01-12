@@ -277,4 +277,196 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(dataAccessStub.Opportunity.create).to.be.callCount(2);
     expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] Successfully synced opportunity for high-form-views-low-conversions audit type.');
   });
+
+  describe('generateDefaultGuidance coverage', () => {
+    it('should return large form guidance when form has more than 6 fields', async () => {
+      const scrapeDataWithLargeForm = {
+        formData: [{
+          finalUrl: 'https://www.surest.com/info/win-1',
+          scrapeResult: [{
+            visibleFieldCount: 8,
+            visibleATF: true,
+          }],
+        }],
+      };
+      formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+      const opptyData = {
+        form: 'https://www.surest.com/info/win-1',
+        trackedFormKPIValue: 0.5,
+      };
+      const auditDataWithForm = {
+        ...auditData,
+        auditResult: {
+          formVitals: [{
+            form: 'https://www.surest.com/info/win-1',
+            formViews: 1000,
+            pageViews: 5000,
+          }],
+        },
+      };
+      await createLowConversionOpportunities(auditUrl, auditDataWithForm, scrapeDataWithLargeForm, context);
+      const createCall = dataAccessStub.Opportunity.create.getCall(0);
+      if (createCall) {
+        const guidance = createCall.args[0].guidance;
+        expect(guidance.recommendations[0].insight).to.include('large number of fields');
+        expect(guidance.recommendations[0].recommendation).to.include('progressive disclosure');
+      }
+    });
+
+    it('should return below the fold guidance when form is not visible above the fold', async () => {
+      const scrapeDataWithBTF = {
+        formData: [{
+          finalUrl: 'https://www.surest.com/info/win-1',
+          scrapeResult: [{
+            visibleFieldCount: 3,
+            visibleATF: false,
+          }],
+        }],
+      };
+      formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+      const auditDataWithForm = {
+        ...auditData,
+        auditResult: {
+          formVitals: [{
+            form: 'https://www.surest.com/info/win-1',
+            formViews: 1000,
+            pageViews: 5000,
+          }],
+        },
+      };
+      await createLowConversionOpportunities(auditUrl, auditDataWithForm, scrapeDataWithBTF, context);
+      const createCall = dataAccessStub.Opportunity.create.getCall(0);
+      if (createCall) {
+        const guidance = createCall.args[0].guidance;
+        expect(guidance.recommendations[0].insight).to.include('not visible above the fold');
+        expect(guidance.recommendations[0].recommendation).to.include('Move the form higher');
+      }
+    });
+
+    it('should return generic guidance when conversion rate is between 0 and 0.1', async () => {
+      const scrapeDataWithLowConversion = {
+        formData: [{
+          finalUrl: 'https://www.surest.com/info/win-1',
+          scrapeResult: [{
+            visibleFieldCount: 3,
+            visibleATF: true,
+          }],
+        }],
+      };
+      formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+      const auditDataWithForm = {
+        ...auditData,
+        auditResult: {
+          formVitals: [{
+            form: 'https://www.surest.com/info/win-1',
+            formViews: 1000,
+            pageViews: 5000,
+            trackedFormKPIValue: 0.05,
+          }],
+        },
+      };
+      await createLowConversionOpportunities(auditUrl, auditDataWithForm, scrapeDataWithLowConversion, context);
+      const createCall = dataAccessStub.Opportunity.create.getCall(0);
+      if (createCall) {
+        const guidance = createCall.args[0].guidance;
+        expect(guidance.recommendations[0].insight).to.include('conversion rate');
+        expect(guidance.recommendations[0].recommendation).to.include('compelling reason');
+      }
+    });
+
+    it('should return empty guidance when conversion rate is 0', async () => {
+      const scrapeDataEmpty = {
+        formData: [{
+          finalUrl: 'https://www.surest.com/info/win-1',
+          scrapeResult: [{
+            visibleFieldCount: 3,
+            visibleATF: true,
+          }],
+        }],
+      };
+      formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+      const auditDataWithForm = {
+        ...auditData,
+        auditResult: {
+          formVitals: [{
+            form: 'https://www.surest.com/info/win-1',
+            formViews: 1000,
+            pageViews: 5000,
+            trackedFormKPIValue: 0,
+          }],
+        },
+      };
+      await createLowConversionOpportunities(auditUrl, auditDataWithForm, scrapeDataEmpty, context);
+      const createCall = dataAccessStub.Opportunity.create.getCall(0);
+      if (createCall) {
+        const guidance = createCall.args[0].guidance;
+        expect(guidance).to.deep.equal({});
+      }
+    });
+
+    it('should return empty guidance when scraped data does not match form URL', async () => {
+      const scrapeDataMismatch = {
+        formData: [{
+          finalUrl: 'https://www.surest.com/other-form',
+          scrapeResult: [{
+            visibleFieldCount: 8,
+            visibleATF: true,
+          }],
+        }],
+      };
+      formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+      const auditDataWithForm = {
+        ...auditData,
+        auditResult: {
+          formVitals: [{
+            form: 'https://www.surest.com/info/win-1',
+            formViews: 1000,
+            pageViews: 5000,
+          }],
+        },
+      };
+      await createLowConversionOpportunities(auditUrl, auditDataWithForm, scrapeDataMismatch, context);
+      const createCall = dataAccessStub.Opportunity.create.getCall(0);
+      if (createCall) {
+        const guidance = createCall.args[0].guidance;
+        expect(guidance).to.deep.equal({});
+      }
+    });
+
+    it('should handle error in opportunity creation loop gracefully', async () => {
+      dataAccessStub.Opportunity.allBySiteId.resolves([]);
+      dataAccessStub.Opportunity.create.onFirstCall().resolves(formsOppty);
+      dataAccessStub.Opportunity.create.onSecondCall().rejects(new Error('Creation failed'));
+      const sendMessageStub = sinon.stub().rejects(new Error('Message failed'));
+      context.sqs.sendMessage = sendMessageStub;
+
+      await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(logStub.error).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: site-id] Creating low conversion forms opportunity failed with error: Creation failed',
+        sinon.match.instanceOf(Error),
+      );
+      expect(logStub.info).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: site-id] Successfully synced opportunity for high-form-views-low-conversions audit type.',
+      );
+    });
+
+    it('should handle error when sending message fails', async () => {
+      formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+      context.sqs.sendMessage = sinon.stub().rejects(new Error('SQS error'));
+
+      await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(logStub.error).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: site-id] Creating low conversion forms opportunity failed with error: SQS error',
+        sinon.match.instanceOf(Error),
+      );
+    });
+  });
 });

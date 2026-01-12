@@ -17,7 +17,8 @@ import sinon from 'sinon';
 import { describe } from 'mocha';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
-import { mapToPaidSuggestion, mapToPaidOpportunity } from '../../../src/paid-cookie-consent/guidance-opportunity-mapper.js';
+import { CopyObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { mapToPaidSuggestion, mapToPaidOpportunity, isLowSeverityGuidanceBody } from '../../../src/paid-cookie-consent/guidance-opportunity-mapper.js';
 
 const TEST_SITE_ID = 'some-id';
 const TEST_SITE = 'https://sample-page';
@@ -401,6 +402,248 @@ describe('Paid Cookie Consent opportunity mapper', () => {
       expect(result.data.dataSources).to.include('Site');
       expect(result.data.dataSources).to.include('RUM');
       expect(result.data.dataSources).to.include('Page');
+    });
+  });
+
+  describe('isLowSeverityGuidanceBody', () => {
+    it('should return true for "none" severity', () => {
+      const body = { issueSeverity: 'none' };
+      expect(isLowSeverityGuidanceBody(body)).to.be.true;
+    });
+
+    it('should return true for "low" severity', () => {
+      const body = { issueSeverity: 'low' };
+      expect(isLowSeverityGuidanceBody(body)).to.be.true;
+    });
+
+    it('should return true for "LOW" severity (case insensitive)', () => {
+      const body = { issueSeverity: 'LOW' };
+      expect(isLowSeverityGuidanceBody(body)).to.be.true;
+    });
+
+    it('should return true for "None" severity (case insensitive)', () => {
+      const body = { issueSeverity: 'None' };
+      expect(isLowSeverityGuidanceBody(body)).to.be.true;
+    });
+
+    it('should return false for "high" severity', () => {
+      const body = { issueSeverity: 'high' };
+      expect(isLowSeverityGuidanceBody(body)).to.be.false;
+    });
+
+    it('should return false for "medium" severity', () => {
+      const body = { issueSeverity: 'medium' };
+      expect(isLowSeverityGuidanceBody(body)).to.be.false;
+    });
+
+    it('should return false when issueSeverity is missing', () => {
+      const body = {};
+      expect(isLowSeverityGuidanceBody(body)).to.be.false;
+    });
+
+    it('should return false when body is null', () => {
+      expect(isLowSeverityGuidanceBody(null)).to.be.false;
+    });
+
+    it('should return false when body is undefined', () => {
+      expect(isLowSeverityGuidanceBody(undefined)).to.be.false;
+    });
+  });
+
+  describe('copySuggestedScreenshots', () => {
+    it('should copy screenshots when buckets are configured', async () => {
+      const context = {
+        env: {
+          S3_MYSTIQUE_BUCKET_NAME: 'mystique-bucket',
+          S3_SCRAPER_BUCKET_NAME: 'scraper-bucket',
+        },
+        log: mockLog,
+        s3Client: mockS3Client,
+      };
+
+      const guidance = {
+        body: { data: { mobile: 'mobile', desktop: 'desktop' } },
+        metadata: { scrape_job_id: 'test-job' },
+      };
+
+      await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
+
+      expect(mockS3Client.send).to.have.been.calledWith(sinon.match.instanceOf(HeadObjectCommand));
+      expect(mockS3Client.send).to.have.been.calledWith(sinon.match.instanceOf(CopyObjectCommand));
+      expect(mockLog.debug).to.have.been.calledWithMatch(/Starting screenshot copy/);
+      expect(mockLog.debug).to.have.been.calledWithMatch(/Successfully copied/);
+    });
+
+    it('should skip copying when mystique bucket is missing', async () => {
+      const context = {
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'scraper-bucket',
+        },
+        log: mockLog,
+        s3Client: mockS3Client,
+      };
+
+      const guidance = {
+        body: { data: { mobile: 'mobile', desktop: 'desktop' } },
+        metadata: { scrape_job_id: 'test-job' },
+      };
+
+      await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
+
+      expect(mockLog.warn).to.have.been.calledWithMatch(/S3 bucket configuration missing/);
+      expect(mockS3Client.send).not.to.have.been.called;
+    });
+
+    it('should skip copying when scraper bucket is missing', async () => {
+      const context = {
+        env: {
+          S3_MYSTIQUE_BUCKET_NAME: 'mystique-bucket',
+        },
+        log: mockLog,
+        s3Client: mockS3Client,
+      };
+
+      const guidance = {
+        body: { data: { mobile: 'mobile', desktop: 'desktop' } },
+        metadata: { scrape_job_id: 'test-job' },
+      };
+
+      await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
+
+      expect(mockLog.warn).to.have.been.calledWithMatch(/S3 bucket configuration missing/);
+      expect(mockS3Client.send).not.to.have.been.called;
+    });
+
+    it('should handle file not found error gracefully', async () => {
+      const notFoundError = new Error('Not Found');
+      notFoundError.name = 'NotFound';
+      mockS3Client.send.onFirstCall().rejects(notFoundError);
+
+      const context = {
+        env: {
+          S3_MYSTIQUE_BUCKET_NAME: 'mystique-bucket',
+          S3_SCRAPER_BUCKET_NAME: 'scraper-bucket',
+        },
+        log: mockLog,
+        s3Client: mockS3Client,
+      };
+
+      const guidance = {
+        body: { data: { mobile: 'mobile', desktop: 'desktop' } },
+        metadata: { scrape_job_id: 'test-job' },
+      };
+
+      await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
+
+      expect(mockLog.warn).to.have.been.calledWithMatch(/Suggested screenshot.*not found/);
+    });
+
+    it('should handle NoSuchKey error gracefully', async () => {
+      const noSuchKeyError = new Error('No Such Key');
+      noSuchKeyError.name = 'NoSuchKey';
+      mockS3Client.send.onFirstCall().rejects(noSuchKeyError);
+
+      const context = {
+        env: {
+          S3_MYSTIQUE_BUCKET_NAME: 'mystique-bucket',
+          S3_SCRAPER_BUCKET_NAME: 'scraper-bucket',
+        },
+        log: mockLog,
+        s3Client: mockS3Client,
+      };
+
+      const guidance = {
+        body: { data: { mobile: 'mobile', desktop: 'desktop' } },
+        metadata: { scrape_job_id: 'test-job' },
+      };
+
+      await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
+
+      expect(mockLog.warn).to.have.been.calledWithMatch(/Suggested screenshot.*not found/);
+    });
+
+    it('should handle other S3 errors gracefully', async () => {
+      const s3Error = new Error('S3 Service Error');
+      s3Error.name = 'ServiceError';
+      mockS3Client.send.onFirstCall().rejects(s3Error);
+
+      const context = {
+        env: {
+          S3_MYSTIQUE_BUCKET_NAME: 'mystique-bucket',
+          S3_SCRAPER_BUCKET_NAME: 'scraper-bucket',
+        },
+        log: mockLog,
+        s3Client: mockS3Client,
+      };
+
+      const guidance = {
+        body: { data: { mobile: 'mobile', desktop: 'desktop' } },
+        metadata: { scrape_job_id: 'test-job' },
+      };
+
+      await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
+
+      expect(mockLog.error).to.have.been.calledWithMatch(/Error copying suggested screenshot/);
+    });
+
+    it('should copy both mobile and desktop screenshots', async () => {
+      const context = {
+        env: {
+          S3_MYSTIQUE_BUCKET_NAME: 'mystique-bucket',
+          S3_SCRAPER_BUCKET_NAME: 'scraper-bucket',
+        },
+        log: mockLog,
+        s3Client: mockS3Client,
+      };
+
+      const guidance = {
+        body: { data: { mobile: 'mobile', desktop: 'desktop' } },
+        metadata: { scrape_job_id: 'test-job' },
+      };
+
+      await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
+
+      // Should check existence for both files
+      const headObjectCalls = mockS3Client.send.getCalls().filter(
+        (call) => call.args[0] instanceof HeadObjectCommand,
+      );
+      expect(headObjectCalls.length).to.be.at.least(2);
+
+      // Should copy both files
+      const copyObjectCalls = mockS3Client.send.getCalls().filter(
+        (call) => call.args[0] instanceof CopyObjectCommand,
+      );
+      expect(copyObjectCalls.length).to.be.at.least(2);
+    });
+
+    it('should use correct paths for screenshot copying', async () => {
+      const context = {
+        env: {
+          S3_MYSTIQUE_BUCKET_NAME: 'mystique-bucket',
+          S3_SCRAPER_BUCKET_NAME: 'scraper-bucket',
+        },
+        log: mockLog,
+        s3Client: mockS3Client,
+      };
+
+      const guidance = {
+        body: { data: { mobile: 'mobile', desktop: 'desktop' } },
+        metadata: { scrape_job_id: 'test-job-123' },
+      };
+
+      await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
+
+      // Check that correct source paths are used
+      const copyCalls = mockS3Client.send.getCalls().filter(
+        (call) => call.args[0] instanceof CopyObjectCommand,
+      );
+      const mobileCopy = copyCalls.find((call) => call.args[0].input.CopySource.includes('mobile-suggested.png'));
+      const desktopCopy = copyCalls.find((call) => call.args[0].input.CopySource.includes('desktop-suggested.png'));
+
+      expect(mobileCopy).to.exist;
+      expect(desktopCopy).to.exist;
+      expect(mobileCopy.args[0].input.CopySource).to.include('temp/consent-banner/test-job-123/mobile-suggested.png');
+      expect(desktopCopy.args[0].input.CopySource).to.include('temp/consent-banner/test-job-123/desktop-suggested.png');
     });
   });
 });

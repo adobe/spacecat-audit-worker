@@ -312,4 +312,99 @@ describe('createLowFormViewsOpportunities handler method', () => {
     // Should work normally with auditContext.data defined
     expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] successfully synced opportunity for site: site-id and high page views low form views audit type.');
   });
+
+  describe('handler loop coverage', () => {
+    it('should find existing opportunity and update it', async () => {
+      const existingOppty = {
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
+        getData: () => ({ form: 'https://www.surest.com/high-page-low-form-view' }),
+        getOrigin: () => 'AUTOMATION',
+        setAuditId: sinon.stub(),
+        setData: sinon.stub(),
+        setGuidance: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+        guidance: {},
+      };
+      dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
+
+      await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(existingOppty.setAuditId).to.have.been.called;
+      expect(existingOppty.setData).to.have.been.called;
+      expect(existingOppty.setGuidance).to.have.been.called;
+      expect(existingOppty.setUpdatedBy).to.have.been.calledWith('system');
+      expect(existingOppty.save).to.have.been.called;
+    });
+
+    it('should not set guidance if existing opportunity already has guidance', async () => {
+      const existingOppty = {
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
+        getData: () => ({ form: 'https://www.surest.com/high-page-low-form-view' }),
+        getOrigin: () => 'AUTOMATION',
+        setAuditId: sinon.stub(),
+        setData: sinon.stub(),
+        setGuidance: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+        guidance: { recommendations: [{ insight: 'existing' }] },
+      };
+      dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
+
+      await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(existingOppty.setGuidance).to.not.have.been.called;
+    });
+
+    it('should send message to mystique when formsList is empty', async () => {
+      const existingOppty = {
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
+        getData: () => ({
+          form: 'https://www.surest.com/high-page-low-form-view',
+          formDetails: { is_lead_gen: true },
+        }),
+        getOrigin: () => 'AUTOMATION',
+        setAuditId: sinon.stub(),
+        setData: sinon.stub(),
+        setGuidance: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+        guidance: {},
+      };
+      dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
+      context.sqs.sendMessage = sinon.stub().resolves({});
+
+      await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(context.sqs.sendMessage).to.have.been.called;
+    });
+
+    it('should handle error in opportunity creation loop gracefully', async () => {
+      dataAccessStub.Opportunity.allBySiteId.resolves([]);
+      dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('Creation failed'));
+
+      await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(logStub.error).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: site-id] creating forms opportunity for high page views low form views failed with error: Creation failed',
+        sinon.match.instanceOf(Error),
+      );
+      expect(logStub.info).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: site-id] successfully synced opportunity for site: site-id and high page views low form views audit type.',
+      );
+    });
+
+    it('should handle error when sending message fails', async () => {
+      highPageViewsLowFormViewsOptty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(highPageViewsLowFormViewsOptty);
+      context.sqs.sendMessage = sinon.stub().rejects(new Error('SQS error'));
+
+      await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(logStub.error).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: site-id] creating forms opportunity for high page views low form views failed with error: SQS error',
+        sinon.match.instanceOf(Error),
+      );
+    });
+  });
 });
