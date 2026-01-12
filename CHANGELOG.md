@@ -1,3 +1,10 @@
+## [1.279.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.3...v1.279.4) (2026-01-12)
+
+
+### Bug Fixes
+
+* empty suggestions ([#1811](https://github.com/adobe/spacecat-audit-worker/issues/1811)) ([dba072a](https://github.com/adobe/spacecat-audit-worker/commit/dba072a58ac9883d4e1d29ee36e9045b40ebce4b))
+
 ## [1.279.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.2...v1.279.3) (2026-01-12)
 
 
