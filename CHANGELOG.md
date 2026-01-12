@@ -1,3 +1,10 @@
+# [1.280.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.4...v1.280.0) (2026-01-12)
+
+
+### Features
+
+* Migrate to async suggestions through mystique ([#1823](https://github.com/adobe/spacecat-audit-worker/issues/1823)) ([61204b2](https://github.com/adobe/spacecat-audit-worker/commit/61204b282dd238059b1df5dcb22a494cf661b9ea))
+
 ## [1.279.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.3...v1.279.4) (2026-01-12)
 
 
