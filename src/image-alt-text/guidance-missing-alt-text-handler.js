@@ -65,7 +65,12 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
   Suggestion,
   log,
 ) {
+  const opportunityId = opportunity.getId?.() || opportunity.id || 'unknown';
+  log.debug(`[${AUDIT_TYPE}]: Starting clearSuggestionsForPagesAndCalculateMetrics for ${pageUrls.length} pages, opportunityId: ${opportunityId}`);
+
   const existingSuggestions = await opportunity.getSuggestions();
+  log.debug(`[${AUDIT_TYPE}]: Found ${existingSuggestions.length} total existing suggestions`);
+
   const pageUrlSet = new Set(pageUrls);
   /**
   * TODO: ASSETS-59781 - Update alt-text opportunity to use syncSuggestions
@@ -80,6 +85,8 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
     return !IGNORED_STATUSES.includes(suggestion.getStatus());
   });
 
+  log.info(`[${AUDIT_TYPE}]: Identified ${suggestionsToRemove.length} suggestions to remove for ${pageUrls.length} pages`);
+
   // Extract images from suggestions being removed
   const removedImages = suggestionsToRemove.map((suggestion) => {
     const rec = suggestion.getData()?.recommendations?.[0];
@@ -88,6 +95,8 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
       src: rec?.imageUrl,
     };
   }).filter((img) => img.pageUrl);
+
+  log.debug(`[${AUDIT_TYPE}]: Extracted ${removedImages.length} images from suggestions being removed`);
 
   // Calculate metrics for removed suggestions using getProjectedMetrics
   const removedMetrics = removedImages.length > 0
@@ -104,10 +113,13 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
     .map((s) => s.getData()?.recommendations?.[0]?.isDecorative)
     .filter((isDecorative) => isDecorative === true).length;
 
+  log.debug(`[${AUDIT_TYPE}]: Removed decorative images count: ${removedDecorativeCount}`);
+
   // Mark suggestions as OUTDATED
   if (suggestionsToRemove.length > 0) {
     await Suggestion.bulkUpdateStatus(suggestionsToRemove, SuggestionModel.STATUSES.OUTDATED);
     log.debug(`[${AUDIT_TYPE}]: Marked ${suggestionsToRemove.length} suggestions as OUTDATED for ${pageUrls.length} pages`);
+    log.info(`[${AUDIT_TYPE}]: Marked ${suggestionsToRemove.length} suggestions as OUTDATED for ${pageUrls.length} pages`);
   }
 
   return {
@@ -126,6 +138,9 @@ export default async function handler(message, context) {
   } = message;
   const { suggestions, pageUrls } = data || {};
 
+  log.info(`[${AUDIT_TYPE}]: Received Mystique response - messageId: ${messageId}, siteId: ${siteId}, auditId: ${auditId}`);
+  log.debug(`[${AUDIT_TYPE}]: Processing ${pageUrls?.length || 0} page URLs with ${suggestions?.length || 0} suggestions`);
+
   // Validate audit exists
   const audit = await Audit.findById(auditId);
   if (!audit) {
@@ -134,6 +149,7 @@ export default async function handler(message, context) {
   }
   const site = await Site.findById(siteId);
   const auditUrl = site.getBaseURL();
+  log.debug(`[${AUDIT_TYPE}]: Processing for baseURL: ${auditUrl}`);
 
   let altTextOppty;
   try {
@@ -142,7 +158,7 @@ export default async function handler(message, context) {
       (oppty) => oppty.getType() === AUDIT_TYPE,
     );
   } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`, { error: e.stack });
     throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
   }
 
@@ -152,6 +168,9 @@ export default async function handler(message, context) {
     throw new Error(errorMsg);
   }
 
+  const opportunityId = altTextOppty.getId?.() || altTextOppty.id || 'unknown';
+  log.info(`[${AUDIT_TYPE}]: Found opportunity ${opportunityId} for siteId: ${siteId}`);
+
   const existingData = altTextOppty.getData() || {};
   const processedSuggestionIds = new Set(existingData.processedSuggestionIds || []);
   if (processedSuggestionIds.has(messageId)) {
@@ -159,9 +178,14 @@ export default async function handler(message, context) {
     return ok();
   }
 
+  log.info(`[${AUDIT_TYPE}]: Processing new message ${messageId} for opportunityId: ${opportunityId} (${existingData.mystiqueResponsesReceived || 0}/${existingData.mystiqueResponsesExpected || 0} responses received so far)`);
+
   // Process the Mystique response
   if (pageUrls && Array.isArray(pageUrls) && pageUrls.length > 0) {
+    log.info(`[${AUDIT_TYPE}]: Processing ${pageUrls.length} page URLs for opportunityId: ${opportunityId}`);
+
     // Clear existing suggestions for the processed pages and calculate their metrics
+    log.debug(`[${AUDIT_TYPE}]: Clearing existing suggestions for ${pageUrls.length} pages`);
     const removedMetrics = await clearSuggestionsForPagesAndCalculateMetrics(
       altTextOppty,
       pageUrls,
@@ -171,6 +195,8 @@ export default async function handler(message, context) {
       log,
     );
 
+    log.info(`[${AUDIT_TYPE}]: Cleared suggestions - removed metrics: projectedTrafficLost=${removedMetrics.projectedTrafficLost}, projectedTrafficValue=${removedMetrics.projectedTrafficValue}, decorativeImagesCount=${removedMetrics.decorativeImagesCount}`);
+
     let newMetrics = {
       projectedTrafficLost: 0,
       projectedTrafficValue: 0,
@@ -178,6 +204,8 @@ export default async function handler(message, context) {
     };
 
     if (suggestions && suggestions.length > 0) {
+      log.info(`[${AUDIT_TYPE}]: Adding ${suggestions.length} new suggestions for opportunityId: ${opportunityId}`);
+
       const mappedSuggestions = mapMystiqueSuggestionsToSuggestionDTOs(
         suggestions,
         altTextOppty.getId(),
@@ -193,6 +221,7 @@ export default async function handler(message, context) {
         pageUrl: suggestion.pageUrl,
         src: suggestion.imageUrl,
       }));
+      log.debug(`[${AUDIT_TYPE}]: Calculating projected metrics for ${newImages.length} images`);
       newMetrics = await getProjectedMetrics({
         images: newImages,
         auditUrl,
@@ -205,6 +234,7 @@ export default async function handler(message, context) {
       newMetrics.decorativeImagesCount = newDecorativeCount;
 
       log.debug(`[${AUDIT_TYPE}]: Added ${suggestions.length} new suggestions for ${pageUrls.length} processed pages`);
+      log.info(`[${AUDIT_TYPE}]: New metrics - projectedTrafficLost=${newMetrics.projectedTrafficLost}, projectedTrafficValue=${newMetrics.projectedTrafficValue}, decorativeImagesCount=${newMetrics.decorativeImagesCount}`);
     } else {
       log.debug(`[${AUDIT_TYPE}]: No new suggestions for ${pageUrls.length} processed pages`);
     }
@@ -225,12 +255,16 @@ export default async function handler(message, context) {
       processedSuggestionIds: [...processedSuggestionIds, messageId],
     };
 
+    log.info(`[${AUDIT_TYPE}]: Updating opportunity ${opportunityId} - total metrics: projectedTrafficLost=${updatedOpportunityData.projectedTrafficLost}, projectedTrafficValue=${updatedOpportunityData.projectedTrafficValue}, decorativeImagesCount=${updatedOpportunityData.decorativeImagesCount}`);
+    log.info(`[${AUDIT_TYPE}]: Mystique responses progress: ${updatedOpportunityData.mystiqueResponsesReceived}/${existingData.mystiqueResponsesExpected || 0}`);
+
     altTextOppty.setAuditId(auditId);
     altTextOppty.setData(updatedOpportunityData);
     altTextOppty.setUpdatedBy('system');
     await altTextOppty.save();
+    log.info(`[${AUDIT_TYPE}]: Successfully saved opportunity ${opportunityId} with updated metrics`);
   } else {
-    log.info(`[${AUDIT_TYPE}]: No suggestions to process for siteId: ${siteId}`);
+    log.info(`[${AUDIT_TYPE}]: No page URLs to process for siteId: ${siteId}, messageId: ${messageId}`);
   }
   return ok();
 }

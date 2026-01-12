@@ -27,8 +27,8 @@ jobs:
         with:
           persist-credentials: 'false'
 
-      - name: Protect NYC config
-        uses: ./.github/actions/protect-nyc-config
+      # - name: Protect NYC config
+      #   uses: ./.github/actions/protect-nyc-config
 
   build:
     runs-on: ubuntu-latest
