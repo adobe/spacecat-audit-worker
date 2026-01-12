@@ -79,7 +79,6 @@ export async function processAltTextWithMystique(context) {
     } else {
       log.debug(`[${AUDIT_TYPE}]: Creating new opportunity for site ${siteId}`);
 
-      // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
       const mergedTags = mergeTagsWithHardcodedTags(AUDIT_TYPE, ['seo', 'accessibility']);
 
       const opportunityDTO = {

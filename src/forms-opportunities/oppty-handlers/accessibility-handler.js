@@ -22,6 +22,7 @@ import {
 import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToMystique } from '../../accessibility/utils/data-processing.js';
 import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from '../../accessibility/utils/constants.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
+import { mergeTagsWithHardcodedTags } from '../../common/tagMappings.js';
 
 const filterAccessibilityOpportunities = (opportunities) => opportunities.filter((opportunity) => opportunity.getTags()?.includes('Forms Accessibility'));
 
@@ -135,10 +136,6 @@ async function createOpportunity(auditId, siteId, context) {
     // change status to IGNORED for older opportunities
     await updateStatusToIgnored(dataAccess, siteId, log, null, filterAccessibilityOpportunities);
 
-    // Import tag merging utility
-    const { mergeTagsWithHardcodedTags } = await import('../../common/tagMappings.js');
-
-    // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
     const mergedTags = mergeTagsWithHardcodedTags(FORM_OPPORTUNITY_TYPES.FORM_A11Y, ['Forms Accessibility']);
 
     const opportunityData = {

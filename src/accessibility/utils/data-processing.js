@@ -34,6 +34,7 @@ import {
   generateBaseReportMarkdown,
 } from './generate-md-reports.js';
 import { AUDIT_PREFIXES, URL_SOURCE_SEPARATOR } from './constants.js';
+import { mergeTagsWithHardcodedTags } from '../../common/tagMappings.js';
 
 /**
  * Deletes the original JSON files after they've been processed
@@ -467,9 +468,6 @@ export async function createReportOpportunity(opportunityInstance, auditData, co
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
   try {
-    // Import tag merging utility
-    const { mergeTagsWithHardcodedTags } = await import('../../common/tagMappings.js');
-
     // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
     const mergedTags = mergeTagsWithHardcodedTags(
       opportunityInstance.type,

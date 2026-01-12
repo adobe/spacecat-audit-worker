@@ -52,7 +52,6 @@ export default async function handler(message, context) {
 
   const entity = convertToOpportunityEntity(siteId, auditId, auditOpportunity, guidance);
 
-  // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
   entity.tags = mergeTagsWithHardcodedTags(entity.type, entity.tags);
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);

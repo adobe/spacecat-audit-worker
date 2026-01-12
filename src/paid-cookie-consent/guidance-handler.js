@@ -46,7 +46,6 @@ export default async function handler(message, context) {
 
   const entity = mapToPaidOpportunity(siteId, url, audit, guidanceParsed);
 
-  // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
   entity.tags = mergeTagsWithHardcodedTags('consent-banner', entity.tags);
 
   // Always create a new opportunity

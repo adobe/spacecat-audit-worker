@@ -72,7 +72,6 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
       // eslint-disable-next-line no-await-in-loop,max-len
       const { projectedConversionValue = null } = (await calculateProjectedConversionValue(context, auditData.siteId, opptyData)) || {};
 
-      // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
       const mergedTags = mergeTagsWithHardcodedTags(FORM_OPPORTUNITY_TYPES.LOW_VIEWS, ['Form Placement']);
 
       const opportunityData = {

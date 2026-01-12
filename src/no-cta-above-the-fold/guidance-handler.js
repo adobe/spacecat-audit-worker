@@ -80,7 +80,6 @@ export default async function handler(message, context) {
   }
 
   const entity = mapToOpportunity(siteId, url, audit, guidanceParsed);
-  // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
   // Note: no-cta-above-the-fold creates generic-opportunity type, so tags should come from API
   if (entity.type !== 'generic-opportunity') {
     entity.tags = mergeTagsWithHardcodedTags(entity.type, entity.tags);

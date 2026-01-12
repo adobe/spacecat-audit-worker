@@ -112,7 +112,6 @@ export default async function handler(message, context) {
   // Create new paid-traffic opportunity for this period
   const entity = mapToPaidOpportunity(siteId, audit, period);
 
-  // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
   entity.tags = mergeTagsWithHardcodedTags(TRAFFIC_OPP_TYPE, entity.tags);
 
   const opportunity = await Opportunity.create(entity);

@@ -88,7 +88,6 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
       // eslint-disable-next-line no-await-in-loop,max-len
       const { projectedConversionValue = null } = (await calculateProjectedConversionValue(context, auditData.siteId, opptyData)) || {};
 
-      // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
       const mergedTags = mergeTagsWithHardcodedTags(FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION, ['Form Navigation']);
 
       const opportunityData = {

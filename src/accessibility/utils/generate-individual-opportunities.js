@@ -24,6 +24,7 @@ import { getAuditData, getCodeInfo } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 import { saveMystiqueValidationMetricsToS3, saveOpptyWithRetry } from './scrape-utils.js';
+import { mergeTagsWithHardcodedTags } from '../../common/tagMappings.js';
 
 /**
  * Extracts the 'source' query parameter from a URL and returns a clean URL
@@ -451,10 +452,6 @@ export async function createIndividualOpportunity(opportunityInstance, auditData
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
   try {
-    // Import tag merging utility
-    const { mergeTagsWithHardcodedTags } = await import('../../common/tagMappings.js');
-
-    // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
     const mergedTags = mergeTagsWithHardcodedTags(
       opportunityInstance.type,
       opportunityInstance.tags,
