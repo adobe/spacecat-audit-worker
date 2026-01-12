@@ -32,7 +32,8 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
 export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, log }) {
-  log.info(`[${AUDIT_TYPE}]: Starting syncAltTextSuggestions for opportunityId: ${opportunity.getId()}, newSuggestions: ${newSuggestionDTOs.length}`);
+  const opportunityId = opportunity.getId?.() || opportunity.id || 'unknown';
+  log.info(`[${AUDIT_TYPE}]: Starting syncAltTextSuggestions for opportunityId: ${opportunityId}, newSuggestions: ${newSuggestionDTOs.length}`);
 
   const existingSuggestions = await opportunity.getSuggestions();
   log.debug(`[${AUDIT_TYPE}]: Found ${existingSuggestions.length} existing suggestions`);
@@ -76,7 +77,7 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
       }
     }
 
-    log.info(`[${AUDIT_TYPE}]: Successfully synchronized ${suggestionsToAdd.length} suggestions for opportunityId: ${opportunity.getId()}`);
+    log.info(`[${AUDIT_TYPE}]: Successfully synchronized ${suggestionsToAdd.length} suggestions for opportunityId: ${opportunityId}`);
   }
 }
 
@@ -194,6 +195,7 @@ export async function sendAltTextOpportunityToMystique(
     // Batch the URLs to avoid sending too many at once
     const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
 
+    log.debug(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to Mystique in ${urlBatches.length} batch(es)`);
     log.info(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to Mystique in ${urlBatches.length} batch(es) via queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
 
     // Send each batch as a separate message
@@ -214,12 +216,15 @@ export async function sendAltTextOpportunityToMystique(
       };
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+      log.debug(`[${AUDIT_TYPE}]: Batch ${i + 1}/${urlBatches.length} sent to Mystique with ${batch.length} URLs`);
       log.info(`[${AUDIT_TYPE}]: Batch ${i + 1}/${urlBatches.length} sent to Mystique with ${batch.length} URLs for siteId: ${siteId}`);
       log.debug(`[${AUDIT_TYPE}]: Message sent to Mystique: ${JSON.stringify(mystiqueMessage)}`);
     }
 
+    log.debug(`[${AUDIT_TYPE}]: All ${urlBatches.length} batches sent to Mystique successfully`);
     log.info(`[${AUDIT_TYPE}]: Successfully sent all ${urlBatches.length} batches to Mystique for siteId: ${siteId}`);
   } catch (error) {
+    log.error(`[${AUDIT_TYPE}]: Failed to send alt-text opportunity to Mystique: ${error.message}`);
     log.error(`[${AUDIT_TYPE}]: Failed to send alt-text opportunity to Mystique for siteId: ${siteId}: ${error.message}`, { error: error.stack });
     throw error;
   }
@@ -240,12 +245,14 @@ export async function clearAltTextSuggestions({ opportunity, log }) {
     return;
   }
 
-  log.info(`[${AUDIT_TYPE}]: Starting clearAltTextSuggestions for opportunityId: ${opportunity.getId()}`);
+  const opportunityId = opportunity.getId?.() || opportunity.id || 'unknown';
+  log.info(`[${AUDIT_TYPE}]: Starting clearAltTextSuggestions for opportunityId: ${opportunityId}`);
 
   const existingSuggestions = await opportunity.getSuggestions();
 
   if (!existingSuggestions || existingSuggestions.length === 0) {
-    log.debug(`[${AUDIT_TYPE}]: No existing suggestions to clear for opportunityId: ${opportunity.getId()}`);
+    log.debug(`[${AUDIT_TYPE}]: No existing suggestions to clear`);
+    log.debug(`[${AUDIT_TYPE}]: No existing suggestions to clear for opportunityId: ${opportunityId}`);
     return;
   }
 
@@ -264,9 +271,11 @@ export async function clearAltTextSuggestions({ opportunity, log }) {
 
   if (suggestionsToRemove.length > 0) {
     await Promise.all(suggestionsToRemove.map((suggestion) => suggestion.remove()));
-    log.info(`[${AUDIT_TYPE}]: Cleared ${suggestionsToRemove.length} existing suggestions (preserved ${ignoredSuggestions.length} ignored suggestions) for opportunityId: ${opportunity.getId()}`);
+    log.info(`[${AUDIT_TYPE}]: Cleared ${suggestionsToRemove.length} existing suggestions (preserved ${ignoredSuggestions.length} ignored suggestions)`);
+    log.info(`[${AUDIT_TYPE}]: Cleared ${suggestionsToRemove.length} existing suggestions (preserved ${ignoredSuggestions.length} ignored suggestions) for opportunityId: ${opportunityId}`);
   } else {
-    log.info(`[${AUDIT_TYPE}]: No suggestions to clear (all ${existingSuggestions.length} suggestions are ignored) for opportunityId: ${opportunity.getId()}`);
+    log.debug(`[${AUDIT_TYPE}]: No suggestions to clear (all ${existingSuggestions.length} suggestions are ignored)`);
+    log.info(`[${AUDIT_TYPE}]: No suggestions to clear (all ${existingSuggestions.length} suggestions are ignored) for opportunityId: ${opportunityId}`);
   }
 }
 
@@ -282,11 +291,12 @@ export async function clearAltTextSuggestions({ opportunity, log }) {
  */
 export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, log }) {
   if (!isNonEmptyArray(newSuggestionDTOs)) {
-    log.debug(`[${AUDIT_TYPE}]: No new suggestions to add for opportunityId: ${opportunity.getId()}`);
+    log.debug(`[${AUDIT_TYPE}]: No new suggestions to add`);
     return;
   }
 
-  log.info(`[${AUDIT_TYPE}]: Adding ${newSuggestionDTOs.length} new suggestions to opportunityId: ${opportunity.getId()}`);
+  const opportunityId = opportunity.getId?.() || opportunity.id || 'unknown';
+  log.info(`[${AUDIT_TYPE}]: Adding ${newSuggestionDTOs.length} new suggestions to opportunityId: ${opportunityId}`);
 
   const updateResult = await opportunity.addSuggestions(newSuggestionDTOs);
 
@@ -301,7 +311,8 @@ export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, lo
     }
     log.warn(`[${AUDIT_TYPE}]: Partial success - ${updateResult.createdItems.length} suggestions added despite ${updateResult.errorItems.length} errors`);
   } else {
-    log.info(`[${AUDIT_TYPE}]: Successfully added ${newSuggestionDTOs.length} new suggestions to opportunityId: ${opportunity.getId()}`);
+    log.debug(`[${AUDIT_TYPE}]: Added ${newSuggestionDTOs.length} new suggestions`);
+    log.info(`[${AUDIT_TYPE}]: Successfully added ${newSuggestionDTOs.length} new suggestions to opportunityId: ${opportunityId}`);
   }
 }
 
@@ -312,7 +323,8 @@ export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, lo
  * @returns {Promise<void>}
  */
 export async function cleanupOutdatedSuggestions(opportunity, log) {
-  log.info(`[${AUDIT_TYPE}]: Starting cleanup of OUTDATED suggestions for opportunityId: ${opportunity.getId()}`);
+  const opportunityId = opportunity.getId?.() || opportunity.id || 'unknown';
+  log.info(`[${AUDIT_TYPE}]: Starting cleanup of OUTDATED suggestions for opportunityId: ${opportunityId}`);
 
   try {
     const allSuggestions = await opportunity.getSuggestions();
@@ -324,11 +336,14 @@ export async function cleanupOutdatedSuggestions(opportunity, log) {
 
     if (outdatedSuggestions.length > 0) {
       await Promise.all(outdatedSuggestions.map((suggestion) => suggestion.remove()));
-      log.info(`[${AUDIT_TYPE}]: Cleaned up ${outdatedSuggestions.length} OUTDATED suggestions for opportunityId: ${opportunity.getId()}`);
+      log.debug(`[${AUDIT_TYPE}]: Cleaned up ${outdatedSuggestions.length} OUTDATED suggestions`);
+      log.info(`[${AUDIT_TYPE}]: Cleaned up ${outdatedSuggestions.length} OUTDATED suggestions for opportunityId: ${opportunityId}`);
     } else {
-      log.debug(`[${AUDIT_TYPE}]: No OUTDATED suggestions to clean up for opportunityId: ${opportunity.getId()}`);
+      log.debug(`[${AUDIT_TYPE}]: No OUTDATED suggestions to clean up`);
+      log.debug(`[${AUDIT_TYPE}]: No OUTDATED suggestions to clean up for opportunityId: ${opportunityId}`);
     }
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}]: Failed to cleanup OUTDATED suggestions for opportunityId: ${opportunity.getId()}: ${error.message}`, { error: error.stack });
+    log.error(`[${AUDIT_TYPE}]: Failed to cleanup OUTDATED suggestions: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}]: Failed to cleanup OUTDATED suggestions for opportunityId: ${opportunityId}: ${error.message}`, { error: error.stack });
   }
 }

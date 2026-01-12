@@ -65,7 +65,8 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
   Suggestion,
   log,
 ) {
-  log.debug(`[${AUDIT_TYPE}]: Starting clearSuggestionsForPagesAndCalculateMetrics for ${pageUrls.length} pages, opportunityId: ${opportunity.getId()}`);
+  const opportunityId = opportunity.getId?.() || opportunity.id || 'unknown';
+  log.debug(`[${AUDIT_TYPE}]: Starting clearSuggestionsForPagesAndCalculateMetrics for ${pageUrls.length} pages, opportunityId: ${opportunityId}`);
 
   const existingSuggestions = await opportunity.getSuggestions();
   log.debug(`[${AUDIT_TYPE}]: Found ${existingSuggestions.length} total existing suggestions`);
@@ -117,6 +118,7 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
   // Mark suggestions as OUTDATED
   if (suggestionsToRemove.length > 0) {
     await Suggestion.bulkUpdateStatus(suggestionsToRemove, SuggestionModel.STATUSES.OUTDATED);
+    log.debug(`[${AUDIT_TYPE}]: Marked ${suggestionsToRemove.length} suggestions as OUTDATED for ${pageUrls.length} pages`);
     log.info(`[${AUDIT_TYPE}]: Marked ${suggestionsToRemove.length} suggestions as OUTDATED for ${pageUrls.length} pages`);
   }
 
@@ -142,7 +144,7 @@ export default async function handler(message, context) {
   // Validate audit exists
   const audit = await Audit.findById(auditId);
   if (!audit) {
-    log.warn(`[${AUDIT_TYPE}]: No audit found for auditId: ${auditId}, messageId: ${messageId}`);
+    log.warn(`[${AUDIT_TYPE}]: No audit found for auditId: ${auditId}`);
     return notFound();
   }
   const site = await Site.findById(siteId);
@@ -166,20 +168,21 @@ export default async function handler(message, context) {
     throw new Error(errorMsg);
   }
 
-  log.info(`[${AUDIT_TYPE}]: Found opportunity ${altTextOppty.getId()} for siteId: ${siteId}`);
+  const opportunityId = altTextOppty.getId?.() || altTextOppty.id || 'unknown';
+  log.info(`[${AUDIT_TYPE}]: Found opportunity ${opportunityId} for siteId: ${siteId}`);
 
   const existingData = altTextOppty.getData() || {};
   const processedSuggestionIds = new Set(existingData.processedSuggestionIds || []);
   if (processedSuggestionIds.has(messageId)) {
-    log.info(`[${AUDIT_TYPE}]: Message ${messageId} already processed for opportunityId: ${altTextOppty.getId()}. Skipping processing.`);
+    log.info(`[${AUDIT_TYPE}]: Suggestions with id ${messageId} already processed. Skipping processing.`);
     return ok();
   }
 
-  log.info(`[${AUDIT_TYPE}]: Processing new message ${messageId} for opportunityId: ${altTextOppty.getId()} (${existingData.mystiqueResponsesReceived || 0}/${existingData.mystiqueResponsesExpected || 0} responses received so far)`);
+  log.info(`[${AUDIT_TYPE}]: Processing new message ${messageId} for opportunityId: ${opportunityId} (${existingData.mystiqueResponsesReceived || 0}/${existingData.mystiqueResponsesExpected || 0} responses received so far)`);
 
   // Process the Mystique response
   if (pageUrls && Array.isArray(pageUrls) && pageUrls.length > 0) {
-    log.info(`[${AUDIT_TYPE}]: Processing ${pageUrls.length} page URLs for opportunityId: ${altTextOppty.getId()}`);
+    log.info(`[${AUDIT_TYPE}]: Processing ${pageUrls.length} page URLs for opportunityId: ${opportunityId}`);
 
     // Clear existing suggestions for the processed pages and calculate their metrics
     log.debug(`[${AUDIT_TYPE}]: Clearing existing suggestions for ${pageUrls.length} pages`);
@@ -201,7 +204,7 @@ export default async function handler(message, context) {
     };
 
     if (suggestions && suggestions.length > 0) {
-      log.info(`[${AUDIT_TYPE}]: Adding ${suggestions.length} new suggestions for opportunityId: ${altTextOppty.getId()}`);
+      log.info(`[${AUDIT_TYPE}]: Adding ${suggestions.length} new suggestions for opportunityId: ${opportunityId}`);
 
       const mappedSuggestions = mapMystiqueSuggestionsToSuggestionDTOs(
         suggestions,
@@ -230,9 +233,10 @@ export default async function handler(message, context) {
       const newDecorativeCount = suggestions.filter((s) => s.isDecorative === true).length;
       newMetrics.decorativeImagesCount = newDecorativeCount;
 
-      log.info(`[${AUDIT_TYPE}]: Added ${suggestions.length} new suggestions - new metrics: projectedTrafficLost=${newMetrics.projectedTrafficLost}, projectedTrafficValue=${newMetrics.projectedTrafficValue}, decorativeImagesCount=${newMetrics.decorativeImagesCount}`);
+      log.debug(`[${AUDIT_TYPE}]: Added ${suggestions.length} new suggestions for ${pageUrls.length} processed pages`);
+      log.info(`[${AUDIT_TYPE}]: New metrics - projectedTrafficLost=${newMetrics.projectedTrafficLost}, projectedTrafficValue=${newMetrics.projectedTrafficValue}, decorativeImagesCount=${newMetrics.decorativeImagesCount}`);
     } else {
-      log.info(`[${AUDIT_TYPE}]: No new suggestions to add for ${pageUrls.length} processed pages`);
+      log.debug(`[${AUDIT_TYPE}]: No new suggestions for ${pageUrls.length} processed pages`);
     }
 
     // Update opportunity data: subtract removed metrics, add new metrics
@@ -251,14 +255,14 @@ export default async function handler(message, context) {
       processedSuggestionIds: [...processedSuggestionIds, messageId],
     };
 
-    log.info(`[${AUDIT_TYPE}]: Updating opportunity ${altTextOppty.getId()} - total metrics: projectedTrafficLost=${updatedOpportunityData.projectedTrafficLost}, projectedTrafficValue=${updatedOpportunityData.projectedTrafficValue}, decorativeImagesCount=${updatedOpportunityData.decorativeImagesCount}`);
+    log.info(`[${AUDIT_TYPE}]: Updating opportunity ${opportunityId} - total metrics: projectedTrafficLost=${updatedOpportunityData.projectedTrafficLost}, projectedTrafficValue=${updatedOpportunityData.projectedTrafficValue}, decorativeImagesCount=${updatedOpportunityData.decorativeImagesCount}`);
     log.info(`[${AUDIT_TYPE}]: Mystique responses progress: ${updatedOpportunityData.mystiqueResponsesReceived}/${existingData.mystiqueResponsesExpected || 0}`);
 
     altTextOppty.setAuditId(auditId);
     altTextOppty.setData(updatedOpportunityData);
     altTextOppty.setUpdatedBy('system');
     await altTextOppty.save();
-    log.info(`[${AUDIT_TYPE}]: Successfully saved opportunity ${altTextOppty.getId()} with updated metrics`);
+    log.info(`[${AUDIT_TYPE}]: Successfully saved opportunity ${opportunityId} with updated metrics`);
   } else {
     log.info(`[${AUDIT_TYPE}]: No page URLs to process for siteId: ${siteId}, messageId: ${messageId}`);
   }
