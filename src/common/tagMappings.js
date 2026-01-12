@@ -84,18 +84,21 @@ export const getTagsForOpportunityType = (opportunityType) => (
  * @returns {string[]} Array with hardcoded tags plus preserved 'isElmo'/'isASO' tags
  */
 export const mergeTagsWithHardcodedTags = (opportunityType, currentTags = []) => {
+  // Normalize currentTags to handle null/undefined
+  const normalizedTags = currentTags || [];
+
   // Skip Generic Opportunity - tags come from API
   if (opportunityType === 'generic-opportunity') {
-    return currentTags;
+    return normalizedTags;
   }
 
   const hardcodedTags = getTagsForOpportunityType(opportunityType);
   if (hardcodedTags.length === 0) {
-    return currentTags;
+    return normalizedTags;
   }
 
   // Preserve 'isElmo' and 'isASO' tags from existing tags, ignore all others
-  const preservedTags = currentTags.filter((tag) => tag === 'isElmo' || tag === 'isASO');
+  const preservedTags = normalizedTags.filter((tag) => tag === 'isElmo' || tag === 'isASO');
 
   // Start with hardcoded tags, then add preserved tags if not already present
   const mergedTags = [...hardcodedTags];
