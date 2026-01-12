@@ -435,7 +435,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
     };
     log.info(`[Headings AI Suggestions] Healthy tags object: ${JSON.stringify(healthyTagsObject)}`);
 
-    const brandGuidelines = await getBrandGuidelines(healthyTagsObject, log, context);
+    const brandGuidelines = await getBrandGuidelines(healthyTagsObject, log, context, site);
     const auditResultsPromises = auditResults.map(async (result) => {
       if (result.status === 'fulfilled' && result.value) {
         const { url, checks } = result.value;
