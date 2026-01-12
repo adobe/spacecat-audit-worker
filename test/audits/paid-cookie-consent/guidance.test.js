@@ -817,5 +817,551 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       expect(Opportunity.create).to.have.been.called;
       expect(Suggestion.create).to.have.been.called;
     });
+
+    it('should handle getGuidanceObj with guidance[0] having body property', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidanceWithBody = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance: guidanceWithBody } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should handle getGuidanceObj with guidance[0] but no body', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidanceNoBody = [{
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance: guidanceNoBody } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should handle getGuidanceObj with empty guidance array', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance: [] } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(logStub.debug).to.have.been.called;
+    });
+
+    it('should handle getGuidanceObj with null guidance', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance: null } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(logStub.debug).to.have.been.called;
+    });
+
+    it('should handle mapToPaidSuggestion returning suggestion data', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(Suggestion.create).to.have.been.calledOnce;
+      expect(logStub.info).to.have.been.calledWithMatch(/Created suggestion for opportunity opptyId/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Created suggestion for opportunity opptyId/);
+    });
+
+    it('should handle existing opportunities with different statuses', async () => {
+      const approvedOppty = {
+        getId: () => 'opptyId-approved',
+        getType: () => 'consent-banner',
+        getStatus: () => 'APPROVED',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      const inProgressOppty = {
+        getId: () => 'opptyId-in-progress',
+        getType: () => 'consent-banner',
+        getStatus: () => 'IN_PROGRESS',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      Opportunity.allBySiteId.resolves([approvedOppty, inProgressOppty]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      // Only NEW opportunities should be marked as IGNORED
+      expect(approvedOppty.setStatus).to.not.have.been.called;
+      expect(inProgressOppty.setStatus).to.not.have.been.called;
+    });
+
+    it('should handle existing opportunities with different updatedBy values', async () => {
+      const userOppty = {
+        getId: () => 'opptyId-user',
+        getType: () => 'consent-banner',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'user@example.com',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      Opportunity.allBySiteId.resolves([userOppty]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      // Only system opportunities should be marked as IGNORED
+      expect(userOppty.setStatus).to.not.have.been.called;
+    });
+
+    it('should handle existing opportunities matching newly created opportunity ID', async () => {
+      const existingOppty = {
+        getId: () => 'opptyId', // Same ID as newly created
+        getType: () => 'consent-banner',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      Opportunity.allBySiteId.resolves([existingOppty]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      // Should not mark the newly created opportunity as IGNORED
+      expect(existingOppty.setStatus).to.not.have.been.called;
+    });
+
+    it('should handle multiple existing opportunities to ignore', async () => {
+      const oppty1 = {
+        getId: () => 'opptyId-1',
+        getType: () => 'consent-banner',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      const oppty2 = {
+        getId: () => 'opptyId-2',
+        getType: () => 'consent-banner',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      const oppty3 = {
+        getId: () => 'opptyId-3',
+        getType: () => 'consent-banner',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      Opportunity.allBySiteId.resolves([oppty1, oppty2, oppty3]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(oppty1.setStatus).to.have.been.calledWith('IGNORED');
+      expect(oppty2.setStatus).to.have.been.calledWith('IGNORED');
+      expect(oppty3.setStatus).to.have.been.calledWith('IGNORED');
+      expect(logStub.debug).to.have.been.calledWithMatch(/Found \d+ existing NEW system opportunities/);
+    });
+
+    it('should handle getGuidanceObj returning object with spread guidance[0] and body', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidanceWithBody = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+        extraField: 'extra',
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance: guidanceWithBody } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should log opportunity JSON in success message', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      const mockOpportunity = {
+        getId: () => 'opptyId',
+        toJSON: () => ({ id: 'opptyId', type: 'consent-banner' }),
+      };
+      Opportunity.create.resolves(mockOpportunity);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(logStub.debug).to.have.been.calledWithMatch(/paid-cookie-consent  opportunity succesfully added/);
+    });
+
+    it('should handle mapToPaidSuggestion being called with correct parameters', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(Suggestion.create).to.have.been.calledOnce;
+      expect(logStub.info).to.have.been.calledWithMatch(/Created suggestion for opportunity opptyId:/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Created suggestion for opportunity opptyId/);
+    });
+
+    it('should handle existingMatches filtering with different getType values', async () => {
+      const consentBannerOppty = {
+        getId: () => 'opptyId-1',
+        getType: () => 'consent-banner',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      const otherTypeOppty = {
+        getId: () => 'opptyId-2',
+        getType: () => 'other-type',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      Opportunity.allBySiteId.resolves([consentBannerOppty, otherTypeOppty]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      // Only consent-banner opportunities should be marked as IGNORED
+      expect(consentBannerOppty.setStatus).to.have.been.calledWith('IGNORED');
+      expect(otherTypeOppty.setStatus).to.not.have.been.called;
+    });
+
+    it('should handle existingMatches filtering with different status values', async () => {
+      const newOppty = {
+        getId: () => 'opptyId-new',
+        getType: () => 'consent-banner',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      const approvedOppty = {
+        getId: () => 'opptyId-approved',
+        getType: () => 'consent-banner',
+        getStatus: () => 'APPROVED',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      Opportunity.allBySiteId.resolves([newOppty, approvedOppty]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      // Only NEW opportunities should be marked as IGNORED
+      expect(newOppty.setStatus).to.have.been.calledWith('IGNORED');
+      expect(approvedOppty.setStatus).to.not.have.been.called;
+    });
+
+    it('should handle existingMatches filtering with different updatedBy values', async () => {
+      const systemOppty = {
+        getId: () => 'opptyId-system',
+        getType: () => 'consent-banner',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      const userOppty = {
+        getId: () => 'opptyId-user',
+        getType: () => 'consent-banner',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'user@example.com',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      Opportunity.allBySiteId.resolves([systemOppty, userOppty]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      // Only system opportunities should be marked as IGNORED
+      expect(systemOppty.setStatus).to.have.been.calledWith('IGNORED');
+      expect(userOppty.setStatus).to.not.have.been.called;
+    });
+
+    it('should handle existingMatches filtering excluding newly created opportunity', async () => {
+      const existingOppty = {
+        getId: () => 'opptyId', // Same ID as newly created
+        getType: () => 'consent-banner',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      Opportunity.allBySiteId.resolves([existingOppty]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      // Should not mark the newly created opportunity as IGNORED
+      expect(existingOppty.setStatus).to.not.have.been.called;
+    });
+
+    it('should handle multiple existing opportunities being marked as IGNORED', async () => {
+      const oppty1 = {
+        getId: () => 'opptyId-1',
+        getType: () => 'consent-banner',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      const oppty2 = {
+        getId: () => 'opptyId-2',
+        getType: () => 'consent-banner',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      const oppty3 = {
+        getId: () => 'opptyId-3',
+        getType: () => 'consent-banner',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'system',
+        setStatus: sinon.stub(),
+        save: sinon.stub().resolvesThis(),
+      };
+      Opportunity.allBySiteId.resolves([oppty1, oppty2, oppty3]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(oppty1.setStatus).to.have.been.calledWith('IGNORED');
+      expect(oppty2.setStatus).to.have.been.calledWith('IGNORED');
+      expect(oppty3.setStatus).to.have.been.calledWith('IGNORED');
+      expect(logStub.debug).to.have.been.calledWithMatch(/Found 3 existing NEW system opportunities/);
+      expect(logStub.info).to.have.been.calledWithMatch(/Marked opportunity opptyId-1 as IGNORED/);
+      expect(logStub.info).to.have.been.calledWithMatch(/Marked opportunity opptyId-2 as IGNORED/);
+      expect(logStub.info).to.have.been.calledWithMatch(/Marked opportunity opptyId-3 as IGNORED/);
+    });
   });
 });

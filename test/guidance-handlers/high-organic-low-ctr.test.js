@@ -380,4 +380,123 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     expect(legacyOpportunity.save).to.have.been.called;
     expect(Suggestion.create).to.have.been.calledOnce;
   });
+
+  describe('update existing opportunity path coverage', () => {
+    it('should update existing opportunity with new audit data', async () => {
+      Opportunity.allBySiteId.resolves([dummyOpportunity]);
+
+      const message = {
+        auditId: 'new-audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account',
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(dummyOpportunity.setAuditId).to.have.been.calledWith('new-audit-id');
+      expect(dummyOpportunity.setData).to.have.been.called;
+      expect(dummyOpportunity.setGuidance).to.have.been.called;
+      expect(dummyOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+      expect(dummyOpportunity.save).to.have.been.called;
+      expect(log.debug).to.have.been.calledWithMatch(/Existing Opportunity found for page.*Updating it with new data/);
+    });
+
+    it('should merge existing data with new entity data', async () => {
+      const existingData = {
+        page: 'https://abc.com/abc-adoption/account',
+        existingField: 'existing-value',
+      };
+      dummyOpportunity.getData.returns(existingData);
+      Opportunity.allBySiteId.resolves([dummyOpportunity]);
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account',
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      await handler(message, context);
+
+      const setDataCall = dummyOpportunity.setData.getCall(0).args[0];
+      expect(setDataCall).to.include(existingData);
+      expect(setDataCall).to.include({ page: 'https://abc.com/abc-adoption/account' });
+    });
+
+    it('should delete all previous suggestions before creating new ones', async () => {
+      const oldSuggestion1 = {
+        remove: sandbox.stub().resolves(),
+        getUpdatedBy: sandbox.stub().returns('system'),
+      };
+      const oldSuggestion2 = {
+        remove: sandbox.stub().resolves(),
+        getUpdatedBy: sandbox.stub().returns('system'),
+      };
+      dummyOpportunity.getSuggestions.resolves([oldSuggestion1, oldSuggestion2]);
+      Opportunity.allBySiteId.resolves([dummyOpportunity]);
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account',
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(oldSuggestion1.remove).to.have.been.called;
+      expect(oldSuggestion2.remove).to.have.been.called;
+      expect(Suggestion.create).to.have.been.calledOnce;
+    });
+
+    it('should create suggestion with PENDING_VALIDATION status when site requires validation', async () => {
+      Opportunity.allBySiteId.resolves([dummyOpportunity]);
+      context.site = { requiresValidation: true };
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account',
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      await handler(message, context);
+
+      const suggestionArg = Suggestion.create.getCall(0).args[0];
+      expect(suggestionArg.status).to.equal(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
+    });
+
+    it('should create suggestion with NEW status when site does not require validation', async () => {
+      Opportunity.allBySiteId.resolves([dummyOpportunity]);
+      context.site = { requiresValidation: false };
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account',
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      await handler(message, context);
+
+      const suggestionArg = Suggestion.create.getCall(0).args[0];
+      expect(suggestionArg.status).to.equal(SuggestionDataAccess.STATUSES.NEW);
+    });
+  });
 });

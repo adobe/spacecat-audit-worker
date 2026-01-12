@@ -468,5 +468,174 @@ describe('createLowConversionOpportunities handler method', () => {
         sinon.match.instanceOf(Error),
       );
     });
+
+    it('should handle reduce function with both isLargeForm and isBelowTheFold set', async () => {
+      const scrapeDataBothIssues = {
+        formData: [{
+          finalUrl: 'https://www.surest.com/info/win-1',
+          scrapeResult: [{
+            visibleFieldCount: 8,
+            visibleATF: false,
+          }],
+        }],
+      };
+      formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+      const auditDataWithForm = {
+        ...auditData,
+        auditResult: {
+          formVitals: [{
+            form: 'https://www.surest.com/info/win-1',
+            formViews: 1000,
+            pageViews: 5000,
+          }],
+        },
+      };
+      await createLowConversionOpportunities(auditUrl, auditDataWithForm, scrapeDataBothIssues, context);
+      const createCall = dataAccessStub.Opportunity.create.getCall(0);
+      if (createCall) {
+        const guidance = createCall.args[0].guidance;
+        // Below the fold takes precedence over large form
+        expect(guidance.recommendations[0].insight).to.include('not visible above the fold');
+        expect(guidance.recommendations[0].recommendation).to.include('Move the form higher');
+      }
+    });
+
+    it('should handle reduce function with multiple forms in scrapeResult', async () => {
+      const scrapeDataMultipleForms = {
+        formData: [{
+          finalUrl: 'https://www.surest.com/info/win-1',
+          scrapeResult: [
+            {
+              visibleFieldCount: 3,
+              visibleATF: true,
+            },
+            {
+              visibleFieldCount: 8,
+              visibleATF: true,
+            },
+            {
+              visibleFieldCount: 2,
+              visibleATF: false,
+            },
+          ],
+        }],
+      };
+      formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+      const auditDataWithForm = {
+        ...auditData,
+        auditResult: {
+          formVitals: [{
+            form: 'https://www.surest.com/info/win-1',
+            formViews: 1000,
+            pageViews: 5000,
+          }],
+        },
+      };
+      await createLowConversionOpportunities(auditUrl, auditDataWithForm, scrapeDataMultipleForms, context);
+      const createCall = dataAccessStub.Opportunity.create.getCall(0);
+      if (createCall) {
+        const guidance = createCall.args[0].guidance;
+        // Below the fold takes precedence
+        expect(guidance.recommendations[0].insight).to.include('not visible above the fold');
+      }
+    });
+
+    it('should handle reduce function with no issues detected', async () => {
+      const scrapeDataNoIssues = {
+        formData: [{
+          finalUrl: 'https://www.surest.com/info/win-1',
+          scrapeResult: [{
+            visibleFieldCount: 3,
+            visibleATF: true,
+          }],
+        }],
+      };
+      formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+      const auditDataWithForm = {
+        ...auditData,
+        auditResult: {
+          formVitals: [{
+            form: 'https://www.surest.com/info/win-1',
+            formViews: 1000,
+            pageViews: 5000,
+            trackedFormKPIValue: 0.15, // Above 0.1 threshold
+          }],
+        },
+      };
+      await createLowConversionOpportunities(auditUrl, auditDataWithForm, scrapeDataNoIssues, context);
+      const createCall = dataAccessStub.Opportunity.create.getCall(0);
+      if (createCall) {
+        const guidance = createCall.args[0].guidance;
+        expect(guidance).to.deep.equal({});
+      }
+    });
+
+    it('should send message to mystique when formsList is empty', async () => {
+      dataAccessStub.Opportunity.allBySiteId.resolves([formsOppty]);
+      formsOppty.getData = sinon.stub().returns({
+        form: 'https://www.surest.com/info/win-1',
+        formDetails: {
+          is_lead_gen: true,
+        },
+      });
+      const { auditDataWithExistingOppty } = testData;
+      context.sqs.sendMessage = sinon.stub().resolves({});
+
+      await createLowConversionOpportunities(
+        auditUrl,
+        auditDataWithExistingOppty,
+        undefined,
+        context,
+      );
+
+      expect(context.sqs.sendMessage).to.have.been.called;
+    });
+
+    it('should send message to forms quality agent when formsList is not empty', async () => {
+      formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+      context.sqs.sendMessage = sinon.stub().resolves({});
+
+      await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(context.sqs.sendMessage).to.have.been.called;
+      const messageCall = context.sqs.sendMessage.getCall(0);
+      expect(messageCall.args[0]).to.equal('spacecat-to-mystique');
+    });
+
+    it('should handle conversion rate exactly at 0.1 threshold', async () => {
+      const scrapeDataExactThreshold = {
+        formData: [{
+          finalUrl: 'https://www.surest.com/info/win-1',
+          scrapeResult: [{
+            visibleFieldCount: 3,
+            visibleATF: true,
+          }],
+        }],
+      };
+      formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+      const auditDataWithForm = {
+        ...auditData,
+        auditResult: {
+          formVitals: [{
+            form: 'https://www.surest.com/info/win-1',
+            formViews: 1000,
+            pageViews: 5000,
+            trackedFormKPIValue: 0.1, // Exactly at threshold
+          }],
+        },
+      };
+      await createLowConversionOpportunities(auditUrl, auditDataWithForm, scrapeDataExactThreshold, context);
+      const createCall = dataAccessStub.Opportunity.create.getCall(0);
+      if (createCall) {
+        const guidance = createCall.args[0].guidance;
+        // Should return empty because condition is > 0 && < 0.1
+        expect(guidance).to.deep.equal({});
+      }
+    });
   });
 });

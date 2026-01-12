@@ -17,6 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 use(sinonChai);
@@ -797,6 +798,446 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
       expect(Opportunity.create).to.have.been.calledOnce;
       expect(Suggestion.create).not.to.have.been.called;
+    });
+
+    it('should handle ignorePreviousOpportunitiesForPeriod with no candidates', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(logStub.debug).to.have.been.calledWithMatch(/Ignored 0 existing paid-traffic opportunities/);
+    });
+
+    it('should handle ignorePreviousOpportunitiesForPeriod excluding new opportunity ID', async () => {
+      const oldOppty = {
+        getType: () => 'paid-traffic',
+        getStatus: () => 'NEW',
+        getId: () => newOpportunityId, // Same as newly created
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => ({ week: 1 }),
+        getTitle: () => 'Old PT Oppty',
+      };
+      Opportunity.allBySiteId.resolves([oldOppty]);
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      // Should not ignore the newly created opportunity
+      expect(oldOppty.setStatus).to.not.have.been.called;
+    });
+
+    it('should handle ignorePreviousOpportunitiesForPeriod with opportunities having different types', async () => {
+      const paidTrafficOppty = {
+        getType: () => 'paid-traffic',
+        getStatus: () => 'NEW',
+        getId: () => 'old-1',
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => ({ week: 1 }),
+        getTitle: () => 'Old PT Oppty',
+      };
+      const otherTypeOppty = {
+        getType: () => 'other-type',
+        getStatus: () => 'NEW',
+        getId: () => 'old-2',
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => ({}),
+        getTitle: () => 'Other Oppty',
+      };
+      Opportunity.allBySiteId.resolves([paidTrafficOppty, otherTypeOppty]);
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      // Only paid-traffic opportunities should be ignored
+      expect(paidTrafficOppty.setStatus).to.have.been.calledWith('IGNORED');
+      expect(otherTypeOppty.setStatus).to.not.have.been.called;
+    });
+
+    it('should handle ignorePreviousOpportunitiesForPeriod with opportunities having different statuses', async () => {
+      const newOppty = {
+        getType: () => 'paid-traffic',
+        getStatus: () => 'NEW',
+        getId: () => 'old-new',
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => ({ week: 1 }),
+        getTitle: () => 'Old PT Oppty',
+      };
+      const ignoredOppty = {
+        getType: () => 'paid-traffic',
+        getStatus: () => 'IGNORED',
+        getId: () => 'old-ignored',
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => ({ week: 1 }),
+        getTitle: () => 'Old PT Oppty Ignored',
+      };
+      Opportunity.allBySiteId.resolves([newOppty, ignoredOppty]);
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      // Only NEW opportunities should be ignored
+      expect(newOppty.setStatus).to.have.been.calledWith('IGNORED');
+      expect(ignoredOppty.setStatus).to.not.have.been.called;
+    });
+
+    it('should handle mapToAIInsightsSuggestions with empty reports array', async () => {
+      const emptyReportsGuidance = [{
+        body: {
+          reports: [],
+        },
+      }];
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: emptyReportsGuidance,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(Suggestion.create).not.to.have.been.called;
+    });
+
+    it('should handle mapToAIInsightsSuggestions with null root', async () => {
+      const nullRootGuidance = [null];
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: nullRootGuidance,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(Suggestion.create).not.to.have.been.called;
+    });
+
+    it('should handle mapToAIInsightsSuggestions with null body', async () => {
+      const nullBodyGuidance = [{
+        body: null,
+      }];
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: nullBodyGuidance,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(Suggestion.create).not.to.have.been.called;
+    });
+
+    it('should handle mapToAIInsightsSuggestions with non-array reports', async () => {
+      const nonArrayReportsGuidance = [{
+        body: {
+          reports: 'not-an-array',
+        },
+      }];
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: nonArrayReportsGuidance,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(Suggestion.create).not.to.have.been.called;
+    });
+
+    it('should handle mapToAIInsightsSuggestions with section without recommendations', async () => {
+      const noRecsGuidance = [{
+        body: {
+          reports: [
+            {
+              reportType: 'PAID_CAMPAIGN_PERFORMANCE',
+            },
+          ],
+        },
+      }];
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: noRecsGuidance,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(Suggestion.create).to.have.been.calledOnce;
+      const suggestion = Suggestion.create.getCall(0).args[0];
+      expect(suggestion.data.recommendations).to.be.an('array').that.has.length(0);
+    });
+
+    it('should handle mapToAIInsightsSuggestions with section with non-array recommendations', async () => {
+      const nonArrayRecsGuidance = [{
+        body: {
+          reports: [
+            {
+              reportType: 'PAID_CAMPAIGN_PERFORMANCE',
+              recommendations: 'not-an-array',
+            },
+          ],
+        },
+      }];
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: nonArrayRecsGuidance,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(Suggestion.create).to.have.been.calledOnce;
+      const suggestion = Suggestion.create.getCall(0).args[0];
+      expect(suggestion.data.recommendations).to.be.an('array').that.has.length(0);
+    });
+
+    it('should handle mapToPaidOpportunity with both week and month', async () => {
+      dummyAudit.getAuditResult = () => ({
+        siteId, week: 5, month: 3, year: 2025, temporalCondition: 'year=2025 AND month=3 AND week=5',
+      });
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      const createdArg = Opportunity.create.getCall(0).args[0];
+      expect(createdArg.data).to.include({ year: 2025, week: 5, month: 3 });
+      expect(createdArg.title).to.equal('Paid Traffic Weekly Report – Week 5 / 2025');
+    });
+
+    it('should handle mapToPaidOpportunity with only week', async () => {
+      dummyAudit.getAuditResult = () => ({
+        siteId, week: 10, year: 2024, temporalCondition: 'year=2024 AND week=10',
+      });
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      const createdArg = Opportunity.create.getCall(0).args[0];
+      expect(createdArg.data).to.include({ year: 2024, week: 10 });
+      expect(createdArg.data).to.not.have.property('month');
+      expect(createdArg.title).to.equal('Paid Traffic Weekly Report – Week 10 / 2024');
+    });
+
+    it('should handle mapToPaidOpportunity with only month', async () => {
+      dummyAudit.getAuditResult = () => ({
+        siteId, month: 8, year: 2024, temporalCondition: 'year=2024 AND month=8',
+      });
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      const createdArg = Opportunity.create.getCall(0).args[0];
+      expect(createdArg.data).to.include({ year: 2024, month: 8 });
+      expect(createdArg.data).to.not.have.property('week');
+      expect(createdArg.title).to.equal('Paid Traffic Monthly Report – Month 8 / 2024');
+    });
+
+    it('should handle mapToPaidOpportunity with week as 0', async () => {
+      dummyAudit.getAuditResult = () => ({
+        siteId, week: 0, year: 2024, temporalCondition: 'year=2024 AND week=0',
+      });
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      const createdArg = Opportunity.create.getCall(0).args[0];
+      expect(createdArg.data).to.include({ year: 2024, week: 0 });
+      expect(createdArg.title).to.equal('Paid Traffic Weekly Report – Week 0 / 2024');
+    });
+
+    it('should handle mapToPaidOpportunity with month as 0', async () => {
+      dummyAudit.getAuditResult = () => ({
+        siteId, month: 0, year: 2024, temporalCondition: 'year=2024 AND month=0',
+      });
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      const createdArg = Opportunity.create.getCall(0).args[0];
+      expect(createdArg.data).to.include({ year: 2024, month: 0 });
+      expect(createdArg.title).to.equal('Paid Traffic Monthly Report – Month 0 / 2024');
+    });
+
+    it('should handle ignorePreviousOpportunitiesForPeriod with multiple opportunities', async () => {
+      const oppty1 = {
+        getType: () => 'paid-traffic',
+        getStatus: () => 'NEW',
+        getId: () => 'old-1',
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => ({ week: 1 }),
+        getTitle: () => 'Old PT Oppty 1',
+      };
+      const oppty2 = {
+        getType: () => 'paid-traffic',
+        getStatus: () => 'NEW',
+        getId: () => 'old-2',
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => ({ week: 2 }),
+        getTitle: () => 'Old PT Oppty 2',
+      };
+      const oppty3 = {
+        getType: () => 'paid-traffic',
+        getStatus: () => 'NEW',
+        getId: () => 'old-3',
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => ({ month: 1 }),
+        getTitle: () => 'Old PT Oppty 3',
+      };
+      Opportunity.allBySiteId.resolves([oppty1, oppty2, oppty3]);
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(oppty1.setStatus).to.have.been.calledWith('IGNORED');
+      expect(oppty2.setStatus).to.have.been.calledWith('IGNORED');
+      expect(oppty3.setStatus).to.have.been.calledWith('IGNORED');
+      expect(logStub.debug).to.have.been.calledWithMatch(/Ignored 3 existing paid-traffic opportunities/);
+    });
+
+    it('should handle ignorePreviousOpportunitiesForPeriod with opportunity having null data', async () => {
+      const opptyNullData = {
+        getType: () => 'paid-traffic',
+        getStatus: () => 'NEW',
+        getId: () => 'old-null-data',
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => null,
+        getTitle: () => 'Old PT Oppty',
+      };
+      Opportunity.allBySiteId.resolves([opptyNullData]);
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(opptyNullData.setStatus).to.have.been.calledWith('IGNORED');
+      expect(logStub.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity/);
+    });
+
+    it('should handle ignorePreviousOpportunitiesForPeriod with opportunity having undefined week and month', async () => {
+      const opptyUndefined = {
+        getType: () => 'paid-traffic',
+        getStatus: () => 'NEW',
+        getId: () => 'old-undefined',
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => ({ week: undefined, month: undefined }),
+        getTitle: () => 'Old PT Oppty',
+      };
+      Opportunity.allBySiteId.resolves([opptyUndefined]);
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(opptyUndefined.setStatus).to.have.been.calledWith('IGNORED');
+      expect(logStub.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity.*week=undefined.*month=undefined/);
     });
   });
 });

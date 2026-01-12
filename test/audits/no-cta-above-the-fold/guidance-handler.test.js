@@ -547,6 +547,511 @@ describe("No CTA above the fold guidance handler", () => {
       const createCall = Opportunity.create.getCall(0).args[0];
       expect(createCall).to.exist;
     });
+
+    it('should handle opportunity with generic type and skip tag mapping', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+      const createCall = Opportunity.create.getCall(0).args[0];
+      // Generic opportunities should not have tag mapping applied (checked in handler line 84)
+      expect(createCall.type).to.equal('generic-opportunity');
+      // Verify tag mapping was not called for generic opportunities (line 84 condition prevents line 85)
+      expect(mockTagMappings.mergeTagsWithHardcodedTags).to.not.have.been.called;
+    });
+
+    it('should handle opportunity with generic type and skip tag mapping', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+      const createCall = Opportunity.create.getCall(0).args[0];
+      // Generic opportunities should not have tag mapping applied
+      expect(createCall.type).to.equal('generic-opportunity');
+    });
+
+    it('should handle existing opportunity with different opportunityType', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([
+        {
+          getId: () => "existing-oppty",
+          getType: () => "generic-opportunity",
+          getData: () => ({
+            opportunityType: "different-type",
+            page: pageUrl,
+          }),
+          getStatus: () => "NEW",
+        },
+      ]);
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should handle existing opportunity with different page URL', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([
+        {
+          getId: () => "existing-oppty",
+          getType: () => "generic-opportunity",
+          getData: () => ({
+            opportunityType: "no-cta-above-the-fold",
+            page: "https://different-url.com",
+          }),
+          getStatus: () => "NEW",
+        },
+      ]);
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should handle existing opportunity with missing opportunityData', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([
+        {
+          getId: () => "existing-oppty",
+          getType: () => "generic-opportunity",
+          getData: () => ({}),
+          getStatus: () => "NEW",
+        },
+      ]);
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should handle mapToSuggestion returning suggestion data', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Suggestion.create).to.have.been.calledOnce;
+      expect(logStub.info).to.have.been.calledWithMatch(/Created suggestion for opportunity oppty-123/);
+    });
+
+    it('should handle getGuidanceObj with guidance[0] having body property', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+      const guidanceWithBody = [
+        {
+          insight: "insight",
+          rationale: "rationale",
+          recommendation: "recommendation",
+          body: { markdown: "Line1\\nLine2" },
+        },
+      ];
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance: guidanceWithBody },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should handle getGuidanceObj returning object with spread guidance[0] and body', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+      const guidanceWithBody = [
+        {
+          insight: "insight",
+          rationale: "rationale",
+          recommendation: "recommendation",
+          body: { markdown: "Line1\\nLine2" },
+          extraField: "extra",
+        },
+      ];
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance: guidanceWithBody },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+      // Verify getGuidanceObj spreads guidance[0] and includes body
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.guidance.recommendations[0].insight).to.equal("insight");
+    });
+
+    it('should log opportunity JSON in success message', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      const mockOpportunity = {
+        getId: () => "oppty-123",
+        toJSON: () => ({ id: "oppty-123", type: "generic-opportunity" }),
+      };
+      Opportunity.create.resolves(mockOpportunity);
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(logStub.info).to.have.been.calledWithMatch(/no-cta-above-the-fold opportunity succesfully added/);
+      expect(logStub.info).to.have.been.calledWithMatch(/Created suggestion for opportunity oppty-123/);
+    });
+
+    it('should handle mapToSuggestion being called with correct parameters', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Suggestion.create).to.have.been.calledOnce;
+      const suggestionArg = Suggestion.create.getCall(0).args[0];
+      expect(suggestionArg.opportunityId).to.equal("oppty-123");
+      expect(suggestionArg.data.suggestionValue).to.equal("Line1\nLine2");
+    });
+
+    it('should handle existing opportunity filtering with different opportunityType', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([
+        {
+          getId: () => "existing-oppty",
+          getType: () => "generic-opportunity",
+          getData: () => ({
+            opportunityType: "different-opportunity-type",
+            page: pageUrl,
+          }),
+          getStatus: () => "NEW",
+        },
+      ]);
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should handle existing opportunity filtering with different page URL', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([
+        {
+          getId: () => "existing-oppty",
+          getType: () => "generic-opportunity",
+          getData: () => ({
+            opportunityType: "no-cta-above-the-fold",
+            page: "https://different-url.com/page",
+          }),
+          getStatus: () => "NEW",
+        },
+      ]);
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should handle existing opportunity filtering with null opportunityData', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([
+        {
+          getId: () => "existing-oppty",
+          getType: () => "generic-opportunity",
+          getData: () => null,
+          getStatus: () => "NEW",
+        },
+      ]);
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should handle existing opportunity filtering with missing opportunityType', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([
+        {
+          getId: () => "existing-oppty",
+          getType: () => "generic-opportunity",
+          getData: () => ({
+            page: pageUrl,
+          }),
+          getStatus: () => "NEW",
+        },
+      ]);
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should handle existing opportunity filtering with missing page', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([
+        {
+          getId: () => "existing-oppty",
+          getType: () => "generic-opportunity",
+          getData: () => ({
+            opportunityType: "no-cta-above-the-fold",
+          }),
+          getStatus: () => "NEW",
+        },
+      ]);
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should handle existing opportunity with IN_PROGRESS status', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([
+        {
+          getId: () => "existing-oppty",
+          getType: () => "generic-opportunity",
+          getData: () => ({
+            opportunityType: "no-cta-above-the-fold",
+            page: pageUrl,
+          }),
+          getStatus: () => "IN_PROGRESS",
+        },
+      ]);
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should handle existing opportunity with APPROVED status', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([
+        {
+          getId: () => "existing-oppty",
+          getType: () => "generic-opportunity",
+          getData: () => ({
+            opportunityType: "no-cta-above-the-fold",
+            page: pageUrl,
+          }),
+          getStatus: () => "APPROVED",
+        },
+      ]);
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
   });
 });
 

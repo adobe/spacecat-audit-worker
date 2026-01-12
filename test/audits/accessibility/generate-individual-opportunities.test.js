@@ -823,6 +823,146 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[2].update_from).to.equal('');
     expect(result.htmlWithIssues[2].target_selector).to.equal('div.test');
   });
+
+  it('should extract understandingUrl when WCAG rule has understandingUrl', () => {
+    constants.successCriteriaLinks['412'] = {
+      name: 'Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
+    };
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test</div>'],
+    }, 'critical');
+
+    expect(result.understandingUrl).to.equal('https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html');
+  });
+
+  it('should not extract understandingUrl when WCAG rule does not have understandingUrl', () => {
+    delete constants.successCriteriaLinks['999'];
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag999'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test</div>'],
+    }, 'critical');
+
+    expect(result.understandingUrl).to.equal('');
+  });
+
+  it('should not extract understandingUrl when rawWcagRule does not start with wcag', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['invalid-rule'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test</div>'],
+    }, 'critical');
+
+    expect(result.understandingUrl).to.equal('');
+  });
+
+  it('should not extract understandingUrl when rawWcagRule is empty', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: [],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test</div>'],
+    }, 'critical');
+
+    expect(result.understandingUrl).to.equal('');
+  });
+});
+
+  it('should extract source from URL with separator in aggregateA11yIssuesByOppType', () => {
+    const testData = {
+      'https://example.com/page?source=test-source': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                htmlWithIssues: ['<div>test</div>'],
+                target: ['div.test'],
+              },
+            },
+          },
+        },
+      },
+    };
+    const result = aggregateA11yIssuesByOppType(testData);
+    expect(result.data[0]['a11y-assistive'][0].source).to.equal('test-source');
+    expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com/page');
+  });
+
+  it('should not include source when URL does not contain separator', () => {
+    const testData = {
+      'https://example.com/page': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                htmlWithIssues: ['<div>test</div>'],
+                target: ['div.test'],
+              },
+            },
+          },
+        },
+      },
+    };
+    const result = aggregateA11yIssuesByOppType(testData);
+    expect(result.data[0]['a11y-assistive'][0].source).to.be.undefined;
+    expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com/page');
+  });
+
+describe('shouldUseCodeFixFlow', () => {
+  let shouldUseCodeFixFlow;
+
+  beforeEach(async () => {
+    const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../common/tagMappings.js': mockTagMappings,
+    });
+    shouldUseCodeFixFlow = module.shouldUseCodeFixFlow;
+  });
+
+  afterEach(async () => {
+    await esmock.patchStop('../../../src/accessibility/utils/generate-individual-opportunities.js');
+  });
+
+  it('should return false for empty array', () => {
+    expect(shouldUseCodeFixFlow([])).to.be.false;
+  });
+
+  it('should return false for null', () => {
+    expect(shouldUseCodeFixFlow(null)).to.be.false;
+  });
+
+  it('should return false for undefined', () => {
+    expect(shouldUseCodeFixFlow(undefined)).to.be.false;
+  });
+
+  it('should return true when all issues are code-fix eligible', () => {
+    const issuesList = [
+      { issueName: 'aria-hidden-focus' },
+      { issueName: 'aria-allowed-attr' },
+    ];
+    expect(shouldUseCodeFixFlow(issuesList)).to.be.true;
+  });
+
+  it('should return false when some issues are not code-fix eligible', () => {
+    const issuesList = [
+      { issueName: 'aria-hidden-focus' },
+      { issueName: 'color-contrast' },
+    ];
+    expect(shouldUseCodeFixFlow(issuesList)).to.be.false;
+  });
+
+  it('should return false when no issues are code-fix eligible', () => {
+    const issuesList = [
+      { issueName: 'color-contrast' },
+      { issueName: 'heading-order' },
+    ];
+    expect(shouldUseCodeFixFlow(issuesList)).to.be.false;
+  });
 });
 
 describe('aggregateAccessibilityIssues', () => {
@@ -1118,6 +1258,68 @@ describe('aggregateAccessibilityIssues', () => {
     expect(assistiveOpportunity.issues[0].type).to.equal('aria-allowed-attr');
     expect(assistiveOpportunity.issues[0].htmlWithIssues).to.have.lengthOf(1);
     expect(assistiveOpportunity.issues[0].htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should handle target array with index matching htmlWithIssues', () => {
+    const input = {
+      'https://example.com': {
+        violations: {
+          critical: {
+            items: {
+              'aria-allowed-attr': {
+                description: 'Multiple elements with invalid ARIA',
+                successCriteriaTags: ['wcag412'],
+                htmlWithIssues: [
+                  '<div aria-fake="true">Content 1</div>',
+                  '<span aria-invalid-attr="value">Content 2</span>',
+                ],
+                target: [
+                  'div[aria-fake]',
+                  'span[aria-invalid-attr]',
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateA11yIssuesByOppType(input);
+    expect(result.data[0]['a11y-assistive']).to.have.lengthOf(2);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].htmlWithIssues[0].target_selector).to.equal('div[aria-fake]');
+    expect(result.data[0]['a11y-assistive'][1].issues[0].htmlWithIssues[0].target_selector).to.equal('span[aria-invalid-attr]');
+  });
+
+  it('should handle target array shorter than htmlWithIssues array', () => {
+    const input = {
+      'https://example.com': {
+        violations: {
+          critical: {
+            items: {
+              'aria-allowed-attr': {
+                description: 'Multiple elements with invalid ARIA',
+                successCriteriaTags: ['wcag412'],
+                htmlWithIssues: [
+                  '<div aria-fake="true">Content 1</div>',
+                  '<span aria-invalid-attr="value">Content 2</span>',
+                  '<p aria-made-up="test">Content 3</p>',
+                ],
+                target: [
+                  'div[aria-fake]',
+                  'span[aria-invalid-attr]',
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateA11yIssuesByOppType(input);
+    expect(result.data[0]['a11y-assistive']).to.have.lengthOf(3);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].htmlWithIssues[0].target_selector).to.equal('div[aria-fake]');
+    expect(result.data[0]['a11y-assistive'][1].issues[0].htmlWithIssues[0].target_selector).to.equal('span[aria-invalid-attr]');
+    expect(result.data[0]['a11y-assistive'][2].issues[0].htmlWithIssues[0].target_selector).to.equal('');
   });
 
   it('should create separate URL objects for multiple HTML elements', () => {
