@@ -96,7 +96,7 @@ Each enabled check handler is invoked sequentially:
 1. **canonical** - Validates canonical tag format and presence
 2. **metatags** - Checks title, description, OG tags, etc.
 3. **links** - Validates internal/external links, checks for broken/insecure links
-4. **headings** - Validates heading hierarchy (H1-H6)
+4. **headings** - Validates heading structure including hierarchy (H1-H6), empty headings, missing H1, H1 length, and multiple H1 issues
 5. **readability** - Analyzes content readability
 6. **accessibility** - Runs axe-core accessibility checks
 
@@ -310,6 +310,18 @@ export const PREFLIGHT_HANDLERS = {
 3. **Enable the check** for your site using the configuration system:
    - The check will be automatically included if `your-check-preflight` audit is enabled for the site
 
+4. **Update the MFE types** in the [Preflight MFE repository](https://github.com/OneAdobe/aem-sites-optimizer-preflight-mfe/blob/main/src/types/audits.ts#L18-L28):
+   - Add your new audit to the `audits` type definition to maintain the UI contract
+   - This ensures consistent human-friendly labels, gates audit-specific rendering, and powers the loading UX before any API response arrives
+   ```typescript
+   export const audits = [
+     'canonical',
+     'metatags',
+     // ... existing audits
+     'your-check',  // Add here
+   ] as const;
+   ```
+
 ### Handler Contract
 
 All handler functions must:
@@ -328,7 +340,7 @@ All handler functions must:
 | `canonical` | SEO | Validates canonical tag presence and format | ❌ |
 | `metatags` | SEO | Checks title, description, OG tags | ✅ |
 | `links` | SEO | Detects broken internal/external links, insecure links | ✅ (internal only) |
-| `headings` | SEO | Validates heading hierarchy and structure | ✅ |
+| `headings` | SEO | Validates heading structure including hierarchy, empty headings, missing H1, H1 length, and multiple H1 issues | ✅ |
 | `readability` | SEO | Analyzes content readability scores | ✅ |
 | `accessibility` | A11Y | Runs axe-core accessibility checks | ❌ |
 | `body-size` | SEO | Ensures sufficient content (>100 chars) | ❌ |
@@ -402,6 +414,48 @@ To test specific check modules:
 npm run test:spec -- test/audits/preflight/links.test.js
 npm run test:spec -- test/audits/preflight/canonical.test.js
 ```
+
+## Running Locally
+
+### Quick Start
+
+To run the preflight audit locally, follow the [How to Run Locally](https://github.com/adobe/spacecat-audit-worker?tab=readme-ov-file#how-to-run-locally) guide in the main repository.
+
+For a more detailed setup with isolated environments for testing, refer to the [Developer Isolated Environments for Testing](https://wiki.corp.adobe.com/display/AEMSites/Developer+Isolated+Environments+for+Testing) wiki page.
+
+### Running a Preflight Audit
+
+Once your local environment is set up:
+
+1. **Start the worker**:
+   ```bash
+   npm run start:local
+   ```
+
+2. **Trigger a preflight audit** via the API or SQS message:
+   ```json
+   {
+     "type": "preflight",
+     "url": "https://your-site.com",
+     "auditContext": {
+       "asyncJobId": "job-123"
+     }
+   }
+   ```
+
+3. **Monitor the async job** for results in your local DynamoDB
+
+### Environment Setup
+
+Ensure you have the following environment variables configured:
+- `S3_SCRAPER_BUCKET_NAME`: Your local/dev S3 bucket
+- `CONTENT_SCRAPER_QUEUE_URL`: Content scraper SQS queue URL
+- `AUDIT_JOBS_QUEUE_URL`: Audit jobs SQS queue URL
+- `DYNAMO_TABLE_NAME_ASYNC_JOBS`: DynamoDB table for async jobs
+- `DYNAMO_TABLE_NAME_SITES`: DynamoDB table for sites
+- `DYNAMO_TABLE_NAME_CONFIGURATIONS`: DynamoDB table for configurations
+
+For a complete list of required environment variables and setup instructions, see the main [README](https://github.com/adobe/spacecat-audit-worker?tab=readme-ov-file).
 
 ## Performance Considerations
 
