@@ -451,6 +451,12 @@ export async function createIndividualOpportunity(opportunityInstance, auditData
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
   try {
+    // Import tag merging utility
+    const { mergeTagsWithHardcodedTags } = await import('../../common/tagMappings.js');
+    
+    // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
+    const mergedTags = mergeTagsWithHardcodedTags(opportunityInstance.type, opportunityInstance.tags);
+
     // Prepare opportunity data with all required fields
     const opportunityData = {
       siteId: auditData.siteId,
@@ -460,7 +466,7 @@ export async function createIndividualOpportunity(opportunityInstance, auditData
       origin: opportunityInstance.origin,
       title: opportunityInstance.title,
       description: opportunityInstance.description,
-      tags: opportunityInstance.tags,
+      tags: mergedTags,
       status: opportunityInstance.status,
       data: opportunityInstance.data,
     };

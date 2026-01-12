@@ -12,6 +12,7 @@
 import { Audit, Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from './constants.js';
 import { checkGoogleConnection } from './opportunity-utils.js';
+import { mergeTagsWithHardcodedTags } from './tagMappings.js';
 /**
   * Converts audit data to an opportunity instance.
   *
@@ -66,6 +67,10 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
 
   try {
     if (!opportunity) {
+      // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
+      // This ensures all opportunities have standardized tags while preserving isElmo/isASO
+      const mergedTags = mergeTagsWithHardcodedTags(auditType, opportunityInstance.tags);
+
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.id,
@@ -75,7 +80,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
         title: opportunityInstance.title,
         description: opportunityInstance.description,
         guidance: opportunityInstance.guidance,
-        tags: opportunityInstance.tags,
+        tags: mergedTags,
         data: opportunityInstance.data,
       };
       opportunity = await Opportunity.create(opportunityData);
