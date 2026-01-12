@@ -46,7 +46,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
     createLowViewsOpportunities = await esmock(
       '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
       {
-        '../../common/tagMappings.js': mockTagMappings,
+        '../../../../src/common/tagMappings.js': mockTagMappings,
       },
     );
     auditUrl = 'https://example.com';
@@ -405,6 +405,93 @@ describe('createLowFormViewsOpportunities handler method', () => {
         '[Form Opportunity] [Site Id: site-id] creating forms opportunity for high page views low form views failed with error: SQS error',
         sinon.match.instanceOf(Error),
       );
+    });
+
+    it('should execute all lines in handler loop including calculateProjectedConversionValue', async () => {
+      highPageViewsLowFormViewsOptty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(highPageViewsLowFormViewsOptty);
+      context.calculateCPCValue = sinon.stub().resolves(2.5);
+
+      await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(dataAccessStub.Opportunity.create).to.have.been.called;
+      expect(mockTagMappings.mergeTagsWithHardcodedTags).to.have.been.called;
+      expect(logStub.debug).to.have.been.calledWithMatch(/forms opportunity created high page views low form views/);
+    });
+
+    it('should execute ESS_OPS origin branch in handler loop', async () => {
+      const existingOppty = {
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
+        getData: () => ({ form: 'https://www.surest.com/high-page-low-form-view' }),
+        getOrigin: () => ORIGINS.ESS_OPS,
+      };
+      dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
+      highPageViewsLowFormViewsOptty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(highPageViewsLowFormViewsOptty);
+
+      await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(dataAccessStub.Opportunity.create).to.have.been.called;
+      const createCall = dataAccessStub.Opportunity.create.getCall(0);
+      expect(createCall.args[0].status).to.equal('IGNORED');
+    });
+
+    it('should execute existing opportunity update branch with all method calls', async () => {
+      const existingOppty = {
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
+        getData: () => ({ form: 'https://www.surest.com/high-page-low-form-view' }),
+        getOrigin: () => 'AUTOMATION',
+        setAuditId: sinon.stub(),
+        setData: sinon.stub(),
+        setGuidance: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+        guidance: {},
+      };
+      dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
+
+      await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(existingOppty.setAuditId).to.have.been.called;
+      expect(existingOppty.setData).to.have.been.called;
+      expect(existingOppty.setGuidance).to.have.been.called;
+      expect(existingOppty.setUpdatedBy).to.have.been.calledWith('system');
+      expect(existingOppty.save).to.have.been.called;
+      expect(logStub.debug).to.have.been.calledWithMatch(/form details available for data/);
+    });
+
+    it('should execute existing opportunity update branch with formDetails present', async () => {
+      const existingOppty = {
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS,
+        getData: () => ({
+          form: 'https://www.surest.com/high-page-low-form-view',
+          formDetails: { is_lead_gen: true },
+        }),
+        getOrigin: () => 'AUTOMATION',
+        setAuditId: sinon.stub(),
+        setData: sinon.stub(),
+        setGuidance: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+        guidance: {},
+      };
+      dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
+      context.sqs.sendMessage = sinon.stub().resolves({});
+
+      await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(logStub.debug).to.have.been.calledWithMatch(/Form details available for opportunity, not sending it to mystique/);
+      expect(context.sqs.sendMessage).to.have.been.called;
+    });
+
+    it('should execute error handling in catch block', async () => {
+      dataAccessStub.Opportunity.allBySiteId.resolves([]);
+      dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('Test error'));
+
+      await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(logStub.error).to.have.been.calledWithMatch(/creating forms opportunity for high page views low form views failed with error: Test error/);
+      expect(logStub.info).to.have.been.calledWithMatch(/successfully synced opportunity/);
     });
   });
 });

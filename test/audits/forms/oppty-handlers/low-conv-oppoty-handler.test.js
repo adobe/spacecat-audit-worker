@@ -46,7 +46,7 @@ describe('createLowConversionOpportunities handler method', () => {
     createLowConversionOpportunities = await esmock(
       '../../../../src/forms-opportunities/oppty-handlers/low-conversion-handler.js',
       {
-        '../../common/tagMappings.js': mockTagMappings,
+        '../../../../src/common/tagMappings.js': mockTagMappings,
       },
     );
     auditUrl = 'https://example.com';
@@ -634,6 +634,131 @@ describe('createLowConversionOpportunities handler method', () => {
       if (createCall) {
         const guidance = createCall.args[0].guidance;
         // Should return empty because condition is > 0 && < 0.1
+        expect(guidance).to.deep.equal({});
+      }
+    });
+  });
+
+  describe('handler loop full coverage', () => {
+    it('should execute all lines in handler loop including calculateProjectedConversionValue', async () => {
+      formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+      context.calculateCPCValue = sinon.stub().resolves(2.5);
+
+      await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(dataAccessStub.Opportunity.create).to.have.been.called;
+      expect(mockTagMappings.mergeTagsWithHardcodedTags).to.have.been.called;
+      expect(logStub.debug).to.have.been.calledWithMatch(/forms opportunity high form views low conversion/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/forms Opportunity high form views low conversion created/);
+    });
+
+    it('should execute ESS_OPS origin branch in handler loop', async () => {
+      const existingOppty = {
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+        getData: () => ({ form: 'https://www.surest.com/info/win-1' }),
+        getOrigin: () => ORIGINS.ESS_OPS,
+      };
+      dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
+      formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+
+      await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(logStub.debug).to.have.been.calledWithMatch(/Forms Opportunity high form views low conversion exists and is from ESS_OPS/);
+      expect(dataAccessStub.Opportunity.create).to.have.been.called;
+      const createCall = dataAccessStub.Opportunity.create.getCall(0);
+      expect(createCall.args[0].status).to.equal('IGNORED');
+    });
+
+    it('should execute existing opportunity update branch with all method calls', async () => {
+      const existingOppty = {
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+        getData: () => ({ form: 'https://www.surest.com/info/win-1' }),
+        getOrigin: () => 'AUTOMATION',
+        setAuditId: sinon.stub(),
+        setData: sinon.stub(),
+        setGuidance: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+        guidance: {},
+      };
+      dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
+
+      await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(existingOppty.setAuditId).to.have.been.called;
+      expect(existingOppty.setData).to.have.been.called;
+      expect(existingOppty.setGuidance).to.have.been.called;
+      expect(existingOppty.setUpdatedBy).to.have.been.calledWith('system');
+      expect(existingOppty.save).to.have.been.called;
+      expect(logStub.info).to.have.been.calledWithMatch(/Form details available for data/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Forms Opportunity high form views low conversion updated/);
+    });
+
+    it('should execute existing opportunity update branch with formDetails present', async () => {
+      const existingOppty = {
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+        getData: () => ({
+          form: 'https://www.surest.com/info/win-1',
+          formDetails: { is_lead_gen: true },
+        }),
+        getOrigin: () => 'AUTOMATION',
+        setAuditId: sinon.stub(),
+        setData: sinon.stub(),
+        setGuidance: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+        guidance: {},
+      };
+      dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
+      context.sqs.sendMessage = sinon.stub().resolves({});
+
+      await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(logStub.info).to.have.been.calledWithMatch(/Form details available for opportunity, not sending it to mystique/);
+      expect(context.sqs.sendMessage).to.have.been.called;
+    });
+
+    it('should execute error handling in catch block', async () => {
+      dataAccessStub.Opportunity.allBySiteId.resolves([]);
+      dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('Test error'));
+
+      await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
+
+      expect(logStub.error).to.have.been.calledWithMatch(/Creating low conversion forms opportunity failed with error: Test error/);
+      expect(logStub.info).to.have.been.calledWithMatch(/Successfully synced opportunity/);
+    });
+
+    it('should execute generateDefaultGuidance with nonSearchForms length 0', async () => {
+      const scrapeDataWithSearchForms = {
+        formData: [{
+          finalUrl: 'https://www.surest.com/info/win-1',
+          scrapeResult: [{
+            visibleFieldCount: 3,
+            visibleATF: true,
+            fieldLabels: ['search', 'search query'],
+          }],
+        }],
+      };
+      formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
+      dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+      const auditDataWithForm = {
+        ...auditData,
+        auditResult: {
+          formVitals: [{
+            form: 'https://www.surest.com/info/win-1',
+            formViews: 1000,
+            pageViews: 5000,
+          }],
+        },
+      };
+
+      await createLowConversionOpportunities(auditUrl, auditDataWithForm, scrapeDataWithSearchForms, context);
+
+      const createCall = dataAccessStub.Opportunity.create.getCall(0);
+      if (createCall) {
+        const guidance = createCall.args[0].guidance;
         expect(guidance).to.deep.equal({});
       }
     });
