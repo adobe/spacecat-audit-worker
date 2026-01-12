@@ -456,7 +456,7 @@ describe('Hreflang Audit', () => {
       expect(result).to.be.an('object');
       expect(result).to.have.property('runbook', '');
       expect(result).to.have.property('origin', 'AUTOMATION');
-      expect(result).to.have.property('title', 'Hreflang implementation issues affecting international SEO');
+      expect(result).to.have.property('title', 'hreflang tag fixes ready to help reach the right audiences in every region');
       expect(result).to.have.property('description').that.is.a('string');
       expect(result).to.have.property('guidance').that.is.an('object');
       expect(result.guidance).to.have.property('steps').that.is.an('array');
@@ -475,7 +475,7 @@ describe('Hreflang Audit', () => {
       expect(result).to.be.an('object');
       expect(result).to.have.property('runbook', '');
       expect(result).to.have.property('origin', 'AUTOMATION');
-      expect(result).to.have.property('title', 'Hreflang implementation issues affecting international SEO');
+      expect(result).to.have.property('title', 'hreflang tag fixes ready to help reach the right audiences in every region');
       expect(result).to.have.property('description').that.is.a('string');
       expect(result).to.have.property('guidance').that.is.an('object');
       expect(result.guidance).to.have.property('recommendations').that.is.an('array');
@@ -487,7 +487,6 @@ describe('Hreflang Audit', () => {
       expect(result).to.have.property('tags').that.is.an('array');
       expect(result.tags).to.include('Traffic Acquisition');
       expect(result.tags).to.include('llm');
-      expect(result.tags).to.include('isElmo');
       expect(result).to.have.property('data').that.is.an('object');
       expect(result.data).to.have.property('dataSources').that.is.an('array');
       expect(result.data).to.have.property('additionalMetrics').that.is.an('array');

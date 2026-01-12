@@ -490,9 +490,8 @@ export async function createReportOpportunitySuggestion(
   reportMarkdown,
   auditData,
   log,
-  context,
 ) {
-  const suggestions = createReportOpportunitySuggestionInstance(reportMarkdown, context);
+  const suggestions = createReportOpportunitySuggestionInstance(reportMarkdown);
 
   try {
     const suggestion = await opportunity.addSuggestions(suggestions);

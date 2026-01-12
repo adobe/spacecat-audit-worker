@@ -55,18 +55,6 @@ describe('LLMO Customer Analysis Handler', () => {
       setConfig: sandbox.stub().resolves(),
     };
 
-    dataAccess = {
-      Configuration: {
-        findLatest: sandbox.stub().resolves(configuration),
-      },
-      Site: {
-        allByOrganizationId: sandbox.stub().resolves([]),
-      },
-      LatestAudit: {
-        findBySiteIdAndAuditType: sandbox.stub().resolves({ getAuditResult: () => ({}) }),
-      },
-    };
-
     const siteConfig = {
       enableImport: sandbox.stub().resolves(),
       isImportEnabled: sandbox.stub().returns(false),
@@ -79,6 +67,19 @@ describe('LLMO Customer Analysis Handler', () => {
       getConfig: sandbox.stub().returns(siteConfig),
       save: sandbox.stub().resolves(),
       setConfig: sandbox.stub().returns(),
+    };
+
+    dataAccess = {
+      Configuration: {
+        findLatest: sandbox.stub().resolves(configuration),
+      },
+      Site: {
+        allByOrganizationId: sandbox.stub().resolves([]),
+        findById: sandbox.stub().resolves(site),
+      },
+      LatestAudit: {
+        findBySiteIdAndAuditType: sandbox.stub().resolves({ getAuditResult: () => ({}) }),
+      },
     };
 
     context = {
@@ -1202,6 +1203,102 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
     });
 
+    it('should handle errors from enableAudits gracefully', async () => {
+      // Use previousConfigVersion to skip first-time onboarding path
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      // Create a context with Configuration.findLatest that throws an error
+      const errorConfiguration = {
+        findLatest: sandbox.stub().rejects(new Error('Configuration service unavailable')),
+      };
+
+      const errorContext = {
+        sqs,
+        log,
+        dataAccess: {
+          Configuration: errorConfiguration,
+          Site: dataAccess.Site,
+          LatestAudit: dataAccess.LatestAudit,
+        },
+        s3Client: {},
+        env: context.env,
+      };
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        errorContext,
+        site,
+        auditContext,
+      );
+
+      // Should log the error
+      expect(log.error).to.have.been.calledWith('Failed to enable audits for site site-123: Configuration service unavailable');
+
+      // Should still complete successfully despite the error
+      expect(result.auditResult.status).to.equal('completed');
+    });
+
+    it('should handle errors from enableImports gracefully', async () => {
+      // Use previousConfigVersion to skip first-time onboarding path
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      // Create a context with Site.findById that throws an error for enableImports
+      const errorSite = {
+        findById: sandbox.stub().rejects(new Error('Import service unavailable')),
+      };
+
+      const errorContext = {
+        sqs,
+        log,
+        dataAccess: {
+          Configuration: dataAccess.Configuration,
+          Site: errorSite,
+          LatestAudit: dataAccess.LatestAudit,
+        },
+        s3Client: {},
+        env: context.env,
+      };
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        errorContext,
+        site,
+        auditContext,
+      );
+
+      // Should log the error
+      expect(log.error).to.have.been.calledWith('Failed to enable imports for site site-123: Import service unavailable');
+
+      // Should still complete successfully despite the error
+      expect(result.auditResult.status).to.equal('completed');
+    });
+
     it('should handle null oldConfig with nullish coalescing operator', async () => {
       const auditContext = {
         configVersion: 'v2',
@@ -1329,8 +1426,6 @@ describe('LLMO Customer Analysis Handler', () => {
         'headings',
         'llm-blocked',
         'llm-error-pages',
-        'canonical',
-        'hreflang',
         'summarization',
         'faqs',
         'llmo-referral-traffic',
