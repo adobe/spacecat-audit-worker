@@ -69,7 +69,8 @@ describe('formatWcagRule', () => {
   });
 
   afterEach(async () => {
-    await esmock.patchStop('../../../src/accessibility/utils/generate-individual-opportunities.js');
+    // Don't stop the patch here to allow coverage tracking
+    // await esmock.patchStop('../../../src/accessibility/utils/generate-individual-opportunities.js');
     // Restore the original values by replacing the properties
     Object.keys(constants.successCriteriaLinks).forEach((key) => {
       delete constants.successCriteriaLinks[key];
@@ -142,6 +143,24 @@ describe('formatWcagRule', () => {
     });
     expect(formatWcagRule('wcag111')).to.equal('1.1.1');
   });
+
+  it('should execute all lines in formatWcagRule including numberPart extraction and formatting loop', () => {
+    constants.successCriteriaLinks['412'] = { name: 'Name, Role, Value' };
+    const result = formatWcagRule('wcag412');
+    expect(result).to.equal('4.1.2 Name, Role, Value');
+  });
+
+  it('should execute formatWcagRule loop for multi-digit number', () => {
+    constants.successCriteriaLinks['1234'] = { name: 'Test Rule' };
+    const result = formatWcagRule('wcag1234');
+    expect(result).to.equal('1.2.3.4 Test Rule');
+  });
+
+  it('should execute formatWcagRule when ruleInfo exists but name is falsy', () => {
+    constants.successCriteriaLinks['412'] = { name: null };
+    const result = formatWcagRule('wcag412');
+    expect(result).to.equal('4.1.2');
+  });
 });
 
 describe('formatIssue', () => {
@@ -175,6 +194,7 @@ describe('formatIssue', () => {
     });
     Object.assign(constants.successCriteriaLinks, originalSuccessCriteriaLinks);
     sandbox.restore();
+    // Don't stop the patch here to allow coverage tracking
   });
 
   it('should format critical severity issues', () => {
@@ -960,7 +980,110 @@ describe('formatIssue', () => {
 
     expect(result.understandingUrl).to.equal('');
   });
+
+  it('should execute all lines in understandingUrl extraction including numberPart replacement and ruleInfo lookup', () => {
+    constants.successCriteriaLinks['412'] = {
+      name: 'Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
+    };
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test</div>'],
+    }, 'critical');
+
+    expect(result.understandingUrl).to.equal('https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html');
+    expect(result.wcagRule).to.equal('4.1.2 Name, Role, Value');
+  });
+
+  it('should execute understandingUrl extraction when ruleInfo is undefined for valid wcag rule', () => {
+    delete constants.successCriteriaLinks['999'];
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag999'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test</div>'],
+    }, 'critical');
+
+    expect(result.understandingUrl).to.equal('');
+  });
+
+  it('should execute understandingUrl extraction when ruleInfo exists but understandingUrl property is undefined', () => {
+    constants.successCriteriaLinks['412'] = {
+      name: 'Name, Role, Value',
+      // understandingUrl property is undefined
+    };
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test</div>'],
+    }, 'critical');
+
+    expect(result.understandingUrl).to.equal('');
+  });
 });
+
+describe('aggregateA11yIssuesByOppType early return coverage', () => {
+  let sandbox;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    if (!aggregateA11yIssuesByOppType) {
+      const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+        '../../common/tagMappings.js': mockTagMappings,
+      });
+      aggregateA11yIssuesByOppType = module.aggregateA11yIssuesByOppType;
+    }
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should execute early return for null input', () => {
+    const result = aggregateA11yIssuesByOppType(null);
+    expect(result).to.deep.equal({ data: [] });
+  });
+
+  it('should execute early return for undefined input', () => {
+    const result = aggregateA11yIssuesByOppType(undefined);
+    expect(result).to.deep.equal({ data: [] });
+  });
+
+  it('should execute early return for false input', () => {
+    const result = aggregateA11yIssuesByOppType(false);
+    expect(result).to.deep.equal({ data: [] });
+  });
+
+  it('should execute early return for empty string input', () => {
+    const result = aggregateA11yIssuesByOppType('');
+    expect(result).to.deep.equal({ data: [] });
+  });
+
+  it('should execute early return for 0 input', () => {
+    const result = aggregateA11yIssuesByOppType(0);
+    expect(result).to.deep.equal({ data: [] });
+  });
+});
+
+describe('aggregateA11yIssuesByOppType functional tests', () => {
+  let sandbox;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    if (!aggregateA11yIssuesByOppType) {
+      const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+        '../../common/tagMappings.js': mockTagMappings,
+      });
+      aggregateA11yIssuesByOppType = module.aggregateA11yIssuesByOppType;
+    }
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
 
   it('should extract source from URL with separator in aggregateA11yIssuesByOppType', () => {
     const testData = {
@@ -1013,7 +1136,8 @@ describe('shouldUseCodeFixFlow', () => {
   });
 
   afterEach(async () => {
-    await esmock.patchStop('../../../src/accessibility/utils/generate-individual-opportunities.js');
+    // Don't stop the patch to allow coverage tracking
+    // await esmock.patchStop('../../../src/accessibility/utils/generate-individual-opportunities.js');
   });
 
   it('should return false for empty array', () => {
@@ -1068,7 +1192,8 @@ describe('aggregateAccessibilityIssues', () => {
   });
 
   afterEach(async () => {
-    await esmock.patchStop('../../../src/accessibility/utils/generate-individual-opportunities.js');
+    // Don't stop the patch to allow coverage tracking
+    // await esmock.patchStop('../../../src/accessibility/utils/generate-individual-opportunities.js');
     sandbox.restore();
   });
 
@@ -1586,7 +1711,8 @@ describe('createIndividualOpportunity', () => {
   });
 
   afterEach(async () => {
-    await esmock.patchStop('../../../src/accessibility/utils/generate-individual-opportunities.js');
+    // Don't stop the patch to allow coverage tracking
+    // await esmock.patchStop('../../../src/accessibility/utils/generate-individual-opportunities.js');
     sandbox.restore();
   });
 
