@@ -724,4 +724,98 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       expect(Suggestion.create).to.have.been.called;
     });
   });
+
+  describe('getGuidanceObj edge cases', () => {
+    it('should handle empty guidance array', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance: [] } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(logStub.debug).to.have.been.called;
+    });
+
+    it('should handle guidance with null body', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      const guidance = [{ body: null, insight: 'insight' }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(logStub.debug).to.have.been.called;
+    });
+
+    it('should handle guidance without body property', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      const guidance = [{ insight: 'insight', rationale: 'rationale' }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(logStub.debug).to.have.been.called;
+    });
+
+    it('should handle guidance with body but no body.body', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      const guidance = [{ body: { data: 'test' }, insight: 'insight' }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(logStub.debug).to.have.been.called;
+    });
+  });
+
+  describe('handler full flow coverage', () => {
+    it('should log debug messages throughout the handler flow', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Message received for guidance:paid-cookie-consent/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Fetched Audit/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Creating new paid-cookie-consent opportunity/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Created suggestion for opportunity/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/paid-cookie-consent  opportunity succesfully added/);
+    });
+
+    it('should handle case when no existing opportunities to ignore', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+      expect(Suggestion.create).to.have.been.called;
+    });
+  });
 });

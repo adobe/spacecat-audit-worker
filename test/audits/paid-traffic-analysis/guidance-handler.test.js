@@ -69,8 +69,15 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
   let createdOpportunity;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sandbox = sinon.createSandbox();
+    // Import handler with mocked tagMappings
+    handler = await esmock(
+      '../../../src/paid-traffic-analysis/guidance-handler.js',
+      {
+        '../common/tagMappings.js': mockTagMappings,
+      },
+    );
 
     dummyAudit = {
       getAuditId: () => auditId,
@@ -479,5 +486,191 @@ describe('Paid-traffic-analysis guidance handler', () => {
     const firstCall = Suggestion.create.getCall(0).args[0];
     // When getType() returns undefined, !== 'paid-traffic' is true, but we still check requiresValidation
     expect(firstCall).to.have.property('status', 'PENDING_VALIDATION');
+  });
+
+  describe('buildPaidTrafficTitle coverage', () => {
+    it('should build monthly title when week is null and month is provided', async () => {
+      dummyAudit.getAuditResult = () => ({
+        siteId, month: 6, year: 2024, temporalCondition: 'year=2024 AND month=6',
+      });
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      const createdArg = Opportunity.create.getCall(0).args[0];
+      expect(createdArg.title).to.equal('Paid Traffic Monthly Report – Month 6 / 2024');
+      expect(createdArg.data).to.include({ year: 2024, month: 6 });
+      expect(createdArg.data).to.not.have.property('week');
+    });
+  });
+
+  describe('ignorePreviousOpportunitiesForPeriod coverage', () => {
+    it('should handle opportunities with different statuses', async () => {
+      const newOppty = {
+        getType: () => 'paid-traffic',
+        getStatus: () => 'NEW',
+        getId: () => 'old-new',
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => ({ week: '1' }),
+        getTitle: () => 'Old PT Oppty',
+      };
+      const approvedOppty = {
+        getType: () => 'paid-traffic',
+        getStatus: () => 'APPROVED',
+        getId: () => 'old-approved',
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => ({ week: '1' }),
+        getTitle: () => 'Old PT Oppty Approved',
+      };
+      Opportunity.allBySiteId.resolves([newOppty, approvedOppty]);
+
+      dummyAudit.getAuditResult = () => ({
+        siteId, week: 2, year: 2025, temporalCondition: 'year=2025 AND week=2',
+      });
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      // Only NEW opportunities should be ignored
+      expect(newOppty.setStatus).to.have.been.calledWith('IGNORED');
+      expect(approvedOppty.setStatus).to.not.have.been.called;
+    });
+
+    it('should handle opportunities with missing week and month data', async () => {
+      const opptyNoData = {
+        getType: () => 'paid-traffic',
+        getStatus: () => 'NEW',
+        getId: () => 'old-no-data',
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => ({}),
+        getTitle: () => 'Old PT Oppty',
+      };
+      Opportunity.allBySiteId.resolves([opptyNoData]);
+
+      dummyAudit.getAuditResult = () => ({
+        siteId, week: 2, year: 2025, temporalCondition: 'year=2025 AND week=2',
+      });
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(opptyNoData.setStatus).to.have.been.calledWith('IGNORED');
+      expect(logStub.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity/);
+    });
+
+    it('should log debug message when ignoring opportunities', async () => {
+      const oldOppty = {
+        getType: () => 'paid-traffic',
+        getStatus: () => 'NEW',
+        getId: () => 'old-1',
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => ({ week: 1, month: 1 }),
+        getTitle: () => 'Old PT Oppty',
+      };
+      Opportunity.allBySiteId.resolves([oldOppty]);
+
+      dummyAudit.getAuditResult = () => ({
+        siteId, week: 2, year: 2025, temporalCondition: 'year=2025 AND week=2',
+      });
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(logStub.debug).to.have.been.calledWithMatch(/Ignored \d+ existing paid-traffic opportunities/);
+    });
+  });
+
+  describe('handler full flow coverage', () => {
+    it('should log debug messages throughout the handler flow', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(logStub.debug).to.have.been.calledWithMatch(/Message received for guidance:traffic-analysis/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Finished mapping/);
+    });
+
+    it('should handle empty guidance array', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: [],
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(Suggestion.create).not.to.have.been.called;
+    });
+
+    it('should handle guidance with null body', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: [{ body: null }],
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(Suggestion.create).not.to.have.been.called;
+    });
+
+    it('should handle guidance with body but no reports array', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: [{ body: { foo: 'bar' } }],
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(Suggestion.create).not.to.have.been.called;
+    });
   });
 });
