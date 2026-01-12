@@ -1,3 +1,10 @@
+## [1.279.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.2...v1.279.3) (2026-01-12)
+
+
+### Bug Fixes
+
+* change guidance format from array to object in Wikipedia analysis handler ([#1838](https://github.com/adobe/spacecat-audit-worker/issues/1838)) ([7f9ed0c](https://github.com/adobe/spacecat-audit-worker/commit/7f9ed0c728693fb88e0d0a8b77461ad73ede5333))
+
 ## [1.279.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.1...v1.279.2) (2026-01-08)
 
 
