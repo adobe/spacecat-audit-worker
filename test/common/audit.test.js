@@ -224,22 +224,36 @@ describe('Audit tests', () => {
       expect(finalURL).to.equal('https://www.spacekitty.cat');
     });
 
-    it('audit run skips when audit is disabled', async () => {
-      configuration.isHandlerEnabledForSite = sinon.stub().returns(false);
+    it('audit runs regardless of enabled status (enabled check happens before SQS)', async () => {
+      // Enabled check is now done before sending SQS message, not in the worker
       const queueUrl = 'some-queue-url';
+      const fullAuditRef = 'test-ref';
+      const auditData = {
+        siteId: site.getId(),
+        isLive: site.getIsLive(),
+        auditedAt: mockDate,
+        auditType: message.type,
+        auditResult: { metric: 42 },
+        fullAuditRef,
+        invocationId: 'test-invocation-id',
+      };
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
       context.dataAccess.Site.findById.withArgs(message.siteId).resolves(site);
       context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(org);
       context.dataAccess.Configuration.findLatest = sinon.stub().resolves(configuration);
+      context.dataAccess.Audit.create.resolves({
+        getId: () => 'test-audit-id',
+      });
+      context.sqs.sendMessage.resolves();
 
       const audit = new AuditBuilder()
-        .withRunner(() => 123)
+        .withRunner(() => auditData)
         .build();
 
       const resp = await audit.run(message, context);
 
       expect(resp.status).to.equal(200);
-      expect(context.log.warn).to.have.been.calledWith('dummy audits disabled for site site-id, skipping...');
+      expect(context.log.warn).not.to.have.been.calledWith('dummy audits disabled for site site-id, skipping...');
     });
 
     it('audit runs as expected with post processors', async () => {

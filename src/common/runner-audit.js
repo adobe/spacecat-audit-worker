@@ -10,9 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { ok } from '@adobe/spacecat-shared-http-utils';
 import { BaseAudit } from './base-audit.js';
-import { isAuditEnabledForSite } from './audit-utils.js';
 
 export class RunnerAudit extends BaseAudit {
   constructor(
@@ -29,17 +27,10 @@ export class RunnerAudit extends BaseAudit {
   }
 
   async run(message, context) {
-    const { log } = context;
     const { type, siteId, auditContext = {} } = message;
 
     try {
       const site = await this.siteProvider(siteId, context);
-
-      if (!(await isAuditEnabledForSite(type, site, context, auditContext))) {
-        log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
-        return ok();
-      }
-
       const finalUrl = await this.urlResolver(site, context);
       const result = await this.runner(finalUrl, context, site, auditContext);
 
