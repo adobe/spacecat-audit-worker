@@ -914,6 +914,52 @@ describe('formatIssue', () => {
 
     expect(result.understandingUrl).to.equal('https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html');
   });
+
+  it('should execute all lines in understandingUrl extraction including numberPart replacement', () => {
+    constants.successCriteriaLinks['412'] = {
+      name: 'Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
+    };
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test</div>'],
+    }, 'critical');
+
+    expect(result.understandingUrl).to.equal('https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html');
+    expect(result.wcagRule).to.equal('4.1.2 Name, Role, Value');
+  });
+
+  it('should execute understandingUrl extraction when rawWcagRule is truthy and starts with wcag', () => {
+    constants.successCriteriaLinks['999'] = {
+      name: 'Test Rule',
+      understandingUrl: 'https://example.com/understanding',
+    };
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag999'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test</div>'],
+    }, 'critical');
+
+    expect(result.understandingUrl).to.equal('https://example.com/understanding');
+  });
+
+  it('should execute understandingUrl extraction when ruleInfo exists but understandingUrl is falsy', () => {
+    constants.successCriteriaLinks['412'] = {
+      name: 'Name, Role, Value',
+      understandingUrl: null,
+    };
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test</div>'],
+    }, 'critical');
+
+    expect(result.understandingUrl).to.equal('');
+  });
 });
 
   it('should extract source from URL with separator in aggregateA11yIssuesByOppType', () => {
@@ -1010,11 +1056,19 @@ describe('shouldUseCodeFixFlow', () => {
 describe('aggregateAccessibilityIssues', () => {
   let sandbox;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sandbox = sinon.createSandbox();
+    // Ensure aggregateA11yIssuesByOppType is imported
+    if (!aggregateA11yIssuesByOppType) {
+      const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+        '../../common/tagMappings.js': mockTagMappings,
+      });
+      aggregateA11yIssuesByOppType = module.aggregateA11yIssuesByOppType;
+    }
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await esmock.patchStop('../../../src/accessibility/utils/generate-individual-opportunities.js');
     sandbox.restore();
   });
 
@@ -1035,6 +1089,11 @@ describe('aggregateAccessibilityIssues', () => {
 
   it('should return empty data array for empty string input', () => {
     const result = aggregateA11yIssuesByOppType('');
+    expect(result).to.deep.equal({ data: [] });
+  });
+
+  it('should return empty data array for 0 input', () => {
+    const result = aggregateA11yIssuesByOppType(0);
     expect(result).to.deep.equal({ data: [] });
   });
 
