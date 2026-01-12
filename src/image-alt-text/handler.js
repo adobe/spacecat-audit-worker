@@ -19,9 +19,12 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
 
 export async function processImportStep(context) {
-  const { site, finalUrl } = context;
+  const { site, finalUrl, log } = context;
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
+
+  log.info(`[${AUDIT_TYPE}]: Starting import step for siteId: ${site.getId()}, finalUrl: ${finalUrl}`);
+  log.debug(`[${AUDIT_TYPE}]: S3 bucket path: ${s3BucketPath}`);
 
   return {
     auditResult: { status: 'preparing', finalUrl },
@@ -36,24 +39,34 @@ export async function processAltTextWithMystique(context) {
     log, site, audit, dataAccess,
   } = context;
 
-  log.debug(`[${AUDIT_TYPE}]: Processing alt-text with Mystique for site ${site.getId()}`);
+  const siteId = site.getId();
+  const auditId = audit.getId();
+
+  log.info(`[${AUDIT_TYPE}]: Processing alt-text with Mystique for siteId: ${siteId}, auditId: ${auditId}`);
 
   try {
     const { Opportunity } = dataAccess;
-    const siteId = site.getId();
 
     // Get top pages and included URLs
     const { SiteTopPage } = dataAccess;
+    log.debug(`[${AUDIT_TYPE}]: Fetching top pages for siteId: ${siteId} from ahrefs/global`);
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    log.info(`[${AUDIT_TYPE}]: Found ${topPages.length} top pages from ahrefs for siteId: ${siteId}`);
+
     const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
+    log.info(`[${AUDIT_TYPE}]: Found ${includedURLs.length} included URLs from config for siteId: ${siteId}`);
 
     // Get ALL page URLs to send to Mystique
     const pageUrls = [...new Set([...topPages.map((page) => page.getUrl()), ...includedURLs])];
     if (pageUrls.length === 0) {
+      log.error(`[${AUDIT_TYPE}]: No top pages found for siteId: ${siteId}`);
       throw new Error(`No top pages found for site ${site.getId()}`);
     }
 
+    log.info(`[${AUDIT_TYPE}]: Total unique page URLs to process: ${pageUrls.length} for siteId: ${siteId}`);
+
     const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
+    log.info(`[${AUDIT_TYPE}]: Created ${urlBatches.length} batches (batch size: ${MYSTIQUE_BATCH_SIZE}) for siteId: ${siteId}`);
 
     // First, find or create the opportunity and clear existing suggestions
     const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
@@ -62,10 +75,12 @@ export async function processAltTextWithMystique(context) {
     );
 
     if (altTextOppty) {
-      log.info(`[${AUDIT_TYPE}]: Updating opportunity for new audit run`);
+      log.info(`[${AUDIT_TYPE}]: Found existing opportunity ${altTextOppty.getId()} for siteId: ${siteId}, updating for new audit run`);
 
       // Reset only Mystique-related data, keep existing metrics
       const existingData = altTextOppty.getData() || {};
+      log.debug(`[${AUDIT_TYPE}]: Existing opportunity data - mystiqueResponsesReceived: ${existingData.mystiqueResponsesReceived || 0}, processedSuggestions: ${existingData.processedSuggestionIds?.length || 0}`);
+
       const resetData = {
         ...existingData,
         mystiqueResponsesReceived: 0,
@@ -74,9 +89,9 @@ export async function processAltTextWithMystique(context) {
       };
       altTextOppty.setData(resetData);
       await altTextOppty.save();
-      log.debug(`[${AUDIT_TYPE}]: Updated opportunity data for new audit run`);
+      log.info(`[${AUDIT_TYPE}]: Updated opportunity ${altTextOppty.getId()} - reset mystiqueResponsesReceived to 0, set mystiqueResponsesExpected to ${urlBatches.length}`);
     } else {
-      log.debug(`[${AUDIT_TYPE}]: Creating new opportunity for site ${siteId}`);
+      log.info(`[${AUDIT_TYPE}]: No existing opportunity found, creating new opportunity for siteId: ${siteId}`);
       const opportunityDTO = {
         siteId,
         auditId: audit.getId(),
@@ -112,7 +127,7 @@ export async function processAltTextWithMystique(context) {
       };
 
       altTextOppty = await Opportunity.create(opportunityDTO);
-      log.debug(`[${AUDIT_TYPE}]: Created new opportunity with ID ${altTextOppty.getId()}`);
+      log.info(`[${AUDIT_TYPE}]: Created new opportunity ${altTextOppty.getId()} for siteId: ${siteId} with mystiqueResponsesExpected: ${urlBatches.length}`);
     }
 
     await sendAltTextOpportunityToMystique(
@@ -123,16 +138,18 @@ export async function processAltTextWithMystique(context) {
       context,
     );
 
-    log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
+    log.info(`[${AUDIT_TYPE}]: Successfully sent ${pageUrls.length} pages in ${urlBatches.length} batches to Mystique for siteId: ${siteId}`);
 
     // Clean up outdated suggestions
     // Small delay to ensure no concurrent operations
     await new Promise((resolve) => {
       setTimeout(resolve, 1000);
     });
+    log.debug(`[${AUDIT_TYPE}]: Starting cleanup of outdated suggestions for opportunityId: ${altTextOppty.getId()}`);
     await cleanupOutdatedSuggestions(altTextOppty, log);
+    log.info(`[${AUDIT_TYPE}]: Completed alt-text processing with Mystique for siteId: ${siteId}`);
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}]: Failed to process with Mystique: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}]: Failed to process with Mystique for siteId: ${site.getId()}: ${error.message}`, { error: error.stack });
     throw error;
   }
 }

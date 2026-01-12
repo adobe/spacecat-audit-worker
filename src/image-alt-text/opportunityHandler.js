@@ -32,7 +32,10 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
 export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, log }) {
+  log.info(`[${AUDIT_TYPE}]: Starting syncAltTextSuggestions for opportunityId: ${opportunity.getId()}, newSuggestions: ${newSuggestionDTOs.length}`);
+
   const existingSuggestions = await opportunity.getSuggestions();
+  log.debug(`[${AUDIT_TYPE}]: Found ${existingSuggestions.length} existing suggestions`);
 
   const IGNORED_STATUSES = [SuggestionModel.STATUSES.SKIPPED, SuggestionModel.STATUSES.FIXED];
   const ignoredSuggestions = existingSuggestions.filter(
@@ -40,16 +43,23 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
   );
   const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
 
+  log.info(`[${AUDIT_TYPE}]: Found ${ignoredSuggestions.length} ignored suggestions (SKIPPED/FIXED) to preserve`);
+
   // Remove existing suggestions that were not ignored
-  await Promise.all(existingSuggestions
-    .filter(
-      (suggestion) => !ignoredSuggestionIds.includes(suggestion.getData().recommendations[0].id),
-    )
-    .map((suggestion) => suggestion.remove()));
+  const suggestionsToRemove = existingSuggestions.filter(
+    (suggestion) => !ignoredSuggestionIds.includes(suggestion.getData().recommendations[0].id),
+  );
+
+  if (suggestionsToRemove.length > 0) {
+    await Promise.all(suggestionsToRemove.map((suggestion) => suggestion.remove()));
+    log.info(`[${AUDIT_TYPE}]: Removed ${suggestionsToRemove.length} existing suggestions`);
+  }
 
   const suggestionsToAdd = newSuggestionDTOs.filter(
     (s) => !ignoredSuggestionIds.includes(s.data.recommendations[0].id),
   );
+
+  log.info(`[${AUDIT_TYPE}]: Adding ${suggestionsToAdd.length} new suggestions (${newSuggestionDTOs.length - suggestionsToAdd.length} skipped due to ignored status)`);
 
   // Add new suggestions to oppty
   if (isNonEmptyArray(suggestionsToAdd)) {
@@ -65,26 +75,34 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
         throw new Error(`[${AUDIT_TYPE}]: Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
       }
     }
+
+    log.info(`[${AUDIT_TYPE}]: Successfully synchronized ${suggestionsToAdd.length} suggestions for opportunityId: ${opportunity.getId()}`);
   }
 }
 
 export const getProjectedMetrics = async ({
   images, auditUrl, context, log,
 }) => {
+  log.debug(`[${AUDIT_TYPE}]: Starting getProjectedMetrics for ${images.length} images, auditUrl: ${auditUrl}`);
+
   let finalUrl;
   let results;
 
   try {
     finalUrl = await getRUMUrl(auditUrl);
+    log.debug(`[${AUDIT_TYPE}]: Resolved RUM URL: ${finalUrl}`);
+
     const rumAPIClient = RUMAPIClient.createFrom(context);
     const options = {
       domain: finalUrl,
       interval: RUM_INTERVAL,
     };
 
+    log.debug(`[${AUDIT_TYPE}]: Querying RUM API for traffic-acquisition with interval: ${RUM_INTERVAL} days`);
     results = await rumAPIClient.query('traffic-acquisition', options);
+    log.info(`[${AUDIT_TYPE}]: RUM API returned ${results.length} pages for domain: ${finalUrl}`);
   } catch (err) {
-    log.error(`[${AUDIT_TYPE}]: Failed to get RUM results for ${auditUrl} with error: ${err.message}`);
+    log.error(`[${AUDIT_TYPE}]: Failed to get RUM results for ${auditUrl} with error: ${err.message}`, { error: err.stack });
     return {
       projectedTrafficLost: 0,
       projectedTrafficValue: 0,
@@ -99,18 +117,28 @@ export const getProjectedMetrics = async ({
     return acc;
   }, {});
 
+  log.debug(`[${AUDIT_TYPE}]: Built traffic map for ${Object.keys(pageUrlToOrganicTrafficMap).length} pages`);
+
+  let matchedImages = 0;
+  let unmatchedImages = 0;
+
   images.forEach((image) => {
     const fullPageUrl = new URL(image.pageUrl, auditUrl).toString();
 
     // Images from RUM (might) come with www while our scraper gives us always non-www pages
     if (pageUrlToOrganicTrafficMap[fullPageUrl]) {
       pageUrlToOrganicTrafficMap[fullPageUrl].imagesWithoutAltText += 1;
+      matchedImages += 1;
     } else if (pageUrlToOrganicTrafficMap[toggleWWW(fullPageUrl)]) {
       pageUrlToOrganicTrafficMap[toggleWWW(fullPageUrl)].imagesWithoutAltText += 1;
+      matchedImages += 1;
     } else {
+      unmatchedImages += 1;
       log.debug(`[${AUDIT_TYPE}]: Page URL ${fullPageUrl} or ${toggleWWW(fullPageUrl)} not found in RUM API results`);
     }
   });
+
+  log.info(`[${AUDIT_TYPE}]: Matched ${matchedImages} images to RUM data, ${unmatchedImages} images not found in RUM`);
 
   const projectedTrafficLost = Object.values(pageUrlToOrganicTrafficMap)
     .reduce(
@@ -119,6 +147,9 @@ export const getProjectedMetrics = async ({
     );
 
   const projectedTrafficValue = projectedTrafficLost * CPC;
+
+  log.info(`[${AUDIT_TYPE}]: Calculated metrics - projectedTrafficLost: ${Math.round(projectedTrafficLost)}, projectedTrafficValue: ${Math.round(projectedTrafficValue)}`);
+
   return {
     projectedTrafficLost: Math.round(projectedTrafficLost),
     projectedTrafficValue: Math.round(projectedTrafficValue),
@@ -153,13 +184,17 @@ export async function sendAltTextOpportunityToMystique(
     sqs, env, log, dataAccess,
   } = context;
 
+  log.info(`[${AUDIT_TYPE}]: Starting sendAltTextOpportunityToMystique - siteId: ${siteId}, auditId: ${auditId}, totalUrls: ${pageUrls.length}`);
+
   try {
     const site = await dataAccess.Site.findById(siteId);
+    const deliveryType = site.getDeliveryType();
+    log.debug(`[${AUDIT_TYPE}]: Site delivery type: ${deliveryType}`);
 
     // Batch the URLs to avoid sending too many at once
     const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
 
-    log.debug(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to Mystique in ${urlBatches.length} batch(es)`);
+    log.info(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to Mystique in ${urlBatches.length} batch(es) via queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
 
     // Send each batch as a separate message
     for (let i = 0; i < urlBatches.length; i += 1) {
@@ -179,13 +214,13 @@ export async function sendAltTextOpportunityToMystique(
       };
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-      log.debug(`[${AUDIT_TYPE}]: Batch ${i + 1}/${urlBatches.length} sent to Mystique with ${batch.length} URLs`);
+      log.info(`[${AUDIT_TYPE}]: Batch ${i + 1}/${urlBatches.length} sent to Mystique with ${batch.length} URLs for siteId: ${siteId}`);
       log.debug(`[${AUDIT_TYPE}]: Message sent to Mystique: ${JSON.stringify(mystiqueMessage)}`);
     }
 
-    log.debug(`[${AUDIT_TYPE}]: All ${urlBatches.length} batches sent to Mystique successfully`);
+    log.info(`[${AUDIT_TYPE}]: Successfully sent all ${urlBatches.length} batches to Mystique for siteId: ${siteId}`);
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}]: Failed to send alt-text opportunity to Mystique: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}]: Failed to send alt-text opportunity to Mystique for siteId: ${siteId}: ${error.message}`, { error: error.stack });
     throw error;
   }
 }
@@ -205,12 +240,16 @@ export async function clearAltTextSuggestions({ opportunity, log }) {
     return;
   }
 
+  log.info(`[${AUDIT_TYPE}]: Starting clearAltTextSuggestions for opportunityId: ${opportunity.getId()}`);
+
   const existingSuggestions = await opportunity.getSuggestions();
 
   if (!existingSuggestions || existingSuggestions.length === 0) {
-    log.debug(`[${AUDIT_TYPE}]: No existing suggestions to clear`);
+    log.debug(`[${AUDIT_TYPE}]: No existing suggestions to clear for opportunityId: ${opportunity.getId()}`);
     return;
   }
+
+  log.debug(`[${AUDIT_TYPE}]: Found ${existingSuggestions.length} existing suggestions`);
 
   const IGNORED_STATUSES = [SuggestionModel.STATUSES.SKIPPED, SuggestionModel.STATUSES.FIXED];
   const ignoredSuggestions = existingSuggestions.filter(
@@ -225,9 +264,9 @@ export async function clearAltTextSuggestions({ opportunity, log }) {
 
   if (suggestionsToRemove.length > 0) {
     await Promise.all(suggestionsToRemove.map((suggestion) => suggestion.remove()));
-    log.info(`[${AUDIT_TYPE}]: Cleared ${suggestionsToRemove.length} existing suggestions (preserved ${ignoredSuggestions.length} ignored suggestions)`);
+    log.info(`[${AUDIT_TYPE}]: Cleared ${suggestionsToRemove.length} existing suggestions (preserved ${ignoredSuggestions.length} ignored suggestions) for opportunityId: ${opportunity.getId()}`);
   } else {
-    log.debug(`[${AUDIT_TYPE}]: No suggestions to clear (all ${existingSuggestions.length} suggestions are ignored)`);
+    log.info(`[${AUDIT_TYPE}]: No suggestions to clear (all ${existingSuggestions.length} suggestions are ignored) for opportunityId: ${opportunity.getId()}`);
   }
 }
 
@@ -243,9 +282,11 @@ export async function clearAltTextSuggestions({ opportunity, log }) {
  */
 export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, log }) {
   if (!isNonEmptyArray(newSuggestionDTOs)) {
-    log.debug(`[${AUDIT_TYPE}]: No new suggestions to add`);
+    log.debug(`[${AUDIT_TYPE}]: No new suggestions to add for opportunityId: ${opportunity.getId()}`);
     return;
   }
+
+  log.info(`[${AUDIT_TYPE}]: Adding ${newSuggestionDTOs.length} new suggestions to opportunityId: ${opportunity.getId()}`);
 
   const updateResult = await opportunity.addSuggestions(newSuggestionDTOs);
 
@@ -258,9 +299,10 @@ export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, lo
     if (!isNonEmptyArray(updateResult.createdItems)) {
       throw new Error(`[${AUDIT_TYPE}]: Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
     }
+    log.warn(`[${AUDIT_TYPE}]: Partial success - ${updateResult.createdItems.length} suggestions added despite ${updateResult.errorItems.length} errors`);
+  } else {
+    log.info(`[${AUDIT_TYPE}]: Successfully added ${newSuggestionDTOs.length} new suggestions to opportunityId: ${opportunity.getId()}`);
   }
-
-  log.debug(`[${AUDIT_TYPE}]: Added ${newSuggestionDTOs.length} new suggestions`);
 }
 
 /**
@@ -270,19 +312,23 @@ export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, lo
  * @returns {Promise<void>}
  */
 export async function cleanupOutdatedSuggestions(opportunity, log) {
+  log.info(`[${AUDIT_TYPE}]: Starting cleanup of OUTDATED suggestions for opportunityId: ${opportunity.getId()}`);
+
   try {
     const allSuggestions = await opportunity.getSuggestions();
+    log.debug(`[${AUDIT_TYPE}]: Found ${allSuggestions.length} total suggestions`);
+
     const outdatedSuggestions = allSuggestions.filter(
       (suggestion) => suggestion.getStatus() === SuggestionModel.STATUSES.OUTDATED,
     );
 
     if (outdatedSuggestions.length > 0) {
       await Promise.all(outdatedSuggestions.map((suggestion) => suggestion.remove()));
-      log.debug(`[${AUDIT_TYPE}]: Cleaned up ${outdatedSuggestions.length} OUTDATED suggestions`);
+      log.info(`[${AUDIT_TYPE}]: Cleaned up ${outdatedSuggestions.length} OUTDATED suggestions for opportunityId: ${opportunity.getId()}`);
     } else {
-      log.debug(`[${AUDIT_TYPE}]: No OUTDATED suggestions to clean up`);
+      log.debug(`[${AUDIT_TYPE}]: No OUTDATED suggestions to clean up for opportunityId: ${opportunity.getId()}`);
     }
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}]: Failed to cleanup OUTDATED suggestions: ${error.message}`);
+    log.error(`[${AUDIT_TYPE}]: Failed to cleanup OUTDATED suggestions for opportunityId: ${opportunity.getId()}: ${error.message}`, { error: error.stack });
   }
 }
