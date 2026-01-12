@@ -359,10 +359,6 @@ export function mergeAccessibilityData(existingData, newData, log, logIdentifier
   Object.entries(merged).forEach(([key, urlData]) => {
     if (key === 'overall' || !urlData || !urlData.violations) return;
 
-    // Add to total violations count
-    const totalViolations = Number(urlData.violations.total) || 0;
-    recalculatedOverall.violations.total += totalViolations;
-
     // Process critical and serious violations
     ['critical', 'serious'].forEach((severity) => {
       const severityData = urlData.violations[severity];
@@ -375,25 +371,40 @@ export function mergeAccessibilityData(existingData, newData, log, logIdentifier
         const overallItems = recalculatedOverall.violations[severity].items;
 
         if (!overallItems[ruleId]) {
-          // If first time seeing this rule, copy it with all required fields
+          // If first time seeing this rule, copy it with ALL fields from content scraper
           overallItems[ruleId] = {
             count: ruleData.count || 0,
             description: ruleData.description || '',
-            level: ruleData.level || severity,
+            level: ruleData.level || '',
             understandingUrl: ruleData.understandingUrl || '',
             successCriteriaNumber: ruleData.successCriteriaNumber || '',
-            ...ruleData, // Include any additional fields
+            helpUrl: ruleData.helpUrl || '',
+            failureSummary: ruleData.failureSummary || '',
+            htmlWithIssues: ruleData.htmlWithIssues ? [...ruleData.htmlWithIssues] : [],
+            target: ruleData.target ? [...ruleData.target] : [],
+            successCriteriaTags: ruleData.successCriteriaTags
+              ? [...ruleData.successCriteriaTags] : [],
           };
-          if (ruleData.htmlData) {
-            overallItems[ruleId].htmlData = [...ruleData.htmlData];
-          }
         } else {
           // If rule already exists, merge the data
           overallItems[ruleId].count = (overallItems[ruleId].count || 0) + (ruleData.count || 0);
 
-          if (ruleData.htmlData?.length) {
-            if (!overallItems[ruleId].htmlData) overallItems[ruleId].htmlData = [];
-            overallItems[ruleId].htmlData.push(...ruleData.htmlData);
+          // Merge array fields by concatenating them
+          if (ruleData.htmlWithIssues?.length) {
+            if (!overallItems[ruleId].htmlWithIssues) overallItems[ruleId].htmlWithIssues = [];
+            overallItems[ruleId].htmlWithIssues.push(...ruleData.htmlWithIssues);
+          }
+
+          if (ruleData.target?.length) {
+            if (!overallItems[ruleId].target) overallItems[ruleId].target = [];
+            overallItems[ruleId].target.push(...ruleData.target);
+          }
+
+          if (ruleData.successCriteriaTags?.length) {
+            if (!overallItems[ruleId].successCriteriaTags) {
+              overallItems[ruleId].successCriteriaTags = [];
+            }
+            overallItems[ruleId].successCriteriaTags.push(...ruleData.successCriteriaTags);
           }
         }
       });
@@ -406,6 +417,10 @@ export function mergeAccessibilityData(existingData, newData, log, logIdentifier
       recalculatedOverall.violations[severity].items,
     ).reduce((sum, rule) => sum + (rule.count || 0), 0);
   });
+
+  // Calculate total from severity counts (no double counting)
+  recalculatedOverall.violations.total = recalculatedOverall.violations.critical.count
+    + recalculatedOverall.violations.serious.count;
 
   merged.overall = recalculatedOverall;
   return merged;
