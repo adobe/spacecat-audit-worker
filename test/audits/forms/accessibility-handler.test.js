@@ -1918,6 +1918,39 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(context.dataAccess.Opportunity.findById).to.not.have.been.called;
     });
 
+    it('should log A11y preflight detected, skipping guidance for preflight request', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          opportunityId,
+          a11y: [{
+            form: 'https://example.com/form1',
+            formSource: '#form1',
+            a11yIssues: [{
+              issue: 'Missing alt text',
+              level: 'error',
+              successCriterias: ['1.1.1'],
+              htmlWithIssues: ['<img src="test.jpg">'],
+              recommendation: 'Add alt text to image',
+            }],
+          }],
+        },
+        options: {
+          a11yPreflight: true,
+        }
+      };
+
+      // Override the Site.findById to return null (site not found)
+      const siteFindByIdStub = sandbox.stub().resolves(null);
+      context.dataAccess.Site.findById = siteFindByIdStub;
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+          `[Form Opportunity] [Site Id: ${siteId}] A11y preflight detected, skipping guidance`,
+      );
+    });
+
     it('should return notFound when opportunityId is provided but opportunity is not found', async () => {
       const message = {
         auditId,
