@@ -12,53 +12,51 @@
 
 import { CloudWatchLogsClient, FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
 
+const CONTENT_SCRAPER_LOG_GROUP = '/aws/lambda/spacecat-services--content-scraper';
+
 /**
- * Queries CloudWatch logs for bot protection events from content scraper.
- *
- * Uses audit creation time as the search start time because:
- * - When triggered during onboarding: audit is created after onboarding starts,
- *   then immediately calls content scraper, so audit creation time captures all scraper logs
- * - When triggered via "run audit" command: audit is created at command time,
- *   then immediately calls content scraper, so audit creation time captures all scraper logs
- *
- * @param {string} jobId - The scrape job ID
+ * Queries CloudWatch logs for bot protection errors from content scraper
+ * Note: Applies a 5-minute buffer before searchStartTime to handle clock skew and log delays
+ * @param {string} siteId - The site ID for filtering logs
  * @param {object} context - Context with env and log
- * @param {number} searchStartTime - Timestamp (ms) to start searching logs from
+ * @param {number} searchStartTime - Search start timestamp (ms), buffer applied automatically
  * @returns {Promise<Array>} Array of bot protection events
  */
-export async function queryBotProtectionLogs(jobId, context, searchStartTime) {
+export async function queryBotProtectionLogs(siteId, context, searchStartTime) {
   const { env, log } = context;
 
   const cloudwatchClient = new CloudWatchLogsClient({
-    region: env.AWS_REGION || /* c8 ignore next */ 'us-east-1',
+    region: env.AWS_REGION || 'us-east-1',
   });
 
-  const logGroupName = env.CONTENT_SCRAPER_LOG_GROUP || '/aws/lambda/spacecat-services--content-scraper';
+  const logGroupName = env.CONTENT_SCRAPER_LOG_GROUP || CONTENT_SCRAPER_LOG_GROUP;
 
-  // Query logs from search start time (audit creation or onboard start) to now
-  const startTime = searchStartTime;
+  // Apply 5-minute buffer to handle clock skew and log delays
+  const BUFFER_MS = 5 * 60 * 1000; // 5 minutes
+  const startTime = searchStartTime - BUFFER_MS;
   const endTime = Date.now();
 
-  log.debug(`Querying bot protection logs from ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
+  log.debug(`Querying bot protection logs from ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()} (5min buffer applied) for site ${siteId}`);
 
   try {
     const command = new FilterLogEventsCommand({
       logGroupName,
       startTime,
       endTime,
-      // Filter pattern to find bot protection logs
-      filterPattern: `{ $.jobId = "${jobId}" && $.errorCategory = "bot-protection" }`,
-      limit: 100, // Max URLs per job
+      // Filter pattern to find bot protection logs for this site in the time window
+      // Text pattern since logs have prefix: [BOT-BLOCKED] Bot Protection Detection in Scraper
+      filterPattern: `"[BOT-BLOCKED]" "${siteId}"`,
+      limit: 500, // Increased limit for sites with many URLs
     });
 
     const response = await cloudwatchClient.send(command);
 
     if (!response.events || response.events.length === 0) {
-      log.debug(`No bot protection logs found for job ${jobId}`);
+      log.debug(`No bot protection logs found for site ${siteId}`);
       return [];
     }
 
-    log.info(`Found ${response.events.length} bot protection events in CloudWatch logs`);
+    log.info(`Found ${response.events.length} bot protection events in CloudWatch logs for site ${siteId}`);
 
     // Parse log events
     const botProtectionEvents = response.events
@@ -79,7 +77,7 @@ export async function queryBotProtectionLogs(jobId, context, searchStartTime) {
 
     return botProtectionEvents;
   } catch (error) {
-    log.error('Failed to query CloudWatch logs for bot protection:', error);
+    log.error(`Failed to query CloudWatch logs for bot protection (site ${siteId}):`, error);
     // Don't fail the entire audit run
     return [];
   }
