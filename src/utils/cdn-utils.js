@@ -22,6 +22,7 @@ export const CDN_TYPES = {
   CLOUDFLARE: 'cloudflare',
   CLOUDFRONT: 'cloudfront',
   FRONTDOOR: 'frontdoor',
+  OTHER: 'other',
 };
 
 export const SERVICE_PROVIDER_TYPES = {
@@ -32,6 +33,7 @@ export const SERVICE_PROVIDER_TYPES = {
   BYOCDN_CLOUDFLARE: 'byocdn-cloudflare',
   BYOCDN_CLOUDFRONT: 'byocdn-cloudfront',
   BYOCDN_FRONTDOOR: 'byocdn-frontdoor',
+  BYOCDN_OTHER: 'byocdn-other',
   AMS_CLOUDFRONT: 'ams-cloudfront',
   AMS_FRONTDOOR: 'ams-frontdoor',
 };
@@ -45,6 +47,7 @@ export const SERVICE_TO_CDN_MAPPING = {
   [SERVICE_PROVIDER_TYPES.BYOCDN_CLOUDFLARE]: CDN_TYPES.CLOUDFLARE,
   [SERVICE_PROVIDER_TYPES.BYOCDN_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
   [SERVICE_PROVIDER_TYPES.BYOCDN_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
+  [SERVICE_PROVIDER_TYPES.BYOCDN_OTHER]: CDN_TYPES.OTHER,
   [SERVICE_PROVIDER_TYPES.AMS_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
   [SERVICE_PROVIDER_TYPES.AMS_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
 };
@@ -320,18 +323,27 @@ export function resolveConsolidatedBucketName(context) {
 }
 
 /**
- * Checks if raw table location matches expected location and recreates if needed
+ * Extracts schema_version from SQL or CREATE TABLE statement
+ */
+function extractSchemaVersion(str) {
+  const match = str?.match(/'schema_version'\s*=\s*'([^']+)'/i);
+  return match?.[1] || '0';
+}
+
+/**
+ * Checks if table needs recreation based on location or schema version mismatch.
  * @returns {Promise<boolean>} True if table needs to be created
  */
-export async function shouldRecreateRawTable(
+export async function shouldRecreateTable(
   athenaClient,
   database,
-  rawTable,
+  tableName,
   expectedLocation,
+  sqlTemplate,
   log,
 ) {
   try {
-    const result = await athenaClient.query(`SHOW CREATE TABLE ${database}.${rawTable}`, database, `[Athena Query] Check raw table location ${database}.${rawTable}`);
+    const result = await athenaClient.query(`SHOW CREATE TABLE ${database}.${tableName}`, database, `[Athena Query] Check table ${database}.${tableName}`);
     const createStatement = result?.map((row) => row.createtab_stmt).join('\n');
     const locationMatch = createStatement?.match(/LOCATION\s*['"]([^'"]+)['"]/i);
 
@@ -339,8 +351,18 @@ export async function shouldRecreateRawTable(
 
     const normalize = (loc) => (loc.endsWith('/') ? loc : `${loc}/`);
     if (normalize(locationMatch[1]) !== normalize(expectedLocation)) {
-      log.info(`Table location mismatch. Dropping table ${database}.${rawTable}`);
-      await athenaClient.execute(`DROP TABLE IF EXISTS ${database}.${rawTable}`, database, `[Athena Query] Drop raw table ${database}.${rawTable}`);
+      log.info(`Table location mismatch. Dropping table ${database}.${tableName}`);
+      await athenaClient.execute(`DROP TABLE IF EXISTS ${database}.${tableName}`, database, `[Athena Query] Drop raw table ${database}.${tableName}`);
+      return true;
+    }
+
+    // Check schema version mismatch
+    const currentVersion = extractSchemaVersion(createStatement);
+    const expectedVersion = extractSchemaVersion(sqlTemplate);
+
+    if (currentVersion !== expectedVersion) {
+      log.info(`Schema version mismatch for ${database}.${tableName} (current: ${currentVersion}, expected: ${expectedVersion}). Dropping table.`);
+      await athenaClient.execute(`DROP TABLE IF EXISTS ${database}.${tableName}`, database, `[Athena Query] Drop raw table ${database}.${tableName}`);
       return true;
     }
 
@@ -355,7 +377,7 @@ export function buildSiteFilters(filters, site) {
     const baseURL = site.getBaseURL();
     const { host } = new URL(baseURL);
     const rootHost = host.replace(/^www\./, '');
-    return `REGEXP_LIKE(host, '(?i)^(www.)?${rootHost}$')`;
+    return `(REGEXP_LIKE(host, '(?i)^(www.)?${rootHost}$') OR REGEXP_LIKE(x_forwarded_host, '(?i)^(www.)?${rootHost}$'))`;
   }
 
   const clauses = filters.map(({ key, value, type }) => {

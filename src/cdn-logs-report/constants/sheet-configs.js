@@ -45,31 +45,41 @@ export const SHEET_CONFIGS = {
       const { PageCitability } = dataAccess;
       const citabilityScores = await PageCitability.allBySiteId(site.getId());
       const citabilityMap = citabilityScores.reduce((acc, score) => {
-        acc[new URL(score.getUrl()).pathname] = score.getCitabilityScore();
+        const { pathname } = new URL(score.getUrl());
+        const existingScore = acc[pathname];
+
+        if (!existingScore || new Date(score.getUpdatedAt()) > new Date(existingScore.updatedAt)) {
+          acc[pathname] = {
+            score: score.getCitabilityScore(),
+            updatedAt: score.getUpdatedAt(),
+          };
+        }
         return acc;
       }, {});
 
       /* c8 ignore next */
       const baseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL || site.getBaseURL();
 
-      return data.map((row) => {
-        const urlPath = row.url === '-' ? '/' : (row.url || '');
-        const path = new URL(joinBaseAndPath(baseURL, urlPath)).pathname;
-        const citabilityScore = citabilityMap[path] || 'N/A';
+      return data
+        .filter((row) => row.agent_type && row.agent_type !== 'Other')
+        .map((row) => {
+          const urlPath = row.url === '-' ? '/' : (row.url || '');
+          const path = new URL(joinBaseAndPath(baseURL, urlPath)).pathname;
+          const citabilityScore = citabilityMap[path]?.score || 'N/A';
 
-        return [
-          row.agent_type || 'Other',
-          row.user_agent_display || 'Unknown',
-          Number(row.status) || 'N/A',
-          Number(row.number_of_hits) || 0,
-          Number(row.avg_ttfb_ms) || 0,
-          validateCountryCode(row.country_code),
-          urlPath,
-          capitalizeFirstLetter(row.product) || 'Other',
-          row.category || 'Uncategorized',
-          citabilityScore,
-        ];
-      });
+          return [
+            row.agent_type,
+            row.user_agent_display || 'Unknown',
+            Number(row.status) || 'N/A',
+            Number(row.number_of_hits) || 0,
+            Number(row.avg_ttfb_ms) || 0,
+            validateCountryCode(row.country_code),
+            urlPath,
+            capitalizeFirstLetter(row.product) || 'Other',
+            row.category || 'Uncategorized',
+            citabilityScore,
+          ];
+        });
     },
   },
   referral: {

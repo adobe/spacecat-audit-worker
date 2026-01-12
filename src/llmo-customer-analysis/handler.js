@@ -44,25 +44,40 @@ async function enableAudits(site, context, audits = [], options = undefined) {
   const { Configuration } = dataAccess;
 
   const configuration = options?.configuration ?? await Configuration.findLatest();
+
+  let hasChanges = false;
   audits.forEach((audit) => {
-    configuration.enableHandlerForSite(audit, site);
-  });
-  await configuration.save();
-  /* c8 ignore stop */
-}
-
-async function enableImports(site, imports = []) {
-  const siteConfig = site.getConfig();
-
-  imports.forEach(({ type, options }) => {
-    if (!siteConfig.isImportEnabled(type, options)) {
-      siteConfig.enableImport(type, options);
+    if (!configuration.isHandlerEnabledForSite(audit, site)) {
+      configuration.enableHandlerForSite(audit, site);
+      hasChanges = true;
     }
   });
 
-  site.setConfig(Config.toDynamoItem(siteConfig));
+  if (hasChanges) {
+    await configuration.save();
+  }
+  /* c8 ignore stop */
+}
 
-  await site.save();
+async function enableImports(siteId, context, imports = []) {
+  const { dataAccess: { Site }, log } = context;
+
+  const site = await Site.findById(siteId);
+  const siteConfig = site.getConfig();
+
+  let hasChanges = false;
+  imports.forEach(({ type, options }) => {
+    if (!siteConfig.isImportEnabled(type, options)) {
+      siteConfig.enableImport(type, options);
+      hasChanges = true;
+    }
+  });
+
+  if (hasChanges) {
+    log.info(`Enabling imports for site ${siteId}`);
+    site.setConfig(Config.toDynamoItem(siteConfig));
+    await site.save();
+  }
 }
 
 async function checkOptelData(domain, context) {
@@ -255,10 +270,10 @@ async function getBaseUrlBySiteId(siteId, context) {
     const site = await Site.findById(siteId);
     /* c8 ignore next */
     return site?.getBaseURL() || '';
-  } catch {
+  } catch /* c8 ignore start */ {
     log.info(`Unable to fetch base URL for siteId: ${siteId}`);
     return '';
-  }
+  } /* c8 ignore stop */
 }
 
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
@@ -270,36 +285,38 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const domain = finalUrl;
 
   // Ensure relevant audits and imports are enabled
-  const { Configuration } = context.dataAccess;
-  const configuration = await Configuration.findLatest();
+  try {
+    const { Configuration } = context.dataAccess;
+    const configuration = await Configuration.findLatest();
 
-  const auditsToEnable = [
-    'scrape-top-pages',
-    'headings',
-    'llm-blocked',
-    'llm-error-pages',
-    'canonical',
-    'hreflang',
-    'summarization',
-    'faqs',
-    REFERRAL_TRAFFIC_AUDIT,
-    'cdn-logs-report',
-  ];
-  const [isDailyEnabled, isPaidEnabled] = await Promise.all([
-    configuration.isHandlerEnabledForSite('geo-brand-presence-daily', site),
-    configuration.isHandlerEnabledForSite('geo-brand-presence-paid', site),
-  ]);
+    const auditsToEnable = [
+      'scrape-top-pages',
+      'headings',
+      'llm-blocked',
+      'llm-error-pages',
+      'summarization',
+      'faqs',
+      REFERRAL_TRAFFIC_AUDIT,
+      'cdn-logs-report',
+    ];
+    const [isDailyEnabled, isPaidEnabled] = await Promise.all([
+      configuration.isHandlerEnabledForSite('geo-brand-presence-daily', site),
+      configuration.isHandlerEnabledForSite('geo-brand-presence-paid', site),
+    ]);
 
-  // don't tamper with configuration if daily geo brand presence is already enabled.
-  if (!isDailyEnabled) {
-    auditsToEnable.push('geo-brand-presence');
-    // only enable free geo brand presence if paid is not already enabled
-    if (!isPaidEnabled) {
-      auditsToEnable.push('geo-brand-presence-free');
+    // don't tamper with configuration if daily geo brand presence is already enabled.
+    if (!isDailyEnabled) {
+      auditsToEnable.push('geo-brand-presence');
+      // only enable free geo brand presence if paid is not already enabled
+      if (!isPaidEnabled) {
+        auditsToEnable.push('geo-brand-presence-free');
+      }
     }
-  }
 
-  await enableAudits(site, context, auditsToEnable, { configuration });
+    await enableAudits(site, context, auditsToEnable, { configuration });
+  } catch (error) {
+    log.error(`Failed to enable audits for site ${siteId}: ${error.message}`);
+  }
 
   // Enable ContentAI for the site
   try {
@@ -311,11 +328,15 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     log.error(`Failed to process ContentAI for site ${siteId}: ${error.message}`);
   }
 
-  await enableImports(site, [
-    { type: REFERRAL_TRAFFIC_IMPORT },
-    { type: 'llmo-prompts-ahrefs', options: { limit: 25 } },
-    { type: 'top-pages' },
-  ]);
+  try {
+    await enableImports(siteId, context, [
+      { type: REFERRAL_TRAFFIC_IMPORT },
+      { type: 'llmo-prompts-ahrefs', options: { limit: 25 } },
+      { type: 'top-pages' },
+    ]);
+  } catch (error) {
+    log.error(`Failed to enable imports for site ${siteId}: ${error.message}`);
+  }
 
   log.info(`Starting LLMO customer analysis for site: ${siteId}, domain: ${domain}`);
 

@@ -98,6 +98,7 @@ describe('CDN Logs Sheet Configs', () => {
         {
           getUrl: () => 'https://example.com/test',
           getCitabilityScore: () => 85,
+          getUpdatedAt: () => '2025-01-15T10:00:00Z',
         },
       ]);
 
@@ -150,7 +151,8 @@ describe('CDN Logs Sheet Configs', () => {
     it('handles data with missing fields', async () => {
       const testData = [
         {
-          // Missing agent_type, user_agent_display, etc.
+          // Missing user_agent_display, etc.
+          agent_type: 'test',
           status: null,
           number_of_hits: 'invalid',
           avg_ttfb_ms: null,
@@ -171,7 +173,7 @@ describe('CDN Logs Sheet Configs', () => {
         .to
         .deep
         .equal([
-          'Other',
+          'test',
           'Unknown',
           'N/A',
           0,
@@ -184,12 +186,75 @@ describe('CDN Logs Sheet Configs', () => {
         ]);
     });
 
+    it('should filter out rows with missing agent_type and other fields', async () => {
+      const testData = [
+        {
+          agent_type: null,
+          user_agent_display: null,
+          status: null,
+          number_of_hits: 'invalid',
+          avg_ttfb_ms: null,
+          country_code: null,
+          url: null,
+          product: null,
+          category: null,
+        },
+      ];
+
+      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
+
+      expect(result)
+        .to
+        .have
+        .length(0);
+    });
+
     it('handles empty array data', async () => {
       const result = await SHEET_CONFIGS.agentic.processData([], mockSite, mockDataAccess);
       expect(result)
         .to
         .deep
         .equal([]);
+    });
+
+    it('uses the latest updated citability score when multiple scores exist for same pathname', async () => {
+      const testData = [
+        {
+          agent_type: 'Chatbots',
+          user_agent_display: 'ChatGPT-User',
+          status: 200,
+          number_of_hits: 100,
+          avg_ttfb_ms: 250.5,
+          country_code: 'US',
+          url: '/test',
+          product: 'firefly',
+          category: 'Products',
+        },
+      ];
+
+      // Setup multiple citability scores for the same pathname with different update times
+      mockDataAccess.PageCitability.allBySiteId.resolves([
+        {
+          getUrl: () => 'https://example.com/test',
+          getCitabilityScore: () => 75,
+          getUpdatedAt: () => '2025-01-10T10:00:00Z', // Older
+        },
+        {
+          getUrl: () => 'https://example.com/test',
+          getCitabilityScore: () => 90,
+          getUpdatedAt: () => '2025-01-15T10:00:00Z', // Newer - should be used
+        },
+      ]);
+
+      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
+
+      expect(result)
+        .to
+        .have
+        .lengthOf(1);
+      expect(result[0][9]) // Citability Score is at index 9
+        .to
+        .equal(90); // Should use the newer score
     });
 
     it('has required properties', () => {
@@ -291,7 +356,7 @@ describe('CDN Logs Sheet Configs', () => {
         region: 'UK',
       }, {
         path: '/another/path',
-        referrer: 'https://l.meta.ai',
+        referrer: 'perplexity.ai',
         utm_source: '',
         utm_medium: '',
         tracking_param: '',
@@ -340,7 +405,7 @@ describe('CDN Logs Sheet Configs', () => {
         '/another/path',
         'earned',
         'llm',
-        'meta',
+        'perplexity',
         'desktop',
         '2025-07-19',
         23,
@@ -348,8 +413,7 @@ describe('CDN Logs Sheet Configs', () => {
         '',
         'US',
         '',
-      ], 
-      ]);
+      ]]);
     });
 
     it('has required properties', () => {
