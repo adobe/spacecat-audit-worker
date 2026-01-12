@@ -309,6 +309,7 @@ export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, lo
     if (!isNonEmptyArray(updateResult.createdItems)) {
       throw new Error(`[${AUDIT_TYPE}]: Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
     }
+    log.debug(`[${AUDIT_TYPE}]: Added ${updateResult.createdItems.length} new suggestions`);
     log.error(`[${AUDIT_TYPE}]: Partial success - ${updateResult.createdItems.length} suggestions added despite ${updateResult.errorItems.length} errors`);
   } else {
     log.debug(`[${AUDIT_TYPE}]: Added ${newSuggestionDTOs.length} new suggestions`);
