@@ -18,6 +18,7 @@ import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js
 import {
   aggregateA11yIssuesByOppType,
   createIndividualOpportunitySuggestions,
+  sendMessageToMystiqueForRemediation,
 } from '../../accessibility/utils/generate-individual-opportunities.js';
 import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToMystique } from '../../accessibility/utils/data-processing.js';
 import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from '../../accessibility/utils/constants.js';
@@ -380,7 +381,13 @@ export default async function handler(message, context) {
     } else {
       log.info(`[Form Opportunity] [Site Id: ${siteId}] ${opportunity.getType()}-auto-fix is disabled for site, skipping code-fix generation`);
     }
-    // TODO: Send message to mystique for guidance
+
+    await sendMessageToMystiqueForRemediation(
+      opportunity,
+      context,
+      log,
+      { useCodeFixFlow: false },
+    );
   } catch (error) {
     log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to process a11y opportunity from mystique: ${error.message}`);
   }

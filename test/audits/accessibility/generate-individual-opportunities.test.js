@@ -2683,7 +2683,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
 
 describe('createDirectMystiqueMessage', () => {
   it('should create a message object with all required fields', () => {
-    const fakeOpportunity = { getId: () => 'oppty-123' };
+    const fakeOpportunity = { getId: () => 'oppty-123', getType: () => 'accessibility' };
     const issuesList = [{ type: 'color-contrast', description: 'desc' }];
     const siteId = 'site-789';
     const auditId = 'audit-101';
@@ -2706,12 +2706,13 @@ describe('createDirectMystiqueMessage', () => {
       url: 'https://example.com',
       opportunityId: 'oppty-123',
       issuesList,
+      opportunityType: 'accessibility',
     });
     expect(result.time).to.be.a('string');
   });
 
   it('should default siteId and auditId to empty string if not provided', () => {
-    const fakeOpportunity = { getId: () => 'oppty-123' };
+    const fakeOpportunity = { getId: () => 'oppty-123', getType: () => 'accessibility' };
     const issuesList = [];
     const result = generateIndividualOpportunitiesModule.createDirectMystiqueMessage({
       url: 'https://example.com',
@@ -2726,7 +2727,7 @@ describe('createDirectMystiqueMessage', () => {
   });
 
   it('should default siteId and auditId to empty string when null', () => {
-    const fakeOpportunity = { getId: () => 'oppty-456' };
+    const fakeOpportunity = { getId: () => 'oppty-456', getType: () => 'accessibility' };
     const issuesList = [];
     const result = generateIndividualOpportunitiesModule.createDirectMystiqueMessage({
       url: 'https://example.com',
@@ -2741,7 +2742,7 @@ describe('createDirectMystiqueMessage', () => {
   });
 
   it('should default siteId and auditId to empty string when empty string', () => {
-    const fakeOpportunity = { getId: () => 'oppty-789' };
+    const fakeOpportunity = { getId: () => 'oppty-789', getType: () => 'accessibility' };
     const issuesList = [];
     const result = generateIndividualOpportunitiesModule.createDirectMystiqueMessage({
       url: 'https://example.com',
@@ -2770,6 +2771,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
       getId: sandbox.stub().returns('oppty-1'),
       getSiteId: sandbox.stub().returns('site-1'),
       getAuditId: sandbox.stub().returns('audit-1'),
+      getType: sandbox.stub().returns('accessibility'),
       getSuggestions: sandbox.stub().resolves([]),
     };
     mockLog = {
@@ -4376,6 +4378,7 @@ describe('sendMystiqueMessage', () => {
 
     mockOpportunity = {
       getId: sandbox.stub().returns('oppty-123'),
+      getType: sandbox.stub().returns('accessibility'),
     };
 
     mockIsAuditEnabledForSite = sandbox.stub();
@@ -4833,6 +4836,7 @@ describe('sendMystiqueMessage', () => {
         url: 'https://example.com/page13',
         opportunityId: 'oppty-123',
         issuesList: [{ issueName: 'color-contrast', details: 'Low contrast' }],
+        opportunityType: 'accessibility',
       });
     });
 
