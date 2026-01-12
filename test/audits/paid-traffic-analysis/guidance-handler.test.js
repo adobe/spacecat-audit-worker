@@ -16,11 +16,23 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
+import esmock from 'esmock';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
-import handler from '../../../src/paid-traffic-analysis/guidance-handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
+
+// Mock tagMappings module
+const mockTagMappings = {
+  mergeTagsWithHardcodedTags: sinon.stub().callsFake((opportunityType, currentTags) => {
+    if (opportunityType === 'paid-traffic') {
+      return ['Paid Traffic', 'Engagement'];
+    }
+    return currentTags || [];
+  }),
+};
+
+let handler;
 
 describe('Paid-traffic-analysis guidance handler', () => {
   let sandbox;

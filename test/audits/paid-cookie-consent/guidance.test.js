@@ -21,10 +21,22 @@ import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { CopyObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
-import handler from '../../../src/paid-cookie-consent/guidance-handler.js';
+import esmock from 'esmock';
 
 use(sinonChai);
 use(chaiAsPromised);
+
+// Mock tagMappings module
+const mockTagMappings = {
+  mergeTagsWithHardcodedTags: sinon.stub().callsFake((opportunityType, currentTags) => {
+    if (opportunityType === 'consent-banner') {
+      return ['Consent Banner', 'Engagement'];
+    }
+    return currentTags || [];
+  }),
+};
+
+let handler;
 
 // Helper to create a fresh stubbed opportunity instance
 function makeOppty({
@@ -60,8 +72,15 @@ describe('Paid Cookie Consent Guidance Handler', () => {
   let opportunityInstance;
   let s3ClientMock;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sandbox = sinon.createSandbox();
+    // Import handler with mocked tagMappings
+    handler = await esmock(
+      '../../../src/paid-cookie-consent/guidance-handler.js',
+      {
+        '../common/tagMappings.js': mockTagMappings,
+      },
+    );
     logStub = {
       info: sandbox.stub(),
       debug: sandbox.stub(),

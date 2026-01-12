@@ -13,6 +13,7 @@ import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
+import { mergeTagsWithHardcodedTags } from '../common/tagMappings.js';
 
 const GUIDANCE_TYPE = 'guidance:traffic-analysis';
 const TRAFFIC_OPP_TYPE = 'paid-traffic';
@@ -110,6 +111,10 @@ export default async function handler(message, context) {
 
   // Create new paid-traffic opportunity for this period
   const entity = mapToPaidOpportunity(siteId, audit, period);
+
+  // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
+  entity.tags = mergeTagsWithHardcodedTags(TRAFFIC_OPP_TYPE, entity.tags);
+
   const opportunity = await Opportunity.create(entity);
 
   // Map AI Insights suggestions from guidance (already in expected structure)

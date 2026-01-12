@@ -142,10 +142,14 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
       const { projectedConversionValue = null } = (await calculateProjectedConversionValue(context, auditData.siteId, opptyData)) || {};
 
       // Import tag merging utility
+      // eslint-disable-next-line no-await-in-loop
       const { mergeTagsWithHardcodedTags } = await import('../../common/tagMappings.js');
-      
+
       // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
-      const mergedTags = mergeTagsWithHardcodedTags(FORM_OPPORTUNITY_TYPES.LOW_CONVERSION, ['Form Conversion']);
+      const mergedTags = mergeTagsWithHardcodedTags(
+        FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+        ['Form Conversion'],
+      );
 
       const opportunityData = {
         siteId: auditData.siteId,

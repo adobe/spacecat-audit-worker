@@ -135,6 +135,12 @@ async function createOpportunity(auditId, siteId, context) {
     // change status to IGNORED for older opportunities
     await updateStatusToIgnored(dataAccess, siteId, log, null, filterAccessibilityOpportunities);
 
+    // Import tag merging utility
+    const { mergeTagsWithHardcodedTags } = await import('../../common/tagMappings.js');
+
+    // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
+    const mergedTags = mergeTagsWithHardcodedTags(FORM_OPPORTUNITY_TYPES.FORM_A11Y, ['Forms Accessibility']);
+
     const opportunityData = {
       siteId,
       auditId,
@@ -143,9 +149,7 @@ async function createOpportunity(auditId, siteId, context) {
       origin: 'AUTOMATION',
       title: 'Forms missing key accessibility attributes — enhancements prepared to support all users',
       description: 'Improving accessibility for forms ensures assistive technologies can correctly interpret each input, helps users understand what\'s required, and makes form completion more intuitive for everyone.',
-      tags: [
-        'Forms Accessibility',
-      ],
+      tags: mergedTags,
       data: {
         dataSources: ['axe-core'],
       },

@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Adobe. All rights reserved.
+ * Copyright 2026 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -17,21 +17,21 @@
  */
 export const OPPORTUNITY_TAG_MAPPINGS = {
   // Web Performance
-  'cwv': ['Core Web Vitals', 'Web Performance'],
+  cwv: ['Core Web Vitals', 'Web Performance'],
 
   // Traffic Acquisition - SEO
   'meta-tags': ['Meta Tags', 'SEO'],
   'product-metatags': ['Product Meta Tags', 'SEO'],
   'broken-backlinks': ['Backlinks', 'SEO'],
   'broken-internal-links': ['Broken Internal Links', 'SEO'],
-  'sitemap': ['Sitemap', 'SEO'],
-  'canonical': ['Canonical URLs', 'SEO'],
-  'hreflang': ['Hreflang', 'SEO'],
+  sitemap: ['Sitemap', 'SEO'],
+  canonical: ['Canonical URLs', 'SEO'],
+  hreflang: ['Hreflang', 'SEO'],
   'structured-data': ['Structured Data', 'SEO'],
   'missing-structured-data': ['Missing Structured Data', 'SEO'],
   'redirect-chains': ['Redirect Chains', 'SEO'],
-  'headings': ['Headings', 'SEO', 'Engagement'],
-  'prerender': ['Prerender', 'SEO'],
+  headings: ['Headings', 'SEO', 'Engagement'],
+  prerender: ['Prerender', 'SEO'],
 
   // Traffic Acquisition - Paid Media
   'consent-banner': ['Consent Banner', 'Engagement'],
@@ -40,7 +40,7 @@ export const OPPORTUNITY_TAG_MAPPINGS = {
   // Compliance & Accessibility
   'a11y-assistive': ['ARIA Labels', 'Accessibility'],
   'a11y-color-contrast': ['Color Contrast', 'Accessibility', 'Engagement'],
-  'readability': ['Readability', 'Accessibility', 'Engagement'],
+  readability: ['Readability', 'Accessibility', 'Engagement'],
   'alt-text': ['Alt-Text', 'Accessibility', 'SEO'],
   'form-accessibility': ['Form Accessibility', 'Accessibility', 'Engagement'],
 
@@ -59,9 +59,9 @@ export const OPPORTUNITY_TAG_MAPPINGS = {
 
   // AI & Content
   'llm-blocked': ['LLM Blocked', 'AI'],
-  'summarization': ['Summarization', 'AI', 'Content'],
-  'faq': ['FAQ', 'AI', 'Content'],
-  'toc': ['Table of Contents', 'Content', 'Engagement'],
+  summarization: ['Summarization', 'AI', 'Content'],
+  faq: ['FAQ', 'AI', 'Content'],
+  toc: ['Table of Contents', 'Content', 'Engagement'],
 
   // Generic
   'generic-opportunity': ['Generic', 'Opportunity'],
@@ -73,14 +73,14 @@ export const OPPORTUNITY_TAG_MAPPINGS = {
  * @param {string} opportunityType - The type of opportunity
  * @returns {string[]} Array of tags for the opportunity type
  */
-export const getTagsForOpportunityType = (opportunityType) => {
-  return OPPORTUNITY_TAG_MAPPINGS[opportunityType] || [];
-};
+export const getTagsForOpportunityType = (opportunityType) => (
+  OPPORTUNITY_TAG_MAPPINGS[opportunityType] || []
+);
 
 /**
  * Applies hardcoded tags for an opportunity type, preserving only 'isElmo' and 'isASO' tags.
  * @param {string} opportunityType - The type of opportunity
- * @param {string[]} currentTags - Current tags from the opportunity (only 'isElmo' and 'isASO' are preserved)
+ * @param {string[]} currentTags - Current tags from the opportunity
  * @returns {string[]} Array with hardcoded tags plus preserved 'isElmo'/'isASO' tags
  */
 export const mergeTagsWithHardcodedTags = (opportunityType, currentTags = []) => {
@@ -95,11 +95,11 @@ export const mergeTagsWithHardcodedTags = (opportunityType, currentTags = []) =>
   }
 
   // Preserve 'isElmo' and 'isASO' tags from existing tags, ignore all others
-  const preservedTags = currentTags.filter(tag => tag === 'isElmo' || tag === 'isASO');
-  
+  const preservedTags = currentTags.filter((tag) => tag === 'isElmo' || tag === 'isASO');
+
   // Start with hardcoded tags, then add preserved tags if not already present
   const mergedTags = [...hardcodedTags];
-  preservedTags.forEach(tag => {
+  preservedTags.forEach((tag) => {
     if (!mergedTags.includes(tag)) {
       mergedTags.push(tag);
     }
@@ -107,4 +107,3 @@ export const mergeTagsWithHardcodedTags = (opportunityType, currentTags = []) =>
 
   return mergedTags;
 };
-

@@ -14,12 +14,24 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import createLowViewsOpportunities from '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js';
+import esmock from 'esmock';
 import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../../../../src/forms-opportunities/constants.js';
 import testData from '../../../fixtures/forms/high-form-views-low-conversions.js';
 import { DATA_SOURCES } from '../../../../src/common/constants.js';
 
 use(sinonChai);
+
+// Mock tagMappings module
+const mockTagMappings = {
+  mergeTagsWithHardcodedTags: sinon.stub().callsFake((opportunityType, currentTags) => {
+    if (opportunityType === 'high-page-views-low-form-views') {
+      return ['Form Visibility', 'Engagement'];
+    }
+    return currentTags || [];
+  }),
+};
+
+let createLowViewsOpportunities;
 describe('createLowFormViewsOpportunities handler method', () => {
   let logStub;
   let dataAccessStub;
@@ -28,8 +40,15 @@ describe('createLowFormViewsOpportunities handler method', () => {
   let highPageViewsLowFormViewsOptty;
   let context;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sinon.restore();
+    // Import with mocked tagMappings
+    createLowViewsOpportunities = await esmock(
+      '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
+      {
+        '../../common/tagMappings.js': mockTagMappings,
+      },
+    );
     auditUrl = 'https://example.com';
     highPageViewsLowFormViewsOptty = {
       getOrigin: sinon.stub().returns('AUTOMATION'),
@@ -113,7 +132,8 @@ describe('createLowFormViewsOpportunities handler method', () => {
       title: 'Your form isn\'t getting enough views — optimizations to drive visibility prepared',
       description: 'Poorly placed or hidden forms reduce leads — increasing visibility improves submission rates.',
       tags: [
-        'Form Placement',
+        'Form Visibility',
+        'Engagement',
       ],
       data: {
         form: 'https://www.surest.com/high-page-low-form-view',

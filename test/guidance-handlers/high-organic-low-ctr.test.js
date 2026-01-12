@@ -16,11 +16,23 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import esmock from 'esmock';
 import opportunitiesAuditData from '../fixtures/experimentation-opportunities/experimentation-opportunity-audit.json' with { type: 'json' };
 import guidanceMsgFromMystique from '../fixtures/experimentation-opportunities/high-organic-low-ctr-guidance.json' with { type: 'json' };
-import handler from '../../src/experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 
 use(sinonChai);
+
+// Mock tagMappings module
+const mockTagMappings = {
+  mergeTagsWithHardcodedTags: sinon.stub().callsFake((opportunityType, currentTags) => {
+    if (opportunityType === 'high-organic-low-ctr') {
+      return ['Low CTR', 'Engagement'];
+    }
+    return currentTags || [];
+  }),
+};
+
+let handler;
 
 const sandbox = sinon.createSandbox();
 
@@ -50,6 +62,14 @@ describe('high-organic-low-ctr guidance handler tests', () => {
   };
 
   beforeEach(async () => {
+    // Import handler with mocked tagMappings
+    handler = await esmock(
+      '../../src/experimentation-opportunities/guidance-high-organic-low-ctr-handler.js',
+      {
+        '../common/tagMappings.js': mockTagMappings,
+      },
+    );
+
     Audit = {
       findById: sandbox.stub().resolves(dummyAudit),
     };

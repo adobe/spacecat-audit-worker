@@ -14,6 +14,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { sendAltTextOpportunityToMystique, chunkArray, cleanupOutdatedSuggestions } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { MYSTIQUE_BATCH_SIZE } from './constants.js';
+import { mergeTagsWithHardcodedTags } from '../common/tagMappings.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
@@ -77,6 +78,10 @@ export async function processAltTextWithMystique(context) {
       log.debug(`[${AUDIT_TYPE}]: Updated opportunity data for new audit run`);
     } else {
       log.debug(`[${AUDIT_TYPE}]: Creating new opportunity for site ${siteId}`);
+
+      // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
+      const mergedTags = mergeTagsWithHardcodedTags(AUDIT_TYPE, ['seo', 'accessibility']);
+
       const opportunityDTO = {
         siteId,
         auditId: audit.getId(),
@@ -108,7 +113,7 @@ export async function processAltTextWithMystique(context) {
           mystiqueResponsesExpected: urlBatches.length,
           processedSuggestionIds: [],
         },
-        tags: ['seo', 'accessibility'],
+        tags: mergedTags,
       };
 
       altTextOppty = await Opportunity.create(opportunityDTO);

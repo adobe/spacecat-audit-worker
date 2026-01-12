@@ -13,6 +13,7 @@
 import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
+import { mergeTagsWithHardcodedTags } from '../common/tagMappings.js';
 /**
  * Checks if any suggestions in the array were manually modified (updatedBy !== 'system')
  * @param {Array} suggestions - Array of suggestion objects
@@ -50,6 +51,9 @@ export default async function handler(message, context) {
   }
 
   const entity = convertToOpportunityEntity(siteId, auditId, auditOpportunity, guidance);
+
+  // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
+  entity.tags = mergeTagsWithHardcodedTags(entity.type, entity.tags);
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   let opportunity = existingOpportunities.find(

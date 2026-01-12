@@ -14,12 +14,24 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import esmock from 'esmock';
 import testData from '../../../fixtures/forms/high-form-views-low-conversions.js';
-import createLowConversionOpportunities from '../../../../src/forms-opportunities/oppty-handlers/low-conversion-handler.js';
 import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../../../../src/forms-opportunities/constants.js';
 import formScrapeData from '../../../fixtures/forms/formscrapedata.js';
 
 use(sinonChai);
+
+// Mock tagMappings module
+const mockTagMappings = {
+  mergeTagsWithHardcodedTags: sinon.stub().callsFake((opportunityType, currentTags) => {
+    if (opportunityType === 'high-form-views-low-conversions') {
+      return ['Form Conversion', 'Conversion'];
+    }
+    return currentTags || [];
+  }),
+};
+
+let createLowConversionOpportunities;
 describe('createLowConversionOpportunities handler method', () => {
   let logStub;
   let dataAccessStub;
@@ -28,8 +40,15 @@ describe('createLowConversionOpportunities handler method', () => {
   let formsOppty;
   let context;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sinon.restore();
+    // Import with mocked tagMappings
+    createLowConversionOpportunities = await esmock(
+      '../../../../src/forms-opportunities/oppty-handlers/low-conversion-handler.js',
+      {
+        '../../common/tagMappings.js': mockTagMappings,
+      },
+    );
     auditUrl = 'https://example.com';
     formsOppty = {
       getOrigin: sinon.stub().returns('AUTOMATION'),

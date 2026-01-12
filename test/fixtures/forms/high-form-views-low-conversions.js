@@ -915,6 +915,7 @@ const testData = {
     description: 'A smoother, more intuitive form experience boosts conversions and ROI from existing traffic.',
     tags: [
       'Form Conversion',
+      'Conversion',
     ],
     data: {
       trackedFormKPIName: 'Conversion Rate',
@@ -1023,6 +1024,7 @@ const testData = {
     description: 'A smoother, more intuitive form experience boosts conversions and ROI from existing traffic.',
     tags: [
       'Form Conversion',
+      'Conversion',
     ],
     data: {
       form: 'https://www.surest.com/contact-us',
@@ -1128,6 +1130,7 @@ const testData = {
     description: 'A smoother, more intuitive form experience boosts conversions and ROI from existing traffic.',
     tags: [
       'Form Conversion',
+      'Conversion',
     ],
     data: {
       form: 'https://www.surest.com/contact-us',
@@ -1242,6 +1245,7 @@ const testData = {
     description: 'A smoother, more intuitive form experience boosts conversions and ROI from existing traffic.',
     tags: [
       'Form Conversion',
+      'Conversion',
     ],
     data: {
       form: 'https://www.surest.com/contact-us',
@@ -1356,6 +1360,7 @@ const testData = {
     description: 'A smoother, more intuitive form experience boosts conversions and ROI from existing traffic.',
     tags: [
       'Form Conversion',
+      'Conversion',
     ],
     data: {
       trackedFormKPIName: 'Conversion Rate',

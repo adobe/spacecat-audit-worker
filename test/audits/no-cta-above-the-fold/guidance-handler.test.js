@@ -15,10 +15,23 @@
 import { expect, use } from "chai";
 import sinon from "sinon";
 import sinonChai from "sinon-chai";
-import handler from "../../../src/no-cta-above-the-fold/guidance-handler.js";
+import esmock from "esmock";
 import { ok, notFound } from "@adobe/spacecat-shared-http-utils";
 
 use(sinonChai);
+
+// Mock tagMappings module
+const mockTagMappings = {
+  mergeTagsWithHardcodedTags: sinon.stub().callsFake((opportunityType, currentTags) => {
+    // Generic opportunities should not have hardcoded tags applied
+    if (opportunityType === 'generic-opportunity') {
+      return currentTags || [];
+    }
+    return currentTags || [];
+  }),
+};
+
+let handler;
 
 describe("No CTA above the fold guidance handler", () => {
   let sandbox;
@@ -39,8 +52,15 @@ describe("No CTA above the fold guidance handler", () => {
     },
   ];
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sandbox = sinon.createSandbox();
+    // Import handler with mocked tagMappings
+    handler = await esmock(
+      "../../../src/no-cta-above-the-fold/guidance-handler.js",
+      {
+        "../common/tagMappings.js": mockTagMappings,
+      },
+    );
     logStub = {
       info: sandbox.stub(),
       debug: sandbox.stub(),

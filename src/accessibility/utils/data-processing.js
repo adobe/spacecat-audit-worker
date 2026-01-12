@@ -469,9 +469,12 @@ export async function createReportOpportunity(opportunityInstance, auditData, co
   try {
     // Import tag merging utility
     const { mergeTagsWithHardcodedTags } = await import('../../common/tagMappings.js');
-    
+
     // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
-    const mergedTags = mergeTagsWithHardcodedTags(opportunityInstance.type, opportunityInstance.tags);
+    const mergedTags = mergeTagsWithHardcodedTags(
+      opportunityInstance.type,
+      opportunityInstance.tags,
+    );
 
     const opportunityData = {
       siteId: auditData.siteId,

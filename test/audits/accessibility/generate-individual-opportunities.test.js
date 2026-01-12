@@ -17,14 +17,26 @@ import sinon from 'sinon';
 import chaiAsPromised from 'chai-as-promised';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-import {
-  formatWcagRule,
-  formatIssue,
-  aggregateA11yIssuesByOppType,
-  createIndividualOpportunity,
-  calculateAccessibilityMetrics,
-  createMystiqueForwardPayload,
-} from '../../../src/accessibility/utils/generate-individual-opportunities.js';
+// Functions will be imported via esmock in beforeEach
+let formatWcagRule;
+let formatIssue;
+let aggregateA11yIssuesByOppType;
+let createIndividualOpportunity;
+let calculateAccessibilityMetrics;
+let createMystiqueForwardPayload;
+
+// Mock tagMappings module
+const mockTagMappings = {
+  mergeTagsWithHardcodedTags: sinon.stub().callsFake((opportunityType, currentTags) => {
+    if (opportunityType === 'a11y-assistive') {
+      return ['ARIA Labels', 'Accessibility'];
+    }
+    if (opportunityType === 'a11y-color-contrast') {
+      return ['Color Contrast', 'Accessibility', 'Engagement'];
+    }
+    return currentTags || [];
+  }),
+};
 import * as constants from '../../../src/accessibility/utils/constants.js';
 import * as generateIndividualOpportunitiesModule from '../../../src/accessibility/utils/generate-individual-opportunities.js';
 
@@ -38,13 +50,26 @@ describe('formatWcagRule', () => {
   let sandbox;
   let originalSuccessCriteriaLinks;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sandbox = sinon.createSandbox();
+    // Import functions with mocked tagMappings
+    if (!formatWcagRule) {
+      const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+        '../../common/tagMappings.js': mockTagMappings,
+      });
+      formatWcagRule = module.formatWcagRule;
+      formatIssue = module.formatIssue;
+      aggregateA11yIssuesByOppType = module.aggregateA11yIssuesByOppType;
+      createIndividualOpportunity = module.createIndividualOpportunity;
+      calculateAccessibilityMetrics = module.calculateAccessibilityMetrics;
+      createMystiqueForwardPayload = module.createMystiqueForwardPayload;
+    }
     // Deep clone to preserve original values and structure
     originalSuccessCriteriaLinks = JSON.parse(JSON.stringify(constants.successCriteriaLinks));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await esmock.patchStop('../../../src/accessibility/utils/generate-individual-opportunities.js');
     // Restore the original values by replacing the properties
     Object.keys(constants.successCriteriaLinks).forEach((key) => {
       delete constants.successCriteriaLinks[key];
@@ -123,8 +148,15 @@ describe('formatIssue', () => {
   let sandbox;
   let originalSuccessCriteriaLinks;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sandbox = sinon.createSandbox();
+    // Ensure formatIssue is imported
+    if (!formatIssue) {
+      const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+        '../../common/tagMappings.js': mockTagMappings,
+      });
+      formatIssue = module.formatIssue;
+    }
     originalSuccessCriteriaLinks = JSON.parse(JSON.stringify(constants.successCriteriaLinks));
     // Add some test WCAG rules
     constants.successCriteriaLinks['412'] = {
@@ -1199,9 +1231,29 @@ describe('createIndividualOpportunity', () => {
   let sandbox;
   let mockOpportunity;
   let mockContext;
+  let mockTagMappings;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sandbox = sinon.createSandbox();
+    mockTagMappings = {
+      mergeTagsWithHardcodedTags: sandbox.stub().callsFake((opportunityType, currentTags) => {
+        // Return hardcoded tags based on type, preserving isElmo/isASO
+        if (opportunityType === 'a11y-assistive') {
+          return ['ARIA Labels', 'Accessibility'];
+        }
+        if (opportunityType === 'a11y-color-contrast') {
+          return ['Color Contrast', 'Accessibility', 'Engagement'];
+        }
+        // For other types, return current tags or empty array
+        return currentTags || [];
+      }),
+    };
+    
+    // Mock the tagMappings module
+    await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../common/tagMappings.js': mockTagMappings,
+    });
+    
     mockOpportunity = {
       getId: sandbox.stub().returns('test-id'),
       getSiteId: sandbox.stub().returns('test-site'),
@@ -1220,14 +1272,15 @@ describe('createIndividualOpportunity', () => {
     };
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await esmock.patchStop('../../../src/accessibility/utils/generate-individual-opportunities.js');
     sandbox.restore();
   });
 
   it('should create an opportunity with correct data', async () => {
     const opportunityInstance = {
       runbook: 'test-runbook',
-      type: 'test-type',
+      type: 'a11y-assistive',
       origin: 'test-origin',
       title: 'test-title',
       description: 'test-description',
@@ -1247,11 +1300,11 @@ describe('createIndividualOpportunity', () => {
       siteId: 'test-site',
       auditId: 'test-audit',
       runbook: 'test-runbook',
-      type: 'test-type',
+      type: 'a11y-assistive',
       origin: 'test-origin',
       title: 'test-title',
       description: 'test-description',
-      tags: ['test-tag'],
+      tags: ['ARIA Labels', 'Accessibility'], // Hardcoded tags applied
       status: 'test-status',
       data: { test: 'data' },
     });
@@ -4123,6 +4176,15 @@ describe('handleAccessibilityRemediationGuidance', () => {
 });
 
 describe('createMystiqueForwardPayload', () => {
+  beforeEach(async () => {
+    // Ensure createMystiqueForwardPayload is imported
+    if (!createMystiqueForwardPayload) {
+      const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+        '../../common/tagMappings.js': mockTagMappings,
+      });
+      createMystiqueForwardPayload = module.createMystiqueForwardPayload;
+    }
+  });
   it('should create payload with valid siteId and auditId', () => {
     const mockOpportunity = {
       getId: () => 'opportunity-123',

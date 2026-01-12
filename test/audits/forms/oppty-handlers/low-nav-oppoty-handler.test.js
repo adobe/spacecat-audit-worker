@@ -14,12 +14,24 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import createLowNavigationOpportunities from '../../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js';
+import esmock from 'esmock';
 import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../../../../src/forms-opportunities/constants.js';
 import testData from '../../../fixtures/forms/high-form-views-low-conversions.js';
 import { DATA_SOURCES } from '../../../../src/common/constants.js';
 
 use(sinonChai);
+
+// Mock tagMappings module
+const mockTagMappings = {
+  mergeTagsWithHardcodedTags: sinon.stub().callsFake((opportunityType, currentTags) => {
+    if (opportunityType === 'high-page-views-low-form-nav') {
+      return ['Form Placement', 'Engagement'];
+    }
+    return currentTags || [];
+  }),
+};
+
+let createLowNavigationOpportunities;
 describe('createLowNavigationOpportunities handler method', () => {
   let logStub;
   let dataAccessStub;
@@ -28,8 +40,15 @@ describe('createLowNavigationOpportunities handler method', () => {
   let formsCTAOppty;
   let context;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sinon.restore();
+    // Import with mocked tagMappings
+    createLowNavigationOpportunities = await esmock(
+      '../../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js',
+      {
+        '../../common/tagMappings.js': mockTagMappings,
+      },
+    );
     auditUrl = 'https://example.com';
     formsCTAOppty = {
       getOrigin: sinon.stub().returns('AUTOMATION'),
@@ -88,7 +107,8 @@ describe('createLowNavigationOpportunities handler method', () => {
       title: 'Visitors aren\'t scrolling or navigating to your form — placement and visibility optimizations ready for review',
       description: 'If users don\'t reach your form, they can\'t convert — optimizing layout increases reach and interactions.',
       tags: [
-        'Form Navigation',
+        'Form Placement',
+        'Engagement',
       ],
       data: {
         form: 'https://www.surest.com/newsletter',
@@ -178,7 +198,8 @@ describe('createLowNavigationOpportunities handler method', () => {
       title: 'Visitors aren\'t scrolling or navigating to your form — placement and visibility optimizations ready for review',
       description: 'If users don\'t reach your form, they can\'t convert — optimizing layout increases reach and interactions.',
       tags: [
-        'Form Navigation',
+        'Form Placement',
+        'Engagement',
       ],
       data: {
         form: 'https://www.iframe-example.com/test/getting-iframe-example/guide/newsletter',

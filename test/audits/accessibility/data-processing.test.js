@@ -913,8 +913,29 @@ describe('data-processing utility functions', () => {
     let mockContext;
     let mockAuditData;
     let mockOpportunityInstance;
+    let mockTagMappings;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+      mockTagMappings = {
+        mergeTagsWithHardcodedTags: sandbox.stub().callsFake((opportunityType, currentTags) => {
+          // Return hardcoded tags based on type, preserving isElmo/isASO
+          if (opportunityType === 'a11y-assistive') {
+            return ['ARIA Labels', 'Accessibility'];
+          }
+          if (opportunityType === 'a11y-color-contrast') {
+            return ['Color Contrast', 'Accessibility', 'Engagement'];
+          }
+          // For other types, return current tags or empty array
+          return currentTags || [];
+        }),
+      };
+      
+      // Mock the tagMappings module
+      const module = await esmock.patch('../../../src/accessibility/utils/data-processing.js', {
+        '../../common/tagMappings.js': mockTagMappings,
+      });
+      createReportOpportunityPatched = module.createReportOpportunity;
+      
       mockOpportunity = {
         create: sandbox.stub(),
       };
@@ -931,19 +952,23 @@ describe('data-processing utility functions', () => {
       };
       mockOpportunityInstance = {
         runbook: 'accessibility-runbook',
-        type: 'accessibility',
+        type: 'a11y-assistive',
         origin: 'spacecat',
         title: 'Improve Accessibility',
         description: 'Fix accessibility violations',
         tags: ['accessibility', 'critical'],
       };
     });
+    
+    afterEach(async () => {
+      await esmock.patchStop('../../../src/accessibility/utils/data-processing.js');
+    });
 
     it('should successfully create a new opportunity', async () => {
       const createdOpportunity = { id: 'opp-123', ...mockOpportunityInstance };
       mockOpportunity.create.resolves(createdOpportunity);
 
-      const result = await createReportOpportunity(
+      const result = await createReportOpportunityPatched(
         mockOpportunityInstance,
         mockAuditData,
         mockContext,
@@ -955,11 +980,11 @@ describe('data-processing utility functions', () => {
         siteId: 'test-site-123',
         auditId: 'audit-456',
         runbook: 'accessibility-runbook',
-        type: 'accessibility',
+        type: 'a11y-assistive',
         origin: 'spacecat',
         title: 'Improve Accessibility',
         description: 'Fix accessibility violations',
-        tags: ['accessibility', 'critical'],
+        tags: ['ARIA Labels', 'Accessibility'],
       })).to.be.true;
     });
 
@@ -968,7 +993,7 @@ describe('data-processing utility functions', () => {
       mockOpportunity.create.rejects(error);
 
       try {
-        await createReportOpportunity(
+        await createReportOpportunityPatched(
           mockOpportunityInstance,
           mockAuditData,
           mockContext,
@@ -987,12 +1012,12 @@ describe('data-processing utility functions', () => {
         origin: 'lighthouse',
         title: 'Complex Opportunity',
         description: 'A complex opportunity with multiple requirements',
-        tags: ['performance', 'seo', 'accessibility'],
+        tags: ['performance', 'seo', 'accessibility'], // Will be replaced by hardcoded tags if type matches
       };
       const createdOpportunity = { id: 'opp-456', ...complexOpportunityInstance };
       mockOpportunity.create.resolves(createdOpportunity);
 
-      await createReportOpportunity(
+      await createReportOpportunityPatched(
         complexOpportunityInstance,
         mockAuditData,
         mockContext,
@@ -1006,7 +1031,7 @@ describe('data-processing utility functions', () => {
         origin: 'lighthouse',
         title: 'Complex Opportunity',
         description: 'A complex opportunity with multiple requirements',
-        tags: ['performance', 'seo', 'accessibility'],
+        tags: ['performance', 'seo', 'accessibility'], // Will be replaced by hardcoded tags if type matches
       })).to.be.true;
     });
 
@@ -1019,7 +1044,7 @@ describe('data-processing utility functions', () => {
       const createdOpportunity = { id: 'opp-789' };
       mockOpportunity.create.resolves(createdOpportunity);
 
-      await createReportOpportunity(
+      await createReportOpportunityPatched(
         incompleteOpportunityInstance,
         mockAuditData,
         mockContext,
@@ -1046,7 +1071,7 @@ describe('data-processing utility functions', () => {
       const createdOpportunity = { id: 'opp-999' };
       mockOpportunity.create.resolves(createdOpportunity);
 
-      await createReportOpportunity(
+      await createReportOpportunityPatched(
         mockOpportunityInstance,
         differentAuditData,
         mockContext,
@@ -1056,11 +1081,11 @@ describe('data-processing utility functions', () => {
         siteId: 'another-site',
         auditId: 'different-audit',
         runbook: 'accessibility-runbook',
-        type: 'accessibility',
+        type: 'a11y-assistive',
         origin: 'spacecat',
         title: 'Improve Accessibility',
         description: 'Fix accessibility violations',
-        tags: ['accessibility', 'critical'],
+        tags: ['ARIA Labels', 'Accessibility'],
       })).to.be.true;
     });
   });

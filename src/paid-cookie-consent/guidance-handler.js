@@ -11,6 +11,7 @@
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
+import { mergeTagsWithHardcodedTags } from '../common/tagMappings.js';
 
 function getGuidanceObj(guidance) {
   const body = guidance && guidance[0] && guidance[0].body;
@@ -44,6 +45,10 @@ export default async function handler(message, context) {
   }
 
   const entity = mapToPaidOpportunity(siteId, url, audit, guidanceParsed);
+
+  // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
+  entity.tags = mergeTagsWithHardcodedTags('consent-banner', entity.tags);
+
   // Always create a new opportunity
   log.debug(`Creating new paid-cookie-consent opportunity for ${siteId} page: ${url}`);
 

@@ -22,6 +22,7 @@ import {
   sendMessageToFormsQualityAgent, sendMessageToMystiqueForGuidance,
 } from '../utils.js';
 import { DATA_SOURCES } from '../../common/constants.js';
+import { mergeTagsWithHardcodedTags } from '../../common/tagMappings.js';
 
 /**
  * @param auditUrl - The URL of the audit
@@ -71,6 +72,9 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
       // eslint-disable-next-line no-await-in-loop,max-len
       const { projectedConversionValue = null } = (await calculateProjectedConversionValue(context, auditData.siteId, opptyData)) || {};
 
+      // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
+      const mergedTags = mergeTagsWithHardcodedTags(FORM_OPPORTUNITY_TYPES.LOW_VIEWS, ['Form Placement']);
+
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.auditId,
@@ -79,7 +83,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         origin: 'AUTOMATION',
         title: 'Your form isn\'t getting enough views — optimizations to drive visibility prepared',
         description: 'Poorly placed or hidden forms reduce leads — increasing visibility improves submission rates.',
-        tags: ['Form Placement'],
+        tags: mergedTags,
         data: {
           ...opptyData,
           projectedConversionValue,

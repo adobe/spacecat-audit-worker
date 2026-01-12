@@ -14,6 +14,7 @@ import {
   mapToOpportunity,
   mapToSuggestion,
 } from './guidance-opportunity-mapper.js';
+import { mergeTagsWithHardcodedTags } from '../common/tagMappings.js';
 
 function isSuggestionFailure(guidanceEntry) {
   const failureMessage = 'Suggestion generation failed, no opportunity created';
@@ -79,6 +80,12 @@ export default async function handler(message, context) {
   }
 
   const entity = mapToOpportunity(siteId, url, audit, guidanceParsed);
+  // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
+  // Note: no-cta-above-the-fold creates generic-opportunity type, so tags should come from API
+  if (entity.type !== 'generic-opportunity') {
+    entity.tags = mergeTagsWithHardcodedTags(entity.type, entity.tags);
+  }
+
   log.info(
     `Creating a new no-cta-above-the-fold opportunity for ${siteId} page: ${url}`,
   );

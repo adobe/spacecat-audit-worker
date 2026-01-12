@@ -22,6 +22,7 @@ import {
   sendMessageToFormsQualityAgent, sendMessageToMystiqueForGuidance,
 } from '../utils.js';
 import { DATA_SOURCES } from '../../common/constants.js';
+import { mergeTagsWithHardcodedTags } from '../../common/tagMappings.js';
 
 const formPathSegments = ['contact', 'newsletter', 'sign', 'enrol', 'subscribe', 'register', 'join', 'apply', 'quote', 'buy', 'trial', 'demo', 'offer'];
 /**
@@ -87,6 +88,9 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
       // eslint-disable-next-line no-await-in-loop,max-len
       const { projectedConversionValue = null } = (await calculateProjectedConversionValue(context, auditData.siteId, opptyData)) || {};
 
+      // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
+      const mergedTags = mergeTagsWithHardcodedTags(FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION, ['Form Navigation']);
+
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.auditId,
@@ -95,7 +99,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         origin: 'AUTOMATION',
         title: 'Visitors aren\'t scrolling or navigating to your form — placement and visibility optimizations ready for review',
         description: 'If users don\'t reach your form, they can\'t convert — optimizing layout increases reach and interactions.',
-        tags: ['Form Navigation'],
+        tags: mergedTags,
         data: {
           ...opptyData,
           projectedConversionValue,
