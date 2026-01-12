@@ -1239,5 +1239,212 @@ describe('Paid-traffic-analysis guidance handler', () => {
       expect(opptyUndefined.setStatus).to.have.been.calledWith('IGNORED');
       expect(logStub.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity.*week=undefined.*month=undefined/);
     });
+
+    it('should execute ignorePreviousOpportunitiesForPeriod function with all code paths', async () => {
+      const oppty1 = {
+        getType: () => 'paid-traffic',
+        getStatus: () => 'NEW',
+        getId: () => 'old-1',
+        setStatus: sandbox.stub().resolves(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getData: () => ({ week: 1 }),
+        getTitle: () => 'Old PT Oppty 1',
+      };
+      Opportunity.allBySiteId.resolves([oppty1]);
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.allBySiteId).to.have.been.calledWith(siteId);
+      expect(oppty1.setStatus).to.have.been.calledWith('IGNORED');
+      expect(oppty1.setUpdatedBy).to.have.been.calledWith('system');
+      expect(oppty1.save).to.have.been.called;
+      expect(logStub.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity id=old-1/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Ignored 1 existing paid-traffic opportunities/);
+    });
+
+    it('should execute mapToPaidOpportunity function with all parameters', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      // Verify mapToPaidOpportunity was called by checking the created entity
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.siteId).to.equal(siteId);
+      expect(createCall.type).to.equal('paid-traffic');
+      expect(createCall.origin).to.equal('ESS_OPS');
+      expect(createCall.data.dataSources).to.include('RUM');
+    });
+
+    it('should execute mapToAIInsightsSuggestions function with all parameters', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(Suggestion.create).to.have.been.called;
+      // Verify mapToAIInsightsSuggestions was called by checking suggestions
+      const firstSug = Suggestion.create.getCall(0).args[0];
+      expect(firstSug.opportunityId).to.equal(newOpportunityId);
+      expect(firstSug.type).to.equal('AI_INSIGHTS');
+      expect(firstSug.rank).to.equal(1);
+    });
+
+    it('should execute all handler lines including period derivation', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(logStub.debug).to.have.been.calledWithMatch(/Message received for guidance:traffic-analysis handler/);
+      expect(Opportunity.create).to.have.been.calledOnce;
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.data.year).to.equal(2025);
+      expect(createCall.data.week).to.equal(2);
+    });
+
+    it('should execute mergeTagsWithHardcodedTags call', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(mockTagMappings.mergeTagsWithHardcodedTags).to.have.been.calledWith('paid-traffic', sinon.match.array);
+    });
+
+    it('should execute handler with suggestions.length > 0 path', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Suggestion.create).to.have.been.called;
+      const firstCall = Suggestion.create.getCall(0).args[0];
+      expect(firstCall.status).to.equal('NEW');
+    });
+
+    it('should execute handler with suggestions.length === 0 path', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: [],
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(Suggestion.create).not.to.have.been.called;
+    });
+
+    it('should execute handler with opportunity.getType() !== paid-traffic path', async () => {
+      const nonPaidTrafficOppty = {
+        getId: () => newOpportunityId,
+        getTitle: () => 'Some Other Opportunity',
+        getType: () => 'generic-opportunity',
+      };
+      Opportunity.create.resolves(nonPaidTrafficOppty);
+      context.site = { requiresValidation: true };
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Suggestion.create).to.have.been.called;
+      const firstCall = Suggestion.create.getCall(0).args[0];
+      expect(firstCall.status).to.equal('PENDING_VALIDATION');
+    });
+
+    it('should execute handler with requiresValidation false path', async () => {
+      context.site = { requiresValidation: false };
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Suggestion.create).to.have.been.called;
+      const firstCall = Suggestion.create.getCall(0).args[0];
+      expect(firstCall.status).to.equal('NEW');
+    });
+
+    it('should execute handler with period.week != null path in log message', async () => {
+      dummyAudit.getAuditResult = () => ({
+        siteId, week: 3, year: 2025, temporalCondition: 'year=2025 AND week=3',
+      });
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(logStub.debug).to.have.been.calledWithMatch(/Finished mapping.*W3\/Y2025/);
+    });
+
+    it('should execute handler with period.week == null path in log message', async () => {
+      dummyAudit.getAuditResult = () => ({
+        siteId, month: 6, year: 2024, temporalCondition: 'year=2024 AND month=6',
+      });
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: 'https://example.com', guidance: guidancePayload,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(logStub.debug).to.have.been.calledWithMatch(/Finished mapping.*M6\/Y2024/);
+    });
   });
 });

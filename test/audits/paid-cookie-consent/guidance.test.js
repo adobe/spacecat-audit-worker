@@ -1363,5 +1363,164 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       expect(logStub.info).to.have.been.calledWithMatch(/Marked opportunity opptyId-2 as IGNORED/);
       expect(logStub.info).to.have.been.calledWithMatch(/Marked opportunity opptyId-3 as IGNORED/);
     });
+
+    it('should execute getGuidanceObj function with guidance[0] present', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidanceWithFirstElement = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance: guidanceWithFirstElement } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should execute getGuidanceObj function with guidance[0] having body property', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidanceWithBody = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance: guidanceWithBody } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should execute mapToPaidOpportunity function call', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.calledOnce;
+      // Verify mapToPaidOpportunity was called by checking the created entity
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.type).to.equal('consent-banner');
+      expect(createCall.origin).to.equal('AUTOMATION');
+    });
+
+    it('should execute mapToPaidSuggestion function call with all parameters', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(Suggestion.create).to.have.been.calledOnce;
+      // Verify mapToPaidSuggestion was called with correct parameters
+      const suggestionArg = Suggestion.create.getCall(0).args[0];
+      expect(suggestionArg.opportunityId).to.equal('opptyId');
+      expect(suggestionArg.type).to.equal('CONTENT_UPDATE');
+    });
+
+    it('should execute all handler lines including log statements', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Message received for guidance:paid-cookie-consent handler/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Fetched Audit/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Creating new paid-cookie-consent opportunity/);
+      expect(logStub.info).to.have.been.calledWithMatch(/Created suggestion for opportunity/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/paid-cookie-consent  opportunity succesfully added/);
+    });
+
+    it('should execute mergeTagsWithHardcodedTags call', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves(opportunityInstance);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(mockTagMappings.mergeTagsWithHardcodedTags).to.have.been.calledWith('consent-banner', sinon.match.array);
+    });
   });
 });

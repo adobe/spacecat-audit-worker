@@ -571,9 +571,9 @@ describe("No CTA above the fold guidance handler", () => {
       expect(result.status).to.equal(ok().status);
       expect(Opportunity.create).to.have.been.called;
       const createCall = Opportunity.create.getCall(0).args[0];
-      // Generic opportunities should not have tag mapping applied (checked in handler line 84)
+      // Generic opportunities should not have tag mapping applied
       expect(createCall.type).to.equal('generic-opportunity');
-      // Verify tag mapping was not called for generic opportunities (line 84 condition prevents line 85)
+      // Verify tag mapping was not called for generic opportunities
       expect(mockTagMappings.mergeTagsWithHardcodedTags).to.not.have.been.called;
     });
 
@@ -1051,6 +1051,156 @@ describe("No CTA above the fold guidance handler", () => {
 
       expect(result.status).to.equal(ok().status);
       expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should execute getGuidanceObj function with guidance[0] present', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+      const guidanceWithFirstElement = [
+        {
+          insight: "insight",
+          rationale: "rationale",
+          recommendation: "recommendation",
+          body: { markdown: "Line1\\nLine2" },
+        },
+      ];
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance: guidanceWithFirstElement },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+      // Verify getGuidanceObj was called and returned object with spread guidance[0] and body
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.guidance.recommendations[0].insight).to.equal("insight");
+    });
+
+    it('should execute getGuidanceObj function with guidance[0] having body property', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+      const guidanceWithBody = [
+        {
+          insight: "insight",
+          body: { markdown: "test" },
+        },
+      ];
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance: guidanceWithBody },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.called;
+    });
+
+    it('should execute mapToOpportunity function call', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Opportunity.create).to.have.been.calledOnce;
+      // Verify mapToOpportunity was called by checking the created entity
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.type).to.equal('generic-opportunity');
+      expect(createCall.origin).to.equal('AUTOMATION');
+    });
+
+    it('should execute mapToSuggestion function call with all parameters', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      const mockOpportunity = {
+        getId: () => "oppty-123",
+      };
+      Opportunity.create.resolves(mockOpportunity);
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Suggestion.create).to.have.been.calledOnce;
+      // Verify mapToSuggestion was called with correct parameters
+      const suggestionArg = Suggestion.create.getCall(0).args[0];
+      expect(suggestionArg.opportunityId).to.equal("oppty-123");
+      expect(suggestionArg.type).to.equal('CONTENT_UPDATE');
+    });
+
+    it('should execute all handler lines including log statements', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Message received for guidance:no-cta-above-the-fold handler/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Fetched Audit/);
+      expect(logStub.info).to.have.been.calledWithMatch(/Creating a new no-cta-above-the-fold opportunity/);
+      expect(logStub.info).to.have.been.calledWithMatch(/no-cta-above-the-fold opportunity succesfully added/);
+      expect(logStub.info).to.have.been.calledWithMatch(/Created suggestion for opportunity/);
     });
   });
 });
