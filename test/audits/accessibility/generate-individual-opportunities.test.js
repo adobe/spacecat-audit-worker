@@ -872,6 +872,48 @@ describe('formatIssue', () => {
 
     expect(result.understandingUrl).to.equal('');
   });
+
+  it('should not extract understandingUrl when ruleInfo exists but has no understandingUrl property', () => {
+    constants.successCriteriaLinks['412'] = {
+      name: 'Name, Role, Value',
+      // No understandingUrl property
+    };
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test</div>'],
+    }, 'critical');
+
+    expect(result.understandingUrl).to.equal('');
+  });
+
+  it('should not extract understandingUrl when ruleInfo is null/undefined for valid wcag rule', () => {
+    delete constants.successCriteriaLinks['999'];
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag999'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test</div>'],
+    }, 'critical');
+
+    expect(result.understandingUrl).to.equal('');
+  });
+
+  it('should extract understandingUrl when rawWcagRule starts with wcag and has understandingUrl', () => {
+    constants.successCriteriaLinks['111'] = {
+      name: 'Non-text Content',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html',
+    };
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag111'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test</div>'],
+    }, 'critical');
+
+    expect(result.understandingUrl).to.equal('https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html');
+  });
 });
 
   it('should extract source from URL with separator in aggregateA11yIssuesByOppType', () => {
@@ -983,6 +1025,16 @@ describe('aggregateAccessibilityIssues', () => {
 
   it('should return empty data array for undefined input', () => {
     const result = aggregateA11yIssuesByOppType(undefined);
+    expect(result).to.deep.equal({ data: [] });
+  });
+
+  it('should return empty data array for false input', () => {
+    const result = aggregateA11yIssuesByOppType(false);
+    expect(result).to.deep.equal({ data: [] });
+  });
+
+  it('should return empty data array for empty string input', () => {
+    const result = aggregateA11yIssuesByOppType('');
     expect(result).to.deep.equal({ data: [] });
   });
 

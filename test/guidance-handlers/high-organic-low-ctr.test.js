@@ -66,7 +66,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     handler = await esmock(
       '../../src/experimentation-opportunities/guidance-high-organic-low-ctr-handler.js',
       {
-        '../common/tagMappings.js': mockTagMappings,
+        '../../src/common/tagMappings.js': mockTagMappings,
       },
     );
 
@@ -116,15 +116,24 @@ describe('high-organic-low-ctr guidance handler tests', () => {
       },
     };
 
-    await handler(message, context);
+    const result = await handler(message, context);
 
-    expect(log.warn).to.have.been.calledWithMatch(/No audit found for auditId: unknown-audit-id/);
+    expect(log.warn).to.have.been.calledWith('No audit found for auditId: unknown-audit-id');
+    expect(result.status).to.equal(404);
     expect(Opportunity.allBySiteId).not.to.have.been.called;
     expect(Opportunity.create).not.to.have.been.called;
     expect(Suggestion.create).not.to.have.been.called;
   });
 
   it('should log info and return early if no raw opportunity of the given type and URL is found', async () => {
+    const auditResult = {
+      experimentationOpportunities: [],
+    };
+    const customAudit = {
+      getAuditResult: () => auditResult,
+    };
+    Audit.findById.resolves(customAudit);
+
     const message = {
       auditId: 'audit-id',
       siteId: 'site-id',
@@ -135,9 +144,10 @@ describe('high-organic-low-ctr guidance handler tests', () => {
       },
     };
 
-    await handler(message, context);
+    const result = await handler(message, context);
 
-    expect(log.info).to.have.been.calledWithMatch(/No raw opportunity found of type 'high-organic-low-ctr' for URL/);
+    expect(log.info).to.have.been.calledWith('No raw opportunity found of type \'high-organic-low-ctr\' for URL: https://abc.com/non-existing-page. Nothing to process.');
+    expect(result.status).to.equal(404);
     expect(Opportunity.allBySiteId).not.to.have.been.called;
     expect(Opportunity.create).not.to.have.been.called;
     expect(Suggestion.create).not.to.have.been.called;
@@ -172,6 +182,11 @@ describe('high-organic-low-ctr guidance handler tests', () => {
   });
 
   it('should update existing opportunity if found', async () => {
+    const existingSuggestion = {
+      remove: sandbox.stub().resolves(),
+      getUpdatedBy: sandbox.stub().returns('system'),
+    };
+    dummyOpportunity.getSuggestions.resolves([existingSuggestion]);
     Opportunity.allBySiteId.resolves([dummyOpportunity]);
 
     const message = {
@@ -186,11 +201,14 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     await handler(message, context);
 
+    expect(log.debug).to.have.been.calledWith('Existing Opportunity found for page: https://abc.com/abc-adoption/account. Updating it with new data.');
     expect(Opportunity.create).not.to.have.been.called;
     expect(dummyOpportunity.setAuditId).to.have.been.calledWith('audit-id');
     expect(dummyOpportunity.setData).to.have.been.called;
     expect(dummyOpportunity.setGuidance).to.have.been.called;
+    expect(dummyOpportunity.setUpdatedBy).to.have.been.calledWith('system');
     expect(dummyOpportunity.save).to.have.been.called;
+    expect(existingSuggestion.remove).to.have.been.called;
     expect(Suggestion.create).to.have.been.calledOnce;
   });
 
@@ -497,6 +515,136 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
       const suggestionArg = Suggestion.create.getCall(0).args[0];
       expect(suggestionArg.status).to.equal(SuggestionDataAccess.STATUSES.NEW);
+    });
+  });
+
+  describe('missing lines coverage', () => {
+    it('should execute log.warn and return notFound when audit is not found', async () => {
+      Audit.findById.resolves(null);
+
+      const message = {
+        auditId: 'non-existent-audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account',
+          guidance: [],
+          suggestions: [],
+        },
+      };
+
+      const result = await handler(message, context);
+
+      expect(log.warn).to.have.been.calledWith('No audit found for auditId: non-existent-audit-id');
+      expect(result.status).to.equal(404);
+    });
+
+    it('should execute log.info and return notFound when auditOpportunity is not found', async () => {
+      const auditResult = {
+        experimentationOpportunities: [],
+      };
+      const customAudit = {
+        getAuditResult: () => auditResult,
+      };
+      Audit.findById.resolves(customAudit);
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/non-existent-page',
+          guidance: [],
+          suggestions: [],
+        },
+      };
+
+      const result = await handler(message, context);
+
+      expect(log.info).to.have.been.calledWithMatch(/No raw opportunity found of type 'high-organic-low-ctr' for URL: https:\/\/abc.com\/non-existent-page/);
+      expect(result.status).to.equal(404);
+    });
+
+    it('should execute all lines in existing opportunity update path', async () => {
+      const existingSuggestion = {
+        remove: sandbox.stub().resolves(),
+        getUpdatedBy: sandbox.stub().returns('system'),
+      };
+      dummyOpportunity.getSuggestions.resolves([existingSuggestion]);
+      Opportunity.allBySiteId.resolves([dummyOpportunity]);
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account',
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(log.debug).to.have.been.calledWith('Existing Opportunity found for page: https://abc.com/abc-adoption/account. Updating it with new data.');
+      expect(dummyOpportunity.setAuditId).to.have.been.calledWith('audit-id');
+      expect(dummyOpportunity.setData).to.have.been.called;
+      expect(dummyOpportunity.setGuidance).to.have.been.called;
+      expect(dummyOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+      expect(dummyOpportunity.save).to.have.been.called;
+      expect(existingSuggestion.remove).to.have.been.called;
+    });
+
+    it('should execute existing opportunity update path with multiple suggestions to remove', async () => {
+      const suggestion1 = {
+        remove: sandbox.stub().resolves(),
+        getUpdatedBy: sandbox.stub().returns('system'),
+      };
+      const suggestion2 = {
+        remove: sandbox.stub().resolves(),
+        getUpdatedBy: sandbox.stub().returns('system'),
+      };
+      dummyOpportunity.getSuggestions.resolves([suggestion1, suggestion2]);
+      Opportunity.allBySiteId.resolves([dummyOpportunity]);
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account',
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(log.debug).to.have.been.calledWith('Existing Opportunity found for page: https://abc.com/abc-adoption/account. Updating it with new data.');
+      expect(suggestion1.remove).to.have.been.called;
+      expect(suggestion2.remove).to.have.been.called;
+      expect(Suggestion.create).to.have.been.calledOnce;
+    });
+
+    it('should execute existing opportunity update path with empty suggestions array', async () => {
+      dummyOpportunity.getSuggestions.resolves([]);
+      Opportunity.allBySiteId.resolves([dummyOpportunity]);
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account',
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(log.debug).to.have.been.calledWith('Existing Opportunity found for page: https://abc.com/abc-adoption/account. Updating it with new data.');
+      expect(dummyOpportunity.setAuditId).to.have.been.calledWith('audit-id');
+      expect(dummyOpportunity.setData).to.have.been.called;
+      expect(dummyOpportunity.setGuidance).to.have.been.called;
+      expect(dummyOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+      expect(dummyOpportunity.save).to.have.been.called;
+      expect(Suggestion.create).to.have.been.calledOnce;
     });
   });
 });
