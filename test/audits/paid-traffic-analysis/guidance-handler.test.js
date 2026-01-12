@@ -76,7 +76,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
     handler = await esmock(
       '../../../src/paid-traffic-analysis/guidance-handler.js',
       {
-        '../common/tagMappings.js': mockTagMappings,
+        '../../../src/common/tagMappings.js': mockTagMappings,
       },
     );
 

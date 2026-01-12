@@ -58,7 +58,7 @@ describe("No CTA above the fold guidance handler", () => {
     handler = await esmock(
       "../../../src/no-cta-above-the-fold/guidance-handler.js",
       {
-        "../common/tagMappings.js": mockTagMappings,
+        "../../../src/common/tagMappings.js": mockTagMappings,
       },
     );
     logStub = {
@@ -1201,6 +1201,163 @@ describe("No CTA above the fold guidance handler", () => {
       expect(logStub.info).to.have.been.calledWithMatch(/Creating a new no-cta-above-the-fold opportunity/);
       expect(logStub.info).to.have.been.calledWithMatch(/no-cta-above-the-fold opportunity succesfully added/);
       expect(logStub.info).to.have.been.calledWithMatch(/Created suggestion for opportunity/);
+    });
+
+    it('should apply tag mapping when entity type is not generic-opportunity', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+
+      // Use esmock to mock mapToOpportunity to return a non-generic type
+      const mockMapper = {
+        mapToOpportunity: sinon.stub().returns({
+          siteId,
+          id: 'test-id',
+          auditId: 'audit-id',
+          type: 'some-other-type',
+          origin: 'AUTOMATION',
+          title: 'Test',
+          tags: ['Engagement'],
+        }),
+        mapToSuggestion: sinon.stub().resolves({
+          opportunityId: 'oppty-123',
+          type: 'CONTENT_UPDATE',
+          rank: 1,
+          status: 'NEW',
+          data: { suggestionValue: 'test' },
+        }),
+      };
+
+      const testHandler = await esmock(
+        "../../../src/no-cta-above-the-fold/guidance-handler.js",
+        {
+          "../../../src/common/tagMappings.js": mockTagMappings,
+          "../../../src/no-cta-above-the-fold/guidance-opportunity-mapper.js": mockMapper,
+        },
+      );
+
+      const result = await testHandler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(mockTagMappings.mergeTagsWithHardcodedTags).to.have.been.calledWith('some-other-type', sinon.match.array);
+    });
+
+    it('should handle sanitizeMarkdown with non-string markdown in mapToSuggestion', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+
+      const guidanceWithNullMarkdown = [
+        {
+          insight: "insight",
+          rationale: "rationale",
+          recommendation: "recommendation",
+          body: { markdown: null },
+        },
+      ];
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance: guidanceWithNullMarkdown },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Suggestion.create).to.have.been.calledOnce;
+      const suggestionArg = Suggestion.create.getCall(0).args[0];
+      expect(suggestionArg.data.suggestionValue).to.equal('');
+    });
+
+    it('should handle sanitizeMarkdown with undefined markdown in mapToSuggestion', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+
+      const guidanceWithUndefinedMarkdown = [
+        {
+          insight: "insight",
+          rationale: "rationale",
+          recommendation: "recommendation",
+          body: {},
+        },
+      ];
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance: guidanceWithUndefinedMarkdown },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Suggestion.create).to.have.been.calledOnce;
+      const suggestionArg = Suggestion.create.getCall(0).args[0];
+      expect(suggestionArg.data.suggestionValue).to.equal('');
+    });
+
+    it('should handle sanitizeMarkdown with number markdown in mapToSuggestion', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+
+      const guidanceWithNumberMarkdown = [
+        {
+          insight: "insight",
+          rationale: "rationale",
+          recommendation: "recommendation",
+          body: { markdown: 123 },
+        },
+      ];
+
+      const result = await handler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance: guidanceWithNumberMarkdown },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      expect(Suggestion.create).to.have.been.calledOnce;
+      const suggestionArg = Suggestion.create.getCall(0).args[0];
+      expect(suggestionArg.data.suggestionValue).to.equal('');
     });
   });
 });

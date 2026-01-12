@@ -646,4 +646,165 @@ describe('Paid Cookie Consent opportunity mapper', () => {
       expect(desktopCopy.args[0].input.CopySource).to.include('temp/consent-banner/test-job-123/desktop-suggested.png');
     });
   });
+
+  describe('formatNumberWithK function coverage', () => {
+    it('should return "0" when num is null', () => {
+      const audit = {
+        getAuditId: () => 'aid',
+        getAuditResult: () => ({
+          totalPageViews: null,
+          totalAverageBounceRate: 0.3,
+          projectedTrafficLost: 1500,
+          projectedTrafficValue: 1200,
+          top3Pages: [],
+          averagePageViewsTop3: null,
+          averageTrafficLostTop3: undefined,
+          averageBounceRateMobileTop3: 0.35,
+          temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+        }),
+      };
+      const guidance = { insight: 'insight', rationale: 'rationale', recommendation: 'rec' };
+      const result = mapToPaidOpportunity('site', 'https://example.com/page', audit, guidance);
+      expect(result.description).to.include('0');
+    });
+
+    it('should return "0" when num is undefined', () => {
+      const audit = {
+        getAuditId: () => 'aid',
+        getAuditResult: () => ({
+          totalPageViews: undefined,
+          totalAverageBounceRate: 0.3,
+          projectedTrafficLost: 1500,
+          projectedTrafficValue: 1200,
+          top3Pages: [],
+          averagePageViewsTop3: null,
+          averageTrafficLostTop3: undefined,
+          averageBounceRateMobileTop3: 0.35,
+          temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+        }),
+      };
+      const guidance = { insight: 'insight', rationale: 'rationale', recommendation: 'rec' };
+      const result = mapToPaidOpportunity('site', 'https://example.com/page', audit, guidance);
+      expect(result.description).to.include('0');
+    });
+
+    it('should return num.toString() when num < 1000', () => {
+      const audit = {
+        getAuditId: () => 'aid',
+        getAuditResult: () => ({
+          totalPageViews: 500,
+          totalAverageBounceRate: 0.3,
+          projectedTrafficLost: 1500,
+          projectedTrafficValue: 1200,
+          top3Pages: [],
+          averagePageViewsTop3: 500,
+          averageTrafficLostTop3: 800,
+          averageBounceRateMobileTop3: 0.35,
+          temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+        }),
+      };
+      const guidance = { insight: 'insight', rationale: 'rationale', recommendation: 'rec' };
+      const result = mapToPaidOpportunity('site', 'https://example.com/page', audit, guidance);
+      expect(result.description).to.include('500');
+      expect(result.description).to.not.include('0.5K');
+    });
+  });
+
+  describe('sanitizeMarkdown function coverage', () => {
+    it('should replace \\n with newline when markdown contains \\n', async () => {
+      const context = {
+        env: {},
+        log: mockLog,
+        s3Client: mockS3Client,
+        dataAccess: {
+          Suggestion: {
+            STATUSES: SuggestionDataAccess.STATUSES,
+            TYPES: SuggestionDataAccess.TYPES,
+          }
+        },
+        site: { requiresValidation: false }
+      };
+      const guidance = {
+        body: {
+          data: {
+            mobile: 'mobile\\nmarkdown',
+            desktop: 'desktop\\nmarkdown',
+            impact: {
+              business: 'business\\nmarkdown',
+              user: 'user\\nmarkdown',
+            },
+          },
+        },
+        metadata: { scrape_job_id: 'test-job' }
+      };
+      const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
+      expect(result.data.mobile).to.include('\n');
+      expect(result.data.mobile).to.not.include('\\n');
+      expect(result.data.desktop).to.include('\n');
+      expect(result.data.desktop).to.not.include('\\n');
+    });
+
+    it('should return markdown as-is when it does not contain \\n', async () => {
+      const context = {
+        env: {},
+        log: mockLog,
+        s3Client: mockS3Client,
+        dataAccess: {
+          Suggestion: {
+            STATUSES: SuggestionDataAccess.STATUSES,
+            TYPES: SuggestionDataAccess.TYPES,
+          }
+        },
+        site: { requiresValidation: false }
+      };
+      const guidance = {
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+        },
+        metadata: { scrape_job_id: 'test-job' }
+      };
+      const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
+      expect(result.data.mobile).to.equal('mobile markdown');
+      expect(result.data.desktop).to.equal('desktop markdown');
+    });
+
+    it('should return markdown as-is when markdown is not a string', async () => {
+      const context = {
+        env: {},
+        log: mockLog,
+        s3Client: mockS3Client,
+        dataAccess: {
+          Suggestion: {
+            STATUSES: SuggestionDataAccess.STATUSES,
+            TYPES: SuggestionDataAccess.TYPES,
+          }
+        },
+        site: { requiresValidation: false }
+      };
+      const guidance = {
+        body: {
+          data: {
+            mobile: 123,
+            desktop: null,
+            impact: {
+              business: undefined,
+              user: 'user markdown',
+            },
+          },
+        },
+        metadata: { scrape_job_id: 'test-job' }
+      };
+      const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
+      expect(result.data.mobile).to.equal(123);
+      expect(result.data.desktop).to.equal(null);
+      expect(result.data.impact.business).to.equal(undefined);
+    });
+  });
 });
