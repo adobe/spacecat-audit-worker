@@ -157,7 +157,7 @@ describe('Wikipedia Analysis Guidance Handler', () => {
 
       const convertCall = convertToOpportunityStub.firstCall;
       const guidanceArg = convertCall.args[5].guidance;
-      expect(guidanceArg[0].rationale).to.include('Finance competitors');
+      expect(guidanceArg.rationale).to.include('Finance competitors');
     });
 
     it('should create guidance without industry analysis', async () => {
@@ -178,7 +178,7 @@ describe('Wikipedia Analysis Guidance Handler', () => {
 
       const convertCall = convertToOpportunityStub.firstCall;
       const guidanceArg = convertCall.args[5].guidance;
-      expect(guidanceArg[0].rationale).to.include('best practices');
+      expect(guidanceArg.rationale).to.include('best practices');
     });
 
     it('should return noContent when no suggestions found', async () => {

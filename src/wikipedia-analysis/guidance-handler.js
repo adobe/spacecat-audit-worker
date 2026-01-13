@@ -143,15 +143,15 @@ export default async function handler(message, context) {
 
     log.info(`[Wikipedia] Processing ${suggestions.length} suggestions for ${company}`);
 
-    // Create guidance object
-    const guidance = [{
+    // Create guidance object (must be an object, not an array, per Opportunity schema)
+    const guidance = {
       insight: `Wikipedia analysis identified ${suggestions.length} improvement opportunities for ${company}`,
       rationale: industryAnalysis
         ? `Based on comparison with ${industryAnalysis.industry} competitors`
         : 'Based on Wikipedia best practices analysis',
       recommendation: 'Review and implement the suggested improvements to enhance Wikipedia presence and LLM citability',
       type: 'CONTENT_UPDATE',
-    }];
+    };
 
     // Create opportunity
     const opportunity = await createOpportunity(
