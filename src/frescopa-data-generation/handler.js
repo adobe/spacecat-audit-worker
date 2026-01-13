@@ -50,7 +50,6 @@ const WEEK_PATTERN = /-(w\d{2}-\d{4})\.json$/;
 function parseWeekIdentifier(weekId) {
   const regex = /^w(\d{2})-(\d{4})$/;
   const match = regex.exec(weekId);
-  if (!match) return null;
   return {
     week: Number.parseInt(match[1], 10),
     year: Number.parseInt(match[2], 10),
@@ -66,8 +65,6 @@ function parseWeekIdentifier(weekId) {
 function compareWeekIdentifiers(a, b) {
   const parsedA = parseWeekIdentifier(a);
   const parsedB = parseWeekIdentifier(b);
-
-  if (!parsedA || !parsedB) return 0;
 
   // Compare by year first, then by week
   if (parsedA.year !== parsedB.year) {
@@ -96,7 +93,8 @@ async function fetchQueryIndex(log) {
 /**
  * Finds the most recent file for a given file prefix from the query index.
  * @param {Array<{ path: string, lastModified: string }>} files - Array of file entries
- * @param {string} filePrefix - The file prefix to match (e.g., "agentictraffic", "brandpresence-all")
+ * @param {string} filePrefix -
+ * The file prefix to match (e.g., "agentictraffic", "brandpresence-all", "referral-traffic")
  * @param {object} log - Logger instance
  * @returns {{ path: string, weekIdentifier: string } | null} The most recent file info, or null
  */
@@ -112,7 +110,7 @@ function findMostRecentFile(files, filePrefix, log) {
       const weekMatch = WEEK_PATTERN.exec(filename);
       return {
         path: file.path,
-        weekIdentifier: weekMatch ? weekMatch[1] : null,
+        weekIdentifier: weekMatch[1],
       };
     })
     .filter((file) => file.weekIdentifier !== null);
@@ -136,7 +134,8 @@ function findMostRecentFile(files, filePrefix, log) {
 
 /**
  * Gets the template file path (xlsx) from a json file path.
- * @param {string} jsonPath - The path to the JSON file (e.g., "/frescopa.coffee/brand-presence/file.json")
+ * @param {string} jsonPath -
+ * The path to the JSON file (e.g., "/frescopa.coffee/brand-presence/file.json")
  * @returns {string} The SharePoint path to the xlsx file
  */
 function getTemplateXlsxPath(jsonPath) {
@@ -315,8 +314,8 @@ async function run(message, context) {
     const skippedCount = results.filter((r) => r.status === 'skipped').length;
 
     log.info(
-      `%s: Frescopa data generation completed for week ${weekIdentifier} in ${duration}ms. ` +
-      `Created: ${successCount}, Skipped: ${skippedCount}, Errors: ${errors.length}`,
+      `%s: Frescopa data generation completed for week ${weekIdentifier} in ${duration}ms. `
+      + `Created: ${successCount}, Skipped: ${skippedCount}, Errors: ${errors.length}`,
       AUDIT_NAME,
     );
 
