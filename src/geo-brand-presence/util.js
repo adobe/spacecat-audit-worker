@@ -177,3 +177,137 @@ export const refreshSheetResultSchema = z.object({
   status: z.enum(['failure', 'skipped', 'success']),
   time: z.iso.datetime(),
 });
+
+// ============================================
+// Batch Processing Utilities
+// ============================================
+
+/**
+ * @param {string} auditId
+ * @returns {string}
+ */
+export function batchDirectoryS3Key(auditId) {
+  return `temp/batch-geo-brand-presence/${auditId}`;
+}
+
+/**
+ * @param {string} auditId
+ * @returns {string}
+ */
+export function batchMetadataFileS3Key(auditId) {
+  return `${batchDirectoryS3Key(auditId)}/metadata.json`;
+}
+
+/**
+ * @param {string} webSearchProvider
+ * @param {number} batchIndex
+ * @returns {string}
+ */
+export function batchResultFileName(webSearchProvider, batchIndex) {
+  return `${webSearchProvider}-batch-${batchIndex}.metadata.json`;
+}
+
+/**
+ * @param {string} auditId
+ * @param {string} webSearchProvider
+ * @param {number} batchIndex
+ * @returns {string}
+ */
+export function batchResultFileS3Key(auditId, webSearchProvider, batchIndex) {
+  return `${batchDirectoryS3Key(auditId)}/${batchResultFileName(webSearchProvider, batchIndex)}`;
+}
+
+/**
+ * @param {object} params
+ * @param {string} [params.message]
+ * @param {S3Client} params.s3Client
+ * @param {string} params.s3Bucket
+ * @param {string} params.outputDir
+ * @param {string} params.webSearchProvider
+ * @param {number} params.batchIndex
+ * @param {string} [params.sheetXlsxName]
+ */
+export function writeBatchResultFailed({
+  message, sheetXlsxName, ...opts
+}) {
+  return writeBatchResult('failure', message, sheetXlsxName, opts);
+}
+
+/**
+ * @param {object} params
+ * @param {string} [params.message]
+ * @param {S3Client} params.s3Client
+ * @param {string} params.s3Bucket
+ * @param {string} params.outputDir
+ * @param {string} params.webSearchProvider
+ * @param {number} params.batchIndex
+ * @param {string} params.sheetXlsxName
+ */
+export function writeBatchResultSuccess({
+  message, sheetXlsxName, ...opts
+}) {
+  return writeBatchResult('success', message, sheetXlsxName, opts);
+}
+
+/**
+ * @param {"failure" | "success"} status
+ * @param {undefined | string} message
+ * @param {undefined | string} sheetXlsxName
+ * @param {object} params
+ * @param {S3Client} params.s3Client
+ * @param {string} params.s3Bucket
+ * @param {string} params.outputDir
+ * @param {string} params.webSearchProvider
+ * @param {number} params.batchIndex
+ */
+async function writeBatchResult(status, message, sheetXlsxName, {
+  s3Client,
+  s3Bucket,
+  outputDir,
+  webSearchProvider,
+  batchIndex,
+}) {
+  const body = {
+    webSearchProvider,
+    batchIndex,
+    message,
+    status,
+    time: (new Date()).toISOString(),
+  };
+  if (sheetXlsxName) {
+    body.sheetXlsxName = sheetXlsxName;
+  }
+
+  return s3Client.send(new PutObjectCommand({
+    Bucket: s3Bucket,
+    Key: `${outputDir}/${batchResultFileName(webSearchProvider, batchIndex)}`,
+    Body: JSON.stringify(body, null, 2),
+    ContentType: 'application/json',
+  }));
+}
+
+/** @typedef {z.infer<typeof batchMetadataSchema>} BatchMetadata */
+/** @typedef {z.infer<typeof batchResultSchema>} BatchResult */
+
+export const batchMetadataSchema = z.object({
+  auditId: z.string(),
+  createdAt: z.string(),
+  totalBatches: z.number(),
+  providers: z.array(z.string()),
+  batches: z.array(
+    z.object({
+      batchIndex: z.number(),
+      provider: z.string(),
+      resultFile: z.string(),
+    }),
+  ),
+});
+
+export const batchResultSchema = z.object({
+  webSearchProvider: z.string(),
+  batchIndex: z.number(),
+  message: z.string().optional(),
+  status: z.enum(['failure', 'success']),
+  time: z.string(),
+  sheetXlsxName: z.string().optional(),
+});

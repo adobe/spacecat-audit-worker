@@ -48,7 +48,11 @@ import { parquetReadObjects } from 'hyparquet';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
 import { getSignedUrl } from '../utils/getPresignedUrl.js';
-import { transformWebSearchProviderForMystique } from './util.js';
+import {
+  transformWebSearchProviderForMystique,
+  batchMetadataFileS3Key,
+  batchResultFileName,
+} from './util.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
@@ -63,6 +67,7 @@ export const OPPTY_TYPES = [
   GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE,
   GEO_BRAND_CATEGORIZATION_OPPTY_TYPE,
 ];
+export const BATCH_SIZE = 10;
 
 export const WEB_SEARCH_PROVIDERS = [
   'all',
@@ -311,10 +316,6 @@ export async function loadPromptsAndSendDetection(
     }
     : { ...context, getPresignedUrl: getPresignedUrlOverride };
 
-  const url = await asPresignedJsonUrl(allPrompts, bucket, s3Context);
-
-  log.info('GEO BRAND PRESENCE: Presigned URL for combined prompts for site id %s (%s): %s', siteId, baseURL, url);
-
   if (!isNonEmptyArray(providersToUse)) {
     log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique', siteId, baseURL);
     return;
@@ -324,40 +325,208 @@ export async function loadPromptsAndSendDetection(
     ? [GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE]
     : [GEO_BRAND_PRESENCE_OPPTY_TYPE];
 
-  const detectionMessages = opptyTypes.flatMap((opptyType) => providersToUse.map(
-    async (webSearchProvider) => {
-      const message = createMystiqueMessage({
-        type: opptyType,
-        siteId,
-        baseURL,
-        auditId: audit.getId(),
-        deliveryType: site.getDeliveryType(),
-        calendarWeek: dateContext,
-        url,
-        webSearchProvider: transformWebSearchProviderForMystique(webSearchProvider),
-        configVersion: /* c8 ignore next */ configExists ? configVersion : null,
-        ...(isDaily && { date: dateContext.date }),
-      });
+  // Check if we need batch processing
+  if (allPrompts.length > BATCH_SIZE) {
+    log.info('GEO BRAND PRESENCE: Prompts count (%d) exceeds batch size (%d), initiating batch processing for site id %s (%s)', allPrompts.length, BATCH_SIZE, siteId, baseURL);
+    await sendBatchedDetectionMessages({
+      allPrompts,
+      bucket,
+      s3Context,
+      opptyTypes,
+      providersToUse,
+      audit,
+      site,
+      dateContext,
+      configVersion,
+      configExists,
+      isDaily,
+      siteId,
+      baseURL,
+      sqs,
+      env,
+      log,
+    });
+  } else {
+    // Original single-batch flow
+    const url = await asPresignedJsonUrl(allPrompts, bucket, s3Context);
 
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-      const cadenceLabel = isDaily ? ' DAILY' : '';
-      log.debug(
-        'GEO BRAND PRESENCE%s: %s detection message sent to Mystique for site id %s (%s) with provider %s',
-        cadenceLabel,
-        opptyType,
-        siteId,
-        baseURL,
-        webSearchProvider,
-      );
-    },
-  ));
+    log.info('GEO BRAND PRESENCE: Presigned URL for combined prompts for site id %s (%s): %s', siteId, baseURL, url);
 
-  await Promise.all(detectionMessages);
+    const detectionMessages = opptyTypes.flatMap((opptyType) => providersToUse.map(
+      async (webSearchProvider) => {
+        const message = createMystiqueMessage({
+          type: opptyType,
+          siteId,
+          baseURL,
+          auditId: audit.getId(),
+          deliveryType: site.getDeliveryType(),
+          calendarWeek: dateContext,
+          url,
+          webSearchProvider: transformWebSearchProviderForMystique(webSearchProvider),
+          configVersion: /* c8 ignore next */ configExists ? configVersion : null,
+          ...(isDaily && { date: dateContext.date }),
+        });
+
+        await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+        const cadenceLabel = isDaily ? ' DAILY' : '';
+        log.debug(
+          'GEO BRAND PRESENCE%s: %s detection message sent to Mystique for site id %s (%s) with provider %s',
+          cadenceLabel,
+          opptyType,
+          siteId,
+          baseURL,
+          webSearchProvider,
+        );
+      },
+    ));
+
+    await Promise.all(detectionMessages);
+  }
 
   const cadenceLabel = isDaily ? ' DAILY' : '';
   const stepCompleteMsg = 'GEO BRAND PRESENCE%s: Unified step complete - detection '
     + 'messages sent directly to Mystique (categorization will happen internally if needed) for site id %s (%s)';
   log.info(stepCompleteMsg, cadenceLabel, siteId, baseURL);
+  /* c8 ignore end */
+}
+
+/**
+ * Handles batch processing when prompts exceed BATCH_SIZE.
+ * Creates batch tracking metadata, splits prompts, uploads batches, and sends detection messages.
+ *
+ * @param {Object} params - The parameters object.
+ * @returns {Promise<void>}
+ */
+async function sendBatchedDetectionMessages({
+  allPrompts,
+  bucket,
+  s3Context,
+  opptyTypes,
+  providersToUse,
+  audit,
+  site,
+  dateContext,
+  configVersion,
+  configExists,
+  isDaily,
+  siteId,
+  baseURL,
+  sqs,
+  env,
+  log,
+}) {
+  /* c8 ignore start */
+  const { s3Client, getPresignedUrl: getPresignedUrlFn } = s3Context;
+  const auditId = audit.getId();
+
+  log.info('GEO BRAND PRESENCE: Using audit ID %s for batch processing for site id %s (%s)', auditId, siteId, baseURL);
+
+  // Split prompts into batches
+  const batches = [];
+  for (let i = 0; i < allPrompts.length; i += BATCH_SIZE) {
+    batches.push(allPrompts.slice(i, i + BATCH_SIZE));
+  }
+
+  log.info('GEO BRAND PRESENCE: Split %d prompts into %d batches for site id %s (%s)', allPrompts.length, batches.length, siteId, baseURL);
+
+  // Create metadata
+  const batchMetadata = {
+    auditId,
+    createdAt: new Date().toISOString(),
+    totalBatches: batches.length,
+    providers: providersToUse,
+    batches: [],
+  };
+
+  // Populate batch metadata entries for each provider and batch
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+    for (const provider of providersToUse) {
+      batchMetadata.batches.push({
+        batchIndex,
+        provider,
+        resultFile: batchResultFileName(provider, batchIndex),
+      });
+    }
+  }
+
+  // Write metadata to S3
+  log.info('GEO BRAND PRESENCE: Writing batch metadata to S3 for audit ID %s, site id %s (%s)', auditId, siteId, baseURL);
+  await s3Client.send(new PutObjectCommand({
+    Bucket: bucket,
+    Key: batchMetadataFileS3Key(auditId),
+    Body: JSON.stringify(batchMetadata, null, 2),
+    ContentType: 'application/json',
+  }));
+
+  // Upload each batch and send detection messages
+  const batchUrls = [];
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+    const batch = batches[batchIndex];
+    const basePath = isDaily ? 'temp/audit-geo-brand-presence-daily' : 'temp/audit-geo-brand-presence';
+    const dateStr = isDaily ? dateContext.date : new Date().toISOString().split('T')[0];
+    const key = `${basePath}/${dateStr}-${auditId}-batch-${batchIndex}.json`;
+
+    log.debug('GEO BRAND PRESENCE: Uploading batch %d/%d to S3 for site id %s (%s), key: %s', batchIndex + 1, batches.length, siteId, baseURL, key);
+
+    // eslint-disable-next-line no-await-in-loop
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: JSON.stringify(batch),
+      ContentType: 'application/json',
+    }));
+
+    // eslint-disable-next-line no-await-in-loop
+    const url = await getPresignedUrlFn(
+      s3Client,
+      new GetObjectCommand({ Bucket: bucket, Key: key }),
+      { expiresIn: 86_400 },
+    );
+
+    batchUrls.push(url);
+    log.debug('GEO BRAND PRESENCE: Batch %d/%d uploaded, presigned URL: %s', batchIndex + 1, batches.length, url);
+  }
+
+  log.info('GEO BRAND PRESENCE: All %d batches uploaded to S3 for site id %s (%s)', batches.length, siteId, baseURL);
+
+  // Send detection messages for all batches and providers
+  const detectionMessages = [];
+  for (const opptyType of opptyTypes) {
+    for (const webSearchProvider of providersToUse) {
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+        const message = createMystiqueMessage({
+          type: opptyType,
+          siteId,
+          baseURL,
+          auditId,
+          deliveryType: site.getDeliveryType(),
+          calendarWeek: dateContext,
+          url: batchUrls[batchIndex],
+          webSearchProvider: transformWebSearchProviderForMystique(webSearchProvider),
+          configVersion: /* c8 ignore next */ configExists ? configVersion : null,
+          ...(isDaily && { date: dateContext.date }),
+          // Add batch metadata to the message
+          batchIndex,
+        });
+
+        detectionMessages.push(sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message));
+        const cadenceLabel = isDaily ? ' DAILY' : '';
+        log.debug(
+          'GEO BRAND PRESENCE%s: %s detection message sent to Mystique for batch %d/%d, site id %s (%s), provider %s',
+          cadenceLabel,
+          opptyType,
+          batchIndex + 1,
+          batches.length,
+          siteId,
+          baseURL,
+          webSearchProvider,
+        );
+      }
+    }
+  }
+
+  await Promise.all(detectionMessages);
+  log.info('GEO BRAND PRESENCE: Sent %d batch detection messages to Mystique for site id %s (%s)', detectionMessages.length, siteId, baseURL);
   /* c8 ignore end */
 }
 
@@ -440,6 +609,7 @@ export async function asPresignedJsonUrl(data, bucketName, context) {
  * @param {string|null} [params.date=null] - The date for daily cadence (YYYY-MM-DD), if present.
  * @param {string|undefined} [params.source] - Optional source for the message.
  * @param {string|undefined} [params.initiator] - Optional initiator for the message.
+ * @param {number|undefined} [params.batchIndex] - Optional batch index for batch processing.
  * @returns {Object} - The formatted message payload for Mystique queue.
  */
 export function createMystiqueMessage({
@@ -455,6 +625,7 @@ export function createMystiqueMessage({
   date = null,
   source = undefined,
   initiator = undefined,
+  batchIndex = undefined,
 }) {
   const data = {
     url,
@@ -465,6 +636,11 @@ export function createMystiqueMessage({
 
   if (date) {
     data.date = date;
+  }
+
+  // Add batch processing metadata if present
+  if (batchIndex !== undefined) {
+    data.batch_index = batchIndex;
   }
 
   return {
