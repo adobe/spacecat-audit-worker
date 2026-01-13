@@ -56,7 +56,7 @@ describe('CloudWatch Utils', () => {
         events: mockEvents,
       });
 
-      const result = await queryBotProtectionLogs('site-456', mockContext, Date.now() - 3600000);
+      const result = await queryBotProtectionLogs('job-123', mockContext, Date.now() - 3600000);
 
       expect(result).to.have.lengthOf(2);
       expect(result[0]).to.deep.include({
@@ -76,16 +76,16 @@ describe('CloudWatch Utils', () => {
         events: [],
       });
 
-      const result = await queryBotProtectionLogs('site-456', mockContext, Date.now() - 3600000);
+      const result = await queryBotProtectionLogs('job-123', mockContext, Date.now() - 3600000);
 
       expect(result).to.be.an('array').that.is.empty;
-      expect(mockContext.log.debug).to.have.been.calledWith('No bot protection logs found for site site-456');
+      expect(mockContext.log.debug).to.have.been.calledWith('No bot protection logs found for scrape job job-123');
     });
 
     it('should return empty array when events is undefined', async () => {
       sendStub.resolves({});
 
-      const result = await queryBotProtectionLogs('site-456', mockContext, Date.now() - 3600000);
+      const result = await queryBotProtectionLogs('job-123', mockContext, Date.now() - 3600000);
 
       expect(result).to.be.an('array').that.is.empty;
     });
@@ -104,7 +104,7 @@ describe('CloudWatch Utils', () => {
         events: mockEvents,
       });
 
-      const result = await queryBotProtectionLogs('site-456', mockContext, Date.now() - 3600000);
+      const result = await queryBotProtectionLogs('job-123', mockContext, Date.now() - 3600000);
 
       expect(result).to.have.lengthOf(1);
       expect(result[0].jobId).to.equal('job-123');
@@ -114,11 +114,11 @@ describe('CloudWatch Utils', () => {
     it('should return empty array on CloudWatch query error', async () => {
       sendStub.rejects(new Error('CloudWatch error'));
 
-      const result = await queryBotProtectionLogs('site-456', mockContext, Date.now() - 3600000);
+      const result = await queryBotProtectionLogs('job-123', mockContext, Date.now() - 3600000);
 
       expect(result).to.be.an('array').that.is.empty;
       expect(mockContext.log.error).to.have.been.calledWith(
-        'Failed to query CloudWatch logs for bot protection (site site-456):',
+        'Failed to query CloudWatch logs for bot protection (scrape job job-123):',
         sinon.match.instanceOf(Error),
       );
     });
@@ -131,7 +131,7 @@ describe('CloudWatch Utils', () => {
         events: [],
       });
 
-      await queryBotProtectionLogs('site-456', mockContext, startTime);
+      await queryBotProtectionLogs('job-123', mockContext, startTime);
 
       const afterCallTime = Date.now();
 
@@ -149,12 +149,12 @@ describe('CloudWatch Utils', () => {
         events: [],
       });
 
-      await queryBotProtectionLogs('site-456', mockContext, Date.now() - 3600000);
+      await queryBotProtectionLogs('job-123', mockContext, Date.now() - 3600000);
 
       const command = sendStub.firstCall.args[0];
       expect(command.input.logGroupName).to.equal('/aws/lambda/test-scraper');
       // Text-based filter since logs have prefix: [BOT-BLOCKED] Bot Protection Detection
-      expect(command.input.filterPattern).to.equal('"[BOT-BLOCKED]" "site-456"');
+      expect(command.input.filterPattern).to.equal('"[BOT-BLOCKED]" "job-123"');
       expect(command.input.limit).to.equal(500);
     });
 
@@ -170,7 +170,7 @@ describe('CloudWatch Utils', () => {
         events: [],
       });
 
-      await queryBotProtectionLogs('site-456', contextWithoutLogGroup, Date.now() - 3600000);
+      await queryBotProtectionLogs('job-123', contextWithoutLogGroup, Date.now() - 3600000);
 
       const command = sendStub.firstCall.args[0];
       expect(command.input.logGroupName).to.equal('/aws/lambda/spacecat-services--content-scraper');
@@ -193,7 +193,7 @@ describe('CloudWatch Utils', () => {
         events: mockEvents,
       });
 
-      const result = await queryBotProtectionLogs('site-456', mockContext, Date.now() - 3600000);
+      const result = await queryBotProtectionLogs('job-123', mockContext, Date.now() - 3600000);
 
       expect(result).to.have.lengthOf(1);
       expect(result[0].jobId).to.equal('job-123');
@@ -210,7 +210,7 @@ describe('CloudWatch Utils', () => {
         events: mockEvents,
       });
 
-      const result = await queryBotProtectionLogs('site-456', mockContext, Date.now() - 3600000);
+      const result = await queryBotProtectionLogs('job-123', mockContext, Date.now() - 3600000);
 
       expect(result).to.have.lengthOf(1);
       expect(result[0].jobId).to.equal('job-123');
@@ -222,10 +222,10 @@ describe('CloudWatch Utils', () => {
       });
 
       const startTime = Date.now() - 3600000;
-      await queryBotProtectionLogs('site-456', mockContext, startTime);
+      await queryBotProtectionLogs('job-123', mockContext, startTime);
 
       expect(mockContext.log.debug).to.have.been.calledWith(
-        sinon.match(/Querying bot protection logs from .* to .* \(5min buffer applied\) for site site-456$/),
+        sinon.match(/Querying bot protection logs from .* to .* \(5min buffer applied\) for scrape job job-123$/),
       );
     });
   });

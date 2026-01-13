@@ -17,12 +17,12 @@ const CONTENT_SCRAPER_LOG_GROUP = '/aws/lambda/spacecat-services--content-scrape
 /**
  * Queries CloudWatch logs for bot protection errors from content scraper
  * Note: Applies a 5-minute buffer before searchStartTime to handle clock skew and log delays
- * @param {string} siteId - The site ID for filtering logs
+ * @param {string} scrapeJobId - The scrape job ID for filtering logs
  * @param {object} context - Context with env and log
  * @param {number} searchStartTime - Search start timestamp (ms), buffer applied automatically
  * @returns {Promise<Array>} Array of bot protection events
  */
-export async function queryBotProtectionLogs(siteId, context, searchStartTime) {
+export async function queryBotProtectionLogs(scrapeJobId, context, searchStartTime) {
   const { env, log } = context;
 
   const cloudwatchClient = new CloudWatchLogsClient({
@@ -39,16 +39,16 @@ export async function queryBotProtectionLogs(siteId, context, searchStartTime) {
   /* c8 ignore start */
   log.info('[BOT-CHECK] Querying CloudWatch logs:');
   log.info(`[BOT-CHECK]   Log Group: ${logGroupName}`);
-  log.info(`[BOT-CHECK]   Site ID: ${siteId}`);
+  log.info(`[BOT-CHECK]   Scrape Job ID: ${scrapeJobId}`);
   log.info(`[BOT-CHECK]   Time Range: ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
   log.info(`[BOT-CHECK]   Search Start Time (raw): ${new Date(searchStartTime).toISOString()}`);
   log.info('[BOT-CHECK]   Buffer Applied: 5 minutes');
   /* c8 ignore stop */
 
-  log.debug(`Querying bot protection logs from ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()} (5min buffer applied) for site ${siteId}`);
+  log.debug(`Querying bot protection logs from ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()} (5min buffer applied) for scrape job ${scrapeJobId}`);
 
   try {
-    const filterPattern = `"[BOT-BLOCKED]" "${siteId}"`;
+    const filterPattern = `"[BOT-BLOCKED]" "${scrapeJobId}"`;
 
     /* c8 ignore start */
     log.info(`[BOT-CHECK] Filter Pattern: ${filterPattern}`);
@@ -75,7 +75,7 @@ export async function queryBotProtectionLogs(siteId, context, searchStartTime) {
       /* c8 ignore start */
       log.info('[BOT-CHECK] No bot protection events found in CloudWatch response');
       /* c8 ignore stop */
-      log.debug(`No bot protection logs found for site ${siteId}`);
+      log.debug(`No bot protection logs found for scrape job ${scrapeJobId}`);
       return [];
     }
 
@@ -84,7 +84,7 @@ export async function queryBotProtectionLogs(siteId, context, searchStartTime) {
     log.info(`[BOT-CHECK] Sample event message: ${response.events[0]?.message?.substring(0, 200)}`);
     /* c8 ignore stop */
 
-    log.info(`Found ${response.events.length} bot protection events in CloudWatch logs for site ${siteId}`);
+    log.info(`Found ${response.events.length} bot protection events in CloudWatch logs for scrape job ${scrapeJobId}`);
 
     // Parse log events
     const botProtectionEvents = response.events
@@ -112,7 +112,7 @@ export async function queryBotProtectionLogs(siteId, context, searchStartTime) {
 
     return botProtectionEvents;
   } catch (error) {
-    log.error(`Failed to query CloudWatch logs for bot protection (site ${siteId}):`, error);
+    log.error(`Failed to query CloudWatch logs for bot protection (scrape job ${scrapeJobId}):`, error);
     // Don't fail the entire audit run
     return [];
   }

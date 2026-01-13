@@ -60,7 +60,7 @@ async function checkBotProtection({
   /* c8 ignore stop */
 
   const logEvents = await queryBotProtectionLogs(
-    siteId,
+    auditContext.scrapeJobId,
     context,
     auditCreatedAt,
   );
