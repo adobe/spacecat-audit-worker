@@ -387,7 +387,11 @@ export async function reconcileDisappearedSuggestions({
       // eslint-disable-next-line no-await-in-loop
       const data = suggestion?.getData?.();
       const urlTo = getTargetUrl(data);
-      const targets = Array.isArray(data?.urlsSuggested) ? data.urlsSuggested : [];
+      // Include both urlEdited (user-provided) and urlsSuggested (system-generated) as targets
+      const suggestedTargets = Array.isArray(data?.urlsSuggested) ? data.urlsSuggested : [];
+      const targets = data?.urlEdited
+        ? [data.urlEdited, ...suggestedTargets]
+        : suggestedTargets;
       if (!urlTo || targets.length === 0) {
         // eslint-disable-next-line no-continue
         continue;
