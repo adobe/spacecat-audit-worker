@@ -121,6 +121,7 @@ export async function getH1HeadingASuggestion(
     'heading-empty-suggestion',
     log,
   );
+  log.info(`[Headings AI Suggestions] Prompt: ${JSON.stringify(prompt)}`);
   try {
     const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
       responseFormat: 'json_object',

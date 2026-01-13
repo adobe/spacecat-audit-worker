@@ -13,16 +13,7 @@
 import { main as universalMain } from './index.js';
 
 export const main = async () => {
-  const messageBody = {
-    type: 'llm-blocked',
-    siteId: 'b1555a54-48b4-47ee-97c1-438257bd3839',
-    auditContext: {
-      next: 'check-llm-blocked',
-      auditId: 'a263123c-9f9a-44a8-9531-955884563472',
-      type: 'llm-blocked',
-      fullAuditRef: 'llm-blocked::cisco.com',
-    },
-  };
+  const messageBody = { type: 'headings', siteId: 'd04f59a7-3962-40fa-99eb-bf47faa95026' };
 
   const message = {
     Records: [
