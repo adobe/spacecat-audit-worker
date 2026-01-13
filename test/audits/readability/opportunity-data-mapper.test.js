@@ -13,7 +13,6 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
-import { OPPORTUNITY_TYPES } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../../../src/common/constants.js';
 import { createOpportunityData } from '../../../src/readability/opportunities/opportunity-data-mapper.js';
 
@@ -42,21 +41,12 @@ describe('Readability Opportunities - Opportunity Data Mapper', () => {
       expect(result.guidance.steps).to.be.an('array');
       expect(result.guidance.steps).to.have.length(6);
 
-      // Line 31 - tags should include 'content' from custom tags
-      expect(result.tags).to.be.an('array');
-      expect(result.tags).to.include('content');
+      // Line 31
+      expect(result.tags).to.deep.equal(['Engagement', 'isElmo', 'content']);
 
       // Lines 32-34
       expect(result.data).to.be.an('object');
       expect(result.data.dataSources).to.deep.equal([DATA_SOURCES.AHREFS, DATA_SOURCES.SITE]);
-    });
-
-    it('should use OPPORTUNITY_TYPES.READABILITY constant for tags', () => {
-      const result = createOpportunityData();
-
-      // Verify tags are generated using OPPORTUNITY_TYPES.READABILITY
-      expect(result.tags).to.be.an('array');
-      expect(result.tags).to.include('content');
     });
 
     it('should include all six guidance steps with correct content', () => {

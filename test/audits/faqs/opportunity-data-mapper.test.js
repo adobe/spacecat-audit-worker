@@ -13,7 +13,6 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
-import { OPPORTUNITY_TYPES } from '@adobe/spacecat-shared-utils';
 import { createOpportunityData } from '../../../src/faqs/opportunity-data-mapper.js';
 import { DATA_SOURCES } from '../../../src/common/constants.js';
 
@@ -33,22 +32,13 @@ describe('FAQ Opportunity Data Mapper', () => {
 
       expect(result.siteId).to.equal('site-123');
       expect(result.auditId).to.equal('audit-456');
-      expect(result.type).to.equal(OPPORTUNITY_TYPES.FAQ);
+      expect(result.type).to.equal('faq');
       expect(result.origin).to.equal('AUTOMATION');
       expect(result.status).to.equal('NEW');
       expect(result.title).to.equal('Add Relevant FAQs');
       expect(result.description).to.equal('Add the relevant FAQs listed below to the corresponding pages to improve content discoverability in LLMs.');
       expect(result.guidance).to.deep.equal(guidance);
-      expect(result.tags).to.be.an('array');
-      expect(result.tags).to.include('content');
-    });
-
-    it('should use OPPORTUNITY_TYPES.FAQ constant for tags', () => {
-      const result = createOpportunityData('site-1', 'audit-1', []);
-
-      // Verify tags are generated using OPPORTUNITY_TYPES.FAQ
-      expect(result.tags).to.be.an('array');
-      // Tags should include the mapped tags from OPPORTUNITY_TAG_MAPPINGS
+      expect(result.tags).to.deep.equal(['isElmo', 'content']);
     });
 
     it('should include correct runbook URL', () => {

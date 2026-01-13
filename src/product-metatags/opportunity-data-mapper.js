@@ -9,7 +9,6 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 export function createOpportunityData(props = {}) {
@@ -29,7 +28,7 @@ export function createOpportunityData(props = {}) {
         'Publish the changes to apply the updates to your live product pages.',
       ],
     },
-    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.PRODUCT_METATAGS, []),
+    tags: ['Commerce', 'Product SEO', 'Traffic acquisition'],
     data: {
       ...restProps,
       ...(magentoEnvironmentId ? { magentoEnvironmentId } : {}),
