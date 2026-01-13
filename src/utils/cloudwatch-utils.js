@@ -36,25 +36,53 @@ export async function queryBotProtectionLogs(siteId, context, searchStartTime) {
   const startTime = searchStartTime - BUFFER_MS;
   const endTime = Date.now();
 
+  /* c8 ignore start */
+  log.info('[BOT-CHECK] Querying CloudWatch logs:');
+  log.info(`[BOT-CHECK]   Log Group: ${logGroupName}`);
+  log.info(`[BOT-CHECK]   Site ID: ${siteId}`);
+  log.info(`[BOT-CHECK]   Time Range: ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
+  log.info(`[BOT-CHECK]   Search Start Time (raw): ${new Date(searchStartTime).toISOString()}`);
+  log.info('[BOT-CHECK]   Buffer Applied: 5 minutes');
+  /* c8 ignore stop */
+
   log.debug(`Querying bot protection logs from ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()} (5min buffer applied) for site ${siteId}`);
 
   try {
+    const filterPattern = `"[BOT-BLOCKED]" "${siteId}"`;
+
+    /* c8 ignore start */
+    log.info(`[BOT-CHECK] Filter Pattern: ${filterPattern}`);
+    log.info('[BOT-CHECK] Sending CloudWatch query...');
+    /* c8 ignore stop */
+
     const command = new FilterLogEventsCommand({
       logGroupName,
       startTime,
       endTime,
       // Filter pattern to find bot protection logs for this site in the time window
       // Text pattern since logs have prefix: [BOT-BLOCKED] Bot Protection Detection in Scraper
-      filterPattern: `"[BOT-BLOCKED]" "${siteId}"`,
+      filterPattern,
       limit: 500, // Increased limit for sites with many URLs
     });
 
     const response = await cloudwatchClient.send(command);
 
+    /* c8 ignore start */
+    log.info(`[BOT-CHECK] CloudWatch query completed. Events found: ${response.events?.length || 0}`);
+    /* c8 ignore stop */
+
     if (!response.events || response.events.length === 0) {
+      /* c8 ignore start */
+      log.info('[BOT-CHECK] No bot protection events found in CloudWatch response');
+      /* c8 ignore stop */
       log.debug(`No bot protection logs found for site ${siteId}`);
       return [];
     }
+
+    /* c8 ignore start */
+    log.info(`[BOT-CHECK] Raw CloudWatch events count: ${response.events.length}`);
+    log.info(`[BOT-CHECK] Sample event message: ${response.events[0]?.message?.substring(0, 200)}`);
+    /* c8 ignore stop */
 
     log.info(`Found ${response.events.length} bot protection events in CloudWatch logs for site ${siteId}`);
 
@@ -67,6 +95,9 @@ export async function queryBotProtectionLogs(siteId, context, searchStartTime) {
           if (messageMatch) {
             return JSON.parse(messageMatch[1]);
           }
+          /* c8 ignore start */
+          log.warn(`[BOT-CHECK] Event message did not match expected pattern: ${event.message?.substring(0, 100)}`);
+          /* c8 ignore stop */
           return null;
         } catch (parseError) {
           log.warn(`Failed to parse bot protection log event: ${event.message}`);
@@ -74,6 +105,10 @@ export async function queryBotProtectionLogs(siteId, context, searchStartTime) {
         }
       })
       .filter((event) => event !== null);
+
+    /* c8 ignore start */
+    log.info(`[BOT-CHECK] Successfully parsed ${botProtectionEvents.length} bot protection events`);
+    /* c8 ignore stop */
 
     return botProtectionEvents;
   } catch (error) {
