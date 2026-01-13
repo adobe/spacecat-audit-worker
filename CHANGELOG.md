@@ -1,3 +1,10 @@
+## [1.280.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.280.0...v1.280.1) (2026-01-13)
+
+
+### Bug Fixes
+
+* **llmo-referral-traffic:** remove empty sheet generation ([#1840](https://github.com/adobe/spacecat-audit-worker/issues/1840)) ([a6b05ba](https://github.com/adobe/spacecat-audit-worker/commit/a6b05baba8b909f9d5fb1d3cf9944181f40b1896))
+
 # [1.280.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.4...v1.280.0) (2026-01-12)
 
 
