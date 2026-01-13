@@ -147,25 +147,22 @@ export async function loadScrapeJson(url, site, allKeys, s3Client, S3_SCRAPER_BU
  * @returns {Object} Formatted brand guidelines
  */
 function extractBrandGuidelinesFromProfile(brandProfile) {
-  const mainProfile = brandProfile.main_profile || brandProfile.mainProfile || {};
+  const mainProfile = brandProfile.main_profile || {};
   // Extract brand persona (short description)
-  const brandPersona = mainProfile.brand_personality?.description
-    || mainProfile.brandPersonality?.description
-    || '';
+  const brandPersona = mainProfile.brand_personality?.description || '';
 
   // Extract tone
-  const toneAttributes = mainProfile.tone_attributes || mainProfile.toneAttributes || {};
+  const toneAttributes = mainProfile.tone_attributes || {};
   const primaryTones = toneAttributes.primary || [];
   const tone = primaryTones.join(', ');
 
   // Extract editorial guidelines
-  const editorialGuidelines = mainProfile.editorial_guidelines
-  || mainProfile.editorialGuidelines || {};
+  const editorialGuidelines = mainProfile.editorial_guidelines || {};
   const dos = editorialGuidelines.dos || [];
   const donts = editorialGuidelines.donts || [];
 
   // Extract forbidden items
-  const languagePatterns = mainProfile.language_patterns || mainProfile.languagePatterns || {};
+  const languagePatterns = mainProfile.language_patterns || {};
   const avoidPatterns = languagePatterns.avoid || [];
   const avoidTones = toneAttributes.avoid || [];
   const forbidden = [...avoidPatterns, ...avoidTones];

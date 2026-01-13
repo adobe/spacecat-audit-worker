@@ -4445,63 +4445,6 @@ describe('Headings Audit', () => {
         // Verify AI was not called (no fetchChatCompletion in this test)
       });
 
-      it('should handle camelCase property names in brand profile', async () => {
-        const mockBrandProfile = {
-          mainProfile: {
-            brandPersonality: {
-              description: 'Test brand personality',
-            },
-            toneAttributes: {
-              primary: ['professional', 'friendly'],
-              avoid: ['aggressive'],
-            },
-            languagePatterns: {
-              avoid: ['test phrase'],
-            },
-            editorialGuidelines: {
-              dos: ['Test do'],
-              donts: ['Test dont'],
-            },
-          },
-        };
-
-        const mockSite = {
-          getConfig: () => ({
-            getBrandProfile: () => mockBrandProfile,
-          }),
-        };
-
-        const healthyTagsObject = {
-          title: 'Sample Title',
-          description: 'Sample Description',
-          h1: 'Sample H1',
-        };
-
-        const mockLog = {
-          info: sinon.spy(),
-          warn: sinon.spy(),
-          debug: sinon.spy(),
-          error: sinon.spy(),
-        };
-
-        const mockContext = {
-          log: mockLog,
-          env: {
-            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
-            AZURE_OPENAI_KEY: 'test-key',
-            AZURE_API_VERSION: '2024-02-01',
-            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
-          },
-        };
-
-        const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
-
-        expect(result.brand_persona).to.equal('Test brand personality');
-        expect(result.tone).to.equal('professional, friendly');
-        expect(result.forbidden).to.include('test phrase');
-        expect(result.forbidden).to.include('aggressive');
-      });
-
       it('should extract all forbidden items from both language patterns and tone attributes', async () => {
         const mockBrandProfile = {
           main_profile: {
@@ -4557,10 +4500,12 @@ describe('Headings Audit', () => {
         expect(result.forbidden).to.include.members(['phrase1', 'phrase2', 'phrase3', 'tone1', 'tone2']);
       });
 
-      it('should handle missing properties and use empty defaults (covers fallback branches)', async () => {
-        // This test covers the fallback branches in lines 150-170
+      it('should handle missing main_profile and use empty defaults (covers fallback branches)', async () => {
+        // This test covers the fallback branch on line 150 when main_profile is missing
         const mockBrandProfile = {
-          // Missing both main_profile and mainProfile - tests line 150 {} fallback
+          // Missing main_profile - tests line 150 {} fallback
+          // But we need at least one property so it's not considered empty by getBrandGuidelines
+          version: 1,
         };
 
         const mockSite = {
