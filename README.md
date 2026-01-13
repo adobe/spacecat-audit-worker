@@ -492,6 +492,99 @@ export function createOpportunityData(parameters) {
 ```
 
 
+### How to reconcile disappeared suggestions
+
+When audit results change between runs, some suggestions that existed before may no longer appear in the current audit results. The `reconcileDisappearedSuggestions` utility helps handle this scenario by:
+
+1. Finding suggestions that disappeared from current audit results
+2. Checking if the target URL now redirects to one of the suggested URLs
+3. If so, marking the suggestion as `FIXED` and creating a `PUBLISHED` fix entity
+
+This is useful for audits like `broken-internal-links` and `broken-backlinks` where a fix might involve setting up a redirect.
+
+**Usage:**
+
+```js
+import { reconcileDisappearedSuggestions } from '../utils/data-access.js';
+
+// Define buildKey to generate unique keys for audit data items
+const buildKey = (link) => `${link.urlFrom}-${link.urlTo}`;
+
+// Call the utility after creating/updating the opportunity
+await reconcileDisappearedSuggestions({
+  opportunity,                          // The opportunity object
+  currentAuditData: brokenLinks,        // Array of current audit data items
+  buildKey,                             // Function to build key from audit data
+  buildKeyFromSuggestion: buildKey,     // Function to build key from suggestion data
+  getTargetUrl: (data) => data?.urlTo,  // Function to get target URL from suggestion data
+  getPagePath: (data) => data?.urlFrom, // Function to get page path from suggestion data
+  site,                                 // The site object
+  FixEntity,                            // FixEntity data access object
+  SuggestionModel,                      // Suggestion model with STATUSES
+  log,                                  // Logger object
+  auditType: AUDIT_TYPE,                // Audit type for logging
+  fetchFn: fetch,                       // Fetch function for following redirects
+});
+```
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `opportunity` | Object | The opportunity object to reconcile suggestions for |
+| `currentAuditData` | Array | Array of current audit data items |
+| `buildKey` | Function | Generates a unique key from an audit data item |
+| `buildKeyFromSuggestion` | Function | Generates a unique key from suggestion data (often same as `buildKey`) |
+| `getTargetUrl` | Function | Extracts the target URL from suggestion data |
+| `getPagePath` | Function | Extracts the page path from suggestion data |
+| `site` | Object | The site object (used for `getDeliveryType()`) |
+| `FixEntity` | Object | FixEntity data access from `@adobe/spacecat-shared-data-access` |
+| `SuggestionModel` | Object | Suggestion model with `STATUSES` constant |
+| `log` | Object | Logger for warnings and debug info |
+| `auditType` | String | Audit type string for log messages |
+| `fetchFn` | Function | Fetch function to follow redirects (e.g., `tracingFetch`) |
+
+**Example - Backlinks handler:**
+
+```js
+// buildKey is defined once and reused for both reconciliation and syncSuggestions
+const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
+
+await reconcileDisappearedSuggestions({
+  opportunity,
+  currentAuditData: auditResult.brokenBacklinks,
+  buildKey,
+  buildKeyFromSuggestion: buildKey,
+  getTargetUrl: (data) => data?.url_to,
+  getPagePath: (data) => data?.url_from,
+  site,
+  FixEntity,
+  SuggestionModel,
+  log,
+  auditType: AUDIT_TYPE,
+  fetchFn: fetch,
+});
+
+// Then use the same buildKey for syncSuggestions
+await syncSuggestions({
+  opportunity,
+  newData: auditResult.brokenBacklinks,
+  buildKey,
+  context,
+  mapNewSuggestion: (backlink) => ({ /* ... */ }),
+});
+```
+
+**How it works:**
+
+1. Fetches existing suggestions from the opportunity
+2. Filters for "candidate" suggestions that don't appear in current audit results (using `buildKey`)
+3. For each candidate, checks if the target URL redirects to any of its `urlsSuggested` URLs
+4. If a match is found:
+   - Marks the suggestion as `FIXED`
+   - Creates a `PUBLISHED` fix entity with change details
+5. Errors are caught and logged, allowing the audit to continue
+
 ### How to add auto-suggest to an audit
 A new auto-suggest feature can be added as a post processor step to the existing audit.
 
@@ -756,4 +849,165 @@ Here's how messages flow between workers in a step-based audit:
 ```
 
 Each message preserves the `auditContext` to maintain the step chain. The `next` field determines which step runs next, while `auditId` and `fullAuditRef` track the audit state across workers.
+
+## How to Add Opportunities and Suggestions
+
+This section documents the shared utility functions available in `src/utils/data-access.js` for managing opportunities, suggestions, and fix entities. These utilities help audits implement consistent patterns for tracking issues and their resolutions.
+
+### syncSuggestions
+
+Synchronizes new audit data with existing suggestions for an opportunity. This function creates new suggestions for new issues and updates existing ones.
+
+```js
+import { syncSuggestions } from '../utils/data-access.js';
+
+await syncSuggestions({
+  opportunity,
+  newData: auditResults,
+  buildKey: (item) => `${item.pageUrl}|${item.issueType}`,
+  mapNewSuggestion: (item) => ({
+    opportunityId: opportunity.getId(),
+    type: 'ISSUE_DETECTED',
+    rank: item.severity,
+    data: item,
+  }),
+  log,
+});
+```
+
+### How to Reconcile Disappeared Suggestions
+
+When audit data no longer includes a previously detected issue, it may mean the issue was fixed externally (e.g., via a redirect or content update). The `reconcileDisappearedSuggestions` utility handles this scenario by:
+
+1. Identifying suggestions that are no longer present in current audit data
+2. Checking if the issue was resolved (e.g., URL now redirects to a suggested target)
+3. Marking resolved suggestions as `FIXED`
+4. Creating `PUBLISHED` fix entities to track the resolution
+
+#### Usage
+
+```js
+import { reconcileDisappearedSuggestions } from '../utils/data-access.js';
+
+await reconcileDisappearedSuggestions({
+  opportunity,                          // Opportunity object
+  currentAuditData: auditResults,       // Current audit findings (array)
+  buildKey: (item) => item.url,         // Key function for audit data items
+  buildKeyFromSuggestion: (s) => s.url, // Key function for suggestion data
+  getTargetUrl: (data) => data?.urlTo,  // Extract target URL from suggestion data
+  getPagePath: (data) => data?.urlFrom, // Extract page path for fix entity
+  site,                                 // Site object
+  FixEntity,                            // FixEntity data access
+  SuggestionModel,                      // Suggestion data access with STATUSES
+  log,                                  // Logger
+  auditType: 'broken-internal-links',   // Audit type for logging
+  fetchFn: fetch,                       // Fetch function for redirect checks
+});
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `opportunity` | Object | The opportunity object with `getSuggestions()` and `addFixEntities()` methods |
+| `currentAuditData` | Array | Current audit results (items still broken) |
+| `buildKey` | Function | Creates a unique key from an audit data item |
+| `buildKeyFromSuggestion` | Function | Creates a unique key from a suggestion's data |
+| `getTargetUrl` | Function | Extracts the target URL from suggestion data (for redirect checking) |
+| `getPagePath` | Function | Extracts the page path from suggestion data (for fix entity) |
+| `site` | Object | Site object with `getDeliveryType()` method |
+| `FixEntity` | Object | FixEntity data access with `STATUSES` constant |
+| `SuggestionModel` | Object | Suggestion data access with `STATUSES` constant |
+| `log` | Object | Logger object |
+| `auditType` | String | Audit type identifier for logging |
+| `fetchFn` | Function | Fetch function for making HTTP requests |
+
+#### Example: Backlinks Handler
+
+```js
+const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
+
+await reconcileDisappearedSuggestions({
+  opportunity,
+  currentAuditData: auditResult.brokenBacklinks,
+  buildKey,
+  buildKeyFromSuggestion: buildKey,
+  getTargetUrl: (data) => data?.url_to,
+  getPagePath: (data) => data?.url_from,
+  site,
+  FixEntity,
+  SuggestionModel,
+  log,
+  auditType: 'broken-backlinks',
+  fetchFn: fetch,
+});
+```
+
+### How to Publish Deployed Fix Entities
+
+When users deploy fixes (e.g., update content to resolve an issue), the fix entity status transitions from `NEW` to `DEPLOYED`. The `publishDeployedFixEntities` utility automatically verifies if deployed fixes have resolved the issue and transitions them to `PUBLISHED` status.
+
+This enables audits to track the full lifecycle of issue resolution:
+1. **NEW** → Fix entity created when user acknowledges an issue
+2. **DEPLOYED** → User has deployed changes to fix the issue
+3. **PUBLISHED** → System verified the issue is resolved in production
+
+#### Usage
+
+```js
+import { publishDeployedFixEntities } from '../utils/data-access.js';
+
+await publishDeployedFixEntities({
+  opportunityId: opportunity.getId(),
+  FixEntity,
+  log,
+  isSuggestionStillBroken: async (suggestion) => {
+    const url = suggestion?.getData?.()?.targetUrl;
+    if (!url) return true; // No URL = can't verify = treat as broken
+    const response = await fetch(url);
+    return !response.ok; // true if still broken, false if fixed
+  },
+});
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `opportunityId` | String | The opportunity ID to process fix entities for |
+| `FixEntity` | Object | FixEntity data access with `STATUSES`, `allByOpportunityIdAndStatus()`, and `getSuggestionsByFixEntityId()` |
+| `log` | Object | Logger object for debug/warn messages |
+| `isSuggestionStillBroken` | Function | Async predicate that receives a suggestion and returns `true` if still broken, `false` if resolved |
+
+#### Example: Internal Links Handler
+
+```js
+await publishDeployedFixEntities({
+  opportunityId: opportunity.getId(),
+  FixEntity,
+  log,
+  isSuggestionStillBroken: async (suggestion) => {
+    const urlTo = suggestion?.getData?.()?.urlTo;
+    if (!urlTo) return true;
+    const is404 = await isLinkInaccessible(urlTo, log);
+    return is404;
+  },
+});
+```
+
+#### Example: Backlinks Handler
+
+```js
+await publishDeployedFixEntities({
+  opportunityId: opportunity.getId(),
+  FixEntity,
+  log,
+  isSuggestionStillBroken: async (suggestion) => {
+    const url = suggestion?.getData?.()?.url_to;
+    if (!url) return true;
+    const stillBrokenItems = await filterOutValidBacklinks([{ url_to: url }], log);
+    return stillBrokenItems.length > 0;
+  },
+});
+```
 

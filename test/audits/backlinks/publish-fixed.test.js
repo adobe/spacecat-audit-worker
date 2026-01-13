@@ -62,7 +62,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -143,7 +143,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -226,7 +226,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -310,7 +310,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -395,7 +395,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -480,7 +480,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -563,7 +563,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -645,7 +645,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -727,7 +727,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -796,7 +796,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -878,7 +878,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -960,7 +960,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -1043,7 +1043,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -1145,8 +1145,8 @@ describe('backlinks: publish FIXED fix entities when url_to no longer broken', (
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixesForFixedSuggestions: async ({
-          opportunityId, FixEntity, log, isSuggestionStillBrokenInLive,
+        publishDeployedFixEntities: async ({
+          opportunityId, FixEntity, log, isSuggestionStillBroken,
         }) => {
           const fixes = await FixEntity.allByOpportunityIdAndStatus(opportunityId, FixEntity.STATUSES.DEPLOYED);
           const tasks = [];
@@ -1158,7 +1158,7 @@ describe('backlinks: publish FIXED fix entities when url_to no longer broken', (
             // eslint-disable-next-line no-restricted-syntax
             for (const s of suggestions) {
               // eslint-disable-next-line no-await-in-loop
-              const stillBroken = await isSuggestionStillBrokenInLive(s);
+              const stillBroken = await isSuggestionStillBroken(s);
               if (stillBroken !== false) {
                 publish = false;
                 break;

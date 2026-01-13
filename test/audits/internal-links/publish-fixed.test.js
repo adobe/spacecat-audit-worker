@@ -57,8 +57,8 @@ describe('internal-links: publish FIXED fix entities when target no longer 404',
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: async ({
-          opportunityId, FixEntity, log, isSuggestionStillBrokenInLive,
+        publishDeployedFixEntities: async ({
+          opportunityId, FixEntity, log, isSuggestionStillBroken,
         }) => {
           const fixes = await FixEntity.allByOpportunityIdAndStatus(opportunityId, FixEntity.STATUSES.DEPLOYED);
           const tasks = [];
@@ -70,7 +70,7 @@ describe('internal-links: publish FIXED fix entities when target no longer 404',
             // eslint-disable-next-line no-restricted-syntax
             for (const s of suggestions) {
               // eslint-disable-next-line no-await-in-loop
-              const stillBroken = await isSuggestionStillBrokenInLive(s);
+              const stillBroken = await isSuggestionStillBroken(s);
               if (stillBroken !== false) {
                 publish = false;
                 break;
@@ -181,8 +181,8 @@ describe('internal-links: publish FIXED fix entities when target no longer 404',
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: async ({
-          opportunityId, FixEntity, log, isSuggestionStillBrokenInLive,
+        publishDeployedFixEntities: async ({
+          opportunityId, FixEntity, log, isSuggestionStillBroken,
         }) => {
           const fixes = await FixEntity.allByOpportunityIdAndStatus(opportunityId, FixEntity.STATUSES.DEPLOYED);
           const tasks = [];
@@ -194,7 +194,7 @@ describe('internal-links: publish FIXED fix entities when target no longer 404',
             // eslint-disable-next-line no-restricted-syntax
             for (const s of suggestions) {
               // eslint-disable-next-line no-await-in-loop
-              const stillBroken = await isSuggestionStillBrokenInLive(s);
+              const stillBroken = await isSuggestionStillBroken(s);
               if (stillBroken !== false) {
                 publish = false;
                 break;

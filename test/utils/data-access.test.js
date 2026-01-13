@@ -131,40 +131,40 @@ describe('utils/data-access', () => {
     expect(context.log.warn).to.have.been.calledWith(sinon.match(/Partial success/));
   });
 
-  it('publishDeployedFixesForFixedSuggestions returns early when STATUSES missing', async () => {
+  it('publishDeployedFixEntities returns early when STATUSES missing', async () => {
     utils = await esmock('../../src/utils/data-access.js');
-    const { publishDeployedFixesForFixedSuggestions } = utils;
+    const { publishDeployedFixEntities } = utils;
     const log = { debug: sandbox.stub(), warn: sandbox.stub() };
-    await publishDeployedFixesForFixedSuggestions({
+    await publishDeployedFixEntities({
       opportunityId: 'op1',
       FixEntity: {},
       log,
-      isSuggestionStillBrokenInLive: async () => false,
+      isSuggestionStillBroken: async () => false,
     });
     expect(log.debug).to.have.been.calledWith(sinon.match(/status constants not available/));
   });
 
-  it('publishDeployedFixesForFixedSuggestions returns when no deployed fix entities', async () => {
+  it('publishDeployedFixEntities returns when no deployed fix entities', async () => {
     utils = await esmock('../../src/utils/data-access.js');
-    const { publishDeployedFixesForFixedSuggestions } = utils;
+    const { publishDeployedFixEntities } = utils;
     const log = { debug: sandbox.stub(), warn: sandbox.stub() };
     const FixEntity = {
       STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
       allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
       getSuggestionsByFixEntityId: sandbox.stub(),
     };
-    await publishDeployedFixesForFixedSuggestions({
+    await publishDeployedFixEntities({
       opportunityId: 'op1',
       FixEntity,
       log,
-      isSuggestionStillBrokenInLive: async () => false,
+      isSuggestionStillBroken: async () => false,
     });
     expect(FixEntity.getSuggestionsByFixEntityId).to.not.have.been.called;
   });
 
-  it('publishDeployedFixesForFixedSuggestions continues when fix has no suggestions', async () => {
+  it('publishDeployedFixEntities continues when fix has no suggestions', async () => {
     utils = await esmock('../../src/utils/data-access.js');
-    const { publishDeployedFixesForFixedSuggestions } = utils;
+    const { publishDeployedFixEntities } = utils;
     const log = { debug: sandbox.stub(), warn: sandbox.stub() };
     const fe = {
       getId: () => 'fe1',
@@ -178,18 +178,18 @@ describe('utils/data-access', () => {
       allByOpportunityIdAndStatus: sandbox.stub().resolves([fe]),
       getSuggestionsByFixEntityId: sandbox.stub().resolves({ data: [] }),
     };
-    await publishDeployedFixesForFixedSuggestions({
+    await publishDeployedFixEntities({
       opportunityId: 'op1',
       FixEntity,
       log,
-      isSuggestionStillBrokenInLive: async () => false,
+      isSuggestionStillBroken: async () => false,
     });
     expect(fe.save).to.not.have.been.called;
   });
 
-  it('publishDeployedFixesForFixedSuggestions publishes when all suggestions are fixed', async () => {
+  it('publishDeployedFixEntities publishes when all suggestions are fixed', async () => {
     utils = await esmock('../../src/utils/data-access.js');
-    const { publishDeployedFixesForFixedSuggestions } = utils;
+    const { publishDeployedFixEntities } = utils;
     const log = { debug: sandbox.stub(), warn: sandbox.stub() };
     const fe = {
       getId: () => 'fe1',
@@ -205,11 +205,11 @@ describe('utils/data-access', () => {
         data: [{}, {}],
       }),
     };
-    await publishDeployedFixesForFixedSuggestions({
+    await publishDeployedFixEntities({
       opportunityId: 'op1',
       FixEntity,
       log,
-      isSuggestionStillBrokenInLive: async () => false,
+      isSuggestionStillBroken: async () => false,
     });
     expect(fe.setStatus).to.have.been.calledWith('PUBLISHED');
     expect(fe.setUpdatedBy).to.have.been.calledWith('system');
@@ -217,9 +217,9 @@ describe('utils/data-access', () => {
     expect(log.debug).to.have.been.calledWith(sinon.match(/Published fix entity/));
   });
 
-  it('publishDeployedFixesForFixedSuggestions skips publish when any suggestion check throws', async () => {
+  it('publishDeployedFixEntities skips publish when any suggestion check throws', async () => {
     utils = await esmock('../../src/utils/data-access.js');
-    const { publishDeployedFixesForFixedSuggestions } = utils;
+    const { publishDeployedFixEntities } = utils;
     const log = { debug: sandbox.stub(), warn: sandbox.stub() };
     const fe = {
       getId: () => 'fe1',
@@ -236,11 +236,11 @@ describe('utils/data-access', () => {
       }),
     };
     let first = true;
-    await publishDeployedFixesForFixedSuggestions({
+    await publishDeployedFixEntities({
       opportunityId: 'op1',
       FixEntity,
       log,
-      isSuggestionStillBrokenInLive: async () => {
+      isSuggestionStillBroken: async () => {
         if (first) {
           first = false;
           throw new Error('network');
@@ -252,20 +252,20 @@ describe('utils/data-access', () => {
     expect(log.debug).to.have.been.calledWith(sinon.match(/Live check failed/));
   });
 
-  it('publishDeployedFixesForFixedSuggestions warns when outer flow throws', async () => {
+  it('publishDeployedFixEntities warns when outer flow throws', async () => {
     utils = await esmock('../../src/utils/data-access.js');
-    const { publishDeployedFixesForFixedSuggestions } = utils;
+    const { publishDeployedFixEntities } = utils;
     const log = { debug: sandbox.stub(), warn: sandbox.stub() };
     const FixEntity = {
       STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
       allByOpportunityIdAndStatus: sandbox.stub().rejects(new Error('db')),
       getSuggestionsByFixEntityId: sandbox.stub(),
     };
-    await publishDeployedFixesForFixedSuggestions({
+    await publishDeployedFixEntities({
       opportunityId: 'op1',
       FixEntity,
       log,
-      isSuggestionStillBrokenInLive: async () => false,
+      isSuggestionStillBroken: async () => false,
     });
     expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to publish DEPLOYED fix entities/));
   });

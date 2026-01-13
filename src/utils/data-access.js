@@ -322,25 +322,178 @@ export async function syncSuggestions({
 }
 
 /**
- * Publishes DEPLOYED fix entities to PUBLISHED when their associated suggestion
- * targets are no longer broken. This function follows a FixEntity-first flow:
- * 1) Fetch FixEntities by opportunity and DEPLOYED status
- * 2) Resolve suggestions for each FixEntity
- * 3) If all suggestions' target URLs are healthy, publish the FixEntity
+ * Reconciles suggestions that disappeared from current audit results.
+ * If a previous suggestion's target URL now redirects to one of its suggested URLs,
+ * marks it as FIXED and creates a PUBLISHED fix entity.
  *
- * @param {Object} params
- * @param {string} params.opportunityId - The opportunity id
- * @param {Object} params.FixEntity - FixEntity DataAccess (from shared package)
- * @param {Object} params.log - Logger
- * @param {function(Object): Promise<boolean>} params.isSuggestionStillBrokenInLive
- *   Async predicate that returns true if URL is still broken
+ * @param {Object} params - The parameters for the reconciliation.
+ * @param {Object} params.opportunity - The opportunity object.
+ * @param {Array} params.currentAuditData - Array of current audit data items.
+ * @param {Function} params.buildKey - Function to build a unique key from audit data item.
+ * @param {Function} params.buildKeyFromSuggestion - Function to build key from suggestion data.
+ * @param {Function} params.getTargetUrl - Function to get the target URL from suggestion data.
+ * @param {Function} params.getPagePath - Function to get the page path from suggestion data.
+ * @param {Object} params.site - The site object.
+ * @param {Object} params.FixEntity - FixEntity data access object.
+ * @param {Object} params.SuggestionModel - Suggestion model with STATUSES.
+ * @param {Object} params.log - Logger object.
+ * @param {string} params.auditType - The audit type for logging.
+ * @param {Function} params.fetchFn - Fetch function for following redirects.
  * @returns {Promise<void>}
  */
-export async function publishDeployedFixesForFixedSuggestions({
+export async function reconcileDisappearedSuggestions({
+  opportunity,
+  currentAuditData,
+  buildKey,
+  buildKeyFromSuggestion,
+  getTargetUrl,
+  getPagePath,
+  site,
+  FixEntity,
+  SuggestionModel,
+  log,
+  auditType,
+  fetchFn,
+}) {
+  try {
+    const existingSuggestions = await opportunity.getSuggestions();
+    const currentKeys = new Set(currentAuditData.map(buildKey));
+    const candidates = existingSuggestions.filter((s) => {
+      const data = s?.getData?.() || {};
+      const key = buildKeyFromSuggestion(data);
+      return !currentKeys.has(key);
+    });
+
+    const normalize = (u) => {
+      if (typeof u !== 'string') return '';
+      return u.replace(/\/+$/, '');
+    };
+
+    // Helper: returns true if target URL eventually resolves to any candidate URL
+    const redirectsToAny = async (urlTo, targets) => {
+      try {
+        const resp = await fetchFn(urlTo, { redirect: 'follow' });
+        const finalResolvedUrl = normalize(resp?.url || urlTo);
+        return targets.some((t) => normalize(t) === finalResolvedUrl);
+      } catch (e) {
+        // treat network errors as not matching
+        return false;
+      }
+    };
+
+    const fixEntityObjects = [];
+
+    for (const suggestion of candidates) {
+      // eslint-disable-next-line no-await-in-loop
+      const data = suggestion?.getData?.();
+      const urlTo = getTargetUrl(data);
+      const targets = Array.isArray(data?.urlsSuggested) ? data.urlsSuggested : [];
+      if (!urlTo || targets.length === 0) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      const matches = await redirectsToAny(urlTo, targets);
+      if (!matches) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      // Mark suggestion as FIXED and prepare a PUBLISHED fix entity on the opportunity
+      let suggestionMarkedFixed = false;
+      try {
+        suggestion.setStatus?.(SuggestionModel.STATUSES.FIXED);
+        suggestion.setUpdatedBy?.('system');
+        // eslint-disable-next-line no-await-in-loop
+        await suggestion.save?.();
+        suggestionMarkedFixed = true;
+      } catch (e) {
+        log.warn(`[${auditType}] Failed to mark suggestion ${suggestion?.getId?.()} as FIXED: ${e.message}`);
+      }
+
+      // Only create fix entity if we successfully marked and saved the suggestion as FIXED
+      if (suggestionMarkedFixed) {
+        try {
+          const published = FixEntity?.STATUSES?.PUBLISHED;
+          if (published && typeof opportunity.addFixEntities === 'function') {
+            const updatedValue = data?.urlEdited || data?.urlsSuggested[0] || '';
+            fixEntityObjects.push({
+              opportunityId: opportunity.getId(),
+              status: published,
+              type: suggestion?.getType?.(),
+              executedAt: new Date().toISOString(),
+              changeDetails: {
+                system: site.getDeliveryType(),
+                pagePath: getPagePath(data),
+                oldValue: urlTo,
+                updatedValue,
+              },
+              suggestions: [suggestion?.getId?.()],
+            });
+          }
+        } catch (e) {
+          log.warn(`[${auditType}] Failed building fix entity payload for suggestion ${suggestion?.getId?.()}: ${e.message}`);
+        }
+      }
+    }
+
+    if (fixEntityObjects.length > 0 && typeof opportunity.addFixEntities === 'function') {
+      try {
+        await opportunity.addFixEntities(fixEntityObjects);
+      } catch (e) {
+        log.warn(`[${auditType}] Failed to add fix entities on opportunity ${opportunity.getId?.()}: ${e.message}`);
+      }
+    }
+  } catch (e) {
+    log.warn(`[${auditType}] Failed reconciliation for disappeared suggestions: ${e.message}`);
+  }
+}
+
+/**
+ * Publishes DEPLOYED fix entities to PUBLISHED when their associated suggestions
+ * are verified as resolved/fixed. This utility enables audits to automatically
+ * transition fix entities from DEPLOYED to PUBLISHED status based on live verification.
+ *
+ * The function follows a FixEntity-first flow:
+ * 1) Fetches all FixEntities for the opportunity with DEPLOYED status
+ * 2) For each FixEntity, retrieves its associated suggestions
+ * 3) Verifies each suggestion using the provided predicate function
+ * 4) If ALL suggestions pass verification (predicate returns false), publishes the FixEntity
+ *
+ * This is useful for audits that track fixes which can be verified programmatically,
+ * such as broken links (check if URL returns 200), redirects (check if redirect works),
+ * or any other issue that can be confirmed as resolved via an async check.
+ *
+ * @param {Object} params - The parameters object
+ * @param {string} params.opportunityId - The opportunity ID to process fix entities for
+ * @param {Object} params.FixEntity - FixEntity data access object from
+ *   @adobe/spacecat-shared-data-access
+ * @param {Object} params.log - Logger object for debug/warn messages
+ * @param {function(Object): Promise<boolean>} params.isSuggestionStillBroken - Async predicate
+ *   that receives a suggestion object and returns:
+ *   - `true` if the issue is still present (do NOT publish)
+ *   - `false` if the issue is resolved (OK to publish)
+ *   - throwing an error is treated as "still broken" for safety
+ * @returns {Promise<void>}
+ *
+ * @example
+ * await publishDeployedFixEntities({
+ *   opportunityId: opportunity.getId(),
+ *   FixEntity,
+ *   log,
+ *   isSuggestionStillBroken: async (suggestion) => {
+ *     const url = suggestion?.getData?.()?.targetUrl;
+ *     if (!url) return true; // No URL = can't verify = treat as broken
+ *     const response = await fetch(url);
+ *     return !response.ok; // true if still broken, false if fixed
+ *   },
+ * });
+ */
+export async function publishDeployedFixEntities({
   opportunityId,
   FixEntity,
   log,
-  isSuggestionStillBrokenInLive,
+  isSuggestionStillBroken,
 }) {
   try {
     if (!FixEntity?.STATUSES?.DEPLOYED || !FixEntity?.STATUSES?.PUBLISHED) {
@@ -381,7 +534,7 @@ export async function publishDeployedFixesForFixedSuggestions({
       for (const suggestion of suggestions) {
         try {
           // eslint-disable-next-line no-await-in-loop
-          const stillBroken = await isSuggestionStillBrokenInLive?.(suggestion);
+          const stillBroken = await isSuggestionStillBroken?.(suggestion);
           if (stillBroken !== false) {
             shouldPublish = false;
             break;

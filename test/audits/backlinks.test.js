@@ -617,7 +617,7 @@ describe('Backlinks Tests', function () {
       // Re-import handler with failing publish helper
       const handler = await (await import('esmock')).default('../../src/backlinks/handler.js', {
         '../../src/utils/data-access.js': {
-          publishDeployedFixesForFixedSuggestions: sandbox.stub().rejects(new Error('boom')),
+          publishDeployedFixEntities: sandbox.stub().rejects(new Error('boom')),
           syncSuggestions: async (...args) => (await import('../../src/utils/data-access.js')).syncSuggestions(...args),
         },
       });
@@ -626,7 +626,7 @@ describe('Backlinks Tests', function () {
 
       expect(result.status).to.deep.equal('complete');
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to publish fix entities for FIXED suggestions: boom/),
+        sinon.match(/Failed to publish fix entities: boom/),
       );
     });
   });

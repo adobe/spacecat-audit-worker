@@ -1189,7 +1189,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().rejects(new Error('boom')),
+        publishDeployedFixEntities: sandbox.stub().rejects(new Error('boom')),
       },
     });
 
@@ -1199,7 +1199,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // Assert
     expect(result.status).to.equal('complete');
     expect(context.log.warn).to.have.been.calledWith(
-      sinon.match(/Failed to publish fix entities for FIXED suggestions: boom/),
+      sinon.match(/Failed to publish fix entities: boom/),
     );
   }).timeout(5000);
 
@@ -1246,7 +1246,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -1329,7 +1329,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -1392,7 +1392,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -1452,7 +1452,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -1575,7 +1575,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -1635,7 +1635,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -1693,7 +1693,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -1751,7 +1751,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -1809,7 +1809,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -1867,7 +1867,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -1886,7 +1886,48 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(suggestion.setStatus).to.not.have.been.called;
   }).timeout(8000);
 
-  it('publish callback: isSuggestionStillBrokenInLive returns true when urlTo missing', async () => {
+  it('publish callback: isSuggestionStillBroken calls isLinkInaccessible when urlTo exists (lines 259-260)', async () => {
+    const isLinkInaccessibleStub = sandbox.stub().resolves(true);
+    const handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: sandbox.stub().resolves({
+          getId: () => 'oppty-cb-urlto',
+        }),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+      '../../../src/internal-links/helpers.js': {
+        calculateKpiDeltasForAudit: sandbox.stub().returns({}),
+        isLinkInaccessible: isLinkInaccessibleStub,
+        calculatePriority: (arr) => arr,
+      },
+      '../../../src/utils/data-access.js': {
+        reconcileDisappearedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: async ({ isSuggestionStillBroken }) => {
+          const result = await isSuggestionStillBroken({
+            getData: () => ({ urlTo: 'https://example.com/broken-url' }),
+          });
+          // isLinkInaccessible returns true, so result should be true
+          expect(result).to.equal(true);
+          expect(isLinkInaccessibleStub).to.have.been.calledWith('https://example.com/broken-url', sinon.match.any);
+        },
+      },
+    });
+
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [{ urlFrom: 'a', urlTo: 'b', trafficDomain: 1 }],
+        success: true,
+      }),
+    };
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+    expect(result.status).to.equal('complete');
+  }).timeout(8000);
+
+  it('publish callback: isSuggestionStillBroken returns true when urlTo missing', async () => {
     const handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/common/opportunity.js': {
         convertToOpportunity: sandbox.stub().resolves({
@@ -1902,8 +1943,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: async ({ isSuggestionStillBrokenInLive }) => {
-          const result = await isSuggestionStillBrokenInLive({
+        reconcileDisappearedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: async ({ isSuggestionStillBroken }) => {
+          const result = await isSuggestionStillBroken({
             getData: () => ({}), // no urlTo
           });
           // Expect early return true when urlTo missing
@@ -1967,7 +2009,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -2024,7 +2066,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -2085,7 +2127,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -2146,7 +2188,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
@@ -2209,7 +2251,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixesForFixedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: sandbox.stub().resolves(),
       },
     });
 
