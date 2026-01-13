@@ -122,7 +122,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(result.fullAuditRef).to.equal(baseURL);
     });
 
-    it('should return error when no company name can be extracted', async () => {
+    it('should use baseURL even if it looks invalid', async () => {
       mockSite.getConfig.returns({
         getCompanyName: sandbox.stub().returns(''),
         getWikipediaUrl: sandbox.stub().returns(''),
@@ -133,9 +133,9 @@ describe('Wikipedia Analysis Handler', () => {
 
       const result = await wikipediaAnalysisHandler.runner('invalid-url', context, mockSite);
 
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('No company name configured for this site');
-      expect(context.log.warn).to.have.been.called;
+      // Should succeed and use whatever baseURL is provided
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.config.companyName).to.equal('invalid-url');
     });
 
     it('should use baseURL as companyName when company name is not configured', async () => {
