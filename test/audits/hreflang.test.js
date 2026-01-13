@@ -18,6 +18,7 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import {
   validatePageHreflang,
+  validateReciprocalHreflang,
   hreflangAuditRunner,
   generateSuggestions,
   opportunityAndSuggestions,
@@ -294,6 +295,550 @@ describe('Hreflang Audit', () => {
       // When hreflang tags exist, validation should proceed normally
       expect(result.checks).to.be.an('array');
     });
+
+    describe('reciprocal validation', () => {
+      it('should validate reciprocal hreflang links when checkReciprocal is true', async () => {
+        const sourceUrl = 'https://example.com/en';
+        const frenchUrl = 'https://example.com/fr';
+
+        const sourceHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+              <link rel="alternate" hreflang="x-default" href="https://example.com/en">
+            </head>
+          </html>
+        `;
+
+        const frenchHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+              <link rel="alternate" hreflang="x-default" href="https://example.com/en">
+            </head>
+          </html>
+        `;
+
+        nock('https://example.com')
+          .get('/en')
+          .reply(200, sourceHtml)
+          .get('/fr')
+          .reply(200, frenchHtml);
+
+        const result = await validatePageHreflang(sourceUrl, mockLog, { checkReciprocal: true });
+
+        expect(result.checks).to.be.an('array');
+        expect(result.checks.length).to.equal(0); // No errors - proper reciprocal implementation
+      });
+
+      it('should detect missing reciprocal link', async () => {
+        const sourceUrl = 'https://example.com/en';
+        const frenchUrl = 'https://example.com/fr';
+
+        const sourceHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+              <link rel="alternate" hreflang="x-default" href="https://example.com/en">
+            </head>
+          </html>
+        `;
+
+        // French page missing the reciprocal link back to English
+        const frenchHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+            </head>
+          </html>
+        `;
+
+        nock('https://example.com')
+          .get('/en')
+          .reply(200, sourceHtml)
+          .get('/fr')
+          .reply(200, frenchHtml);
+
+        const result = await validatePageHreflang(sourceUrl, mockLog, { checkReciprocal: true });
+
+        const hasMissingReciprocal = result.checks.some((check) => check.check
+          === HREFLANG_CHECKS.HREFLANG_MISSING_RECIPROCAL.check
+          && !check.success);
+        expect(hasMissingReciprocal).to.be.true;
+      });
+
+      it('should detect incomplete hreflang set', async () => {
+        const sourceUrl = 'https://example.com/en';
+
+        const sourceHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+              <link rel="alternate" hreflang="de" href="https://example.com/de">
+              <link rel="alternate" hreflang="x-default" href="https://example.com/en">
+            </head>
+          </html>
+        `;
+
+        // French page missing German alternate
+        const frenchHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+              <link rel="alternate" hreflang="x-default" href="https://example.com/en">
+            </head>
+          </html>
+        `;
+
+        const germanHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+              <link rel="alternate" hreflang="de" href="https://example.com/de">
+              <link rel="alternate" hreflang="x-default" href="https://example.com/en">
+            </head>
+          </html>
+        `;
+
+        nock('https://example.com')
+          .get('/en')
+          .reply(200, sourceHtml)
+          .get('/fr')
+          .reply(200, frenchHtml)
+          .get('/de')
+          .reply(200, germanHtml);
+
+        const result = await validatePageHreflang(sourceUrl, mockLog, { checkReciprocal: true });
+
+        const hasIncompleteSet = result.checks.some((check) => check.check
+          === HREFLANG_CHECKS.HREFLANG_INCOMPLETE_SET.check
+          && !check.success);
+        expect(hasIncompleteSet).to.be.true;
+      });
+
+      it('should handle fetch errors gracefully during reciprocal validation', async () => {
+        const sourceUrl = 'https://example.com/en';
+
+        const sourceHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+            </head>
+          </html>
+        `;
+
+        nock('https://example.com')
+          .get('/en')
+          .reply(200, sourceHtml)
+          .get('/fr')
+          .replyWithError('Network error');
+
+        const result = await validatePageHreflang(sourceUrl, mockLog, { checkReciprocal: true });
+
+        // Should not throw error, just skip the failed page
+        expect(result.checks).to.be.an('array');
+      });
+
+      it('should skip reciprocal validation when checkReciprocal is false', async () => {
+        const sourceUrl = 'https://example.com/en';
+
+        const sourceHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+            </head>
+          </html>
+        `;
+
+        nock('https://example.com')
+          .get('/en')
+          .reply(200, sourceHtml);
+        // No mock for /fr - should not be called
+
+        const result = await validatePageHreflang(sourceUrl, mockLog, { checkReciprocal: false });
+
+        expect(result.checks).to.be.an('array');
+        // Should not attempt to fetch French page
+      });
+
+      it('should skip reciprocal validation when no self-referencing hreflang exists', async () => {
+        const sourceUrl = 'https://example.com/en';
+
+        const sourceHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+              <link rel="alternate" hreflang="de" href="https://example.com/de">
+            </head>
+          </html>
+        `;
+
+        nock('https://example.com')
+          .get('/en')
+          .reply(200, sourceHtml);
+
+        const result = await validatePageHreflang(sourceUrl, mockLog, { checkReciprocal: true });
+
+        expect(result.checks).to.be.an('array');
+        // Should not perform reciprocal checks without self-reference
+      });
+
+      it('should handle HTTP 404 responses during reciprocal validation', async () => {
+        const sourceUrl = 'https://example.com/en';
+
+        const sourceHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+            </head>
+          </html>
+        `;
+
+        nock('https://example.com')
+          .get('/en')
+          .reply(200, sourceHtml)
+          .get('/fr')
+          .reply(404, 'Not Found');
+
+        const result = await validatePageHreflang(sourceUrl, mockLog, { checkReciprocal: true });
+
+        // Should log warning but not report as audit issue
+        expect(mockLog.warn).to.have.been.calledWith(
+          sinon.match(/Failed to fetch/),
+        );
+        expect(result.checks).to.be.an('array');
+      });
+
+      it('should validate multiple alternate pages with proper concurrency control', async () => {
+        const sourceUrl = 'https://example.com/en';
+
+        const sourceHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+              <link rel="alternate" hreflang="de" href="https://example.com/de">
+              <link rel="alternate" hreflang="es" href="https://example.com/es">
+              <link rel="alternate" hreflang="x-default" href="https://example.com/en">
+            </head>
+          </html>
+        `;
+
+        const alternateHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+              <link rel="alternate" hreflang="de" href="https://example.com/de">
+              <link rel="alternate" hreflang="es" href="https://example.com/es">
+              <link rel="alternate" hreflang="x-default" href="https://example.com/en">
+            </head>
+          </html>
+        `;
+
+        nock('https://example.com')
+          .get('/en')
+          .reply(200, sourceHtml)
+          .get('/fr')
+          .reply(200, alternateHtml)
+          .get('/de')
+          .reply(200, alternateHtml)
+          .get('/es')
+          .reply(200, alternateHtml);
+
+        const result = await validatePageHreflang(sourceUrl, mockLog, {
+          checkReciprocal: true,
+          maxConcurrency: 2,
+        });
+
+        expect(result.checks).to.be.an('array');
+        expect(result.checks.length).to.equal(0); // All alternates have proper reciprocal links
+      });
+    });
+
+    describe('aggregation and deduplication', () => {
+      it('should deduplicate URLs in aggregated results', async () => {
+        const sourceHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+            </head>
+          </html>
+        `;
+
+        // French page missing reciprocal link
+        const frenchHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+            </head>
+          </html>
+        `;
+
+        nock('https://example.com')
+          .get('/en')
+          .reply(200, sourceHtml)
+          .get('/fr')
+          .reply(200, frenchHtml);
+
+        const result = await validatePageHreflang('https://example.com/en', mockLog, {
+          checkReciprocal: true,
+        });
+
+        // Should have checks with proper context
+        const reciprocalChecks = result.checks.filter(
+          (c) => c.check === HREFLANG_CHECKS.HREFLANG_MISSING_RECIPROCAL.check,
+        );
+
+        expect(reciprocalChecks.length).to.be.greaterThan(0);
+        expect(reciprocalChecks[0]).to.have.property('alternateUrl');
+        expect(reciprocalChecks[0]).to.have.property('sourceUrl');
+        expect(reciprocalChecks[0]).to.have.property('sourceHreflang');
+      });
+
+      it('should handle pages with both missing reciprocal and incomplete set', async () => {
+        const sourceHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+              <link rel="alternate" hreflang="de" href="https://example.com/de">
+            </head>
+          </html>
+        `;
+
+        // French page has reciprocal link but incomplete set (missing German)
+        const frenchHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+            </head>
+          </html>
+        `;
+
+        const germanHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+              <link rel="alternate" hreflang="de" href="https://example.com/de">
+            </head>
+          </html>
+        `;
+
+        nock('https://example.com')
+          .get('/en')
+          .reply(200, sourceHtml)
+          .get('/fr')
+          .reply(200, frenchHtml)
+          .get('/de')
+          .reply(200, germanHtml);
+
+        const result = await validatePageHreflang('https://example.com/en', mockLog, {
+          checkReciprocal: true,
+        });
+
+        // French page should have incomplete set error
+        const incompleteChecks = result.checks.filter(
+          (c) => c.check === HREFLANG_CHECKS.HREFLANG_INCOMPLETE_SET.check,
+        );
+
+        expect(incompleteChecks.some((c) => c.alternateUrl === 'https://example.com/fr')).to.be.true;
+        
+        // Verify it includes context about missing hreflangs
+        const frenchCheck = incompleteChecks.find((c) => c.alternateUrl === 'https://example.com/fr');
+        expect(frenchCheck.missingHreflangs).to.include('de');
+      });
+    });
+
+    describe('context in error messages', () => {
+      it('should include context information in reciprocal check failures', async () => {
+        const sourceUrl = 'https://example.com/en';
+
+        const sourceHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+            </head>
+          </html>
+        `;
+
+        const frenchHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+            </head>
+          </html>
+        `;
+
+        nock('https://example.com')
+          .get('/en')
+          .reply(200, sourceHtml)
+          .get('/fr')
+          .reply(200, frenchHtml);
+
+        const result = await validatePageHreflang(sourceUrl, mockLog, {
+          checkReciprocal: true,
+        });
+
+        const reciprocalCheck = result.checks.find(
+          (c) => c.check === HREFLANG_CHECKS.HREFLANG_MISSING_RECIPROCAL.check,
+        );
+
+        expect(reciprocalCheck).to.exist;
+        expect(reciprocalCheck.sourceUrl).to.equal(sourceUrl);
+        expect(reciprocalCheck.sourceHreflang).to.equal('en');
+        expect(reciprocalCheck.alternateUrl).to.equal('https://example.com/fr');
+        expect(reciprocalCheck.explanation).to.include('en');
+      });
+
+      it('should include missing hreflangs in incomplete set check', async () => {
+        const sourceUrl = 'https://example.com/en';
+
+        const sourceHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+              <link rel="alternate" hreflang="de" href="https://example.com/de">
+            </head>
+          </html>
+        `;
+
+        // French page has reciprocal but missing German
+        const frenchHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+            </head>
+          </html>
+        `;
+
+        const germanHtml = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="https://example.com/en">
+              <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+              <link rel="alternate" hreflang="de" href="https://example.com/de">
+            </head>
+          </html>
+        `;
+
+        nock('https://example.com')
+          .get('/en')
+          .reply(200, sourceHtml)
+          .get('/fr')
+          .reply(200, frenchHtml)
+          .get('/de')
+          .reply(200, germanHtml);
+
+        const result = await validatePageHreflang(sourceUrl, mockLog, {
+          checkReciprocal: true,
+        });
+
+        const incompleteCheck = result.checks.find(
+          (c) => c.check === HREFLANG_CHECKS.HREFLANG_INCOMPLETE_SET.check,
+        );
+
+        expect(incompleteCheck).to.exist;
+        expect(incompleteCheck.missingHreflangs).to.be.an('array');
+        expect(incompleteCheck.missingHreflangs).to.include('de');
+      });
+    });
+
+    describe('edge cases for validateReciprocalHreflang', () => {
+      it('should handle page with no hreflang links when checkReciprocal is true', async () => {
+        const html = '<html><head></head></html>';
+
+        nock('https://example.com')
+          .get('/page')
+          .reply(200, html);
+
+        const result = await validatePageHreflang('https://example.com/page', mockLog, {
+          checkReciprocal: true,
+        });
+
+        // Should have no reciprocal checks since there are no hreflang links
+        const reciprocalChecks = result.checks.filter(
+          (c) => c.check === HREFLANG_CHECKS.HREFLANG_MISSING_RECIPROCAL.check
+            || c.check === HREFLANG_CHECKS.HREFLANG_INCOMPLETE_SET.check,
+        );
+
+        expect(reciprocalChecks).to.be.empty;
+      });
+
+      it('should handle invalid URLs in hreflang links gracefully', async () => {
+        const html = `
+          <html>
+            <head>
+              <link rel="alternate" hreflang="en" href="not-a-valid-url">
+              <link rel="alternate" hreflang="fr" href="://invalid-scheme">
+            </head>
+          </html>
+        `;
+
+        nock('https://example.com')
+          .get('/page')
+          .reply(200, html);
+
+        // Should not throw an error when processing invalid URLs
+        const result = await validatePageHreflang('https://example.com/page', mockLog, {
+          checkReciprocal: true,
+        });
+
+        // Should have a result with checks array
+        expect(result).to.exist;
+        expect(result.checks).to.be.an('array');
+        
+        // Invalid URLs are handled gracefully during URL parsing in extractHreflangLinks
+        // They're converted to absolute URLs, and may result in unusual but valid URLs
+        // The key is that it doesn't throw an error
+        expect(result.url).to.equal('https://example.com/page');
+      });
+    });
+  });
+
+  describe('validateReciprocalHreflang', () => {
+    it('should return empty checks when sourceHreflangLinks is null', async () => {
+      const result = await validateReciprocalHreflang('https://example.com/page', null, mockLog);
+      expect(result).to.be.an('array').that.is.empty;
+    });
+
+    it('should return empty checks when sourceHreflangLinks is empty array', async () => {
+      const result = await validateReciprocalHreflang('https://example.com/page', [], mockLog);
+      expect(result).to.be.an('array').that.is.empty;
+    });
+
+    it('should handle hreflang links with malformed URLs gracefully', async () => {
+      // These invalid URLs will fail during URL parsing in the sourceHreflang detection
+      const sourceHreflangLinks = [
+        { hreflang: 'en', href: 'not a url at all' },
+        { hreflang: 'fr', href: ':::invalid:::' },
+      ];
+
+      // Should not throw an error
+      const result = await validateReciprocalHreflang(
+        'https://example.com/page',
+        sourceHreflangLinks,
+        mockLog,
+      );
+
+      // Returns empty checks because no valid self-referencing hreflang was found
+      expect(result).to.be.an('array').that.is.empty;
+    });
   });
 
   describe('hreflangAuditRunner', () => {
@@ -447,6 +992,127 @@ describe('Hreflang Audit', () => {
       expect(result.auditResult.status).to.equal('success');
       expect(result.auditResult.message).to.include('No hreflang issues detected');
     });
+
+    it('should deduplicate when same alternate URL fails from multiple source pages', async () => {
+      // Both en and en-us pages reference fr page
+      // fr page missing reciprocal links
+      // Should only report fr page once
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+        { getUrl: () => `${baseURL}/en` },
+        { getUrl: () => `${baseURL}/en-us` },
+      ]);
+
+      const enHtml = `
+        <html>
+          <head>
+            <link rel="alternate" hreflang="en" href="https://example.com/en">
+            <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+          </head>
+        </html>
+      `;
+
+      const enUsHtml = `
+        <html>
+          <head>
+            <link rel="alternate" hreflang="en-US" href="https://example.com/en-us">
+            <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+          </head>
+        </html>
+      `;
+
+      // French page missing reciprocal links - will fail for both en and en-us
+      const frHtml = `
+        <html>
+          <head>
+            <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+          </head>
+        </html>
+      `;
+
+      nock(baseURL)
+        .get('/en')
+        .reply(200, enHtml)
+        .get('/en-us')
+        .reply(200, enUsHtml)
+        .get('/fr')
+        .times(2) // Will be fetched twice (once from en, once from en-us)
+        .reply(200, frHtml);
+
+      const result = await hreflangAuditRunner(baseURL, context, site);
+
+      // Should have reciprocal check failures
+      const reciprocalCheck = result.auditResult[HREFLANG_CHECKS.HREFLANG_MISSING_RECIPROCAL.check];
+      expect(reciprocalCheck).to.exist;
+      expect(reciprocalCheck.success).to.be.false;
+
+      // fr page should only appear ONCE in the URLs array (deduplicated)
+      const frUrls = reciprocalCheck.urls.filter(
+        (item) => (typeof item === 'string' ? item : item.url) === 'https://example.com/fr',
+      );
+      expect(frUrls.length).to.equal(1);
+      
+      // Verify the structure includes context
+      expect(reciprocalCheck.urls[0]).to.have.property('url');
+      expect(reciprocalCheck.urls[0]).to.have.property('context');
+      expect(reciprocalCheck.urls[0].context).to.have.property('sourceUrl');
+    });
+
+    it('should handle aggregation with mixed reciprocal and non-reciprocal checks', async () => {
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+        { getUrl: () => `${baseURL}/page1` },
+        { getUrl: () => `${baseURL}/page2` },
+      ]);
+
+      // Page 1: Invalid language code (non-reciprocal check)
+      const page1Html = `
+        <html>
+          <head>
+            <link rel="alternate" hreflang="invalid-lang" href="https://example.com/page1">
+            <link rel="alternate" hreflang="en" href="https://example.com/en">
+          </head>
+        </html>
+      `;
+
+      // Page 2: Also has invalid language code
+      const page2Html = `
+        <html>
+          <head>
+            <link rel="alternate" hreflang="invalid-lang" href="https://example.com/page2">
+            <link rel="alternate" hreflang="en" href="https://example.com/en">
+          </head>
+        </html>
+      `;
+
+      const enHtml = `
+        <html>
+          <head>
+            <link rel="alternate" hreflang="en" href="https://example.com/en">
+          </head>
+        </html>
+      `;
+
+      nock(baseURL)
+        .get('/page1')
+        .reply(200, page1Html)
+        .get('/page2')
+        .reply(200, page2Html)
+        .get('/en')
+        .times(2)
+        .reply(200, enHtml);
+
+      const result = await hreflangAuditRunner(baseURL, context, site);
+
+      // Should have invalid language tag errors
+      const invalidLangCheck = result.auditResult[HREFLANG_CHECKS.HREFLANG_INVALID_LANGUAGE_TAG.check];
+      expect(invalidLangCheck).to.exist;
+      expect(invalidLangCheck.urls).to.be.an('array');
+      expect(invalidLangCheck.urls.length).to.equal(2);
+      
+      // Non-reciprocal checks should store URLs as strings
+      invalidLangCheck.urls.forEach((url) => {
+        expect(typeof url).to.equal('string');
+      });
+    });
   });
 
   describe('createOpportunityData', () => {
@@ -581,6 +1247,105 @@ describe('Hreflang Audit', () => {
 
       expect(result).to.deep.equal(auditData);
       expect(result.suggestions).to.be.undefined;
+    });
+
+    it('should generate suggestions with context for reciprocal check failures', () => {
+      const auditData = {
+        auditResult: {
+          'hreflang-missing-reciprocal': {
+            success: false,
+            explanation: 'Missing reciprocal hreflang link',
+            urls: [
+              {
+                url: 'https://example.com/fr',
+                context: {
+                  sourceUrl: 'https://example.com/en',
+                  sourceHreflang: 'en',
+                  alternateHreflang: 'fr',
+                },
+              },
+            ],
+          },
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result.suggestions).to.be.an('array');
+      expect(result.suggestions).to.have.length(1);
+      expect(result.suggestions[0].url).to.equal('https://example.com/fr');
+      expect(result.suggestions[0].context).to.exist;
+      expect(result.suggestions[0].recommendedAction).to.include('https://example.com/en');
+      expect(result.suggestions[0].recommendedAction).to.include('hreflang="en"');
+    });
+
+    it('should generate suggestions with context for incomplete set failures', () => {
+      const auditData = {
+        auditResult: {
+          'hreflang-incomplete-set': {
+            success: false,
+            explanation: 'Incomplete hreflang set',
+            urls: [
+              {
+                url: 'https://example.com/fr',
+                context: {
+                  sourceUrl: 'https://example.com/en',
+                  missingHreflangs: ['de', 'es'],
+                },
+              },
+            ],
+          },
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result.suggestions).to.be.an('array');
+      expect(result.suggestions).to.have.length(1);
+      expect(result.suggestions[0].recommendedAction).to.include('de, es');
+    });
+
+    it('should handle suggestions without context (backward compatibility)', () => {
+      const auditData = {
+        auditResult: {
+          'hreflang-missing-reciprocal': {
+            success: false,
+            explanation: 'Missing reciprocal hreflang link',
+            urls: ['https://example.com/fr'], // String URL without context
+          },
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result.suggestions).to.be.an('array');
+      expect(result.suggestions).to.have.length(1);
+      expect(result.suggestions[0].url).to.equal('https://example.com/fr');
+      expect(result.suggestions[0].recommendedAction).to.include('Add reciprocal hreflang link');
+    });
+
+    it('should generate fallback recommendation for incomplete set without context', () => {
+      const auditData = {
+        auditResult: {
+          'hreflang-incomplete-set': {
+            success: false,
+            explanation: 'Incomplete hreflang set',
+            urls: [
+              {
+                url: 'https://example.com/fr',
+                context: {}, // Context without missingHreflangs
+              },
+            ],
+          },
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result.suggestions).to.be.an('array');
+      expect(result.suggestions).to.have.length(1);
+      expect(result.suggestions[0].recommendedAction).to.include('complete set');
+      expect(result.suggestions[0].recommendedAction).to.not.include('Add missing');
     });
 
     it('should generate suggestions for all check types', () => {

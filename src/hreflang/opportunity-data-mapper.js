@@ -44,9 +44,9 @@ export function createOpportunityDataForElmo() {
       recommendations: [
         {
           insight: 'Hreflang analysis reveals implementation issues affecting international SEO and user experience',
-          recommendation: 'Ensure hreflang tags are properly implemented in the <head> section of each page using valid ISO 639-1 language codes and ISO 3166-1 Alpha 2 country codes',
+          recommendation: 'Ensure hreflang tags are properly implemented in the <head> section of each page using valid ISO 639-1 language codes and ISO 3166-1 Alpha 2 country codes, with bidirectional relationships between all alternate pages',
           type: 'CONTENT',
-          rationale: 'Proper hreflang implementation helps search engines serve the correct language and regional versions of pages to users, improving international SEO and user experience',
+          rationale: 'Proper hreflang implementation with reciprocal links helps search engines serve the correct language and regional versions of pages to users, improving international SEO and user experience',
         },
       ],
     },

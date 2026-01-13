@@ -12,7 +12,15 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { trimTagValue, normalizeTagValue, getIssueRanking } from '../../src/utils/seo-utils.js';
+import { load as cheerioLoad } from 'cheerio';
+import {
+  trimTagValue,
+  normalizeTagValue,
+  getIssueRanking,
+  extractHreflangLinks,
+  hasReciprocalLink,
+  buildExpectedHreflangSet,
+} from '../../src/utils/seo-utils.js';
 
 describe('trimTagValue', () => {
   it('should trim leading and trailing whitespace from string', () => {
@@ -160,5 +168,290 @@ describe('getIssueRanking - edge cases', () => {
   it('should return -1 for unknown issue word', () => {
     // Cover the loop that doesn't find a match (line 100)
     expect(getIssueRanking('title', 'Something Random')).to.equal(-1);
+  });
+});
+
+describe('extractHreflangLinks', () => {
+  it('should extract hreflang links from HTML head', () => {
+    const html = `
+      <html>
+        <head>
+          <link rel="alternate" hreflang="en" href="https://example.com/en">
+          <link rel="alternate" hreflang="fr" href="https://example.com/fr">
+          <link rel="alternate" hreflang="x-default" href="https://example.com/">
+        </head>
+      </html>
+    `;
+    const $ = cheerioLoad(html);
+    const links = extractHreflangLinks($, 'https://example.com/en');
+
+    expect(links).to.have.lengthOf(3);
+    expect(links[0]).to.deep.equal({
+      hreflang: 'en',
+      href: 'https://example.com/en',
+      isInHead: true,
+    });
+    expect(links[1]).to.deep.equal({
+      hreflang: 'fr',
+      href: 'https://example.com/fr',
+      isInHead: true,
+    });
+    expect(links[2]).to.deep.equal({
+      hreflang: 'x-default',
+      href: 'https://example.com/',
+      isInHead: true,
+    });
+  });
+
+  it('should detect hreflang links outside head section', () => {
+    const html = `
+      <html>
+        <head></head>
+        <body>
+          <link rel="alternate" hreflang="en" href="https://example.com/en">
+        </body>
+      </html>
+    `;
+    const $ = cheerioLoad(html);
+    const links = extractHreflangLinks($, 'https://example.com/en');
+
+    expect(links).to.have.lengthOf(1);
+    expect(links[0].isInHead).to.be.false;
+  });
+
+  it('should resolve relative URLs to absolute', () => {
+    const html = `
+      <html>
+        <head>
+          <link rel="alternate" hreflang="en" href="/en">
+          <link rel="alternate" hreflang="fr" href="/fr">
+        </head>
+      </html>
+    `;
+    const $ = cheerioLoad(html);
+    const links = extractHreflangLinks($, 'https://example.com/page');
+
+    expect(links).to.have.lengthOf(2);
+    expect(links[0].href).to.equal('https://example.com/en');
+    expect(links[1].href).to.equal('https://example.com/fr');
+  });
+
+  it('should handle invalid URLs gracefully', () => {
+    const html = `
+      <html>
+        <head>
+          <link rel="alternate" hreflang="en" href="invalid-url">
+        </head>
+      </html>
+    `;
+    const $ = cheerioLoad(html);
+    const links = extractHreflangLinks($, 'https://example.com/en');
+
+    expect(links).to.have.lengthOf(1);
+    // Relative URLs are resolved to absolute URLs
+    expect(links[0].href).to.equal('https://example.com/invalid-url');
+  });
+
+  it('should skip links without hreflang or href attributes', () => {
+    const html = `
+      <html>
+        <head>
+          <link rel="alternate" hreflang="en">
+          <link rel="alternate" href="https://example.com/fr">
+          <link rel="alternate" hreflang="de" href="https://example.com/de">
+        </head>
+      </html>
+    `;
+    const $ = cheerioLoad(html);
+    const links = extractHreflangLinks($, 'https://example.com/en');
+
+    expect(links).to.have.lengthOf(1);
+    expect(links[0].hreflang).to.equal('de');
+  });
+
+  it('should return empty array when no hreflang links exist', () => {
+    const html = '<html><head></head></html>';
+    const $ = cheerioLoad(html);
+    const links = extractHreflangLinks($, 'https://example.com/en');
+
+    expect(links).to.be.an('array').that.is.empty;
+  });
+
+  it('should handle complex hreflang values (language-region)', () => {
+    const html = `
+      <html>
+        <head>
+          <link rel="alternate" hreflang="en-US" href="https://example.com/en-us">
+          <link rel="alternate" hreflang="en-GB" href="https://example.com/en-gb">
+          <link rel="alternate" hreflang="fr-CA" href="https://example.com/fr-ca">
+        </head>
+      </html>
+    `;
+    const $ = cheerioLoad(html);
+    const links = extractHreflangLinks($, 'https://example.com/en-us');
+
+    expect(links).to.have.lengthOf(3);
+    expect(links[0].hreflang).to.equal('en-US');
+    expect(links[1].hreflang).to.equal('en-GB');
+    expect(links[2].hreflang).to.equal('fr-CA');
+  });
+
+  it('should handle URL construction failures gracefully', () => {
+    // Test with invalid sourceUrl that causes URL constructor to fail
+    const html = `
+      <html>
+        <head>
+          <link rel="alternate" hreflang="en" href="/en">
+          <link rel="alternate" hreflang="fr" href="/fr">
+        </head>
+      </html>
+    `;
+    const $ = cheerioLoad(html);
+
+    // Using an invalid sourceUrl should trigger the catch block
+    const links = extractHreflangLinks($, 'not-a-valid-base-url');
+
+    // Should not throw, and should keep original hrefs when URL construction fails
+    expect(links).to.have.lengthOf(2);
+    expect(links[0].href).to.equal('/en');
+    expect(links[1].href).to.equal('/fr');
+  });
+});
+
+describe('hasReciprocalLink', () => {
+  it('should return true when reciprocal link exists', () => {
+    const hreflangLinks = [
+      { hreflang: 'en', href: 'https://example.com/en' },
+      { hreflang: 'fr', href: 'https://example.com/fr' },
+    ];
+
+    const result = hasReciprocalLink('https://example.com/en', 'en', hreflangLinks);
+    expect(result).to.be.true;
+  });
+
+  it('should return false when reciprocal link does not exist', () => {
+    const hreflangLinks = [
+      { hreflang: 'fr', href: 'https://example.com/fr' },
+      { hreflang: 'de', href: 'https://example.com/de' },
+    ];
+
+    const result = hasReciprocalLink('https://example.com/en', 'en', hreflangLinks);
+    expect(result).to.be.false;
+  });
+
+  it('should return false when hreflang value does not match', () => {
+    const hreflangLinks = [
+      { hreflang: 'fr', href: 'https://example.com/en' },
+    ];
+
+    const result = hasReciprocalLink('https://example.com/en', 'en', hreflangLinks);
+    expect(result).to.be.false;
+  });
+
+  it('should normalize URLs for comparison (remove trailing slash)', () => {
+    const hreflangLinks = [
+      { hreflang: 'en', href: 'https://example.com/en/' },
+    ];
+
+    const result = hasReciprocalLink('https://example.com/en', 'en', hreflangLinks);
+    expect(result).to.be.true;
+  });
+
+  it('should handle URLs with query parameters', () => {
+    const hreflangLinks = [
+      { hreflang: 'en', href: 'https://example.com/en?page=1' },
+    ];
+
+    const result = hasReciprocalLink('https://example.com/en?page=1', 'en', hreflangLinks);
+    expect(result).to.be.true;
+  });
+
+  it('should return false for null/undefined inputs', () => {
+    expect(hasReciprocalLink(null, 'en', [])).to.be.false;
+    expect(hasReciprocalLink('https://example.com/en', null, [])).to.be.false;
+    expect(hasReciprocalLink('https://example.com/en', 'en', null)).to.be.false;
+  });
+
+  it('should return false for empty array', () => {
+    const result = hasReciprocalLink('https://example.com/en', 'en', []);
+    expect(result).to.be.false;
+  });
+
+  it('should handle invalid URLs gracefully', () => {
+    const hreflangLinks = [
+      { hreflang: 'en', href: 'invalid-url' },
+    ];
+
+    const result = hasReciprocalLink('https://example.com/en', 'en', hreflangLinks);
+    expect(result).to.be.false;
+  });
+});
+
+describe('buildExpectedHreflangSet', () => {
+  it('should build expected hreflang set for all alternate pages', () => {
+    const sourceUrl = 'https://example.com/en';
+    const sourceLinks = [
+      { hreflang: 'en', href: 'https://example.com/en' },
+      { hreflang: 'fr', href: 'https://example.com/fr' },
+      { hreflang: 'de', href: 'https://example.com/de' },
+    ];
+
+    const expectedSet = buildExpectedHreflangSet(sourceUrl, sourceLinks);
+
+    expect(expectedSet).to.be.a('map');
+    expect(expectedSet.size).to.equal(3);
+
+    // Each page should expect all three hreflang values
+    expect([...expectedSet.get('https://example.com/en')]).to.have.members(['en', 'fr', 'de']);
+    expect([...expectedSet.get('https://example.com/fr')]).to.have.members(['en', 'fr', 'de']);
+    expect([...expectedSet.get('https://example.com/de')]).to.have.members(['en', 'fr', 'de']);
+  });
+
+  it('should handle x-default hreflang', () => {
+    const sourceUrl = 'https://example.com/en';
+    const sourceLinks = [
+      { hreflang: 'en', href: 'https://example.com/en' },
+      { hreflang: 'fr', href: 'https://example.com/fr' },
+      { hreflang: 'x-default', href: 'https://example.com/en' },
+    ];
+
+    const expectedSet = buildExpectedHreflangSet(sourceUrl, sourceLinks);
+
+    expect(expectedSet.size).to.equal(2); // en and fr (x-default points to en)
+    expect([...expectedSet.get('https://example.com/en')]).to.have.members(['en', 'fr', 'x-default']);
+  });
+
+  it('should return empty map when source links is empty', () => {
+    const expectedSet = buildExpectedHreflangSet('https://example.com/en', []);
+    expect(expectedSet).to.be.a('map');
+    expect(expectedSet.size).to.equal(0);
+  });
+
+  it('should handle URLs with different paths correctly', () => {
+    const sourceUrl = 'https://example.com/products/item1';
+    const sourceLinks = [
+      { hreflang: 'en', href: 'https://example.com/products/item1' },
+      { hreflang: 'fr', href: 'https://example.com/fr/produits/item1' },
+    ];
+
+    const expectedSet = buildExpectedHreflangSet(sourceUrl, sourceLinks);
+
+    expect(expectedSet.size).to.equal(2);
+    expect([...expectedSet.get('https://example.com/products/item1')]).to.have.members(['en', 'fr']);
+    expect([...expectedSet.get('https://example.com/fr/produits/item1')]).to.have.members(['en', 'fr']);
+  });
+
+  it('should handle complex language-region codes', () => {
+    const sourceUrl = 'https://example.com/en-us';
+    const sourceLinks = [
+      { hreflang: 'en-US', href: 'https://example.com/en-us' },
+      { hreflang: 'en-GB', href: 'https://example.com/en-gb' },
+      { hreflang: 'fr-CA', href: 'https://example.com/fr-ca' },
+    ];
+
+    const expectedSet = buildExpectedHreflangSet(sourceUrl, sourceLinks);
+
+    expect(expectedSet.size).to.equal(3);
+    expect([...expectedSet.get('https://example.com/en-us')]).to.have.members(['en-US', 'en-GB', 'fr-CA']);
   });
 });

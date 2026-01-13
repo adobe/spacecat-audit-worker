@@ -129,3 +129,100 @@ export function getIssueRanking(tagName, issue) {
   }
   return -1;
 }
+
+/**
+ * Extracts hreflang links from HTML content.
+ * Shared utility that can be used by hreflang audit, sitemap audit, or any other audit.
+ *
+ * @param {CheerioAPI} $ - Cheerio instance with loaded HTML
+ * @param {string} sourceUrl - URL of the page being analyzed (for context/logging)
+ * @returns {Array<{hreflang: string, href: string, isInHead: boolean}>} Array of hreflang links
+ */
+export function extractHreflangLinks($, sourceUrl) {
+  const hreflangLinks = [];
+  const $links = $('link[rel="alternate"][hreflang]');
+
+  $links.each((i, link) => {
+    const $link = $(link);
+    const hreflang = $link.attr('hreflang');
+    const href = $link.attr('href');
+    const isInHead = $link.closest('head').length > 0;
+
+    if (hreflang && href) {
+      // Resolve relative URLs to absolute
+      let absoluteHref = href;
+      try {
+        absoluteHref = new URL(href, sourceUrl).href;
+      } catch {
+        // If URL construction fails, keep original href
+      }
+
+      hreflangLinks.push({
+        hreflang,
+        href: absoluteHref,
+        isInHead,
+      });
+    }
+  });
+
+  return hreflangLinks;
+}
+
+/**
+ * Checks if a set of hreflang links contains a reference back to a specific URL.
+ * Used to validate reciprocal hreflang relationships.
+ *
+ * @param {string} targetUrl - The URL we expect to find in the hreflang links
+ * @param {string} expectedHreflang - The expected hreflang value (e.g., 'en', 'fr-CA')
+ * @param {Array<{hreflang: string, href: string}>} hreflangLinks - Links found on the page
+ * @returns {boolean} True if reciprocal link exists
+ */
+export function hasReciprocalLink(targetUrl, expectedHreflang, hreflangLinks) {
+  if (!targetUrl || !expectedHreflang || !Array.isArray(hreflangLinks)) {
+    return false;
+  }
+
+  // Normalize URLs for comparison (remove trailing slashes, fragments, etc.)
+  const normalizeUrl = (url) => {
+    try {
+      const parsed = new URL(url);
+      // Remove trailing slash and fragment
+      return `${parsed.origin}${parsed.pathname}${parsed.search}`.replace(/\/$/, '');
+    } catch {
+      return url;
+    }
+  };
+
+  const normalizedTarget = normalizeUrl(targetUrl);
+
+  return hreflangLinks.some((link) => {
+    const normalizedHref = normalizeUrl(link.href);
+    return normalizedHref === normalizedTarget && link.hreflang === expectedHreflang;
+  });
+}
+
+/**
+ * Builds the complete expected set of hreflang links for reciprocal validation.
+ * Each alternate page should reference all other alternates (including itself).
+ *
+ * @param {string} sourceUrl - The original page URL
+ * @param {Array<{hreflang: string, href: string}>} sourceLinks - Links from source page
+ * @returns {Map<string, Set<string>>} Map of URL -> Set of expected hreflang values
+ */
+export function buildExpectedHreflangSet(sourceUrl, sourceLinks) {
+  const expectedSet = new Map();
+
+  // Each alternate page should have ALL hreflang links from the source
+  sourceLinks.forEach((link) => {
+    if (!expectedSet.has(link.href)) {
+      expectedSet.set(link.href, new Set());
+    }
+
+    // Add all hreflang values (all alternates should reference each other)
+    sourceLinks.forEach((otherLink) => {
+      expectedSet.get(link.href).add(otherLink.hreflang);
+    });
+  });
+
+  return expectedSet;
+}
