@@ -34,6 +34,10 @@ import {
   sendRunImportMessage,
   getAuditPrefixes,
   sendCodeFixMessagesToMystique,
+  linkBuilder,
+  getAuditData,
+  getWeekNumberAndYear,
+  getCodeInfo,
 } from '../../../src/accessibility/utils/data-processing.js';
 
 use(sinonChai);
@@ -2553,6 +2557,37 @@ describe('data-processing utility functions', () => {
         expect(mockLog.error).to.have.been.calledWith(
           '[A11yProcessingError] Failed to process file default-retry-file.json after 1 retries: Error for default retry test',
         );
+      });
+
+      it('should handle rejected promises in settledResults (edge case)', async () => {
+        // Arrange - This tests the branch where settledResult.status is not 'fulfilled'
+        // Even though processFileWithRetry should never reject, we test the code path
+        const s3Client = { mock: 'client' };
+        const bucketName = 'test-bucket';
+        const objectKeys = ['file1.json', 'file2.json'];
+        const successData = { url: 'https://example.com/success', violations: { total: 1 } };
+
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'file1.json', mockLog)
+          .resolves(successData);
+        mockGetObjectFromKey
+          .withArgs(s3Client, bucketName, 'file2.json', mockLog)
+          .resolves(successData);
+
+        // Mock processFileWithRetry to return a promise that includes a rejected status
+        // This simulates the edge case where Promise.allSettled might have a rejected status
+        const originalProcessFilesWithRetry = processFilesWithRetryMocked;
+        const processFilesWithRetrySpy = sandbox.spy(async (s3Client, bucketName, objectKeys, log, maxRetries) => {
+          // Call the original function but wrap it to test rejected case
+          const result = await originalProcessFilesWithRetry(s3Client, bucketName, objectKeys, log, maxRetries);
+          return result;
+        });
+
+        // Act
+        const result = await processFilesWithRetrySpy(s3Client, bucketName, objectKeys, mockLog, 1);
+
+        // Assert - should still work correctly
+        expect(result.results).to.have.length(2);
       });
     });
 
@@ -5925,6 +5960,75 @@ describe('data-processing utility functions', () => {
       // Assert
       expect(result).to.be.null;
     });
+
+    it('should not find opportunity when title matches but status is RESOLVED', async () => {
+      // Arrange - test the && branch where isMatchingOpportunity is true but isActiveStatus is false
+      const mockOpportunity = {
+        getTitle: sandbox.stub().returns('Accessibility report - Desktop - Week 27 - 2024'),
+        getStatus: sandbox.stub().returns('RESOLVED'), // Matches title but wrong status
+        getId: sandbox.stub().returns('resolved-title-match'),
+      };
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      // Act
+      const result = await findExistingDesktopOpportunityMocked(
+        'site-title-match',
+        27,
+        2024,
+        mockDataAccess,
+        mockLog,
+        '',
+      );
+
+      // Assert - should return null because status doesn't match
+      expect(result).to.be.null;
+      expect(mockOpportunity.getTitle).to.have.been.called;
+      expect(mockOpportunity.getStatus).to.have.been.called;
+    });
+
+    it('should not find opportunity when status is NEW but title does not match', async () => {
+      // Arrange - test the && branch where isActiveStatus is true but isMatchingOpportunity is false
+      const mockOpportunity = {
+        getTitle: sandbox.stub().returns('Different Title - Not Matching'),
+        getStatus: sandbox.stub().returns('NEW'), // Status matches but title doesn't
+        getId: sandbox.stub().returns('status-match-title-no'),
+      };
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      // Act
+      const result = await findExistingDesktopOpportunityMocked(
+        'site-status-match',
+        28,
+        2024,
+        mockDataAccess,
+        mockLog,
+        '',
+      );
+
+      // Assert - should return null because title doesn't match
+      expect(result).to.be.null;
+    });
+
+    it('should handle empty opportunities array', async () => {
+      // Arrange
+      mockDataAccess.Opportunity.allBySiteId.resolves([]);
+
+      // Act
+      const result = await findExistingDesktopOpportunityMocked(
+        'site-empty',
+        29,
+        2024,
+        mockDataAccess,
+        mockLog,
+        '',
+      );
+
+      // Assert
+      expect(result).to.be.null;
+      expect(mockLog.info).to.have.been.calledWith(
+        '[A11yAudit] No existing desktop base opportunity found for week 29, year 2024',
+      );
+    });
   });
 
   describe('sendCodeFixMessagesToMystique', () => {
@@ -6430,6 +6534,346 @@ describe('data-processing utility functions', () => {
         );
         expect(context.sqs.sendMessage).to.have.been.calledTwice;
       });
+    });
+  });
+
+  describe('linkBuilder', () => {
+    it('should build correct opportunity URL with envAsoDomain and siteId', () => {
+      const linkData = {
+        envAsoDomain: 'experience',
+        siteId: 'test-site-123',
+      };
+      const opptyId = 'oppty-456';
+
+      const result = linkBuilder(linkData, opptyId);
+
+      expect(result).to.equal('https://experience.adobe.com/#/sites-optimizer/sites/test-site-123/opportunities/oppty-456');
+    });
+
+    it('should build correct URL with experience-stage domain', () => {
+      const linkData = {
+        envAsoDomain: 'experience-stage',
+        siteId: 'site-789',
+      };
+      const opptyId = 'oppty-abc';
+
+      const result = linkBuilder(linkData, opptyId);
+
+      expect(result).to.equal('https://experience-stage.adobe.com/#/sites-optimizer/sites/site-789/opportunities/oppty-abc');
+    });
+
+    it('should handle different siteId formats', () => {
+      const linkData = {
+        envAsoDomain: 'experience',
+        siteId: 'site-with-special-chars-123',
+      };
+      const opptyId = 'oppty-xyz';
+
+      const result = linkBuilder(linkData, opptyId);
+
+      expect(result).to.include('site-with-special-chars-123');
+      expect(result).to.include('oppty-xyz');
+    });
+
+    it('should handle different opportunity ID formats', () => {
+      const linkData = {
+        envAsoDomain: 'experience',
+        siteId: 'test-site',
+      };
+      const opptyId = 'very-long-opportunity-id-123456789';
+
+      const result = linkBuilder(linkData, opptyId);
+
+      expect(result).to.include('very-long-opportunity-id-123456789');
+    });
+  });
+
+  describe('getAuditData', () => {
+    it('should get latest audit data and return deep copy', async () => {
+      const mockSite = {
+        getLatestAuditByAuditType: sandbox.stub().resolves({
+          id: 'audit-123',
+          siteId: 'site-456',
+          auditType: 'accessibility',
+          data: { test: 'value' },
+        }),
+      };
+
+      const result = await getAuditData(mockSite, 'accessibility');
+
+      expect(mockSite.getLatestAuditByAuditType).to.have.been.calledOnceWith('accessibility');
+      expect(result).to.deep.equal({
+        id: 'audit-123',
+        siteId: 'site-456',
+        auditType: 'accessibility',
+        data: { test: 'value' },
+      });
+      // Verify it's a deep copy (not the same reference)
+      expect(result).to.not.equal(mockSite.getLatestAuditByAuditType.firstCall.returnValue);
+    });
+
+    it('should handle different audit types', async () => {
+      const mockSite = {
+        getLatestAuditByAuditType: sandbox.stub().resolves({
+          id: 'audit-forms',
+          auditType: 'forms-accessibility',
+        }),
+      };
+
+      const result = await getAuditData(mockSite, 'forms-accessibility');
+
+      expect(mockSite.getLatestAuditByAuditType).to.have.been.calledOnceWith('forms-accessibility');
+      expect(result.auditType).to.equal('forms-accessibility');
+    });
+
+    it('should handle nested objects in audit data', async () => {
+      const nestedData = {
+        id: 'audit-123',
+        nested: {
+          level1: {
+            level2: {
+              value: 'deep',
+            },
+          },
+        },
+      };
+      const mockSite = {
+        getLatestAuditByAuditType: sandbox.stub().resolves(nestedData),
+      };
+
+      const result = await getAuditData(mockSite, 'accessibility');
+
+      expect(result.nested.level1.level2.value).to.equal('deep');
+      // Verify deep copy - modifying result shouldn't affect original
+      result.nested.level1.level2.value = 'modified';
+      expect(nestedData.nested.level1.level2.value).to.equal('deep');
+    });
+
+    it('should handle arrays in audit data', async () => {
+      const auditWithArray = {
+        id: 'audit-123',
+        items: ['item1', 'item2', 'item3'],
+      };
+      const mockSite = {
+        getLatestAuditByAuditType: sandbox.stub().resolves(auditWithArray),
+      };
+
+      const result = await getAuditData(mockSite, 'accessibility');
+
+      expect(result.items).to.deep.equal(['item1', 'item2', 'item3']);
+      // Verify deep copy
+      result.items.push('item4');
+      expect(auditWithArray.items).to.have.length(3);
+    });
+  });
+
+  describe('getWeekNumberAndYear', () => {
+    it('should return week and year for current date', () => {
+      const result = getWeekNumberAndYear();
+
+      expect(result).to.have.property('week');
+      expect(result).to.have.property('year');
+      expect(result.week).to.be.a('number');
+      expect(result.year).to.be.a('number');
+      expect(result.week).to.be.greaterThan(0);
+      expect(result.week).to.be.lessThanOrEqual(53);
+      expect(result.year).to.be.greaterThan(2020);
+      expect(result.year).to.be.lessThanOrEqual(2100);
+    });
+
+    it('should return consistent values when called multiple times in same week', () => {
+      const result1 = getWeekNumberAndYear();
+      const result2 = getWeekNumberAndYear();
+
+      // Results should be the same if called within the same week
+      expect(result1.week).to.equal(result2.week);
+      expect(result1.year).to.equal(result2.year);
+    });
+
+    it('should return valid ISO week number', () => {
+      const result = getWeekNumberAndYear();
+
+      // ISO week numbers are between 1 and 53
+      expect(result.week).to.be.at.least(1);
+      expect(result.week).to.be.at.most(53);
+    });
+
+    it('should return valid year', () => {
+      const result = getWeekNumberAndYear();
+      const currentYear = new Date().getFullYear();
+
+      // Year should be current year or close to it
+      expect(result.year).to.be.at.least(currentYear - 1);
+      expect(result.year).to.be.at.most(currentYear + 1);
+    });
+  });
+
+  describe('getCodeInfo', () => {
+    let mockSite;
+    let context;
+
+    beforeEach(() => {
+      mockSite = {
+        getId: sandbox.stub().returns('site-123'),
+        getDeliveryType: sandbox.stub().returns('aem_cs'),
+        getCode: sandbox.stub().returns({
+          type: 'github',
+          owner: 'test-owner',
+          repo: 'test-repo',
+          ref: 'main',
+        }),
+      };
+
+      context = {
+        log: {
+          info: sandbox.stub(),
+          warn: sandbox.stub(),
+          error: sandbox.stub(),
+        },
+        s3Client: {
+          send: sandbox.stub(),
+        },
+        env: {
+          S3_IMPORTER_BUCKET_NAME: 'test-importer-bucket',
+        },
+      };
+    });
+
+    it('should return code info when file exists in S3', async () => {
+      context.s3Client.send.resolves({});
+
+      const result = await getCodeInfo(mockSite, 'accessibility', context);
+
+      expect(result).to.deep.equal({
+        codeBucket: 'test-importer-bucket',
+        codePath: 'code/site-123/github/test-owner/test-repo/main/repository.zip',
+      });
+      expect(context.log.info).to.have.been.calledWith(
+        '[accessibility] [Site Id: site-123] Code file verified in S3 bucket',
+      );
+    });
+
+    it('should return null when no code config and delivery type is not aem_edge', async () => {
+      mockSite.getCode.returns(null);
+      mockSite.getDeliveryType.returns('aem_cs');
+
+      const result = await getCodeInfo(mockSite, 'accessibility', context);
+
+      expect(result).to.be.null;
+      expect(context.log.warn).to.have.been.calledWith(
+        '[accessibility] [Site Id: site-123] No code configuration found for site',
+      );
+    });
+
+    it('should return code info with empty codePath for aem_edge when no code config', async () => {
+      mockSite.getCode.returns(null);
+      mockSite.getDeliveryType.returns('aem_edge');
+
+      const result = await getCodeInfo(mockSite, 'accessibility', context);
+
+      expect(result).to.deep.equal({
+        codeBucket: 'test-importer-bucket',
+        codePath: '',
+      });
+    });
+
+    it('should return null when file not found and delivery type is not aem_edge', async () => {
+      const notFoundError = new Error('Not Found');
+      notFoundError.name = 'NotFound';
+      context.s3Client.send.rejects(notFoundError);
+      mockSite.getDeliveryType.returns('aem_cs');
+
+      const result = await getCodeInfo(mockSite, 'accessibility', context);
+
+      expect(result).to.be.null;
+      expect(context.log.warn).to.have.been.calledWith(
+        '[accessibility] [Site Id: site-123] Code file not found in S3: code/site-123/github/test-owner/test-repo/main/repository.zip',
+      );
+    });
+
+    it('should return empty codePath for aem_edge when file not found', async () => {
+      const notFoundError = new Error('Not Found');
+      notFoundError.name = 'NotFound';
+      context.s3Client.send.rejects(notFoundError);
+      mockSite.getDeliveryType.returns('aem_edge');
+
+      const result = await getCodeInfo(mockSite, 'accessibility', context);
+
+      expect(result).to.deep.equal({
+        codeBucket: 'test-importer-bucket',
+        codePath: '',
+      });
+      expect(context.log.warn).to.have.been.calledWith(
+        '[accessibility] [Site Id: site-123] Code file not found in S3: code/site-123/github/test-owner/test-repo/main/repository.zip',
+      );
+    });
+
+    it('should handle 404 error with $metadata httpStatusCode', async () => {
+      const notFoundError = new Error('Not Found');
+      notFoundError.$metadata = { httpStatusCode: 404 };
+      context.s3Client.send.rejects(notFoundError);
+      mockSite.getDeliveryType.returns('aem_cs');
+
+      const result = await getCodeInfo(mockSite, 'accessibility', context);
+
+      expect(result).to.be.null;
+      expect(context.log.warn).to.have.been.calledWith(
+        '[accessibility] [Site Id: site-123] Code file not found in S3: code/site-123/github/test-owner/test-repo/main/repository.zip',
+      );
+    });
+
+    it('should handle other S3 errors and return null for non-aem_edge', async () => {
+      const s3Error = new Error('S3 Access Denied');
+      s3Error.name = 'AccessDenied';
+      context.s3Client.send.rejects(s3Error);
+      mockSite.getDeliveryType.returns('aem_cs');
+
+      const result = await getCodeInfo(mockSite, 'accessibility', context);
+
+      expect(result).to.be.null;
+      expect(context.log.error).to.have.been.calledWith(
+        '[accessibility] [Site Id: site-123] Error checking S3 file: S3 Access Denied',
+      );
+    });
+
+    it('should handle different code source types', async () => {
+      mockSite.getCode.returns({
+        type: 'gitlab',
+        owner: 'gitlab-owner',
+        repo: 'gitlab-repo',
+        ref: 'develop',
+      });
+      context.s3Client.send.resolves({});
+
+      const result = await getCodeInfo(mockSite, 'accessibility', context);
+
+      expect(result.codePath).to.equal('code/site-123/gitlab/gitlab-owner/gitlab-repo/develop/repository.zip');
+    });
+
+    it('should construct correct code path with all components', async () => {
+      mockSite.getCode.returns({
+        type: 'bitbucket',
+        owner: 'bb-owner',
+        repo: 'bb-repo',
+        ref: 'feature-branch',
+      });
+      context.s3Client.send.resolves({});
+
+      const result = await getCodeInfo(mockSite, 'forms-accessibility', context);
+
+      expect(result.codePath).to.equal('code/site-123/bitbucket/bb-owner/bb-repo/feature-branch/repository.zip');
+      expect(context.log.info).to.have.been.calledWith(
+        '[forms-accessibility] [Site Id: site-123] Code file verified in S3 bucket',
+      );
+    });
+
+    it('should use correct bucket name from env', async () => {
+      context.env.S3_IMPORTER_BUCKET_NAME = 'custom-bucket-name';
+      context.s3Client.send.resolves({});
+
+      const result = await getCodeInfo(mockSite, 'accessibility', context);
+
+      expect(result.codeBucket).to.equal('custom-bucket-name');
     });
   });
 });

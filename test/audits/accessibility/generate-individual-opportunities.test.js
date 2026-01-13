@@ -2540,6 +2540,62 @@ describe('createAccessibilityIndividualOpportunities', () => {
     expect(result.data).to.deep.equal([]);
   });
 
+  it('should handle missing opportunity creator function', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'unknown-issue-type': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 1,
+                htmlWithIssues: ['<div>test</div>'],
+                target: ['div.test'],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    // Mock aggregateA11yIssuesByOppType to return unknown opportunity type
+    const mockModule = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/utils/constants.js': {
+        accessibilityOpportunitiesMap: {
+          'unknown-opportunity-type': ['unknown-issue-type'],
+        },
+        successCriteriaLinks: {},
+      },
+      '../../../src/accessibility/utils/data-processing.js': {
+        getAuditData: mockGetAuditData,
+      },
+      '../../../src/accessibility/utils/report-oppty.js': {
+        createAccessibilityAssistiveOpportunity: mockCreateAssistiveOppty,
+      },
+      '../../../src/utils/data-access.js': {
+        syncSuggestions: mockSyncSuggestions,
+      },
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    const result = await mockModule.createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
+    expect(result.error).to.include('No opportunity creator found for type: unknown-opportunity-type');
+    expect(mockContext.log.error).to.have.been.calledWith(
+      sinon.match(/No opportunity creator found for type: unknown-opportunity-type/),
+    );
+  });
+
   it('should handle errors during opportunity creation', async () => {
     const accessibilityData = {
       'https://example.com/page1': {
@@ -4612,6 +4668,422 @@ describe('handleAccessibilityRemediationGuidance', () => {
       '[A11yRemediationGuidance] Saved complete Mystique validation metrics for opportunity oppty-123, page https://example.com/page1: sent=1, received=1',
     );
   });
+
+  it('should handle error saving metrics to S3 gracefully', async () => {
+    // Mock scrape-utils to reject when saving metrics
+    const mockScrapeUtils = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/utils/scrape-utils.js': {
+        saveMystiqueValidationMetricsToS3: sandbox.stub().rejects(new Error('S3 save failed')),
+        saveOpptyWithRetry: sandbox.stub().resolves(),
+      },
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com/page1',
+            issuesList: [
+              { suggestionId: 'sugg-789' },
+            ],
+          },
+        ]),
+      },
+    });
+
+    const mockOpportunity = {
+      getId: () => 'oppty-123',
+      getSiteId: () => 'site-456',
+      getType: () => 'a11y-assistive',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div aria-label="test">Content</div>',
+                    target_selector: 'div.test',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
+          },
+        ],
+        totalIssues: 1,
+      },
+    };
+
+    const result = await mockScrapeUtils.handleAccessibilityRemediationGuidance(
+      message,
+      mockContext,
+    );
+
+    // Should still succeed even if metrics save fails
+    expect(result.success).to.be.true;
+    expect(mockLog.error).to.have.been.calledWith(
+      '[A11yRemediationGuidance][A11yProcessingError] Failed to save Mystique validation metrics for opportunity oppty-123, page https://example.com/page1: S3 save failed',
+    );
+  });
+
+  it('should handle snake_case remediation properties (general_suggestion, update_to, user_impact)', async () => {
+    const mockSuggestion = {
+      getId: () => 'sugg-789',
+      getData: () => ({
+        url: 'https://example.com/page1',
+        issues: [
+          {
+            type: 'aria-allowed-attr',
+            htmlWithIssues: [
+              {
+                update_from: '<div aria-label="test">Content</div>',
+                target_selector: 'div.test',
+              },
+            ],
+          },
+        ],
+      }),
+      setData: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([mockSuggestion]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes', // snake_case
+            update_to: '<div>Content</div>', // snake_case
+            user_impact: 'Improves screen reader accessibility', // snake_case
+            suggestionId: 'sugg-789',
+          },
+        ],
+        totalIssues: 1,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result.success).to.be.true;
+    expect(mockSuggestion.setData).to.have.been.called;
+    const updatedData = mockSuggestion.setData.firstCall.args[0];
+    expect(updatedData.issues[0].htmlWithIssues[0].guidance.generalSuggestion).to.equal('Remove disallowed ARIA attributes');
+    expect(updatedData.issues[0].htmlWithIssues[0].guidance.updateTo).to.equal('<div>Content</div>');
+    expect(updatedData.issues[0].htmlWithIssues[0].guidance.userImpact).to.equal('Improves screen reader accessibility');
+  });
+
+  it('should handle camelCase remediation properties (generalSuggestion, updateTo, userImpact)', async () => {
+    const mockSuggestion = {
+      getId: () => 'sugg-789',
+      getData: () => ({
+        url: 'https://example.com/page1',
+        issues: [
+          {
+            type: 'aria-allowed-attr',
+            htmlWithIssues: [
+              {
+                update_from: '<div aria-label="test">Content</div>',
+                target_selector: 'div.test',
+              },
+            ],
+          },
+        ],
+      }),
+      setData: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([mockSuggestion]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            generalSuggestion: 'Remove disallowed ARIA attributes', // camelCase
+            updateTo: '<div>Content</div>', // camelCase
+            userImpact: 'Improves screen reader accessibility', // camelCase
+            suggestionId: 'sugg-789',
+          },
+        ],
+        totalIssues: 1,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result.success).to.be.true;
+    expect(mockSuggestion.setData).to.have.been.called;
+    const updatedData = mockSuggestion.setData.firstCall.args[0];
+    expect(updatedData.issues[0].htmlWithIssues[0].guidance.generalSuggestion).to.equal('Remove disallowed ARIA attributes');
+    expect(updatedData.issues[0].htmlWithIssues[0].guidance.updateTo).to.equal('<div>Content</div>');
+    expect(updatedData.issues[0].htmlWithIssues[0].guidance.userImpact).to.equal('Improves screen reader accessibility');
+  });
+
+  it('should use saveOpptyWithRetry instead of direct save', async () => {
+    const mockSaveOpptyWithRetry = sandbox.stub().resolves();
+    const mockScrapeUtils = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/utils/scrape-utils.js': {
+        saveMystiqueValidationMetricsToS3: sandbox.stub().resolves(),
+        saveOpptyWithRetry: mockSaveOpptyWithRetry,
+      },
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com/page1',
+            issuesList: [
+              { suggestionId: 'sugg-789' },
+            ],
+          },
+        ]),
+      },
+    });
+
+    const mockOpportunity = {
+      getId: () => 'oppty-123',
+      getSiteId: () => 'site-456',
+      getType: () => 'a11y-assistive',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div aria-label="test">Content</div>',
+                    target_selector: 'div.test',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
+          },
+        ],
+        totalIssues: 1,
+      },
+    };
+
+    await mockScrapeUtils.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    // Verify saveOpptyWithRetry was called instead of opportunity.save()
+    expect(mockSaveOpptyWithRetry).to.have.been.calledOnce;
+    expect(mockSaveOpptyWithRetry).to.have.been.calledWith(
+      mockOpportunity,
+      'audit-123',
+      mockDataAccess.Opportunity,
+      mockLog,
+    );
+    expect(mockOpportunity.save).to.not.have.been.called;
+  });
+
+  it('should handle both fulfilled and rejected save results', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div aria-label="test">Content</div>',
+                    target_selector: 'div.test',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(), // First succeeds
+        },
+        {
+          getId: () => 'sugg-790',
+          getData: () => ({
+            url: 'https://example.com/page2',
+            issues: [
+              {
+                type: 'color-contrast',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div style="color: #ccc">Content</div>',
+                    target_selector: 'div.contrast',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().rejects(new Error('Save failed')), // Second fails
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
+          },
+          {
+            issue_name: 'color-contrast',
+            general_suggestion: 'Improve color contrast',
+            update_to: '<div style="color: #000">Content</div>',
+            user_impact: 'Improves readability',
+            suggestionId: 'sugg-790',
+          },
+        ],
+        totalIssues: 2,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result.success).to.be.true;
+    expect(result.failedSuggestionIds).to.deep.equal(['sugg-790']);
+    expect(mockLog.error).to.have.been.calledWith(
+      '[A11yRemediationGuidance][A11yProcessingError] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to save suggestion sugg-790: Error: Save failed',
+    );
+    expect(mockLog.debug).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Successfully processed 1 remediations',
+    );
+  });
 });
 
 describe('createMystiqueForwardPayload', () => {
@@ -5451,4 +5923,5 @@ describe('sendMystiqueMessage', () => {
       expect(sentMessage.data).to.not.have.property('codePath');
     });
   });
+});
 });

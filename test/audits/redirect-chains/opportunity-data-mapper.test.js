@@ -44,7 +44,7 @@ describe('Redirect Chains Opportunity Data Mapper', () => {
       const result = createOpportunityData({});
 
       expect(result.tags).to.be.an('array');
-      // Tags should be generated using OPPORTUNITY_TYPES.REDIRECT_CHAINS
+      expect(result.tags).to.deep.equal(['Redirect Chains', 'SEO']);
     });
 
     it('should include correct data sources', () => {

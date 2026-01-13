@@ -45,7 +45,7 @@ describe('Internal Links Opportunity Data Mapper', () => {
       const result = createOpportunityData({ kpiDeltas: {} });
 
       expect(result.tags).to.be.an('array');
-      // Tags should be generated using OPPORTUNITY_TYPES.BROKEN_INTERNAL_LINKS
+      expect(result.tags).to.deep.equal(['Internal links', 'SEO', 'Engagement']);
     });
 
     it('should include correct data sources', () => {

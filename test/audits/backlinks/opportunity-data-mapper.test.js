@@ -43,7 +43,7 @@ describe('Backlinks Opportunity Data Mapper', () => {
       const result = createOpportunityData({});
 
       expect(result.tags).to.be.an('array');
-      // Tags should be generated using OPPORTUNITY_TYPES.BROKEN_BACKLINKS
+      expect(result.tags).to.deep.equal(['Backlinks', 'SEO']);
     });
 
     it('should include correct data sources', () => {

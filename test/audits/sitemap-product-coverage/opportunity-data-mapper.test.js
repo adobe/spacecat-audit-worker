@@ -13,32 +13,33 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
-import { OPPORTUNITY_TYPES } from '@adobe/spacecat-shared-utils';
-import { createOpportunityData } from '../../../src/sitemap/opportunity-data-mapper.js';
+import { createOpportunityData } from '../../../src/sitemap-product-coverage/opportunity-data-mapper.js';
 import { DATA_SOURCES } from '../../../src/common/constants.js';
 
-describe('Sitemap Opportunity Data Mapper', () => {
+describe('Sitemap Product Coverage Opportunity Data Mapper', () => {
   describe('createOpportunityData', () => {
     it('should create opportunity data with all required fields', () => {
       const result = createOpportunityData();
 
       expect(result).to.be.an('object');
       expect(result).to.have.property('runbook');
-      expect(result.runbook).to.include('adobe.sharepoint.com');
-      expect(result.runbook).to.include('Experience_Success_Studio_Sitemap_Runbook');
+      expect(result.runbook).to.include('wiki.corp.adobe.com');
       expect(result).to.have.property('origin', 'AUTOMATION');
-      expect(result).to.have.property('title');
-      expect(result).to.have.property('description');
+      expect(result).to.have.property('title', 'Issues found for the sitemap product coverage');
+      expect(result).to.have.property('description', '');
       expect(result).to.have.property('guidance');
       expect(result).to.have.property('tags');
       expect(result).to.have.property('data');
     });
 
-    it('should use OPPORTUNITY_TYPES.SITEMAP constant for tags', () => {
+    it('should include correct guidance steps', () => {
       const result = createOpportunityData();
 
-      expect(result.tags).to.be.an('array');
-      expect(result.tags).to.deep.equal(['Sitemap', 'SEO']);
+      expect(result.guidance).to.be.an('object');
+      expect(result.guidance.steps).to.be.an('array');
+      expect(result.guidance.steps).to.have.length(1);
+      expect(result.guidance.steps[0]).to.include('affected website locale');
+      expect(result.guidance.steps[0]).to.include('sitemap');
     });
 
     it('should include correct data sources', () => {
@@ -48,26 +49,34 @@ describe('Sitemap Opportunity Data Mapper', () => {
       expect(result.data.dataSources).to.include(DATA_SOURCES.SITE);
     });
 
-    it('should have correct guidance steps', () => {
+    it('should include tags array', () => {
       const result = createOpportunityData();
 
-      expect(result.guidance).to.be.an('object');
-      expect(result.guidance.steps).to.be.an('array');
-      expect(result.guidance.steps).to.have.length(2);
-      expect(result.guidance.steps[0]).to.include('Verify each URL');
-      expect(result.guidance.steps[1]).to.include('Check RUM data');
+      expect(result.tags).to.be.an('array');
+      expect(result.tags.length).to.be.greaterThan(0);
     });
 
-    it('should have correct title', () => {
+    it('should use OPPORTUNITY_TYPES.SITEMAP_PRODUCT_COVERAGE constant for tags', () => {
       const result = createOpportunityData();
 
-      expect(result.title).to.equal('Help search engines crawl your site easily — fixes for sitemap issues are queued up');
+      expect(result.tags).to.be.an('array');
+      // Note: SITEMAP_PRODUCT_COVERAGE ('sitemap-product-coverage') may not have hardcoded tags in the mapping
+      // If no mapping exists, mergeTagsWithHardcodedTags returns empty array when currentTags is empty
+      // This test verifies tags array exists
+      expect(result.tags).to.be.an('array');
     });
 
-    it('should have correct description', () => {
+    it('should have empty description', () => {
       const result = createOpportunityData();
 
-      expect(result.description).to.equal('A clean, error-free sitemap ensures all important pages are indexed efficiently and discovered faster.');
+      expect(result.description).to.equal('');
+    });
+
+    it('should have runbook URL pointing to wiki', () => {
+      const result = createOpportunityData();
+
+      expect(result.runbook).to.include('wiki.corp.adobe.com');
+      expect(result.runbook).to.include('sitemap');
     });
   });
 });

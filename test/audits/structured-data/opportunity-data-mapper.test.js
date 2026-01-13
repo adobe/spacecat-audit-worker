@@ -38,6 +38,7 @@ describe('Structured Data Opportunity Data Mapper', () => {
       const result = createOpportunityData();
 
       expect(result.tags).to.be.an('array');
+      expect(result.tags).to.include.members(['Structured Data', 'SEO']);
       expect(result.tags).to.include('tech-seo');
     });
 
