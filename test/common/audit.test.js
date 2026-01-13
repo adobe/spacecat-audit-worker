@@ -228,15 +228,6 @@ describe('Audit tests', () => {
       // Enabled check is now done before sending SQS message, not in the worker
       const queueUrl = 'some-queue-url';
       const fullAuditRef = 'test-ref';
-      const auditData = {
-        siteId: site.getId(),
-        isLive: site.getIsLive(),
-        auditedAt: mockDate,
-        auditType: message.type,
-        auditResult: { metric: 42 },
-        fullAuditRef,
-        invocationId: 'test-invocation-id',
-      };
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
       context.dataAccess.Site.findById.withArgs(message.siteId).resolves(site);
       context.dataAccess.Organization.findById.withArgs(site.getOrganizationId()).resolves(org);
@@ -246,8 +237,21 @@ describe('Audit tests', () => {
       });
       context.sqs.sendMessage.resolves();
 
+      nock(baseURL)
+        .get('/')
+        .reply(200);
+
+      const dummyRunner = () => ({
+        auditResult: { metric: 42 },
+        fullAuditRef,
+      });
+
       const audit = new AuditBuilder()
-        .withRunner(() => auditData)
+        .withSiteProvider(defaultSiteProvider)
+        .withUrlResolver(defaultUrlResolver)
+        .withRunner(dummyRunner)
+        .withPersister(defaultPersister)
+        .withMessageSender(defaultMessageSender)
         .build();
 
       const resp = await audit.run(message, context);
