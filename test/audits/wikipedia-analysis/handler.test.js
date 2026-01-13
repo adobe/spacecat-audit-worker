@@ -122,45 +122,45 @@ describe('Wikipedia Analysis Handler', () => {
       expect(result.fullAuditRef).to.equal(baseURL);
     });
 
-    it('should return error when no company name is configured', async () => {
+    it('should return error when no company name can be extracted', async () => {
       mockSite.getConfig.returns({
         getCompanyName: sandbox.stub().returns(''),
         getWikipediaUrl: sandbox.stub().returns(''),
         getCompetitors: sandbox.stub().returns([]),
         getCompetitorRegion: sandbox.stub().returns(null),
       });
-      mockSite.getOrganizationId.returns('');
+      mockSite.getBaseURL.returns('invalid-url');
 
-      const result = await wikipediaAnalysisHandler.runner(baseURL, context, mockSite);
+      const result = await wikipediaAnalysisHandler.runner('invalid-url', context, mockSite);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('No company name configured for this site');
       expect(context.log.warn).to.have.been.called;
     });
 
-    it('should use organizationId as fallback when company name is not configured', async () => {
+    it('should use baseURL as companyName when company name is not configured', async () => {
       mockSite.getConfig.returns({
         getCompanyName: sandbox.stub().returns(null),
         getWikipediaUrl: sandbox.stub().returns(''),
         getCompetitors: sandbox.stub().returns([]),
         getCompetitorRegion: sandbox.stub().returns(null),
       });
-      mockSite.getOrganizationId.returns('org-fallback-name');
+      mockSite.getBaseURL.returns('https://bmw.com');
 
-      const result = await wikipediaAnalysisHandler.runner(baseURL, context, mockSite);
+      const result = await wikipediaAnalysisHandler.runner('https://bmw.com', context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.config.companyName).to.equal('org-fallback-name');
+      expect(result.auditResult.config.companyName).to.equal('https://bmw.com');
     });
 
-    it('should handle missing config gracefully', async () => {
+    it('should handle missing config gracefully and use baseURL', async () => {
       mockSite.getConfig.returns(null);
-      mockSite.getOrganizationId.returns('');
+      mockSite.getBaseURL.returns('https://test-company.com');
 
-      const result = await wikipediaAnalysisHandler.runner(baseURL, context, mockSite);
+      const result = await wikipediaAnalysisHandler.runner('https://test-company.com', context, mockSite);
 
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.equal('No company name configured for this site');
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.config.companyName).to.equal('https://test-company.com');
     });
 
     it('should handle errors during execution', async () => {
