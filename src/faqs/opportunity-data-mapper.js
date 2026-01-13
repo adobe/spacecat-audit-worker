@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 export function createOpportunityData(siteId, auditId, guidance) {
@@ -23,7 +24,7 @@ export function createOpportunityData(siteId, auditId, guidance) {
     description: 'Add the relevant FAQs listed below to the corresponding pages to improve content discoverability in LLMs.',
     status: 'NEW',
     guidance,
-    tags: ['isElmo', 'content'],
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.FAQ, []),
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.PAGE, DATA_SOURCES.SITE],
     },

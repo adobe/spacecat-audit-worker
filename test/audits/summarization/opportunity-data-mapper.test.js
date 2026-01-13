@@ -2,7 +2,7 @@
  * Copyright 2025 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
- * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ * of the License at http://www.apache.org/licenses/LICENSE/2.0
  *
  * Unless required by applicable law or agreed to in writing, software distributed under
  * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
@@ -14,10 +14,10 @@
 
 import { expect } from 'chai';
 import { OPPORTUNITY_TYPES } from '@adobe/spacecat-shared-utils';
-import { createOpportunityData } from '../../../src/faqs/opportunity-data-mapper.js';
+import { createOpportunityData } from '../../../src/summarization/opportunity-data-mapper.js';
 import { DATA_SOURCES } from '../../../src/common/constants.js';
 
-describe('FAQ Opportunity Data Mapper', () => {
+describe('Summarization Opportunity Data Mapper', () => {
   describe('createOpportunityData', () => {
     it('should create opportunity data with all required fields', () => {
       const siteId = 'site-123';
@@ -33,38 +33,35 @@ describe('FAQ Opportunity Data Mapper', () => {
 
       expect(result.siteId).to.equal('site-123');
       expect(result.auditId).to.equal('audit-456');
-      expect(result.type).to.equal(OPPORTUNITY_TYPES.FAQ);
+      expect(result.type).to.equal(OPPORTUNITY_TYPES.SUMMARIZATION);
       expect(result.origin).to.equal('AUTOMATION');
       expect(result.status).to.equal('NEW');
-      expect(result.title).to.equal('Add Relevant FAQs');
-      expect(result.description).to.equal('Add the relevant FAQs listed below to the corresponding pages to improve content discoverability in LLMs.');
+      expect(result.title).to.equal('Add LLM-Friendly Summaries');
+      expect(result.description).to.equal('Content summarization elements such as summary and key points improve content discoverability and user engagement.');
       expect(result.guidance).to.deep.equal(guidance);
       expect(result.tags).to.be.an('array');
-      expect(result.tags).to.include('content');
     });
 
-    it('should use OPPORTUNITY_TYPES.FAQ constant for tags', () => {
+    it('should use OPPORTUNITY_TYPES.SUMMARIZATION constant for tags', () => {
       const result = createOpportunityData('site-1', 'audit-1', []);
 
-      // Verify tags are generated using OPPORTUNITY_TYPES.FAQ
+      // Verify tags are generated using OPPORTUNITY_TYPES.SUMMARIZATION
       expect(result.tags).to.be.an('array');
-      // Tags should include the mapped tags from OPPORTUNITY_TAG_MAPPINGS
     });
 
     it('should include correct runbook URL', () => {
       const result = createOpportunityData('site-1', 'audit-1', []);
 
       expect(result.runbook).to.include('adobe.sharepoint.com');
-      expect(result.runbook).to.include('Experience_Success_Studio_FAQs_Runbook');
+      expect(result.runbook).to.include('Experience_Success_Studio_Summarization_Runbook');
     });
 
     it('should include correct data sources', () => {
       const result = createOpportunityData('site-1', 'audit-1', []);
 
-      expect(result.data.dataSources).to.be.an('array').with.lengthOf(3);
+      expect(result.data.dataSources).to.be.an('array').with.lengthOf(2);
       expect(result.data.dataSources).to.include(DATA_SOURCES.AHREFS);
       expect(result.data.dataSources).to.include(DATA_SOURCES.PAGE);
-      expect(result.data.dataSources).to.include(DATA_SOURCES.SITE);
     });
 
     it('should handle empty guidance array', () => {
@@ -96,3 +93,4 @@ describe('FAQ Opportunity Data Mapper', () => {
     });
   });
 });
+

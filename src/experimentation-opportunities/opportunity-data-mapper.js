@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 function calculateOpptyImpact(organicTraffic, siteAverageCTR, pageCTR) {
@@ -53,7 +54,7 @@ export function convertToOpportunityEntity(siteId, auditId, rawOppty = {}, guida
     guidance: {
       recommendations: guidance,
     },
-    tags: ['Engagement'],
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.HIGH_ORGANIC_LOW_CTR, []),
     data: {
       page,
       pageViews,

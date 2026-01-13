@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
+import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 /**
@@ -55,7 +55,7 @@ export function createOpportunityData(props) {
     origin: 'AUTOMATION',
     title: 'Some third-party libraries on your site pose security risks — remediation ready for review',
     description: 'Outdated libraries can introduce security flaws — updating them keeps the site stable and safe.',
-    tags: ['Vulnerabilities'],
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.SECURITY_VULNERABILITIES, []),
     data: {
       howToFix: 'Apply a code patch which upgrades the versions of the 3rd-party libraries in the application code.\n\nReview all suggested fixes below before applying. Entries can be dismissed or edited as needed.',
       dataSources: [DATA_SOURCES.SITE],

@@ -13,6 +13,7 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
+import { OPPORTUNITY_TYPES } from '@adobe/spacecat-shared-utils';
 import { createOpportunityData } from '../../../src/wikipedia-analysis/opportunity-data-mapper.js';
 
 describe('Wikipedia Analysis Opportunity Data Mapper', () => {
@@ -31,8 +32,18 @@ describe('Wikipedia Analysis Opportunity Data Mapper', () => {
 
       expect(result.guidance).to.deep.equal(guidance);
       expect(result.origin).to.equal('AUTOMATION');
-      expect(result.type).to.equal('wikipedia-analysis');
+      expect(result.type).to.equal(OPPORTUNITY_TYPES.WIKIPEDIA_ANALYSIS);
       expect(result.status).to.equal('NEW');
+    });
+
+    it('should use OPPORTUNITY_TYPES.WIKIPEDIA_ANALYSIS constant for tags', () => {
+      const result = createOpportunityData({ guidance: [] });
+
+      // Verify tags are generated using OPPORTUNITY_TYPES.WIKIPEDIA_ANALYSIS
+      expect(result.tags).to.be.an('array');
+      expect(result.tags).to.include('llmo');
+      expect(result.tags).to.include('wikipedia');
+      expect(result.tags).to.include('Off-Site');
     });
 
     it('should include correct title and description', () => {

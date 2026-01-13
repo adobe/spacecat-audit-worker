@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../../common/constants.js';
 
 export function createOpportunityData() {
@@ -28,7 +29,7 @@ export function createOpportunityData() {
         'Use AI-generated suggestions as a starting point for improvements.',
       ],
     },
-    tags: ['Engagement', 'isElmo', 'content'],
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.READABILITY, ['content']),
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
     },

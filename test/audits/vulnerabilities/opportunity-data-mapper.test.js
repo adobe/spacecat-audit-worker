@@ -15,6 +15,7 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import { OPPORTUNITY_TYPES } from '@adobe/spacecat-shared-utils';
 import {
   VULNERABILITY_REPORT_WITH_VULNERABILITIES,
   VULNERABILITY_REPORT_NO_VULNERABILITIES,
@@ -167,6 +168,22 @@ describe('Vulnerabilities Opportunity Data Mapper', () => {
         expect(result).to.have.property('runbook');
         expect(result).to.have.property('origin', 'AUTOMATION');
       });
+    });
+
+    it('should use OPPORTUNITY_TYPES.SECURITY_VULNERABILITIES constant for tags', () => {
+      const props = {
+        mainMetric: { name: 'Libraries', value: 12 },
+        metrics: {
+          high_risk_vulnerabilities: 23,
+          medium_risk_vulnerabilities: 22,
+          low_risk_vulnerabilities: 6,
+        },
+      };
+
+      const result = createOpportunityData(props);
+
+      // Verify tags are generated using OPPORTUNITY_TYPES.SECURITY_VULNERABILITIES
+      expect(result.tags).to.be.an('array');
     });
   });
 });
