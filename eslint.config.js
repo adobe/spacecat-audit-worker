@@ -26,6 +26,7 @@ export default defineConfig([
     'test/*/fixtures/*',
     'test/audits/**/*.test.js',
     'test/dev/*.mjs',
+    'browser-extension/*',
   ]),
   {
     languageOptions: {
