@@ -10,11 +10,11 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import {
   mapToOpportunity,
   mapToSuggestion,
 } from './guidance-opportunity-mapper.js';
-import { mergeTagsWithHardcodedTags } from '../common/tagMappings.js';
 
 function isSuggestionFailure(guidanceEntry) {
   const failureMessage = 'Suggestion generation failed, no opportunity created';
@@ -80,9 +80,9 @@ export default async function handler(message, context) {
   }
 
   const entity = mapToOpportunity(siteId, url, audit, guidanceParsed);
-  // Note: no-cta-above-the-fold creates generic-opportunity type, so tags should come from API
-  if (entity.type !== 'generic-opportunity') {
-    entity.tags = mergeTagsWithHardcodedTags(entity.type, entity.tags);
+  // Apply tag mapping based on data.opportunityType
+  if (entity.data?.opportunityType) {
+    entity.tags = mergeTagsWithHardcodedTags(entity.data.opportunityType, entity.tags);
   }
 
   log.info(

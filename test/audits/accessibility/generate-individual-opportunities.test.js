@@ -55,7 +55,7 @@ describe('formatWcagRule', () => {
     // Import functions with mocked tagMappings
     if (!formatWcagRule) {
       const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-        '../../common/tagMappings.js': mockTagMappings,
+        '@adobe/spacecat-shared-utils': mockTagMappings,
       });
       formatWcagRule = module.formatWcagRule;
       formatIssue = module.formatIssue;
@@ -172,7 +172,7 @@ describe('formatIssue', () => {
     // Ensure formatIssue is imported
     if (!formatIssue) {
       const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-        '../../common/tagMappings.js': mockTagMappings,
+        '@adobe/spacecat-shared-utils': mockTagMappings,
       });
       formatIssue = module.formatIssue;
     }
@@ -1032,7 +1032,7 @@ describe('aggregateA11yIssuesByOppType early return coverage', () => {
     sandbox = sinon.createSandbox();
     if (!aggregateA11yIssuesByOppType) {
       const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-        '../../common/tagMappings.js': mockTagMappings,
+        '@adobe/spacecat-shared-utils': mockTagMappings,
       });
       aggregateA11yIssuesByOppType = module.aggregateA11yIssuesByOppType;
     }
@@ -1075,7 +1075,7 @@ describe('aggregateA11yIssuesByOppType functional tests', () => {
     sandbox = sinon.createSandbox();
     if (!aggregateA11yIssuesByOppType) {
       const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-        '../../common/tagMappings.js': mockTagMappings,
+        '@adobe/spacecat-shared-utils': mockTagMappings,
       });
       aggregateA11yIssuesByOppType = module.aggregateA11yIssuesByOppType;
     }
@@ -1185,7 +1185,7 @@ describe('aggregateAccessibilityIssues', () => {
     // Ensure aggregateA11yIssuesByOppType is imported
     if (!aggregateA11yIssuesByOppType) {
       const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-        '../../common/tagMappings.js': mockTagMappings,
+        '@adobe/spacecat-shared-utils': mockTagMappings,
       });
       aggregateA11yIssuesByOppType = module.aggregateA11yIssuesByOppType;
     }
@@ -4619,7 +4619,7 @@ describe('createMystiqueForwardPayload', () => {
     // Ensure createMystiqueForwardPayload is imported
     if (!createMystiqueForwardPayload) {
       const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-        '../../common/tagMappings.js': mockTagMappings,
+        '@adobe/spacecat-shared-utils': mockTagMappings,
       });
       createMystiqueForwardPayload = module.createMystiqueForwardPayload;
     }

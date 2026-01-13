@@ -46,7 +46,7 @@ describe('createLowNavigationOpportunities handler method', () => {
     createLowNavigationOpportunities = await esmock(
       '../../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js',
       {
-        '../../../../src/common/tagMappings.js': mockTagMappings,
+        '@adobe/spacecat-shared-utils': mockTagMappings,
       },
     );
     auditUrl = 'https://example.com';

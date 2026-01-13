@@ -10,11 +10,11 @@
  * governing permissions and limitations under the License.
  */
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendAltTextOpportunityToMystique, chunkArray, cleanupOutdatedSuggestions } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { MYSTIQUE_BATCH_SIZE } from './constants.js';
-import { mergeTagsWithHardcodedTags } from '../common/tagMappings.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;

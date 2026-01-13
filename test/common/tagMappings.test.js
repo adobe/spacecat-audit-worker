@@ -18,7 +18,7 @@ import {
   OPPORTUNITY_TAG_MAPPINGS,
   getTagsForOpportunityType,
   mergeTagsWithHardcodedTags,
-} from '../../src/common/tagMappings.js';
+} from '@adobe/spacecat-shared-utils';
 
 use(sinonChai);
 

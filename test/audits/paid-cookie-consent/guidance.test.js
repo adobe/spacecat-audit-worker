@@ -78,7 +78,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     handler = await esmock(
       '../../../src/paid-cookie-consent/guidance-handler.js',
       {
-        '../../../src/common/tagMappings.js': mockTagMappings,
+        '@adobe/spacecat-shared-utils': mockTagMappings,
       },
     );
     logStub = {

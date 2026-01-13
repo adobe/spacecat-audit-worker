@@ -932,7 +932,7 @@ describe('data-processing utility functions', () => {
       
       // Mock the tagMappings module
       const module = await esmock.patch('../../../src/accessibility/utils/data-processing.js', {
-        '../../common/tagMappings.js': mockTagMappings,
+        '@adobe/spacecat-shared-utils': mockTagMappings,
       });
       createReportOpportunityPatched = module.createReportOpportunity;
       

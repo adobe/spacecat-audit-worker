@@ -23,6 +23,10 @@ use(sinonChai);
 // Mock tagMappings module
 const mockTagMappings = {
   mergeTagsWithHardcodedTags: sinon.stub().callsFake((opportunityType, currentTags) => {
+    // Return mapped tags for no-cta-above-the-fold
+    if (opportunityType === 'no-cta-above-the-fold') {
+      return ['CTA Optimization', 'Engagement'];
+    }
     // Generic opportunities should not have hardcoded tags applied
     if (opportunityType === 'generic-opportunity') {
       return currentTags || [];
@@ -58,7 +62,7 @@ describe("No CTA above the fold guidance handler", () => {
     handler = await esmock(
       "../../../src/no-cta-above-the-fold/guidance-handler.js",
       {
-        "../../../src/common/tagMappings.js": mockTagMappings,
+        "@adobe/spacecat-shared-utils": mockTagMappings,
       },
     );
     logStub = {
@@ -548,7 +552,7 @@ describe("No CTA above the fold guidance handler", () => {
       expect(createCall).to.exist;
     });
 
-    it('should handle opportunity with generic type and skip tag mapping', async () => {
+    it('should apply tag mapping for generic-opportunity using data.opportunityType', async () => {
       const audit = {
         getAuditId: () => "audit-id",
         getAuditResult: () => [],
@@ -571,13 +575,19 @@ describe("No CTA above the fold guidance handler", () => {
       expect(result.status).to.equal(ok().status);
       expect(Opportunity.create).to.have.been.called;
       const createCall = Opportunity.create.getCall(0).args[0];
-      // Generic opportunities should not have tag mapping applied
+      // Generic opportunities should have tag mapping applied using data.opportunityType
       expect(createCall.type).to.equal('generic-opportunity');
-      // Verify tag mapping was not called for generic opportunities
-      expect(mockTagMappings.mergeTagsWithHardcodedTags).to.not.have.been.called;
+      expect(createCall.data.opportunityType).to.equal('no-cta-above-the-fold');
+      // Verify tag mapping was called with data.opportunityType
+      expect(mockTagMappings.mergeTagsWithHardcodedTags).to.have.been.calledWith(
+        'no-cta-above-the-fold',
+        []
+      );
+      // Verify tags were set correctly
+      expect(createCall.tags).to.deep.equal(['CTA Optimization', 'Engagement']);
     });
 
-    it('should handle opportunity with generic type and skip tag mapping', async () => {
+    it('should preserve isElmo and isASO tags when applying tag mapping', async () => {
       const audit = {
         getAuditId: () => "audit-id",
         getAuditResult: () => [],
@@ -588,7 +598,52 @@ describe("No CTA above the fold guidance handler", () => {
         getId: () => "oppty-123",
       });
 
-      const result = await handler(
+      // Mock mapper to return tags with isElmo
+      const mockMapper = {
+        mapToOpportunity: sinon.stub().returns({
+          siteId,
+          id: 'test-id',
+          auditId: 'audit-id',
+          type: 'generic-opportunity',
+          origin: 'AUTOMATION',
+          title: 'Test',
+          tags: ['isElmo'],
+          data: {
+            opportunityType: 'no-cta-above-the-fold',
+            page: pageUrl,
+          },
+        }),
+        mapToSuggestion: sinon.stub().resolves({
+          opportunityId: 'oppty-123',
+          type: 'CONTENT_UPDATE',
+          rank: 1,
+          status: 'NEW',
+          data: { suggestionValue: 'test' },
+        }),
+      };
+
+      // Update mock to preserve isElmo/isASO tags
+      const mockTagMappingsWithPreservation = {
+        mergeTagsWithHardcodedTags: sinon.stub().callsFake((opportunityType, currentTags) => {
+          if (opportunityType === 'no-cta-above-the-fold') {
+            const preservedTags = (currentTags || []).filter(
+              (tag) => tag === 'isElmo' || tag === 'isASO'
+            );
+            return ['CTA Optimization', 'Engagement', ...preservedTags];
+          }
+          return currentTags || [];
+        }),
+      };
+
+      const testHandler = await esmock(
+        "../../../src/no-cta-above-the-fold/guidance-handler.js",
+        {
+          "@adobe/spacecat-shared-utils": mockTagMappingsWithPreservation,
+          "../../../src/no-cta-above-the-fold/guidance-opportunity-mapper.js": mockMapper,
+        },
+      );
+
+      const result = await testHandler(
         {
           auditId: "audit-id",
           siteId,
@@ -598,10 +653,10 @@ describe("No CTA above the fold guidance handler", () => {
       );
 
       expect(result.status).to.equal(ok().status);
-      expect(Opportunity.create).to.have.been.called;
       const createCall = Opportunity.create.getCall(0).args[0];
-      // Generic opportunities should not have tag mapping applied
-      expect(createCall.type).to.equal('generic-opportunity');
+      expect(createCall.tags).to.include('CTA Optimization');
+      expect(createCall.tags).to.include('Engagement');
+      expect(createCall.tags).to.include('isElmo');
     });
 
     it('should handle existing opportunity with different opportunityType', async () => {
@@ -1144,6 +1199,8 @@ describe("No CTA above the fold guidance handler", () => {
       const createCall = Opportunity.create.getCall(0).args[0];
       expect(createCall.type).to.equal('generic-opportunity');
       expect(createCall.origin).to.equal('AUTOMATION');
+      // Verify tags were set via tag mapping (not hardcoded in mapper)
+      expect(createCall.tags).to.deep.equal(['CTA Optimization', 'Engagement']);
     });
 
     it('should execute mapToSuggestion function call with all parameters', async () => {
@@ -1237,7 +1294,7 @@ describe("No CTA above the fold guidance handler", () => {
       const testHandler = await esmock(
         "../../../src/no-cta-above-the-fold/guidance-handler.js",
         {
-          "../../../src/common/tagMappings.js": mockTagMappings,
+          "@adobe/spacecat-shared-utils": mockTagMappings,
           "../../../src/no-cta-above-the-fold/guidance-opportunity-mapper.js": mockMapper,
         },
       );
@@ -1323,6 +1380,65 @@ describe("No CTA above the fold guidance handler", () => {
       expect(Suggestion.create).to.have.been.calledOnce;
       const suggestionArg = Suggestion.create.getCall(0).args[0];
       expect(suggestionArg.data.suggestionValue).to.equal('');
+    });
+
+    it('should not apply tag mapping when data.opportunityType is missing', async () => {
+      const audit = {
+        getAuditId: () => "audit-id",
+        getAuditResult: () => [],
+      };
+      Audit.findById.resolves(audit);
+      Opportunity.allBySiteId.resolves([]);
+      Opportunity.create.resolves({
+        getId: () => "oppty-123",
+      });
+
+      // Mock mapper to return entity without opportunityType
+      const mockMapper = {
+        mapToOpportunity: sinon.stub().returns({
+          siteId,
+          id: 'test-id',
+          auditId: 'audit-id',
+          type: 'generic-opportunity',
+          origin: 'AUTOMATION',
+          title: 'Test',
+          tags: [],
+          data: {
+            page: pageUrl,
+            // No opportunityType
+          },
+        }),
+        mapToSuggestion: sinon.stub().resolves({
+          opportunityId: 'oppty-123',
+          type: 'CONTENT_UPDATE',
+          rank: 1,
+          status: 'NEW',
+          data: { suggestionValue: 'test' },
+        }),
+      };
+
+      const testHandler = await esmock(
+        "../../../src/no-cta-above-the-fold/guidance-handler.js",
+        {
+          "@adobe/spacecat-shared-utils": mockTagMappings,
+          "../../../src/no-cta-above-the-fold/guidance-opportunity-mapper.js": mockMapper,
+        },
+      );
+
+      const result = await testHandler(
+        {
+          auditId: "audit-id",
+          siteId,
+          data: { url: pageUrl, guidance },
+        },
+        context
+      );
+
+      expect(result.status).to.equal(ok().status);
+      // Tag mapping should not be called when opportunityType is missing
+      expect(mockTagMappings.mergeTagsWithHardcodedTags).to.not.have.been.called;
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.tags).to.deep.equal([]);
     });
 
     it('should handle sanitizeMarkdown with number markdown in mapToSuggestion', async () => {

@@ -10,10 +10,10 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
-import { mergeTagsWithHardcodedTags } from '../common/tagMappings.js';
 
 const GUIDANCE_TYPE = 'guidance:traffic-analysis';
 const TRAFFIC_OPP_TYPE = 'paid-traffic';

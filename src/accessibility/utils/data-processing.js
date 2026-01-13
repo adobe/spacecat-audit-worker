@@ -17,7 +17,7 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
-import { isoCalendarWeek } from '@adobe/spacecat-shared-utils';
+import { isoCalendarWeek, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
 import {
   createReportOpportunitySuggestionInstance,
@@ -34,7 +34,6 @@ import {
   generateBaseReportMarkdown,
 } from './generate-md-reports.js';
 import { AUDIT_PREFIXES, URL_SOURCE_SEPARATOR } from './constants.js';
-import { mergeTagsWithHardcodedTags } from '../../common/tagMappings.js';
 
 /**
  * Deletes the original JSON files after they've been processed

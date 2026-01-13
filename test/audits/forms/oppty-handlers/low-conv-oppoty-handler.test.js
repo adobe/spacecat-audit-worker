@@ -46,7 +46,7 @@ describe('createLowConversionOpportunities handler method', () => {
     createLowConversionOpportunities = await esmock(
       '../../../../src/forms-opportunities/oppty-handlers/low-conversion-handler.js',
       {
-        '../../../../src/common/tagMappings.js': mockTagMappings,
+        '@adobe/spacecat-shared-utils': mockTagMappings,
       },
     );
     auditUrl = 'https://example.com';

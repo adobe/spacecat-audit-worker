@@ -66,7 +66,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     handler = await esmock(
       '../../src/experimentation-opportunities/guidance-high-organic-low-ctr-handler.js',
       {
-        '../../src/common/tagMappings.js': mockTagMappings,
+        '@adobe/spacecat-shared-utils': mockTagMappings,
       },
     );
 

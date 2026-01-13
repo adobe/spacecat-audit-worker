@@ -10,9 +10,9 @@
  * governing permissions and limitations under the License.
  */
 import { Audit, Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
+import { mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from './constants.js';
 import { checkGoogleConnection } from './opportunity-utils.js';
-import { mergeTagsWithHardcodedTags } from './tagMappings.js';
 /**
   * Converts audit data to an opportunity instance.
   *

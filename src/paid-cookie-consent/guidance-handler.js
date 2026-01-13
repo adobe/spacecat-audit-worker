@@ -10,8 +10,8 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
-import { mergeTagsWithHardcodedTags } from '../common/tagMappings.js';
 
 function getGuidanceObj(guidance) {
   const body = guidance && guidance[0] && guidance[0].body;

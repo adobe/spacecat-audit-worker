@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyObject, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import {
   FORM_OPPORTUNITY_TYPES, OPPTY_OPTIONS_ALL, OPPORTUNITY_LIMIT, ORIGINS,
 } from '../constants.js';
@@ -22,7 +22,6 @@ import {
   sendMessageToFormsQualityAgent, sendMessageToMystiqueForGuidance,
 } from '../utils.js';
 import { DATA_SOURCES } from '../../common/constants.js';
-import { mergeTagsWithHardcodedTags } from '../../common/tagMappings.js';
 
 const formPathSegments = ['contact', 'newsletter', 'sign', 'enrol', 'subscribe', 'register', 'join', 'apply', 'quote', 'buy', 'trial', 'demo', 'offer'];
 /**

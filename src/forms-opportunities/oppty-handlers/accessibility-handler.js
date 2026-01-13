@@ -12,6 +12,7 @@
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { FORM_OPPORTUNITY_TYPES, formOpportunitiesMap } from '../constants.js';
 import { getSuccessCriteriaDetails } from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
@@ -22,7 +23,6 @@ import {
 import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToMystique } from '../../accessibility/utils/data-processing.js';
 import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from '../../accessibility/utils/constants.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
-import { mergeTagsWithHardcodedTags } from '../../common/tagMappings.js';
 
 const filterAccessibilityOpportunities = (opportunities) => opportunities.filter((opportunity) => opportunity.getTags()?.includes('Forms Accessibility'));
 

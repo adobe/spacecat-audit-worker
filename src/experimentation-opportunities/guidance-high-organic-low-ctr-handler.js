@@ -11,9 +11,9 @@
  */
 
 import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
-import { mergeTagsWithHardcodedTags } from '../common/tagMappings.js';
 /**
  * Checks if any suggestions in the array were manually modified (updatedBy !== 'system')
  * @param {Array} suggestions - Array of suggestion objects

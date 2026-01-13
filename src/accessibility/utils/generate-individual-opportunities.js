@@ -10,7 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray, isString, buildSuggestionKey } from '@adobe/spacecat-shared-utils';
+import {
+  isNonEmptyArray,
+  isString,
+  buildSuggestionKey,
+  mergeTagsWithHardcodedTags,
+} from '@adobe/spacecat-shared-utils';
 import { Opportunity as OpportunityDataAccess, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { createAccessibilityAssistiveOpportunity, createAccessibilityColorContrastOpportunity } from './report-oppty.js';
 import {
@@ -24,7 +29,6 @@ import { getAuditData, getCodeInfo } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 import { saveMystiqueValidationMetricsToS3, saveOpptyWithRetry } from './scrape-utils.js';
-import { mergeTagsWithHardcodedTags } from '../../common/tagMappings.js';
 
 /**
  * Extracts the 'source' query parameter from a URL and returns a clean URL

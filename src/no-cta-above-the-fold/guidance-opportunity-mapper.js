@@ -66,7 +66,7 @@ export function mapToOpportunity(siteId, url, audit, pageGuidance) {
       pageType: 'unknown',
     },
     status: 'NEW',
-    tags: ['Engagement'],
+    tags: [],
   };
 }
 
