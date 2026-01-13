@@ -138,6 +138,22 @@ describe('Wikipedia Analysis Handler', () => {
       expect(result.auditResult.config.companyName).to.equal('invalid-url');
     });
 
+    it('should return error when both company name and baseURL are empty', async () => {
+      mockSite.getConfig.returns({
+        getCompanyName: sandbox.stub().returns(''),
+        getWikipediaUrl: sandbox.stub().returns(''),
+        getCompetitors: sandbox.stub().returns([]),
+        getCompetitorRegion: sandbox.stub().returns(null),
+      });
+      mockSite.getBaseURL.returns('');
+
+      const result = await wikipediaAnalysisHandler.runner('', context, mockSite);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('No company name configured for this site');
+      expect(context.log.warn).to.have.been.called;
+    });
+
     it('should use baseURL as companyName when company name is not configured', async () => {
       mockSite.getConfig.returns({
         getCompanyName: sandbox.stub().returns(null),
