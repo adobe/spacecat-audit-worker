@@ -4556,6 +4556,162 @@ describe('Headings Audit', () => {
         expect(result.forbidden).to.be.an('array').with.length(5);
         expect(result.forbidden).to.include.members(['phrase1', 'phrase2', 'phrase3', 'tone1', 'tone2']);
       });
+
+      it('should handle missing properties and use empty defaults (covers fallback branches)', async () => {
+        // This test covers the fallback branches in lines 150-170
+        const mockBrandProfile = {
+          // Missing both main_profile and mainProfile - tests line 150 {} fallback
+        };
+
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Should use empty defaults
+        expect(result.brand_persona).to.equal('');
+        expect(result.tone).to.equal('');
+        expect(result.editorial_guidelines.do).to.deep.equal([]);
+        expect(result.editorial_guidelines.dont).to.deep.equal([]);
+        expect(result.forbidden).to.deep.equal([]);
+      });
+
+      it('should handle missing nested properties and use empty defaults', async () => {
+        // Test with main_profile present but missing nested properties
+        const mockBrandProfile = {
+          main_profile: {
+            // Missing brand_personality - tests line 154 '' fallback
+            // Missing tone_attributes - tests line 157 {} fallback
+            // Missing editorial_guidelines - tests line 162-163 {} fallback
+            // Missing language_patterns - tests line 168 {} fallback
+          },
+        };
+
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Should use empty defaults for all missing properties
+        expect(result.brand_persona).to.equal('');
+        expect(result.tone).to.equal('');
+        expect(result.editorial_guidelines.do).to.deep.equal([]);
+        expect(result.editorial_guidelines.dont).to.deep.equal([]);
+        expect(result.forbidden).to.deep.equal([]);
+      });
+
+      it('should handle brand profile with missing avoid arrays', async () => {
+        // Test with tone_attributes and language_patterns present but missing avoid arrays
+        const mockBrandProfile = {
+          main_profile: {
+            brand_personality: {
+              description: 'Test persona',
+            },
+            tone_attributes: {
+              primary: ['professional'],
+              // Missing avoid - tests line 170 || [] fallback
+            },
+            language_patterns: {
+              preferred: ['test phrase'],
+              // Missing avoid - tests line 169 || [] fallback
+            },
+            editorial_guidelines: {
+              // Missing dos - tests line 164 || [] fallback
+              // Missing donts - tests line 165 || [] fallback
+            },
+          },
+        };
+
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Should use empty arrays for missing avoid properties
+        expect(result.brand_persona).to.equal('Test persona');
+        expect(result.tone).to.equal('professional');
+        expect(result.editorial_guidelines.do).to.deep.equal([]);
+        expect(result.editorial_guidelines.dont).to.deep.equal([]);
+        expect(result.forbidden).to.deep.equal([]);
+      });
     });
 
     describe('getBrandGuidelines fallback to AI generation', () => {
