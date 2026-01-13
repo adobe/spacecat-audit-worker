@@ -48,7 +48,7 @@ export function createOpportunityDataForElmo() {
         },
       ],
     },
-    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.CANONICAL, ['tech-seo', 'llm']),
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.CANONICAL, ['llm']),
     data: {
       ...OpptyData.data,
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],

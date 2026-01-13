@@ -25,7 +25,7 @@ const OpptyDataForTOC = {
       'Ensure TOC is properly implemented in the <head> section of each page.',
     ],
   },
-  tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.TOC, []),
+  tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.TOC, ['isElmo']),
   data: {
     dataSources: [DATA_SOURCES.SITE],
   },

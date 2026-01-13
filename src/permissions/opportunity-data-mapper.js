@@ -87,7 +87,7 @@ export function createAdminOpportunityData(props) {
     runbook: 'https://wiki.corp.adobe.com/display/WEM/Security+Success',
     origin: 'AUTOMATION',
     title: 'Your website defines unnecessary permissions for admin / administrators',
-    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.SECURITY_PERMISSIONS_REDUNDANT, ['Administrators']),
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.SECURITY_PERMISSIONS_REDUNDANT, []),
     description: 'Your configuration defines unnecessary rules for the admin user or administrators related groups. These permissions are not taken into consideration for those principals, It creates a false sense of security.\n'
       + 'According to the OWASP Top 10 (A05:2021 – Security Misconfiguration), redundant or excessive privileges increase the risk of misconfiguration.\n'
       + 'Review and optimize permissions to maintain clarity and least privilege.',

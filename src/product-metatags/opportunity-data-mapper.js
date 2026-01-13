@@ -29,7 +29,7 @@ export function createOpportunityData(props = {}) {
         'Publish the changes to apply the updates to your live product pages.',
       ],
     },
-    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.PRODUCT_METATAGS, ['Commerce', 'Product SEO']),
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.PRODUCT_METATAGS, []),
     data: {
       ...restProps,
       ...(magentoEnvironmentId ? { magentoEnvironmentId } : {}),

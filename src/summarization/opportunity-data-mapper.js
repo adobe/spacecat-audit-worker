@@ -24,7 +24,7 @@ export function createOpportunityData(siteId, auditId, guidance) {
     description: 'Content summarization elements such as summary and key points improve content discoverability and user engagement.',
     status: 'NEW',
     guidance,
-    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.SUMMARIZATION, []),
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.SUMMARIZATION, ['isElmo']),
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.PAGE],
     },

@@ -51,7 +51,7 @@ export function createOpportunityDataForElmo() {
         },
       ],
     },
-    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.HREFLANG, ['tech-seo', 'llm']),
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.HREFLANG, ['llm']),
     data: {
       ...OpptyData.data,
       dataSources: [DATA_SOURCES.SITE],

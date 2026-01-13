@@ -27,7 +27,7 @@ const OpptyData = {
       'Ensure headings follow brand guidelines and maintain consistent tone across the site.',
     ],
   },
-  tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.HEADINGS, ['tech-seo']),
+  tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.HEADINGS, ['isElmo', 'isASO', 'tech-seo']),
   data: {
     dataSources: [DATA_SOURCES.SITE],
   },

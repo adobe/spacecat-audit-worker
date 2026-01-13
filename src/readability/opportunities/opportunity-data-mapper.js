@@ -29,7 +29,7 @@ export function createOpportunityData() {
         'Use AI-generated suggestions as a starting point for improvements.',
       ],
     },
-    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.READABILITY, ['content']),
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.READABILITY, ['isElmo']),
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
     },
