@@ -184,6 +184,7 @@ describe('Vulnerabilities Opportunity Data Mapper', () => {
 
       // Verify tags are generated using OPPORTUNITY_TYPES.SECURITY_VULNERABILITIES
       expect(result.tags).to.be.an('array');
+      expect(result.tags).to.deep.equal(['Security Vulnerabilities', 'Security']);
     });
   });
 });

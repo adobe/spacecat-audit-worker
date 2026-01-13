@@ -43,7 +43,13 @@ describe('Metatags Opportunity Data Mapper', () => {
       const result = createOpportunityData();
 
       expect(result.tags).to.be.an('array');
-      // Tags should be generated using OPPORTUNITY_TYPES.INVALID_OR_MISSING_METADATA
+      expect(result.tags).to.deep.equal(['Meta Tags', 'SEO']);
+    });
+
+    it('should preserve custom tags when merging with hardcoded tags', () => {
+      const result = createOpportunityData({ customTag: 'value' });
+
+      expect(result.tags).to.include.members(['Meta Tags', 'SEO']);
     });
 
     it('should include correct data sources', () => {

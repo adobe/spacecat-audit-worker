@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 export function createOpportunityData(siteId, auditId, guidance) {
@@ -24,7 +23,7 @@ export function createOpportunityData(siteId, auditId, guidance) {
     description: 'Content summarization elements such as summary and key points improve content discoverability and user engagement.',
     status: 'NEW',
     guidance,
-    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.SUMMARIZATION, ['isElmo']),
+    tags: ['isElmo', 'content'],
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.PAGE],
     },

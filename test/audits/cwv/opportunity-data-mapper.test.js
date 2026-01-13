@@ -44,7 +44,7 @@ describe('CWV Opportunity Data Mapper', () => {
       const result = createOpportunityData({});
 
       expect(result.tags).to.be.an('array');
-      // Tags should be generated using OPPORTUNITY_TYPES.CWV
+      expect(result.tags).to.deep.equal(['Core Web Vitals', 'Web Performance']);
     });
 
     it('should include correct data sources', () => {

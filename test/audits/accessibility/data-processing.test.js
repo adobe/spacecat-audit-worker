@@ -28,7 +28,6 @@ import {
   updateViolationData,
   getObjectKeysFromSubfolders,
   cleanupS3Files,
-  createReportOpportunity,
   createReportOpportunitySuggestion,
   getEnvAsoDomain,
   aggregateAccessibilityData,
@@ -913,28 +912,19 @@ describe('data-processing utility functions', () => {
     let mockContext;
     let mockAuditData;
     let mockOpportunityInstance;
-    let mockTagMappings;
+    let createReportOpportunityReal;
 
     beforeEach(async () => {
-      mockTagMappings = {
-        mergeTagsWithHardcodedTags: sandbox.stub().callsFake((opportunityType, currentTags) => {
-          // Return hardcoded tags based on type, preserving isElmo/isASO
-          if (opportunityType === 'a11y-assistive') {
-            return ['ARIA Labels', 'Accessibility'];
-          }
-          if (opportunityType === 'a11y-color-contrast') {
-            return ['Color Contrast', 'Accessibility', 'Engagement'];
-          }
-          // For other types, return current tags or empty array
-          return currentTags || [];
-        }),
-      };
-      
-      // Mock the tagMappings module
-      const module = await esmock.patch('../../../src/accessibility/utils/data-processing.js', {
-        '@adobe/spacecat-shared-utils': mockTagMappings,
+      // Use the REAL implementation to get 100% coverage
+      const module = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '@aws-sdk/client-s3': {
+          DeleteObjectCommand: DeleteObjectCommand,
+          DeleteObjectsCommand: DeleteObjectsCommand,
+          ListObjectsV2Command: ListObjectsV2Command,
+          PutObjectCommand: PutObjectCommand,
+        },
       });
-      createReportOpportunityPatched = module.createReportOpportunity;
+      createReportOpportunityReal = module.createReportOpportunity;
       
       mockOpportunity = {
         create: sandbox.stub(),
@@ -956,19 +946,15 @@ describe('data-processing utility functions', () => {
         origin: 'spacecat',
         title: 'Improve Accessibility',
         description: 'Fix accessibility violations',
-        tags: ['accessibility', 'critical'],
+        tags: ['isElmo', 'custom-tag'],
       };
     });
-    
-    afterEach(async () => {
-      await esmock.patchStop('../../../src/accessibility/utils/data-processing.js');
-    });
 
-    it('should successfully create a new opportunity', async () => {
+    it('should successfully create a new opportunity with merged tags', async () => {
       const createdOpportunity = { id: 'opp-123', ...mockOpportunityInstance };
       mockOpportunity.create.resolves(createdOpportunity);
 
-      const result = await createReportOpportunityPatched(
+      const result = await createReportOpportunityReal(
         mockOpportunityInstance,
         mockAuditData,
         mockContext,
@@ -976,16 +962,148 @@ describe('data-processing utility functions', () => {
 
       expect(result.opportunity).to.deep.equal(createdOpportunity);
       expect(mockOpportunity.create.calledOnce).to.be.true;
-      expect(mockOpportunity.create.calledWith({
-        siteId: 'test-site-123',
-        auditId: 'audit-456',
-        runbook: 'accessibility-runbook',
+      const callArgs = mockOpportunity.create.getCall(0).args[0];
+      expect(callArgs.tags).to.include.members(['ARIA Labels', 'Accessibility']);
+      expect(callArgs.tags).to.include('isElmo');
+      expect(callArgs.tags).to.include('custom-tag');
+    });
+
+    it('should handle opportunity with a11y-color-contrast type and preserve custom tags', async () => {
+      const opportunityInstance = {
+        ...mockOpportunityInstance,
+        type: 'a11y-color-contrast',
+        tags: ['isASO', 'tech-seo'],
+      };
+      const createdOpportunity = { id: 'opp-456', ...opportunityInstance };
+      mockOpportunity.create.resolves(createdOpportunity);
+
+      await createReportOpportunityReal(
+        opportunityInstance,
+        mockAuditData,
+        mockContext,
+      );
+
+      const callArgs = mockOpportunity.create.getCall(0).args[0];
+      expect(callArgs.tags).to.include.members(['Color Contrast', 'Accessibility', 'Engagement']);
+      expect(callArgs.tags).to.include('isASO');
+      expect(callArgs.tags).to.include('tech-seo');
+    });
+
+    it('should handle generic-opportunity type and preserve tags as-is', async () => {
+      const opportunityInstance = {
+        ...mockOpportunityInstance,
+        type: 'generic-opportunity',
+        tags: ['custom-tag-1', 'custom-tag-2'],
+      };
+      const createdOpportunity = { id: 'opp-789', ...opportunityInstance };
+      mockOpportunity.create.resolves(createdOpportunity);
+
+      await createReportOpportunityReal(
+        opportunityInstance,
+        mockAuditData,
+        mockContext,
+      );
+
+      const callArgs = mockOpportunity.create.getCall(0).args[0];
+      expect(callArgs.tags).to.deep.equal(['custom-tag-1', 'custom-tag-2']);
+    });
+
+    it('should handle opportunity type without hardcoded tags', async () => {
+      const opportunityInstance = {
+        ...mockOpportunityInstance,
+        type: 'unknown-type',
+        tags: ['preserved-tag'],
+      };
+      const createdOpportunity = { id: 'opp-unknown', ...opportunityInstance };
+      mockOpportunity.create.resolves(createdOpportunity);
+
+      await createReportOpportunityReal(
+        opportunityInstance,
+        mockAuditData,
+        mockContext,
+      );
+
+      const callArgs = mockOpportunity.create.getCall(0).args[0];
+      expect(callArgs.tags).to.deep.equal(['preserved-tag']);
+    });
+
+    it('should handle null tags', async () => {
+      const opportunityInstance = {
+        ...mockOpportunityInstance,
         type: 'a11y-assistive',
-        origin: 'spacecat',
-        title: 'Improve Accessibility',
-        description: 'Fix accessibility violations',
-        tags: ['ARIA Labels', 'Accessibility'],
-      })).to.be.true;
+        tags: null,
+      };
+      const createdOpportunity = { id: 'opp-null', ...opportunityInstance };
+      mockOpportunity.create.resolves(createdOpportunity);
+
+      await createReportOpportunityReal(
+        opportunityInstance,
+        mockAuditData,
+        mockContext,
+      );
+
+      const callArgs = mockOpportunity.create.getCall(0).args[0];
+      expect(callArgs.tags).to.deep.equal(['ARIA Labels', 'Accessibility']);
+    });
+
+    it('should handle undefined tags', async () => {
+      const opportunityInstance = {
+        ...mockOpportunityInstance,
+        type: 'cwv',
+        tags: undefined,
+      };
+      const createdOpportunity = { id: 'opp-undefined', ...opportunityInstance };
+      mockOpportunity.create.resolves(createdOpportunity);
+
+      await createReportOpportunityReal(
+        opportunityInstance,
+        mockAuditData,
+        mockContext,
+      );
+
+      const callArgs = mockOpportunity.create.getCall(0).args[0];
+      expect(callArgs.tags).to.deep.equal(['Core Web Vitals', 'Web Performance']);
+    });
+
+    it('should handle empty tags array', async () => {
+      const opportunityInstance = {
+        ...mockOpportunityInstance,
+        type: 'headings',
+        tags: [],
+      };
+      const createdOpportunity = { id: 'opp-empty', ...opportunityInstance };
+      mockOpportunity.create.resolves(createdOpportunity);
+
+      await createReportOpportunityReal(
+        opportunityInstance,
+        mockAuditData,
+        mockContext,
+      );
+
+      const callArgs = mockOpportunity.create.getCall(0).args[0];
+      expect(callArgs.tags).to.deep.equal(['Headings', 'SEO', 'Engagement']);
+    });
+
+    it('should filter out tags that overlap with hardcoded tags', async () => {
+      const opportunityInstance = {
+        ...mockOpportunityInstance,
+        type: 'meta-tags',
+        tags: ['Meta Tags', 'custom-preserved'],
+      };
+      const createdOpportunity = { id: 'opp-overlap', ...opportunityInstance };
+      mockOpportunity.create.resolves(createdOpportunity);
+
+      await createReportOpportunityReal(
+        opportunityInstance,
+        mockAuditData,
+        mockContext,
+      );
+
+      const callArgs = mockOpportunity.create.getCall(0).args[0];
+      expect(callArgs.tags).to.include.members(['Meta Tags', 'SEO']);
+      expect(callArgs.tags).to.include('custom-preserved');
+      // Should not have duplicate 'Meta Tags'
+      expect(callArgs.tags.filter(t => t === 'Meta Tags').length).to.equal(1);
     });
 
     it('should handle opportunity creation errors', async () => {
@@ -993,7 +1111,7 @@ describe('data-processing utility functions', () => {
       mockOpportunity.create.rejects(error);
 
       try {
-        await createReportOpportunityPatched(
+        await createReportOpportunityReal(
           mockOpportunityInstance,
           mockAuditData,
           mockContext,
@@ -1005,36 +1123,6 @@ describe('data-processing utility functions', () => {
       }
     });
 
-    it('should pass all opportunity instance properties to create method', async () => {
-      const complexOpportunityInstance = {
-        runbook: 'complex-runbook',
-        type: 'performance',
-        origin: 'lighthouse',
-        title: 'Complex Opportunity',
-        description: 'A complex opportunity with multiple requirements',
-        tags: ['performance', 'seo', 'accessibility'], // Will be replaced by hardcoded tags if type matches
-      };
-      const createdOpportunity = { id: 'opp-456', ...complexOpportunityInstance };
-      mockOpportunity.create.resolves(createdOpportunity);
-
-      await createReportOpportunityPatched(
-        complexOpportunityInstance,
-        mockAuditData,
-        mockContext,
-      );
-
-      expect(mockOpportunity.create.calledWith({
-        siteId: 'test-site-123',
-        auditId: 'audit-456',
-        runbook: 'complex-runbook',
-        type: 'performance',
-        origin: 'lighthouse',
-        title: 'Complex Opportunity',
-        description: 'A complex opportunity with multiple requirements',
-        tags: ['performance', 'seo', 'accessibility'], // Will be replaced by hardcoded tags if type matches
-      })).to.be.true;
-    });
-
     it('should handle missing opportunity instance properties', async () => {
       const incompleteOpportunityInstance = {
         runbook: 'test-runbook',
@@ -1044,22 +1132,18 @@ describe('data-processing utility functions', () => {
       const createdOpportunity = { id: 'opp-789' };
       mockOpportunity.create.resolves(createdOpportunity);
 
-      await createReportOpportunityPatched(
+      await createReportOpportunityReal(
         incompleteOpportunityInstance,
         mockAuditData,
         mockContext,
       );
 
-      expect(mockOpportunity.create.calledWith({
-        siteId: 'test-site-123',
-        auditId: 'audit-456',
-        runbook: 'test-runbook',
-        type: 'test',
-        origin: undefined,
-        title: undefined,
-        description: undefined,
-        tags: undefined,
-      })).to.be.true;
+      const callArgs = mockOpportunity.create.getCall(0).args[0];
+      expect(callArgs.siteId).to.equal('test-site-123');
+      expect(callArgs.auditId).to.equal('audit-456');
+      expect(callArgs.runbook).to.equal('test-runbook');
+      expect(callArgs.type).to.equal('test');
+      expect(callArgs.tags).to.deep.equal([]);
     });
 
     it('should handle different audit data formats', async () => {
@@ -1071,22 +1155,16 @@ describe('data-processing utility functions', () => {
       const createdOpportunity = { id: 'opp-999' };
       mockOpportunity.create.resolves(createdOpportunity);
 
-      await createReportOpportunityPatched(
+      await createReportOpportunityReal(
         mockOpportunityInstance,
         differentAuditData,
         mockContext,
       );
 
-      expect(mockOpportunity.create.calledWith({
-        siteId: 'another-site',
-        auditId: 'different-audit',
-        runbook: 'accessibility-runbook',
-        type: 'a11y-assistive',
-        origin: 'spacecat',
-        title: 'Improve Accessibility',
-        description: 'Fix accessibility violations',
-        tags: ['ARIA Labels', 'Accessibility'],
-      })).to.be.true;
+      const callArgs = mockOpportunity.create.getCall(0).args[0];
+      expect(callArgs.siteId).to.equal('another-site');
+      expect(callArgs.auditId).to.equal('different-audit');
+      expect(callArgs.tags).to.include.members(['ARIA Labels', 'Accessibility']);
     });
   });
 

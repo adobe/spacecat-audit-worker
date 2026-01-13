@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 const OpptyDataForTOC = {
@@ -25,7 +24,7 @@ const OpptyDataForTOC = {
       'Ensure TOC is properly implemented in the <head> section of each page.',
     ],
   },
-  tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.TOC, ['isElmo']),
+  tags: ['Accessibility', 'SEO', 'isElmo'],
   data: {
     dataSources: [DATA_SOURCES.SITE],
   },

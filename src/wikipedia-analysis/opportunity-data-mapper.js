@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 /**
@@ -28,7 +27,7 @@ export function createOpportunityData({ guidance }) {
     description: 'Enhance your company\'s Wikipedia page to improve visibility in Large Language Model (LLM) responses. A well-maintained Wikipedia presence increases the likelihood of being cited by AI systems like ChatGPT, Claude, and Perplexity.',
     status: 'NEW',
     guidance,
-    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.WIKIPEDIA_ANALYSIS, ['llmo', 'isElmo']),
+    tags: ['isElmo', 'llmo', 'wikipedia', 'Off-Site'],
     data: {
       dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.PAGE],
     },
