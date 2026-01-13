@@ -249,7 +249,32 @@
         .export-buttons {
             display: flex;
             gap: 10px;
-            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 8px;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            cursor: pointer;
+            margin-bottom: -2px;
+        }
+        
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
         }
         
         .error-message {
@@ -300,8 +325,6 @@ https://example.com/page3"></textarea>
                 
                 <div class="summary" id="summary"></div>
                 
-                <div id="urlResults"></div>
-                
                 <div class="export-buttons">
                     <button class="btn-secondary" onclick="exportJSON()">
                         📥 Download JSON
@@ -309,13 +332,25 @@ https://example.com/page3"></textarea>
                     <button class="btn-secondary" onclick="exportCSV()">
                         📊 Download CSV
                     </button>
+                    <button class="btn-secondary" onclick="copyCleanUrls()">
+                        📋 Copy Clean URLs
+                    </button>
                 </div>
+                
+                <div class="tabs">
+                    <button class="tab active" data-tab="all" onclick="switchTab('all')">All (0)</button>
+                    <button class="tab" data-tab="clean" onclick="switchTab('clean')">Clean (0)</button>
+                    <button class="tab" data-tab="blocked" onclick="switchTab('blocked')">Blocked (0)</button>
+                </div>
+                
+                <div id="urlResults"></div>
             </div>
         </div>
     </div>
 
     <script>
         let resultsData = null;
+        let currentTab = 'all';
 
         async function checkUrls() {
             const textarea = document.getElementById('urls');
@@ -391,9 +426,33 @@ https://example.com/page3"></textarea>
                 </div>
             `;
             
-            // URL results
-            const allUrls = [...data.cleanUrls, ...data.blockedUrls];
-            const urlsHtml = allUrls.map(url => {
+            // Update tab counts
+            document.querySelector('[data-tab="all"]').textContent = `All (${total})`;
+            document.querySelector('[data-tab="clean"]').textContent = `Clean (${clean})`;
+            document.querySelector('[data-tab="blocked"]').textContent = `Blocked (${blocked})`;
+            
+            // Display URL list based on current tab
+            displayUrlList(currentTab);
+        }
+        
+        function displayUrlList(tab) {
+            if (!resultsData) return;
+            
+            let urls = [];
+            if (tab === 'all') {
+                urls = [...resultsData.cleanUrls, ...resultsData.blockedUrls];
+            } else if (tab === 'clean') {
+                urls = resultsData.cleanUrls;
+            } else if (tab === 'blocked') {
+                urls = resultsData.blockedUrls;
+            }
+            
+            if (urls.length === 0) {
+                document.getElementById('urlResults').innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">No URLs to display</p>';
+                return;
+            }
+            
+            const urlsHtml = urls.map(url => {
                 const isClean = url.indexable;
                 const icon = isClean ? '✅' : '❌';
                 
@@ -431,12 +490,6 @@ https://example.com/page3"></textarea>
                     <span>${label}</span>
                 </div>
             `;
-        }
-        
-        function clearAll() {
-            document.getElementById('urls').value = '';
-            document.getElementById('results').classList.remove('visible');
-            resultsData = null;
         }
         
         function exportJSON() {
@@ -477,6 +530,37 @@ https://example.com/page3"></textarea>
             a.download = `seo-validation-${Date.now()}.csv`;
             a.click();
             URL.revokeObjectURL(url);
+        }
+        
+        function copyCleanUrls() {
+            if (!resultsData) return;
+            
+            const cleanUrls = resultsData.cleanUrls.map(item => item.url).join('\n');
+            
+            navigator.clipboard.writeText(cleanUrls).then(() => {
+                alert(`✅ ${resultsData.cleanUrls.length} clean URLs copied to clipboard!`);
+            }).catch(err => {
+                alert('❌ Failed to copy to clipboard');
+                console.error('Copy error:', err);
+            });
+        }
+        
+        function switchTab(tab) {
+            currentTab = tab;
+            
+            // Update active tab
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+            
+            // Display filtered URL list
+            displayUrlList(tab);
+        }
+        
+        function clearAll() {
+            document.getElementById('urls').value = '';
+            document.getElementById('results').classList.remove('visible');
+            resultsData = null;
+            currentTab = 'all';
         }
     </script>
 </body>
