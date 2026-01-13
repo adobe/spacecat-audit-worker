@@ -371,41 +371,18 @@ export function mergeAccessibilityData(existingData, newData, log, logIdentifier
         const overallItems = recalculatedOverall.violations[severity].items;
 
         if (!overallItems[ruleId]) {
-          // If first time seeing this rule, copy it with ALL fields from content scraper
+          // If first time seeing this rule, copy it with only the core fields
+          // (matching the structure created by updateViolationData)
           overallItems[ruleId] = {
             count: ruleData.count || 0,
             description: ruleData.description || '',
             level: ruleData.level || '',
             understandingUrl: ruleData.understandingUrl || '',
             successCriteriaNumber: ruleData.successCriteriaNumber || '',
-            helpUrl: ruleData.helpUrl || '',
-            failureSummary: ruleData.failureSummary || '',
-            htmlWithIssues: ruleData.htmlWithIssues ? [...ruleData.htmlWithIssues] : [],
-            target: ruleData.target ? [...ruleData.target] : [],
-            successCriteriaTags: ruleData.successCriteriaTags
-              ? [...ruleData.successCriteriaTags] : [],
           };
         } else {
-          // If rule already exists, merge the data
+          // If rule already exists, accumulate the count
           overallItems[ruleId].count = (overallItems[ruleId].count || 0) + (ruleData.count || 0);
-
-          // Merge array fields by concatenating them
-          if (ruleData.htmlWithIssues?.length) {
-            if (!overallItems[ruleId].htmlWithIssues) overallItems[ruleId].htmlWithIssues = [];
-            overallItems[ruleId].htmlWithIssues.push(...ruleData.htmlWithIssues);
-          }
-
-          if (ruleData.target?.length) {
-            if (!overallItems[ruleId].target) overallItems[ruleId].target = [];
-            overallItems[ruleId].target.push(...ruleData.target);
-          }
-
-          if (ruleData.successCriteriaTags?.length) {
-            if (!overallItems[ruleId].successCriteriaTags) {
-              overallItems[ruleId].successCriteriaTags = [];
-            }
-            overallItems[ruleId].successCriteriaTags.push(...ruleData.successCriteriaTags);
-          }
         }
       });
     });
