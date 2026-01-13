@@ -1851,7 +1851,7 @@ describe('data-processing utility functions', () => {
       expect(result.success).to.be.true;
 
       // With 2 keys [key1, key2], code loads lastWeekObjectKeys[length-2] = lastWeekObjectKeys[0] = lastWeekFileKey1
-      const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey1}`;
+      const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey2}`;
       const logCall = mockLog.debug.getCalls().find((call) => call.args[0].includes(expectedKeyInLog) && call.args[0].includes('with content:'));
       expect(logCall).to.not.be.undefined;
       // If more precise matching is needed, verify the full content:
