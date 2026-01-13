@@ -195,7 +195,7 @@ export async function getBrandGuidelines(healthyTagsObject, log, context, site =
       if (brandProfile && typeof brandProfile === 'object' && Object.keys(brandProfile).length > 0) {
         log.info('[Brand Guidelines] Using brand profile from site config');
         const guidelines = extractBrandGuidelinesFromProfile(brandProfile);
-        log.info(`[Brand Guidelines] Extracted guidelines: ${JSON.stringify(guidelines)}`);
+        log.debug(`[Brand Guidelines] Extracted guidelines: ${JSON.stringify(guidelines)}`);
         return guidelines;
       }
     } catch (error) {
