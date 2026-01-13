@@ -54,7 +54,7 @@ describe('formatWcagRule', () => {
     sandbox = sinon.createSandbox();
     // Import functions with mocked tagMappings
     if (!formatWcagRule) {
-      const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
         '@adobe/spacecat-shared-utils': mockTagMappings,
       });
       formatWcagRule = module.formatWcagRule;
@@ -171,7 +171,7 @@ describe('formatIssue', () => {
     sandbox = sinon.createSandbox();
     // Ensure formatIssue is imported
     if (!formatIssue) {
-      const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
         '@adobe/spacecat-shared-utils': mockTagMappings,
       });
       formatIssue = module.formatIssue;
@@ -683,6 +683,44 @@ describe('formatIssue', () => {
     expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
+  it('should extract understandingUrl from successCriteriaLinks', () => {
+    constants.successCriteriaLinks['412'] = {
+      name: 'Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/name-role-value.html',
+    };
+
+    const issueData = {
+      description: 'Test issue',
+      successCriteriaTags: ['wcag412'],
+      level: 'AA',
+      htmlWithIssues: ['<div>test</div>'],
+      target: ['div.test'],
+    };
+
+    const result = formatIssue('aria-allowed-attr', issueData, 'critical');
+
+    expect(result.understandingUrl).to.equal('https://www.w3.org/WAI/WCAG21/Understanding/name-role-value.html');
+  });
+
+  it('should handle understandingUrl when ruleInfo exists but understandingUrl is missing', () => {
+    constants.successCriteriaLinks['412'] = {
+      name: 'Name, Role, Value',
+      // No understandingUrl
+    };
+
+    const issueData = {
+      description: 'Test issue',
+      successCriteriaTags: ['wcag412'],
+      level: 'AA',
+      htmlWithIssues: ['<div>test</div>'],
+      target: ['div.test'],
+    };
+
+    const result = formatIssue('aria-allowed-attr', issueData, 'critical');
+
+    expect(result.understandingUrl).to.equal('');
+  });
+
   it('should handle htmlWithIssues with string items', () => {
     // This test verifies the simplified logic handles string items correctly
     const result = formatIssue('aria-allowed-attr', {
@@ -1031,7 +1069,7 @@ describe('aggregateA11yIssuesByOppType early return coverage', () => {
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
     if (!aggregateA11yIssuesByOppType) {
-      const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
         '@adobe/spacecat-shared-utils': mockTagMappings,
       });
       aggregateA11yIssuesByOppType = module.aggregateA11yIssuesByOppType;
@@ -1074,7 +1112,7 @@ describe('aggregateA11yIssuesByOppType functional tests', () => {
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
     if (!aggregateA11yIssuesByOppType) {
-      const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
         '@adobe/spacecat-shared-utils': mockTagMappings,
       });
       aggregateA11yIssuesByOppType = module.aggregateA11yIssuesByOppType;
@@ -1124,6 +1162,79 @@ describe('aggregateA11yIssuesByOppType functional tests', () => {
     expect(result.data[0]['a11y-assistive'][0].source).to.be.undefined;
     expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com/page');
   });
+
+describe('extractSourceFromUrl', () => {
+  let extractSourceFromUrl;
+  let testModule;
+
+  beforeEach(async () => {
+    testModule = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '@adobe/spacecat-shared-utils': mockTagMappings,
+    });
+    extractSourceFromUrl = testModule.extractSourceFromUrl || ((url) => {
+      // Access the internal function via aggregateA11yIssuesByOppType which uses it
+      const testData = {
+        [`${url}?source=test-source`]: {
+          violations: {
+            critical: {
+              items: {
+                'aria-hidden-focus': {
+                  htmlWithIssues: ['<div>test</div>'],
+                  target: ['div.test'],
+                },
+              },
+            },
+          },
+        },
+      };
+      const result = testModule.aggregateA11yIssuesByOppType(testData);
+      if (result.data[0] && result.data[0]['a11y-assistive'] && result.data[0]['a11y-assistive'][0]) {
+        return { url: result.data[0]['a11y-assistive'][0].url, source: result.data[0]['a11y-assistive'][0].source };
+      }
+      return { url, source: null };
+    });
+  });
+
+  it('should extract source from URL with separator', () => {
+    const testData = {
+      'https://example.com/page?source=test-source': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                htmlWithIssues: ['<div>test</div>'],
+                target: ['div.test'],
+              },
+            },
+          },
+        },
+      },
+    };
+    const result = testModule.aggregateA11yIssuesByOppType(testData);
+    expect(result.data[0]['a11y-assistive'][0].source).to.equal('test-source');
+    expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com/page');
+  });
+
+  it('should return null source when URL does not contain separator', () => {
+    const testData = {
+      'https://example.com/page': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                htmlWithIssues: ['<div>test</div>'],
+                target: ['div.test'],
+              },
+            },
+          },
+        },
+      },
+    };
+    const result = testModule.aggregateA11yIssuesByOppType(testData);
+    expect(result.data[0]['a11y-assistive'][0].source).to.be.undefined;
+    expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com/page');
+  });
+});
 
 describe('shouldUseCodeFixFlow', () => {
   let shouldUseCodeFixFlow;
@@ -1184,7 +1295,7 @@ describe('aggregateAccessibilityIssues', () => {
     sandbox = sinon.createSandbox();
     // Ensure aggregateA11yIssuesByOppType is imported
     if (!aggregateA11yIssuesByOppType) {
-      const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
         '@adobe/spacecat-shared-utils': mockTagMappings,
       });
       aggregateA11yIssuesByOppType = module.aggregateA11yIssuesByOppType;
@@ -2436,22 +2547,37 @@ describe('createAccessibilityIndividualOpportunities', () => {
     mockSyncSuggestions = sandbox.stub().resolves();
 
     // Fix: Mock all dependencies before importing the module under test
-    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-      '../../../src/accessibility/utils/constants.js': {
-        accessibilityOpportunitiesMap: {
-          'a11y-assistive': ['aria-hidden-focus', 'aria-allowed-attr'],
-          'a11y-usability': ['button-name', 'label'],
-        },
-        successCriteriaLinks: {
-          412: { name: 'Name, Role, Value' },
-          111: { name: 'Non-text Content' },
-        },
+    const mockConstants = {
+      accessibilityOpportunitiesMap: {
+        'a11y-assistive': ['aria-hidden-focus', 'aria-allowed-attr'],
+        'a11y-color-contrast': ['color-contrast'],
+        'a11y-usability': ['button-name', 'label'],
       },
+      successCriteriaLinks: {
+        412: { name: 'Name, Role, Value' },
+        111: { name: 'Non-text Content' },
+        143: { name: 'Color Contrast' },
+      },
+      URL_SOURCE_SEPARATOR: '?source=',
+      issueTypesForCodeFix: ['aria-allowed-attr', 'aria-hidden-focus'],
+    };
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/utils/constants.js': mockConstants,
       '../../../src/accessibility/utils/data-processing.js': {
         getAuditData: mockGetAuditData,
       },
       '../../../src/accessibility/utils/report-oppty.js': {
         createAccessibilityAssistiveOpportunity: mockCreateAssistiveOppty,
+        createAccessibilityColorContrastOpportunity: sandbox.stub().returns({
+          type: 'a11y-color-contrast',
+          runbook: 'test-runbook',
+          origin: 'AUTOMATION',
+          title: 'Test Color Contrast Opportunity',
+          description: 'Test Description',
+          tags: ['a11y'],
+          status: 'NEW',
+          data: { dataSources: ['axe-core'] },
+        }),
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: mockSyncSuggestions,
@@ -2483,42 +2609,48 @@ describe('createAccessibilityIndividualOpportunities', () => {
     sandbox.restore();
   });
 
-  // it('should create opportunities and suggestions for accessibility issues', async () => {
-  //   const accessibilityData = {
-  //     'https://example.com/page1': {
-  //       violations: {
-  //         critical: {
-  //           items: {
-  //             'aria-hidden-focus': {
-  //               description: 'Test issue',
-  //               successCriteriaTags: ['wcag412'],
-  //               count: 5,
-  //             },
-  //           },
-  //         },
-  //       },
-  //     },
-  //   };
+  it('should create opportunities and suggestions for accessibility issues', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
+              },
+            },
+          },
+        },
+      },
+    };
 
-  //   const result = await createAccessibilityIndividualOpportunities(
-  //     accessibilityData,
-  //     mockContext,
-  //   );
+    // Ensure aggregateA11yIssuesByOppType returns data by using the mocked constants
+    // The function uses accessibilityOpportunitiesMap as default, which we've mocked
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
 
-  //   expect(result).to.exist;
-  //   if (result.status === 'OPPORTUNITIES_FAILED') {
-  //     expect.fail(`Function failed with error: ${result.error}`);
-  //   }
-  //   expect(result.opportunities).to.have.lengthOf(1);
-  //   expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
-  //   expect(result.opportunities[0].opportunityType).to.equal('a11y-assistive');
-  //   expect(result.opportunities[0].suggestionsCount).to.equal(1);
-  //   expect(result.opportunities[0].totalIssues).to.equal(5);
-  //   expect(result.opportunities[0].pagesWithIssues).to.equal(1);
-  //   expect(mockGetAuditData).to.have.been.calledWith(mockSite, 'accessibility');
-  //   expect(mockCreateAssistiveOppty).to.have.been.calledOnce;
-  //   expect(mockSyncSuggestions).to.have.been.calledOnce;
-  // });
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
+    if (result.status === 'NO_OPPORTUNITIES') {
+      expect.fail(`Function returned NO_OPPORTUNITIES: ${result.message}`);
+    }
+    expect(result.opportunities).to.have.lengthOf(1);
+    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
+    expect(result.opportunities[0].opportunityType).to.equal('a11y-assistive');
+    expect(result.opportunities[0].suggestionsCount).to.be.greaterThan(0);
+    expect(result.opportunities[0].totalIssues).to.be.greaterThan(0);
+    expect(result.opportunities[0].pagesWithIssues).to.equal(1);
+    expect(mockGetAuditData).to.have.been.calledWith(mockSite, 'accessibility');
+    expect(mockCreateAssistiveOppty).to.have.been.calledOnce;
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+  });
 
   it('should handle no accessibility issues', async () => {
     const accessibilityData = {
@@ -5075,14 +5207,564 @@ describe('handleAccessibilityRemediationGuidance', () => {
 
     const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
 
+      expect(result.success).to.be.true;
+      expect(result.failedSuggestionIds).to.deep.equal(['sugg-790']);
+      expect(mockLog.error).to.have.been.calledWith(
+        '[A11yRemediationGuidance][A11yProcessingError] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to save suggestion sugg-790: Error: Save failed',
+      );
+      expect(mockLog.debug).to.have.been.calledWith(
+        '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Successfully processed 1 remediations',
+      );
+  });
+
+  it('should handle sendMystiqueMessage when useCodeFixFlow is undefined and context exists', async () => {
+    const mockIsAuditEnabledForSite = sandbox.stub();
+    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-fix', sinon.match.any, sinon.match.any).resolves(true);
+    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any).resolves(true);
+
+    const sendMystiqueMessageModule = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+      '../../../src/accessibility/utils/data-processing.js': {
+        getCodeInfo: sandbox.stub().resolves({
+          codeBucket: 'test-bucket',
+          codePath: 'test-path',
+        }),
+      },
+    });
+
+    const mockSqs = {
+      sendMessage: sandbox.stub().resolves(),
+    };
+    const mockEnv = {
+      QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+    };
+    const mockLog = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+    const mockOpportunity = {
+      getId: sandbox.stub().returns('oppty-123'),
+    };
+    const mockContext = {
+      site: { getId: sandbox.stub().returns('site-123') },
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      siteId: 'site-123',
+      auditId: 'audit-456',
+      deliveryType: 'aem_edge',
+      aggregationKey: 'agg-key',
+      sqs: mockSqs,
+      env: mockEnv,
+      log: mockLog,
+      context: mockContext,
+      useCodeFixFlow: undefined, // This should trigger the auto-detection logic
+    };
+
+    const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
     expect(result.success).to.be.true;
-    expect(result.failedSuggestionIds).to.deep.equal(['sugg-790']);
-    expect(mockLog.error).to.have.been.calledWith(
-      '[A11yRemediationGuidance][A11yProcessingError] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to save suggestion sugg-790: Error: Save failed',
+    expect(mockSqs.sendMessage).to.have.been.calledOnce;
+    const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+    expect(sentMessage.data).to.have.property('codeBucket', 'test-bucket');
+    expect(sentMessage.data).to.have.property('codePath', 'test-path');
+  });
+
+  it('should handle sendMystiqueMessage when codeInfo exists but codeBucket is missing', async () => {
+    const mockIsAuditEnabledForSite = sandbox.stub();
+    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-fix', sinon.match.any, sinon.match.any).resolves(true);
+    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any).resolves(true);
+
+    const sendMystiqueMessageModule = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+      '../../../src/accessibility/utils/data-processing.js': {
+        getCodeInfo: sandbox.stub().resolves({
+          codePath: 'test-path', // Missing codeBucket
+        }),
+      },
+    });
+
+    const mockSqs = {
+      sendMessage: sandbox.stub().resolves(),
+    };
+    const mockEnv = {
+      QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+    };
+    const mockLog = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+    const mockOpportunity = {
+      getId: sandbox.stub().returns('oppty-123'),
+    };
+    const mockContext = {
+      site: { getId: sandbox.stub().returns('site-123') },
+    };
+
+    const params = {
+      url: 'https://example.com/page',
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
+      opportunity: mockOpportunity,
+      siteId: 'site-123',
+      auditId: 'audit-456',
+      deliveryType: 'aem_edge',
+      aggregationKey: 'agg-key',
+      sqs: mockSqs,
+      env: mockEnv,
+      log: mockLog,
+      context: mockContext,
+      useCodeFixFlow: true,
+    };
+
+    const result = await sendMystiqueMessageModule.sendMystiqueMessage(params);
+
+    expect(result.success).to.be.true;
+    expect(mockSqs.sendMessage).to.have.been.calledOnce;
+    const sentMessage = mockSqs.sendMessage.firstCall.args[1];
+    expect(sentMessage.data).to.not.have.property('codeBucket');
+    expect(sentMessage.data).to.not.have.property('codePath');
+  });
+
+  it('should handle sendMessageToMystiqueForRemediation with fallback siteId from context.site', async () => {
+    const opportunityWithoutGetSiteId = {
+      getId: sandbox.stub().returns('oppty-1'),
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+
+    const contextWithSiteId = {
+      site: {
+        getId: sandbox.stub().returns('site-from-context'),
+        getDeliveryType: sandbox.stub().returns('aem_edge'),
+      },
+      auditId: 'audit-1',
+      log: mockLog,
+      dataAccess: {
+        Opportunity: {
+          findById: sandbox.stub().resolves(opportunityWithoutGetSiteId),
+        },
+      },
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+      },
+    };
+
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    await module.sendMessageToMystiqueForRemediation(
+      opportunityWithoutGetSiteId,
+      contextWithSiteId,
+      mockLog,
     );
+
+    expect(mockLog.info).to.have.been.calledWith(
+      '[A11yIndividual] No messages to send to Mystique - no matching issue types found',
+    );
+  });
+
+  it('should handle sendMessageToMystiqueForRemediation with fallback auditId from context.audit', async () => {
+    const opportunityWithoutGetAuditId = {
+      getId: sandbox.stub().returns('oppty-1'),
+      getSiteId: sandbox.stub().returns('site-1'),
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+
+    const contextWithAuditId = {
+      site: {
+        getId: sandbox.stub().returns('site-1'),
+        getDeliveryType: sandbox.stub().returns('aem_edge'),
+      },
+      auditId: undefined,
+      audit: {
+        getId: sandbox.stub().returns('audit-from-context'),
+      },
+      log: mockLog,
+      dataAccess: {
+        Opportunity: {
+          findById: sandbox.stub().resolves(opportunityWithoutGetAuditId),
+        },
+      },
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+      },
+    };
+
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    await module.sendMessageToMystiqueForRemediation(
+      opportunityWithoutGetAuditId,
+      contextWithAuditId,
+      mockLog,
+    );
+
+    expect(mockLog.info).to.have.been.calledWith(
+      '[A11yIndividual] No messages to send to Mystique - no matching issue types found',
+    );
+  });
+
+  it('should handle sendMessageToMystiqueForRemediation with code fix eligible issues check', async () => {
+    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-fix', sinon.match.any, sinon.match.any).resolves(true);
+    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any).resolves(true);
+
+    mockOpportunity.getSuggestions = sandbox.stub().resolves([
+      {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          issues: [
+            {
+              type: 'aria-allowed-attr', // This is in issueTypesForCodeFix
+              htmlWithIssues: [{ target_selector: 'div.test' }], // Has htmlWithIssues
+            },
+          ],
+        }),
+        getId: () => 'sugg-1',
+      },
+    ]);
+
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com',
+            issuesList: [{ issueName: 'aria-allowed-attr' }],
+          },
+        ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    await module.sendMessageToMystiqueForRemediation(
+      mockOpportunity,
+      mockContext,
+      mockLog,
+    );
+
     expect(mockLog.debug).to.have.been.calledWith(
-      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Successfully processed 1 remediations',
+      sinon.match(/Code fix flow enabled: true, has eligible issues: true, using code fix flow: true/),
     );
+  });
+
+  it('should handle sendMessageToMystiqueForRemediation with rejected promises in results', async () => {
+    mockOpportunity.getSuggestions = sandbox.stub().resolves([
+      {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          issues: [{ type: 'color-contrast' }],
+        }),
+        getId: () => 'sugg-1',
+      },
+    ]);
+
+    const sendMessageStub = sandbox.stub();
+    sendMessageStub.onFirstCall().rejects(new Error('SQS error'));
+    sendMessageStub.onSecondCall().resolves();
+    mockContext.sqs.sendMessage = sendMessageStub;
+
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com/page1',
+            issuesList: [{ issueName: 'color-contrast' }],
+            aggregationKey: 'key1',
+          },
+          {
+            url: 'https://example.com/page2',
+            issuesList: [{ issueName: 'color-contrast' }],
+            aggregationKey: 'key2',
+          },
+        ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    await module.sendMessageToMystiqueForRemediation(
+      mockOpportunity,
+      mockContext,
+      mockLog,
+    );
+
+    expect(mockLog.debug).to.have.been.calledWithMatch(
+      /Message sending completed: 1 successful, 0 failed, 1 rejected/,
+    );
+  });
+
+  it('should handle findOrCreateAccessibilityOpportunity with IN_PROGRESS status', async () => {
+    const mockOpportunityInstance = {
+      type: 'a11y-assistive',
+    };
+    const mockAuditData = {
+      siteId: 'site-123',
+      auditId: 'audit-456',
+    };
+    const existingOpportunity = {
+      getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('IN_PROGRESS'),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        allBySiteId: sandbox.stub().resolves([existingOpportunity]),
+        STATUSES: {
+          NEW: 'NEW',
+          IN_PROGRESS: 'IN_PROGRESS',
+        },
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '@adobe/spacecat-shared-utils': mockTagMappings,
+    });
+
+    const result = await module.findOrCreateAccessibilityOpportunity(
+      mockOpportunityInstance,
+      mockAuditData,
+      mockContext,
+    );
+
+    expect(result.isNew).to.be.false;
+    expect(result.opportunity).to.equal(existingOpportunity);
+    expect(existingOpportunity.setAuditId).to.have.been.calledWith('audit-456');
+    expect(existingOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+    expect(existingOpportunity.save).to.have.been.called;
+  });
+
+  it('should handle createAccessibilityIndividualOpportunities with Updated opportunity', async () => {
+    const existingOpportunity = {
+      getId: sandbox.stub().returns('existing-opp-id'),
+      getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('NEW'),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                htmlWithIssues: ['<div>test</div>'],
+                target: ['div.test'],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        allBySiteId: sandbox.stub().resolves([existingOpportunity]),
+        create: sandbox.stub(),
+        STATUSES: {
+          NEW: 'NEW',
+          IN_PROGRESS: 'IN_PROGRESS',
+        },
+      },
+    };
+
+    mockContext.dataAccess = mockDataAccess;
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result.opportunities).to.have.lengthOf(1);
+    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_UPDATED');
+    expect(result.opportunities[0].opportunityId).to.equal('existing-opp-id');
+    expect(mockContext.log.info).to.have.been.calledWith(
+      sinon.match(/Updated opportunity for a11y-assistive/),
+    );
+  });
+
+  it('should handle handleAccessibilityRemediationGuidance with sent count calculation', async () => {
+    const mockOpportunity = {
+      getId: () => 'oppty-123',
+      getSiteId: () => 'site-456',
+      getType: () => 'a11y-assistive',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div aria-label="test">Content</div>',
+                    target_selector: 'div.test',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            suggestionId: 'sugg-789',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+          },
+        ],
+        totalIssues: 1,
+      },
+    };
+
+    const mockScrapeUtils = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/utils/scrape-utils.js': {
+        saveMystiqueValidationMetricsToS3: sandbox.stub().resolves(),
+        saveOpptyWithRetry: sandbox.stub().resolves(),
+      },
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com/page1',
+            issuesList: [
+              { suggestionId: 'sugg-789' },
+            ],
+          },
+        ]),
+      },
+    });
+
+    const result = await mockScrapeUtils.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result.success).to.be.true;
+    expect(mockLog.debug).to.have.been.calledWith(
+      '[A11yRemediationGuidance] Saved complete Mystique validation metrics for opportunity oppty-123, page https://example.com/page1: sent=1, received=1',
+    );
+  });
+
+  it('should handle handleAccessibilityRemediationGuidance with issues without htmlWithIssues in mapping', async () => {
+    const mockSuggestion = {
+      getId: () => 'sugg-789',
+      getData: () => ({
+        url: 'https://example.com/page1',
+        issues: [
+          {
+            type: 'aria-allowed-attr',
+            // No htmlWithIssues property
+          },
+        ],
+      }),
+      setData: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([mockSuggestion]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            suggestionId: 'sugg-789',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+          },
+        ],
+        totalIssues: 1,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result.success).to.be.true;
+    expect(mockSuggestion.setData).to.have.been.called;
+    const updatedData = mockSuggestion.setData.firstCall.args[0];
+    // Issue without htmlWithIssues should be returned unchanged
+    expect(updatedData.issues[0]).to.not.have.property('htmlWithIssues');
   });
 });
 
@@ -5090,7 +5772,7 @@ describe('createMystiqueForwardPayload', () => {
   beforeEach(async () => {
     // Ensure createMystiqueForwardPayload is imported
     if (!createMystiqueForwardPayload) {
-      const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
         '@adobe/spacecat-shared-utils': mockTagMappings,
       });
       createMystiqueForwardPayload = module.createMystiqueForwardPayload;

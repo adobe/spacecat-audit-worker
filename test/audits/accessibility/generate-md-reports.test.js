@@ -348,6 +348,72 @@ Optional issue second`;
       // Should show dashes when all issues are filtered out
       expect(result).to.include('| https://example.com/page2 | 2K | 0 | - | - |');
     });
+
+    it('should handle missing successCriteriaLinks entry in generateAccessibilityIssuesOverviewSection (line 353)', () => {
+      const issuesOverview = {
+        levelA: [
+          {
+            rule: 'unknown-rule',
+            description: 'Unknown rule description',
+            count: 5,
+            level: 'A',
+            successCriteriaNumber: '999', // This doesn't exist in successCriteriaLinks
+            understandingUrl: 'https://example.com/understanding',
+          },
+        ],
+        levelAA: [],
+      };
+
+      const result = generateAccessibilityIssuesOverviewSection(issuesOverview);
+
+      // Line 353: successCriteriaLinks[issue.successCriteriaNumber]?.name should be undefined
+      // The optional chaining should handle this gracefully - should show empty string for name
+      expect(result).to.include('unknown-rule');
+      expect(result).to.include('9.9.9'); // Formatted number
+      // Should not crash when name is undefined - optional chaining returns undefined, escapeHtmlTags handles it
+      expect(result).to.match(/9\.9\.9\s+\]\(/); // Should have empty name before the link
+    });
+  });
+
+  describe('generateEnhancingAccessibilitySection', () => {
+    it('should handle missing successCriteriaLinks entry (lines 369-370)', () => {
+      const trafficViolations = [
+        {
+          url: 'https://example.com/page1',
+          traffic: 1000,
+          levelA: ['1 x `unknown-rule`'],
+          levelAA: [],
+        },
+      ];
+      const issuesOverview = {
+        levelA: [
+          {
+            rule: 'unknown-rule',
+            description: 'Unknown rule description',
+            impact: 'Unknown impact',
+            count: 5,
+            level: 'A',
+            successCriteriaNumber: '999', // This doesn't exist in successCriteriaLinks
+          },
+        ],
+        levelAA: [],
+      };
+      const currentData = {
+        overall: {
+          violations: {
+            critical: { count: 0 },
+            serious: { count: 0 },
+          },
+        },
+      };
+
+      const result = generateEnhancingAccessibilitySection(trafficViolations, issuesOverview, currentData);
+
+      // Lines 369-370: successCriteriaLinks[issue.successCriteriaNumber]?.name and ?.successCriterionUrl
+      // should be undefined - optional chaining should handle this gracefully
+      expect(result).to.include('unknown-rule');
+      // Should not crash when name/url are undefined
+    });
   });
 
   describe('generateAccessibilityComplianceOverviewSection', () => {
@@ -709,6 +775,44 @@ Optional issue second`;
       expect(firstAIndex).to.be.lessThan(firstAAIndex);
       expect(secondAIndex).to.be.lessThan(firstAAIndex);
       // expect(secondAIndex).to.be.lessThan(secondAAIndex);
+    });
+
+    it('should handle missing successCriteriaLinks entry in generateQuickWinsOverviewSection (line 511)', async () => {
+      // Mock the constants module to ensure '999' doesn't exist
+      const { generateQuickWinsOverviewSection: testFn } = await esmock('../../../src/accessibility/utils/generate-md-reports.js', {
+        '../../../src/accessibility/utils/constants.js': {
+          successCriteriaLinks: {
+            // Only include some entries, not '999'
+            143: { name: 'Color Contrast', successCriterionUrl: 'https://example.com/143' },
+            412: { name: 'Name, Role, Value', successCriterionUrl: 'https://example.com/412' },
+          },
+          accessibilityIssuesImpact: {},
+          accessibilitySolutions: {},
+        },
+      });
+
+      const quickWinsData = {
+        topIssues: [
+          {
+            id: 'unknown-issue',
+            description: 'Unknown issue description',
+            count: 50,
+            level: 'A',
+            successCriteriaNumber: '999', // This doesn't exist in successCriteriaLinks
+            percentage: 25,
+          },
+        ],
+      };
+      const enhancedReportUrl = 'https://example.com/enhanced';
+
+      const result = testFn(quickWinsData, enhancedReportUrl);
+
+      // Line 511: successCriteriaLinks[group.successCriteriaNumber]?.name and ?.successCriterionUrl
+      // should be undefined - optional chaining should handle this gracefully
+      expect(result).to.include('Unknown issue description');
+      expect(result).to.include('9.9.9'); // Formatted number
+      // Should not crash when name/url are undefined - optional chaining returns undefined
+      expect(result).to.match(/9\.9\.9\s+\]\(/); // Should have empty name before the link
     });
   });
 
@@ -2981,6 +3085,44 @@ Optional issue second`;
       expect(result).to.include('Single issue test');
       expect(result).to.include('---');
     });
+
+    it('should handle missing successCriteriaLinks entry (line 353)', async () => {
+      // Mock the constants module to ensure '999' doesn't exist
+      const { generateAccessibilityIssuesOverviewSection: testFn } = await esmock('../../../src/accessibility/utils/generate-md-reports.js', {
+        '../../../src/accessibility/utils/constants.js': {
+          successCriteriaLinks: {
+            // Only include some entries, not '999'
+            143: { name: 'Color Contrast', successCriterionUrl: 'https://example.com/143' },
+            412: { name: 'Name, Role, Value', successCriterionUrl: 'https://example.com/412' },
+          },
+          accessibilityIssuesImpact: {},
+        },
+      });
+
+      const issuesOverview = {
+        levelA: [
+          {
+            rule: 'unknown-rule',
+            description: 'Unknown rule description',
+            count: 5,
+            level: 'A',
+            successCriteriaNumber: '999', // This doesn't exist in successCriteriaLinks
+            understandingUrl: 'https://example.com/understanding',
+          },
+        ],
+        levelAA: [],
+      };
+
+      const result = testFn(issuesOverview);
+
+      // Line 353: successCriteriaLinks[issue.successCriteriaNumber]?.name should be undefined
+      // The optional chaining should handle this gracefully
+      expect(result).to.include('unknown-rule');
+      expect(result).to.include('9.9.9'); // Formatted number
+      // Should not crash when name is undefined - optional chaining returns undefined
+      // The result should have ](undefined) or ]() when url is also undefined
+      expect(result).to.match(/9\.9\.9\s+\]\(/);
+    });
   });
 
   describe('filterImageAltIssues', () => {
@@ -3155,6 +3297,57 @@ Optional issue second`;
   });
 
   describe('generateEnhancingAccessibilitySection', () => {
+    it('should handle missing successCriteriaLinks entry (lines 369-370)', async () => {
+      // Mock the constants module to ensure '999' doesn't exist
+      const { generateEnhancingAccessibilitySection: testFn } = await esmock('../../../src/accessibility/utils/generate-md-reports.js', {
+        '../../../src/accessibility/utils/constants.js': {
+          successCriteriaLinks: {
+            // Only include some entries, not '999'
+            143: { name: 'Color Contrast', successCriterionUrl: 'https://example.com/143' },
+            412: { name: 'Name, Role, Value', successCriterionUrl: 'https://example.com/412' },
+          },
+          accessibilityIssuesImpact: {},
+        },
+      });
+
+      const trafficViolations = [
+        {
+          url: 'https://example.com/page1',
+          traffic: 1000,
+          levelA: ['1 x `unknown-rule`'],
+          levelAA: [],
+        },
+      ];
+      const issuesOverview = {
+        levelA: [
+          {
+            rule: 'unknown-rule',
+            description: 'Unknown rule description',
+            impact: 'Unknown impact',
+            count: 5,
+            level: 'A',
+            successCriteriaNumber: '999', // This doesn't exist in successCriteriaLinks
+          },
+        ],
+        levelAA: [],
+      };
+      const currentData = {
+        overall: {
+          violations: {
+            critical: { count: 0 },
+            serious: { count: 0 },
+          },
+        },
+      };
+
+      const result = testFn(trafficViolations, issuesOverview, currentData);
+
+      // Lines 369-370: successCriteriaLinks[issue.successCriteriaNumber]?.name and ?.successCriterionUrl
+      // should be undefined - optional chaining should handle this gracefully
+      expect(result).to.include('unknown-rule');
+      // Should not crash when name/url are undefined
+    });
+
     it('should filter out image-alt issues from issuesOverview', () => {
       const trafficViolations = [
         {
