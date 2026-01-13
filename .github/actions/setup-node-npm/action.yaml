@@ -27,26 +27,6 @@ runs:
       run: npm install -g npm@10.9.2
       shell: bash
 
-    - name: Build spacecat-shared-utils tarball
-      run: |
-        cd ${{ github.workspace }}
-        if [ ! -f "adobe-spacecat-shared-utils-1.87.0.tgz" ]; then
-          echo "Building tarball from spacecat-shared repo..."
-          if git clone --depth 1 --branch opportunity-tag-mappings https://github.com/adobe/spacecat-shared.git /tmp/spacecat-shared 2>/dev/null; then
-            echo "Cloned opportunity-tag-mappings branch"
-          else
-            echo "Branch not found, cloning main branch"
-            git clone --depth 1 https://github.com/adobe/spacecat-shared.git /tmp/spacecat-shared
-          fi
-          cd /tmp/spacecat-shared/packages/spacecat-shared-utils
-          npm pack
-          cp adobe-spacecat-shared-utils-*.tgz ${{ github.workspace }}/adobe-spacecat-shared-utils-1.87.0.tgz
-          echo "Tarball created successfully"
-        else
-          echo "Tarball already exists, skipping build"
-        fi
-      shell: bash
-
     - name: Install dependencies (only if cache miss)
       run: npm ci
       shell: bash
