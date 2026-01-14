@@ -112,6 +112,7 @@ export async function getTopAgenticUrlsFromAthena(
       .filter((url) => url !== null);
 
     log.info(`Agentic URLs - Selected ${topUrls.length} top agentic URLs via Athena. baseUrl=${baseUrl}`);
+    log.info(`Agentic URLs - Top URLs: ${topUrls.join(', ')}`);
     return topUrls;
   } catch (e) {
     log?.warn?.(`Agentic URLs - Athena agentic URL fetch failed: ${e.message}. baseUrl=${baseUrl}`);
