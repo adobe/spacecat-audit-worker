@@ -26,7 +26,6 @@ describe('agentic-urls', () => {
   let mockExtractCustomerDomain;
   let mockGenerateReportingPeriods;
   let mockWeeklyBreakdownQueries;
-  let mockWwwUrlResolver;
   let getTopAgenticUrlsFromAthena;
 
   beforeEach(async () => {
@@ -38,8 +37,6 @@ describe('agentic-urls', () => {
 
     mockResolveConsolidatedBucketName = sandbox.stub().returns('test-bucket');
     mockExtractCustomerDomain = sandbox.stub().returns('example_com');
-    // Default: resolve to www.example.com (simulating www resolution)
-    mockWwwUrlResolver = sandbox.stub().resolves('www.example.com');
 
     mockGenerateReportingPeriods = sandbox.stub().returns({
       weeks: [
@@ -72,9 +69,6 @@ describe('agentic-urls', () => {
       '../../src/cdn-logs-report/utils/query-builder.js': {
         weeklyBreakdownQueries: mockWeeklyBreakdownQueries,
       },
-      '../../src/common/base-audit.js': {
-        wwwUrlResolver: mockWwwUrlResolver,
-      },
     });
 
     getTopAgenticUrlsFromAthena = module.getTopAgenticUrlsFromAthena;
@@ -103,6 +97,7 @@ describe('agentic-urls', () => {
       AWS_ENV: 'prod',
       AWS_REGION: 'us-east-1',
     },
+    finalUrl: 'https://www.example.com',
   });
 
   describe('getTopAgenticUrlsFromAthena', () => {
@@ -118,17 +113,17 @@ describe('agentic-urls', () => {
 
       const result = await getTopAgenticUrlsFromAthena(site, context);
 
-      // URLs should use the resolved www hostname
+      // URLs should use the finalUrl from context as base
       expect(result).to.deep.equal([
         'https://www.example.com/page1',
         'https://www.example.com/page2',
         'https://www.example.com/page3',
       ]);
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://example.com',
+        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://www.example.com',
       );
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Selected 3 top agentic URLs via Athena. baseUrl=https://example.com',
+        'Agentic URLs - Selected 3 top agentic URLs via Athena. baseUrl=https://www.example.com',
       );
     });
 
@@ -142,7 +137,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.have.been.calledWith(
-        'Agentic URLs - Athena returned no agentic rows. baseUrl=https://example.com',
+        'Agentic URLs - Athena returned no agentic rows. baseUrl=https://www.example.com',
       );
     });
 
@@ -156,7 +151,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.have.been.calledWith(
-        'Agentic URLs - Athena returned no agentic rows. baseUrl=https://example.com',
+        'Agentic URLs - Athena returned no agentic rows. baseUrl=https://www.example.com',
       );
     });
 
@@ -170,7 +165,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.have.been.calledWith(
-        'Agentic URLs - Athena agentic URL fetch failed: Athena connection failed. baseUrl=https://example.com',
+        'Agentic URLs - Athena agentic URL fetch failed: Athena connection failed. baseUrl=https://www.example.com',
       );
     });
 
@@ -188,7 +183,7 @@ describe('agentic-urls', () => {
 
       const result = await getTopAgenticUrlsFromAthena(site, context);
 
-      // URLs should use the resolved www hostname
+      // URLs should use the finalUrl from context as base
       expect(result).to.deep.equal([
         'https://www.example.com/page1',
         'https://www.example.com/page2',
@@ -238,25 +233,19 @@ describe('agentic-urls', () => {
 
       const result = await getTopAgenticUrlsFromAthena(site, context);
 
-      // Both should be normalized to full URLs using resolved www hostname
+      // Both should be normalized to full URLs
       expect(result).to.have.lengthOf(2);
       expect(result[0]).to.equal('https://www.example.com/page1');
       // Full URLs are handled by URL constructor - base is ignored for absolute URLs
       expect(result[1]).to.equal('https://example.com/page2');
     });
 
-    it('should handle site with no baseURL gracefully', async () => {
-      const site = {
-        getBaseURL: () => '',
-        getId: () => 'site-123',
-        getConfig: () => ({
-          getLlmoCdnlogsFilter: () => [],
-        }),
+    it('should handle context with no finalUrl gracefully', async () => {
+      const site = createMockSite();
+      const context = {
+        ...createMockContext(),
+        finalUrl: undefined,
       };
-      const context = createMockContext();
-
-      // When there's no baseURL, wwwUrlResolver returns empty string
-      mockWwwUrlResolver.resolves('');
 
       mockAthenaClient.query.resolves([
         { url: '/page1' },
@@ -317,20 +306,12 @@ describe('agentic-urls', () => {
       );
     });
 
-    it('should use wwwUrlResolver to construct URLs with proper www prefix', async () => {
-      // This test verifies the fix for URLs missing www prefix
-      // (e.g., https://example.com instead of https://www.example.com)
-      const site = {
-        getBaseURL: () => 'https://example.com', // Base URL without www
-        getId: () => 'site-123',
-        getConfig: () => ({
-          getLlmoCdnlogsFilter: () => [],
-        }),
+    it('should use finalUrl from context to construct URLs', async () => {
+      const site = createMockSite();
+      const context = {
+        ...createMockContext(),
+        finalUrl: 'https://www.example.com',
       };
-      const context = createMockContext();
-
-      // wwwUrlResolver should resolve to www.example.com
-      mockWwwUrlResolver.resolves('www.example.com');
 
       mockAthenaClient.query.resolves([
         { url: '/products/page1' },
@@ -339,12 +320,11 @@ describe('agentic-urls', () => {
 
       const result = await getTopAgenticUrlsFromAthena(site, context);
 
-      // URLs should use the resolved www hostname to avoid redirects
+      // URLs should use the finalUrl from context
       expect(result).to.deep.equal([
         'https://www.example.com/products/page1',
         'https://www.example.com/about',
       ]);
-      expect(mockWwwUrlResolver).to.have.been.calledWith(site, context);
     });
   });
 });

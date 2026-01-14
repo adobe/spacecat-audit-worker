@@ -14,7 +14,6 @@ import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { resolveConsolidatedBucketName, extractCustomerDomain } from './cdn-utils.js';
 import { generateReportingPeriods } from '../cdn-logs-report/utils/report-utils.js';
 import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.js';
-import { wwwUrlResolver } from '../common/base-audit.js';
 
 const DEFAULT_TOP_AGENTIC_URLS_LIMIT = 200;
 
@@ -54,7 +53,7 @@ export async function getTopAgenticUrlsFromAthena(
   context,
   limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
 ) {
-  const { log } = context;
+  const { log, finalUrl: baseUrl } = context;
   try {
     const s3Config = await getS3Config(site, context);
     const periods = generateReportingPeriods();
@@ -68,7 +67,7 @@ export async function getTopAgenticUrlsFromAthena(
       site,
       limit,
     });
-    log.info(`Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=${site.getBaseURL()}`);
+    log.info(`Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=${baseUrl}`);
     const results = await athenaClient.query(
       query,
       s3Config.databaseName,
@@ -76,28 +75,25 @@ export async function getTopAgenticUrlsFromAthena(
     );
 
     if (!Array.isArray(results) || results.length === 0) {
-      log.warn(`Agentic URLs - Athena returned no agentic rows. baseUrl=${site.getBaseURL()}`);
+      log.warn(`Agentic URLs - Athena returned no agentic rows. baseUrl=${baseUrl}`);
       return [];
     }
-
-    const resolvedHostname = await wwwUrlResolver(site, context);
-    const resolvedBaseUrl = `https://${resolvedHostname}`;
 
     const topUrls = results
       .filter((row) => typeof row?.url === 'string' && row.url.length > 0)
       .map((row) => {
         const path = row.url;
         try {
-          return new URL(path, resolvedBaseUrl).toString();
+          return new URL(path, baseUrl).toString();
         } catch {
           return path;
         }
       });
 
-    log.info(`Agentic URLs - Selected ${topUrls.length} top agentic URLs via Athena. baseUrl=${site.getBaseURL()}`);
+    log.info(`Agentic URLs - Selected ${topUrls.length} top agentic URLs via Athena. baseUrl=${baseUrl}`);
     return topUrls;
   } catch (e) {
-    log?.warn?.(`Agentic URLs - Athena agentic URL fetch failed: ${e.message}. baseUrl=${site.getBaseURL()}`);
+    log?.warn?.(`Agentic URLs - Athena agentic URL fetch failed: ${e.message}. baseUrl=${baseUrl}`);
     return [];
   }
 }
