@@ -1,3 +1,11 @@
+## [1.280.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.280.2...v1.280.3) (2026-01-14)
+
+
+### Bug Fixes
+
+* adding comprehensive preflight docs ([#1817](https://github.com/adobe/spacecat-audit-worker/issues/1817)) ([e414960](https://github.com/adobe/spacecat-audit-worker/commit/e4149603c3651efd24d2224aae653767939491bf))
+* www resolver for agentic URLs ([#1843](https://github.com/adobe/spacecat-audit-worker/issues/1843)) ([8298bb7](https://github.com/adobe/spacecat-audit-worker/commit/8298bb7c5f5dae0e3358ea6567ed7d975dac86d3))
+
 ## [1.280.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.280.1...v1.280.2) (2026-01-13)
 
 
