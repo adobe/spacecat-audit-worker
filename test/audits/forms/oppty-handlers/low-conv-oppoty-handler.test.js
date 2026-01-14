@@ -42,13 +42,49 @@ describe('createLowConversionOpportunities handler method', () => {
 
   beforeEach(async () => {
     sinon.restore();
-    // Import with mocked tagMappings
+    // Import with mocked tagMappings and utils
+    const utilsModule = await import('../../../../src/forms-opportunities/utils.js');
+    // Create a stub that can be configured per test
+    const generateOpptyDataStub = sinon.stub();
+    const calculateProjectedConversionValueStub = sinon.stub().resolves({ projectedConversionValue: 100 });
+    const filterFormsStub = sinon.stub().callsFake((opps) => opps);
+    // Use real applyOpportunityFilters implementation to properly filter opportunities
+    const applyOpportunityFiltersStub = sinon.stub().callsFake(utilsModule.applyOpportunityFilters);
+    // Use real implementations so they properly call sqs.sendMessage
+    const sendMessageToMystiqueForGuidanceStub = sinon.stub().callsFake(utilsModule.sendMessageToMystiqueForGuidance);
+    const sendMessageToFormsQualityAgentStub = sinon.stub().callsFake(utilsModule.sendMessageToFormsQualityAgent);
+
     createLowConversionOpportunities = await esmock(
       '../../../../src/forms-opportunities/oppty-handlers/low-conversion-handler.js',
       {
         '@adobe/spacecat-shared-utils': mockTagMappings,
+        '../../../../src/forms-opportunities/utils.js': {
+          ...utilsModule,
+          generateOpptyData: generateOpptyDataStub,
+          calculateProjectedConversionValue: calculateProjectedConversionValueStub,
+          filterForms: filterFormsStub,
+          applyOpportunityFilters: applyOpportunityFiltersStub,
+          sendMessageToMystiqueForGuidance: sendMessageToMystiqueForGuidanceStub,
+          sendMessageToFormsQualityAgent: sendMessageToFormsQualityAgentStub,
+        },
       },
     );
+
+    // Store stubs on the module for test access
+    createLowConversionOpportunities._testStubs = {
+      generateOpptyData: generateOpptyDataStub,
+      calculateProjectedConversionValue: calculateProjectedConversionValueStub,
+      filterForms: filterFormsStub,
+      applyOpportunityFilters: applyOpportunityFiltersStub,
+      sendMessageToMystiqueForGuidance: sendMessageToMystiqueForGuidanceStub,
+      sendMessageToFormsQualityAgent: sendMessageToFormsQualityAgentStub,
+    };
+
+    // Default: use real implementation for generateOpptyData unless overridden
+    // This will be reset in beforeEach for each test
+    generateOpptyDataStub.callsFake(async (...args) => {
+      return utilsModule.generateOpptyData(...args);
+    });
     auditUrl = 'https://example.com';
     formsOppty = {
       getOrigin: sinon.stub().returns('AUTOMATION'),
@@ -83,6 +119,7 @@ describe('createLowConversionOpportunities handler method', () => {
     context = {
       log: logStub,
       dataAccess: dataAccessStub,
+      auditContext: {}, // Add auditContext for generateOpptyData
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
         QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique',
@@ -444,6 +481,27 @@ describe('createLowConversionOpportunities handler method', () => {
       dataAccessStub.Opportunity.create.onSecondCall().rejects(new Error('Creation failed'));
       const sendMessageStub = sinon.stub().rejects(new Error('Message failed'));
       context.sqs.sendMessage = sendMessageStub;
+      // Mock generateOpptyData to return multiple opportunities so we can test the error on the second one
+      createLowConversionOpportunities._testStubs.generateOpptyData.resolves([
+        {
+          form: 'https://www.surest.com/info/win-1',
+          formsource: '.form',
+          formViews: 5670,
+          pageViews: 5670,
+          trackedFormKPIName: 'Conversion Rate',
+          trackedFormKPIValue: 0.018,
+          metrics: [],
+        },
+        {
+          form: 'https://www.surest.com/info/win-2',
+          formsource: '.form',
+          formViews: 5000,
+          pageViews: 5000,
+          trackedFormKPIName: 'Conversion Rate',
+          trackedFormKPIValue: 0.015,
+          metrics: [],
+        },
+      ]);
 
       await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
 
@@ -662,6 +720,18 @@ describe('createLowConversionOpportunities handler method', () => {
       dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
       formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
       dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
+      // Mock generateOpptyData to return data matching the existing opportunity
+      createLowConversionOpportunities._testStubs.generateOpptyData.resolves([
+        {
+          form: 'https://www.surest.com/info/win-1',
+          formsource: '.form',
+          formViews: 5670,
+          pageViews: 5670,
+          trackedFormKPIName: 'Conversion Rate',
+          trackedFormKPIValue: 0.018,
+          metrics: [],
+        },
+      ]);
 
       await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
 
@@ -684,6 +754,18 @@ describe('createLowConversionOpportunities handler method', () => {
         guidance: {},
       };
       dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
+      // Mock generateOpptyData to return data matching the existing opportunity
+      createLowConversionOpportunities._testStubs.generateOpptyData.resolves([
+        {
+          form: 'https://www.surest.com/info/win-1',
+          formsource: '.form',
+          formViews: 5670,
+          pageViews: 5670,
+          trackedFormKPIName: 'Conversion Rate',
+          trackedFormKPIValue: 0.018,
+          metrics: [],
+        },
+      ]);
 
       await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
 
@@ -713,6 +795,18 @@ describe('createLowConversionOpportunities handler method', () => {
       };
       dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
       context.sqs.sendMessage = sinon.stub().resolves({});
+      // Mock generateOpptyData to return data matching the existing opportunity
+      createLowConversionOpportunities._testStubs.generateOpptyData.resolves([
+        {
+          form: 'https://www.surest.com/info/win-1',
+          formsource: '.form',
+          formViews: 5670,
+          pageViews: 5670,
+          trackedFormKPIName: 'Conversion Rate',
+          trackedFormKPIValue: 0.018,
+          metrics: [],
+        },
+      ]);
 
       await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
 

@@ -27,6 +27,9 @@ function sanitizeMarkdown(markdown) {
 }
 
 export function mapToOpportunity(siteId, url, audit, pageGuidance) {
+  if (!pageGuidance) {
+    return null;
+  }
   const stats = audit.getAuditResult();
   const urlPath = new URL(url).pathname;
   const pageData = stats.find((item) => item.path === urlPath) || {};
@@ -48,9 +51,9 @@ export function mapToOpportunity(siteId, url, audit, pageGuidance) {
     guidance: {
       recommendations: [
         {
-          insight: pageGuidance.insight,
-          rationale: pageGuidance.rationale,
-          recommendation: pageGuidance.recommendation,
+          insight: pageGuidance?.insight,
+          rationale: pageGuidance?.rationale,
+          recommendation: pageGuidance?.recommendation,
           type: 'guidance',
         },
       ],

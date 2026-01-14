@@ -83,6 +83,10 @@ export default async function handler(message, context) {
   }
 
   const entity = mapToOpportunity(siteId, url, audit, guidanceParsed);
+  if (!entity) {
+    log.warn(`Failed to map opportunity for site: ${siteId} page: ${url} audit: ${auditId}`);
+    return ok();
+  }
   // Apply tag mapping based on data.opportunityType
   if (entity.data?.opportunityType) {
     entity.tags = mergeTagsWithHardcodedTags(entity.data.opportunityType, entity.tags);
@@ -93,10 +97,14 @@ export default async function handler(message, context) {
   );
 
   const opportunity = await Opportunity.create(entity);
+  if (!opportunity) {
+    log.error(`Failed to create opportunity for site: ${siteId} page: ${url} audit: ${auditId}`);
+    return ok();
+  }
 
   const suggestionData = await mapToSuggestion(
     context,
-    opportunity.getId(),
+    opportunity?.getId?.() || 'unknown',
     url,
     guidanceParsed,
   );
@@ -106,7 +114,7 @@ export default async function handler(message, context) {
   );
 
   await Suggestion.create(suggestionData);
-  log.info(`Created suggestion for opportunity ${opportunity.getId()}`);
+  log.info(`Created suggestion for opportunity ${opportunity?.getId?.() || 'unknown'}`);
 
   return ok();
 }

@@ -935,7 +935,9 @@ describe('data-processing utility functions', () => {
             return ['Headings', 'SEO', 'Engagement', ...(currentTags || [])];
           }
           if (opportunityType === 'meta-tags') {
-            return ['Meta Tags', 'SEO', ...(currentTags || [])];
+            const baseTags = ['Meta Tags', 'SEO'];
+            const filteredCustomTags = (currentTags || []).filter(tag => !baseTags.includes(tag));
+            return [...baseTags, ...filteredCustomTags];
           }
           return currentTags || [];
         }),

@@ -5386,6 +5386,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
   });
 
   it('should handle sendMessageToMystiqueForRemediation with fallback auditId from context.audit', async () => {
+    const mockIsAuditEnabledForSite = sandbox.stub().resolves(true);
     const opportunityWithoutGetAuditId = {
       getId: sandbox.stub().returns('oppty-1'),
       getSiteId: sandbox.stub().returns('site-1'),
@@ -5579,7 +5580,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     );
 
     expect(mockLog.debug).to.have.been.calledWithMatch(
-      /Message sending completed: 1 successful, 0 failed, 1 rejected/,
+      /Message sending completed: 1 successful, 1 failed, 0 rejected/,
     );
   });
 
@@ -5662,6 +5663,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     const mockDataAccess = {
       Opportunity: {
         allBySiteId: sandbox.stub().resolves([existingOpportunity]),
+        findById: sandbox.stub().resolves(existingOpportunity),
         create: sandbox.stub(),
         STATUSES: {
           NEW: 'NEW',
@@ -5685,6 +5687,12 @@ describe('handleAccessibilityRemediationGuidance', () => {
       site: mockSite,
       log: mockLog,
       dataAccess: mockDataAccess,
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+      },
+      sqs: {
+        sendMessage: sandbox.stub().resolves({}),
+      },
     };
 
     const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
@@ -5694,6 +5702,16 @@ describe('handleAccessibilityRemediationGuidance', () => {
           siteId: 'site-123',
           auditId: 'audit-456',
         }),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: sandbox.stub().resolves(false), // Disable mystique to skip that path
+      },
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([]),
+      },
+      '../../../src/utils/data-access.js': {
+        syncSuggestions: sandbox.stub().resolves(), // Mock syncSuggestions at import level
+        keepSameDataFunction: (existing) => existing,
       },
     });
 
