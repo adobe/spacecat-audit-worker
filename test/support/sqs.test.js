@@ -101,4 +101,74 @@ describe('sqs', () => {
 
     expect(logSpy).to.have.been.calledWith(`Success, message sent. MessageID:  ${messageId}`);
   });
+
+  it('automatically adds traceId from context to message', async () => {
+    const message = { key: 'value' };
+    const queueUrl = 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue';
+    const traceId = '1-69665d08-b1edce7e1f49715d3a7d6957';
+    context.traceId = traceId;
+
+    nock('https://sqs.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(200, (_, body) => {
+        const { MessageBody } = JSON.parse(body);
+        const parsedMessage = JSON.parse(MessageBody);
+        expect(parsedMessage.traceId).to.equal(traceId);
+        expect(parsedMessage.key).to.equal(message.key);
+        return {
+          MessageId: 'message-id',
+          MD5OfMessageBody: crypto.createHash('md5').update(MessageBody, 'utf-8').digest('hex'),
+        };
+      });
+
+    await wrap(async (req, ctx) => {
+      await ctx.sqs.sendMessage(queueUrl, message);
+    }).with(sqsWrapper)({}, context);
+  });
+
+  it('does not overwrite existing traceId in message', async () => {
+    const existingTraceId = '1-existing-trace-id';
+    const message = { key: 'value', traceId: existingTraceId };
+    const queueUrl = 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue';
+    context.traceId = '1-context-trace-id';
+
+    nock('https://sqs.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(200, (_, body) => {
+        const { MessageBody } = JSON.parse(body);
+        const parsedMessage = JSON.parse(MessageBody);
+        expect(parsedMessage.traceId).to.equal(existingTraceId);
+        return {
+          MessageId: 'message-id',
+          MD5OfMessageBody: crypto.createHash('md5').update(MessageBody, 'utf-8').digest('hex'),
+        };
+      });
+
+    await wrap(async (req, ctx) => {
+      await ctx.sqs.sendMessage(queueUrl, message);
+    }).with(sqsWrapper)({}, context);
+  });
+
+  it('works without traceId when context.traceId is undefined', async () => {
+    const message = { key: 'value' };
+    const queueUrl = 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue';
+    // context.traceId is undefined
+
+    nock('https://sqs.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(200, (_, body) => {
+        const { MessageBody } = JSON.parse(body);
+        const parsedMessage = JSON.parse(MessageBody);
+        expect(parsedMessage.traceId).to.be.undefined;
+        expect(parsedMessage.key).to.equal(message.key);
+        return {
+          MessageId: 'message-id',
+          MD5OfMessageBody: crypto.createHash('md5').update(MessageBody, 'utf-8').digest('hex'),
+        };
+      });
+
+    await wrap(async (req, ctx) => {
+      await ctx.sqs.sendMessage(queueUrl, message);
+    }).with(sqsWrapper)({}, context);
+  });
 });
