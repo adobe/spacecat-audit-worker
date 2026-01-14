@@ -14,6 +14,7 @@ import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { resolveConsolidatedBucketName, extractCustomerDomain } from './cdn-utils.js';
 import { generateReportingPeriods } from '../cdn-logs-report/utils/report-utils.js';
 import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.js';
+import { wwwUrlResolver } from '../common/base-audit.js';
 
 const DEFAULT_TOP_AGENTIC_URLS_LIMIT = 200;
 
@@ -79,13 +80,15 @@ export async function getTopAgenticUrlsFromAthena(
       return [];
     }
 
-    const baseUrl = site.getBaseURL?.() || '';
+    const resolvedHostname = await wwwUrlResolver(site, context);
+    const resolvedBaseUrl = `https://${resolvedHostname}`;
+
     const topUrls = results
       .filter((row) => typeof row?.url === 'string' && row.url.length > 0)
       .map((row) => {
         const path = row.url;
         try {
-          return new URL(path, baseUrl).toString();
+          return new URL(path, resolvedBaseUrl).toString();
         } catch {
           return path;
         }
