@@ -1326,7 +1326,7 @@ describe('Canonical URL Tests', () => {
       expect(result.guidance.recommendations[0]).to.have.property('type', 'CONTENT');
       expect(result.guidance.recommendations[0]).to.have.property('rationale');
       expect(result).to.have.property('tags').that.is.an('array');
-      expect(result.tags).to.include('Traffic Acquisition');
+      expect(result.tags).to.include('Canonical URLs');
       expect(result.tags).to.include('SEO');
       expect(result.tags).to.include('llm');
       expect(result).to.have.property('data').that.is.an('object');

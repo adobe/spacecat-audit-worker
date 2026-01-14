@@ -59,10 +59,7 @@ export default async function handler(message, context) {
     (oppty) => oppty.getData()?.page === url,
   );
 
-  if (!opportunity) {
-    log.debug(`No existing Opportunity found for page: ${url}. Creating a new one.`);
-    opportunity = await Opportunity.create(entity);
-  } else {
+  if (opportunity) {
     const existingSuggestions = await opportunity.getSuggestions();
     // Manual protection check: any manual suggestions found, skip all updates
     if (existingSuggestions.length > 0 && hasManuallyModifiedSuggestions(existingSuggestions)) {
@@ -71,8 +68,9 @@ export default async function handler(message, context) {
     }
     log.debug(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
     opportunity.setAuditId(auditId);
+    const existingData = opportunity.getData() || {};
     opportunity.setData({
-      ...opportunity.getData(),
+      ...existingData,
       ...entity.data,
     });
     opportunity.setGuidance(entity.guidance);
@@ -80,6 +78,9 @@ export default async function handler(message, context) {
     opportunity = await opportunity.save();
     // Delete previous suggestions if any exist
     await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
+  } else {
+    log.debug(`No existing Opportunity found for page: ${url}. Creating a new one.`);
+    opportunity = await Opportunity.create(entity);
   }
 
   // map the suggestions received from M to PSS

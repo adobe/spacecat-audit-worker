@@ -101,7 +101,7 @@ describe('Experimentation Opportunities Opportunity Data Mapper', () => {
       const result = convertToOpportunityEntity('site-1', 'audit-1', rawOppty, []);
 
       expect(result.data.opportunityImpact).to.equal((0.05 - 0.03) * 5000);
-      expect(result.data.opportunityImpact).to.equal(100);
+      expect(result.data.opportunityImpact).to.be.closeTo(100, 0.0001);
     });
 
     it('should return 0 impact when pageCTR is greater than siteAverage', () => {

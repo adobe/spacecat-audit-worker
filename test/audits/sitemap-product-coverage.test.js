@@ -985,8 +985,8 @@ describe('Sitemap Product Coverage Audit', () => {
         const result = createOpportunityData();
 
         expect(result.tags).to.be.an('array');
-        expect(result.tags).to.have.length(1);
-        expect(result.tags[0]).to.equal('Traffic Acquisition');
+        // sitemap-product-coverage is not in OPPORTUNITY_TAG_MAPPINGS, so returns empty array when currentTags is empty
+        expect(result.tags).to.have.length(0);
       });
 
       it('should have data with correct dataSources', () => {

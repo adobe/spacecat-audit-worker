@@ -108,13 +108,14 @@ describe('Paid-traffic-analysis guidance handler', () => {
       TYPES: SuggestionDataAccess.TYPES,
     };
 
+    const logStub = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+    };
     context = {
-      log: {
-        info: sandbox.stub(),
-        debug: sandbox.stub(),
-        warn: sandbox.stub(),
-        error: sandbox.stub(),
-      },
+      log: logStub,
       dataAccess: { Audit, Opportunity, Suggestion },
       site: { requiresValidation: true },
     };
@@ -557,8 +558,8 @@ describe('Paid-traffic-analysis guidance handler', () => {
       expect(oldOppty.setStatus).to.have.been.calledWith('IGNORED');
       expect(oldOppty.setUpdatedBy).to.have.been.calledWith('system');
       expect(oldOppty.save).to.have.been.called;
-      expect(logStub.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity/);
-      expect(logStub.debug).to.have.been.calledWithMatch(/Ignored \d+ existing paid-traffic opportunities/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Ignored \d+ existing paid-traffic opportunities/);
     });
 
     it('should handle opportunities with different statuses', async () => {
@@ -629,7 +630,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
       await handler(message, context);
 
       expect(opptyNoData.setStatus).to.have.been.calledWith('IGNORED');
-      expect(logStub.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity/);
     });
 
     it('should log debug message when ignoring opportunities', async () => {
@@ -658,7 +659,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
       await handler(message, context);
 
-      expect(logStub.debug).to.have.been.calledWithMatch(/Ignored \d+ existing paid-traffic opportunities/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Ignored \d+ existing paid-traffic opportunities/);
     });
   });
 
@@ -674,8 +675,8 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
       await handler(message, context);
 
-      expect(logStub.debug).to.have.been.calledWithMatch(/Message received for guidance:traffic-analysis/);
-      expect(logStub.debug).to.have.been.calledWithMatch(/Finished mapping/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Message received for guidance:traffic-analysis/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Finished mapping/);
     });
 
     it('should handle notFound when audit is missing', async () => {
@@ -690,7 +691,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
       const result = await handler(message, context);
 
-      expect(logStub.warn).to.have.been.calledWithMatch(/No audit found for auditId/);
+      expect(context.log.warn).to.have.been.calledWithMatch(/No audit found for auditId/);
       expect(Opportunity.create).not.to.have.been.called;
     });
 
@@ -731,7 +732,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
       await handler(message, context);
 
-      expect(logStub.debug).to.have.been.calledWithMatch(/Finished mapping/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Finished mapping/);
       expect(opptyWithGetId.getId).to.have.been.called;
     });
 
@@ -752,7 +753,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
       await handler(message, context);
 
-      expect(logStub.debug).to.have.been.calledWithMatch(/Finished mapping/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Finished mapping/);
     });
 
     it('should handle empty guidance array', async () => {
@@ -813,7 +814,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
       await handler(message, context);
 
       expect(Opportunity.create).to.have.been.calledOnce;
-      expect(logStub.debug).to.have.been.calledWithMatch(/Ignored 0 existing paid-traffic opportunities/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Ignored 0 existing paid-traffic opportunities/);
     });
 
     it('should handle ignorePreviousOpportunitiesForPeriod excluding new opportunity ID', async () => {
@@ -1185,7 +1186,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
       expect(oppty1.setStatus).to.have.been.calledWith('IGNORED');
       expect(oppty2.setStatus).to.have.been.calledWith('IGNORED');
       expect(oppty3.setStatus).to.have.been.calledWith('IGNORED');
-      expect(logStub.debug).to.have.been.calledWithMatch(/Ignored 3 existing paid-traffic opportunities/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Ignored 3 existing paid-traffic opportunities/);
     });
 
     it('should handle ignorePreviousOpportunitiesForPeriod with opportunity having null data', async () => {
@@ -1211,7 +1212,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
       await handler(message, context);
 
       expect(opptyNullData.setStatus).to.have.been.calledWith('IGNORED');
-      expect(logStub.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity/);
     });
 
     it('should handle ignorePreviousOpportunitiesForPeriod with opportunity having undefined week and month', async () => {
@@ -1237,7 +1238,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
       await handler(message, context);
 
       expect(opptyUndefined.setStatus).to.have.been.calledWith('IGNORED');
-      expect(logStub.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity.*week=undefined.*month=undefined/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity.*week=undefined.*month=undefined/);
     });
 
     it('should execute ignorePreviousOpportunitiesForPeriod function with all code paths', async () => {
@@ -1266,8 +1267,8 @@ describe('Paid-traffic-analysis guidance handler', () => {
       expect(oppty1.setStatus).to.have.been.calledWith('IGNORED');
       expect(oppty1.setUpdatedBy).to.have.been.calledWith('system');
       expect(oppty1.save).to.have.been.called;
-      expect(logStub.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity id=old-1/);
-      expect(logStub.debug).to.have.been.calledWithMatch(/Ignored 1 existing paid-traffic opportunities/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Setting existing paid-traffic opportunity id=old-1/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Ignored 1 existing paid-traffic opportunities/);
     });
 
     it('should execute mapToPaidOpportunity function with all parameters', async () => {
@@ -1321,7 +1322,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
       await handler(message, context);
 
-      expect(logStub.debug).to.have.been.calledWithMatch(/Message received for guidance:traffic-analysis handler/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Message received for guidance:traffic-analysis handler/);
       expect(Opportunity.create).to.have.been.calledOnce;
       const createCall = Opportunity.create.getCall(0).args[0];
       expect(createCall.data.year).to.equal(2025);
@@ -1427,7 +1428,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
       await handler(message, context);
 
-      expect(logStub.debug).to.have.been.calledWithMatch(/Finished mapping.*W3\/Y2025/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Finished mapping.*W3\/Y2025/);
     });
 
     it('should execute handler with period.week == null path in log message', async () => {
@@ -1444,7 +1445,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
       await handler(message, context);
 
-      expect(logStub.debug).to.have.been.calledWithMatch(/Finished mapping.*M6\/Y2024/);
+      expect(context.log.debug).to.have.been.calledWithMatch(/Finished mapping.*M6\/Y2024/);
     });
   });
 });

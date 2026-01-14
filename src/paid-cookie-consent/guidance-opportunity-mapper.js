@@ -29,7 +29,10 @@ function formatNumberWithK(num) {
 }
 
 function sanitizeMarkdown(markdown) {
-  if (typeof markdown === 'string' && markdown.includes('\\n')) {
+  if (typeof markdown !== 'string') {
+    return '';
+  }
+  if (markdown.includes('\\n')) {
     return markdown.replace(/\\n/g, '\n');
   }
   return markdown;
@@ -89,6 +92,10 @@ async function copySuggestedScreenshots(context, jobId, resultPath) {
 }
 
 async function addScreenshots(context, siteId, markdown, jobId) {
+  if (!jobId) {
+    return sanitizeMarkdown(markdown);
+  }
+
   const fileVariants = [
     { key: 'DESKTOP_BANNER_ON_URL', variant: 'screenshot-desktop-viewport-withBanner' },
     { key: 'DESKTOP_BANNER_OFF_URL', variant: 'screenshot-desktop-viewport-withoutBanner' },
@@ -106,7 +113,7 @@ async function addScreenshots(context, siteId, markdown, jobId) {
   const basePath = result.path.replace('/scrape.json', '');
   await copySuggestedScreenshots(context, jobId, basePath);
 
-  let markdownWithScreenshots = markdown;
+  let markdownWithScreenshots = typeof markdown === 'string' ? markdown : String(markdown ?? '');
 
   const apiBase = context.env?.SPACECAT_API_URI || 'https://spacecat.experiencecloud.live/api/v1';
   fileVariants.forEach((fileVariant) => {
@@ -120,6 +127,9 @@ async function addScreenshots(context, siteId, markdown, jobId) {
 }
 
 export function isLowSeverityGuidanceBody(body) {
+  if (!body || typeof body !== 'object') {
+    return false;
+  }
   if (body.issueSeverity) {
     const sev = body.issueSeverity.toLowerCase();
     return sev.includes('none') || sev.includes('low');
@@ -199,18 +209,18 @@ export async function mapToPaidSuggestion(context, siteId, opportunityId, url, p
       mobile: await addScreenshots(
         context,
         siteId,
-        pageGuidance.body.data?.mobile,
-        pageGuidance.metadata.scrape_job_id,
+        pageGuidance.body?.data?.mobile,
+        pageGuidance.metadata?.scrape_job_id,
       ),
       desktop: await addScreenshots(
         context,
         siteId,
-        pageGuidance.body.data?.desktop,
-        pageGuidance.metadata.scrape_job_id,
+        pageGuidance.body?.data?.desktop,
+        pageGuidance.metadata?.scrape_job_id,
       ),
       impact: {
-        business: pageGuidance.body.data?.impact?.business,
-        user: pageGuidance.body.data?.impact?.user,
+        business: pageGuidance.body?.data?.impact?.business,
+        user: pageGuidance.body?.data?.impact?.user,
       },
     },
   };

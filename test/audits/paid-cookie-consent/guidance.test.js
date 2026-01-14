@@ -1522,5 +1522,38 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       expect(result.status).to.equal(ok().status);
       expect(mockTagMappings.mergeTagsWithHardcodedTags).to.have.been.calledWith('consent-banner', sinon.match.array);
     });
+
+    it('should handle opportunity without getId method', async () => {
+      Opportunity.allBySiteId.resolves([]);
+      const opptyWithoutGetId = {
+        getType: () => 'consent-banner',
+        getStatus: () => 'NEW',
+        getUpdatedBy: () => 'system',
+      };
+      Opportunity.create.resolves(opptyWithoutGetId);
+      const guidance = [{
+        body: {
+          data: {
+            mobile: 'mobile markdown',
+            desktop: 'desktop markdown',
+            impact: {
+              business: 'business markdown',
+              user: 'user markdown',
+            },
+          },
+          issueSeverity: 'high',
+        },
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'rec',
+        metadata: { scrape_job_id: 'test-job-id' },
+      }];
+      const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+      const result = await handler(message, context);
+      expect(result.status).to.equal(ok().status);
+      expect(Suggestion.create).to.have.been.calledOnce;
+      const suggestionArg = Suggestion.create.getCall(0).args[0];
+      expect(suggestionArg.opportunityId).to.equal('unknown');
+    });
   });
 });

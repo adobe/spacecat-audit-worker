@@ -14,7 +14,10 @@ import { mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
 
 function getGuidanceObj(guidance) {
-  const body = guidance && guidance[0] && guidance[0].body;
+  if (!guidance || !Array.isArray(guidance) || guidance.length === 0) {
+    return null;
+  }
+  const body = guidance[0]?.body;
 
   return {
     ...guidance[0],
@@ -39,7 +42,11 @@ export default async function handler(message, context) {
 
   // Check for low severity and skip if so
   const guidanceParsed = getGuidanceObj(guidance);
-  if (isLowSeverityGuidanceBody(guidanceParsed.body)) {
+  if (!guidanceParsed) {
+    log.warn(`No guidance found for site: ${siteId} page: ${url} audit: ${auditId}`);
+    return ok();
+  }
+  if (guidanceParsed.body && isLowSeverityGuidanceBody(guidanceParsed.body)) {
     log.info(`Skipping opportunity creation for site: ${siteId} page: ${url} audit: ${auditId} due to low issue severity: ${guidanceParsed}`);
     return ok();
   }
@@ -52,17 +59,22 @@ export default async function handler(message, context) {
   log.debug(`Creating new paid-cookie-consent opportunity for ${siteId} page: ${url}`);
 
   const opportunity = await Opportunity.create(entity);
+  if (!opportunity) {
+    log.error(`Failed to create opportunity for site: ${siteId} page: ${url} audit: ${auditId}`);
+    return ok();
+  }
   // Create suggestion for the new opportunity first
+  const opptyId = opportunity?.getId?.() || 'unknown';
   const suggestionData = await mapToPaidSuggestion(
     context,
     siteId,
-    opportunity.getId(),
+    opptyId,
     url,
     guidanceParsed,
   );
   await Suggestion.create(suggestionData);
-  log.info(`Created suggestion for opportunity ${opportunity.getId()}: ${JSON.stringify(suggestionData, null, 2)}`);
-  log.debug(`Created suggestion for opportunity ${opportunity.getId()}`);
+  log.info(`Created suggestion for opportunity ${opptyId}: ${JSON.stringify(suggestionData, null, 2)}`);
+  log.debug(`Created suggestion for opportunity ${opptyId}`);
 
   // Only after suggestion is successfully created,
   // find and mark existing NEW system opportunities as IGNORED
@@ -70,7 +82,11 @@ export default async function handler(message, context) {
   const existingMatches = existingOpportunities
     .filter((oppty) => oppty.getType() === 'consent-banner')
     .filter((oppty) => oppty.getStatus() === 'NEW' && oppty.getUpdatedBy() === 'system')
-    .filter((oppty) => oppty.getId() !== opportunity.getId()); // Exclude the newly created one
+    .filter((oppty) => {
+      const currentOpptyId = opportunity?.getId?.() || null;
+      const opptyIdToCheck = oppty?.getId?.() || null;
+      return currentOpptyId && opptyIdToCheck && opptyIdToCheck !== currentOpptyId;
+    }); // Exclude the newly created one
 
   if (existingMatches.length > 0) {
     log.debug(`Found ${existingMatches.length} existing NEW system opportunities for page ${url}. Marking them as IGNORED.`);

@@ -20,7 +20,7 @@ export function createOpportunityData(siteId, auditId, guidance) {
     origin: 'AUTOMATION',
     type: 'summarization',
     title: 'Add LLM-Friendly Summaries',
-    description: 'Content summarization elements such as summary and key points improve content discoverability and user engagement.',
+    description: 'Content summarization elements such as summary and key points improve content discoverability and user engagement. LLM-friendly summaries help AI systems better understand and present your content.',
     status: 'NEW',
     guidance,
     tags: ['isElmo', 'content'],

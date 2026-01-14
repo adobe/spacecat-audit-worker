@@ -25,7 +25,10 @@ function isSuggestionFailure(guidanceEntry) {
 }
 
 function getGuidanceObj(guidance) {
-  const body = guidance && guidance[0] && guidance[0].body;
+  if (!guidance || !Array.isArray(guidance) || guidance.length === 0) {
+    return null;
+  }
+  const body = guidance[0]?.body;
 
   return {
     ...guidance[0],

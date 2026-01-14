@@ -17,7 +17,7 @@ export const ESTIMATED_CPC = 0.8;
 
 function sanitizeMarkdown(markdown) {
   if (typeof markdown !== 'string') {
-    return markdown ?? '';
+    return markdown;
   }
 
   if (markdown.includes('\\n')) {

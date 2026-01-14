@@ -23,7 +23,9 @@ function buildPaidTrafficTitle({ year, week, month }) {
   if (week != null) {
     return `Paid Traffic Weekly Report – Week ${String(week)} / ${year}`;
   }
-  return `Paid Traffic Monthly Report – Month ${String(month)} / ${year}`;
+  // Handle null/undefined month - convert to "undefined" string for consistency
+  const monthStr = month == null ? 'undefined' : String(month);
+  return `Paid Traffic Monthly Report – Month ${monthStr} / ${year}`;
 }
 
 function mapToPaidOpportunity(siteId, audit, { year, month, week }) {
@@ -70,14 +72,17 @@ async function ignorePreviousOpportunitiesForPeriod(Opportunity, siteId, _period
   const candidates = existing
     .filter((oppty) => oppty.getType() === TRAFFIC_OPP_TYPE)
     .filter((oppty) => oppty.getStatus() === 'NEW')
-    .filter((oppty) => oppty.getId() !== newOpptyId);
+    .filter((oppty) => {
+      const id = oppty.getId ? oppty.getId() : null;
+      return id !== newOpptyId;
+    });
 
   await Promise.all(candidates.map(async (oppty) => {
     const data = oppty.getData();
     const title = oppty.getTitle();
     const weekVal = data?.week;
     const monthVal = data?.month;
-    const id = oppty.getId();
+    const id = oppty.getId ? oppty.getId() : 'unknown';
     log.debug(`Setting existing paid-traffic opportunity id=${id} title="${title}" week=${weekVal} month=${monthVal} to IGNORED`);
     oppty.setStatus('IGNORED');
     oppty.setUpdatedBy('system');
@@ -117,7 +122,8 @@ export default async function handler(message, context) {
   const opportunity = await Opportunity.create(entity);
 
   // Map AI Insights suggestions from guidance (already in expected structure)
-  const suggestions = mapToAIInsightsSuggestions(opportunity.getId(), guidance);
+  const opptyId = opportunity.getId ? opportunity.getId() : null;
+  const suggestions = mapToAIInsightsSuggestions(opptyId, guidance);
   if (suggestions.length) {
     // If this is a paid traffic report, always set status to NEW, else use requiresValidation logic
     const requiresValidation = Boolean(context.site?.requiresValidation);
@@ -137,9 +143,10 @@ export default async function handler(message, context) {
     siteId,
     period,
     log,
-    opportunity.getId(),
+    opportunity.getId?.(),
   );
 
-  log.debug(`Finished mapping [${GUIDANCE_TYPE}] -> OpportunityType [${TRAFFIC_OPP_TYPE}] for site: ${siteId} period: ${period.week != null ? `W${period.week}/Y${period.year}` : `M${period.month}/Y${period.year}`} opportunityId: ${opportunity.getId?.()}`);
+  const opptyIdForLog = opportunity.getId ? opportunity.getId() : 'unknown';
+  log.debug(`Finished mapping [${GUIDANCE_TYPE}] -> OpportunityType [${TRAFFIC_OPP_TYPE}] for site: ${siteId} period: ${period.week != null ? `W${period.week}/Y${period.year}` : `M${period.month}/Y${period.year}`} opportunityId: ${opptyIdForLog}`);
   return ok();
 }

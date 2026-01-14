@@ -53,7 +53,8 @@ describe('Sitemap Product Coverage Opportunity Data Mapper', () => {
       const result = createOpportunityData();
 
       expect(result.tags).to.be.an('array');
-      expect(result.tags.length).to.be.greaterThan(0);
+      // sitemap-product-coverage is not in OPPORTUNITY_TAG_MAPPINGS, so returns empty array when currentTags is empty
+      expect(result.tags.length).to.equal(0);
     });
 
     it('should use OPPORTUNITY_TYPES.SITEMAP_PRODUCT_COVERAGE constant for tags', () => {

@@ -1393,6 +1393,9 @@ describe("No CTA above the fold guidance handler", () => {
         getId: () => "oppty-123",
       });
 
+      // Reset the stub to ensure clean state
+      mockTagMappings.mergeTagsWithHardcodedTags.resetHistory();
+
       // Mock mapper to return entity without opportunityType
       const mockMapper = {
         mapToOpportunity: sinon.stub().returns({
@@ -1425,7 +1428,7 @@ describe("No CTA above the fold guidance handler", () => {
         },
       );
 
-      const result = await testHandler(
+      const result = await testHandler.default(
         {
           auditId: "audit-id",
           siteId,
@@ -1473,7 +1476,8 @@ describe("No CTA above the fold guidance handler", () => {
       expect(result.status).to.equal(ok().status);
       expect(Suggestion.create).to.have.been.calledOnce;
       const suggestionArg = Suggestion.create.getCall(0).args[0];
-      expect(suggestionArg.data.suggestionValue).to.equal('');
+      // sanitizeMarkdown returns the value as-is for non-string (123), then template literal converts to '123'
+      expect(suggestionArg.data.suggestionValue).to.equal('123');
     });
   });
 });

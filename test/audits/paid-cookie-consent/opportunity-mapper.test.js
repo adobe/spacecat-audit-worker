@@ -802,9 +802,43 @@ describe('Paid Cookie Consent opportunity mapper', () => {
         metadata: { scrape_job_id: 'test-job' }
       };
       const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
-      expect(result.data.mobile).to.equal(123);
-      expect(result.data.desktop).to.equal(null);
+      // addScreenshots converts non-string markdown to string, so 123 becomes "123"
+      expect(result.data.mobile).to.equal('123');
+      // null markdown returns empty string early in addScreenshots
+      expect(result.data.desktop).to.equal('');
       expect(result.data.impact.business).to.equal(undefined);
+    });
+
+    it('should return empty string when markdown is not a string and jobId is missing', async () => {
+      const context = {
+        env: {},
+        log: mockLog,
+        s3Client: mockS3Client,
+        dataAccess: {
+          Suggestion: {
+            STATUSES: SuggestionDataAccess.STATUSES,
+            TYPES: SuggestionDataAccess.TYPES,
+          }
+        },
+        site: { requiresValidation: false }
+      };
+      const guidance = {
+        body: {
+          data: {
+            mobile: 123,
+            desktop: null,
+            impact: {
+              business: undefined,
+              user: 'user markdown',
+            },
+          },
+        },
+        metadata: {} // No scrape_job_id
+      };
+      const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
+      // When jobId is missing, sanitizeMarkdown is called directly with non-string, returns ''
+      expect(result.data.mobile).to.equal('');
+      expect(result.data.desktop).to.equal('');
     });
   });
 });

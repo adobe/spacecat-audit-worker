@@ -1168,7 +1168,7 @@ describe('extractSourceFromUrl', () => {
   let testModule;
 
   beforeEach(async () => {
-    testModule = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+    testModule = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '@adobe/spacecat-shared-utils': mockTagMappings,
     });
     extractSourceFromUrl = testModule.extractSourceFromUrl || ((url) => {
@@ -1240,8 +1240,8 @@ describe('shouldUseCodeFixFlow', () => {
   let shouldUseCodeFixFlow;
 
   beforeEach(async () => {
-    const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-      '../../common/tagMappings.js': mockTagMappings,
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '@adobe/spacecat-shared-utils': mockTagMappings,
     });
     shouldUseCodeFixFlow = module.shouldUseCodeFixFlow;
   });
@@ -1799,8 +1799,8 @@ describe('createIndividualOpportunity', () => {
     };
     
     // Mock the tagMappings module
-    await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-      '../../common/tagMappings.js': mockTagMappings,
+    await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '@adobe/spacecat-shared-utils': mockTagMappings,
     });
     
     mockOpportunity = {
@@ -5333,6 +5333,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
   });
 
   it('should handle sendMessageToMystiqueForRemediation with fallback siteId from context.site', async () => {
+    const mockIsAuditEnabledForSite = sandbox.stub().resolves(false);
     const opportunityWithoutGetSiteId = {
       getId: sandbox.stub().returns('oppty-1'),
       getSuggestions: sandbox.stub().resolves([]),
@@ -5429,10 +5430,15 @@ describe('handleAccessibilityRemediationGuidance', () => {
   });
 
   it('should handle sendMessageToMystiqueForRemediation with code fix eligible issues check', async () => {
+    const mockIsAuditEnabledForSite = sandbox.stub();
     mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-fix', sinon.match.any, sinon.match.any).resolves(true);
     mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any).resolves(true);
 
-    mockOpportunity.getSuggestions = sandbox.stub().resolves([
+    const mockOpportunity = {
+      getId: sandbox.stub().returns('oppty-123'),
+      getSiteId: sandbox.stub().returns('site-456'),
+      getAuditId: sandbox.stub().returns('audit-789'),
+      getSuggestions: sandbox.stub().resolves([
       {
         getData: () => ({
           url: 'https://example.com/page1',
@@ -5446,6 +5452,23 @@ describe('handleAccessibilityRemediationGuidance', () => {
         getId: () => 'sugg-1',
       },
     ]);
+
+    const mockContext = {
+      site: { getId: sandbox.stub().returns('site-123') },
+      auditId: 'audit-456',
+      log: mockLog,
+      dataAccess: {
+        Opportunity: {
+          findById: sandbox.stub().resolves(mockOpportunity),
+        },
+      },
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+      },
+    };
 
     const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
@@ -5473,7 +5496,11 @@ describe('handleAccessibilityRemediationGuidance', () => {
   });
 
   it('should handle sendMessageToMystiqueForRemediation with rejected promises in results', async () => {
-    mockOpportunity.getSuggestions = sandbox.stub().resolves([
+    const mockOpportunity = {
+      getId: sandbox.stub().returns('oppty-123'),
+      getSiteId: sandbox.stub().returns('site-456'),
+      getAuditId: sandbox.stub().returns('audit-789'),
+      getSuggestions: sandbox.stub().resolves([
       {
         getData: () => ({
           url: 'https://example.com/page1',
@@ -5486,7 +5513,27 @@ describe('handleAccessibilityRemediationGuidance', () => {
     const sendMessageStub = sandbox.stub();
     sendMessageStub.onFirstCall().rejects(new Error('SQS error'));
     sendMessageStub.onSecondCall().resolves();
-    mockContext.sqs.sendMessage = sendMessageStub;
+    
+    const mockContext = {
+      site: { getId: sandbox.stub().returns('site-123') },
+      auditId: 'audit-456',
+      log: {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
+        debug: sandbox.stub(),
+      },
+      dataAccess: {
+        Opportunity: {
+          findById: sandbox.stub().resolves(mockOpportunity),
+        },
+      },
+      sqs: {
+        sendMessage: sendMessageStub,
+      },
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+      },
+    };
 
     const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
@@ -5550,7 +5597,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
       dataAccess: mockDataAccess,
     };
 
-    const module = await esmock.patch('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '@adobe/spacecat-shared-utils': mockTagMappings,
     });
 
@@ -5606,9 +5653,16 @@ describe('handleAccessibilityRemediationGuidance', () => {
       },
     };
 
-    mockContext.dataAccess = mockDataAccess;
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
 
-    const result = await createAccessibilityIndividualOpportunities(
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '@adobe/spacecat-shared-utils': mockTagMappings,
+    });
+
+    const result = await module.createAccessibilityIndividualOpportunities(
       accessibilityData,
       mockContext,
     );

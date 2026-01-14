@@ -1185,7 +1185,7 @@ describe('Sitemap Audit', () => {
               'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
             ],
           },
-          tags: ['Traffic Acquisition'],
+          tags: ['Sitemap', 'SEO'],
           data: {
             dataSources: [DATA_SOURCES.SITE],
           },

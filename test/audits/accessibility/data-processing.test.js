@@ -920,6 +920,14 @@ describe('data-processing utility functions', () => {
 
     beforeEach(async () => {
       // Use the REAL implementation to get 100% coverage
+      const mockTagMappings = {
+        mergeTagsWithHardcodedTags: sinon.stub().callsFake((opportunityType, currentTags) => {
+          if (opportunityType === 'a11y-assistive') {
+            return ['ARIA Labels', 'Accessibility', ...(currentTags || [])];
+          }
+          return currentTags || [];
+        }),
+      };
       const module = await esmock('../../../src/accessibility/utils/data-processing.js', {
         '@aws-sdk/client-s3': {
           DeleteObjectCommand: DeleteObjectCommand,
@@ -927,6 +935,7 @@ describe('data-processing utility functions', () => {
           ListObjectsV2Command: ListObjectsV2Command,
           PutObjectCommand: PutObjectCommand,
         },
+        '@adobe/spacecat-shared-utils': mockTagMappings,
       });
       createReportOpportunityReal = module.createReportOpportunity;
       
