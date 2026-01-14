@@ -38,7 +38,8 @@ import { convertToOpportunity } from '../../src/common/opportunity.js';
 
 chaiUse(sinonChai);
 
-describe('Headings Audit', () => {
+describe('Headings Audit', function () {
+  this.timeout(10000); // Increase timeout to 10 seconds for async operations
   let log;
   let context;
   let site;

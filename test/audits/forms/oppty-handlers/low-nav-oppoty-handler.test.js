@@ -42,13 +42,52 @@ describe('createLowNavigationOpportunities handler method', () => {
 
   beforeEach(async () => {
     sinon.restore();
-    // Import with mocked tagMappings
+    // Import with mocked tagMappings and utils
+    const utilsModule = await import('../../../../src/forms-opportunities/utils.js');
+    const generateOpptyDataStub = sinon.stub();
+    const calculateProjectedConversionValueStub = sinon.stub().resolves({ projectedConversionValue: null });
+    let logStub;
+    const filterFormsStub = sinon.stub().callsFake((opps, scrapedData, log) => {
+      // Call the real filterForms to set scrapedStatus correctly
+      if (!logStub) {
+        logStub = {
+          info: sinon.stub(),
+          debug: sinon.stub(),
+          error: sinon.stub(),
+        };
+      }
+      return utilsModule.filterForms(opps, scrapedData, log || logStub);
+    });
+    const applyOpportunityFiltersStub = sinon.stub().callsFake(utilsModule.applyOpportunityFilters);
+    const sendMessageToMystiqueForGuidanceStub = sinon.stub().callsFake(utilsModule.sendMessageToMystiqueForGuidance);
+    const sendMessageToFormsQualityAgentStub = sinon.stub().callsFake(utilsModule.sendMessageToFormsQualityAgent);
+
     createLowNavigationOpportunities = await esmock(
       '../../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js',
       {
         '@adobe/spacecat-shared-utils': mockTagMappings,
+        '../../../../src/forms-opportunities/utils.js': {
+          ...utilsModule,
+          generateOpptyData: generateOpptyDataStub,
+          calculateProjectedConversionValue: calculateProjectedConversionValueStub,
+          filterForms: filterFormsStub,
+          applyOpportunityFilters: applyOpportunityFiltersStub,
+          sendMessageToMystiqueForGuidance: sendMessageToMystiqueForGuidanceStub,
+          sendMessageToFormsQualityAgent: sendMessageToFormsQualityAgentStub,
+        },
       },
     );
+
+    // Store stubs for test access
+    createLowNavigationOpportunities._testStubs = {
+      generateOpptyData: generateOpptyDataStub,
+      calculateProjectedConversionValue: calculateProjectedConversionValueStub,
+    };
+
+    // Default: use real implementation for generateOpptyData unless overridden
+    generateOpptyDataStub.callsFake(async (...args) => {
+      return utilsModule.generateOpptyData(...args);
+    });
     auditUrl = 'https://example.com';
     formsCTAOppty = {
       getOrigin: sinon.stub().returns('AUTOMATION'),
@@ -95,7 +134,12 @@ describe('createLowNavigationOpportunities handler method', () => {
       sqs: {
         sendMessage: sinon.stub().resolves({}),
       },
+      s3Client: {
+        send: sinon.stub(),
+      },
     };
+    // Set S3_BUCKET_NAME in process.env for getPresignedUrl
+    process.env.S3_BUCKET_NAME = 'test-bucket';
     auditData = testData.oppty2AuditData;
   });
 
@@ -390,6 +434,24 @@ describe('createLowNavigationOpportunities handler method', () => {
         guidance: {},
       };
       dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
+      // Mock generateOpptyData to return data matching the existing opportunity
+      createLowNavigationOpportunities._testStubs.generateOpptyData.resolves([
+        {
+          form: 'https://www.surest.com/newsletter',
+          formsource: '',
+          formViews: 300,
+          pageViews: 8670,
+          formNavigation: {
+            url: 'https://www.surest.com/about-us',
+            source: '#teaser-related02 .cmp-teaser__action-link',
+            pageViews: 104000,
+            clicksOnCTA: 800,
+          },
+          trackedFormKPIName: 'Form View Rate',
+          trackedFormKPIValue: 0.0346,
+          metrics: [],
+        },
+      ]);
 
       await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
@@ -436,6 +498,24 @@ describe('createLowNavigationOpportunities handler method', () => {
       };
       dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
       context.sqs.sendMessage = sinon.stub().resolves({});
+      // Mock generateOpptyData to return data matching the existing opportunity
+      createLowNavigationOpportunities._testStubs.generateOpptyData.resolves([
+        {
+          form: 'https://www.surest.com/newsletter',
+          formsource: '',
+          formViews: 300,
+          pageViews: 8670,
+          formNavigation: {
+            url: 'https://www.surest.com/about-us',
+            source: '#teaser-related02 .cmp-teaser__action-link',
+            pageViews: 104000,
+            clicksOnCTA: 800,
+          },
+          trackedFormKPIName: 'Form View Rate',
+          trackedFormKPIValue: 0.0346,
+          metrics: [],
+        },
+      ]);
 
       await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
@@ -445,6 +525,24 @@ describe('createLowNavigationOpportunities handler method', () => {
     it('should handle error in opportunity creation loop gracefully', async () => {
       dataAccessStub.Opportunity.allBySiteId.resolves([]);
       dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('Creation failed'));
+      // Mock generateOpptyData to return data so the handler tries to create opportunities
+      createLowNavigationOpportunities._testStubs.generateOpptyData.resolves([
+        {
+          form: 'https://www.surest.com/newsletter',
+          formsource: '',
+          formViews: 300,
+          pageViews: 8670,
+          formNavigation: {
+            url: 'https://www.surest.com/about-us',
+            source: '#teaser-related02 .cmp-teaser__action-link',
+            pageViews: 104000,
+            clicksOnCTA: 800,
+          },
+          trackedFormKPIName: 'Form View Rate',
+          trackedFormKPIValue: 0.0346,
+          metrics: [],
+        },
+      ]);
 
       await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
@@ -461,6 +559,24 @@ describe('createLowNavigationOpportunities handler method', () => {
       formsCTAOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION;
       dataAccessStub.Opportunity.create = sinon.stub().returns(formsCTAOppty);
       context.sqs.sendMessage = sinon.stub().rejects(new Error('SQS error'));
+      // Mock generateOpptyData to return data so the handler tries to create opportunities
+      createLowNavigationOpportunities._testStubs.generateOpptyData.resolves([
+        {
+          form: 'https://www.surest.com/newsletter',
+          formsource: '',
+          formViews: 300,
+          pageViews: 8670,
+          formNavigation: {
+            url: 'https://www.surest.com/about-us',
+            source: '#teaser-related02 .cmp-teaser__action-link',
+            pageViews: 104000,
+            clicksOnCTA: 800,
+          },
+          trackedFormKPIName: 'Form View Rate',
+          trackedFormKPIValue: 0.0346,
+          metrics: [],
+        },
+      ]);
 
       await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
@@ -474,6 +590,24 @@ describe('createLowNavigationOpportunities handler method', () => {
       formsCTAOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION;
       dataAccessStub.Opportunity.create = sinon.stub().returns(formsCTAOppty);
       context.calculateCPCValue = sinon.stub().resolves(2.5);
+      // Mock generateOpptyData to return data so the handler tries to create opportunities
+      createLowNavigationOpportunities._testStubs.generateOpptyData.resolves([
+        {
+          form: 'https://www.surest.com/newsletter',
+          formsource: '',
+          formViews: 300,
+          pageViews: 8670,
+          formNavigation: {
+            url: 'https://www.surest.com/about-us',
+            source: '#teaser-related02 .cmp-teaser__action-link',
+            pageViews: 104000,
+            clicksOnCTA: 800,
+          },
+          trackedFormKPIName: 'Form View Rate',
+          trackedFormKPIValue: 0.0346,
+          metrics: [],
+        },
+      ]);
 
       await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
@@ -492,6 +626,24 @@ describe('createLowNavigationOpportunities handler method', () => {
       dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
       formsCTAOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION;
       dataAccessStub.Opportunity.create = sinon.stub().returns(formsCTAOppty);
+      // Mock generateOpptyData to return data matching the existing opportunity
+      createLowNavigationOpportunities._testStubs.generateOpptyData.resolves([
+        {
+          form: 'https://www.surest.com/newsletter',
+          formsource: '',
+          formViews: 300,
+          pageViews: 8670,
+          formNavigation: {
+            url: 'https://www.surest.com/about-us',
+            source: '#teaser-related02 .cmp-teaser__action-link',
+            pageViews: 104000,
+            clicksOnCTA: 800,
+          },
+          trackedFormKPIName: 'Form View Rate',
+          trackedFormKPIValue: 0.0346,
+          metrics: [],
+        },
+      ]);
 
       await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
@@ -522,7 +674,7 @@ describe('createLowNavigationOpportunities handler method', () => {
         '../../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js',
         {
           '@adobe/spacecat-shared-utils': mockTagMappings,
-          '../utils.js': {
+          '../../../../src/forms-opportunities/utils.js': {
             ...utilsModule,
             generateOpptyData: sinon.stub().resolves([{
               form: 'https://www.surest.com/newsletter',
@@ -539,8 +691,8 @@ describe('createLowNavigationOpportunities handler method', () => {
             calculateProjectedConversionValue: sinon.stub().resolves({ projectedConversionValue: 2.5 }),
             filterForms: sinon.stub().callsFake((opps) => opps),
             applyOpportunityFilters: sinon.stub().callsFake((opps) => opps),
-            sendMessageToMystiqueForGuidance: sinon.stub().resolves(),
-            sendMessageToFormsQualityAgent: sinon.stub().resolves(),
+            sendMessageToMystiqueForGuidance: sinon.stub().callsFake(utilsModule.sendMessageToMystiqueForGuidance),
+            sendMessageToFormsQualityAgent: sinon.stub().callsFake(utilsModule.sendMessageToFormsQualityAgent),
           },
         },
       );
@@ -580,7 +732,7 @@ describe('createLowNavigationOpportunities handler method', () => {
         '../../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js',
         {
           '@adobe/spacecat-shared-utils': mockTagMappings,
-          '../utils.js': {
+          '../../../../src/forms-opportunities/utils.js': {
             ...utilsModule,
             generateOpptyData: sinon.stub().callsFake(async (formVitals, context, opportunityTypes) => {
               // Return properly structured data that convertToOpportunityData expects
@@ -614,7 +766,7 @@ describe('createLowNavigationOpportunities handler method', () => {
 
       await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
-      expect(logStub.debug).to.have.been.calledWithMatch(/Form details available for opportunity, not sending it to mystique/);
+      expect(logStub.info).to.have.been.calledWithMatch(/Form details available for opportunity, not sending it to mystique/);
       // When formDetails is present, formsList is empty, so sendMessageToMystiqueForGuidance is called
       expect(context.sqs.sendMessage).to.have.been.called;
     });
@@ -630,7 +782,7 @@ describe('createLowNavigationOpportunities handler method', () => {
         '../../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js',
         {
           '@adobe/spacecat-shared-utils': mockTagMappings,
-          '../utils.js': {
+          '../../../../src/forms-opportunities/utils.js': {
             ...utilsModule,
             generateOpptyData: sinon.stub().callsFake(async (formVitals, context, opportunityTypes) => {
               // Return properly structured data that convertToOpportunityData expects

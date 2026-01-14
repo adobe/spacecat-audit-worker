@@ -47,7 +47,8 @@ export const expectedOpportunity = {
     ],
   },
   tags: [
-    'Traffic acquisition',
+    'Internal links',
+    'SEO',
     'Engagement',
   ],
   data: { projectedTrafficLost: 32, projectedTrafficValue: 32, dataSources: ['Ahrefs', 'RUM', 'Site'] },

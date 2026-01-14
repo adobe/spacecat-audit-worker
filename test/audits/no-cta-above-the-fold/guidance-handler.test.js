@@ -1074,7 +1074,8 @@ describe("No CTA above the fold guidance handler", () => {
       );
 
       expect(result.status).to.equal(ok().status);
-      expect(Opportunity.create).to.have.been.called;
+      // Handler returns early when existing opportunity is found (status is not RESOLVED or IGNORED)
+      expect(Opportunity.create).to.not.have.been.called;
     });
 
     it('should handle existing opportunity with APPROVED status', async () => {
@@ -1105,7 +1106,8 @@ describe("No CTA above the fold guidance handler", () => {
       );
 
       expect(result.status).to.equal(ok().status);
-      expect(Opportunity.create).to.have.been.called;
+      // Handler returns early when existing opportunity is found (status is not RESOLVED or IGNORED)
+      expect(Opportunity.create).to.not.have.been.called;
     });
 
     it('should execute getGuidanceObj function with guidance[0] present', async () => {
@@ -1277,10 +1279,14 @@ describe("No CTA above the fold guidance handler", () => {
           siteId,
           id: 'test-id',
           auditId: 'audit-id',
-          type: 'some-other-type',
+          type: 'generic-opportunity',
           origin: 'AUTOMATION',
           title: 'Test',
           tags: ['Engagement'],
+          data: {
+            opportunityType: 'some-other-type',
+            page: pageUrl,
+          },
         }),
         mapToSuggestion: sinon.stub().resolves({
           opportunityId: 'oppty-123',

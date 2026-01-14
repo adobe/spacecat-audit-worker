@@ -16,8 +16,11 @@ import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-acces
 export const ESTIMATED_CPC = 0.8;
 
 function sanitizeMarkdown(markdown) {
+  if (markdown === null || markdown === undefined) {
+    return '';
+  }
   if (typeof markdown !== 'string') {
-    return markdown;
+    return String(markdown);
   }
 
   if (markdown.includes('\\n')) {

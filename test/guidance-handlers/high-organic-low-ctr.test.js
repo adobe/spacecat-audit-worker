@@ -444,8 +444,8 @@ describe('high-organic-low-ctr guidance handler tests', () => {
       await handler(message, context);
 
       const setDataCall = dummyOpportunity.setData.getCall(0).args[0];
-      expect(setDataCall).to.include(existingData);
-      expect(setDataCall).to.include({ page: 'https://abc.com/abc-adoption/account' });
+      expect(setDataCall).to.have.property('existingField', 'existing-value');
+      expect(setDataCall).to.have.property('page', 'https://abc.com/abc-adoption/account');
     });
 
     it('should delete all previous suggestions before creating new ones', async () => {

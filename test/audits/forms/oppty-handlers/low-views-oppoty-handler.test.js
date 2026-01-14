@@ -48,22 +48,77 @@ describe('createLowFormViewsOpportunities handler method', () => {
       '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
       {
         '@adobe/spacecat-shared-utils': mockTagMappings,
-        '../utils.js': {
+        '../../../../src/forms-opportunities/utils.js': {
           ...utilsModule,
           generateOpptyData: sinon.stub().callsFake(async (formVitals, context, opportunityTypes) => {
             // Return form data that matches the test expectations
             if (opportunityTypes.includes(FORM_OPPORTUNITY_TYPES.LOW_VIEWS)) {
-              return [{
-                form: 'https://www.surest.com/high-page-low-form-view',
-                formsource: '',
-                formViews: 200,
-                pageViews: 5690,
-                trackedFormKPIName: 'Form View Rate',
-                trackedFormKPIValue: 0.0351,
-                metrics: [],
-              }];
+              // Return empty array if formVitals is empty
+              if (!formVitals || !Array.isArray(formVitals) || formVitals.length === 0) {
+                return [];
+              }
+              // Return data for all forms in formVitals
+              const results = [];
+              for (const formVital of formVitals) {
+                if (formVital.url === 'https://www.surest.com/high-page-low-form-view') {
+                  results.push({
+                    form: 'https://www.surest.com/high-page-low-form-view',
+                    formsource: '',
+                    formViews: 200,
+                    pageViews: 5690,
+                    screenshot: '',
+                    samples: 5690,
+                    trackedFormKPIName: 'Form View Rate',
+                    trackedFormKPIValue: 0.035,
+                    metrics: [
+                      {
+                        type: 'formViewRate',
+                        device: '*',
+                        value: { page: 0.035 },
+                      },
+                      {
+                        type: 'formViewRate',
+                        device: 'mobile',
+                        value: { page: null },
+                      },
+                      {
+                        type: 'formViewRate',
+                        device: 'desktop',
+                        value: { page: 0.035 },
+                      },
+                      {
+                        device: 'desktop',
+                        type: 'traffic',
+                        value: { page: 5690 },
+                      },
+                      {
+                        device: 'mobile',
+                        type: 'traffic',
+                        value: { page: 0 },
+                      },
+                    ],
+                  });
+                } else if (formVital.url === 'https://www.surest.com/existing-opportunity') {
+                  results.push({
+                    form: 'https://www.surest.com/existing-opportunity',
+                    formsource: '',
+                    formViews: 200,
+                    pageViews: 6690,
+                    screenshot: '',
+                    samples: 6690,
+                    trackedFormKPIName: 'Form View Rate',
+                    trackedFormKPIValue: 0.0299,
+                    metrics: [],
+                  });
+                }
+              }
+              return results;
             }
             return [];
+          }),
+          filterForms: sinon.stub().callsFake((opps, scrapedData, log) => {
+            // Call the real filterForms to set scrapedStatus correctly
+            return utilsModule.filterForms(opps, scrapedData, log || logStub);
           }),
         },
       },
@@ -114,7 +169,12 @@ describe('createLowFormViewsOpportunities handler method', () => {
       sqs: {
         sendMessage: sinon.stub().resolves({}),
       },
+      s3Client: {
+        send: sinon.stub(),
+      },
     };
+    // Set S3_BUCKET_NAME in process.env for getPresignedUrl
+    process.env.S3_BUCKET_NAME = 'test-bucket';
     auditData = testData.lowFormviewsAuditData;
   });
 
@@ -354,7 +414,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
         {
           '@adobe/spacecat-shared-utils': mockTagMappings,
-          '../utils.js': {
+          '../../../../src/forms-opportunities/utils.js': {
             ...utilsModule,
             generateOpptyData: sinon.stub().resolves([{
               form: 'https://www.surest.com/high-page-low-form-view',
@@ -427,7 +487,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
         {
           '@adobe/spacecat-shared-utils': mockTagMappings,
-          '../utils.js': {
+          '../../../../src/forms-opportunities/utils.js': {
             ...utilsModule,
             generateOpptyData: sinon.stub().resolves([{
               form: 'https://www.surest.com/high-page-low-form-view',
@@ -464,7 +524,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
         {
           '@adobe/spacecat-shared-utils': mockTagMappings,
-          '../utils.js': {
+          '../../../../src/forms-opportunities/utils.js': {
             ...utilsModule,
             generateOpptyData: sinon.stub().resolves([{
               form: 'https://www.surest.com/high-page-low-form-view',
@@ -507,7 +567,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
         {
           '@adobe/spacecat-shared-utils': mockTagMappings,
-          '../utils.js': {
+          '../../../../src/forms-opportunities/utils.js': {
             ...utilsModule,
             generateOpptyData: sinon.stub().resolves([{
               form: 'https://www.surest.com/high-page-low-form-view',
@@ -545,7 +605,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
         {
           '@adobe/spacecat-shared-utils': mockTagMappings,
-          '../utils.js': {
+          '../../../../src/forms-opportunities/utils.js': {
             ...utilsModule,
             generateOpptyData: sinon.stub().resolves([{
               form: 'https://www.surest.com/high-page-low-form-view',
@@ -587,7 +647,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
         {
           '@adobe/spacecat-shared-utils': mockTagMappings,
-          '../utils.js': {
+          '../../../../src/forms-opportunities/utils.js': {
             ...utilsModule,
             generateOpptyData: sinon.stub().resolves([{
               form: 'https://www.surest.com/high-page-low-form-view',
@@ -635,7 +695,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
         {
           '@adobe/spacecat-shared-utils': mockTagMappings,
-          '../utils.js': {
+          '../../../../src/forms-opportunities/utils.js': {
             ...utilsModule,
             generateOpptyData: sinon.stub().resolves([{
               form: 'https://www.surest.com/high-page-low-form-view',
@@ -690,7 +750,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
         {
           '@adobe/spacecat-shared-utils': mockTagMappings,
-          '../utils.js': {
+          '../../../../src/forms-opportunities/utils.js': {
             ...utilsModule,
             generateOpptyData: sinon.stub().resolves([{
               form: 'https://www.surest.com/high-page-low-form-view',
@@ -712,7 +772,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
 
       await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
 
-      expect(logStub.debug).to.have.been.calledWithMatch(/Form details available for opportunity, not sending it to mystique/);
+      expect(logStub.info).to.have.been.calledWithMatch(/Form details available for opportunity, not sending it to mystique/);
       // When formDetails is present, formsList is empty, so sendMessageToMystiqueForGuidance is called
       expect(context.sqs.sendMessage).to.have.been.called;
     });
