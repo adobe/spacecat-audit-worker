@@ -21,7 +21,7 @@ const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
  * CWV suggestion structure:
  * {
  *   opportunityId: string,
- *   status: 'NEW' | 'APPROVED' | 'SKIPPED' | 'FIXED' | 'ERROR',
+ *   status: 'NEW' | 'APPROVED' | 'SKIPPED' | 'FIXED' | 'ERROR' | 'REJECTED',
  *   ...
  *   data: {
  *     type: 'url' | 'group',
@@ -40,7 +40,7 @@ const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
  * }
  *
  * Filters out suggestions that:
- * - Are not NEW (IN_PROGRESS, APPROVED, FIXED, SKIPPED, ERROR)
+ * - Are not NEW (IN_PROGRESS, APPROVED, FIXED, SKIPPED, ERROR, REJECTED)
  * - Already have guidance (data.issues with non-empty values)
  *
  * @param {Object} suggestion - Suggestion object
