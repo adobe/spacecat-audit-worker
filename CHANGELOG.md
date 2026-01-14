@@ -1,3 +1,10 @@
+# [1.282.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.281.1...v1.282.0) (2026-01-14)
+
+
+### Features
+
+* **LLMO-1023:** add automatic trace ID propagation in SQS wrapper ([#1847](https://github.com/adobe/spacecat-audit-worker/issues/1847)) ([f81520e](https://github.com/adobe/spacecat-audit-worker/commit/f81520e8c44413b060a56401faea4379c1644d55))
+
 ## [1.281.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.281.0...v1.281.1) (2026-01-14)
 
 
