@@ -97,7 +97,8 @@ describe('agentic-urls', () => {
       AWS_ENV: 'prod',
       AWS_REGION: 'us-east-1',
     },
-    finalUrl: 'https://www.example.com',
+    // finalUrl is a hostname (without protocol) as returned by wwwUrlResolver
+    finalUrl: 'www.example.com',
   });
 
   describe('getTopAgenticUrlsFromAthena', () => {
@@ -124,6 +125,9 @@ describe('agentic-urls', () => {
       );
       expect(context.log.info).to.have.been.calledWith(
         'Agentic URLs - Selected 3 top agentic URLs via Athena. baseUrl=https://www.example.com',
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        'Agentic URLs - Top #1 URL: https://www.example.com/page1',
       );
     });
 
@@ -240,7 +244,7 @@ describe('agentic-urls', () => {
       expect(result[1]).to.equal('https://example.com/page2');
     });
 
-    it('should handle context with no finalUrl gracefully', async () => {
+    it('should fall back to site.getBaseURL when context.finalUrl is undefined', async () => {
       const site = createMockSite();
       const context = {
         ...createMockContext(),
@@ -253,8 +257,8 @@ describe('agentic-urls', () => {
 
       const result = await getTopAgenticUrlsFromAthena(site, context);
 
-      // Should return the path as-is when URL construction fails
-      expect(result).to.deep.equal(['/page1']);
+      // Should fall back to site.getBaseURL() when finalUrl is undefined
+      expect(result).to.deep.equal(['https://example.com/page1']);
     });
 
     it('should build correct S3 config from site and context', async () => {
@@ -306,11 +310,12 @@ describe('agentic-urls', () => {
       );
     });
 
-    it('should use finalUrl from context to construct URLs', async () => {
+    it('should use finalUrl (hostname) from context to construct URLs', async () => {
       const site = createMockSite();
       const context = {
         ...createMockContext(),
-        finalUrl: 'https://www.example.com',
+        // finalUrl is a hostname as returned by wwwUrlResolver
+        finalUrl: 'www.example.com',
       };
 
       mockAthenaClient.query.resolves([
@@ -320,11 +325,76 @@ describe('agentic-urls', () => {
 
       const result = await getTopAgenticUrlsFromAthena(site, context);
 
-      // URLs should use the finalUrl from context
+      // URLs should use https:// + finalUrl from context
       expect(result).to.deep.equal([
         'https://www.example.com/products/page1',
         'https://www.example.com/about',
       ]);
+    });
+
+    it('should handle finalUrl that already includes https protocol', async () => {
+      const site = createMockSite();
+      const context = {
+        ...createMockContext(),
+        // finalUrl already has protocol (edge case)
+        finalUrl: 'https://www.example.com',
+      };
+
+      mockAthenaClient.query.resolves([
+        { url: '/page1' },
+      ]);
+
+      const result = await getTopAgenticUrlsFromAthena(site, context);
+
+      // Should use finalUrl as-is without double-prepending https://
+      expect(result).to.deep.equal(['https://www.example.com/page1']);
+      expect(context.log.info).to.have.been.calledWith(
+        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://www.example.com',
+      );
+    });
+
+    it('should filter out paths when site.getBaseURL is invalid and finalUrl is undefined', async () => {
+      const site = {
+        ...createMockSite(),
+        getBaseURL: () => 'invalid-url', // Invalid URL that will cause URL constructor to fail
+      };
+      const context = {
+        ...createMockContext(),
+        finalUrl: undefined, // No finalUrl, falls back to invalid getBaseURL
+      };
+
+      mockAthenaClient.query.resolves([
+        { url: '/page1' },
+      ]);
+
+      const result = await getTopAgenticUrlsFromAthena(site, context);
+
+      // Should filter out paths when URL construction fails (no valid baseUrl)
+      expect(result).to.deep.equal([]);
+      expect(context.log.warn).to.have.been.calledWith(
+        'Agentic URLs - Invalid baseUrl: invalid-url, cannot construct absolute URLs',
+      );
+    });
+
+    it('should keep absolute URLs even when site.getBaseURL is invalid', async () => {
+      const site = {
+        ...createMockSite(),
+        getBaseURL: () => 'invalid-url',
+      };
+      const context = {
+        ...createMockContext(),
+        finalUrl: undefined, // No finalUrl, falls back to invalid getBaseURL
+      };
+
+      mockAthenaClient.query.resolves([
+        { url: 'https://example.com/page1' }, // Already absolute URL
+        { url: '/page2' }, // Relative path - should be filtered out
+      ]);
+
+      const result = await getTopAgenticUrlsFromAthena(site, context);
+
+      // Should keep absolute URLs but filter out relative paths
+      expect(result).to.deep.equal(['https://example.com/page1']);
     });
   });
 });
