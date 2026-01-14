@@ -136,6 +136,8 @@ export async function sendSQSMessageForAutoSuggest(context, opportunity, site) {
         },
       };
 
+      log.info(`CWV SQS Message to Mystique (suggestionId: ${suggestionId}):\n${JSON.stringify(sqsMessage, null, 2)}`);
+
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, sqsMessage);
       log.debug(`[audit-worker-cwv] siteId: ${siteId} | CWV suggestion sent to Mystique, suggestionId: ${suggestionId}, url: ${url}`);
