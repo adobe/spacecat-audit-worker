@@ -124,7 +124,7 @@ describe('Meta Tags', () => {
         expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(MODERATE);
       });
 
-      it('should detect title below ideal length and add to detectedTags with LOW impact', () => {
+      it('should detect title below ideal length and add to detectedTags with MODERATE impact', () => {
         const url = 'https://example.com';
         // Title between minLength (3) and idealMinLength (40)
         const belowIdealTitle = 'A'.repeat(TAG_LENGTHS[TITLE].minLength + 5); // 8 chars
@@ -132,10 +132,10 @@ describe('Meta Tags', () => {
 
         seoChecks.checkForTagsLength(url, pageTags);
 
-        expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Title below ideal length');
-        expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(LOW);
+        expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Title too short');
+        expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(MODERATE);
         expect(seoChecks.getDetectedTags()[url][TITLE].issueDetails)
-          .to.equal(`${TAG_LENGTHS[TITLE].idealMinLength - belowIdealTitle.length} chars below ideal minimum`);
+          .to.equal(`${TAG_LENGTHS[TITLE].idealMinLength - belowIdealTitle.length} chars below limit`);
       });
 
       it('should detect title above ideal length and add to detectedTags with LOW impact', () => {

@@ -100,14 +100,14 @@ class SeoChecks {
       } else if (tagContent?.length < TAG_LENGTHS[tagName].minLength) {
         // Exists, but below absolute minimum
         issue = `${capitalizedTagName} too short`;
-        issueDetails = `${capitalizedTagName} has only ${tagContent.length} character(s)`;
+        issueDetails = `${TAG_LENGTHS[tagName].idealMinLength - tagContent.length} chars below limit`;
         issueImpact = MODERATE;
         recommendation = getLengthSuggestion(tagName);
       } else if (tagContent?.length < TAG_LENGTHS[tagName].idealMinLength) {
         // Below ideal but above minimum
-        issue = `${capitalizedTagName} below ideal length`;
-        issueDetails = `${TAG_LENGTHS[tagName].idealMinLength - tagContent.length} chars below ideal minimum`;
-        issueImpact = LOW;
+        issue = `${capitalizedTagName} too short`;
+        issueDetails = `${TAG_LENGTHS[tagName].idealMinLength - tagContent.length} chars below limit`;
+        issueImpact = MODERATE;
         recommendation = getLengthSuggestion(tagName);
       } else if (tagContent?.length > TAG_LENGTHS[tagName].idealMaxLength
         && tagContent?.length <= TAG_LENGTHS[tagName].maxLength) {
