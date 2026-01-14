@@ -53,7 +53,9 @@ export async function getTopAgenticUrlsFromAthena(
   context,
   limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
 ) {
-  const { log, finalUrl: baseUrl } = context;
+  const { log } = context;
+  // Use finalUrl from context if available, otherwise fall back to site.getBaseURL()
+  const baseUrl = context.finalUrl || site.getBaseURL();
   try {
     const s3Config = await getS3Config(site, context);
     const periods = generateReportingPeriods();

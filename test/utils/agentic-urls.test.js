@@ -240,7 +240,7 @@ describe('agentic-urls', () => {
       expect(result[1]).to.equal('https://example.com/page2');
     });
 
-    it('should handle context with no finalUrl gracefully', async () => {
+    it('should fall back to site.getBaseURL when context.finalUrl is undefined', async () => {
       const site = createMockSite();
       const context = {
         ...createMockContext(),
@@ -253,8 +253,8 @@ describe('agentic-urls', () => {
 
       const result = await getTopAgenticUrlsFromAthena(site, context);
 
-      // Should return the path as-is when URL construction fails
-      expect(result).to.deep.equal(['/page1']);
+      // Should fall back to site.getBaseURL() when finalUrl is undefined
+      expect(result).to.deep.equal(['https://example.com/page1']);
     });
 
     it('should build correct S3 config from site and context', async () => {
@@ -325,6 +325,26 @@ describe('agentic-urls', () => {
         'https://www.example.com/products/page1',
         'https://www.example.com/about',
       ]);
+    });
+
+    it('should return path as-is when URL construction fails', async () => {
+      const site = {
+        ...createMockSite(),
+        getBaseURL: () => 'invalid-url', // Invalid URL that will cause URL constructor to fail
+      };
+      const context = {
+        ...createMockContext(),
+        finalUrl: 'also-invalid', // Invalid finalUrl
+      };
+
+      mockAthenaClient.query.resolves([
+        { url: '/page1' },
+      ]);
+
+      const result = await getTopAgenticUrlsFromAthena(site, context);
+
+      // Should return the path as-is when URL construction fails
+      expect(result).to.deep.equal(['/page1']);
     });
   });
 });
