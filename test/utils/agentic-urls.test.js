@@ -128,9 +128,6 @@ describe('agentic-urls', () => {
         'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://example.com',
       );
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Using resolved base URL: https://www.example.com (original: https://example.com)',
-      );
-      expect(context.log.info).to.have.been.calledWith(
         'Agentic URLs - Selected 3 top agentic URLs via Athena. baseUrl=https://example.com',
       );
     });
@@ -348,9 +345,6 @@ describe('agentic-urls', () => {
         'https://www.example.com/about',
       ]);
       expect(mockWwwUrlResolver).to.have.been.calledWith(site, context);
-      expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Using resolved base URL: https://www.example.com (original: https://example.com)',
-      );
     });
   });
 });
