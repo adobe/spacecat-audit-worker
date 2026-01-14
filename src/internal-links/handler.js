@@ -56,7 +56,6 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 
     // 3. Query for 404 internal links
     const internal404Links = await rumAPIClient.query('404-internal-links', options);
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${internal404Links.length} 404 internal links`);
 
     // 4. Check accessibility in parallel before transformation
     const accessibilityResults = await Promise.all(
@@ -141,7 +140,7 @@ export async function prepareScrapingStep(context) {
   const baseURL = site.getBaseURL();
   const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope`);
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope for scraping`);
 
   if (filteredTopPages.length === 0) {
     if (topPages.length === 0) {
