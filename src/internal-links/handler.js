@@ -56,6 +56,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 
     // 3. Query for 404 internal links
     const internal404Links = await rumAPIClient.query('404-internal-links', options);
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${internal404Links.length} 404 internal links`);
 
     // 4. Check accessibility in parallel before transformation
     const accessibilityResults = await Promise.all(
