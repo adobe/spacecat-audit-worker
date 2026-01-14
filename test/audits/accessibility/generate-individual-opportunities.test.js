@@ -1798,11 +1798,6 @@ describe('createIndividualOpportunity', () => {
       }),
     };
     
-    // Mock the tagMappings module
-    await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-      '@adobe/spacecat-shared-utils': mockTagMappings,
-    });
-    
     mockOpportunity = {
       getId: sandbox.stub().returns('test-id'),
       getSiteId: sandbox.stub().returns('test-site'),
@@ -5434,24 +5429,31 @@ describe('handleAccessibilityRemediationGuidance', () => {
     mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-fix', sinon.match.any, sinon.match.any).resolves(true);
     mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any).resolves(true);
 
+    const mockLog = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
     const mockOpportunity = {
       getId: sandbox.stub().returns('oppty-123'),
       getSiteId: sandbox.stub().returns('site-456'),
       getAuditId: sandbox.stub().returns('audit-789'),
       getSuggestions: sandbox.stub().resolves([
-      {
-        getData: () => ({
-          url: 'https://example.com/page1',
-          issues: [
-            {
-              type: 'aria-allowed-attr', // This is in issueTypesForCodeFix
-              htmlWithIssues: [{ target_selector: 'div.test' }], // Has htmlWithIssues
-            },
-          ],
-        }),
-        getId: () => 'sugg-1',
-      },
-    ]);
+        {
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr', // This is in issueTypesForCodeFix
+                htmlWithIssues: [{ target_selector: 'div.test' }], // Has htmlWithIssues
+              },
+            ],
+          }),
+          getId: () => 'sugg-1',
+        },
+      ]),
+    };
 
     const mockContext = {
       site: { getId: sandbox.stub().returns('site-123') },
@@ -5496,19 +5498,26 @@ describe('handleAccessibilityRemediationGuidance', () => {
   });
 
   it('should handle sendMessageToMystiqueForRemediation with rejected promises in results', async () => {
+    const mockLog = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
     const mockOpportunity = {
       getId: sandbox.stub().returns('oppty-123'),
       getSiteId: sandbox.stub().returns('site-456'),
       getAuditId: sandbox.stub().returns('audit-789'),
       getSuggestions: sandbox.stub().resolves([
-      {
-        getData: () => ({
-          url: 'https://example.com/page1',
-          issues: [{ type: 'color-contrast' }],
-        }),
-        getId: () => 'sugg-1',
-      },
-    ]);
+        {
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [{ type: 'color-contrast' }],
+          }),
+          getId: () => 'sugg-1',
+        },
+      ]),
+    };
 
     const sendMessageStub = sandbox.stub();
     sendMessageStub.onFirstCall().rejects(new Error('SQS error'));
