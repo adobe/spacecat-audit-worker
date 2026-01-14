@@ -17,7 +17,7 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
-import { isoCalendarWeek } from '@adobe/spacecat-shared-utils';
+import { isoCalendarWeek, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
 import {
   createReportOpportunitySuggestionInstance,
@@ -467,6 +467,11 @@ export async function createReportOpportunity(opportunityInstance, auditData, co
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
   try {
+    // Apply hardcoded tags based on opportunity type (except for Generic Opportunity)
+    const mergedTags = mergeTagsWithHardcodedTags(
+      opportunityInstance.type,
+      opportunityInstance.tags,
+    );
     const opportunityData = {
       siteId: auditData.siteId,
       auditId: auditData.auditId,
@@ -475,7 +480,7 @@ export async function createReportOpportunity(opportunityInstance, auditData, co
       origin: opportunityInstance.origin,
       title: opportunityInstance.title,
       description: opportunityInstance.description,
-      tags: opportunityInstance.tags,
+      tags: mergedTags,
     };
     const opportunity = await Opportunity.create(opportunityData);
     return { opportunity };

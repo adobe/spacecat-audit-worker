@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
@@ -110,6 +111,7 @@ export default async function handler(message, context) {
 
   // Create new paid-traffic opportunity for this period
   const entity = mapToPaidOpportunity(siteId, audit, period);
+  entity.tags = mergeTagsWithHardcodedTags(TRAFFIC_OPP_TYPE, entity.tags);
   const opportunity = await Opportunity.create(entity);
 
   // Map AI Insights suggestions from guidance (already in expected structure)

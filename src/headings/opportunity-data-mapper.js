@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 const OpptyData = {
@@ -26,7 +27,7 @@ const OpptyData = {
       'Ensure headings follow brand guidelines and maintain consistent tone across the site.',
     ],
   },
-  tags: ['Accessibility', 'SEO', 'isElmo', 'isASO', 'tech-seo'],
+  tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.HEADINGS, ['isElmo', 'isASO', 'tech-seo']),
   data: {
     dataSources: [DATA_SOURCES.SITE],
   },

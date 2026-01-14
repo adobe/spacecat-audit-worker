@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
+import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 const OpptyData = {
@@ -24,7 +24,7 @@ const OpptyData = {
       'Use lowercase, absolute URLs for canonical tags to avoid formatting issues.',
     ],
   },
-  tags: ['Traffic Acquisition', 'SEO', 'tech-seo'],
+  tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.CANONICAL, ['tech-seo']),
   data: {
     dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
   },
@@ -47,7 +47,7 @@ export function createOpportunityDataForElmo() {
         },
       ],
     },
-    tags: [...OpptyData.tags, 'llm'],
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.CANONICAL, ['llm']),
     data: {
       ...OpptyData.data,
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],

@@ -10,7 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray, isString, buildSuggestionKey } from '@adobe/spacecat-shared-utils';
+import {
+  isNonEmptyArray,
+  isString,
+  buildSuggestionKey,
+  mergeTagsWithHardcodedTags,
+} from '@adobe/spacecat-shared-utils';
 import { Opportunity as OpportunityDataAccess, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { createAccessibilityAssistiveOpportunity, createAccessibilityColorContrastOpportunity } from './report-oppty.js';
 import {
@@ -451,6 +456,11 @@ export async function createIndividualOpportunity(opportunityInstance, auditData
   const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
   try {
+    const mergedTags = mergeTagsWithHardcodedTags(
+      opportunityInstance.type,
+      opportunityInstance.tags,
+    );
+
     // Prepare opportunity data with all required fields
     const opportunityData = {
       siteId: auditData.siteId,
@@ -460,7 +470,7 @@ export async function createIndividualOpportunity(opportunityInstance, auditData
       origin: opportunityInstance.origin,
       title: opportunityInstance.title,
       description: opportunityInstance.description,
-      tags: opportunityInstance.tags,
+      tags: mergedTags,
       status: opportunityInstance.status,
       data: opportunityInstance.data,
     };

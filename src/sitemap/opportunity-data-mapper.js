@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 export function createOpportunityData() {
@@ -24,7 +25,7 @@ export function createOpportunityData() {
         'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
       ],
     },
-    tags: ['Traffic Acquisition'],
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.SITEMAP, []),
     data: {
       dataSources: [DATA_SOURCES.SITE],
     },

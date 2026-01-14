@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
+import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 export function createOpportunityData(kpiDeltas) {
@@ -26,10 +26,7 @@ export function createOpportunityData(kpiDeltas) {
         'Monitor performance over time to ensure consistent CWV scores across devices.',
       ],
     },
-    tags: [
-      'Traffic acquisition',
-      'Engagement',
-    ],
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.CWV, []),
     data: {
       ...kpiDeltas,
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],

@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
+import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 /**
@@ -48,7 +48,7 @@ export function createTooStrongOpportunityData(props) {
     runbook: 'https://wiki.corp.adobe.com/display/WEM/Security+Success',
     origin: 'AUTOMATION',
     title: 'Protect sensitive data and user trust — recommendations for optimized permission settings ready for review',
-    tags: ['Security', 'Permissions'],
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.SECURITY_PERMISSIONS, []),
     description: 'Overly broad permissions risk data exposure — tightening access enhances privacy and compliance confidence.',
     data: {
       howToFix: 'Edit your user or group permissions in the AEM Security Permissions console, or in your code repository if applicable.\n'
@@ -86,7 +86,7 @@ export function createAdminOpportunityData(props) {
     runbook: 'https://wiki.corp.adobe.com/display/WEM/Security+Success',
     origin: 'AUTOMATION',
     title: 'Your website defines unnecessary permissions for admin / administrators',
-    tags: ['Security', 'Permissions', 'Administrators'],
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.SECURITY_PERMISSIONS_REDUNDANT, []),
     description: 'Your configuration defines unnecessary rules for the admin user or administrators related groups. These permissions are not taken into consideration for those principals, It creates a false sense of security.\n'
       + 'According to the OWASP Top 10 (A05:2021 – Security Misconfiguration), redundant or excessive privileges increase the risk of misconfiguration.\n'
       + 'Review and optimize permissions to maintain clarity and least privilege.',

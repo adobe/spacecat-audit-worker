@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 /**
@@ -31,10 +32,7 @@ export function createOpportunityData({ kpiDeltas }) {
         'Monitor internal links for 404 errors in RUM tool over time to ensure they are functioning correctly.',
       ],
     },
-    tags: [
-      'Traffic acquisition',
-      'Engagement',
-    ],
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.BROKEN_INTERNAL_LINKS, []),
     data: {
       ...kpiDeltas,
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],

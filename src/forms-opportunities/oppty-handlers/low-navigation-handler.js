@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyObject, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import {
   FORM_OPPORTUNITY_TYPES, OPPTY_OPTIONS_ALL, OPPORTUNITY_LIMIT, ORIGINS,
 } from '../constants.js';
@@ -87,6 +87,8 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
       // eslint-disable-next-line no-await-in-loop,max-len
       const { projectedConversionValue = null } = (await calculateProjectedConversionValue(context, auditData.siteId, opptyData)) || {};
 
+      const mergedTags = mergeTagsWithHardcodedTags(FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION, ['Form Navigation']);
+
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.auditId,
@@ -95,7 +97,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         origin: 'AUTOMATION',
         title: 'Visitors aren\'t scrolling or navigating to your form — placement and visibility optimizations ready for review',
         description: 'If users don\'t reach your form, they can\'t convert — optimizing layout increases reach and interactions.',
-        tags: ['Form Navigation'],
+        tags: mergedTags,
         data: {
           ...opptyData,
           projectedConversionValue,

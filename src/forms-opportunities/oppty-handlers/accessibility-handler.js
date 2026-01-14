@@ -12,6 +12,7 @@
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { FORM_OPPORTUNITY_TYPES, formOpportunitiesMap } from '../constants.js';
 import { getSuccessCriteriaDetails } from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
@@ -135,6 +136,8 @@ async function createOpportunity(auditId, siteId, context) {
     // change status to IGNORED for older opportunities
     await updateStatusToIgnored(dataAccess, siteId, log, null, filterAccessibilityOpportunities);
 
+    const mergedTags = mergeTagsWithHardcodedTags(FORM_OPPORTUNITY_TYPES.FORM_A11Y, ['Forms Accessibility']);
+
     const opportunityData = {
       siteId,
       auditId,
@@ -143,9 +146,7 @@ async function createOpportunity(auditId, siteId, context) {
       origin: 'AUTOMATION',
       title: 'Forms missing key accessibility attributes — enhancements prepared to support all users',
       description: 'Improving accessibility for forms ensures assistive technologies can correctly interpret each input, helps users understand what\'s required, and makes form completion more intuitive for everyone.',
-      tags: [
-        'Forms Accessibility',
-      ],
+      tags: mergedTags,
       data: {
         dataSources: ['axe-core'],
       },
