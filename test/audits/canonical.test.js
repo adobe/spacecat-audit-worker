@@ -1302,7 +1302,7 @@ describe('Canonical URL Tests', () => {
       expect(result.guidance).to.have.property('steps').that.is.an('array');
       expect(result.guidance.steps).to.have.length.above(0);
       expect(result).to.have.property('tags').that.is.an('array');
-      expect(result.tags).to.include('Traffic Acquisition');
+      expect(result.tags).to.include('Canonical URLs');
       expect(result.tags).to.include('SEO');
       expect(result).to.have.property('data').that.is.an('object');
       expect(result.data).to.have.property('dataSources').that.is.an('array');

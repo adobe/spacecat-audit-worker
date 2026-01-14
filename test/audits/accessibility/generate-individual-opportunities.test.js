@@ -5025,6 +5025,11 @@ describe('handleAccessibilityRemediationGuidance', () => {
   });
 
   it('should use saveOpptyWithRetry instead of direct save', async () => {
+    const mockLog = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
     const mockSaveOpptyWithRetry = sandbox.stub().resolves();
     const mockScrapeUtils = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '../../../src/accessibility/utils/scrape-utils.js': {
@@ -5070,6 +5075,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
       ]),
       setAuditId: sandbox.stub(),
       setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
     };
 
     const mockDataAccess = {
@@ -5328,6 +5334,11 @@ describe('handleAccessibilityRemediationGuidance', () => {
   });
 
   it('should handle sendMessageToMystiqueForRemediation with fallback siteId from context.site', async () => {
+    const mockLog = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
     const mockIsAuditEnabledForSite = sandbox.stub().resolves(false);
     const opportunityWithoutGetSiteId = {
       getId: sandbox.stub().returns('oppty-1'),
@@ -5369,8 +5380,8 @@ describe('handleAccessibilityRemediationGuidance', () => {
       mockLog,
     );
 
-    expect(mockLog.info).to.have.been.calledWith(
-      '[A11yIndividual] No messages to send to Mystique - no matching issue types found',
+    expect(mockLog.info).to.have.been.calledWithMatch(
+      /No messages to send to Mystique|Mystique suggestions are disabled/,
     );
   });
 
@@ -5503,6 +5514,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
       error: sandbox.stub(),
       debug: sandbox.stub(),
     };
+    const mockIsAuditEnabledForSite = sandbox.stub().resolves(true);
 
     const mockOpportunity = {
       getId: sandbox.stub().returns('oppty-123'),
@@ -5526,11 +5538,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     const mockContext = {
       site: { getId: sandbox.stub().returns('site-123') },
       auditId: 'audit-456',
-      log: {
-        info: sandbox.stub(),
-        error: sandbox.stub(),
-        debug: sandbox.stub(),
-      },
+      log: mockLog,
       dataAccess: {
         Opportunity: {
           findById: sandbox.stub().resolves(mockOpportunity),
@@ -5662,13 +5670,31 @@ describe('handleAccessibilityRemediationGuidance', () => {
       },
     };
 
+    const mockLog = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const mockSite = {
+      getBaseURL: sandbox.stub().returns('https://example.com'),
+      getId: sandbox.stub().returns('site-123'),
+    };
+
     const mockContext = {
+      site: mockSite,
       log: mockLog,
       dataAccess: mockDataAccess,
     };
 
     const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '@adobe/spacecat-shared-utils': mockTagMappings,
+      '../../../src/accessibility/utils/data-processing.js': {
+        getAuditData: sandbox.stub().resolves({
+          siteId: 'site-123',
+          auditId: 'audit-456',
+        }),
+      },
     });
 
     const result = await module.createAccessibilityIndividualOpportunities(

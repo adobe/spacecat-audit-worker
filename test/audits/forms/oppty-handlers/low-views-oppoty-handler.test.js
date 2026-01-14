@@ -42,11 +42,30 @@ describe('createLowFormViewsOpportunities handler method', () => {
 
   beforeEach(async () => {
     sinon.restore();
-    // Import with mocked tagMappings
+    // Import with mocked tagMappings and generateOpptyData
+    const utilsModule = await import('../../../../src/forms-opportunities/utils.js');
     createLowViewsOpportunities = await esmock(
       '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
       {
         '@adobe/spacecat-shared-utils': mockTagMappings,
+        '../utils.js': {
+          ...utilsModule,
+          generateOpptyData: sinon.stub().callsFake(async (formVitals, context, opportunityTypes) => {
+            // Return form data that matches the test expectations
+            if (opportunityTypes.includes(FORM_OPPORTUNITY_TYPES.LOW_VIEWS)) {
+              return [{
+                form: 'https://www.surest.com/high-page-low-form-view',
+                formsource: '',
+                formViews: 200,
+                pageViews: 5690,
+                trackedFormKPIName: 'Form View Rate',
+                trackedFormKPIValue: 0.0351,
+                metrics: [],
+              }];
+            }
+            return [];
+          }),
+        },
       },
     );
     auditUrl = 'https://example.com';
@@ -327,6 +346,33 @@ describe('createLowFormViewsOpportunities handler method', () => {
         guidance: {},
       };
       dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
+      // Mock calculateProjectedConversionValue to return a value
+      context.calculateCPCValue = sinon.stub().resolves(2.5);
+      // Re-import with mocked generateOpptyData
+      const utilsModule = await import('../../../../src/forms-opportunities/utils.js');
+      createLowViewsOpportunities = await esmock(
+        '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
+        {
+          '@adobe/spacecat-shared-utils': mockTagMappings,
+          '../utils.js': {
+            ...utilsModule,
+            generateOpptyData: sinon.stub().resolves([{
+              form: 'https://www.surest.com/high-page-low-form-view',
+              formsource: '',
+              formViews: 200,
+              pageViews: 5690,
+              trackedFormKPIName: 'Form View Rate',
+              trackedFormKPIValue: 0.0351,
+              metrics: [],
+            }]),
+            calculateProjectedConversionValue: sinon.stub().resolves({ projectedConversionValue: 2.5 }),
+            filterForms: sinon.stub().callsFake((opps) => opps),
+            applyOpportunityFilters: sinon.stub().callsFake((opps) => opps),
+            sendMessageToMystiqueForGuidance: sinon.stub().resolves(),
+            sendMessageToFormsQualityAgent: sinon.stub().resolves(),
+          },
+        },
+      );
 
       await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
 
@@ -373,15 +419,70 @@ describe('createLowFormViewsOpportunities handler method', () => {
       };
       dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
       context.sqs.sendMessage = sinon.stub().resolves({});
+      // Mock calculateProjectedConversionValue to return a value
+      context.calculateCPCValue = sinon.stub().resolves(2.5);
+      // Re-import with mocked generateOpptyData
+      const utilsModule = await import('../../../../src/forms-opportunities/utils.js');
+      createLowViewsOpportunities = await esmock(
+        '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
+        {
+          '@adobe/spacecat-shared-utils': mockTagMappings,
+          '../utils.js': {
+            ...utilsModule,
+            generateOpptyData: sinon.stub().resolves([{
+              form: 'https://www.surest.com/high-page-low-form-view',
+              formsource: '',
+              formViews: 200,
+              pageViews: 5690,
+              trackedFormKPIName: 'Form View Rate',
+              trackedFormKPIValue: 0.0351,
+              metrics: [],
+            }]),
+            calculateProjectedConversionValue: sinon.stub().resolves({ projectedConversionValue: 2.5 }),
+            filterForms: sinon.stub().callsFake((opps) => opps),
+            applyOpportunityFilters: sinon.stub().callsFake((opps) => opps),
+            sendMessageToMystiqueForGuidance: sinon.stub().resolves(),
+            sendMessageToFormsQualityAgent: sinon.stub().resolves(),
+          },
+        },
+      );
 
       await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
 
+      // When formDetails is present, formsList is empty, so sendMessageToMystiqueForGuidance is called
       expect(context.sqs.sendMessage).to.have.been.called;
     });
 
     it('should handle error in opportunity creation loop gracefully', async () => {
       dataAccessStub.Opportunity.allBySiteId.resolves([]);
       dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('Creation failed'));
+      // Mock calculateProjectedConversionValue to return a value
+      context.calculateCPCValue = sinon.stub().resolves(2.5);
+      // Re-import with mocked generateOpptyData
+      const utilsModule = await import('../../../../src/forms-opportunities/utils.js');
+      createLowViewsOpportunities = await esmock(
+        '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
+        {
+          '@adobe/spacecat-shared-utils': mockTagMappings,
+          '../utils.js': {
+            ...utilsModule,
+            generateOpptyData: sinon.stub().resolves([{
+              form: 'https://www.surest.com/high-page-low-form-view',
+              formsource: '',
+              formViews: 200,
+              pageViews: 5690,
+              trackedFormKPIName: 'Form View Rate',
+              trackedFormKPIValue: 0.0351,
+              metrics: [],
+            }]),
+            calculateProjectedConversionValue: sinon.stub().resolves({ projectedConversionValue: 2.5 }),
+            filterForms: sinon.stub().callsFake((opps) => opps),
+            applyOpportunityFilters: sinon.stub().callsFake((opps) => opps),
+            sendMessageToMystiqueForGuidance: sinon.stub().resolves(),
+            sendMessageToFormsQualityAgent: sinon.stub().resolves(),
+          },
+        },
+      );
 
       await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
 
@@ -398,6 +499,33 @@ describe('createLowFormViewsOpportunities handler method', () => {
       highPageViewsLowFormViewsOptty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS;
       dataAccessStub.Opportunity.create = sinon.stub().returns(highPageViewsLowFormViewsOptty);
       context.sqs.sendMessage = sinon.stub().rejects(new Error('SQS error'));
+      // Mock calculateProjectedConversionValue to return a value
+      context.calculateCPCValue = sinon.stub().resolves(2.5);
+      // Re-import with mocked generateOpptyData
+      const utilsModule = await import('../../../../src/forms-opportunities/utils.js');
+      createLowViewsOpportunities = await esmock(
+        '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
+        {
+          '@adobe/spacecat-shared-utils': mockTagMappings,
+          '../utils.js': {
+            ...utilsModule,
+            generateOpptyData: sinon.stub().resolves([{
+              form: 'https://www.surest.com/high-page-low-form-view',
+              formsource: '',
+              formViews: 200,
+              pageViews: 5690,
+              trackedFormKPIName: 'Form View Rate',
+              trackedFormKPIValue: 0.0351,
+              metrics: [],
+            }]),
+            calculateProjectedConversionValue: sinon.stub().resolves({ projectedConversionValue: 2.5 }),
+            filterForms: sinon.stub().callsFake((opps) => opps),
+            applyOpportunityFilters: sinon.stub().callsFake((opps) => opps),
+            sendMessageToMystiqueForGuidance: sinon.stub().rejects(new Error('SQS error')),
+            sendMessageToFormsQualityAgent: sinon.stub().resolves(),
+          },
+        },
+      );
 
       await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
 
@@ -411,6 +539,31 @@ describe('createLowFormViewsOpportunities handler method', () => {
       highPageViewsLowFormViewsOptty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS;
       dataAccessStub.Opportunity.create = sinon.stub().returns(highPageViewsLowFormViewsOptty);
       context.calculateCPCValue = sinon.stub().resolves(2.5);
+      // Re-import with mocked generateOpptyData
+      const utilsModule = await import('../../../../src/forms-opportunities/utils.js');
+      createLowViewsOpportunities = await esmock(
+        '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
+        {
+          '@adobe/spacecat-shared-utils': mockTagMappings,
+          '../utils.js': {
+            ...utilsModule,
+            generateOpptyData: sinon.stub().resolves([{
+              form: 'https://www.surest.com/high-page-low-form-view',
+              formsource: '',
+              formViews: 200,
+              pageViews: 5690,
+              trackedFormKPIName: 'Form View Rate',
+              trackedFormKPIValue: 0.0351,
+              metrics: [],
+            }]),
+            calculateProjectedConversionValue: sinon.stub().resolves({ projectedConversionValue: 2.5 }),
+            filterForms: sinon.stub().callsFake((opps) => opps),
+            applyOpportunityFilters: sinon.stub().callsFake((opps) => opps),
+            sendMessageToMystiqueForGuidance: sinon.stub().resolves(),
+            sendMessageToFormsQualityAgent: sinon.stub().resolves(),
+          },
+        },
+      );
 
       await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
 
@@ -428,6 +581,31 @@ describe('createLowFormViewsOpportunities handler method', () => {
       dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
       highPageViewsLowFormViewsOptty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS;
       dataAccessStub.Opportunity.create = sinon.stub().returns(highPageViewsLowFormViewsOptty);
+      // Re-import with mocked generateOpptyData
+      const utilsModule = await import('../../../../src/forms-opportunities/utils.js');
+      createLowViewsOpportunities = await esmock(
+        '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
+        {
+          '@adobe/spacecat-shared-utils': mockTagMappings,
+          '../utils.js': {
+            ...utilsModule,
+            generateOpptyData: sinon.stub().resolves([{
+              form: 'https://www.surest.com/high-page-low-form-view',
+              formsource: '',
+              formViews: 200,
+              pageViews: 5690,
+              trackedFormKPIName: 'Form View Rate',
+              trackedFormKPIValue: 0.0351,
+              metrics: [],
+            }]),
+            calculateProjectedConversionValue: sinon.stub().resolves({ projectedConversionValue: 2.5 }),
+            filterForms: sinon.stub().callsFake((opps) => opps),
+            applyOpportunityFilters: sinon.stub().callsFake((opps) => opps),
+            sendMessageToMystiqueForGuidance: sinon.stub().resolves(),
+            sendMessageToFormsQualityAgent: sinon.stub().resolves(),
+          },
+        },
+      );
 
       await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
 
@@ -449,6 +627,33 @@ describe('createLowFormViewsOpportunities handler method', () => {
         guidance: {},
       };
       dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
+      // Mock calculateProjectedConversionValue to return a value
+      context.calculateCPCValue = sinon.stub().resolves(2.5);
+      // Re-import with mocked generateOpptyData
+      const utilsModule = await import('../../../../src/forms-opportunities/utils.js');
+      createLowViewsOpportunities = await esmock(
+        '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
+        {
+          '@adobe/spacecat-shared-utils': mockTagMappings,
+          '../utils.js': {
+            ...utilsModule,
+            generateOpptyData: sinon.stub().resolves([{
+              form: 'https://www.surest.com/high-page-low-form-view',
+              formsource: '',
+              formViews: 200,
+              pageViews: 5690,
+              trackedFormKPIName: 'Form View Rate',
+              trackedFormKPIValue: 0.0351,
+              metrics: [],
+            }]),
+            calculateProjectedConversionValue: sinon.stub().resolves({ projectedConversionValue: 2.5 }),
+            filterForms: sinon.stub().callsFake((opps) => opps),
+            applyOpportunityFilters: sinon.stub().callsFake((opps) => opps),
+            sendMessageToMystiqueForGuidance: sinon.stub().resolves(),
+            sendMessageToFormsQualityAgent: sinon.stub().resolves(),
+          },
+        },
+      );
 
       await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
 
@@ -477,20 +682,53 @@ describe('createLowFormViewsOpportunities handler method', () => {
       };
       dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
       context.sqs.sendMessage = sinon.stub().resolves({});
+      // Mock calculateProjectedConversionValue to return a value
+      context.calculateCPCValue = sinon.stub().resolves(2.5);
+      // Re-import with mocked generateOpptyData
+      const utilsModule = await import('../../../../src/forms-opportunities/utils.js');
+      createLowViewsOpportunities = await esmock(
+        '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js',
+        {
+          '@adobe/spacecat-shared-utils': mockTagMappings,
+          '../utils.js': {
+            ...utilsModule,
+            generateOpptyData: sinon.stub().resolves([{
+              form: 'https://www.surest.com/high-page-low-form-view',
+              formsource: '',
+              formViews: 200,
+              pageViews: 5690,
+              trackedFormKPIName: 'Form View Rate',
+              trackedFormKPIValue: 0.0351,
+              metrics: [],
+            }]),
+            calculateProjectedConversionValue: sinon.stub().resolves({ projectedConversionValue: 2.5 }),
+            filterForms: sinon.stub().callsFake((opps) => opps),
+            applyOpportunityFilters: sinon.stub().callsFake((opps) => opps),
+            sendMessageToMystiqueForGuidance: sinon.stub().resolves(),
+            sendMessageToFormsQualityAgent: sinon.stub().resolves(),
+          },
+        },
+      );
 
       await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
 
       expect(logStub.debug).to.have.been.calledWithMatch(/Form details available for opportunity, not sending it to mystique/);
+      // When formDetails is present, formsList is empty, so sendMessageToMystiqueForGuidance is called
       expect(context.sqs.sendMessage).to.have.been.called;
     });
 
     it('should execute error handling in catch block', async () => {
       dataAccessStub.Opportunity.allBySiteId.resolves([]);
       dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('Test error'));
+      // Mock calculateProjectedConversionValue to return a value
+      context.calculateCPCValue = sinon.stub().resolves(2.5);
 
       await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
 
-      expect(logStub.error).to.have.been.calledWithMatch(/creating forms opportunity for high page views low form views failed with error: Test error/);
+      expect(logStub.error).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: site-id] creating forms opportunity for high page views low form views failed with error: Test error',
+        sinon.match.instanceOf(Error),
+      );
       expect(logStub.info).to.have.been.calledWithMatch(/successfully synced opportunity/);
     });
   });

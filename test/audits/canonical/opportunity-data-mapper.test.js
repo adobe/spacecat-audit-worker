@@ -90,7 +90,8 @@ describe('Canonical Opportunity Data Mapper', () => {
       const result = createOpportunityDataForElmo();
 
       expect(result.tags).to.be.an('array');
-      expect(result.tags).to.include('tech-seo');
+      expect(result.tags).to.include('Canonical URLs');
+      expect(result.tags).to.include('SEO');
       expect(result.tags).to.include('llm');
     });
 

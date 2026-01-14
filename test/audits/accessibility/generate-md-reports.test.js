@@ -13,6 +13,7 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
+import esmock from 'esmock';
 import {
   escapeHtmlTags,
   formatFailureSummary,

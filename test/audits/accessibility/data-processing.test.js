@@ -925,6 +925,18 @@ describe('data-processing utility functions', () => {
           if (opportunityType === 'a11y-assistive') {
             return ['ARIA Labels', 'Accessibility', ...(currentTags || [])];
           }
+          if (opportunityType === 'a11y-color-contrast') {
+            return ['Color Contrast', 'Accessibility', 'Engagement', ...(currentTags || [])];
+          }
+          if (opportunityType === 'cwv') {
+            return ['Core Web Vitals', 'Web Performance', ...(currentTags || [])];
+          }
+          if (opportunityType === 'headings') {
+            return ['Headings', 'SEO', 'Engagement', ...(currentTags || [])];
+          }
+          if (opportunityType === 'meta-tags') {
+            return ['Meta Tags', 'SEO', ...(currentTags || [])];
+          }
           return currentTags || [];
         }),
       };

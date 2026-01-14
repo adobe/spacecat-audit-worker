@@ -462,7 +462,7 @@ describe('Hreflang Audit', () => {
       expect(result.guidance).to.have.property('steps').that.is.an('array');
       expect(result.guidance.steps).to.have.length.above(0);
       expect(result).to.have.property('tags').that.is.an('array');
-      expect(result.tags).to.include('Traffic Acquisition');
+      expect(result.tags).to.include('Hreflang');
       expect(result).to.have.property('data').that.is.an('object');
       expect(result.data).to.have.property('dataSources').that.is.an('array');
     });
@@ -485,7 +485,7 @@ describe('Hreflang Audit', () => {
       expect(result.guidance.recommendations[0]).to.have.property('type', 'CONTENT');
       expect(result.guidance.recommendations[0]).to.have.property('rationale');
       expect(result).to.have.property('tags').that.is.an('array');
-      expect(result.tags).to.include('Traffic Acquisition');
+      expect(result.tags).to.include('Hreflang');
       expect(result.tags).to.include('llm');
       expect(result).to.have.property('data').that.is.an('object');
       expect(result.data).to.have.property('dataSources').that.is.an('array');

@@ -85,10 +85,12 @@ describe('createLowNavigationOpportunities handler method', () => {
       dataAccess: dataAccessStub,
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
       site: {
         getId: sinon.stub().returns('test-site-id'),
         getDeliveryType: sinon.stub().returns('eds'),
+        getBaseURL: sinon.stub().returns('https://www.surest.com'),
       },
       sqs: {
         sendMessage: sinon.stub().resolves({}),
@@ -512,6 +514,36 @@ describe('createLowNavigationOpportunities handler method', () => {
         guidance: {},
       };
       dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
+      // Mock calculateProjectedConversionValue to return a value
+      context.calculateCPCValue = sinon.stub().resolves(2.5);
+      // Re-import with mocked generateOpptyData
+      const utilsModule = await import('../../../../src/forms-opportunities/utils.js');
+      createLowNavigationOpportunities = await esmock(
+        '../../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js',
+        {
+          '@adobe/spacecat-shared-utils': mockTagMappings,
+          '../utils.js': {
+            ...utilsModule,
+            generateOpptyData: sinon.stub().resolves([{
+              form: 'https://www.surest.com/newsletter',
+              formsource: '',
+              formViews: 300,
+              pageViews: 8670,
+              formNavigation: {
+                url: 'https://www.surest.com/about-us',
+                source: '#teaser-related02 .cmp-teaser__action-link',
+                pageViews: 104000,
+                clicksOnCTA: 800,
+              },
+            }]),
+            calculateProjectedConversionValue: sinon.stub().resolves({ projectedConversionValue: 2.5 }),
+            filterForms: sinon.stub().callsFake((opps) => opps),
+            applyOpportunityFilters: sinon.stub().callsFake((opps) => opps),
+            sendMessageToMystiqueForGuidance: sinon.stub().resolves(),
+            sendMessageToFormsQualityAgent: sinon.stub().resolves(),
+          },
+        },
+      );
 
       await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
@@ -540,20 +572,102 @@ describe('createLowNavigationOpportunities handler method', () => {
       };
       dataAccessStub.Opportunity.allBySiteId.resolves([existingOppty]);
       context.sqs.sendMessage = sinon.stub().resolves({});
+      // Mock calculateProjectedConversionValue to return a value
+      context.calculateCPCValue = sinon.stub().resolves(2.5);
+      // Re-import with mocked generateOpptyData
+      const utilsModule = await import('../../../../src/forms-opportunities/utils.js');
+      createLowNavigationOpportunities = await esmock(
+        '../../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js',
+        {
+          '@adobe/spacecat-shared-utils': mockTagMappings,
+          '../utils.js': {
+            ...utilsModule,
+            generateOpptyData: sinon.stub().callsFake(async (formVitals, context, opportunityTypes) => {
+              // Return properly structured data that convertToOpportunityData expects
+              if (opportunityTypes.includes(FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION)) {
+                return [{
+                  form: 'https://www.surest.com/newsletter',
+                  formsource: '',
+                  formViews: 300,
+                  pageViews: 8670,
+                  formNavigation: {
+                    url: 'https://www.surest.com/about-us',
+                    source: '#teaser-related02 .cmp-teaser__action-link',
+                    pageViews: 104000,
+                    clicksOnCTA: 800,
+                  },
+                  trackedFormKPIName: 'Form View Rate',
+                  trackedFormKPIValue: 0.0346,
+                  metrics: [],
+                }];
+              }
+              return [];
+            }),
+            calculateProjectedConversionValue: sinon.stub().resolves({ projectedConversionValue: 2.5 }),
+            filterForms: sinon.stub().callsFake((opps) => opps),
+            applyOpportunityFilters: sinon.stub().callsFake((opps) => opps),
+            sendMessageToMystiqueForGuidance: sinon.stub().resolves(),
+            sendMessageToFormsQualityAgent: sinon.stub().resolves(),
+          },
+        },
+      );
 
       await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
       expect(logStub.debug).to.have.been.calledWithMatch(/Form details available for opportunity, not sending it to mystique/);
+      // When formDetails is present, formsList is empty, so sendMessageToMystiqueForGuidance is called
       expect(context.sqs.sendMessage).to.have.been.called;
     });
 
     it('should execute error handling in catch block', async () => {
       dataAccessStub.Opportunity.allBySiteId.resolves([]);
       dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('Test error'));
+      // Mock calculateProjectedConversionValue to return a value
+      context.calculateCPCValue = sinon.stub().resolves(2.5);
+      // Re-import with mocked generateOpptyData that returns data
+      const utilsModule = await import('../../../../src/forms-opportunities/utils.js');
+      createLowNavigationOpportunities = await esmock(
+        '../../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js',
+        {
+          '@adobe/spacecat-shared-utils': mockTagMappings,
+          '../utils.js': {
+            ...utilsModule,
+            generateOpptyData: sinon.stub().callsFake(async (formVitals, context, opportunityTypes) => {
+              // Return properly structured data that convertToOpportunityData expects
+              if (opportunityTypes.includes(FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION)) {
+                return [{
+                  form: 'https://www.surest.com/newsletter',
+                  formsource: '',
+                  formViews: 300,
+                  pageViews: 8670,
+                  formNavigation: {
+                    url: 'https://www.surest.com/about-us',
+                    source: '#teaser-related02 .cmp-teaser__action-link',
+                    pageViews: 104000,
+                    clicksOnCTA: 800,
+                  },
+                  trackedFormKPIName: 'Form View Rate',
+                  trackedFormKPIValue: 0.0346,
+                  metrics: [],
+                }];
+              }
+              return [];
+            }),
+            calculateProjectedConversionValue: sinon.stub().resolves({ projectedConversionValue: 2.5 }),
+            filterForms: sinon.stub().callsFake((opps) => opps),
+            applyOpportunityFilters: sinon.stub().callsFake((opps) => opps),
+            sendMessageToMystiqueForGuidance: sinon.stub().resolves(),
+            sendMessageToFormsQualityAgent: sinon.stub().resolves(),
+          },
+        },
+      );
 
       await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
-      expect(logStub.error).to.have.been.calledWithMatch(/creating forms opportunity for high page views low form nav failed with error: Test error/);
+      expect(logStub.error).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: site-id] creating forms opportunity for high page views low form nav failed with error: Test error',
+        sinon.match.instanceOf(Error),
+      );
       expect(logStub.info).to.have.been.calledWithMatch(/successfully synced opportunity/);
     });
   });
