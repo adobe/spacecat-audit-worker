@@ -126,6 +126,9 @@ describe('agentic-urls', () => {
       expect(context.log.info).to.have.been.calledWith(
         'Agentic URLs - Selected 3 top agentic URLs via Athena. baseUrl=https://www.example.com',
       );
+      expect(context.log.info).to.have.been.calledWith(
+        'Agentic URLs - Top #1 URL: https://www.example.com/page1',
+      );
     });
 
     it('should return empty array when Athena returns no results', async () => {
@@ -327,6 +330,27 @@ describe('agentic-urls', () => {
         'https://www.example.com/products/page1',
         'https://www.example.com/about',
       ]);
+    });
+
+    it('should handle finalUrl that already includes https protocol', async () => {
+      const site = createMockSite();
+      const context = {
+        ...createMockContext(),
+        // finalUrl already has protocol (edge case)
+        finalUrl: 'https://www.example.com',
+      };
+
+      mockAthenaClient.query.resolves([
+        { url: '/page1' },
+      ]);
+
+      const result = await getTopAgenticUrlsFromAthena(site, context);
+
+      // Should use finalUrl as-is without double-prepending https://
+      expect(result).to.deep.equal(['https://www.example.com/page1']);
+      expect(context.log.info).to.have.been.calledWith(
+        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://www.example.com',
+      );
     });
 
     it('should filter out paths when site.getBaseURL is invalid and finalUrl is undefined', async () => {

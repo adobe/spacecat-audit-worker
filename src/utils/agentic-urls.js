@@ -56,9 +56,9 @@ export async function getTopAgenticUrlsFromAthena(
   const { log } = context;
   // Use finalUrl from context if available (it's a hostname, so add https://),
   // otherwise fall back to site.getBaseURL() which already includes the protocol
-  const baseUrl = context.finalUrl
+  const baseUrl = context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
     ? `https://${context.finalUrl}`
-    : site.getBaseURL();
+    : context.finalUrl || site.getBaseURL();
   try {
     const s3Config = await getS3Config(site, context);
     const periods = generateReportingPeriods();
@@ -112,7 +112,7 @@ export async function getTopAgenticUrlsFromAthena(
       .filter((url) => url !== null);
 
     log.info(`Agentic URLs - Selected ${topUrls.length} top agentic URLs via Athena. baseUrl=${baseUrl}`);
-    log.info(`Agentic URLs - Top URLs: ${topUrls.join(', ')}`);
+    log.info(`Agentic URLs - Top #1 URL: ${topUrls[0]}`);
     return topUrls;
   } catch (e) {
     log?.warn?.(`Agentic URLs - Athena agentic URL fetch failed: ${e.message}. baseUrl=${baseUrl}`);
