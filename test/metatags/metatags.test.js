@@ -25,6 +25,7 @@ import {
   SEO_IMPACT,
   HIGH,
   MODERATE,
+  LOW,
   ISSUE,
   SEO_RECOMMENDATION,
   MULTIPLE_H1_ON_PAGE,
@@ -121,6 +122,34 @@ describe('Meta Tags', () => {
 
         expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Title too short');
         expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(MODERATE);
+      });
+
+      it('should detect title below ideal length and add to detectedTags with LOW impact', () => {
+        const url = 'https://example.com';
+        // Title between minLength (3) and idealMinLength (40)
+        const belowIdealTitle = 'A'.repeat(TAG_LENGTHS[TITLE].minLength + 5); // 8 chars
+        const pageTags = { [TITLE]: belowIdealTitle };
+
+        seoChecks.checkForTagsLength(url, pageTags);
+
+        expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Title below ideal length');
+        expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(LOW);
+        expect(seoChecks.getDetectedTags()[url][TITLE].issueDetails)
+          .to.equal(`${TAG_LENGTHS[TITLE].idealMinLength - belowIdealTitle.length} chars below ideal minimum`);
+      });
+
+      it('should detect title above ideal length and add to detectedTags with LOW impact', () => {
+        const url = 'https://example.com';
+        // Title between idealMaxLength (60) and maxLength (75)
+        const aboveIdealTitle = 'A'.repeat(TAG_LENGTHS[TITLE].idealMaxLength + 5); // 65 chars
+        const pageTags = { [TITLE]: aboveIdealTitle };
+
+        seoChecks.checkForTagsLength(url, pageTags);
+
+        expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Title above ideal length');
+        expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(LOW);
+        expect(seoChecks.getDetectedTags()[url][TITLE].issueDetails)
+          .to.equal(`${aboveIdealTitle.length - TAG_LENGTHS[TITLE].idealMaxLength} chars above ideal maximum`);
       });
     });
 
