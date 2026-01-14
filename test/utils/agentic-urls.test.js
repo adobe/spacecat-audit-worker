@@ -97,7 +97,6 @@ describe('agentic-urls', () => {
       AWS_ENV: 'prod',
       AWS_REGION: 'us-east-1',
     },
-    finalUrl: 'https://www.example.com',
   });
 
   describe('getTopAgenticUrlsFromAthena', () => {
@@ -113,17 +112,16 @@ describe('agentic-urls', () => {
 
       const result = await getTopAgenticUrlsFromAthena(site, context);
 
-      // URLs should use the finalUrl from context as base
       expect(result).to.deep.equal([
-        'https://www.example.com/page1',
-        'https://www.example.com/page2',
-        'https://www.example.com/page3',
+        'https://example.com/page1',
+        'https://example.com/page2',
+        'https://example.com/page3',
       ]);
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://www.example.com',
+        'Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=https://example.com',
       );
       expect(context.log.info).to.have.been.calledWith(
-        'Agentic URLs - Selected 3 top agentic URLs via Athena. baseUrl=https://www.example.com',
+        'Agentic URLs - Selected 3 top agentic URLs via Athena. baseUrl=https://example.com',
       );
     });
 
@@ -137,7 +135,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.have.been.calledWith(
-        'Agentic URLs - Athena returned no agentic rows. baseUrl=https://www.example.com',
+        'Agentic URLs - Athena returned no agentic rows. baseUrl=https://example.com',
       );
     });
 
@@ -151,7 +149,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.have.been.calledWith(
-        'Agentic URLs - Athena returned no agentic rows. baseUrl=https://www.example.com',
+        'Agentic URLs - Athena returned no agentic rows. baseUrl=https://example.com',
       );
     });
 
@@ -165,7 +163,7 @@ describe('agentic-urls', () => {
 
       expect(result).to.deep.equal([]);
       expect(context.log.warn).to.have.been.calledWith(
-        'Agentic URLs - Athena agentic URL fetch failed: Athena connection failed. baseUrl=https://www.example.com',
+        'Agentic URLs - Athena agentic URL fetch failed: Athena connection failed. baseUrl=https://example.com',
       );
     });
 
@@ -183,10 +181,9 @@ describe('agentic-urls', () => {
 
       const result = await getTopAgenticUrlsFromAthena(site, context);
 
-      // URLs should use the finalUrl from context as base
       expect(result).to.deep.equal([
-        'https://www.example.com/page1',
-        'https://www.example.com/page2',
+        'https://example.com/page1',
+        'https://example.com/page2',
       ]);
     });
 
@@ -235,17 +232,18 @@ describe('agentic-urls', () => {
 
       // Both should be normalized to full URLs
       expect(result).to.have.lengthOf(2);
-      expect(result[0]).to.equal('https://www.example.com/page1');
-      // Full URLs are handled by URL constructor - base is ignored for absolute URLs
-      expect(result[1]).to.equal('https://example.com/page2');
+      expect(result[0]).to.equal('https://example.com/page1');
     });
 
-    it('should handle context with no finalUrl gracefully', async () => {
-      const site = createMockSite();
-      const context = {
-        ...createMockContext(),
-        finalUrl: undefined,
+    it('should handle site with no baseURL gracefully', async () => {
+      const site = {
+        getBaseURL: () => '',
+        getId: () => 'site-123',
+        getConfig: () => ({
+          getLlmoCdnlogsFilter: () => [],
+        }),
       };
+      const context = createMockContext();
 
       mockAthenaClient.query.resolves([
         { url: '/page1' },
@@ -304,27 +302,6 @@ describe('agentic-urls', () => {
           periods: { weeks: [{ weekNumber: 2, year: 2025 }] },
         }),
       );
-    });
-
-    it('should use finalUrl from context to construct URLs', async () => {
-      const site = createMockSite();
-      const context = {
-        ...createMockContext(),
-        finalUrl: 'https://www.example.com',
-      };
-
-      mockAthenaClient.query.resolves([
-        { url: '/products/page1' },
-        { url: '/about' },
-      ]);
-
-      const result = await getTopAgenticUrlsFromAthena(site, context);
-
-      // URLs should use the finalUrl from context
-      expect(result).to.deep.equal([
-        'https://www.example.com/products/page1',
-        'https://www.example.com/about',
-      ]);
     });
   });
 });
