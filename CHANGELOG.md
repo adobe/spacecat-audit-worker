@@ -1,3 +1,53 @@
+## [1.282.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.282.1...v1.282.2) (2026-01-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency diff to v8.0.3 [security] ([#1854](https://github.com/adobe/spacecat-audit-worker/issues/1854)) ([01c060f](https://github.com/adobe/spacecat-audit-worker/commit/01c060f626c9ba4e1747000f426dc100eb433d45))
+
+## [1.282.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.282.0...v1.282.1) (2026-01-15)
+
+
+### Bug Fixes
+
+* adding brand profile for headings ([#1836](https://github.com/adobe/spacecat-audit-worker/issues/1836)) ([ebae81f](https://github.com/adobe/spacecat-audit-worker/commit/ebae81f010e144b735f5271937bd7610946f1122))
+
+# [1.282.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.281.1...v1.282.0) (2026-01-14)
+
+
+### Features
+
+* **LLMO-1023:** add automatic trace ID propagation in SQS wrapper ([#1847](https://github.com/adobe/spacecat-audit-worker/issues/1847)) ([f81520e](https://github.com/adobe/spacecat-audit-worker/commit/f81520e8c44413b060a56401faea4379c1644d55))
+
+## [1.281.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.281.0...v1.281.1) (2026-01-14)
+
+
+### Bug Fixes
+
+* correct URL format & fall back to site url ([#1848](https://github.com/adobe/spacecat-audit-worker/issues/1848)) ([b851bae](https://github.com/adobe/spacecat-audit-worker/commit/b851bae1bd43a885f63131408c6a76d0573bf289))
+
+# [1.281.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.280.3...v1.281.0) (2026-01-14)
+
+
+### Features
+
+* prerender mystique integration ([#1824](https://github.com/adobe/spacecat-audit-worker/issues/1824)) ([5e9dcfd](https://github.com/adobe/spacecat-audit-worker/commit/5e9dcfd0cd540369eab64ebf7a300674ef6fb9da))
+
+## [1.280.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.280.2...v1.280.3) (2026-01-14)
+
+
+### Bug Fixes
+
+* adding comprehensive preflight docs ([#1817](https://github.com/adobe/spacecat-audit-worker/issues/1817)) ([e414960](https://github.com/adobe/spacecat-audit-worker/commit/e4149603c3651efd24d2224aae653767939491bf))
+* www resolver for agentic URLs ([#1843](https://github.com/adobe/spacecat-audit-worker/issues/1843)) ([8298bb7](https://github.com/adobe/spacecat-audit-worker/commit/8298bb7c5f5dae0e3358ea6567ed7d975dac86d3))
+
+## [1.280.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.280.1...v1.280.2) (2026-01-13)
+
+
+### Bug Fixes
+
+* use baseURL instead of organizationId for Wikipedia company name ([#1842](https://github.com/adobe/spacecat-audit-worker/issues/1842)) ([c083749](https://github.com/adobe/spacecat-audit-worker/commit/c08374932f401a7df7aae6bd78e9b33073df3cff))
+
 ## [1.280.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.280.0...v1.280.1) (2026-01-13)
 
 
