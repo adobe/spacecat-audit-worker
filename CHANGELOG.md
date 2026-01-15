@@ -1,3 +1,10 @@
+## [1.282.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.282.1...v1.282.2) (2026-01-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency diff to v8.0.3 [security] ([#1854](https://github.com/adobe/spacecat-audit-worker/issues/1854)) ([01c060f](https://github.com/adobe/spacecat-audit-worker/commit/01c060f626c9ba4e1747000f426dc100eb433d45))
+
 ## [1.282.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.282.0...v1.282.1) (2026-01-15)
 
 
