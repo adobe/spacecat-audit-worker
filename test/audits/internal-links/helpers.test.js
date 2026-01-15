@@ -22,6 +22,7 @@ import {
   TRAFFIC_MULTIPLIER,
   CPC_DEFAULT_VALUE,
   isLinkInaccessible,
+  calculatePriority,
 } from '../../../src/internal-links/helpers.js';
 import { auditData } from '../../fixtures/internal-links-data.js';
 
@@ -163,5 +164,100 @@ describe('isLinkInaccessible', () => {
     expect(mockLog.error.calledWith(
       'broken-internal-links audit: Error checking https://example.com/timeout: Request timed out after 3000ms',
     )).to.be.true;
+  });
+});
+
+describe('calculatePriority', () => {
+
+  it('should classify links into high, medium, and low priority based on traffic', () => {
+    const links = [
+      { urlTo: 'link1', trafficDomain: 1000 },
+      { urlTo: 'link2', trafficDomain: 900 },
+      { urlTo: 'link3', trafficDomain: 800 },
+      { urlTo: 'link4', trafficDomain: 700 },
+      { urlTo: 'link5', trafficDomain: 600 },
+      { urlTo: 'link6', trafficDomain: 500 },
+      { urlTo: 'link7', trafficDomain: 400 },
+      { urlTo: 'link8', trafficDomain: 300 },
+    ];
+
+    const result = calculatePriority(links);
+
+    // Top 25% (2 links) should be high
+    expect(result[0].priority).to.equal('high');
+    expect(result[1].priority).to.equal('high');
+
+    // Next 25% (2 links) should be medium
+    expect(result[2].priority).to.equal('medium');
+    expect(result[3].priority).to.equal('medium');
+
+    // Bottom 50% (4 links) should be low
+    expect(result[4].priority).to.equal('low');
+    expect(result[5].priority).to.equal('low');
+    expect(result[6].priority).to.equal('low');
+    expect(result[7].priority).to.equal('low');
+
+    // Should be sorted by trafficDomain descending
+    expect(result[0].trafficDomain).to.equal(1000);
+    expect(result[7].trafficDomain).to.equal(300);
+  });
+
+  it('should handle single link correctly', () => {
+    const links = [{ urlTo: 'link1', trafficDomain: 100 }];
+    const result = calculatePriority(links);
+
+    expect(result).to.have.lengthOf(1);
+    expect(result[0].priority).to.equal('high');
+  });
+
+  it('should handle two links correctly', () => {
+    const links = [
+      { urlTo: 'link1', trafficDomain: 200 },
+      { urlTo: 'link2', trafficDomain: 100 },
+    ];
+
+    const result = calculatePriority(links);
+
+    expect(result).to.have.lengthOf(2);
+    // With 2 links: quarterIndex=1, halfIndex=1
+    // index 0 < 1 → 'high'
+    // index 1 >= 1 → 'low'
+    expect(result[0].priority).to.equal('high');
+    expect(result[1].priority).to.equal('low');
+  });
+
+  it('should handle empty array', () => {
+    const result = calculatePriority([]);
+    expect(result).to.be.an('array').that.is.empty;
+  });
+
+  it('should not mutate original array', () => {
+    const links = [
+      { urlTo: 'link1', trafficDomain: 300 },
+      { urlTo: 'link2', trafficDomain: 100 },
+      { urlTo: 'link3', trafficDomain: 200 },
+    ];
+
+    const originalOrder = links.map((l) => l.urlTo);
+    calculatePriority(links);
+
+    // Original array should be unchanged
+    expect(links.map((l) => l.urlTo)).to.deep.equal(originalOrder);
+  });
+
+  it('should preserve all link properties', () => {
+    const links = [
+      { urlTo: 'link1', urlFrom: 'from1', trafficDomain: 100, extraProp: 'test' },
+    ];
+
+    const result = calculatePriority(links);
+
+    expect(result[0]).to.deep.include({
+      urlTo: 'link1',
+      urlFrom: 'from1',
+      trafficDomain: 100,
+      extraProp: 'test',
+      priority: 'high',
+    });
   });
 });

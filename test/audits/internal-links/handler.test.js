@@ -176,6 +176,64 @@ describe('Broken internal links audit', () => {
     });
   }).timeout(5000);
 
+  it('broken-internal-links audit filters out links that are out of audit scope', async () => {
+    // Mock RUM data with links both in and out of scope
+    const mixedScopeLinks = [
+      {
+        url_from: 'https://example.com/page1',
+        url_to: 'https://example.com/broken1', // In scope
+        traffic_domain: 1000,
+      },
+      {
+        url_from: 'https://example.com/other/page2',
+        url_to: 'https://example.com/broken2', // Out of scope (from)
+        traffic_domain: 2000,
+      },
+      {
+        url_from: 'https://example.com/page3',
+        url_to: 'https://example.com/other/broken3', // Out of scope (to)
+        traffic_domain: 1500,
+      },
+    ];
+
+    context.rumApiClient.query.resolves(mixedScopeLinks);
+
+    // Mock isLinkInaccessible to return true for all
+    nock('https://example.com')
+      .get('/broken1')
+      .reply(404);
+    nock('https://example.com')
+      .get('/broken2')
+      .reply(404);
+    nock('https://example.com')
+      .get('/other/broken3')
+      .reply(404);
+
+    const result = await internalLinksAuditRunner(
+      'www.example.com',
+      context,
+      site,
+    );
+
+    // Only the in-scope link should be included
+    expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+    expect(result.auditResult.brokenInternalLinks[0]).to.deep.equal({
+      urlFrom: 'https://example.com/page1',
+      urlTo: 'https://example.com/broken1',
+      trafficDomain: 1000,
+    });
+
+    // Check that the debug log was called for filtered links
+    expect(context.log.debug).to.have.been.calledWith(
+      sinon.match(/Filtered out.*out of scope/),
+    );
+
+    // Check that the info log was called for out-of-scope count
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/Filtered out 2 links out of audit scope/),
+    );
+  }).timeout(5000);
+
   it('runAuditAndImportTopPagesStep should run audit and import top pages', async () => {
     const result = await runAuditAndImportTopPagesStep(context);
     expect(result).to.deep.equal({

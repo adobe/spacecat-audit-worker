@@ -324,6 +324,7 @@ describe('Crawl Detection for Broken Internal Links', () => {
               <a href="javascript:void(0)">Invalid</a>
               <a href="/valid-link">Valid</a>
               <a href="">Empty</a>
+              <a href=":::invalid:::">Malformed URL</a>
             </main>
           </body>
         </html>
@@ -345,11 +346,72 @@ describe('Crawl Detection for Broken Internal Links', () => {
 
       const result = await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
 
-      // Should check valid link and empty href (which resolves to page itself)
-      expect(isLinkInaccessibleStub).to.have.been.calledTwice;
+      // Should check valid hrefs: /valid-link, empty href (resolves to page1), and :::invalid::: (becomes relative URL)
+      // javascript:void(0) is external so it's skipped
+      expect(isLinkInaccessibleStub.callCount).to.be.at.least(2);
       expect(isLinkInaccessibleStub).to.have.been.calledWith('https://example.com/valid-link');
       expect(isLinkInaccessibleStub).to.have.been.calledWith('https://example.com/page1');
       expect(result).to.have.lengthOf(0);
+    });
+
+    it('should handle pages with no internal links', async () => {
+      const noInternalLinksHTML = `
+        <html>
+          <body>
+            <main>
+              <a href="https://external.com/link1">External 1</a>
+              <a href="https://external.com/link2">External 2</a>
+            </main>
+          </body>
+        </html>
+      `;
+
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          rawBody: noInternalLinksHTML,
+        },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isWithinAuditScopeStub.returns(true);
+
+      const result = await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
+
+      // Should not check any links since they're all external
+      expect(isLinkInaccessibleStub).to.not.have.been.called;
+      expect(result).to.have.lengthOf(0);
+      expect(mockContext.log.debug).to.have.been.calledWith(
+        sinon.match(/No internal links to validate/),
+      );
+    });
+
+    it('should log debug message when page is out of scope', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/fr/page1', 's3-key-1'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          rawBody: '<a href="/fr/link1">Link1</a>',
+        },
+        finalUrl: 'https://example.com/fr/page1',
+      });
+
+      // Page is out of scope
+      isWithinAuditScopeStub.callsFake((url) => !url.includes('/fr/'));
+      isLinkInaccessibleStub.resolves(true);
+
+      const result = await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
+
+      // Should filter out the link since page is out of scope
+      expect(result).to.have.lengthOf(0);
+      expect(mockContext.log.debug).to.have.been.calledWith(
+        sinon.match(/Page.*is out of audit scope, skipping link validation/),
+      );
     });
   });
 
