@@ -20,6 +20,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
 import { isUnscrapeable } from '../utils/url-utils.js';
+import { smartSampleUrls } from '../utils/url-sampling.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -184,17 +185,28 @@ export const generateSuggestionData = async (context) => {
     newData: auditResult?.brokenBacklinks,
     buildKey,
     context,
-    mapNewSuggestion: (backlink) => ({
-      opportunityId: opportunity.getId(),
-      type: 'REDIRECT_UPDATE',
-      rank: backlink.traffic_domain,
-      data: {
-        title: backlink.title,
-        url_from: backlink.url_from,
-        url_to: backlink.url_to,
-        traffic_domain: backlink.traffic_domain,
-      },
-    }),
+    mapNewSuggestion: (backlink) => {
+      // Rank formula: DR² × log10(traffic + 1)
+      // This weights Domain Rating more heavily than traffic volume
+      // High DR sites (authority) are prioritized over high traffic (volume)
+      const dr = backlink.domain_rating_source || 30;
+      const traffic = backlink.traffic_domain || 1;
+      const rank = Math.round((dr ** 2) * Math.log10(traffic + 1));
+
+      return {
+        opportunityId: opportunity.getId(),
+        type: 'REDIRECT_UPDATE',
+        rank,
+        data: {
+          title: backlink.title,
+          url_from: backlink.url_from,
+          url_to: backlink.url_to,
+          traffic_domain: backlink.traffic_domain,
+          anchor: backlink.anchor || '',
+          domain_rating: backlink.domain_rating_source || 0,
+        },
+      };
+    },
   });
   const suggestions = await Suggestion.allByOpportunityIdAndStatus(
     opportunity.getId(),
@@ -207,6 +219,7 @@ export const generateSuggestionData = async (context) => {
       urlFrom: suggestion?.getData()?.url_from,
       urlTo: suggestion?.getData()?.url_to,
       suggestionId: suggestion?.getId(),
+      anchor: suggestion?.getData()?.anchor || '',
     }))
     .filter((link) => link.urlFrom && link.urlTo && link.suggestionId); // Filter invalid entries
 
@@ -248,6 +261,14 @@ export const generateSuggestionData = async (context) => {
   alternativeUrls = alternativeUrls.filter((url) => !isUnscrapeable(url));
   if (alternativeUrls.length < originalCount) {
     log.info(`Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs (PDFs, Office docs, etc.) from alternative URLs before sending to Mystique`);
+  }
+
+  // Smart sample URLs to ensure content diversity across different path patterns
+  // This prevents all 200 URLs from being just /products/* pages
+  const preSmartSampleCount = alternativeUrls.length;
+  alternativeUrls = smartSampleUrls(alternativeUrls, 200, log);
+  if (alternativeUrls.length < preSmartSampleCount) {
+    log.info(`Smart sampled ${alternativeUrls.length} URLs from ${preSmartSampleCount} to ensure content diversity`);
   }
 
   // Validate before sending to Mystique

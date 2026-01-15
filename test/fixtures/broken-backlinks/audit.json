@@ -7,25 +7,38 @@
         "title": "backlink that redirects to www and throw connection error",
         "url_from": "https://from.com/from-2",
         "url_to": "https://foo.com/redirects-throws-error",
-        "traffic_domain": 2000
+        "traffic_domain": 2000,
+        "anchor": "click here for error page",
+        "domain_rating_source": 45
       },
       {
         "title": "backlink that returns 429",
         "url_from": "https://from.com/from-3",
         "url_to": "https://foo.com/returns-429",
-        "traffic_domain": 1000
+        "traffic_domain": 1000,
+        "anchor": "rate limited page",
+        "domain_rating_source": 35
       },
       {
         "title": "backlink that is not excluded",
         "url_from": "https://from.com/from-not-excluded",
         "url_to": "https://foo.com/not-excluded",
-        "traffic_domain": 5000
+        "traffic_domain": 5000,
+        "anchor": "best product reviews",
+        "domain_rating_source": 72
       },
       {
         "title": "backlink that returns 404",
         "url_from": "https://from.com/from-1",
         "url_to": "https://foo.com/returns-404",
-        "traffic_domain": 4000
+        "traffic_domain": 4000,
+        "anchor": "page not found example",
+        "domain_rating_source": 58
+      },
+      {
+        "title": "backlink with missing optional fields",
+        "url_from": "https://from.com/from-missing",
+        "url_to": "https://foo.com/missing-fields"
       }
     ]
   },
