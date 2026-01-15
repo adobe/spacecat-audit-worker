@@ -20,10 +20,10 @@ import {
   defaultUrlResolver,
   defaultJobProvider,
   defaultPostProcessors,
-  StepAudit,
-  RunnerAudit,
-  AsyncJobRunner,
-} from './index.js';
+} from './base-audit.js';
+import { StepAudit } from './step-audit.js';
+import { RunnerAudit } from './runner-audit.js';
+import { AsyncJobRunner } from './async-job-runner.js';
 
 export class AuditBuilder {
   constructor() {

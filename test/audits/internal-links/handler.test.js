@@ -25,6 +25,8 @@ import {
   internalLinksAuditRunner,
   runAuditAndImportTopPagesStep,
   prepareScrapingStep,
+  submitForScraping,
+  runCrawlDetectionAndGenerateSuggestions,
 } from '../../../src/internal-links/handler.js';
 import {
   internalLinksData,
@@ -40,19 +42,16 @@ const AUDIT_RESULT_DATA = [
     trafficDomain: 1800,
     urlTo: 'https://www.petplace.com/a01',
     urlFrom: 'https://www.petplace.com/a02nf',
-    priority: 'high',
   },
   {
     trafficDomain: 1200,
     urlTo: 'https://www.petplace.com/ax02',
     urlFrom: 'https://www.petplace.com/ax02nf',
-    priority: 'medium',
   },
   {
     trafficDomain: 200,
     urlTo: 'https://www.petplace.com/a01',
     urlFrom: 'https://www.petplace.com/a01nf',
-    priority: 'low',
   },
 ];
 const AUDIT_RESULT_DATA_WITH_SUGGESTIONS = [
@@ -174,6 +173,86 @@ describe('Broken internal links audit', () => {
         success: false,
       },
     });
+  }).timeout(5000);
+
+  it('should return empty array when RUM returns no broken links', async () => {
+    context.rumApiClient.query.resolves([]);
+    const result = await internalLinksAuditRunner(
+      'www.example.com',
+      context,
+      site,
+    );
+    expect(result).to.deep.equal({
+      auditResult: {
+        brokenInternalLinks: [],
+        fullAuditRef: auditUrl,
+        finalUrl: 'www.example.com',
+        auditContext: { interval: 30 },
+        success: true,
+      },
+      fullAuditRef: auditUrl,
+    });
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/No 404 internal links found in RUM data/));
+  }).timeout(5000);
+
+  it('should filter out links that are no longer broken', async () => {
+    const mockLinksFromRUM = [
+      { url_to: 'https://example.com/broken', url_from: 'https://example.com/page1', traffic_domain: 100 },
+      { url_to: 'https://example.com/fixed', url_from: 'https://example.com/page2', traffic_domain: 50 },
+    ];
+
+    context.rumApiClient.query.resolves(mockLinksFromRUM);
+
+    // Mock isLinkInaccessible to return true for first link, false for second
+    const mockIsLinkInaccessible = async (url) => {
+      if (url === 'https://example.com/broken') return true;
+      if (url === 'https://example.com/fixed') return false;
+      return false;
+    };
+
+    const handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/helpers.js': {
+        isLinkInaccessible: mockIsLinkInaccessible,
+        calculatePriority: (links) => links,
+        calculateKpiDeltasForAudit: () => {},
+      },
+    });
+
+    const result = await handler.internalLinksAuditRunner('www.example.com', context, site);
+
+    expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+    expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://example.com/broken');
+    expect(context.log.debug).to.have.been.calledWith(sinon.match(/is now fixed/));
+  }).timeout(5000);
+
+  it('should filter out links that are out of audit scope and log them', async () => {
+    const siteWithSubpath = {
+      ...site,
+      getBaseURL: () => 'https://example.com/blog',
+    };
+
+    const mockLinksFromRUM = [
+      { url_to: 'https://example.com/blog/post1', url_from: 'https://example.com/blog/index', traffic_domain: 100 },
+      { url_to: 'https://example.com/products/item', url_from: 'https://example.com/blog/index', traffic_domain: 50 },
+    ];
+
+    context.rumApiClient.query.resolves(mockLinksFromRUM);
+    context.site = siteWithSubpath;
+
+    const handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/helpers.js': {
+        isLinkInaccessible: async () => true,
+        calculatePriority: (links) => links,
+        calculateKpiDeltasForAudit: () => {},
+      },
+    });
+
+    const result = await handler.internalLinksAuditRunner('www.example.com', context, siteWithSubpath);
+
+    expect(result.auditResult.brokenInternalLinks).to.have.lengthOf(1);
+    expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://example.com/blog/post1');
+    expect(context.log.debug).to.have.been.calledWith(sinon.match(/Filtered out \(out of scope\)/));
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/Filtered out 1 links out of audit scope/));
   }).timeout(5000);
 
   it('runAuditAndImportTopPagesStep should run audit and import top pages', async () => {
@@ -1126,4 +1205,328 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       sinon.match(/No alternative URLs available/),
     );
   }).timeout(5000);
+
+  describe('submitForScraping', () => {
+    it('should fetch top pages, merge with includedURLs, and return scraping request', async () => {
+      const mockTopPages = [
+        { getUrl: () => 'https://example.com/page1' },
+        { getUrl: () => 'https://example.com/page2' },
+      ];
+
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(mockTopPages),
+      };
+
+      context.site.getConfig = sandbox.stub().returns({
+        getIncludedURLs: sandbox.stub().returns(['https://example.com/page3', 'https://example.com/page1']), // page1 is duplicate
+      });
+
+      const result = await submitForScraping(context);
+
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+          { url: 'https://example.com/page3' },
+        ],
+        siteId: 'site-id-1',
+        type: 'broken-internal-links',
+        allowCache: false,
+        maxScrapeAge: 0,
+      });
+
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Found 2 Ahrefs top pages/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Found 2 manual includedURLs/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/3 unique/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/1 duplicates removed/));
+    });
+
+    it('should filter out unscrapeable URLs (PDFs, Office docs)', async () => {
+      const mockTopPages = [
+        { getUrl: () => 'https://example.com/page1.html' },
+        { getUrl: () => 'https://example.com/doc.pdf' },
+        { getUrl: () => 'https://example.com/file.xlsx' },
+      ];
+
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(mockTopPages),
+      };
+
+      context.site.getConfig = sandbox.stub().returns({
+        getIncludedURLs: sandbox.stub().returns([]),
+      });
+
+      const result = await submitForScraping(context);
+
+      expect(result.urls).to.deep.equal([
+        { url: 'https://example.com/page1.html' },
+      ]);
+
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Filtered out 2 unscrape-able files/));
+    });
+
+    it('should throw error when no URLs are found', async () => {
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+      };
+
+      context.site.getConfig = sandbox.stub().returns({
+        getIncludedURLs: sandbox.stub().returns([]),
+      });
+
+      await expect(submitForScraping(context)).to.be.rejectedWith(
+        /No URLs found for site neither top pages nor included URLs/,
+      );
+
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/No URLs found for site/),
+      );
+    });
+
+    it('should work with only manual includedURLs (no top pages)', async () => {
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+      };
+
+      context.site.getConfig = sandbox.stub().returns({
+        getIncludedURLs: sandbox.stub().returns(['https://example.com/manual1']),
+      });
+
+      const result = await submitForScraping(context);
+
+      expect(result.urls).to.deep.equal([
+        { url: 'https://example.com/manual1' },
+      ]);
+
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Found 0 Ahrefs top pages/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Found 1 manual includedURLs/));
+    });
+
+    it('should handle site with no config or getIncludedURLs undefined', async () => {
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+          { getUrl: () => 'https://example.com/page1' },
+        ]),
+      };
+
+      // Test site with no getConfig method (returns undefined)
+      context.site.getConfig = sandbox.stub().returns(undefined);
+
+      const result = await submitForScraping(context);
+
+      expect(result.urls).to.deep.equal([
+        { url: 'https://example.com/page1' },
+      ]);
+
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Found 0 manual includedURLs/));
+    });
+
+    it('should log ellipsis when more than 5 includedURLs', async () => {
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+      };
+
+      const manyUrls = Array.from({ length: 10 }, (_, i) => `https://example.com/url${i}`);
+      context.site.getConfig = sandbox.stub().returns({
+        getIncludedURLs: sandbox.stub().returns(manyUrls),
+      });
+
+      await submitForScraping(context);
+
+      expect(context.log.debug).to.have.been.calledWith(sinon.match(/Manual includedURLs:.*\.\.\./));
+    });
+  });
+
+  describe('runCrawlDetectionAndGenerateSuggestions', () => {
+    let mockHandler;
+
+    beforeEach(async () => {
+      mockHandler = await esmock('../../../src/internal-links/handler.js', {
+        '../../../src/internal-links/crawl-detection.js': {
+          detectBrokenLinksFromCrawl: sandbox.stub().resolves([
+            { urlTo: 'https://example.com/crawl1', urlFrom: 'https://example.com/page1', trafficDomain: 0 },
+          ]),
+          mergeAndDeduplicate: sandbox.stub().callsFake((crawl, rum) => [...crawl, ...rum]),
+        },
+        '../../../src/internal-links/helpers.js': {
+          calculatePriority: sandbox.stub().callsFake((links) => links.map(l => ({ ...l, priority: 'high' }))),
+          isLinkInaccessible: sandbox.stub().resolves(false),
+          calculateKpiDeltasForAudit: sandbox.stub(),
+        },
+      });
+    });
+
+    it('should use RUM-only results when feature toggle is OFF', async () => {
+      const rumLinks = [
+        { urlTo: 'https://example.com/rum1', urlFrom: 'https://example.com/page1', trafficDomain: 100 },
+      ];
+
+      context.audit = {
+        getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
+        setAuditResult: sandbox.stub(),
+      };
+
+      context.dataAccess.Configuration = {
+        findLatest: () => ({
+          isHandlerEnabledForSite: () => false, // Feature toggle OFF
+        }),
+      };
+
+      context.scrapeResultPaths = new Map();
+
+      // Mock opportunityAndSuggestionsStep
+      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
+      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
+
+      await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
+
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Feature toggle OFF/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/RUM-only results/));
+      expect(context.audit.setAuditResult).to.have.been.calledOnce;
+
+      const resultArg = context.audit.setAuditResult.getCall(0).args[0];
+      expect(resultArg.brokenInternalLinks).to.have.lengthOf(1);
+      expect(resultArg.brokenInternalLinks[0].priority).to.equal('high');
+    });
+
+    it('should merge crawl + RUM results when feature toggle is ON', async () => {
+      const rumLinks = [
+        { urlTo: 'https://example.com/rum1', urlFrom: 'https://example.com/page1', trafficDomain: 100 },
+      ];
+
+      context.audit = {
+        getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
+        setAuditResult: sandbox.stub(),
+      };
+
+      context.dataAccess.Configuration = {
+        findLatest: () => ({
+          isHandlerEnabledForSite: () => true, // Feature toggle ON
+        }),
+      };
+
+      context.scrapeResultPaths = new Map([['https://example.com/page1', 's3-key-1']]);
+
+      // Mock opportunityAndSuggestionsStep
+      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
+      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
+
+      await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
+
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Feature toggle ON/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Starting crawl-based detection/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Merging RUM/));
+      expect(context.audit.setAuditResult).to.have.been.calledOnce;
+    });
+
+    it('should fall back to RUM-only when no scraped content is available', async () => {
+      const rumLinks = [
+        { urlTo: 'https://example.com/rum1', urlFrom: 'https://example.com/page1', trafficDomain: 100 },
+      ];
+
+      context.audit = {
+        getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
+        setAuditResult: sandbox.stub(),
+      };
+
+      context.dataAccess.Configuration = {
+        findLatest: () => ({
+          isHandlerEnabledForSite: () => true, // Feature toggle ON
+        }),
+      };
+
+      context.scrapeResultPaths = new Map(); // Empty scrape results
+
+      // Mock opportunityAndSuggestionsStep
+      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
+      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
+
+      await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
+
+      expect(context.log.warn).to.have.been.calledWith(sinon.match(/No scraped content available/));
+      expect(context.log.warn).to.have.been.calledWith(sinon.match(/falling back to RUM-only/));
+      expect(context.audit.setAuditResult).to.have.been.calledOnce;
+    });
+
+    it('should log priority distribution after calculating priorities', async () => {
+      const rumLinks = [
+        { urlTo: 'https://example.com/rum1', urlFrom: 'https://example.com/page1', trafficDomain: 100 },
+        { urlTo: 'https://example.com/rum2', urlFrom: 'https://example.com/page2', trafficDomain: 50 },
+      ];
+
+      context.audit = {
+        getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
+        setAuditResult: sandbox.stub(),
+      };
+
+      context.dataAccess.Configuration = {
+        findLatest: () => ({
+          isHandlerEnabledForSite: () => false,
+        }),
+      };
+
+      context.scrapeResultPaths = new Map();
+
+      // Mock opportunityAndSuggestionsStep
+      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
+      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
+
+      await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
+
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Calculating priority for 2 broken links/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Priority distribution:/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Updated audit result with 2 prioritized broken links/));
+    });
+
+    it('should handle auditResult with no brokenInternalLinks field', async () => {
+      context.audit = {
+        getAuditResult: () => ({}), // No brokenInternalLinks field
+        setAuditResult: sandbox.stub(),
+      };
+
+      context.dataAccess.Configuration = {
+        findLatest: () => ({
+          isHandlerEnabledForSite: () => false,
+        }),
+      };
+
+      context.scrapeResultPaths = new Map();
+
+      // Mock opportunityAndSuggestionsStep
+      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
+      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
+
+      await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
+
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/RUM detection results: 0 broken links/));
+      expect(context.audit.setAuditResult).to.have.been.calledOnce;
+    });
+
+    it('should handle links with undefined trafficDomain', async () => {
+      const rumLinks = [
+        { urlTo: 'https://example.com/rum1', urlFrom: 'https://example.com/page1' }, // No trafficDomain
+      ];
+
+      context.audit = {
+        getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
+        setAuditResult: sandbox.stub(),
+      };
+
+      context.dataAccess.Configuration = {
+        findLatest: () => ({
+          isHandlerEnabledForSite: () => false,
+        }),
+      };
+
+      context.scrapeResultPaths = new Map();
+
+      // Mock opportunityAndSuggestionsStep
+      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
+      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
+
+      await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
+
+      expect(context.log.debug).to.have.been.calledWith(sinon.match(/RUM links total traffic: 0 views/));
+    });
+  });
 });

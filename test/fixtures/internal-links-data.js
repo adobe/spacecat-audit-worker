@@ -15,19 +15,16 @@ export const internalLinksData = [
     traffic_domain: 1800,
     url_to: 'https://www.petplace.com/a01',
     url_from: 'https://www.petplace.com/a02nf',
-    priority: 'high',
   },
   {
     traffic_domain: 1200,
     url_to: 'https://www.petplace.com/ax02',
     url_from: 'https://www.petplace.com/ax02nf',
-    priority: 'medium',
   },
   {
     traffic_domain: 200,
     url_to: 'https://www.petplace.com/a01',
     url_from: 'https://www.petplace.com/a01nf',
-    priority: 'low',
   },
 ];
 

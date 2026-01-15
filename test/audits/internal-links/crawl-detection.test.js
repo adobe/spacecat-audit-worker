@@ -559,4 +559,24 @@ describe('Crawl Detection for Broken Internal Links', () => {
       );
     });
   });
+
+  describe('finalUrl fallback', () => {
+    it('should use url as fallback when finalUrl is missing', async () => {
+      const html = `<html><body><a href="/broken">Link</a></body></html>`;
+      const scrapeResultPaths = new Map([['https://example.com/page1', 's3-key-1']]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: html },
+        // No finalUrl field - should fallback to url
+      });
+      isWithinAuditScopeStub.returns(true);
+      isLinkInaccessibleStub.resolves(true);
+
+      const result = await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].urlFrom).to.equal('https://example.com/page1');
+      expect(result[0].urlTo).to.equal('https://example.com/broken');
+    });
+  });
 });
