@@ -20,7 +20,7 @@ import nock from 'nock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
-import { CWVRunner, opportunityAndSuggestions } from '../../src/cwv/handler.js';
+import { collectCWVDataAndImportCode, syncOpportunityAndSuggestionsStep } from '../../src/cwv/handler.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
 import expectedOpptyWithoutGSC from '../fixtures/cwv/opptyWithoutGSC.json' with { type: 'json' };
 import suggestions from '../fixtures/cwv/suggestions.json' with { type: 'json' };
@@ -39,18 +39,19 @@ const DOMAIN_REQUEST_DEFAULT_PARAMS = {
   granularity: 'hourly',
 };
 
-describe('CWVRunner Tests', () => {
+describe('collectCWVDataAndImportCode Tests', () => {
   const groupedURLs = [{ name: 'test', pattern: 'test/*' }];
   const siteConfig = {
     getGroupedURLs: sandbox.stub().returns(groupedURLs),
   };
   const site = {
-    getId: () => 'test-site-id',
+    getId: () => 'site-id',
     getBaseURL: sandbox.stub().returns(baseURL),
     getConfig: () => siteConfig,
     getDeliveryType: sandbox.stub().returns('aem_cs'),
     getDeliveryConfig: sandbox.stub().returns({}),
     hasProductEntitlement: sandbox.stub().resolves(true),
+    getCode: sandbox.stub().returns(null),
   };
 
   const context = {
@@ -91,7 +92,7 @@ describe('CWVRunner Tests', () => {
 
   it('cwv audit runs rum api client cwv query', async () => {
     site.getDeliveryConfig.returns({});
-    const result = await CWVRunner(auditUrl, context, site);
+    const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
 
     expect(siteConfig.getGroupedURLs.calledWith(Audit.AUDIT_TYPES.CWV)).to.be.true;
     expect(
@@ -118,7 +119,7 @@ describe('CWVRunner Tests', () => {
   it('uses default values when delivery config is null', async () => {
     site.getDeliveryConfig.returns(null);
 
-    const result = await CWVRunner(auditUrl, context, site);
+    const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
 
     expect(context.rumApiClient.query).to.have.been.calledWith(
       Audit.AUDIT_TYPES.CWV,
@@ -141,7 +142,7 @@ describe('CWVRunner Tests', () => {
 
   it('includes pages beyond top 15 if they meet threshold', async () => {
     // With default threshold (1000 * 7 = 7000), check pages that meet threshold
-    const result = await CWVRunner(auditUrl, context, site);
+    const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
 
     // At least top 15 should be included
     expect(result.auditResult.cwv.length).to.be.at.least(15);
@@ -232,7 +233,7 @@ describe('CWVRunner Tests', () => {
 
     context.rumApiClient.query.resolves(customData);
 
-    const result = await CWVRunner(auditUrl, context, site);
+    const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
 
     // Should have 15 (top) + 3 (threshold) = 18 pages
     expect(result.auditResult.cwv).to.have.lengthOf(18);
@@ -272,7 +273,7 @@ describe('CWVRunner Tests', () => {
     const dataWithHomepage = [...rumData, homepageData];
     context.rumApiClient.query.resolves(dataWithHomepage);
 
-    const result = await CWVRunner(auditUrl, context, site);
+    const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
 
     // Should have top 15 + homepage (16 total)
     expect(result.auditResult.cwv).to.have.lengthOf(16);
@@ -309,7 +310,7 @@ describe('CWVRunner Tests', () => {
     const dataWithGrouped = [...rumData, groupedData];
     context.rumApiClient.query.resolves(dataWithGrouped);
 
-    const result = await CWVRunner(auditUrl, context, site);
+    const result = await collectCWVDataAndImportCode({ site, finalUrl: auditUrl, log: context.log, ...context });
     // Should only have top 15 (grouped entry excluded: type !== 'url')
     expect(result.auditResult.cwv).to.have.lengthOf(15);
   });
@@ -319,6 +320,7 @@ describe('CWVRunner Tests', () => {
     let oppty;
     const opptyData = { 0: 'existed-data' };
     let auditData;
+    let mockAudit;
 
     beforeEach(() => {
       context.log = {
@@ -387,6 +389,16 @@ describe('CWVRunner Tests', () => {
         },
         fullAuditRef: auditUrl,
       };
+
+      // Mock audit object for syncOpportunityAndSuggestionsStep
+      mockAudit = {
+        getSiteId: () => 'site-id',
+        getId: () => 'audit-id',
+        getAuditType: () => Audit.AUDIT_TYPES.CWV,
+        getAuditResult: () => auditData.auditResult,
+        getFullAuditRef: () => auditUrl,
+        getAuditedAt: () => '2023-11-27T12:34:56.789Z',
+      };
     });
 
     afterEach(() => {
@@ -398,11 +410,12 @@ describe('CWVRunner Tests', () => {
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
 
-      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
 
       expect(siteConfig.getGroupedURLs).to.have.been.calledWith(Audit.AUDIT_TYPES.CWV);
 
-      expect(GoogleClient.createFrom).to.have.been.calledWith(context, auditUrl);
+      expect(GoogleClient.createFrom).to.have.been.calledWith(stepContext, auditUrl);
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
 
       // make sure that newly oppty has all 4 new suggestions
@@ -416,7 +429,8 @@ describe('CWVRunner Tests', () => {
       context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
       sinon.stub(GoogleClient, 'createFrom').resolves({});
 
-      await expect(opportunityAndSuggestions(auditUrl, auditData, context, site)).to.be.rejectedWith('big error happened');
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await expect(syncOpportunityAndSuggestionsStep(stepContext)).to.be.rejectedWith('big error happened');
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
       expect(context.log.error).to.have.been.calledOnceWith('Failed to create new opportunity for siteId site-id and auditId audit-id: big error happened');
 
@@ -440,7 +454,8 @@ describe('CWVRunner Tests', () => {
       }));
       oppty.getSuggestions.resolves(existingSuggestions);
 
-      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
 
       expect(siteConfig.getGroupedURLs).to.have.been.calledWith(Audit.AUDIT_TYPES.CWV);
 
@@ -471,9 +486,10 @@ describe('CWVRunner Tests', () => {
       // Mock GoogleClient to return null/undefined
       sinon.stub(GoogleClient, 'createFrom').resolves(null);
 
-      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
 
-      expect(GoogleClient.createFrom).to.have.been.calledWith(context, auditUrl);
+      expect(GoogleClient.createFrom).to.have.been.calledWith(stepContext, auditUrl);
       expect(context.dataAccess.Opportunity.create)
         .to.have.been.calledOnceWith(expectedOpptyWithoutGSC);
 
@@ -488,9 +504,10 @@ describe('CWVRunner Tests', () => {
 
       sinon.stub(GoogleClient, 'createFrom').rejects(new Error('GSC not connected'));
 
-      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+      const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
 
-      expect(GoogleClient.createFrom).to.have.been.calledWith(context, auditUrl);
+      expect(GoogleClient.createFrom).to.have.been.calledWith(stepContext, auditUrl);
       expect(context.dataAccess.Opportunity.create)
         .to.have.been.calledOnceWith(expectedOpptyWithoutGSC);
 
@@ -499,7 +516,7 @@ describe('CWVRunner Tests', () => {
       expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
     });
 
-    it('calls sendSQSMessageForAutoSuggest when suggestions have no guidance', async () => {
+    it('calls processAutoSuggest when suggestions have no guidance', async () => {
       // Mock suggestions without guidance (empty issues array)
       const mockSuggestions = [
         { getId: () => 'sugg-1', getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
@@ -513,16 +530,16 @@ describe('CWVRunner Tests', () => {
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
 
-      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+      await syncOpportunityAndSuggestionsStep({ site, audit: mockAudit, finalUrl: auditUrl, log: context.log, ...context });
 
       // Verify that SQS sendMessage was called twice (once per suggestion)
       expect(context.sqs.sendMessage).to.have.been.calledTwice;
       const message = context.sqs.sendMessage.firstCall.args[1];
-      expect(message.type).to.equal('guidance:cwv-analysis');
+      expect(message.type).to.equal('guidance:cwv');
       expect(message.siteId).to.equal('site-id');
     });
 
-    it('does not call sendSQSMessageForAutoSuggest when all suggestions have guidance', async () => {
+    it('does not call processAutoSuggest when all suggestions have guidance', async () => {
       // Mock suggestions with existing guidance
       const mockSuggestions = [
         {
@@ -545,13 +562,13 @@ describe('CWVRunner Tests', () => {
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
 
-      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+      await syncOpportunityAndSuggestionsStep({ site, audit: mockAudit, finalUrl: auditUrl, log: context.log, ...context });
 
       // Verify that SQS sendMessage was NOT called
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
-    it('calls sendSQSMessageForAutoSuggest when some suggestions have guidance and some do not', async () => {
+    it('calls processAutoSuggest when some suggestions have guidance and some do not', async () => {
       // Mock mixed suggestions - some with guidance, some without
       const mockSuggestions = [
         {
@@ -583,7 +600,7 @@ describe('CWVRunner Tests', () => {
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
 
-      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+      await syncOpportunityAndSuggestionsStep({ site, audit: mockAudit, finalUrl: auditUrl, log: context.log, ...context });
 
       // Verify that SQS sendMessage was called once (only for the suggestion without guidance)
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
