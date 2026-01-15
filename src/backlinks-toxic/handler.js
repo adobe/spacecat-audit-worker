@@ -157,6 +157,9 @@ function truncateUrl(url, maxLength = 50) {
 function generateMarkdownTable(backlinks) {
   let markdown = '# Toxic Backlinks Report\n\n';
   markdown += `**Total toxic backlinks found:** ${backlinks.length}\n\n`;
+  markdown += '## ⚠️ DISCLAIMER\n\n';
+  markdown += '**PROCEED WITH CAUTION:** Disavowing backlinks can have significant impacts on your search engine optimization and should not be done hastily.\n\n';
+  markdown += '---\n\n';
   markdown += '## Toxic Backlinks Details\n\n';
 
   // Table header
