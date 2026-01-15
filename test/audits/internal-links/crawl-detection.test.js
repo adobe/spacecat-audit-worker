@@ -324,7 +324,6 @@ describe('Crawl Detection for Broken Internal Links', () => {
               <a href="javascript:void(0)">Invalid</a>
               <a href="/valid-link">Valid</a>
               <a href="">Empty</a>
-              <a href=":::invalid:::">Malformed URL</a>
             </main>
           </body>
         </html>
@@ -346,9 +345,8 @@ describe('Crawl Detection for Broken Internal Links', () => {
 
       const result = await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
 
-      // Should check valid hrefs: /valid-link, empty href (resolves to page1), and :::invalid::: (becomes relative URL)
-      // javascript:void(0) is external so it's skipped
-      expect(isLinkInaccessibleStub.callCount).to.be.at.least(2);
+      // Should check valid link and empty href (which resolves to page itself)
+      expect(isLinkInaccessibleStub).to.have.been.calledTwice;
       expect(isLinkInaccessibleStub).to.have.been.calledWith('https://example.com/valid-link');
       expect(isLinkInaccessibleStub).to.have.been.calledWith('https://example.com/page1');
       expect(result).to.have.lengthOf(0);
@@ -411,6 +409,45 @@ describe('Crawl Detection for Broken Internal Links', () => {
       expect(result).to.have.lengthOf(0);
       expect(mockContext.log.debug).to.have.been.calledWith(
         sinon.match(/Page.*is out of audit scope, skipping link validation/),
+      );
+    });
+
+    it('should handle malformed URLs that cause new URL() to throw', async () => {
+      // Use an invalid base URL (finalUrl) to trigger URL parsing errors
+      const htmlWithLinks = `
+        <html>
+          <body>
+            <main>
+              <a href="/some-link">Link</a>
+            </main>
+          </body>
+        </html>
+      `;
+
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          rawBody: htmlWithLinks,
+        },
+        finalUrl: 'not-a-valid-url', // Invalid base URL will cause new URL() to throw
+      });
+
+      isWithinAuditScopeStub.returns(true);
+      isLinkInaccessibleStub.resolves(false);
+
+      const result = await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
+
+      // With invalid base URL, all hrefs should fail to parse and be caught
+      // No links should be validated
+      expect(isLinkInaccessibleStub).to.not.have.been.called;
+      expect(result).to.have.lengthOf(0);
+
+      // Verify the page was processed despite URL parsing errors
+      expect(mockContext.log.debug).to.have.been.calledWith(
+        sinon.match(/Processing page/),
       );
     });
   });
