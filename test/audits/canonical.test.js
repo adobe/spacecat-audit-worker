@@ -269,7 +269,7 @@ describe('Canonical URL Tests', () => {
       ]);
     });
 
-    it('should handle invalid canonical URL ', () => {
+    it('should handle invalid canonical URL', () => {
       const canonicalUrl = {};
       const baseUrl = 'http://example.com';
       const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
@@ -278,7 +278,7 @@ describe('Canonical URL Tests', () => {
       expect(log.error).to.have.been.calledWith('Canonical URL is not a string: object');
     });
 
-    it('should handle invalid base URL ', () => {
+    it('should handle invalid base URL', () => {
       const canonicalUrl = 'https://example.com';
       const baseUrl = 'invalid-url';
       const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
@@ -409,7 +409,7 @@ describe('Canonical URL Tests', () => {
       expect(log.info).to.have.been.calledWith(`Canonical URL ${url} references itself`);
     });
 
-    it('should handle try-catch for invalid canonical URL ', () => {
+    it('should handle try-catch for invalid canonical URL', () => {
       const invalidCanonicalUrl = 'http://%';
       const baseUrl = 'https://example.com';
 
@@ -1296,7 +1296,7 @@ describe('Canonical URL Tests', () => {
       expect(result).to.be.an('object');
       expect(result).to.have.property('runbook').that.is.a('string').and.is.not.empty;
       expect(result).to.have.property('origin', 'AUTOMATION');
-      expect(result).to.have.property('title', 'Canonical URL issues affecting SEO');
+      expect(result).to.have.property('title', 'Canonical URLs to clarify your SEO strategy to search engines are ready');
       expect(result).to.have.property('description').that.is.a('string');
       expect(result).to.have.property('guidance').that.is.an('object');
       expect(result.guidance).to.have.property('steps').that.is.an('array');
@@ -1316,7 +1316,7 @@ describe('Canonical URL Tests', () => {
       expect(result).to.be.an('object');
       expect(result).to.have.property('runbook').that.is.a('string').and.is.not.empty;
       expect(result).to.have.property('origin', 'AUTOMATION');
-      expect(result).to.have.property('title', 'Canonical URL issues affecting SEO');
+      expect(result).to.have.property('title', 'Canonical URLs to clarify your SEO strategy to search engines are ready');
       expect(result).to.have.property('description').that.is.a('string');
       expect(result).to.have.property('guidance').that.is.an('object');
       expect(result.guidance).to.have.property('recommendations').that.is.an('array');
@@ -1329,7 +1329,6 @@ describe('Canonical URL Tests', () => {
       expect(result.tags).to.include('Traffic Acquisition');
       expect(result.tags).to.include('SEO');
       expect(result.tags).to.include('llm');
-      expect(result.tags).to.include('isElmo');
       expect(result).to.have.property('data').that.is.an('object');
       expect(result.data).to.have.property('dataSources').that.is.an('array');
       expect(result.data).to.have.property('additionalMetrics').that.is.an('array');

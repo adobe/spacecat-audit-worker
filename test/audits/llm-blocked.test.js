@@ -17,6 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
+import esmock from 'esmock';
 import { MockContextBuilder } from '../shared.js';
 import { checkLLMBlocked, importTopPages } from '../../src/llm-blocked/handler.js';
 import { createOpportunityData } from '../../src/llm-blocked/opportunity-data-mapper.js';
@@ -260,7 +261,7 @@ describe('LLM Blocked Audit', () => {
           'If the URLs are intentionally blocked, ignore the suggestion.',
         ],
       },
-      tags: ['llm', 'isElmo'],
+      tags: ['llm', 'isElmo', 'tech-geo'],
       data: {
         fullRobots: 'User-Agent: *\nDisallow: /',
         numProcessedUrls: 10,
@@ -435,5 +436,169 @@ describe('LLM Blocked Audit', () => {
         robotsTxtHash: '2f293650',
       },
     });
+  });
+});
+
+describe('LLM Blocked Audit - Athena/Ahrefs fallback', () => {
+  let sandbox;
+  let mockGetTopAgenticUrlsFromAthena;
+  let checkLLMBlockedWithMocks;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub();
+
+    const handler = await esmock('../../src/llm-blocked/handler.js', {
+      '../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    checkLLMBlockedWithMocks = handler.checkLLMBlocked;
+  });
+
+  afterEach(() => {
+    nock.cleanAll();
+    sandbox.restore();
+  });
+
+  it('should use Athena URLs when available', async () => {
+    mockGetTopAgenticUrlsFromAthena.resolves([
+      'https://example.com/athena-page1',
+      'https://example.com/athena-page2',
+    ]);
+
+    nock('https://example.com')
+      .get('/robots.txt')
+      .reply(200, 'User-Agent: *\nAllow: /');
+
+    const context = new MockContextBuilder()
+      .withOverrides({
+        site: {
+          getId: () => 'test-site-id',
+          getBaseURL: () => 'https://example.com',
+        },
+        finalUrl: 'example.com',
+        audit: { getId: () => 'test-audit-id' },
+        log: {
+          debug: sandbox.stub(),
+          info: sandbox.stub(),
+          error: sandbox.stub(),
+          warn: sandbox.stub(),
+        },
+      })
+      .withSandbox(sandbox).build();
+
+    const result = await checkLLMBlockedWithMocks(context);
+
+    expect(result.auditResult).to.equal('[]');
+    // Athena was called
+    expect(mockGetTopAgenticUrlsFromAthena).to.have.been.calledOnce;
+    // Ahrefs was NOT called because Athena returned data
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+  });
+
+  it('should fall back to Ahrefs when Athena returns empty array', async () => {
+    mockGetTopAgenticUrlsFromAthena.resolves([]);
+
+    nock('https://example.com')
+      .get('/robots.txt')
+      .reply(200, 'User-Agent: *\nAllow: /');
+
+    const mockTopPages = [
+      { getUrl: () => 'https://example.com/ahrefs-page1' },
+    ];
+
+    const context = new MockContextBuilder()
+      .withOverrides({
+        site: {
+          getId: () => 'test-site-id',
+          getBaseURL: () => 'https://example.com',
+        },
+        finalUrl: 'example.com',
+        audit: { getId: () => 'test-audit-id' },
+        log: {
+          debug: sandbox.stub(),
+          info: sandbox.stub(),
+          error: sandbox.stub(),
+          warn: sandbox.stub(),
+        },
+      })
+      .withSandbox(sandbox).build();
+
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub().resolves(mockTopPages);
+
+    const result = await checkLLMBlockedWithMocks(context);
+
+    expect(result.auditResult).to.equal('[]');
+    // Athena was called first
+    expect(mockGetTopAgenticUrlsFromAthena).to.have.been.calledOnce;
+    // Ahrefs was called as fallback
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
+    // Log should indicate fallback
+    expect(context.log.info).to.have.been.calledWith(
+      '[LLM-BLOCKED] No agentic URLs from Athena, falling back to Ahrefs',
+    );
+  });
+
+  it('should fall back to Ahrefs when Athena returns null', async () => {
+    mockGetTopAgenticUrlsFromAthena.resolves(null);
+
+    nock('https://example.com')
+      .get('/robots.txt')
+      .reply(200, 'User-Agent: *\nAllow: /');
+
+    const mockTopPages = [
+      { getUrl: () => 'https://example.com/ahrefs-page1' },
+    ];
+
+    const context = new MockContextBuilder()
+      .withOverrides({
+        site: {
+          getId: () => 'test-site-id',
+          getBaseURL: () => 'https://example.com',
+        },
+        finalUrl: 'example.com',
+        audit: { getId: () => 'test-audit-id' },
+        log: {
+          debug: sandbox.stub(),
+          info: sandbox.stub(),
+          error: sandbox.stub(),
+          warn: sandbox.stub(),
+        },
+      })
+      .withSandbox(sandbox).build();
+
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub().resolves(mockTopPages);
+
+    const result = await checkLLMBlockedWithMocks(context);
+
+    expect(result.auditResult).to.equal('[]');
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
+  });
+
+  it('should throw error when both Athena and Ahrefs return no pages', async () => {
+    mockGetTopAgenticUrlsFromAthena.resolves([]);
+
+    const context = new MockContextBuilder()
+      .withOverrides({
+        site: {
+          getId: () => 'test-site-id',
+          getBaseURL: () => 'https://example.com',
+        },
+        finalUrl: 'example.com',
+        audit: { getId: () => 'test-audit-id' },
+        log: {
+          debug: sandbox.stub(),
+          info: sandbox.stub(),
+          error: sandbox.stub(),
+          warn: sandbox.stub(),
+        },
+      })
+      .withSandbox(sandbox).build();
+
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub().resolves([]);
+
+    await expect(checkLLMBlockedWithMocks(context)).to.be.rejectedWith('No top pages found for site');
   });
 });

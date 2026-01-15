@@ -15,11 +15,13 @@ import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
  * @class SQS utility to send messages to SQS
  * @param {string} region - AWS region
  * @param {object} log - log object
+ * @param {object} context - context object for trace ID propagation
  */
 class SQS {
-  constructor(region, log) {
+  constructor(region, log, context) {
     this.sqsClient = new SQSClient({ region });
     this.log = log;
+    this.context = context;
   }
 
   async sendMessage(queueUrl, message, msgGroupId, delaySeconds = 0) {
@@ -27,6 +29,12 @@ class SQS {
       ...message,
       timestamp: new Date().toISOString(),
     };
+
+    // Auto-add trace ID from context if not already present in message
+    // This maintains trace continuity across service boundaries (e.g., SpaceCat → Mystique)
+    if (!('traceId' in body) && this.context?.traceId) {
+      body.traceId = this.context.traceId;
+    }
 
     const asJSON = JSON.stringify(body);
     const msgCommand = new SendMessageCommand({
@@ -52,7 +60,7 @@ export default function sqsWrapper(fn) {
     if (!context.sqs) {
       const { log } = context;
       const { region } = context.runtime;
-      context.sqs = new SQS(region, log);
+      context.sqs = new SQS(region, log, context);
     }
 
     return fn(request, context);

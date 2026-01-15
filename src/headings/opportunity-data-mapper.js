@@ -15,7 +15,7 @@ import { DATA_SOURCES } from '../common/constants.js';
 const OpptyData = {
   runbook: '',
   origin: 'AUTOMATION',
-  title: 'Heading structure issues affecting accessibility and SEO',
+  title: 'Optimize Headings for LLMs',
   description: 'Ensure heading elements (h1–h6) are used in a logical, hierarchical order without skipping levels, and that no heading is empty. Proper heading structure improves accessibility and helps search engines and generative engines understand page content. AI-powered suggestions are available to help improve heading quality and consistency.',
   guidance: {
     steps: [
@@ -26,7 +26,7 @@ const OpptyData = {
       'Ensure headings follow brand guidelines and maintain consistent tone across the site.',
     ],
   },
-  tags: ['Accessibility', 'SEO', 'isElmo', 'isASO'],
+  tags: ['Accessibility', 'SEO', 'isElmo', 'isASO', 'tech-seo'],
   data: {
     dataSources: [DATA_SOURCES.SITE],
   },

@@ -242,7 +242,7 @@ describe('Detect Form Details Handler', () => {
           form: 'testUrl1',
           formSource: 'formSource1',
           a11yIssues: [],
-          formTitle: 'Contact Form',
+          formTitle: 'Forms missing key accessibility attributes — enhancements prepared to support all users',
           formDetails: {
             is_lead_gen: true,
             form_type: 'Contact Form',
@@ -255,5 +255,104 @@ describe('Detect Form Details Handler', () => {
       ]),
     }));
     expect(opportunity.save).to.have.been.calledOnce;
+  });
+
+  it('should mark opportunity as IGNORED for search form with is_lead_gen false', async () => {
+    dataAccessStub.Opportunity.findById.resolves({
+      getType: () => 'testOpportunityType',
+      getData: () => ({
+        form: 'testUrl1',
+        formsource: 'formSource1',
+        formViews: 100,
+        samples: 987,
+        projectedConversionValue: 8789.0,
+      }),
+      setUpdatedBy: sinon.stub(),
+      setData: sinon.stub(),
+      setTitle: sinon.stub(),
+      setStatus: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+    });
+
+    message.data.form_details = [
+      {
+        url: 'testUrl1',
+        form_source: 'formSource1',
+        is_lead_gen: false,
+        form_type: 'search form',
+        form_category: 'B2B',
+        industry: 'Telecommunications',
+        cpl: 94.0,
+      },
+    ];
+
+    await handler(message, context);
+    const opportunity = await dataAccessStub.Opportunity.findById();
+
+    expect(opportunity.setStatus).to.have.been.calledWith('IGNORED');
+    expect(opportunity.save).to.have.been.calledOnce;
+    expect(sqsStub.sendMessage).not.to.have.been.called;
+  });
+
+  it('should mark opportunity as IGNORED for SEARCH form (uppercase) with is_lead_gen false', async () => {
+    dataAccessStub.Opportunity.findById.resolves({
+      getType: () => 'testOpportunityType',
+      getData: () => ({
+        form: 'testUrl1',
+        formsource: 'formSource1',
+        formViews: 100,
+      }),
+      setUpdatedBy: sinon.stub(),
+      setData: sinon.stub(),
+      setTitle: sinon.stub(),
+      setStatus: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+    });
+
+    message.data.form_details = [
+      {
+        url: 'testUrl1',
+        form_source: 'formSource1',
+        is_lead_gen: false,
+        form_type: 'SEARCH form',
+      },
+    ];
+
+    await handler(message, context);
+    const opportunity = await dataAccessStub.Opportunity.findById();
+
+    expect(opportunity.setStatus).to.have.been.calledWith('IGNORED');
+    expect(sqsStub.sendMessage).not.to.have.been.called;
+  });
+
+  it('should not mark opportunity as IGNORED for search form with is_lead_gen true', async () => {
+    dataAccessStub.Opportunity.findById.resolves({
+      getType: () => 'testOpportunityType',
+      getData: () => ({
+        form: 'testUrl1',
+        formsource: 'formSource1',
+        formViews: 100,
+      }),
+      setUpdatedBy: sinon.stub(),
+      setData: sinon.stub(),
+      setTitle: sinon.stub(),
+      setStatus: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+    });
+
+    message.data.form_details = [
+      {
+        url: 'testUrl1',
+        form_source: 'formSource1',
+        is_lead_gen: true,
+        form_type: 'search form',
+      },
+    ];
+
+    await handler(message, context);
+    const opportunity = await dataAccessStub.Opportunity.findById();
+
+    expect(opportunity.setStatus).not.to.have.been.called;
+    expect(sqsStub.sendMessage).to.have.been.called;
   });
 });

@@ -174,7 +174,7 @@ describe('getElementSelector', () => {
       expect(result).to.equal('div.wrapper > section.content > p.text');
     });
 
-    it('should limit path to 3 levels maximum', () => {
+    it('should traverse up to body for unique selectors', () => {
       $('body').html(`
         <div class="level1">
           <div class="level2">
@@ -189,10 +189,8 @@ describe('getElementSelector', () => {
       const target = $('p')[0];
 
       const result = getElementSelector(target);
-      // Should only go up 3 levels
-      const parts = result.split(' > ');
-      expect(parts.length).to.be.at.most(4); // target + 3 parent levels
-      expect(result).to.include('p.target');
+      // Should include all levels up to body for uniqueness
+      expect(result).to.equal('div.level1 > div.level2 > div.level3 > div.level4 > p.target');
     });
 
     it('should stop path building when parent has ID', () => {
@@ -267,9 +265,8 @@ describe('getElementSelector', () => {
       const p = $('p')[0];
 
       const result = getElementSelector(p);
-      // Should respect 3-level limit
-      expect(result).to.include('p');
-      expect(result).to.include(' > ');
+      // Should traverse up to body for unique selector
+      expect(result).to.equal('article.post > main.content > section.body > div.text-block > p');
     });
 
     it('should handle element with special characters in class names', () => {
@@ -278,6 +275,58 @@ describe('getElementSelector', () => {
 
       const result = getElementSelector(div);
       expect(result).to.include('div.class-with-dash.class_with_underscore');
+    });
+
+    it('should escape special characters in class names', () => {
+      $('body').html('<div class="foo:bar baz[0]"></div>');
+      const div = $('div')[0];
+
+      const result = getElementSelector(div);
+      // Special characters should be escaped
+      expect(result).to.include('div.foo\\:bar.baz\\[0\\]');
+    });
+
+    it('should use data-testid attribute for uniqueness', () => {
+      $('body').html('<div><p data-testid="unique-test"></p><p></p></div>');
+      const p1 = $('p').eq(0)[0];
+
+      const result = getElementSelector(p1);
+      expect(result).to.include('[data-testid="unique-test"]');
+      expect(result).to.not.include('nth-of-type');
+    });
+
+    it('should use role attribute for uniqueness when no data-testid', () => {
+      $('body').html('<div><button role="submit"></button><button></button></div>');
+      const btn = $('button').eq(0)[0];
+
+      const result = getElementSelector(btn);
+      expect(result).to.include('[role="submit"]');
+      expect(result).to.not.include('nth-of-type');
+    });
+
+    it('should fall back to nth-of-type when no unique attributes', () => {
+      $('body').html('<div><p class="text"></p><p class="text"></p></div>');
+      const p2 = $('p').eq(1)[0];
+
+      const result = getElementSelector(p2);
+      expect(result).to.include(':nth-of-type(2)');
+    });
+
+    it('should handle case-insensitive tag matching for siblings', () => {
+      // Use cheerio to create real elements, then modify tag name case
+      $('body').html('<div><p class="first"></p><p class="second"></p></div>');
+
+      const div = $('div')[0];
+      const p1 = div.children[0];
+      const p2 = div.children[1];
+
+      // Simulate mixed case tag names (edge case from some parsers)
+      p1.name = 'P';
+      p2.name = 'p';
+
+      const result = getElementSelector(p2);
+      // Should treat P and p as the same tag type
+      expect(result).to.include(':nth-of-type(2)');
     });
 
     it('should generate unique selector for different elements', () => {
@@ -328,6 +377,50 @@ describe('getElementSelector', () => {
       // Verify the selector can be used to find the element
       const found = $(selector)[0];
       expect(found).to.equal(target);
+    });
+
+    it('should escape NULL character in class names', () => {
+      $('body').html('<div></div>');
+      const div = $('div')[0];
+      // Set class with NULL character (U+0000)
+      div.attribs.class = 'foo\x00bar';
+
+      const result = getElementSelector(div);
+      // NULL should be replaced with U+FFFD replacement character
+      expect(result).to.include('.foo\uFFFDbar');
+    });
+
+    it('should escape control characters in class names', () => {
+      $('body').html('<div></div>');
+      const div = $('div')[0];
+      // Set class with control character (U+001F - unit separator)
+      div.attribs.class = 'foo\x1Fbar';
+
+      const result = getElementSelector(div);
+      // Control character should be escaped as hex
+      expect(result).to.include('.foo\\1f bar');
+    });
+
+    it('should escape DEL character in class names', () => {
+      $('body').html('<div></div>');
+      const div = $('div')[0];
+      // Set class with DEL character (U+007F)
+      div.attribs.class = 'foo\x7Fbar';
+
+      const result = getElementSelector(div);
+      // DEL should be escaped as hex
+      expect(result).to.include('.foo\\7f bar');
+    });
+
+    it('should escape single hyphen class name', () => {
+      $('body').html('<div></div>');
+      const div = $('div')[0];
+      // Set class to just a hyphen
+      div.attribs.class = '-';
+
+      const result = getElementSelector(div);
+      // Single hyphen should be escaped
+      expect(result).to.include('.\\-');
     });
   });
 
@@ -380,6 +473,213 @@ describe('getElementSelector', () => {
 
       const result = getElementSelector(html);
       expect(result).to.equal('html');
+    });
+
+    it('should handle element without parent (detached element)', () => {
+      // Create a detached element without a parent
+      const detachedElement = {
+        name: 'div',
+        attribs: { class: 'detached' },
+        parent: null,
+        type: 'tag',
+      };
+
+      const result = getElementSelector(detachedElement);
+      expect(result).to.equal('div.detached');
+    });
+
+    it('should handle element with parent that has no name property', () => {
+      // Element with a parent that lacks the name property
+      // This triggers line 108-109 in buildSelectorPath
+      const parentWithoutName = {
+        type: 'root',
+        children: [],
+      };
+
+      const elementWithBadParent = {
+        name: 'p',
+        attribs: { class: 'test' },
+        parent: parentWithoutName,
+        type: 'tag',
+      };
+
+      const result = getElementSelector(elementWithBadParent);
+      // Should return selector without parent path since parent has no name
+      expect(result).to.include('p.test');
+    });
+
+    it('should handle deeply nested element where recursive parent returns empty', () => {
+      // Create a chain where the grandparent causes early return
+      const grandparent = {
+        name: 'section',
+        attribs: {},
+        parent: { type: 'root' }, // Parent without name - triggers line 108
+        type: 'tag',
+        children: [],
+      };
+
+      const parent = {
+        name: 'div',
+        attribs: { class: 'wrapper' },
+        parent: grandparent,
+        type: 'tag',
+        children: [],
+      };
+
+      grandparent.children = [parent];
+
+      const element = {
+        name: 'p',
+        attribs: { class: 'content' },
+        parent,
+        type: 'tag',
+      };
+
+      parent.children = [element];
+
+      const result = getElementSelector(element);
+      // Should handle the case where parent path building stops due to grandparent structure
+      expect(result).to.be.a('string');
+      // Result may include path components depending on how deep we go
+    });
+
+    it('should return selector when parent selector is empty from recursion', () => {
+      // Create element with parent that will return empty selector
+      const invalidGrandparent = {
+        name: 'article',
+        attribs: {},
+        parent: null, // No parent for grandparent
+        type: 'tag',
+        children: [],
+      };
+
+      const parent = {
+        name: 'section',
+        attribs: {},
+        parent: invalidGrandparent,
+        type: 'tag',
+        children: [],
+      };
+
+      invalidGrandparent.children = [parent];
+
+      const element = {
+        name: 'span',
+        attribs: { class: 'text' },
+        parent,
+        type: 'tag',
+      };
+
+      parent.children = [element];
+
+      const result = getElementSelector(element);
+      expect(result).to.be.a('string');
+      expect(result).to.include('span.text');
+    });
+
+    it('should handle body element in getSingleElementSelector path', () => {
+      // Use a getter that returns 'div' for initial checks but 'body' when
+      // getSingleElementSelector accesses it for selector building
+      // This tests lines 36-37 in getSingleElementSelector
+      let nameAccessCount = 0;
+      const trickElement = {
+        get name() {
+          nameAccessCount++;
+          // Access 1: getElementSelector line 145 (!element.name check)
+          // Access 2: buildSelectorPath line 81 (!element.name check)
+          // Access 3: buildSelectorPath line 85 (destructure)
+          // Access 4: getSingleElementSelector line 22-23 (destructure) -> return 'body'
+          if (nameAccessCount <= 3) return 'div';
+          return 'body';
+        },
+        attribs: {},
+        parent: { name: 'html', type: 'tag' },
+        type: 'tag',
+        children: [],
+      };
+
+      const result = getElementSelector(trickElement);
+      expect(result).to.equal('body');
+    });
+
+    it('should return empty when element becomes invalid during buildSelectorPath recursion', () => {
+      // Use a getter to make parent.name return valid value at line 107 check
+      // but invalid value when accessed in recursive buildSelectorPath at line 81
+      // This tests lines 82-83
+      let nameAccessCount = 0;
+      const trickParent = {
+        get name() {
+          nameAccessCount++;
+          // Access 1: line 107 check (parent.name)
+          // Access 2: line 111 (parent.name.toLowerCase)
+          // Access 3: recursive call line 81 (element.name)
+          if (nameAccessCount <= 2) return 'section';
+          return undefined; // This triggers line 82 return ''
+        },
+        attribs: { class: 'parent' },
+        parent: { name: 'article', type: 'tag', attribs: {}, parent: null, children: [] },
+        type: 'tag',
+        children: [],
+      };
+
+      const element = {
+        name: 'p',
+        attribs: { class: 'test' },
+        parent: trickParent,
+        type: 'tag',
+      };
+
+      trickParent.children = [element];
+
+      const result = getElementSelector(element);
+      // When recursive buildSelectorPath returns '', lines 129-130 are hit
+      expect(result).to.be.a('string');
+      expect(result).to.include('p.test');
+    });
+
+    it('should handle when recursive buildSelectorPath returns html', () => {
+      // Use a getter to make parent pass initial checks but return 'html' tag in recursion
+      // This tests line 130 (parentSelector === 'html')
+      let nameAccessCount = 0;
+      const trickParent = {
+        get name() {
+          nameAccessCount++;
+          // Access 1: line 107 check (parent.name)
+          // Access 2: line 111 (parent.name.toLowerCase)
+          // Access 3: recursive call line 81 (element.name)
+          // Access 4: recursive call line 85 destructure
+          if (nameAccessCount <= 2) return 'section';
+          return 'html'; // This makes recursive call return 'html' at line 90
+        },
+        attribs: {},
+        parent: { name: 'div', type: 'tag', attribs: {}, parent: null, children: [] },
+        type: 'tag',
+        children: [],
+      };
+
+      const element = {
+        name: 'span',
+        attribs: { class: 'content' },
+        parent: trickParent,
+        type: 'tag',
+      };
+
+      trickParent.children = [element];
+
+      const result = getElementSelector(element);
+      // When recursive buildSelectorPath returns 'html', line 130 is hit
+      expect(result).to.be.a('string');
+      expect(result).to.include('span.content');
+    });
+
+    it('should handle element with name property but invalid structure', () => {
+      const invalidElement = {
+        name: 'div',
+        // Missing attribs, parent, etc.
+      };
+
+      const result = getElementSelector(invalidElement);
+      expect(result).to.be.a('string');
     });
   });
 });

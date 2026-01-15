@@ -11,9 +11,7 @@
  */
 
 import {
-  composeAuditURL,
   isArray,
-  prependSchema,
 } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
@@ -21,8 +19,8 @@ import {
   filterValidUrls,
   getSitemapUrls,
 } from './common.js';
-import { getUrlWithoutPath } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { noopUrlResolver } from '../common/base-audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
@@ -34,7 +32,7 @@ const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
 /**
  * Main sitemap discovery and validation function
  */
-export async function findSitemap(inputUrl) {
+export async function findSitemap(inputUrl, log) {
   // Extract and validate pages from sitemaps
   const siteMapUrlsResult = await getSitemapUrls(inputUrl);
   if (!siteMapUrlsResult.success) return siteMapUrlsResult;
@@ -45,6 +43,9 @@ export async function findSitemap(inputUrl) {
   if (extractedPaths && Object.keys(extractedPaths).length > 0) {
     for (const sitemapUrl of Object.keys(extractedPaths)) {
       const urlsToCheck = extractedPaths[sitemapUrl];
+
+      /* c8 ignore next */
+      log?.info(`Number of URLs extracted from sitemap ${sitemapUrl}: ${urlsToCheck?.length ?? 0}`);
 
       if (urlsToCheck?.length) {
         // eslint-disable-next-line no-await-in-loop
@@ -100,15 +101,15 @@ export async function sitemapAuditRunner(baseURL, context) {
   const { log } = context;
   const startTime = process.hrtime();
 
-  log.debug(`Starting sitemap audit for ${baseURL}`);
+  log.info(`Starting sitemap audit for ${baseURL}`);
 
-  const auditResult = await findSitemap(baseURL);
+  const auditResult = await findSitemap(baseURL, log);
 
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  log.debug(`Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
+  log.info(`Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
 
   return {
     fullAuditRef: baseURL,
@@ -211,7 +212,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
-  .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
-    .then((url) => getUrlWithoutPath(prependSchema(url))))
+  .withUrlResolver(noopUrlResolver) // Preserves full URL including subpath
   .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();

@@ -12,7 +12,7 @@
 
 import {
   FORMS_AUDIT_INTERVAL,
-  isNonEmptyArray, isNonEmptyObject,
+  isNonEmptyArray,
 } from '@adobe/spacecat-shared-utils';
 import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
@@ -21,6 +21,7 @@ import {
 import {
   FORM_OPPORTUNITY_TYPES,
   successCriteriaLinks,
+  FORM_TYPES_TO_IGNORE,
 } from './constants.js';
 import { calculateCPCValue } from '../support/utils.js';
 import { getPresignedUrl as getPresignedUrlUtil } from '../utils/getPresignedUrl.js';
@@ -308,6 +309,24 @@ export function shouldExcludeForm(scrapedFormData) {
 }
 
 /**
+ * Check if a form should be ignored based on form details criteria.
+ * Forms are ignored if they match certain form types (defined in FORM_TYPES_TO_IGNORE)
+ * and are not lead generation forms.
+ *
+ * @param {Object} formDetails - The form details object containing form_type and is_lead_gen
+ * @returns {boolean} - True if the form should be ignored, false otherwise
+ */
+export function shouldIgnoreFormByDetails(formDetails) {
+  if (!formDetails || typeof formDetails !== 'object') {
+    return false;
+  }
+  // Normalize form_type to lowercase for case-insensitive comparison
+  const formType = formDetails.form_type?.toLowerCase();
+  // Ignore forms that match specified types and are not lead generation (boolean check)
+  return FORM_TYPES_TO_IGNORE.includes(formType) && formDetails.is_lead_gen === false;
+}
+
+/**
  * filter login and search forms from the opportunities
  * @param formOpportunities
  * @param scrapedData
@@ -570,24 +589,15 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
  * @param {Object} opportunity - Object with setTitle method.
  */
 export function getFormTitle(formDetails, opportunity) {
-  let formType = (formDetails && isNonEmptyObject(formDetails) && formDetails.form_type?.trim())
-    ? formDetails.form_type.trim()
-    : 'Form';
-
-  const normalizedType = formType.toLowerCase();
-  if (normalizedType === 'na' || normalizedType.includes('other')) {
-    formType = 'Form';
-  }
-
-  const suffixMap = {
-    [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]: 'has low conversions',
-    [FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION]: 'has low views',
-    [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]: 'has low views',
-    [FORM_OPPORTUNITY_TYPES.FORM_A11Y]: '',
+  // Return user-friendly titles that match frontend UI
+  const titleMap = {
+    [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]: 'Turn more visitors into leads and customers — optimizations for form conversion rate are ready',
+    [FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION]: 'Visitors aren\'t scrolling or navigating to your form — placement and visibility optimizations ready for review',
+    [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]: 'Your form isn\'t getting enough views — optimizations to drive visibility prepared',
+    [FORM_OPPORTUNITY_TYPES.FORM_A11Y]: 'Forms missing key accessibility attributes — enhancements prepared to support all users',
   };
 
-  const suffix = suffixMap[opportunity.getType()] || '';
-  return suffix ? `${formType.trim()} ${suffix}` : formType.trim();
+  return titleMap[opportunity.getType()] || 'Form opportunity detected';
 }
 
 /**

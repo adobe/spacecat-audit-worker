@@ -19,11 +19,11 @@ export function createOpportunityData(siteId, auditId, guidance) {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_FAQs_Runbook.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
     origin: 'AUTOMATION',
     type: 'faq',
-    title: 'LLM prompt improvement: Add FAQs to pages',
+    title: 'Add Relevant FAQs',
     description: 'Add the relevant FAQs listed below to the corresponding pages to improve content discoverability in LLMs.',
     status: 'NEW',
     guidance,
-    tags: ['isElmo'],
+    tags: ['isElmo', 'content'],
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.PAGE, DATA_SOURCES.SITE],
     },

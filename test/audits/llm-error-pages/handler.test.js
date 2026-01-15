@@ -43,6 +43,7 @@ describe('LLM Error Pages Handler', function () {
   let mockCategorizeErrorsByStatusCode;
   let mockDownloadExistingCdnSheet;
   let mockMatchErrorsWithCdnData;
+  let mockGetTopAgenticUrlsFromAthena;
 
   const topPages = [
     { getUrl: () => 'https://example.com/page1' },
@@ -167,6 +168,9 @@ describe('LLM Error Pages Handler', function () {
       category: 'Test',
     })));
 
+    // Mock getTopAgenticUrlsFromAthena to return empty (fall back to Ahrefs)
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
+
     // Mock ExcelJS
     const mockWorksheet = {
       addRow: sandbox.stub(),
@@ -205,7 +209,6 @@ describe('LLM Error Pages Handler', function () {
       '../../../src/llm-error-pages/utils.js': {
         getS3Config: mockGetS3Config,
         generateReportingPeriods: mockGenerateReportingPeriods,
-        buildSiteFilters: mockBuildSiteFilters,
         processErrorPagesResults: mockProcessResults,
         buildLlmErrorPagesQuery: mockBuildQuery,
         getAllLlmProviders: mockGetAllLlmProviders,
@@ -221,6 +224,12 @@ describe('LLM Error Pages Handler', function () {
         createLLMOSharepointClient: mockCreateLLMOSharepointClient,
         saveExcelReport: mockSaveExcelReport,
         readFromSharePoint: mockReadFromSharePoint,
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: mockBuildSiteFilters,
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
       },
       exceljs: {
         default: mockExcelJS,
@@ -490,7 +499,6 @@ describe('LLM Error Pages Handler', function () {
         '../../../src/llm-error-pages/utils.js': {
           getS3Config: mockGetS3Config,
           generateReportingPeriods: mockGenerateReportingPeriods,
-          buildSiteFilters: mockBuildSiteFilters,
           processErrorPagesResults: () => ({
             totalErrors: 2,
             errorPages: [
@@ -510,6 +518,9 @@ describe('LLM Error Pages Handler', function () {
         '../../../src/utils/report-uploader.js': {
           createLLMOSharepointClient: mockCreateLLMOSharepointClient,
           saveExcelReport: mockSaveExcelReport,
+        },
+        '../../../src/utils/cdn-utils.js': {
+          buildSiteFilters: mockBuildSiteFilters,
         },
         exceljs: {
           default: {
@@ -641,6 +652,352 @@ describe('LLM Error Pages Handler', function () {
   });
 });
 
+describe('LLM Error Pages Handler - Athena/Ahrefs fallback', function () {
+  this.timeout(10000);
+  let sandbox;
+  let mockGetTopAgenticUrlsFromAthena;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should use Athena URLs in importTopPagesAndScrape when available', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
+      'https://example.com/athena-page1',
+      'https://example.com/athena-page2',
+    ]);
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+      },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    const result = await handler.importTopPagesAndScrape(context);
+
+    expect(result.auditResult.success).to.be.true;
+    expect(result.auditResult.topPages).to.deep.equal([
+      'https://example.com/athena-page1',
+      'https://example.com/athena-page2',
+    ]);
+    // Ahrefs should NOT be called when Athena returns data
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+  });
+
+  it('should fall back to Ahrefs in importTopPagesAndScrape when Athena returns empty', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const topPages = [
+      { getUrl: () => 'https://example.com/ahrefs-page1' },
+      { getUrl: () => 'https://example.com/ahrefs-page2' },
+    ];
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+      },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+        },
+      },
+    };
+
+    const result = await handler.importTopPagesAndScrape(context);
+
+    expect(result.auditResult.success).to.be.true;
+    expect(result.auditResult.topPages).to.deep.equal([
+      'https://example.com/ahrefs-page1',
+      'https://example.com/ahrefs-page2',
+    ]);
+    expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs');
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith('site-123', 'ahrefs', 'global');
+  });
+
+  it('should return failure when both Athena and Ahrefs return empty in importTopPagesAndScrape', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+      },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    const result = await handler.importTopPagesAndScrape(context);
+
+    expect(result.auditResult.success).to.be.false;
+    expect(result.auditResult.topPages).to.deep.equal([]);
+    expect(context.log.warn).to.have.been.calledWith('[LLM-ERROR-PAGES] No top pages found for site');
+  });
+
+  it('should use Ahrefs URLs in submitForScraping', async () => {
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+    });
+
+    const topPages = [{ getUrl: () => 'https://example.com/ahrefs-page1' }];
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+      },
+      audit: { getAuditResult: () => ({ success: true }) },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+        },
+      },
+    };
+
+    const result = await handler.submitForScraping(context);
+
+    expect(result.urls).to.deep.equal([{ url: 'https://example.com/ahrefs-page1' }]);
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith('site-123', 'ahrefs', 'global');
+  });
+
+  it('should throw error when no Ahrefs pages in submitForScraping', async () => {
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+      },
+      audit: { getAuditResult: () => ({ success: true }) },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    try {
+      await handler.submitForScraping(context);
+      expect.fail('Should have thrown an error');
+    } catch (error) {
+      expect(error.message).to.equal('No top pages to submit for scraping');
+    }
+    expect(context.log.warn).to.have.been.calledWith('[LLM-ERROR-PAGES] No top pages to submit for scraping');
+  });
+
+  it('should use Athena URLs for alternativeUrls in runAuditAndSendToMystique when available', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
+      'https://example.com/athena-alt1',
+      'https://example.com/athena-alt2',
+    ]);
+
+    const mockAthenaClient = { query: sandbox.stub().resolves([]) };
+    const mockProcessResults = sandbox.stub().returns({
+      totalErrors: 1,
+      errorPages: [{ user_agent: 'Bot', url: '/404-page', status: 404, total_requests: 10, userAgent: 'Bot' }],
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+    });
+    const mockCategorizeErrors = sandbox.stub().returns({
+      404: [{ user_agent: 'Bot', url: '/404-page', status: 404, total_requests: 10, userAgent: 'Bot' }],
+    });
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+      '@adobe/spacecat-shared-athena-client': {
+        AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) },
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+      '../../../src/llm-error-pages/utils.js': {
+        getS3Config: sandbox.stub().resolves({
+          bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
+          getAthenaTempLocation: () => 's3://test/temp/',
+        }),
+        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date() }] }),
+        processErrorPagesResults: mockProcessResults,
+        buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
+        getAllLlmProviders: sandbox.stub().returns([]),
+        categorizeErrorsByStatusCode: mockCategorizeErrors,
+        consolidateErrorsByUrl: (errors) => errors,
+        sortErrorsByTrafficVolume: (errors) => errors,
+        toPathOnly: (url) => url,
+        SPREADSHEET_COLUMNS: [],
+      },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: sandbox.stub().resolves({}),
+        saveExcelReport: sandbox.stub().resolves(),
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: sandbox.stub().returns(''),
+      },
+      exceljs: {
+        default: { Workbook: function Workbook() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      sqs: { sendMessage: sandbox.stub().resolves({}) },
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+        getDeliveryType: () => 'aem_edge',
+        getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'test' }),
+      },
+      audit: { getId: () => 'audit-123' },
+      dataAccess: {
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
+      },
+    };
+
+    const result = await handler.runAuditAndSendToMystique(context);
+
+    expect(result.auditResult.success).to.be.true;
+    // Verify Athena URLs were used
+    const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+    expect(sentMessage.data.alternativeUrls).to.deep.equal([
+      'https://example.com/athena-alt1',
+      'https://example.com/athena-alt2',
+    ]);
+    // Ahrefs was NOT called
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+  });
+
+  it('should fall back to Ahrefs for alternativeUrls in runAuditAndSendToMystique when Athena returns empty', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
+
+    const mockAthenaClient = { query: sandbox.stub().resolves([]) };
+    const mockProcessResults = sandbox.stub().returns({
+      totalErrors: 1,
+      errorPages: [{ user_agent: 'Bot', url: '/404-page', status: 404, total_requests: 10, userAgent: 'Bot' }],
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1 },
+    });
+    const mockCategorizeErrors = sandbox.stub().returns({
+      404: [{ user_agent: 'Bot', url: '/404-page', status: 404, total_requests: 10, userAgent: 'Bot' }],
+    });
+
+    const handler = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Audit: { AUDIT_STEP_DESTINATIONS: { IMPORT_WORKER: 'import-worker', SCRAPE_CLIENT: 'scrape-client' } },
+      },
+      '@adobe/spacecat-shared-athena-client': {
+        AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) },
+      },
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+      '../../../src/llm-error-pages/utils.js': {
+        getS3Config: sandbox.stub().resolves({
+          bucket: 'test', customerName: 'test', databaseName: 'test_db', tableName: 'test_table',
+          getAthenaTempLocation: () => 's3://test/temp/',
+        }),
+        generateReportingPeriods: sandbox.stub().returns({ weeks: [{ weekNumber: 1, year: 2025, startDate: new Date(), endDate: new Date() }] }),
+        processErrorPagesResults: mockProcessResults,
+        buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT'),
+        getAllLlmProviders: sandbox.stub().returns([]),
+        categorizeErrorsByStatusCode: mockCategorizeErrors,
+        consolidateErrorsByUrl: (errors) => errors,
+        sortErrorsByTrafficVolume: (errors) => errors,
+        toPathOnly: (url) => url,
+        SPREADSHEET_COLUMNS: [],
+      },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: sandbox.stub().resolves({}),
+        saveExcelReport: sandbox.stub().resolves(),
+      },
+      '../../../src/utils/cdn-utils.js': {
+        buildSiteFilters: sandbox.stub().returns(''),
+      },
+      exceljs: {
+        default: { Workbook: function Workbook() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } },
+      },
+    });
+
+    const topPages = [{ getUrl: () => 'https://example.com/ahrefs-alt1' }];
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      sqs: { sendMessage: sandbox.stub().resolves({}) },
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' },
+      site: {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-123',
+        getDeliveryType: () => 'aem_edge',
+        getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'test' }),
+      },
+      audit: { getId: () => 'audit-123' },
+      dataAccess: {
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages) },
+      },
+    };
+
+    const result = await handler.runAuditAndSendToMystique(context);
+
+    expect(result.auditResult.success).to.be.true;
+    // Verify Ahrefs URLs were used as fallback
+    const sentMessage = context.sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.data.alternativeUrls).to.deep.equal(['https://example.com/ahrefs-alt1']);
+      expect(context.log.info).to.have.been.calledWith(
+        '[LLM-ERROR-PAGES] No agentic URLs from Athena, falling back to Ahrefs',
+      );
+    });
+});
+
 describe('LLM Error Pages Handler (isolated)', function () {
   this.timeout(10000);
   it('covers Excel row fallbacks and sorting branches without shared beforeEach', async () => {
@@ -718,7 +1075,6 @@ describe('LLM Error Pages Handler (isolated)', function () {
       '../../../src/llm-error-pages/utils.js': {
         getS3Config: mockGetS3Config,
         generateReportingPeriods: mockGenerateReportingPeriods,
-        buildSiteFilters: mockBuildSiteFilters,
         processErrorPagesResults: () => ({
           totalErrors: 2,
           errorPages: [

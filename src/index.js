@@ -34,6 +34,7 @@ import noCTAAboveTheFold from './no-cta-above-the-fold/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
 import brokenLinksGuidance from './broken-links-guidance/guidance-handler.js';
+import metatagsGuidance from './metatags-guidance/guidance-handler.js';
 import internalLinks from './internal-links/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
@@ -81,8 +82,11 @@ import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
+import toc from './toc/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
+import vulnerabilitiesCodeFix from './vulnerabilities-code-fix/handler.js';
 import prerender from './prerender/handler.js';
+import prerenderGuidance from './prerender/guidance-handler.js';
 import productMetatags from './product-metatags/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import summarization from './summarization/handler.js';
@@ -93,6 +97,9 @@ import permissionsRedundant from './permissions/handler.redundant.js';
 import faqs from './faqs/handler.js';
 import faqsGuidance from './faqs/guidance-handler.js';
 import pageCitability from './page-citability/handler.js';
+import healthCheck from './health-check/handler.js';
+import wikipediaAnalysis from './wikipedia-analysis/handler.js';
+import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -124,12 +131,15 @@ const HANDLERS = {
   'site-detection': siteDetection,
   'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
   'guidance:broken-links': brokenLinksGuidance,
+  'guidance:metatags': metatagsGuidance,
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions':
     highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'geo-brand-presence': geoBrandPresence,
+  'geo-brand-presence-free': geoBrandPresence,
+  'geo-brand-presence-paid': geoBrandPresence,
   'category:geo-brand-presence': handleCategorizationResponseHandler,
   'detect:geo-brand-presence': detectGeoBrandPresence,
   'refresh:geo-brand-presence': detectGeoBrandPresence,
@@ -164,15 +174,21 @@ const HANDLERS = {
   'guidance:summarization': summarizationGuidance,
   hreflang,
   headings,
+  toc,
   prerender,
+  'guidance:prerender': prerenderGuidance,
   'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,
+  'codefix:security-vulnerabilities': vulnerabilitiesCodeFix,
   'codefix:form-accessibility': accessibilityCodeFixHandler,
   'security-permissions': permissions,
   'security-permissions-redundant': permissionsRedundant,
   faqs,
   'guidance:faqs': faqsGuidance,
   'page-citability': pageCitability,
+  'health-check': healthCheck,
+  'wikipedia-analysis': wikipediaAnalysis,
+  'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
   dummy: (message) => ok(message),
 };
 

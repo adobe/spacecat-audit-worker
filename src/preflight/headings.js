@@ -13,10 +13,10 @@
 import { stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import {
   validatePageHeadingFromScrapeJson,
-  getBrandGuidelines,
   getH1HeadingASuggestion,
   HEADINGS_CHECKS,
 } from '../headings/handler.js';
+import { getBrandGuidelines } from '../headings/shared-utils.js';
 import { saveIntermediateResults } from './utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
 
@@ -141,7 +141,7 @@ export default async function headings(context, auditContext) {
         };
         log.debug(`[preflight-headings] AI Suggestions Healthy tags object: ${JSON.stringify(healthyTagsObject)}`);
         try {
-          const brandGuidelines = await getBrandGuidelines(healthyTagsObject, log, context);
+          const brandGuidelines = await getBrandGuidelines(healthyTagsObject, log, context, site);
           return await enhanceWithAISuggestions(detectedIssues, brandGuidelines, context, log);
         } catch (error) {
           log.error(`[preflight-headings] Failed to generate AI suggestions: ${error.message}`);

@@ -38,7 +38,7 @@ export function createOpportunityData(auditData) {
         },
       ],
     },
-    tags: ['isElmo'],
+    tags: ['isElmo', 'tech-geo', 'edgeOptimize'],
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
       thresholds: {

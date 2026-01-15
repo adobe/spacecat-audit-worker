@@ -15,7 +15,6 @@ import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   getS3Config,
-  ensureTableExists,
   loadSql,
   generateReportingPeriods,
   fetchRemotePatterns,
@@ -60,8 +59,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlDb, s3Config.databaseName, `[Athena Query] Create database ${s3Config.databaseName}`);
     }
-
-    await ensureTableExists(athenaClient, s3Config.databaseName, reportConfig, log);
 
     const isMonday = new Date().getUTCDay() === 1;
     // If weekOffset is not provided, run for both week 0 and -1 on Monday and

@@ -32,8 +32,8 @@ import {
   createReportOpportunitySuggestion,
   getEnvAsoDomain,
   aggregateAccessibilityData,
-  getAuditPrefixes,
   sendRunImportMessage,
+  getAuditPrefixes,
   sendCodeFixMessagesToMystique,
 } from '../../../src/accessibility/utils/data-processing.js';
 
@@ -1089,7 +1089,7 @@ describe('data-processing utility functions', () => {
       log,
       context = {}
     ) => {
-      const suggestions = createReportOpportunitySuggestionInstanceStub(reportMarkdown, context);
+      const suggestions = createReportOpportunitySuggestionInstanceStub(reportMarkdown);
 
       try {
         const suggestion = await opportunity.addSuggestions(suggestions);
@@ -1119,7 +1119,7 @@ describe('data-processing utility functions', () => {
 
       expect(result.suggestion).to.deep.equal(createdSuggestion);
       expect(createReportOpportunitySuggestionInstanceStub.calledOnce).to.be.true;
-      expect(createReportOpportunitySuggestionInstanceStub.calledWith(reportMarkdown, sinon.match.any)).to.be.true;
+      expect(createReportOpportunitySuggestionInstanceStub.calledWith(reportMarkdown)).to.be.true;
       expect(mockOpportunity.addSuggestions.calledOnce).to.be.true;
       expect(mockOpportunity.addSuggestions.calledWith(mockSuggestions)).to.be.true;
     });
@@ -1167,7 +1167,7 @@ describe('data-processing utility functions', () => {
       );
 
       expect(result.suggestion).to.deep.equal(createdSuggestion);
-      expect(createReportOpportunitySuggestionInstanceStub.calledWith('', sinon.match.any)).to.be.true;
+      expect(createReportOpportunitySuggestionInstanceStub.calledWith('')).to.be.true;
     });
 
     it('should handle complex report markdown', async () => {
@@ -1202,11 +1202,10 @@ describe('data-processing utility functions', () => {
         reportMarkdown,
         mockAuditData,
         mockLog,
-        { site: { requiresValidation: true } }
       );
 
       expect(result.suggestion).to.deep.equal(createdSuggestion);
-      expect(createReportOpportunitySuggestionInstanceStub.calledWith(reportMarkdown, sinon.match.any)).to.be.true;
+      expect(createReportOpportunitySuggestionInstanceStub.calledWith(reportMarkdown)).to.be.true;
     });
 
     it('should handle different audit data formats', async () => {
@@ -3797,7 +3796,7 @@ describe('data-processing utility functions', () => {
       mockAuditType = 'accessibility';
     });
 
-    describe('initial data setup (lines 644-680)', () => {
+    describe('initial data setup', () => {
       it('should correctly extract basic data from inputs', async () => {
         // Arrange
         const mockOpportunity = {
@@ -3977,7 +3976,7 @@ describe('data-processing utility functions', () => {
       });
     });
 
-    describe('in-depth report generation (lines 682-687)', () => {
+    describe('in-depth report generation', () => {
       it('should successfully generate in-depth report opportunity', async () => {
         // Arrange
         const mockOpportunity = {
@@ -4173,7 +4172,7 @@ describe('data-processing utility functions', () => {
       });
     });
 
-    describe('enhanced report generation (lines 689-694)', () => {
+    describe('enhanced report generation', () => {
       it('should successfully generate enhanced report opportunity', async () => {
         // Arrange
         const mockOpportunity = {
@@ -4434,7 +4433,7 @@ describe('data-processing utility functions', () => {
       });
     });
 
-    describe('fixed vs new report generation (lines 696-701)', () => {
+    describe('fixed vs new report generation', () => {
       it('should successfully generate fixed vs new report opportunity', async () => {
         // Arrange
         const mockOpportunity = {
@@ -4768,7 +4767,7 @@ describe('data-processing utility functions', () => {
       });
     });
 
-    describe('base report generation (lines 703-714)', () => {
+    describe('base report generation', () => {
       it('should successfully generate base report opportunity with shouldIgnore=false', async () => {
         // Arrange
         const mockOpportunity = {
@@ -5516,7 +5515,7 @@ describe('data-processing utility functions', () => {
       expect(mockExistingSuggestion.setData).to.not.have.been.called;
     });
 
-    it('should handle null getData() result (line 532)', async () => {
+    it('should handle null getData() result', async () => {
       // Arrange - test the ?? {} branch
       mockExistingSuggestion.getData.returns(null);
       const reportMarkdown = '# Content\n';
@@ -5538,7 +5537,7 @@ describe('data-processing utility functions', () => {
       expect(result.suggestion).to.equal(mockExistingSuggestion);
     });
 
-    it('should handle missing suggestionValue in currentData (line 533)', async () => {
+    it('should handle missing suggestionValue in currentData', async () => {
       // Arrange - test the ?? {} branch for suggestionValue
       mockExistingSuggestion.getData.returns({ someOtherField: 'value' });
       const reportMarkdown = '# Content\n';
@@ -5560,7 +5559,7 @@ describe('data-processing utility functions', () => {
       expect(result.suggestion).to.equal(mockExistingSuggestion);
     });
 
-    it('should handle empty reportMarkdown (line 527, 566)', async () => {
+    it('should handle empty reportMarkdown', async () => {
       // Arrange - test the || 0 branch when reportMarkdown is empty
       mockOpportunity.getSuggestions.resolves([]);
       const reportMarkdown = ''; // Empty string
@@ -5581,7 +5580,7 @@ describe('data-processing utility functions', () => {
       expect(mockOpportunity.addSuggestions).to.have.been.called;
     });
 
-    it('should handle null reportMarkdown (line 527)', async () => {
+    it('should handle null reportMarkdown', async () => {
       // Arrange - test the ?. branch when reportMarkdown is null
       mockOpportunity.getSuggestions.resolves([]);
       const reportMarkdown = null;
@@ -5602,7 +5601,7 @@ describe('data-processing utility functions', () => {
       expect(result).to.exist;
     });
 
-    it('should handle missing accessibility-desktop in suggestionValue (line 536, 550)', async () => {
+    it('should handle missing accessibility-desktop in suggestionValue', async () => {
       // Arrange - test the || 0 branch when accessibility-desktop is undefined
       mockExistingSuggestion.getData.returns({
         suggestionValue: {
@@ -5627,7 +5626,7 @@ describe('data-processing utility functions', () => {
       expect(mockExistingSuggestion.save).to.have.been.called;
     });
 
-    it('should handle missing accessibility-mobile in suggestionValue (line 537, 551)', async () => {
+    it('should handle missing accessibility-mobile in suggestionValue', async () => {
       // Arrange - test the || 0 branch when accessibility-mobile is undefined
       mockExistingSuggestion.getData.returns({
         suggestionValue: {
@@ -5777,7 +5776,7 @@ describe('data-processing utility functions', () => {
       expect(mockLog.error.called).to.be.true;
     });
 
-    it('should find opportunity with IGNORED status (line 636 - OR condition)', async () => {
+    it('should find opportunity with IGNORED status', async () => {
       // Arrange - test the || branch where status is IGNORED
       const mockOpportunity = {
         getTitle: sandbox.stub().returns('Accessibility report - Desktop - Week 25 - 2024'),
@@ -5801,7 +5800,7 @@ describe('data-processing utility functions', () => {
       expect(mockOpportunity.getStatus).to.have.been.called;
     });
 
-    it('should not find opportunity with RESOLVED status (line 636)', async () => {
+    it('should not find opportunity with RESOLVED status', async () => {
       // Arrange - test that non-NEW and non-IGNORED statuses are filtered out
       const mockOpportunity = {
         getTitle: sandbox.stub().returns('Accessibility report - Desktop - Week 26 - 2024'),

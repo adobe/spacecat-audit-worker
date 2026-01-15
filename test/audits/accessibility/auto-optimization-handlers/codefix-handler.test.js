@@ -28,9 +28,14 @@ describe('AccessibilityCodeFixHandler', () => {
   let mockOpportunity;
   let mockSuggestion;
   let getObjectFromKeyStub;
+  let CodeFixConfigurationError;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sandbox = sinon.createSandbox();
+
+    // Import CodeFixConfigurationError for testing
+    const codefixHandler = await import('../../../../src/common/codefix-handler.js');
+    CodeFixConfigurationError = codefixHandler.CodeFixConfigurationError;
 
     mockSuggestion = {
       getId: sandbox.stub().returns('suggestion-123'),
@@ -536,41 +541,10 @@ describe('AccessibilityCodeFixHandler', () => {
       expect(context.log.warn).to.have.been.called;
     });
 
-    it('should use default bucket when S3_MYSTIQUE_BUCKET_NAME not set for old format', async () => {
-      context.env.S3_MYSTIQUE_BUCKET_NAME = undefined;
-
-      const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
-        '../../../../src/common/codefix-handler.js': await esmock('../../../../src/common/codefix-handler.js', {
-          '../../../../src/utils/s3-utils.js': {
-            getObjectFromKey: getObjectFromKeyStub,
-          },
-        }),
-      });
-
-      const messageOldFormat = {
-        siteId: 'site-123',
-        data: {
-          opportunityId: 'opportunity-123',
-          updates: [
-            {
-              url: 'https://example.com/contact',
-              source: 'form',
-              types: ['color-contrast'],
-            },
-          ],
-        },
-      };
-
-      const result = await handler.default(messageOldFormat, context);
-
-      expect(result.status).to.equal(200);
-      expect(getObjectFromKeyStub).to.have.been.calledWith(
-        context.s3Client,
-        'spacecat-prod-mystique-assets',
-        sinon.match.string,
-        context.log,
-      );
-    });
+    // Note: Lines 270-272 and 312-314 in codefix-handler.js are defensive error checks
+    // that cannot be reached with current implementation because defaultBucketName
+    // always has a fallback value ('spacecat-prod-mystique-assets').
+    // These lines are kept for defensive programming and future-proofing.
 
     it('should work without source parameter', async () => {
       const mockReportData = {
@@ -1087,6 +1061,137 @@ describe('AccessibilityCodeFixHandler', () => {
       });
       expect(mockSuggestion.save).to.have.been.called;
       expect(mockSuggestion2.save).to.have.been.called;
+    });
+
+    it('should throw CodeFixConfigurationError when S3_MYSTIQUE_BUCKET_NAME is not set (new format)', async () => {
+      const message = {
+        siteId: 'site-123',
+        type: 'codefix:accessibility',
+        data: {
+          opportunityId: 'opportunity-123',
+          updates: [
+            {
+              url: 'https://example.com/contact',
+              source: 'form',
+              aggregation_key: 'button-name',
+              // No code_fix_path or code_fix_bucket, so it will try to use default bucket
+            },
+          ],
+        },
+      };
+
+      // Create context without S3_MYSTIQUE_BUCKET_NAME
+      const contextWithoutBucket = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          log: {
+            info: sandbox.spy(),
+            debug: sandbox.spy(),
+            warn: sandbox.spy(),
+            error: sandbox.spy(),
+          },
+          dataAccess: mockDataAccess,
+          s3Client: context.s3Client,
+          env: {
+            // S3_MYSTIQUE_BUCKET_NAME is not set
+          },
+        })
+        .build();
+
+      const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
+        '../../../../src/common/codefix-handler.js': await esmock('../../../../src/common/codefix-handler.js', {
+          '../../../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        }),
+      });
+
+      const result = await handler.default(message, contextWithoutBucket);
+
+      expect(result.status).to.equal(500);
+      expect(contextWithoutBucket.log.error).to.have.been.calledWith(
+        sinon.match(/Configuration error/)
+      );
+    });
+
+    it('should throw CodeFixConfigurationError when S3_MYSTIQUE_BUCKET_NAME is not set (old format)', async () => {
+      // Setup suggestions so the code reaches the bucket check
+      mockOpportunity.getSuggestions.resolves([mockSuggestion]);
+
+      const message = {
+        siteId: 'site-123',
+        type: 'codefix:accessibility',
+        data: {
+          opportunityId: 'opportunity-123',
+          updates: [
+            {
+              url: 'https://example.com/contact',
+              source: 'form',
+              types: ['button-name', 'form-label'],
+            },
+          ],
+        },
+      };
+
+      // Create context without S3_MYSTIQUE_BUCKET_NAME
+      const contextWithoutBucket = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          log: {
+            info: sandbox.spy(),
+            debug: sandbox.spy(),
+            warn: sandbox.spy(),
+            error: sandbox.spy(),
+          },
+          dataAccess: mockDataAccess,
+          s3Client: context.s3Client,
+          env: {
+            // S3_MYSTIQUE_BUCKET_NAME is not set
+          },
+        })
+        .build();
+
+      const handler = await esmock('../../../../src/common/codefix-response-handler.js', {
+        '../../../../src/common/codefix-handler.js': await esmock('../../../../src/common/codefix-handler.js', {
+          '../../../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        }),
+      });
+
+      const result = await handler.default(message, contextWithoutBucket);
+
+      expect(result.status).to.equal(500);
+      expect(contextWithoutBucket.log.error).to.have.been.calledWith(
+        sinon.match(/Configuration error/)
+      );
+      
+      // Reset the stub
+      mockOpportunity.getSuggestions.resolves([]);
+    });
+  });
+
+  describe('CodeFixConfigurationError', () => {
+    it('should create error with correct name and message', () => {
+      const message = 'S3 bucket name not configured';
+      const error = new CodeFixConfigurationError(message);
+
+      expect(error).to.be.instanceof(Error);
+      expect(error).to.be.instanceof(CodeFixConfigurationError);
+      expect(error.name).to.equal('CodeFixConfigurationError');
+      expect(error.message).to.equal(message);
+    });
+
+    it('should be catchable as Error', () => {
+      const message = 'Test configuration error';
+      
+      try {
+        throw new CodeFixConfigurationError(message);
+      } catch (error) {
+        expect(error).to.be.instanceof(Error);
+        expect(error.name).to.equal('CodeFixConfigurationError');
+        expect(error.message).to.equal(message);
+      }
     });
   });
 });

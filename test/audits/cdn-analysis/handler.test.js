@@ -50,6 +50,11 @@ function createS3MockForCdnType(cdnType, options = {}) {
         ? 'raw/'
         : `${orgId}/raw/byocdn-cloudflare/`,
     },
+    other: {
+      logSample: '{"url": "/test", "timestamp": "2025-01-15T23:00:00Z", "status": 200}',
+      keyPath: `${orgId}/raw/byocdn-other/${year}/${month}/${day}/file1.log`,
+      prefix: `${orgId}/raw/byocdn-other/`,
+    },
   };
 
   const config = cdnConfigs[cdnType];
@@ -187,6 +192,34 @@ describe('CDN Analysis Handler', () => {
       expect(result22.auditResult.providers).to.be.an('array').with.length(0);
     });
 
+    it('handles byocdn-other daily processing', async () => {
+      const auditContext23 = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 23,
+      };
+      const auditContext22 = {
+        year: 2025,
+        month: 6,
+        day: 15,
+        hour: 22,
+      };
+
+      context.s3Client.send.callsFake(createS3MockForCdnType('other'));
+
+      // Hour 23 should process
+      const result23 = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext23);
+      expect(result23.auditResult.providers).to.be.an('array').with.length.greaterThan(0);
+      expect(result23.auditResult.providers[0]).to.have.property('cdnType', 'other');
+      expect(result23.auditResult.providers[0].rawDataPath)
+        .to.include('/raw/byocdn-other/2025/06/15/');
+
+      // Hour 22 should skip
+      const result22 = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext22);
+      expect(result22.auditResult.providers).to.be.an('array').with.length(0);
+    });
+
     it('validates and processes auditContext correctly', async () => {
       const validAuditContext = {
         year: 2025,
@@ -257,6 +290,17 @@ describe('CDN Analysis Handler', () => {
         expect(result.auditResult.providers[0].output).to.include('2025/09/07/04');
         expect(result.auditResult.providers[0].outputReferral).to.include('2025/09/07/04');
       }
+    });
+
+    it('falls back to previous hour when auditContext is not an object', async () => {
+      const originalDateNow = Date.now;
+      Date.now = sandbox.stub().returns(new Date('2025-01-01T01:05:00Z').getTime());
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, null);
+
+      expect(result.fullAuditRef).to.include('2025/01/01/00');
+
+      Date.now = originalDateNow;
     });
 
     it('should allow full day to be processed', async () => {

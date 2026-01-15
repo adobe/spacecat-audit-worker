@@ -503,7 +503,7 @@ describe('Sitemap Product Coverage Audit', () => {
       expect(context.log.warn).to.have.been.called; // Should warn about product count mismatch
     });
 
-    it('should handle early break when product limit is reached (lines 107-109)', async () => {
+    it('should handle early break when product limit is reached', async () => {
       global.mockLargeCatalog = true;
       global.mockEarlyBreak = true;
       const result = await sitemapProductCoverageAuditRunnerMocked(baseURL, context, mockSite);
@@ -514,7 +514,7 @@ describe('Sitemap Product Coverage Audit', () => {
       // Should hit the early break logic when products.size >= productCount
     });
 
-    it('should trigger exact early break condition (lines 107-109)', async () => {
+    it('should trigger exact early break condition', async () => {
       global.mockExactBreak = true;
       const result = await sitemapProductCoverageAuditRunnerMocked(baseURL, context, mockSite);
       global.mockExactBreak = false;
@@ -523,7 +523,7 @@ describe('Sitemap Product Coverage Audit', () => {
       // Should hit shouldBreak = true when products.size exactly equals productCount
     });
 
-    it('should handle empty sitemap paths with NO_VALID_PATHS_EXTRACTED (lines 199-208)', async () => {
+    it('should handle empty sitemap paths with NO_VALID_PATHS_EXTRACTED', async () => {
       const siteWithEmptyExtraction = {
         getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE,
         getConfig: () => ({
@@ -804,7 +804,7 @@ describe('Sitemap Product Coverage Audit', () => {
       expect(context.log.debug).to.have.been.calledWith('No existing opportunity found - nothing to resolve');
     });
 
-    it('should create opportunity when audit succeeds with suggestions and test mapNewSuggestion callback (lines 347-352)', async () => {
+    it('should create opportunity when audit succeeds with suggestions and test mapNewSuggestion callback', async () => {
       const auditUrl = 'https://example.com';
       const auditData = {
         auditResult: {
@@ -880,7 +880,7 @@ describe('Sitemap Product Coverage Audit', () => {
       nock.cleanAll();
     });
 
-    it('should handle getSitemapUrls success with missing details properties (lines 137-138)', async () => {
+    it('should handle getSitemapUrls success with missing details properties', async () => {
       global.mockMissingDetails = true;
       const result = await sitemapProductCoverageAuditRunnerMocked(baseURL, context, mockSite);
       global.mockMissingDetails = false;

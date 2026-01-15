@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import esmock from 'esmock';
 import {
   importTopPages,
   submitForScraping,
@@ -412,5 +413,253 @@ describe('Summarization Handler', () => {
       );
       expect(sqs.sendMessage).to.have.been.calledOnce;
     });
+  });
+});
+
+describe('Summarization Handler - Athena/Ahrefs fallback', () => {
+  let sandbox;
+  let mockGetTopAgenticUrlsFromAthena;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should use Ahrefs URLs in importTopPages (importTopPages only uses Ahrefs)', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
+      'https://adobe.com/athena-page1',
+      'https://adobe.com/athena-page2',
+    ]);
+
+    const handler = await esmock('../../../src/summarization/handler.js', {
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const topPages = [
+      { getUrl: () => 'https://adobe.com/ahrefs-page1' },
+      { getUrl: () => 'https://adobe.com/ahrefs-page2' },
+    ];
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://adobe.com',
+        getId: () => 'site-123',
+      },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+        },
+      },
+    };
+
+    const result = await handler.importTopPages(context);
+
+    // importTopPages only uses Ahrefs, not Athena
+    expect(result.auditResult.success).to.be.true;
+    expect(result.auditResult.topPages).to.deep.equal([
+      'https://adobe.com/ahrefs-page1',
+      'https://adobe.com/ahrefs-page2',
+    ]);
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
+      'site-123',
+      'ahrefs',
+      'global',
+    );
+    // Athena is not used in importTopPages
+    expect(mockGetTopAgenticUrlsFromAthena).to.not.have.been.called;
+  });
+
+  it('should return failure in importTopPages when no Ahrefs pages found (importTopPages only uses Ahrefs)', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
+
+    const handler = await esmock('../../../src/summarization/handler.js', {
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://adobe.com',
+        getId: () => 'site-123',
+      },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    const result = await handler.importTopPages(context);
+
+    // importTopPages only uses Ahrefs, not Athena, so when Ahrefs returns empty, it fails
+    expect(result.auditResult.success).to.be.false;
+    expect(result.auditResult.topPages).to.deep.equal([]);
+    expect(context.log.warn).to.have.been.calledWith(
+      '[SUMMARIZATION] No top pages found for site',
+    );
+    // Athena is not used in importTopPages
+    expect(mockGetTopAgenticUrlsFromAthena).to.not.have.been.called;
+  });
+
+  it('should use Athena URLs in submitForScraping when available', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
+      'https://adobe.com/athena-page1',
+    ]);
+
+    const handler = await esmock('../../../src/summarization/handler.js', {
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://adobe.com',
+        getId: () => 'site-123',
+      },
+      audit: { getAuditResult: () => ({ success: true }) },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    const result = await handler.submitForScraping(context);
+
+    expect(result.urls).to.deep.equal([{ url: 'https://adobe.com/athena-page1' }]);
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+  });
+
+  it('should fall back to Ahrefs in submitForScraping when Athena returns empty', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
+
+    const handler = await esmock('../../../src/summarization/handler.js', {
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const topPages = [{ getUrl: () => 'https://adobe.com/ahrefs-page1' }];
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: {
+        getBaseURL: () => 'https://adobe.com',
+        getId: () => 'site-123',
+      },
+      audit: { getAuditResult: () => ({ success: true }) },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+        },
+      },
+    };
+
+    const result = await handler.submitForScraping(context);
+
+    expect(result.urls).to.deep.equal([{ url: 'https://adobe.com/ahrefs-page1' }]);
+    expect(context.log.info).to.have.been.calledWith(
+      '[SUMMARIZATION] No agentic URLs from Athena, falling back to Ahrefs',
+    );
+  });
+
+  it('should use Athena URLs in sendToMystique when available', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
+      'https://adobe.com/athena-page1',
+      'https://adobe.com/athena-page2',
+      'https://adobe.com/athena-page3',
+    ]);
+
+    const handler = await esmock('../../../src/summarization/handler.js', {
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      sqs: { sendMessage: sandbox.stub().resolves({}) },
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' },
+      site: {
+        getBaseURL: () => 'https://adobe.com',
+        getId: () => 'site-123',
+        getDeliveryType: () => 'aem',
+      },
+      audit: {
+        getId: () => 'audit-123',
+        getAuditResult: () => ({ success: true }),
+      },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+      scrapeResultPaths: new Map([
+        ['https://adobe.com/athena-page1', 'path1'],
+        ['https://adobe.com/athena-page2', 'path2'],
+        ['https://adobe.com/athena-page3', 'path3'],
+      ]),
+    };
+
+    const result = await handler.sendToMystique(context);
+
+    expect(result).to.deep.equal({ status: 'complete' });
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+  });
+
+  it('should fall back to Ahrefs in sendToMystique when Athena returns empty', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([]);
+
+    const handler = await esmock('../../../src/summarization/handler.js', {
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const topPages = [
+      { getUrl: () => 'https://adobe.com/ahrefs-page1' },
+      { getUrl: () => 'https://adobe.com/ahrefs-page2' },
+    ];
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      sqs: { sendMessage: sandbox.stub().resolves({}) },
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' },
+      site: {
+        getBaseURL: () => 'https://adobe.com',
+        getId: () => 'site-123',
+        getDeliveryType: () => 'aem',
+      },
+      audit: {
+        getId: () => 'audit-123',
+        getAuditResult: () => ({ success: true }),
+      },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+        },
+      },
+      scrapeResultPaths: new Map([
+        ['https://adobe.com/ahrefs-page1', 'path1'],
+        ['https://adobe.com/ahrefs-page2', 'path2'],
+      ]),
+    };
+
+    const result = await handler.sendToMystique(context);
+
+    expect(result).to.deep.equal({ status: 'complete' });
+    expect(context.log.info).to.have.been.calledWith(
+      '[SUMMARIZATION] No agentic URLs from Athena, falling back to Ahrefs',
+    );
   });
 });

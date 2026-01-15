@@ -15,8 +15,8 @@ import { DATA_SOURCES } from '../common/constants.js';
 const OpptyData = {
   runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Acquisition%20-%20SEO/Experience_Success_Studio_Canonical_Runbook.docx?d=w53f8a3edfd554beab12083570672da00&csf=1&web=1&e=NJSdWD',
   origin: 'AUTOMATION',
-  title: 'Canonical URL issues affecting SEO',
-  description: 'Canonical URLs help search engines understand which version of a page is the preferred one to index. Issues with canonical URLs can lead to duplicate content problems, diluted page authority, and reduced search rankings.',
+  title: 'Canonical URLs to clarify your SEO strategy to search engines are ready',
+  description: 'Canonical tags prevent duplicate content confusion — consolidating signals strengthens ranking authority.',
   guidance: {
     steps: [
       'Review each URL with canonical issues identified in the audit results.',
@@ -24,7 +24,7 @@ const OpptyData = {
       'Use lowercase, absolute URLs for canonical tags to avoid formatting issues.',
     ],
   },
-  tags: ['Traffic Acquisition', 'SEO'],
+  tags: ['Traffic Acquisition', 'SEO', 'tech-seo'],
   data: {
     dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
   },
@@ -47,7 +47,7 @@ export function createOpportunityDataForElmo() {
         },
       ],
     },
-    tags: [...OpptyData.tags, 'llm', 'isElmo'],
+    tags: [...OpptyData.tags, 'llm'],
     data: {
       ...OpptyData.data,
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],

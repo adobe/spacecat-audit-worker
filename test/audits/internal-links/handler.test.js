@@ -15,6 +15,7 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import esmock from 'esmock';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
@@ -85,6 +86,7 @@ const AUDIT_RESULT_DATA_WITH_SUGGESTIONS = [
 ];
 
 use(sinonChai);
+use(chaiAsPromised);
 
 const sandbox = sinon.createSandbox();
 
@@ -103,7 +105,7 @@ const site = {
   getDeliveryType: sinon.stub().returns('aem_edge'),
 };
 
-describe('Broken internal links audit ', () => {
+describe('Broken internal links audit', () => {
   let context;
 
   beforeEach(() => {
@@ -224,9 +226,52 @@ describe('Broken internal links audit ', () => {
 
     await expect(prepareScrapingStep(context))
       .to.be.rejectedWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skip scraping and suggestion generation`);
-    
+
     // Verify that SiteTopPage.allBySiteIdAndSourceAndGeo was not called since we exit early
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+  }).timeout(5000);
+
+  it('prepareScrapingStep should throw error when no top pages found in database', async () => {
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]), // Empty array
+    };
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
+
+    await expect(prepareScrapingStep(context))
+      .to.be.rejectedWith(`No top pages found in database for site ${site.getId()}. Ahrefs import required.`);
+  }).timeout(5000);
+
+  it('prepareScrapingStep should throw error when all top pages filtered out by audit scope', async () => {
+    // Mock site with subpath
+    const siteWithSubpath = {
+      ...site,
+      getBaseURL: () => 'https://example.com/blog',
+    };
+    context.site = siteWithSubpath;
+
+    // Mock top pages that don't match the subpath
+    const topPagesOutsideScope = [
+      { getUrl: () => 'https://example.com/products' },
+      { getUrl: () => 'https://example.com/about' },
+    ];
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPagesOutsideScope),
+    };
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
+
+    await expect(prepareScrapingStep(context))
+      .to.be.rejectedWith(`All 2 top pages filtered out by audit scope. BaseURL: https://example.com/blog requires subpath match but no pages match scope.`);
   }).timeout(5000);
 });
 
@@ -297,8 +342,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       getSuggestions: sandbox.stub().resolves([]),
       setAuditId: sandbox.stub(),
       save: sandbox.stub().resolves(),
-      setData: () => {},
-      getData: () => {},
+      setData: () => { },
+      getData: () => { },
       setUpdatedBy: sandbox.stub().returnsThis(),
     };
 
@@ -332,7 +377,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // Stub is already initialized in beforeEach, just update the method
     context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
       .resolves(AUDIT_RESULT_DATA_WITH_SUGGESTIONS.map((data) => (
-        { getData: () => data, getId: () => '1111', save: () => {} })));
+        { getData: () => data, getId: () => '1111', save: () => { } })));
   });
 
   afterEach(() => {
@@ -563,6 +608,58 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(result.status).to.equal('complete');
   }).timeout(5000);
 
+  it('filters out unscrape-able file types (PDFs, Office docs) from alternative URLs', async () => {
+    // Use root-level URLs (no path prefix) to ensure all alternatives are included
+    const validSuggestions = [
+      {
+        getData: () => ({
+          urlFrom: 'https://example.com/',
+          urlTo: 'https://example.com/',
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+    if (!context.dataAccess) {
+      context.dataAccess = {};
+    }
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    // Stub allBySiteIdAndStatus to return empty array so a new opportunity is created
+    context.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+    // Include various unscrape-able file types in top pages to trigger filtering
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves([
+        { getUrl: () => 'https://example.com/page1' },
+        { getUrl: () => 'https://example.com/brochure.pdf' },
+        { getUrl: () => 'https://example.com/document.PDF' },
+        { getUrl: () => 'https://example.com/data.xlsx' },
+        { getUrl: () => 'https://example.com/presentation.pptx' },
+        { getUrl: () => 'https://example.com/report.docx' },
+      ]);
+    // Ensure audit is set with proper broken links data
+    context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(result.status).to.equal('complete');
+
+    // Verify the log message about filtering file types was called
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/Filtered out 5 unscrape-able file URLs \(PDFs, Office docs, etc\.\) from alternative URLs before sending to Mystique/),
+    );
+
+    // Verify SQS was called with only scrapeable URLs
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    const messageArg = context.sqs.sendMessage.getCall(0).args[1];
+    expect(messageArg.data.alternativeUrls).to.have.lengthOf(1);
+    expect(messageArg.data.alternativeUrls[0]).to.equal('https://example.com/page1');
+  }).timeout(5000);
+
   it('Existing opportunity and suggestions are updated if no broken internal links found', async () => {
     // Create mock suggestions
     const mockSuggestions = [{}];
@@ -699,7 +796,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(opportunity.save).to.have.been.calledOnce;
   }).timeout(5000);
 
-   it('returns original auditData if audit result is unsuccessful', async () => {
+  it('returns original auditData if audit result is unsuccessful', async () => {
     const FailureAuditData = {
       ...auditData,
       getAuditResult: () => ({
@@ -906,13 +1003,13 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         isHandlerEnabledForSite: () => true,
       }),
     };
-    
+
     // Create opportunity with missing getId()
     const opportunityWithoutId = {
       ...opportunity,
       getId: () => undefined, // Missing ID
     };
-    
+
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunityWithoutId]);
     context.site.getBaseURL = () => 'https://bulk.com';
     context.site.getDeliveryType = () => 'aem_edge';
