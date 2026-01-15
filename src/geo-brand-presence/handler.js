@@ -174,6 +174,30 @@ function deduplicatePrompts(prompts, siteId, log) {
 }
 
 /**
+ * Checks if an AI prompt is marked as deleted in the LLMO config.
+ * For AI prompts, we only match on prompt text and region because:
+ * - AI prompts from parquet files have empty category (category='')
+ * - Deleted AI prompts have the category assigned by Mystique after categorization
+ *
+ * @param {string} promptText - The prompt text to check
+ * @param {string} region - The region code (e.g., 'us', 'ca')
+ * @param {Object} deletedPrompts - The deleted prompts record from config.deleted.prompts
+ * @returns {boolean} True if the AI prompt is deleted for this region
+ */
+export function isAiPromptDeleted(promptText, region, deletedPrompts) {
+  if (!deletedPrompts || Object.keys(deletedPrompts).length === 0) {
+    return false;
+  }
+
+  return Object.values(deletedPrompts)
+    .filter((deleted) => deleted.origin === 'ai')
+    .some((deleted) => (
+      deleted.prompt === promptText
+      && deleted.regions.includes(region)
+    ));
+}
+
+/**
  * Loads prompts and sends categorization messages for brand presence detection.
  *
  * @param {Object} context - The execution context including audit, logging, site info, etc.
@@ -265,6 +289,32 @@ export async function loadPromptsAndSendDetection(
   } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
 
   log.info('GEO BRAND PRESENCE: Found %d AI prompts (after dedup) for site id %s (%s)', aiPrompts.length, siteId, baseURL);
+
+  // Filter deleted AI prompts from parquet data
+  let deletedAiPromptsFilteredCount = 0;
+  if (configExists && config) {
+    const deletedPrompts = config.deleted?.prompts || {};
+    const originalAiCount = aiPrompts.length;
+
+    aiPrompts = aiPrompts.filter((p) => {
+      const isDeleted = isAiPromptDeleted(p.prompt, p.region, deletedPrompts);
+      if (isDeleted) {
+        deletedAiPromptsFilteredCount += 1;
+      }
+      return !isDeleted;
+    });
+
+    if (deletedAiPromptsFilteredCount > 0) {
+      log.info(
+        'GEO BRAND PRESENCE: Filtered %d deleted AI prompts from parquet; AI prompts after filtering: %d (was %d) for site id %s (%s)',
+        deletedAiPromptsFilteredCount,
+        aiPrompts.length,
+        originalAiCount,
+        siteId,
+        baseURL,
+      );
+    }
+  }
 
   // Load human prompts from LLMO config
   let humanPrompts = [];
