@@ -136,7 +136,7 @@ async function createOpportunity(auditId, siteId, context) {
     // change status to IGNORED for older opportunities
     await updateStatusToIgnored(dataAccess, siteId, log, null, filterAccessibilityOpportunities);
 
-    const mergedTags = mergeTagsWithHardcodedTags(FORM_OPPORTUNITY_TYPES.FORM_A11Y, ['Forms Accessibility']);
+    const mergedTags = mergeTagsWithHardcodedTags(FORM_OPPORTUNITY_TYPES.FORM_A11Y, []);
 
     const opportunityData = {
       siteId,

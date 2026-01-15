@@ -143,7 +143,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
 
       const mergedTags = mergeTagsWithHardcodedTags(
         FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
-        ['Form Conversion'],
+        [],
       );
 
       const opportunityData = {
