@@ -1,3 +1,10 @@
+# [1.284.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.283.0...v1.284.0) (2026-01-15)
+
+
+### Features
+
+* implement step-based architecture for CWV with code import ([#1831](https://github.com/adobe/spacecat-audit-worker/issues/1831)) ([22558d8](https://github.com/adobe/spacecat-audit-worker/commit/22558d80634d8a26308ff6d66fdcbe15543c3ab9))
+
 # [1.283.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.282.2...v1.283.0) (2026-01-15)
 
 
