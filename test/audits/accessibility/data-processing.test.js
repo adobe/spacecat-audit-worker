@@ -1025,16 +1025,18 @@ describe('data-processing utility functions', () => {
         mockContext,
       );
 
-      expect(mockOpportunity.create.calledWith({
-        siteId: 'test-site-123',
-        auditId: 'audit-456',
-        runbook: 'test-runbook',
-        type: 'test',
-        origin: undefined,
-        title: undefined,
-        description: undefined,
-        tags: undefined,
-      })).to.be.true;
+      const createCall = mockOpportunity.create.getCall(0);
+      expect(createCall).to.not.be.undefined;
+      const callArgs = createCall.args[0];
+      expect(callArgs.siteId).to.equal('test-site-123');
+      expect(callArgs.auditId).to.equal('audit-456');
+      expect(callArgs.runbook).to.equal('test-runbook');
+      expect(callArgs.type).to.equal('test');
+      expect(callArgs.origin).to.be.undefined;
+      expect(callArgs.title).to.be.undefined;
+      expect(callArgs.description).to.be.undefined;
+      // Tags are now merged with hardcoded tags, so they won't be undefined
+      expect(callArgs.tags).to.be.an('array');
     });
 
     it('should handle different audit data formats', async () => {

@@ -956,7 +956,19 @@ describe('Meta Tags', () => {
         opportunity.getType = () => 'meta-tags';
         dataAccessStub.Opportunity.create = sinon.stub().returns(opportunity);
         await opportunityAndSuggestions(auditUrl, auditData, context);
-        expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.OpportunityData);
+        const createCall = dataAccessStub.Opportunity.create.getCall(0);
+        expect(createCall).to.not.be.undefined;
+        const actualOppty = createCall.args[0];
+        // Check all fields except tags (which are now merged with hardcoded tags)
+        const expectedWithoutTags = { ...testData.OpportunityData };
+        delete expectedWithoutTags.tags;
+        const actualWithoutTags = { ...actualOppty };
+        delete actualWithoutTags.tags;
+        expect(actualWithoutTags).to.deep.equal(expectedWithoutTags);
+        // Verify tags include hardcoded tags
+        expect(actualOppty.tags).to.be.an('array');
+        expect(actualOppty.tags).to.include('Meta Tags');
+        expect(actualOppty.tags).to.include('SEO');
         expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
