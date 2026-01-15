@@ -1,3 +1,10 @@
+# [1.283.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.282.2...v1.283.0) (2026-01-15)
+
+
+### Features
+
+* SITES-38255 - metatags: reduce minimum character limit for TITLE ([#1852](https://github.com/adobe/spacecat-audit-worker/issues/1852)) ([a48c342](https://github.com/adobe/spacecat-audit-worker/commit/a48c342d9502d8a2b454ec4dea1eab11266fc68f))
+
 ## [1.282.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.282.1...v1.282.2) (2026-01-15)
 
 
