@@ -33,6 +33,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
 
   beforeEach(async () => {
     mockDomSelector = {
+      getDomElementSelector: sinon.stub(),
       toElementTargets: sinon.stub(),
     };
 
@@ -141,27 +142,30 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
     sinon.restore();
   });
 
-  describe('getElementsFromCheck - transformRules.selector branch (line 43)', () => {
-    it('should use check.selectors when transformRules.selector is not present', async () => {
-      // Setup check without transformRules but with selectors to test the selectors branch
-      const checkWithSelectors = {
+  describe('getElementsFromCheck - selector generation from HTML', () => {
+    it('should generate selectors from HTML for heading-multiple-h1 check', async () => {
+      // Setup check without transformRules - should generate selectors from HTML
+      const checkWithoutSelectors = {
         success: false,
         check: 'heading-multiple-h1',
         checkTitle: 'Multiple H1 Tags',
         description: 'Found multiple H1 tags',
         explanation: 'Use only one H1 per page',
-        selectors: ['h1:nth-of-type(1)', 'h1:nth-of-type(2)'],
       };
 
       mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
         url: 'https://main--example--page.aem.page/page1',
-        checks: [checkWithSelectors],
+        checks: [checkWithoutSelectors],
       });
 
-      mockDomSelector.toElementTargets.returns([
-        { selector: 'h1:nth-of-type(1)' },
-        { selector: 'h1:nth-of-type(2)' },
-      ]);
+      mockDomSelector.getDomElementSelector.onFirstCall().returns('body > h1:nth-of-type(1)');
+      mockDomSelector.getDomElementSelector.onSecondCall().returns('body > h1:nth-of-type(2)');
+      mockDomSelector.toElementTargets.returns({
+        elements: [
+          { selector: 'body > h1:nth-of-type(1)' },
+          { selector: 'body > h1:nth-of-type(2)' },
+        ],
+      });
 
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/utils/dom-selector.js': mockDomSelector,
@@ -201,29 +205,35 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
 
       await headingsModule.default(context, auditContext);
 
-      // Verify toElementTargets was called with check.selectors
+      // Verify getDomElementSelector was called for each H1
+      expect(mockDomSelector.getDomElementSelector).to.have.been.called;
+      // Verify toElementTargets was called with generated selectors
       expect(mockDomSelector.toElementTargets).to.have.been.calledWith(
-        ['h1:nth-of-type(1)', 'h1:nth-of-type(2)'],
+        ['body > h1:nth-of-type(1)', 'body > h1:nth-of-type(2)'],
       );
     });
 
-    it('should return undefined when neither selectors nor transformRules are present', async () => {
-      // Setup check without selectors or transformRules
-      const checkWithoutSelectors = {
+    it('should generate selectors for heading-empty check when tagName is provided', async () => {
+      // Setup heading-empty check with tagName
+      const checkWithTagName = {
         success: false,
         check: 'heading-empty',
         checkTitle: 'Empty Heading',
         description: 'Heading is empty',
         explanation: 'Add content to heading',
+        tagName: 'h1',
       };
 
       mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
         url: 'https://main--example--page.aem.page/page1',
-        checks: [checkWithoutSelectors],
+        checks: [checkWithTagName],
       });
 
-      // Return empty array to indicate no elements
-      mockDomSelector.toElementTargets.returns([]);
+      // Mock getDomElementSelector to return a selector for the empty h1
+      mockDomSelector.getDomElementSelector.returns('body > h1');
+      mockDomSelector.toElementTargets.returns({
+        elements: [{ selector: 'body > h1' }],
+      });
 
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/utils/dom-selector.js': mockDomSelector,
@@ -263,20 +273,22 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
 
       await headingsModule.default(context, auditContext);
 
-      // Verify toElementTargets was called with []
-      expect(mockDomSelector.toElementTargets).to.have.been.calledWith([]);
+      // Verify getDomElementSelector was called for the empty heading
+      expect(mockDomSelector.getDomElementSelector).to.have.been.called;
+      // Verify toElementTargets was called with the generated selector
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h1']);
     });
 
-    it('should use transformRules.selector when check.selectors is not present', async () => {
-      // Setup check with transformRules but no selectors
+    it('should use transformRules.selector for unknown check types as fallback', async () => {
+      // Setup check with an unknown check type that has transformRules
       const checkWithTransformRules = {
         success: false,
-        check: 'heading-h1-length',
-        checkTitle: 'H1 Too Long',
-        description: 'H1 exceeds recommended length',
-        explanation: 'Shorten the H1',
+        check: 'heading-custom-check', // Unknown check type
+        checkTitle: 'Custom Heading Issue',
+        description: 'Custom heading validation failed',
+        explanation: 'Fix the custom issue',
         transformRules: {
-          selector: 'h1.long-heading',
+          selector: 'h2.custom-heading',
           action: 'replace',
         },
       };
@@ -287,7 +299,9 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
       });
 
       // Return mock elements
-      mockDomSelector.toElementTargets.returns([{ selector: 'h1.long-heading' }]);
+      mockDomSelector.toElementTargets.returns({
+        elements: [{ selector: 'h2.custom-heading' }],
+      });
 
       const headingsModule = await esmock('../../src/preflight/headings.js', {
         '../../src/utils/dom-selector.js': mockDomSelector,
@@ -317,7 +331,7 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
         scrapedObjects: [{
           data: {
             scrapeResult: {
-              rawBody: '<body><h1 class="long-heading">Very Long H1 Heading Text</h1></body>',
+              rawBody: '<body><h2 class="custom-heading">Custom Heading</h2></body>',
             },
             finalUrl: 'https://main--example--page.aem.page/page1',
           },
@@ -327,8 +341,8 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
 
       await headingsModule.default(context, auditContext);
 
-      // Verify toElementTargets was called with [transformRules.selector]
-      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['h1.long-heading']);
+      // Verify toElementTargets was called with [transformRules.selector] for unknown check types
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['h2.custom-heading']);
     });
   });
 });
