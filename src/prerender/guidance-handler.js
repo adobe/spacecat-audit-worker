@@ -202,7 +202,7 @@ export default async function handler(message, context) {
     return ok();
   } catch (error) {
     log.error(
-      `${LOG_PREFIX} Error processing guidance for opportunityId=${opportunityId || 'unknown'}, siteId=${siteId}: ${error.message}`,
+      `${LOG_PREFIX} Error processing guidance for opportunityId=${opportunityId}, siteId=${siteId}: ${error.message}`,
       error,
     );
     return badRequest(`Failed to process guidance: ${error.message}`);
