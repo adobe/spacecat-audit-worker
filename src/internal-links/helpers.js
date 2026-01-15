@@ -95,14 +95,14 @@ export async function isLinkInaccessible(url, log) {
 }
 
 /**
- * Classifies links into priority categories based on views
+ * Classifies links into priority categories based on trafficDomain
  * High: top 25%, Medium: next 25%, Low: bottom 50%
- * @param {Array} links - Array of objects with views property
+ * @param {Array} links - Array of objects with trafficDomain property
  * @returns {Array} - Links with priority classifications included
  */
 export function calculatePriority(links) {
-  // Sort links by views in descending order
-  const sortedLinks = [...links].sort((a, b) => b.views - a.views);
+  // Sort links by trafficDomain in descending order
+  const sortedLinks = [...links].sort((a, b) => b.trafficDomain - a.trafficDomain);
 
   // Calculate indices for the 25% and 50% marks
   const quarterIndex = Math.ceil(sortedLinks.length * 0.25);
