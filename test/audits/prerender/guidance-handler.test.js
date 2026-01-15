@@ -119,8 +119,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
     };
 
     // Mock global fetch for presigned URL downloads
-    fetchStub = sinon.stub();
-    global.fetch = fetchStub;
+    // Using sinon.stub(global, 'fetch') properly saves and restores the original
+    fetchStub = sinon.stub(global, 'fetch');
 
     // Import handler directly (no esmock needed for fetch)
     handler = await import('../../../src/prerender/guidance-handler.js');
@@ -136,8 +136,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
   });
 
   afterEach(() => {
-    sinon.restore();
-    delete global.fetch;
+    sinon.restore(); // Automatically restores global.fetch
   });
 
   describe('Successful AI Summary Update (Presigned URL)', () => {
