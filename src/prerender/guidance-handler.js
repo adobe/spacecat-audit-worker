@@ -63,44 +63,41 @@ export default async function handler(message, context) {
     return badRequest(msg);
   }
 
-  const { presignedUrl } = data;
+  // Extract from SQS message data
+  const { presignedUrl, opportunityId } = data;
 
-  // Validate required presigned URL
+  // Validate required fields
   if (!presignedUrl) {
     const msg = `${LOG_PREFIX} Missing presignedUrl in Mystique response for siteId=${siteId}`;
     log.error(msg);
     return badRequest(msg);
   }
 
-  log.info(`${LOG_PREFIX} Downloading AI summaries from presigned URL for siteId=${siteId}`);
+  if (!opportunityId) {
+    const msg = `${LOG_PREFIX} Missing opportunityId in Mystique response for siteId=${siteId}`;
+    log.error(msg);
+    return badRequest(msg);
+  }
 
-  let opportunityId; // Declare at function scope for error handling
+  log.info(`${LOG_PREFIX} Downloading AI summaries from presigned URL for siteId=${siteId}, opportunityId=${opportunityId}`);
 
   try {
-    // 1. Download AI summaries from presigned URL (throws on error)
+    // Download AI summaries from presigned URL (throws on error)
     const aiSummariesData = await downloadFromPresignedUrl(presignedUrl, log);
 
     const { suggestions } = aiSummariesData;
-    opportunityId = aiSummariesData.opportunityId; // Assign to outer scope
     log.info(
       `${LOG_PREFIX} Successfully loaded ${suggestions.length} suggestions from presigned URL for opportunityId=${opportunityId}`,
     );
 
-    // 2. Validate site exists
+    // Validate site exists
     const site = await Site.findById(siteId);
     if (!site) {
       log.error(`${LOG_PREFIX} Site not found for siteId: ${siteId}`);
       return notFound('Site not found');
     }
 
-    // 3. Validate opportunityId
-    if (!opportunityId) {
-      const msg = `${LOG_PREFIX} Missing opportunityId in downloaded data for siteId=${siteId}`;
-      log.error(msg);
-      return badRequest(msg);
-    }
-
-    // 4. Look up the existing prerender opportunity by ID
+    // Look up the existing prerender opportunity by ID
     const opportunity = await Opportunity.findById(opportunityId);
     if (!opportunity) {
       const msg = `${LOG_PREFIX} Opportunity not found for opportunityId=${opportunityId}, siteId=${siteId}`;
@@ -108,7 +105,7 @@ export default async function handler(message, context) {
       return notFound('Opportunity not found');
     }
 
-    // 5. Load existing suggestions for this opportunity
+    // Load existing suggestions for this opportunity
     const existingSuggestions = await opportunity.getSuggestions();
     if (!existingSuggestions || existingSuggestions.length === 0) {
       log.warn(
@@ -117,7 +114,7 @@ export default async function handler(message, context) {
       return ok();
     }
 
-    // 6. Filter out OUTDATED suggestions (stale data from previous audit runs)
+    // Filter out OUTDATED suggestions (stale data from previous audit runs)
     const updateableSuggestions = existingSuggestions.filter((s) => {
       const status = s.getStatus?.();
       return status !== 'OUTDATED';
@@ -134,7 +131,7 @@ export default async function handler(message, context) {
       `${LOG_PREFIX} Found ${updateableSuggestions.length}/${existingSuggestions.length} updateable suggestions (excluding OUTDATED) for opportunityId=${opportunityId}`,
     );
 
-    // 7. Index updateable suggestions by URL for quick lookup
+    // Index updateable suggestions by URL for quick lookup
     const suggestionsByUrl = new Map();
     updateableSuggestions.forEach((s) => {
       const dataObj = s.getData();
@@ -143,7 +140,7 @@ export default async function handler(message, context) {
       }
     });
 
-    // 8. Prepare updates for all suggestions
+    // Prepare updates for all suggestions
     const suggestionsToSave = [];
 
     suggestions.forEach((incoming) => {

@@ -173,7 +173,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl,
-          suggestionCount: 2,
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -223,6 +223,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -256,6 +257,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -307,6 +309,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -317,9 +320,9 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(log.error).to.have.been.calledWith(
         sinon.match(/Failed to download from presigned URL: 404 Not Found/),
       );
-      // Should also log the catch block error with opportunityId='unknown'
+      // Should also log the catch block error with opportunityId
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/Error processing guidance for opportunityId=unknown/),
+        sinon.match(/Error processing guidance for opportunityId=opportunity-123/),
         sinon.match.instanceOf(Error),
       );
     });
@@ -333,15 +336,16 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      // Should log the catch block error with opportunityId='unknown'
+      // Should log the catch block error with opportunityId
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/Error processing guidance for opportunityId=unknown/),
+        sinon.match(/Error processing guidance for opportunityId=opportunity-123/),
         sinon.match.instanceOf(Error),
       );
     });
@@ -357,6 +361,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -367,9 +372,9 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       expect(log.error).to.have.been.calledWith(
         sinon.match(/Downloaded data is missing required suggestions array/),
       );
-      // Should also log the catch block error with opportunityId='unknown'
+      // Should also log the catch block error with opportunityId
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/Error processing guidance for opportunityId=unknown/),
+        sinon.match(/Error processing guidance for opportunityId=opportunity-123/),
         sinon.match.instanceOf(Error),
       );
     });
@@ -386,6 +391,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -396,17 +402,11 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
     });
 
     it('should return 400 if opportunityId is missing', async () => {
-      mockFetchSuccess({
-        suggestions: [
-          { url: 'https://example.com/page1', aiSummary: 'Some summary', valuable: true },
-        ],
-      });
-
       const message = {
         siteId: 'site-123',
         auditId: 'audit-123',
         data: {
-          // opportunityId: missing
+          // opportunityId is missing - testing validation
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
         },
       };
@@ -414,7 +414,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      expect(log.error).to.have.been.calledWith(sinon.match(/Missing opportunityId in downloaded data/));
+      expect(log.error).to.have.been.calledWith(sinon.match(/Missing opportunityId in Mystique response/));
     });
 
     it('should return 404 if opportunity not found', async () => {
@@ -455,6 +455,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -478,6 +479,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -497,15 +499,16 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      // Should log the catch block error with opportunityId='unknown'
+      // Should log the catch block error with opportunityId
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/Error processing guidance for opportunityId=unknown/),
+        sinon.match(/Error processing guidance for opportunityId=opportunity-123/),
         sinon.match.instanceOf(Error),
       );
     });
@@ -529,6 +532,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -575,6 +579,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -631,6 +636,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -664,6 +670,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -688,6 +695,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -717,6 +725,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -767,6 +776,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -798,6 +808,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -820,6 +831,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -842,6 +854,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
@@ -871,6 +884,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         auditId: 'audit-123',
         data: {
           presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
         },
       };
 
