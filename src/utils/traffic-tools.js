@@ -10,47 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-/**
- * Traffic Tools - Helper utility for analyzing traffic patterns across URLs
- *
- * Example Usage:
- * ```javascript
- * import { TrafficTools } from './utils/traffic-tools.js';
- *
- * // In your audit handler
- * const trafficTools = new TrafficTools(context);
- *
- * const urls = [
- *   'https://example.com/page1',
- *   'https://example.com/page2',
- *   'https://example.com/page3',
- * ];
- *
- * const siteId = site.getId();
- * const baseUrl = site.getBaseURL();
- * const percentageThreshold = 10; // 10% threshold
- *
- * const trafficAnalysis = await trafficTools.determinePredominantTraffic(
- *   urls,
- *   baseUrl,
- *   siteId,
- *   percentageThreshold
- * );
- *
- * // Result format:
- * // {
- * //   'https://example.com/page1': {
- * //     predominantTraffic: 'paid',
- * //     details: { paid: 70, earned: 20, owned: 10 }
- * //   },
- * //   'https://example.com/page2': {
- * //     predominantTraffic: 'earned',
- * //     details: { paid: 15, earned: 65, owned: 20 }
- * //   }
- * // }
- * ```
- */
-
 import {
   AWSAthenaClient,
   getTop3PagesWithTrafficLostTemplate,
