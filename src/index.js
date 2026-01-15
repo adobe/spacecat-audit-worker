@@ -34,6 +34,7 @@ import noCTAAboveTheFold from './no-cta-above-the-fold/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
 import brokenLinksGuidance from './broken-links-guidance/guidance-handler.js';
+import metatagsGuidance from './metatags-guidance/guidance-handler.js';
 import internalLinks from './internal-links/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
@@ -81,9 +82,11 @@ import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
+import toc from './toc/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
 import vulnerabilitiesCodeFix from './vulnerabilities-code-fix/handler.js';
 import prerender from './prerender/handler.js';
+import prerenderGuidance from './prerender/guidance-handler.js';
 import productMetatags from './product-metatags/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import summarization from './summarization/handler.js';
@@ -128,6 +131,7 @@ const HANDLERS = {
   'site-detection': siteDetection,
   'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
   'guidance:broken-links': brokenLinksGuidance,
+  'guidance:metatags': metatagsGuidance,
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions':
     highFormViewsLowConversionsGuidance,
@@ -170,7 +174,9 @@ const HANDLERS = {
   'guidance:summarization': summarizationGuidance,
   hreflang,
   headings,
+  toc,
   prerender,
+  'guidance:prerender': prerenderGuidance,
   'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,
   'codefix:security-vulnerabilities': vulnerabilitiesCodeFix,

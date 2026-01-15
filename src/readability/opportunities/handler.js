@@ -16,11 +16,12 @@ import { AuditBuilder } from '../../common/audit-builder.js';
 import { convertToOpportunity } from '../../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../../utils/data-access.js';
-import { noopUrlResolver } from '../../common/base-audit.js';
+import { wwwUrlResolver } from '../../common/base-audit.js';
 import { analyzePageReadability, sendReadabilityToMystique } from '../shared/analysis-utils.js';
 import {
   TOP_PAGES_LIMIT,
 } from '../shared/constants.js';
+import { getTopAgenticUrlsFromAthena } from '../../utils/agentic-urls.js';
 
 const { AUDIT_STEP_DESTINATIONS, AUDIT_TYPES } = Audit;
 
@@ -57,25 +58,39 @@ export async function scrapeReadabilityData(context) {
 
   log.info(`[ReadabilityAudit] Step 1: Preparing content scrape for readability audit for ${site.getBaseURL()} with siteId ${siteId}`);
 
-  // Get top pages for readability analysis
-  const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  // Try to get top agentic URLs from Athena first
+  const topPageUrls = await getTopAgenticUrlsFromAthena(site, context);
+  let urlsToScrape;
 
-  log.info(`[ReadabilityAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}`);
+  // Fallback to Ahrefs if Athena returns no data
+  if (!topPageUrls || topPageUrls.length === 0) {
+    log.info('[ReadabilityAudit] No agentic URLs from Athena, falling back to Ahrefs');
+    const { SiteTopPage } = dataAccess;
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
-  if (!isNonEmptyArray(topPages)) {
-    log.info(`[ReadabilityAudit] No top pages found for site ${siteId} (${site.getBaseURL()}), skipping audit`);
-    return {
-      status: 'NO_OPPORTUNITIES',
-      message: 'No top pages found, skipping audit',
-    };
+    log.info(`[ReadabilityAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}`);
+
+    if (!isNonEmptyArray(topPages)) {
+      log.info(`[ReadabilityAudit] No top pages found for site ${siteId} (${site.getBaseURL()}), skipping audit`);
+      return {
+        status: 'NO_OPPORTUNITIES',
+        message: 'No top pages found, skipping audit',
+      };
+    }
+
+    // Take top pages by traffic, sorted descending
+    urlsToScrape = topPages
+      .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
+      .sort((a, b) => b.traffic - a.traffic)
+      .slice(0, TOP_PAGES_LIMIT);
+  } else {
+    log.info(`[ReadabilityAudit] Found ${topPageUrls.length} agentic URLs from Athena for site ${site.getBaseURL()}`);
+
+    // Map Athena URLs to the expected format (no traffic data available from Athena)
+    urlsToScrape = topPageUrls
+      .slice(0, TOP_PAGES_LIMIT)
+      .map((url, index) => ({ url, traffic: 0, urlId: `athena-${index}` }));
   }
-
-  // Take top pages by traffic, sorted descending
-  const urlsToScrape = topPages
-    .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
-    .sort((a, b) => b.traffic - a.traffic)
-    .slice(0, TOP_PAGES_LIMIT);
 
   log.info(`[ReadabilityAudit] Top ${TOP_PAGES_LIMIT} pages for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(urlsToScrape, null, 2)}`);
 
@@ -221,7 +236,7 @@ export async function processReadabilityOpportunities(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(noopUrlResolver)
+  .withUrlResolver(wwwUrlResolver)
   .addStep(
     'import-top-pages',
     processImportStep,

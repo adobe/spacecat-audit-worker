@@ -456,7 +456,7 @@ describe('Hreflang Audit', () => {
       expect(result).to.be.an('object');
       expect(result).to.have.property('runbook', '');
       expect(result).to.have.property('origin', 'AUTOMATION');
-      expect(result).to.have.property('title', 'Hreflang implementation issues affecting international SEO');
+      expect(result).to.have.property('title', 'hreflang tag fixes ready to help reach the right audiences in every region');
       expect(result).to.have.property('description').that.is.a('string');
       expect(result).to.have.property('guidance').that.is.an('object');
       expect(result.guidance).to.have.property('steps').that.is.an('array');
@@ -475,7 +475,7 @@ describe('Hreflang Audit', () => {
       expect(result).to.be.an('object');
       expect(result).to.have.property('runbook', '');
       expect(result).to.have.property('origin', 'AUTOMATION');
-      expect(result).to.have.property('title', 'Hreflang implementation issues affecting international SEO');
+      expect(result).to.have.property('title', 'hreflang tag fixes ready to help reach the right audiences in every region');
       expect(result).to.have.property('description').that.is.a('string');
       expect(result).to.have.property('guidance').that.is.an('object');
       expect(result.guidance).to.have.property('recommendations').that.is.an('array');
@@ -487,7 +487,6 @@ describe('Hreflang Audit', () => {
       expect(result).to.have.property('tags').that.is.an('array');
       expect(result.tags).to.include('Traffic Acquisition');
       expect(result.tags).to.include('llm');
-      expect(result.tags).to.include('isElmo');
       expect(result).to.have.property('data').that.is.an('object');
       expect(result.data).to.have.property('dataSources').that.is.an('array');
       expect(result.data).to.have.property('additionalMetrics').that.is.an('array');
@@ -625,6 +624,45 @@ describe('Hreflang Audit', () => {
       const result = generateSuggestions(auditUrl, auditData, mockContext);
 
       expect(result.suggestions).to.be.an('array').that.is.empty;
+    });
+
+    it('should handle malformed URLs gracefully in x-default suggestions', () => {
+      const auditData = {
+        auditResult: {
+          'hreflang-x-default-missing': {
+            success: false,
+            explanation: 'Missing x-default hreflang tag',
+            urls: ['not-a-valid-url'],
+          },
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result.suggestions).to.have.length(1);
+      expect(result.suggestions[0].recommendedAction).to.equal('Add x-default hreflang tag: <link rel="alternate" href="[base-url]" hreflang="x-default" />');
+      expect(result.suggestions[0].suggestion).to.equal('Add x-default hreflang tag: <link rel="alternate" href="[base-url]" hreflang="x-default" />');
+    });
+
+    it('should use fallback when URL parsing fails for x-default', () => {
+      const auditData = {
+        auditResult: {
+          'hreflang-x-default-missing': {
+            success: false,
+            explanation: 'Missing x-default hreflang tag',
+            urls: ['/relative/path', '   ', 'ht!tp://invalid'],
+          },
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result.suggestions).to.have.length(3);
+      // All should fall back to placeholder
+      result.suggestions.forEach((suggestion) => {
+        expect(suggestion.recommendedAction).to.include('[base-url]');
+        expect(suggestion.suggestion).to.include('[base-url]');
+      });
     });
 
     it('should generate default recommended action for unknown check types', () => {

@@ -16,8 +16,8 @@ export function createOpportunityData(kpiMetrics) {
   return {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/_layouts/15/doc2.aspx?sourcedoc=%7BAC174971-BA97-44A9-9560-90BE6C7CF789%7D&file=Experience_Success_Studio_Broken_Backlinks_Runbook.docx&action=default&mobileredirect=true',
     origin: 'AUTOMATION',
-    title: 'Authoritative Domains are linking to invalid URLs. This could impact your SEO.',
-    description: 'Provide the correct target URL that each of the broken backlinks should be redirected to.',
+    title: 'Recover lost SEO value from broken backlinks — repair options available for deployment',
+    description: 'Broken backlinks waste valuable link equity — restoring them recovers authority and boosts search rankings.',
     guidance: {
       steps: [
         'Review the list of broken target URLs and the suggested redirects.',

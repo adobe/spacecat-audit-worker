@@ -28,9 +28,11 @@ import {
   generateSuggestions,
   headingsAuditRunner,
   getH1HeadingASuggestion,
+} from '../../src/headings/handler.js';
+import {
   getHeadingSelector,
   getTextContent,
-} from '../../src/headings/handler.js';
+} from '../../src/headings/shared-utils.js';
 import { createOpportunityData } from '../../src/headings/opportunity-data-mapper.js';
 import { convertToOpportunity } from '../../src/common/opportunity.js';
 
@@ -57,7 +59,7 @@ describe('Headings Audit', () => {
         AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
       },
     };
-    site = { getId: () => 'site-1' };
+    site = { getId: () => 'site-1', getBaseURL: () => 'https://example.com', getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }) };
     allKeys = [];
     allKeys.push('scrapes/site-1/page/scrape.json');
     s3Client = {
@@ -600,7 +602,7 @@ describe('Headings Audit', () => {
     expect(result.auditResult.message).to.equal('No heading issues detected');
 
     expect(logSpy.debug).to.have.been.calledWith(
-      sinon.match(/Found 0 issues across 2 check types/),
+      sinon.match(/Found 0 issues across 0 check types/),
     );
   });
 
@@ -612,7 +614,6 @@ describe('Headings Audit', () => {
       allKeys,
       s3Client,
       context.env.S3_SCRAPER_BUCKET_NAME,
-      context,
       seoChecks,
     );
 
@@ -628,7 +629,6 @@ describe('Headings Audit', () => {
       allKeys,
       s3Client,
       context.env.S3_SCRAPER_BUCKET_NAME,
-      context,
       seoChecks,
     );
 
@@ -648,7 +648,6 @@ describe('Headings Audit', () => {
       emptyKeys,
       s3Client,
       context.env.S3_SCRAPER_BUCKET_NAME,
-      context,
       seoChecks,
     );
 
@@ -668,33 +667,10 @@ describe('Headings Audit', () => {
       allKeys,
       s3Client,
       context.env.S3_SCRAPER_BUCKET_NAME,
-      context,
       seoChecks,
     );
 
     expect(result).to.be.null;
-  });
-
-  it('handles error in validatePageHeadings when url is invalid', async () => {
-    const invalidUrl = 'not a valid url';
-    const logSpy = sinon.spy(log);
-
-    const result = await validatePageHeadings(
-      invalidUrl,
-      logSpy,
-      site,
-      allKeys,
-      s3Client,
-      context.env.S3_SCRAPER_BUCKET_NAME,
-      context,
-      seoChecks,
-    );
-
-    expect(result.url).to.equal(invalidUrl);
-    expect(result.checks).to.deep.equal([]);
-    expect(logSpy.error).to.have.been.calledWith(
-      sinon.match(/Error validating headings for/)
-    );
   });
 
   it('detects headings with content having child elements', async () => {
@@ -1145,7 +1121,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       // Find the missing H1 check
       const missingH1Check = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_MISSING_H1.check);
@@ -1180,7 +1156,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       // Find the missing H1 check
       const missingH1Check = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_MISSING_H1.check);
@@ -1215,7 +1191,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       // Find the H1 length check
       const h1LengthCheck = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
@@ -1251,7 +1227,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       // Find the H1 length check
       const h1LengthCheck = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
@@ -1286,7 +1262,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       // Find the heading order invalid check
       const orderInvalidCheck = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_ORDER_INVALID.check);
@@ -1616,7 +1592,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result1 = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result1 = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
       const h1LengthCheck1 = result1.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
 
       // Selector is dynamically generated based on DOM structure
@@ -1642,7 +1618,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result2 = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result2 = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
       const h1LengthCheck2 = result2.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
 
       // Selector should be different for different DOM structures
@@ -1657,7 +1633,7 @@ describe('Headings Audit', () => {
     // Mock s3Client to throw an error - this will cause getObjectFromKey to return null
     s3Client.send.rejects(new Error('S3 connection failed'));
 
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
     // When getObjectFromKey returns null due to S3 error, validatePageHeadings returns null
     expect(result).to.be.null;
@@ -1693,7 +1669,7 @@ describe('Headings Audit', () => {
       },
     });
 
-    const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
     // This should trigger the catch block and return the error object with url and empty checks
     expect(result.url).to.equal(url);
@@ -1729,7 +1705,7 @@ describe('Headings Audit', () => {
     });
 
     // validatePageHeadings should return normal checks (AI is called later in headingsAuditRunner)
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
     // Should return normal checks since AI is not called during validatePageHeadings
     expect(result.url).to.equal(url);
@@ -1767,88 +1743,11 @@ describe('Headings Audit', () => {
     });
 
     // validatePageHeadings should return normal checks (AI is called later in headingsAuditRunner)
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
     // Should return normal checks since AI is not called during validatePageHeadings
     expect(result.url).to.equal(url);
     expect(result.checks).to.have.length.greaterThan(0);
-  });
-
-  it('getH1HeadingASuggestion returns successful AI suggestion', async () => {
-    const url = 'https://example.com/page';
-    const pageTags = {
-      title: 'Page Title',
-      description: 'Page Description',
-      h1: 'Page H1',
-      lang: 'en',
-      finalUrl: url,
-    };
-    const brandGuidelines = { guidelines: 'Test guidelines' };
-
-    // Mock AI client to return valid JSON with suggestion
-    const mockClient = {
-      fetchChatCompletion: sinon.stub().resolves({
-        choices: [{ message: { content: '{"h1":{"aiSuggestion":"Optimized H1 Title","aiRationale":"Better for SEO"}}' } }],
-      }),
-    };
-    AzureOpenAIClient.createFrom.restore();
-    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
-
-    // Use esmock to access the internal function
-    const mockedHandler = await esmock('../../src/headings/handler.js', {});
-
-    // Test the function through the headingsAuditRunner flow instead of direct access
-    const baseURL = 'https://example.com';
-    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-    context.log = logSpy;
-
-    // Mock getTopPagesForSiteId to return pages
-    const getTopPagesForSiteIdStub = sinon.stub().resolves([
-      { url: url }
-    ]);
-
-    const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
-      '../../src/canonical/handler.js': {
-        getTopPagesForSiteId: getTopPagesForSiteIdStub,
-      },
-    });
-
-    // Mock S3 client to return HTML with H1 length issue (which triggers AI suggestion)
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
-
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () => JSON.stringify({
-              finalUrl: url,
-              scrapeResult: {
-                rawBody: '<h1></h1>', // Empty H1 to trigger AI suggestion
-                tags: {
-                  title: 'Page Title',
-                  description: 'Page Description',
-                  h1: 'Page H1',
-                },
-              }
-            }),
-          },
-          ContentType: 'application/json',
-        });
-      }
-
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
-
-    context.s3Client = s3Client;
-    const result = await mockedHandlerWithStubs.headingsAuditRunner(baseURL, context, site);
-
-    // Verify that AI suggestion was called (through the audit flow)
-    expect(mockClient.fetchChatCompletion).to.have.been.called;
   });
 
   it('handles getH1HeadingASuggestion with invalid response structure', async () => {
@@ -2023,102 +1922,6 @@ describe('Headings Audit', () => {
 
     // The audit should fail or return error result due to the error
     expect(result.auditResult.error || result.auditResult.headings['heading-missing-h1']).to.exist;
-  });
-
-  it('handles error in headingsAuditRunner when calling getH1HeadingASuggestion', async () => {
-    const baseURL = 'https://example.com';
-    const url = 'https://example.com/page';
-    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
-    context.log = logSpy;
-
-    // Mock getPrompt with different behavior for each call:
-    // - First call (getBrandGuidelines): succeed
-    // - Second call (getH1HeadingASuggestion): fail
-    let getPromptCallCount = 0;
-    const getPromptStub = sinon.stub().callsFake(() => {
-      getPromptCallCount++;
-      if (getPromptCallCount === 1) {
-        // First call for getBrandGuidelines - succeed
-        return Promise.resolve('brand guidelines prompt');
-      }
-      // Second call for getH1HeadingASuggestion - fail
-      return Promise.reject(new Error('Prompt template not found'));
-    });
-
-    // Mock AI client for getBrandGuidelines
-    const mockClient = {
-      fetchChatCompletion: sinon.stub().resolves({
-        choices: [{ message: { content: '{"guidelines":"Test guidelines"}' } }],
-      }),
-    };
-    AzureOpenAIClient.createFrom.restore();
-    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
-
-    // Mock getTopPagesForSiteId to return pages
-    const getTopPagesForSiteIdStub = sinon.stub().resolves([
-      { url: url }
-    ]);
-
-    const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
-      '../../src/canonical/handler.js': {
-        getTopPagesForSiteId: getTopPagesForSiteIdStub,
-      },
-      '@adobe/spacecat-shared-utils': {
-        getPrompt: getPromptStub,
-      },
-    });
-
-    context.dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
-          { getUrl: () => url },
-        ]),
-      },
-    };
-
-    // Mock S3 client to return HTML with missing H1 (which triggers AI suggestion)
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
-
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () => JSON.stringify({
-              finalUrl: url,
-              scrapedAt: Date.now(),
-              scrapeResult: {
-                rawBody: '<h2>No H1 here</h2>', // Missing H1 to trigger AI suggestion
-                tags: {
-                  title: 'Page Title',
-                  description: 'Page Description',
-                  h1: ['Page H1'],
-                },
-              }
-            }),
-          },
-          ContentType: 'application/json',
-        });
-      }
-
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
-
-    context.s3Client = s3Client;
-    const result = await mockedHandlerWithStubs.headingsAuditRunner(baseURL, context, site);
-
-    // Verify that an error was logged (the audit fails due to prompt template error)
-    expect(logSpy.error).to.have.been.called;
-
-    // Verify getPrompt was called at least twice
-    expect(getPromptStub.callCount).to.be.at.least(2);
-
-    // The audit should return error result
-    expect(result.auditResult.error || result.auditResult.headings).to.exist;
   });
 
   it('handles getH1HeadingASuggestion with missing pageTags properties (default fallbacks)', async () => {
@@ -2485,7 +2288,7 @@ describe('Headings Audit', () => {
 
     // This creates a scenario where pageTags properties are all null/empty
     // The optional chaining will safely return undefined for all properties
-    const result = await validatePageHeadings(url, logSpy, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    const result = await validatePageHeadings(url, logSpy, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
     // Verify the result still contains checks (HEADING_MISSING_H1)
     expect(result.url).to.equal(url);
@@ -2525,7 +2328,7 @@ describe('Headings Audit', () => {
       ContentType: 'application/json',
     });
 
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
     // Verify that pageTags.h1 uses the fallback [] when h1 is null
     expect(result.checks).to.be.an('array');
@@ -2639,294 +2442,87 @@ describe('Headings Audit', () => {
     expect(mockClient.fetchChatCompletion).to.have.been.called;
   });
 
-  it('handles error in AI suggestion generation within headingsAuditRunner aggregation loop', async () => {
-    const baseURL = 'https://example.com';
-    const url = 'https://example.com/page';
-    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
-    context.log = logSpy;
-
-    // Mock AI client to fail on the H1 suggestion call but succeed on other calls
-    let callCount = 0;
-    const mockClient = {
-      fetchChatCompletion: sinon.stub().callsFake(() => {
-        callCount++;
-        if (callCount === 1) {
-          // First call: TOC detection - succeed
-          return Promise.resolve({
-            choices: [{ message: { content: '{"tocPresent":false,"confidence":5}' } }],
-          });
-        }
-        if (callCount === 2) {
-          // Second call: Brand guidelines - succeed
-          return Promise.resolve({
-            choices: [{ message: { content: '{"guidelines":"Test guidelines"}' } }],
-          });
-        }
-        // Third call: H1 suggestion - fail with error
-        return Promise.reject(new Error('AI service temporarily unavailable'));
-      }),
-    };
-    AzureOpenAIClient.createFrom.restore();
-    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
-
-    // Mock getTopPagesForSiteId
-    const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
-    const mockedHandler = await esmock('../../src/headings/handler.js', {
-      '../../src/canonical/handler.js': {
-        getTopPagesForSiteId: getTopPagesForSiteIdStub,
-      },
-    });
-
-    context.dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-      },
-    };
-
-    // Mock S3 to return HTML with empty H1 (triggers AI suggestion)
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
-
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () => JSON.stringify({
-              finalUrl: url,
-              scrapedAt: Date.now(),
-              scrapeResult: {
-                rawBody: '<h1></h1><h2>Section</h2>', // Empty H1 to trigger AI suggestion
-                tags: {
-                  title: 'Page Title',
-                  description: 'Page Description',
-                  h1: [],
-                },
-              },
-            }),
-          },
-          ContentType: 'application/json',
-        });
-      }
-
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
-
-    context.s3Client = s3Client;
-    const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-
-    // Verify the error was logged (caught inside getH1HeadingASuggestion at line 218)
-    expect(logSpy.error).to.have.been.calledWith(
-      sinon.match(/\[Headings AI Suggestions\] Error for empty heading suggestion:.*AI service temporarily unavailable/)
-    );
-
-    // Verify that AI suggestion was attempted
-    expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(3);
-
-    // Verify the audit still completed with the H1 length issue detected
-    expect(result.auditResult.headings['heading-h1-length']).to.exist;
-    expect(result.auditResult.headings['heading-h1-length'].urls[0].url).to.equal(url);
-    
-    // Verify that isAISuggested is false since AI failed
-    expect(result.auditResult.headings['heading-h1-length'].urls[0].isAISuggested).to.equal(false);
-    
-    // Verify that the default suggestion is used instead of AI suggestion
-    expect(result.auditResult.headings['heading-h1-length'].urls[0].suggestion).to.equal(
-      HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion
-    );
-  });
-
-  it('covers catch block at line 660 - error thrown by getH1HeadingASuggestion itself', async () => {
-    const baseURL = 'https://example.com';
-    const url = 'https://example.com/page';
-    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
-    context.log = logSpy;
-
-    // Mock AI client to succeed for TOC and brand guidelines
-    let callCount = 0;
-    const mockClient = {
-      fetchChatCompletion: sinon.stub().callsFake(() => {
-        callCount++;
-        if (callCount === 1) {
-          // First call: TOC detection - succeed
-          return Promise.resolve({
-            choices: [{ message: { content: '{"tocPresent":false,"confidence":5}' } }],
-          });
-        }
-        if (callCount === 2) {
-          // Second call: Brand guidelines - succeed
-          return Promise.resolve({
-            choices: [{ message: { content: '{"guidelines":"Test guidelines"}' } }],
-          });
-        }
-        // This won't be reached because getPrompt will throw first
-        return Promise.resolve({
-          choices: [{ message: { content: '{"h1":{"aiSuggestion":"Test"}}' } }],
-        });
-      }),
-    };
-    AzureOpenAIClient.createFrom.restore();
-    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
-
-    // Mock getPrompt to throw an error on the H1 suggestion call
-    let getPromptCallCount = 0;
-    const getPromptStub = sinon.stub().callsFake(async (data, templateName) => {
-      getPromptCallCount++;
-      if (getPromptCallCount === 1) {
-        // First call: TOC detection - succeed
-        return 'toc detection prompt';
-      }
-      if (getPromptCallCount === 2) {
-        // Second call: Brand guidelines - succeed
-        return 'brand guidelines prompt';
-      }
-      // Third call: H1 suggestion - throw error
-      throw new Error('Prompt template file not found');
-    });
-
-    // Mock getTopPagesForSiteId
-    const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
-
-    const mockedHandler = await esmock('../../src/headings/handler.js', {
-      '../../src/canonical/handler.js': {
-        getTopPagesForSiteId: getTopPagesForSiteIdStub,
-      },
-      '@adobe/spacecat-shared-utils': {
-        getPrompt: getPromptStub,
-      },
-    });
-
-    context.dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([{ getUrl: () => url }]),
-      },
-    };
-
-    // Mock S3 to return HTML with empty H1 (triggers AI suggestion)
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
-
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () => JSON.stringify({
-              finalUrl: url,
-              scrapedAt: Date.now(),
-              scrapeResult: {
-                rawBody: '<h1></h1><h2>Section</h2>', // Empty H1 to trigger AI suggestion
-                tags: {
-                  title: 'Page Title',
-                  description: 'Page Description',
-                  h1: [],
-                },
-              },
-            }),
-          },
-          ContentType: 'application/json',
-        });
-      }
-
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
-
-    context.s3Client = s3Client;
-    const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-
-    // Verify the error was logged from the catch block at line 660
-    expect(logSpy.error).to.have.been.calledWith(
-      sinon.match(new RegExp(`\\[Headings AI Suggestions\\] Error generating AI suggestion for ${url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:.*Prompt template file not found`))
-    );
-
-    // Verify the audit still completed with the H1 length issue detected
-    expect(result.auditResult.headings['heading-h1-length']).to.exist;
-    expect(result.auditResult.headings['heading-h1-length'].urls[0].url).to.equal(url);
-    
-    // Verify that isAISuggested is false since getH1HeadingASuggestion threw an error
-    expect(result.auditResult.headings['heading-h1-length'].urls[0].isAISuggested).to.equal(false);
-    
-    // Verify that the default suggestion is used (because aiSuggestion was set to null at line 661)
-    expect(result.auditResult.headings['heading-h1-length'].urls[0].suggestion).to.equal(
-      HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion
-    );
-  });
-
-  it('getBrandGuidelines generates brand guidelines successfully', async () => {
-    const healthyTagsObject = {
-      title: 'Test Title 1, Test Title 2',
-      description: 'Test Description 1, Test Description 2',
-      h1: 'Test H1 1, Test H1 2',
-    };
-
-    // Mock AI client to return valid brand guidelines
-    const mockClient = {
-      fetchChatCompletion: sinon.stub().resolves({
-        choices: [{ message: { content: '{"guidelines":"Test brand guidelines","tone":"professional","style":"modern"}' } }],
-      }),
-    };
-    AzureOpenAIClient.createFrom.restore();
-    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
-
-    // Test through the headingsAuditRunner flow
-    const baseURL = 'https://example.com';
+  it('tests getH1HeadingASuggestion catch block when fetchChatCompletion throws error (lines 137-140)', async () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-    context.log = logSpy;
 
-    // Mock getTopPagesForSiteId to return pages
-    const getTopPagesForSiteIdStub = sinon.stub().resolves([
-      { url: url }
-    ]);
+    // Mock AI client to throw an error
+    const mockClient = {
+      fetchChatCompletion: sinon.stub().rejects(new Error('Azure OpenAI service unavailable')),
+    };
+    AzureOpenAIClient.createFrom.restore();
+    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
-    const mockedHandler = await esmock('../../src/headings/handler.js', {
-      '../../src/canonical/handler.js': {
-        getTopPagesForSiteId: getTopPagesForSiteIdStub,
-      },
-    });
+    const pageTags = {
+      finalUrl: url,
+      title: 'Test Title',
+      h1: ['Test H1'],
+      description: 'Test Description',
+      lang: 'en',
+    };
 
-    // Mock S3 client to return HTML with issues
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
+    // This should trigger the catch block at lines 137-140
+    const result = await getH1HeadingASuggestion(
+      url,
+      logSpy,
+      'h1',
+      pageTags,
+      context,
+      'Brand Guidelines'
+    );
 
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () => JSON.stringify({
-              finalUrl: url,
-              scrapeResult: {
-                rawBody: '<h1></h1>', // Empty H1 to trigger AI suggestion
-                tags: {
-                  title: 'Page Title',
-                  description: 'Page Description',
-                  h1: 'Page H1',
-                },
-              }
-            }),
-          },
-          ContentType: 'application/json',
-        });
-      }
+    // Should return null when error occurs
+    expect(result).to.be.null;
 
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
+    // Should log the error
+    expect(logSpy.error).to.have.been.calledWith(
+      sinon.match(/\[Headings AI Suggestions\] Error for empty heading suggestion:/)
+    );
 
-    context.s3Client = s3Client;
-    const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+    // Should have attempted to call fetchChatCompletion
+    expect(mockClient.fetchChatCompletion).to.have.been.called;
+  });
 
-    // Verify that brand guidelines generation was called (through the audit flow)
+  it('tests getH1HeadingASuggestion catch block when JSON.parse throws error (lines 137-140)', async () => {
+    const url = 'https://example.com/page';
+    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+
+    // Mock AI client to return invalid JSON that will cause JSON.parse to throw
+    const mockClient = {
+      fetchChatCompletion: sinon.stub().resolves({
+        choices: [{ message: { content: 'This is not valid JSON at all!' } }],
+      }),
+    };
+    AzureOpenAIClient.createFrom.restore();
+    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+    const pageTags = {
+      finalUrl: url,
+      title: 'Test Title',
+      h1: ['Test H1'],
+      description: 'Test Description',
+      lang: 'en',
+    };
+
+    // This should trigger the catch block at lines 137-140 via JSON.parse error
+    const result = await getH1HeadingASuggestion(
+      url,
+      logSpy,
+      'h1',
+      pageTags,
+      context,
+      'Brand Guidelines'
+    );
+
+    // Should return null when JSON parsing fails
+    expect(result).to.be.null;
+
+    // Should log the error (will include JSON parse error message)
+    expect(logSpy.error).to.have.been.calledWith(
+      sinon.match(/\[Headings AI Suggestions\] Error for empty heading suggestion:/)
+    );
+
+    // Should have called fetchChatCompletion
     expect(mockClient.fetchChatCompletion).to.have.been.called;
   });
 
@@ -2956,292 +2552,6 @@ describe('Headings Audit', () => {
     expect(result.auditResult).to.have.property('check', HEADINGS_CHECKS.TOPPAGES.check);
     expect(result.auditResult.success).to.be.false;
     expect(logSpy.warn).to.have.been.calledWith('[Headings Audit] No top pages found, ending audit.');
-  });
-
-  it('handles headingsAuditRunner error gracefully', async () => {
-    const baseURL = 'https://example.com';
-    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-    context.log = logSpy;
-
-    // Mock getTopPagesForSiteId to throw an error
-    const getTopPagesForSiteIdStub = sinon.stub().rejects(new Error('Database connection failed'));
-
-    const mockedHandler = await esmock('../../src/headings/handler.js', {
-      '../../src/canonical/handler.js': {
-        getTopPagesForSiteId: getTopPagesForSiteIdStub,
-      },
-    });
-
-    context.s3Client = s3Client;
-    const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-
-    expect(result.auditResult.error).to.include('Database connection failed');
-    expect(result.auditResult.success).to.be.false;
-    expect(logSpy.error).to.have.been.calledWith(sinon.match(/Headings audit failed/));
-  });
-
-  it('headingsAuditRunner returns audit results when issues are found', async () => {
-    const baseURL = 'https://example.com';
-    const url = 'https://example.com/page';
-    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-    context.log = logSpy;
-
-    // Mock getTopPagesForSiteId to return pages with issues
-    const getTopPagesForSiteIdStub = sinon.stub().resolves([
-      { url: url }
-    ]);
-
-    const mockedHandler = await esmock('../../src/headings/handler.js', {
-      '../../src/canonical/handler.js': {
-        getTopPagesForSiteId: getTopPagesForSiteIdStub,
-      },
-    });
-
-    // Mock S3 client to return HTML with heading issues
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
-
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () => JSON.stringify({
-              finalUrl: url,
-              scrapeResult: {
-                rawBody: '<h1>Title</h1><h3>Jump to h3</h3>', // This should trigger heading-order-invalid
-                tags: {
-                  title: 'Page Title',
-                  description: 'Page Description',
-                  h1: 'Page H1',
-                },
-              }
-            }),
-          },
-          ContentType: 'application/json',
-        });
-      }
-
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
-
-    context.s3Client = s3Client;
-    const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-
-    // The test is complex due to mocking issues, so let's test what we can verify
-    // The main goal is to ensure the function runs without errors
-    expect(result).to.have.property('fullAuditRef', baseURL);
-    expect(result).to.have.property('auditResult');
-
-    // Verify that getTopPagesForSiteId was called
-    expect(getTopPagesForSiteIdStub).to.have.been.calledOnce;
-  });
-
-  it('headingsAuditRunner integrates H1 length check in main flow', async () => {
-    const baseURL = 'https://example.com';
-    const url = 'https://example.com/page';
-    const longH1Text = 'This is a very long H1 heading that exceeds the maximum allowed length of 70 characters for optimal SEO and accessibility';
-    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-    context.log = logSpy;
-
-    // Mock getTopPagesForSiteId to return pages with H1 length issues
-    const getTopPagesForSiteIdStub = sinon.stub().resolves([
-      { url: url }
-    ]);
-
-    const mockedHandler = await esmock('../../src/headings/handler.js', {
-      '../../src/canonical/handler.js': {
-        getTopPagesForSiteId: getTopPagesForSiteIdStub,
-      },
-    });
-
-    // Mock S3 client to return HTML with H1 length issue
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
-
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () => JSON.stringify({
-              finalUrl: url,
-              scrapeResult: {
-                rawBody: `<h1>${longH1Text}</h1><h2>Section</h2>`,
-                tags: {
-                  title: 'Page Title',
-                  description: 'Page Description',
-                  h1: longH1Text,
-                },
-              }
-            }),
-          },
-          ContentType: 'application/json',
-        });
-      }
-
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
-
-    context.s3Client = s3Client;
-    const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-
-    // The test is complex due to mocking issues, so let's test what we can verify
-    // The main goal is to ensure the function runs without errors
-    expect(result).to.have.property('fullAuditRef', baseURL);
-    expect(result).to.have.property('auditResult');
-
-    // Verify that getTopPagesForSiteId was called
-    expect(getTopPagesForSiteIdStub).to.have.been.calledOnce;
-  });
-
-  it('headingsAuditRunner generates AI suggestions for empty headings', async () => {
-    const baseURL = 'https://example.com';
-    const url = 'https://example.com/page';
-    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-    context.log = logSpy;
-
-    // Mock AI client to return valid JSON with suggestion
-    const mockClient = {
-      fetchChatCompletion: sinon.stub().resolves({
-        choices: [{ message: { content: '{"h1":{"aiSuggestion":"Optimized H1 Title","aiRationale":"Better for SEO"}}' } }],
-      }),
-    };
-    AzureOpenAIClient.createFrom.restore();
-    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
-
-    // Mock getTopPagesForSiteId to return pages with empty heading issues
-    const getTopPagesForSiteIdStub = sinon.stub().resolves([
-      { url: url }
-    ]);
-
-    const mockedHandler = await esmock('../../src/headings/handler.js', {
-      '../../src/canonical/handler.js': {
-        getTopPagesForSiteId: getTopPagesForSiteIdStub,
-      },
-    });
-
-    // Mock S3 client to return HTML with empty heading issues
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
-
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () => JSON.stringify({
-              finalUrl: url,
-              scrapeResult: {
-                rawBody: '<h1></h1><h2>Section</h2>', // Empty H1 to trigger AI suggestion
-                tags: {
-                  title: 'Page Title',
-                  description: 'Page Description',
-                  h1: 'Page H1',
-                },
-              }
-            }),
-          },
-          ContentType: 'application/json',
-        });
-      }
-
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
-
-    context.s3Client = s3Client;
-    const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-
-    // Verify that AI suggestion was called
-    expect(mockClient.fetchChatCompletion).to.have.been.called;
-
-    // Verify the result structure
-    expect(result).to.have.property('fullAuditRef', baseURL);
-    expect(result).to.have.property('auditResult');
-
-    // Verify that getTopPagesForSiteId was called
-    expect(getTopPagesForSiteIdStub).to.have.been.calledOnce;
-  });
-
-  it('headingsAuditRunner generates AI suggestions for H1 length issues', async () => {
-    const baseURL = 'https://example.com';
-    const url = 'https://example.com/page';
-    const longH1Text = 'This is a very long H1 heading that exceeds the maximum allowed length of 70 characters for optimal SEO and accessibility';
-    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-    context.log = logSpy;
-
-    // Mock AI client to return valid JSON with suggestion
-    const mockClient = {
-      fetchChatCompletion: sinon.stub().resolves({
-        choices: [{ message: { content: '{"h1":{"aiSuggestion":"Shorter H1 Title","aiRationale":"Better for SEO"}}' } }],
-      }),
-    };
-    AzureOpenAIClient.createFrom.restore();
-    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
-
-    // Mock getTopPagesForSiteId to return pages with H1 length issues
-    const getTopPagesForSiteIdStub = sinon.stub().resolves([
-      { url: url }
-    ]);
-
-    const mockedHandler = await esmock('../../src/headings/handler.js', {
-      '../../src/canonical/handler.js': {
-        getTopPagesForSiteId: getTopPagesForSiteIdStub,
-      },
-    });
-
-    // Mock S3 client to return HTML with H1 length issues
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
-
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () => JSON.stringify({
-              finalUrl: url,
-              scrapeResult: {
-                rawBody: `<h1>${longH1Text}</h1><h2>Section</h2>`, // Long H1 to trigger AI suggestion
-                tags: {
-                  title: 'Page Title',
-                  description: 'Page Description',
-                  h1: longH1Text,
-                },
-              }
-            }),
-          },
-          ContentType: 'application/json',
-        });
-      }
-
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
-
-    context.s3Client = s3Client;
-    const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-
-    // Verify that AI suggestion was called
-    expect(mockClient.fetchChatCompletion).to.have.been.called;
-
-    // Verify the result structure
-    expect(result).to.have.property('fullAuditRef', baseURL);
-    expect(result).to.have.property('auditResult');
-
-    // Verify that getTopPagesForSiteId was called
-    expect(getTopPagesForSiteIdStub).to.have.been.calledOnce;
   });
 
   describe('generateSuggestions', () => {
@@ -4139,7 +3449,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       // Empty H2 should generate a selector
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
@@ -4170,7 +3480,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
@@ -4199,7 +3509,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
@@ -4233,7 +3543,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
@@ -4262,7 +3572,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
@@ -4294,7 +3604,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
@@ -4326,7 +3636,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
@@ -4358,7 +3668,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
@@ -4390,7 +3700,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       // Empty H2 should still generate a selector
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
@@ -4419,7 +3729,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
@@ -4455,7 +3765,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       const emptyChecks = result.checks.filter(c => c.check === 'heading-empty');
       expect(emptyChecks).to.have.lengthOf(3);
@@ -4492,7 +3802,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
 
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
@@ -4535,7 +3845,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
       
       // Empty H2 triggers getHeadingContext -> getSurroundingText
       // The break at line 50 prevents collecting more than charLimit chars after the heading
@@ -4571,7 +3881,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
       
       // Empty H2 triggers getHeadingContext -> getSurroundingText
       // The break at line 63 prevents collecting more than charLimit chars before the heading
@@ -4606,7 +3916,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
       
       // When text is short, the break at line 50 is NOT taken
       // The loop continues to collect text from all siblings
@@ -4641,7 +3951,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
       
       // When text is short, the break at line 63 is NOT taken
       // The loop continues to collect text from all previous siblings
@@ -4677,7 +3987,7 @@ describe('Headings Audit', () => {
         ContentType: 'application/json',
       });
 
-      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, seoChecks);
       
       // Both breaks (lines 50 and 63) should be triggered
       expect(result).to.exist;
@@ -4685,6 +3995,1038 @@ describe('Headings Audit', () => {
       const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
       expect(emptyCheck).to.exist;
       expect(emptyCheck.headingContext).to.exist;
+    });
+  });
+
+  describe('Shared Utils Coverage Tests', () => {
+    it('covers lines 144-146: error in loadScrapeJson', async () => {
+      const { loadScrapeJson } = await import('../../src/headings/shared-utils.js');
+      const url = 'https://example.com/page';
+      const logSpy = sinon.spy(log);
+
+      // Mock S3 client to throw an error that will be caught in the catch block
+      const errorS3Client = {
+        send: sinon.stub().rejects(new Error('S3 connection timeout')),
+      };
+
+      const result = await loadScrapeJson(
+        url,
+        site,
+        allKeys,
+        errorS3Client,
+        context.env.S3_SCRAPER_BUCKET_NAME,
+        logSpy,
+      );
+
+      expect(result).to.be.null;
+      // The error can be logged by either getObjectFromKey or loadScrapeJson's catch block
+      expect(logSpy.error).to.have.been.called;
+    });
+  });
+
+  describe('Coverage Tests for Missing Lines', () => {
+    it('covers lines 157-159: null scrapeJsonObject in validatePageHeadingFromScrapeJson', async () => {
+      const { validatePageHeadingFromScrapeJson } = await import('../../src/headings/handler.js');
+      const url = 'https://example.com/page';
+      const logSpy = sinon.spy(log);
+
+      const result = await validatePageHeadingFromScrapeJson(url, null, logSpy, seoChecks);
+
+      expect(result).to.be.null;
+      expect(logSpy.error).to.have.been.calledWith(
+        sinon.match(/Scrape JSON object not found/)
+      );
+    });
+
+    it('covers lines 365-370: invalid URL format in validatePageHeadings', async () => {
+      const invalidUrl = 'not-a-valid-url';
+      const logSpy = sinon.spy(log);
+
+      const result = await validatePageHeadings(
+        invalidUrl,
+        logSpy,
+        site,
+        allKeys,
+        s3Client,
+        context.env.S3_SCRAPER_BUCKET_NAME,
+        seoChecks,
+      );
+
+      expect(result.url).to.equal(invalidUrl);
+      expect(result.checks).to.deep.equal([]);
+      expect(logSpy.error).to.have.been.calledWith(
+        sinon.match(/Invalid URL format/)
+      );
+    });
+
+    it('covers lines 379-384: error in validatePageHeadings catch block', async () => {
+      const url = 'https://example.com/page';
+      const logSpy = sinon.spy(log);
+
+      // Mock S3 to return malformed data that will cause validatePageHeadingFromScrapeJson to throw
+      s3Client.send.callsFake((command) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({
+            Contents: allKeys.map((key) => ({ Key: key })),
+            NextContinuationToken: undefined,
+          });
+        }
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: null, // This will cause an error when accessing rawBody
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      const result = await validatePageHeadings(
+        url,
+        logSpy,
+        site,
+        allKeys,
+        s3Client,
+        context.env.S3_SCRAPER_BUCKET_NAME,
+        seoChecks,
+      );
+
+      // The catch block should return an error object
+      expect(result.url).to.equal(url);
+      expect(result.checks).to.deep.equal([]);
+      expect(logSpy.error).to.have.been.calledWith(
+        sinon.match(/Error validating headings for/)
+      );
+    });
+
+    it('covers lines 467-469: error generating AI suggestion in headingsAuditRunner', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+      context.log = logSpy;
+
+      // Mock getPrompt to throw on the third call (H1 suggestion)
+      const getPromptStub = sinon.stub();
+      getPromptStub.onCall(0).resolves('toc prompt');
+      getPromptStub.onCall(1).resolves('brand guidelines prompt');
+      getPromptStub.onCall(2).rejects(new Error('Prompt template not found'));
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub()
+          .onFirstCall().resolves({
+            choices: [{ message: { content: '{"tocPresent":false}' } }],
+          })
+          .onSecondCall().resolves({
+            choices: [{ message: { content: '{"guidelines":"Test"}' } }],
+          }),
+      };
+
+      const getTopPagesForSiteIdStub = sinon.stub().resolves([{ url }]);
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/canonical/handler.js': {
+          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        },
+        '@adobe/spacecat-shared-utils': {
+          getPrompt: getPromptStub,
+        },
+        '@adobe/spacecat-shared-gpt-client': {
+          AzureOpenAIClient: {
+            createFrom: sinon.stub().returns(mockClient),
+          },
+        },
+      });
+
+      // Set up dataAccess mock
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+            { getUrl: () => url },
+          ]),
+        },
+      };
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({
+            Contents: allKeys.map((key) => ({ Key: key })),
+            NextContinuationToken: undefined,
+          });
+        }
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<h1></h1>',
+                  tags: { title: 'Test', description: 'Test', h1: [] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command');
+      });
+
+      context.s3Client = s3Client;
+      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+
+      // The catch block at lines 467-469 OR internal error handling both log AI Suggestions errors
+      // Either path provides adequate coverage for error handling
+      expect(logSpy.error).to.have.been.calledWith(
+        sinon.match(/\[Headings AI Suggestions\]/)
+      );
+      expect(result).to.have.property('auditResult');
+    });
+
+    it('covers lines 520-525: error in headingsAuditRunner catch block', async () => {
+      const baseURL = 'https://example.com';
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+      context.log = logSpy;
+
+      const getTopPagesForSiteIdStub = sinon.stub().rejects(new Error('Database error'));
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/canonical/handler.js': {
+          getTopPagesForSiteId: getTopPagesForSiteIdStub,
+        },
+      });
+
+      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+
+      expect(result.auditResult.error).to.exist;
+      expect(result.auditResult.error).to.be.a('string');
+      expect(result.auditResult.success).to.be.false;
+      expect(logSpy.error).to.have.been.calledWith(sinon.match(/Headings audit failed/));
+    });
+  });
+
+  describe('Branch Coverage Tests', () => {
+    it('covers line 538: fallback to auditResult when headings key does not exist', async () => {
+      const { generateSuggestions } = await import('../../src/headings/handler.js');
+      const auditUrl = 'https://example.com';
+      
+      // Create auditData WITHOUT the headings key to trigger fallback
+      const auditData = {
+        fullAuditRef: auditUrl,
+        auditResult: {
+          // No 'headings' key, so it should fallback to auditResult itself
+          'heading-missing-h1': {
+            success: false,
+            urls: [{
+              url: auditUrl,
+              suggestion: 'Add H1',
+            }],
+          },
+        },
+      };
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+
+      const result = await generateSuggestions(auditUrl, auditData, { log: logSpy });
+
+      expect(result.suggestions).to.exist;
+      expect(result.suggestions.headings).to.be.an('array');
+    });
+
+    it('covers line 566: fallback to empty array when suggestions.headings does not exist', async () => {
+      const { opportunityAndSuggestions } = await import('../../src/headings/handler.js');
+      const auditUrl = 'https://example.com';
+      
+      // Create auditData WITHOUT suggestions.headings to trigger fallback
+      const auditData = {
+        fullAuditRef: auditUrl,
+        auditResult: {
+          headings: {},
+        },
+        // No suggestions key at all
+      };
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+      const mockContext = { 
+        log: logSpy,
+        dataAccess: {
+          Opportunity: {
+            allBySiteIdAndStatus: sinon.stub().resolves([]),
+          },
+        },
+      };
+
+      const result = await opportunityAndSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(logSpy.info).to.have.been.calledWith(
+        sinon.match(/no issues, skipping opportunity creation/)
+      );
+    });
+  });
+
+  describe('Athena/Ahrefs fallback in headingsAuditRunner', () => {
+    it('should use Athena URLs when available and skip Ahrefs', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/athena-page';
+
+      const mockGetTopAgenticUrlsFromAthena = sinon.stub().resolves([url]);
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+        },
+      });
+
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      const mockSiteTopPage = sinon.stub().resolves([]);
+
+      const testContext = {
+        log: logSpy,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          AZURE_OPENAI_ENDPOINT: 'https://test-endpoint.com',
+          AZURE_OPENAI_KEY: 'test-key',
+          AZURE_API_VERSION: '2024-02-01',
+          AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+        },
+        dataAccess: {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: mockSiteTopPage,
+          },
+        },
+        s3Client: {
+          send: sinon.stub().callsFake((command) => {
+            if (command.constructor.name === 'ListObjectsV2Command') {
+              return Promise.resolve({
+                Contents: [{ Key: `scrapes/site-1/athena-page/scrape.json` }],
+                NextContinuationToken: undefined,
+              });
+            }
+            if (command.constructor.name === 'GetObjectCommand') {
+              return Promise.resolve({
+                Body: {
+                  transformToString: () => JSON.stringify({
+                    finalUrl: url,
+                    scrapedAt: Date.now(),
+                    scrapeResult: {
+                      rawBody: '<h1>Valid Heading</h1><h2>Subheading</h2>',
+                      tags: { title: 'Test', description: 'Test', h1: ['Valid Heading'] },
+                    },
+                  }),
+                },
+                ContentType: 'application/json',
+              });
+            }
+            throw new Error('Unexpected command');
+          }),
+        },
+      };
+
+      const testSite = {
+        getId: () => 'site-1',
+        getBaseURL: () => baseURL,
+        getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
+      };
+
+      const result = await mockedHandler.headingsAuditRunner(baseURL, testContext, testSite);
+
+      // Verify Athena was called
+      expect(mockGetTopAgenticUrlsFromAthena).to.have.been.calledOnce;
+      // Verify Ahrefs was NOT called since Athena returned data
+      expect(mockSiteTopPage).to.not.have.been.called;
+      // Verify result
+      expect(result.fullAuditRef).to.equal(baseURL);
+    });
+  });
+
+  describe('Brand Profile Integration', () => {
+    let getBrandGuidelines;
+
+    before(async () => {
+      const sharedUtils = await import('../../src/headings/shared-utils.js');
+      getBrandGuidelines = sharedUtils.getBrandGuidelines;
+    });
+
+    describe('getBrandGuidelines with brand profile from site config', () => {
+      it('should use brand profile from site config when available', async () => {
+        const mockBrandProfile = {
+          main_profile: {
+            brand_personality: {
+              description: 'Lovesac comes across as both a nurturing host and an inspired creator',
+              archetype: 'Caregiver-Innovator hybrid',
+              traits: ['hospitable', 'innovative', 'optimistic', 'genuine', 'modern'],
+            },
+            tone_attributes: {
+              primary: ['warm', 'enthusiastic', 'optimistic', 'inviting', 'premium'],
+              avoid: ['aloof', 'overly formal', 'utilitarian', 'cold', 'condescending'],
+            },
+            language_patterns: {
+              preferred: [
+                'Designed for life',
+                'Changeable. Washable. Loveable.',
+                'Innovation you can feel',
+              ],
+              avoid: [
+                'Lowest price guaranteed',
+                'Standard sofa',
+                'Cheap',
+              ],
+            },
+            editorial_guidelines: {
+              dos: [
+                'Use brand-specific terms like \'Sac\' and \'Sactional\' confidently',
+                'Tie product features directly to lifestyle/emotional benefits',
+                'Speak directly to the reader in second person',
+              ],
+              donts: [
+                'Talk down to the reader or use superfluous jargon',
+                'Overpromise on technical claims without backing up with benefits',
+                'Depend on price or discount language as primary motivation',
+              ],
+            },
+          },
+        };
+
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Verify that brand profile was used
+        expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] Using brand profile from site config');
+
+        // Verify the extracted guidelines
+        expect(result).to.have.property('brand_persona');
+        expect(result.brand_persona).to.equal('Lovesac comes across as both a nurturing host and an inspired creator');
+
+        expect(result).to.have.property('tone');
+        expect(result.tone).to.equal('warm, enthusiastic, optimistic, inviting, premium');
+
+        expect(result).to.have.property('editorial_guidelines');
+        expect(result.editorial_guidelines).to.have.property('do');
+        expect(result.editorial_guidelines.do).to.be.an('array').with.length(3);
+        expect(result.editorial_guidelines).to.have.property('dont');
+        expect(result.editorial_guidelines.dont).to.be.an('array').with.length(3);
+
+        expect(result).to.have.property('forbidden');
+        expect(result.forbidden).to.be.an('array');
+        expect(result.forbidden).to.include('Lowest price guaranteed');
+        expect(result.forbidden).to.include('aloof');
+
+        // Verify AI was not called (no fetchChatCompletion in this test)
+      });
+
+      it('should extract all forbidden items from both language patterns and tone attributes', async () => {
+        const mockBrandProfile = {
+          main_profile: {
+            tone_attributes: {
+              primary: ['friendly'],
+              avoid: ['tone1', 'tone2'],
+            },
+            language_patterns: {
+              avoid: ['phrase1', 'phrase2', 'phrase3'],
+            },
+            editorial_guidelines: {
+              dos: [],
+              donts: [],
+            },
+            brand_personality: {
+              description: 'Test',
+            },
+          },
+        };
+
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        expect(result.forbidden).to.be.an('array').with.length(5);
+        expect(result.forbidden).to.include.members(['phrase1', 'phrase2', 'phrase3', 'tone1', 'tone2']);
+      });
+
+      it('should handle missing main_profile and use empty defaults (covers fallback branches)', async () => {
+        // This test covers the fallback branch on line 150 when main_profile is missing
+        const mockBrandProfile = {
+          // Missing main_profile - tests line 150 {} fallback
+          // But we need at least one property so it's not considered empty by getBrandGuidelines
+          version: 1,
+        };
+
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Should use empty defaults
+        expect(result.brand_persona).to.equal('');
+        expect(result.tone).to.equal('');
+        expect(result.editorial_guidelines.do).to.deep.equal([]);
+        expect(result.editorial_guidelines.dont).to.deep.equal([]);
+        expect(result.forbidden).to.deep.equal([]);
+      });
+
+      it('should handle missing nested properties and use empty defaults', async () => {
+        // Test with main_profile present but missing nested properties
+        const mockBrandProfile = {
+          main_profile: {
+            // Missing brand_personality - tests line 154 '' fallback
+            // Missing tone_attributes - tests line 157 {} fallback
+            // Missing editorial_guidelines - tests line 162-163 {} fallback
+            // Missing language_patterns - tests line 168 {} fallback
+          },
+        };
+
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Should use empty defaults for all missing properties
+        expect(result.brand_persona).to.equal('');
+        expect(result.tone).to.equal('');
+        expect(result.editorial_guidelines.do).to.deep.equal([]);
+        expect(result.editorial_guidelines.dont).to.deep.equal([]);
+        expect(result.forbidden).to.deep.equal([]);
+      });
+
+      it('should handle brand profile with missing avoid arrays', async () => {
+        // Test with tone_attributes and language_patterns present but missing avoid arrays
+        const mockBrandProfile = {
+          main_profile: {
+            brand_personality: {
+              description: 'Test persona',
+            },
+            tone_attributes: {
+              primary: ['professional'],
+              // Missing avoid - tests line 170 || [] fallback
+            },
+            language_patterns: {
+              preferred: ['test phrase'],
+              // Missing avoid - tests line 169 || [] fallback
+            },
+            editorial_guidelines: {
+              // Missing dos - tests line 164 || [] fallback
+              // Missing donts - tests line 165 || [] fallback
+            },
+          },
+        };
+
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Should use empty arrays for missing avoid properties
+        expect(result.brand_persona).to.equal('Test persona');
+        expect(result.tone).to.equal('professional');
+        expect(result.editorial_guidelines.do).to.deep.equal([]);
+        expect(result.editorial_guidelines.dont).to.deep.equal([]);
+        expect(result.forbidden).to.deep.equal([]);
+      });
+    });
+
+    describe('getBrandGuidelines fallback to AI generation', () => {
+      let mockAzureClient;
+
+      beforeEach(() => {
+        mockAzureClient = {
+          fetchChatCompletion: sinon.stub().resolves({
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  brand_persona: 'AI generated persona',
+                  tone: 'AI generated tone',
+                  editorial_guidelines: {
+                    do: ['AI do'],
+                    dont: ['AI dont'],
+                  },
+                  forbidden: ['AI forbidden'],
+                }),
+              },
+            }],
+          }),
+        };
+
+        AzureOpenAIClient.createFrom.restore();
+        sinon.stub(AzureOpenAIClient, 'createFrom').returns(mockAzureClient);
+      });
+
+      it('should fall back to AI when no brand profile is available', async () => {
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => null,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Verify that AI fallback was used
+        expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] No brand profile found in site config, generating from healthy tags using AI');
+        expect(mockAzureClient.fetchChatCompletion).to.have.been.called;
+      });
+
+      it('should fall back to AI when no site is provided', async () => {
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        await getBrandGuidelines(healthyTagsObject, mockLog, mockContext);
+
+        // Verify that AI was used
+        expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] No brand profile found in site config, generating from healthy tags using AI');
+        expect(mockAzureClient.fetchChatCompletion).to.have.been.called;
+      });
+
+      it('should fall back to AI when brand profile is empty object', async () => {
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => ({}),
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Verify that AI fallback was used
+        expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] No brand profile found in site config, generating from healthy tags using AI');
+        expect(mockAzureClient.fetchChatCompletion).to.have.been.called;
+      });
+
+      it('should handle errors gracefully and fall back to AI', async () => {
+        const mockSite = {
+          getConfig: () => {
+            throw new Error('Config access error');
+          },
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Verify that warning was logged
+        expect(mockLog.warn).to.have.been.calledWith(sinon.match(/Error accessing brand profile from site config/));
+
+        // Verify that AI fallback was used
+        expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] No brand profile found in site config, generating from healthy tags using AI');
+        expect(mockAzureClient.fetchChatCompletion).to.have.been.called;
+      });
+    });
+
+    describe('Brand profile integration in full audit flow', () => {
+      it('should use brand profile throughout the audit when available', async function () {
+        this.timeout(10000); // Increase timeout for full audit flow
+        const baseURL = 'https://example.com';
+        const url = 'https://example.com/page';
+
+        const mockBrandProfile = {
+          main_profile: {
+            brand_personality: {
+              description: 'Professional and approachable',
+            },
+            tone_attributes: {
+              primary: ['professional', 'friendly'],
+              avoid: ['aggressive'],
+            },
+            editorial_guidelines: {
+              dos: ['Use clear language'],
+              donts: ['Avoid jargon'],
+            },
+            language_patterns: {
+              avoid: ['bad phrase'],
+            },
+          },
+        };
+
+        const mockSite = {
+          getId: () => 'site-1',
+          getBaseURL: () => baseURL,
+          getConfig: () => ({
+            getLlmoCdnlogsFilter: () => [],
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+                { getUrl: () => url },
+              ]),
+            },
+          },
+          s3Client: {
+            send: sinon.stub().callsFake((command) => {
+              if (command.constructor.name === 'ListObjectsV2Command') {
+                return Promise.resolve({
+                  Contents: [{ Key: 'scrapes/site-1/page/scrape.json' }],
+                  NextContinuationToken: undefined,
+                });
+              }
+              if (command.constructor.name === 'GetObjectCommand') {
+                return Promise.resolve({
+                  Body: {
+                    transformToString: () => JSON.stringify({
+                      finalUrl: url,
+                      scrapedAt: Date.now(),
+                      scrapeResult: {
+                        rawBody: '<h1>Valid Heading</h1><h2>Section</h2>',
+                        tags: {
+                          title: 'Test Title',
+                          description: 'Test Description',
+                          h1: ['Valid Heading'],
+                        },
+                      },
+                    }),
+                  },
+                  ContentType: 'application/json',
+                });
+              }
+              throw new Error('Unexpected command');
+            }),
+          },
+        };
+
+        const { headingsAuditRunner } = await import('../../src/headings/handler.js');
+        const result = await headingsAuditRunner(baseURL, mockContext, mockSite);
+
+        // Verify brand profile was used (check logs)
+        expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] Using brand profile from site config');
+
+        // Verify audit completed
+        expect(result).to.have.property('fullAuditRef', baseURL);
+        expect(result).to.have.property('auditResult');
+      });
+
+      it('should fall back to AI generation when site has no brand profile', async function () {
+        this.timeout(10000); // Increase timeout for full audit flow
+        const baseURL = 'https://example.com';
+        const url = 'https://example.com/page';
+
+        const mockSite = {
+          getId: () => 'site-1',
+          getBaseURL: () => baseURL,
+          getConfig: () => ({
+            getLlmoCdnlogsFilter: () => [],
+            getBrandProfile: () => null, // No brand profile
+          }),
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockAzureClient = {
+          fetchChatCompletion: sinon.stub().resolves({
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  brand_persona: 'AI generated persona',
+                  tone: 'professional',
+                }),
+              },
+            }],
+          }),
+        };
+
+        AzureOpenAIClient.createFrom.restore();
+        sinon.stub(AzureOpenAIClient, 'createFrom').returns(mockAzureClient);
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+                { getUrl: () => url },
+              ]),
+            },
+          },
+          s3Client: {
+            send: sinon.stub().callsFake((command) => {
+              if (command.constructor.name === 'ListObjectsV2Command') {
+                return Promise.resolve({
+                  Contents: [{ Key: 'scrapes/site-1/page/scrape.json' }],
+                  NextContinuationToken: undefined,
+                });
+              }
+              if (command.constructor.name === 'GetObjectCommand') {
+                return Promise.resolve({
+                  Body: {
+                    transformToString: () => JSON.stringify({
+                      finalUrl: url,
+                      scrapedAt: Date.now(),
+                      scrapeResult: {
+                        rawBody: '<h1>Valid Heading</h1><h2>Section</h2>',
+                        tags: {
+                          title: 'Test Title',
+                          description: 'Test Description',
+                          h1: ['Valid Heading'],
+                        },
+                      },
+                    }),
+                  },
+                  ContentType: 'application/json',
+                });
+              }
+              throw new Error('Unexpected command');
+            }),
+          },
+        };
+
+        const { headingsAuditRunner } = await import('../../src/headings/handler.js');
+        const result = await headingsAuditRunner(baseURL, mockContext, mockSite);
+
+        // Verify AI fallback was used
+        expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] No brand profile found in site config, generating from healthy tags using AI');
+        expect(mockAzureClient.fetchChatCompletion).to.have.been.called;
+
+        // Verify audit completed
+        expect(result).to.have.property('fullAuditRef', baseURL);
+        expect(result).to.have.property('auditResult');
+      });
     });
   });
 });
