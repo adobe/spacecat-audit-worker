@@ -47,7 +47,7 @@ export function createOpportunityDataForElmo() {
         },
       ],
     },
-    tags: [...OpptyData.tags, 'llm', 'isElmo'],
+    tags: [...OpptyData.tags, 'llm'],
     data: {
       ...OpptyData.data,
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],

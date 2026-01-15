@@ -32,12 +32,13 @@ import { wwwUrlResolver } from '../common/index.js';
  */
 function getWikipediaConfig(site) {
   const config = site.getConfig();
+  const baseURL = site.getBaseURL();
 
   // Try to get Wikipedia configuration from site config
-  // This can be extended to read from SpaceCat site configuration
+  // If not configured, use baseURL directly
   return {
-    companyName: config?.getCompanyName?.() || site.getOrganizationId() || '',
-    companyWebsite: site.getBaseURL(),
+    companyName: config?.getCompanyName?.() || baseURL,
+    companyWebsite: baseURL,
     wikipediaUrl: config?.getWikipediaUrl?.() || '', // Empty = auto-detect
     competitors: config?.getCompetitors?.() || [], // Empty = auto-detect
     competitorRegion: config?.getCompetitorRegion?.() || null,

@@ -54,6 +54,11 @@ export async function getTopAgenticUrlsFromAthena(
   limit = DEFAULT_TOP_AGENTIC_URLS_LIMIT,
 ) {
   const { log } = context;
+  // Use finalUrl from context if available (it's a hostname, so add https://),
+  // otherwise fall back to site.getBaseURL() which already includes the protocol
+  const baseUrl = context.finalUrl && !/^https?:\/\//.test(context.finalUrl)
+    ? `https://${context.finalUrl}`
+    : context.finalUrl || site.getBaseURL();
   try {
     const s3Config = await getS3Config(site, context);
     const periods = generateReportingPeriods();
@@ -67,7 +72,7 @@ export async function getTopAgenticUrlsFromAthena(
       site,
       limit,
     });
-    log.info(`Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=${site.getBaseURL()}`);
+    log.info(`Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=${baseUrl}`);
     const results = await athenaClient.query(
       query,
       s3Config.databaseName,
@@ -75,26 +80,42 @@ export async function getTopAgenticUrlsFromAthena(
     );
 
     if (!Array.isArray(results) || results.length === 0) {
-      log.warn(`Agentic URLs - Athena returned no agentic rows. baseUrl=${site.getBaseURL()}`);
+      log.warn(`Agentic URLs - Athena returned no agentic rows. baseUrl=${baseUrl}`);
       return [];
     }
 
-    const baseUrl = site.getBaseURL?.() || '';
+    // Validate baseUrl before constructing URLs
+    let resolvedBaseUrl = baseUrl;
+    try {
+      // eslint-disable-next-line no-new
+      new URL(baseUrl);
+    } catch {
+      log.warn(`Agentic URLs - Invalid baseUrl: ${baseUrl}, cannot construct absolute URLs`);
+      resolvedBaseUrl = null;
+    }
+
     const topUrls = results
       .filter((row) => typeof row?.url === 'string' && row.url.length > 0)
       .map((row) => {
         const path = row.url;
-        try {
-          return new URL(path, baseUrl).toString();
-        } catch {
+        // If path is already an absolute URL, return it as-is
+        if (path.startsWith('http://') || path.startsWith('https://')) {
           return path;
         }
-      });
+        // If we have a valid base URL, construct the full URL
+        if (resolvedBaseUrl) {
+          return new URL(path, resolvedBaseUrl).toString();
+        }
+        // No valid base URL, return null to filter out
+        return null;
+      })
+      .filter((url) => url !== null);
 
-    log.info(`Agentic URLs - Selected ${topUrls.length} top agentic URLs via Athena. baseUrl=${site.getBaseURL()}`);
+    log.info(`Agentic URLs - Selected ${topUrls.length} top agentic URLs via Athena. baseUrl=${baseUrl}`);
+    log.info(`Agentic URLs - Top #1 URL: ${topUrls[0]}`);
     return topUrls;
   } catch (e) {
-    log?.warn?.(`Agentic URLs - Athena agentic URL fetch failed: ${e.message}. baseUrl=${site.getBaseURL()}`);
+    log?.warn?.(`Agentic URLs - Athena agentic URL fetch failed: ${e.message}. baseUrl=${baseUrl}`);
     return [];
   }
 }

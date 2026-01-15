@@ -18,6 +18,7 @@ export const H1 = 'h1';
 // SEO impact category
 export const HIGH = 'High';
 export const MODERATE = 'Moderate';
+export const LOW = 'Low';
 
 // Audit result constants
 export const ISSUE = 'issue';
@@ -39,7 +40,7 @@ export const ONE_H1_ON_A_PAGE = '1 H1 on a page';
 // Tags lengths
 export const TAG_LENGTHS = {
   [TITLE]: {
-    minLength: 25,
+    minLength: 3, // was 25, but lowered to 3 to allow short titles and short brand names
     maxLength: 75,
     idealMinLength: 40,
     idealMaxLength: 60,
@@ -55,3 +56,5 @@ export const TAG_LENGTHS = {
     idealMaxLength: 70,
   },
 };
+
+export const MYSTIQUE_BATCH_SIZE = 25;
