@@ -124,7 +124,9 @@ describe('Vulnerabilities Opportunity Data Mapper', () => {
       expect(result).to.have.property('origin', 'AUTOMATION');
       expect(result).to.have.property('title');
       expect(result).to.have.property('description');
-      expect(result).to.have.property('tags');
+      expect(result).to.have.property('tags').that.is.an('array');
+      expect(result.tags).to.include('tech-seo');
+      expect(result.tags.length).to.be.above(0);
       expect(result.data).to.include(props);
       expect(result.data).to.have.property('howToFix');
       expect(result.data).to.have.property('dataSources');
@@ -166,6 +168,7 @@ describe('Vulnerabilities Opportunity Data Mapper', () => {
         expect(result.data).to.include(props);
         expect(result).to.have.property('runbook');
         expect(result).to.have.property('origin', 'AUTOMATION');
+        expect(result).to.have.property('tags').that.is.an('array');
       });
     });
   });
