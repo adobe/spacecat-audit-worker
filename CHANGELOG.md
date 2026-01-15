@@ -1,3 +1,10 @@
+## [1.282.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.282.0...v1.282.1) (2026-01-15)
+
+
+### Bug Fixes
+
+* adding brand profile for headings ([#1836](https://github.com/adobe/spacecat-audit-worker/issues/1836)) ([ebae81f](https://github.com/adobe/spacecat-audit-worker/commit/ebae81f010e144b735f5271937bd7610946f1122))
+
 # [1.282.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.281.1...v1.282.0) (2026-01-14)
 
 
