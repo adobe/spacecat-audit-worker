@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "handlers": {
+    "broken-internal-links": {
+      "productCodes": ["spacecat"]
+    },
+    "broken-internal-links-auto-suggest": {
+      "enabled": true
+    },
+    "broken-internal-links-crawl": {
+      "enabled": true
+    }
+  },
+  "sites": {
+    "1db7b770-db7f-4c52-a9dc-6e05add6c11e": {
+      "enabledHandlers": [
+        "broken-internal-links",
+        "broken-internal-links-auto-suggest",
+        "broken-internal-links-crawl"
+      ]
+    }
+  }
+}

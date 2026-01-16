@@ -255,7 +255,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const {
     log, site, finalUrl, sqs, env, dataAccess, audit,
   } = context;
-  const { Configuration, Suggestion, SiteTopPage } = dataAccess;
+  const { Suggestion, SiteTopPage } = dataAccess;
 
   const { brokenInternalLinks, success } = audit.getAuditResult();
 
@@ -325,7 +325,6 @@ export const opportunityAndSuggestionsStep = async (context) => {
     log,
   });
 
-  const configuration = await Configuration.findLatest();
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
   log.info(
@@ -345,100 +344,100 @@ export const opportunityAndSuggestionsStep = async (context) => {
     `[${AUDIT_TYPE}] [Site: ${site.getId()}] After audit scope filtering: ${filteredTopPages.length} top pages available`,
   );
 
-  if (configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
-    const suggestions = await Suggestion.allByOpportunityIdAndStatus(
-      opportunity.getId(),
-      SuggestionDataAccess.STATUSES.NEW,
-    );
+  // Auto-suggest is now enabled for all sites
+  log.info(`[${AUDIT_TYPE}] 🚀 Generating suggestions for Mystique (auto-suggest enabled)`);
+  const suggestions = await Suggestion.allByOpportunityIdAndStatus(
+    opportunity.getId(),
+    SuggestionDataAccess.STATUSES.NEW,
+  );
 
-    // Build broken links array without per-link alternatives
-    // Mystique expects: brokenLinks with only urlFrom, urlTo, suggestionId
-    const brokenLinks = suggestions
-      .map((suggestion) => ({
-        urlFrom: suggestion?.getData()?.urlFrom,
-        urlTo: suggestion?.getData()?.urlTo,
-        suggestionId: suggestion?.getId(),
-      }))
-      .filter((link) => link.urlFrom && link.urlTo && link.suggestionId); // Filter invalid entries
+  // Build broken links array without per-link alternatives
+  // Mystique expects: brokenLinks with only urlFrom, urlTo, suggestionId
+  const brokenLinks = suggestions
+    .map((suggestion) => ({
+      urlFrom: suggestion?.getData()?.urlFrom,
+      urlTo: suggestion?.getData()?.urlTo,
+      suggestionId: suggestion?.getId(),
+    }))
+    .filter((link) => link.urlFrom && link.urlTo && link.suggestionId); // Filter invalid entries
 
-    // Filter alternatives by locales/subpaths present in broken links
-    // This limits suggestions to relevant locales only
-    const allTopPageUrls = filteredTopPages.map((page) => page.getUrl());
+  // Filter alternatives by locales/subpaths present in broken links
+  // This limits suggestions to relevant locales only
+  const allTopPageUrls = filteredTopPages.map((page) => page.getUrl());
 
-    // Extract unique locales/subpaths from broken links
-    const brokenLinkLocales = new Set();
-    brokenLinks.forEach((link) => {
-      const locale = extractPathPrefix(link.urlTo);
-      if (locale) {
-        brokenLinkLocales.add(locale);
-      }
+  // Extract unique locales/subpaths from broken links
+  const brokenLinkLocales = new Set();
+  brokenLinks.forEach((link) => {
+    const locale = extractPathPrefix(link.urlTo);
+    if (locale) {
+      brokenLinkLocales.add(locale);
+    }
+  });
+
+  // Filter alternatives to only include URLs matching broken links' locales
+  // If no locales found (no subpath), include all alternatives
+  // Always ensure alternativeUrls is an array (even if empty)
+  let alternativeUrls = [];
+  if (brokenLinkLocales.size > 0) {
+    alternativeUrls = allTopPageUrls.filter((url) => {
+      const urlLocale = extractPathPrefix(url);
+      // Include if URL matches one of the broken links' locales, or has no locale
+      return !urlLocale || brokenLinkLocales.has(urlLocale);
     });
-
-    // Filter alternatives to only include URLs matching broken links' locales
-    // If no locales found (no subpath), include all alternatives
-    // Always ensure alternativeUrls is an array (even if empty)
-    let alternativeUrls = [];
-    if (brokenLinkLocales.size > 0) {
-      alternativeUrls = allTopPageUrls.filter((url) => {
-        const urlLocale = extractPathPrefix(url);
-        // Include if URL matches one of the broken links' locales, or has no locale
-        return !urlLocale || brokenLinkLocales.has(urlLocale);
-      });
-    } else {
-      // No locale prefixes found, include all alternatives
-      alternativeUrls = allTopPageUrls;
-    }
-
-    // Filter out unscrape-able file types before sending to Mystique
-    const originalCount = alternativeUrls.length;
-    alternativeUrls = alternativeUrls.filter((url) => !isUnscrapeable(url));
-    if (alternativeUrls.length < originalCount) {
-      log.info(`[${AUDIT_TYPE}] Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs (PDFs, Office docs, etc.) from alternative URLs before sending to Mystique`);
-    }
-
-    // Validate before sending to Mystique
-    if (brokenLinks.length === 0) {
-      log.warn(
-        `[${AUDIT_TYPE}] [Site: ${site.getId()}] No valid broken links to send to Mystique. Skipping message.`,
-      );
-      return {
-        status: 'complete',
-      };
-    }
-
-    if (!opportunity?.getId()) {
-      log.error(
-        `[${AUDIT_TYPE}] [Site: ${site.getId()}] Opportunity ID is missing. Cannot send to Mystique.`,
-      );
-      return {
-        status: 'complete',
-      };
-    }
-
-    if (alternativeUrls.length === 0) {
-      log.warn(
-        `[${AUDIT_TYPE}] [Site: ${site.getId()}] No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.`,
-      );
-      return {
-        status: 'complete',
-      };
-    }
-
-    const message = {
-      type: 'guidance:broken-links',
-      siteId: site.getId(),
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      data: {
-        alternativeUrls,
-        opportunityId: opportunity.getId(),
-        brokenLinks,
-      },
-    };
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.debug(`Message sent to Mystique: ${JSON.stringify(message)}`);
+  } else {
+    // No locale prefixes found, include all alternatives
+    alternativeUrls = allTopPageUrls;
   }
+
+  // Filter out unscrape-able file types before sending to Mystique
+  const originalCount = alternativeUrls.length;
+  alternativeUrls = alternativeUrls.filter((url) => !isUnscrapeable(url));
+  if (alternativeUrls.length < originalCount) {
+    log.info(`[${AUDIT_TYPE}] Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs (PDFs, Office docs, etc.) from alternative URLs before sending to Mystique`);
+  }
+
+  // Validate before sending to Mystique
+  if (brokenLinks.length === 0) {
+    log.warn(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] No valid broken links to send to Mystique. Skipping message.`,
+    );
+    return {
+      status: 'complete',
+    };
+  }
+
+  if (!opportunity?.getId()) {
+    log.error(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Opportunity ID is missing. Cannot send to Mystique.`,
+    );
+    return {
+      status: 'complete',
+    };
+  }
+
+  if (alternativeUrls.length === 0) {
+    log.warn(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.`,
+    );
+    return {
+      status: 'complete',
+    };
+  }
+
+  const message = {
+    type: 'guidance:broken-links',
+    siteId: site.getId(),
+    auditId: audit.getId(),
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      alternativeUrls,
+      opportunityId: opportunity.getId(),
+      brokenLinks,
+    },
+  };
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+  log.debug(`Message sent to Mystique: ${JSON.stringify(message)}`);
   return {
     status: 'complete',
   };
@@ -450,9 +449,8 @@ export const opportunityAndSuggestionsStep = async (context) => {
  */
 export async function runCrawlDetectionAndGenerateSuggestions(context) {
   const {
-    log, site, audit, scrapeResultPaths, dataAccess,
+    log, site, audit, scrapeResultPaths,
   } = context;
-  const { Configuration } = dataAccess;
 
   log.info(`[${AUDIT_TYPE}] ====== Crawl Detection Step ======`);
   log.info(`[${AUDIT_TYPE}] Site: ${site.getId()}, BaseURL: ${site.getBaseURL()}`);
@@ -467,50 +465,40 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
     log.debug(`[${AUDIT_TYPE}] RUM links total traffic: ${rumTraffic} views`);
   }
 
-  // Check feature toggle
-  log.debug(`[${AUDIT_TYPE}] Checking feature toggle: broken-internal-links-crawl`);
-  const configuration = await Configuration.findLatest();
-  const isCrawlEnabled = configuration.isHandlerEnabledForSite('broken-internal-links-crawl', site);
-
+  // Crawl-based detection is now enabled for all sites
   let finalLinks;
 
-  if (!isCrawlEnabled) {
-    log.info(`[${AUDIT_TYPE}] ⚠️  Feature toggle OFF: Crawl detection is disabled for site ${site.getId()}`);
-    log.info(`[${AUDIT_TYPE}] Using RUM-only results (legacy behavior)`);
+  log.info(`[${AUDIT_TYPE}] 🚀 Using Ahrefs + siteConfig crawl detection (new behavior)`);
+  log.info(`[${AUDIT_TYPE}] Scrape result paths available: ${scrapeResultPaths.size}`);
+
+  if (scrapeResultPaths.size === 0) {
+    log.warn(`[${AUDIT_TYPE}] No scraped content available, falling back to RUM-only results`);
     finalLinks = rumLinks;
   } else {
-    log.info(`[${AUDIT_TYPE}] ✓ Feature toggle ON: Crawl detection is enabled for site ${site.getId()}`);
-    log.info(`[${AUDIT_TYPE}] Scrape result paths available: ${scrapeResultPaths.size}`);
+    // Run crawl detection
+    log.info(`[${AUDIT_TYPE}] Starting crawl-based detection...`);
+    const startTime = Date.now();
 
-    if (scrapeResultPaths.size === 0) {
-      log.warn(`[${AUDIT_TYPE}] No scraped content available, falling back to RUM-only results`);
-      finalLinks = rumLinks;
-    } else {
-      // Run crawl detection
-      log.info(`[${AUDIT_TYPE}] Starting crawl-based detection...`);
-      const startTime = Date.now();
+    const crawlLinks = await detectBrokenLinksFromCrawl(scrapeResultPaths, context);
 
-      const crawlLinks = await detectBrokenLinksFromCrawl(scrapeResultPaths, context);
+    const crawlDuration = Date.now() - startTime;
+    log.info(`[${AUDIT_TYPE}] Crawl detection completed in ${crawlDuration}ms`);
+    log.info(`[${AUDIT_TYPE}] Crawl detected ${crawlLinks.length} broken links`);
 
-      const crawlDuration = Date.now() - startTime;
-      log.info(`[${AUDIT_TYPE}] Crawl detection completed in ${crawlDuration}ms`);
-      log.info(`[${AUDIT_TYPE}] Crawl detected ${crawlLinks.length} broken links`);
+    // Merge crawl + RUM results (RUM takes priority for traffic data)
+    log.info(`[${AUDIT_TYPE}] Merging RUM (${rumLinks.length}) + Crawl (${crawlLinks.length}) results...`);
+    finalLinks = mergeAndDeduplicate(crawlLinks, rumLinks, log);
 
-      // Merge crawl + RUM results (RUM takes priority for traffic data)
-      log.info(`[${AUDIT_TYPE}] Merging RUM (${rumLinks.length}) + Crawl (${crawlLinks.length}) results...`);
-      finalLinks = mergeAndDeduplicate(crawlLinks, rumLinks, log);
+    const crawlOnlyLinks = finalLinks.filter((link) => link.trafficDomain === 0);
+    const rumOnlyLinks = finalLinks.filter(
+      (link) => link.trafficDomain > 0 && !crawlLinks.some((c) => c.urlTo === link.urlTo),
+    );
+    const overlapLinks = finalLinks.length - crawlOnlyLinks.length - rumOnlyLinks.length;
 
-      const crawlOnlyLinks = finalLinks.filter((link) => link.trafficDomain === 0);
-      const rumOnlyLinks = finalLinks.filter(
-        (link) => link.trafficDomain > 0 && !crawlLinks.some((c) => c.urlTo === link.urlTo),
-      );
-      const overlapLinks = finalLinks.length - crawlOnlyLinks.length - rumOnlyLinks.length;
-
-      log.info(`[${AUDIT_TYPE}] Merge results: ${finalLinks.length} total (${crawlOnlyLinks.length} crawl-only, ${rumOnlyLinks.length} RUM-only, ${overlapLinks} overlap)`);
-    }
+    log.info(`[${AUDIT_TYPE}] Merge results: ${finalLinks.length} total (${crawlOnlyLinks.length} crawl-only, ${rumOnlyLinks.length} RUM-only, ${overlapLinks} overlap)`);
   }
 
-  // Calculate priority for all links (after merge or RUM-only)
+  // Calculate priority for all links
   log.info(`[${AUDIT_TYPE}] Calculating priority for ${finalLinks.length} broken links...`);
   const prioritizedLinks = calculatePriority(finalLinks);
 

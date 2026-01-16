@@ -1356,7 +1356,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       });
     });
 
-    it('should use RUM-only results when feature toggle is OFF', async () => {
+    it('should merge crawl + RUM results', async () => {
       const rumLinks = [
         { urlTo: 'https://example.com/rum1', urlFrom: 'https://example.com/page1', trafficDomain: 100 },
       ];
@@ -1364,45 +1364,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       context.audit = {
         getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
         setAuditResult: sandbox.stub(),
-      };
-
-      context.dataAccess.Configuration = {
-        findLatest: () => ({
-          isHandlerEnabledForSite: () => false, // Feature toggle OFF
-        }),
-      };
-
-      context.scrapeResultPaths = new Map();
-
-      // Mock opportunityAndSuggestionsStep
-      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
-      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
-
-      await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
-
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Feature toggle OFF/));
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/RUM-only results/));
-      expect(context.audit.setAuditResult).to.have.been.calledOnce;
-
-      const resultArg = context.audit.setAuditResult.getCall(0).args[0];
-      expect(resultArg.brokenInternalLinks).to.have.lengthOf(1);
-      expect(resultArg.brokenInternalLinks[0].priority).to.equal('high');
-    });
-
-    it('should merge crawl + RUM results when feature toggle is ON', async () => {
-      const rumLinks = [
-        { urlTo: 'https://example.com/rum1', urlFrom: 'https://example.com/page1', trafficDomain: 100 },
-      ];
-
-      context.audit = {
-        getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
-        setAuditResult: sandbox.stub(),
-      };
-
-      context.dataAccess.Configuration = {
-        findLatest: () => ({
-          isHandlerEnabledForSite: () => true, // Feature toggle ON
-        }),
       };
 
       context.scrapeResultPaths = new Map([['https://example.com/page1', 's3-key-1']]);
@@ -1413,7 +1374,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
 
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Feature toggle ON/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Using Ahrefs.*siteConfig crawl detection/));
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Starting crawl-based detection/));
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Merging RUM/));
       expect(context.audit.setAuditResult).to.have.been.calledOnce;
@@ -1427,12 +1388,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       context.audit = {
         getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
         setAuditResult: sandbox.stub(),
-      };
-
-      context.dataAccess.Configuration = {
-        findLatest: () => ({
-          isHandlerEnabledForSite: () => true, // Feature toggle ON
-        }),
       };
 
       context.scrapeResultPaths = new Map(); // Empty scrape results
