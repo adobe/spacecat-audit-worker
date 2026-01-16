@@ -498,12 +498,12 @@ export async function publishDeployedFixEntities({
     log.info(`publishDeployedFixEntities for opportunityId ${opportunityId}`);
     const FixEntity = FixEntityDataAccess;
     if (!FixEntity?.STATUSES?.DEPLOYED || !FixEntity?.STATUSES?.PUBLISHED) {
-      log.debug('FixEntity status constants not available; skipping publish.');
+      log.info('FixEntity status constants not available; skipping publish.');
       return;
     }
     if (typeof FixEntity?.allByOpportunityIdAndStatus !== 'function'
       || typeof FixEntity?.getSuggestionsByFixEntityId !== 'function') {
-      log.debug('FixEntity APIs not available; skipping publish.');
+      log.info('FixEntity APIs not available; skipping publish.');
       return;
     }
 

@@ -145,7 +145,7 @@ describe('utils/data-access', () => {
       log,
       isIssueResolvedOnProduction: async () => true,
     });
-    expect(log.debug).to.have.been.calledWith(sinon.match(/status constants not available/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/status constants not available/));
   });
 
   it('publishDeployedFixEntities returns when no deployed fix entities', async () => {
