@@ -510,8 +510,8 @@ export async function publishDeployedFixEntities({
       return;
     }
 
-    const deployedStatus = FixEntity.STATUSES.DEPLOYED;
-    const publishedStatus = FixEntity.STATUSES.PUBLISHED;
+    const deployedStatus = FixEntityDataAccess.STATUSES.DEPLOYED;
+    const publishedStatus = FixEntityDataAccess.STATUSES.PUBLISHED;
 
     const deployedFixEntities = await FixEntity.allByOpportunityIdAndStatus(
       opportunityId,
