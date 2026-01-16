@@ -13,6 +13,7 @@
 import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
+
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -80,6 +81,17 @@ export const HEADINGS_CHECKS = Object.freeze({
   },
 });
 
+/**
+ * Get AI suggestion for H1 heading
+ * @param {string} url - Page URL
+ * @param {Object} log - Logger instance
+ * @param {string} tagName - Tag name (h1, h2, etc.)
+ * @param {Object} pageTags - Page tags
+ * @param {Object} context - Audit context
+ * @param {Object} brandGuidelines - Brand guidelines
+ * @param {Object} headingContext - Heading context
+ * @returns {Promise<string|null>} AI suggestion or null
+ */
 export async function getH1HeadingASuggestion(
   url,
   log,
@@ -163,7 +175,6 @@ export async function validatePageHeadingFromScrapeJson(
     const checks = [];
 
     const h1Elements = headings.filter((h) => $(h).prop('tagName') === 'H1');
-    const h1Selectors = h1Elements.map((h) => getHeadingSelector(h)).filter(Boolean);
 
     if (h1Elements.length === 0) {
       log.debug(`Missing h1 element detected at ${url}`);
@@ -193,7 +204,6 @@ export async function validatePageHeadingFromScrapeJson(
         explanation: `Found ${h1Elements.length} h1 elements: ${HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation}`,
         suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
         count: h1Elements.length,
-        selectors: h1Selectors,
       });
     } else if (getTextContent(h1Elements[0], $).length === 0
       || getTextContent(h1Elements[0], $).length > H1_LENGTH_CHARS) {
@@ -215,7 +225,6 @@ export async function validatePageHeadingFromScrapeJson(
           scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
         },
         pageTags,
-        selectors: [h1Selector],
       });
     }
 
@@ -243,7 +252,6 @@ export async function validatePageHeadingFromScrapeJson(
             tagName,
             pageTags,
             headingContext,
-            selectors: [headingSelector],
           };
         }
       }
@@ -271,7 +279,6 @@ export async function validatePageHeadingFromScrapeJson(
             success: false,
             explanation: `${HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation} Invalid jump: h${prevLevel} → h${curLevel}`,
             suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
-            selectors: curSelector,
             transformRules: {
               action: 'replaceWith',
               selector: curSelector,
