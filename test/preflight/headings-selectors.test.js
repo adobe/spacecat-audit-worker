@@ -143,6 +143,68 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
   });
 
   describe('getElementsFromCheck - selector generation from HTML', () => {
+    it('should return empty object when scrapeJsonObject has no rawBody', async () => {
+      // Setup check without rawBody in scrapeJsonObject
+      const checkWithoutRawBody = {
+        success: false,
+        check: 'heading-missing-h1',
+        checkTitle: 'Missing H1',
+        description: 'No H1 found',
+        explanation: 'Add an H1',
+      };
+
+      mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
+        url: 'https://main--example--page.aem.page/page1',
+        checks: [checkWithoutRawBody],
+      });
+
+      mockDomSelector.toElementTargets.returns({});
+
+      const headingsModule = await esmock('../../src/preflight/headings.js', {
+        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/metatags/seo-checks.js': {
+          default: class {
+            // eslint-disable-next-line class-methods-use-this
+            getFewHealthyTags() {
+              return { title: [], description: [], h1: [] };
+            }
+          },
+        },
+      });
+
+      const auditContext = {
+        previewUrls: ['https://main--example--page.aem.page/page1'],
+        step: 'identify',
+        audits: new Map([
+          ['https://main--example--page.aem.page/page1', {
+            audits: [],
+          }],
+        ]),
+        auditsResult: [{
+          pageUrl: 'https://main--example--page.aem.page/page1',
+          audits: [],
+        }],
+        scrapedObjects: [{
+          data: {
+            scrapeResult: {
+              // No rawBody
+            },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          },
+        }],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModule.default(context, auditContext);
+
+      const testAudit = auditContext.audits.get('https://main--example--page.aem.page/page1')
+        .audits.find((a) => a.name === 'headings');
+      expect(testAudit.opportunities).to.have.lengthOf(1);
+      expect(testAudit.opportunities[0]).to.not.have.property('elements');
+      expect(testAudit.opportunities[0]).to.not.have.property('selector');
+    });
+
     it('should generate selectors from HTML for heading-multiple-h1 check', async () => {
       // Setup check without transformRules - should generate selectors from HTML
       const checkWithoutSelectors = {
@@ -343,6 +405,196 @@ describe('Preflight Headings - Selector Coverage Tests', () => {
 
       // Verify toElementTargets was called with [transformRules.selector] for unknown check types
       expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['h2.custom-heading']);
+    });
+
+    it('should generate selectors for heading-h1-length check', async () => {
+      // Setup heading-h1-length check
+      const checkH1Length = {
+        success: false,
+        check: 'heading-h1-length',
+        checkTitle: 'H1 Length Issue',
+        description: 'H1 is too long',
+        explanation: 'Shorten the H1',
+      };
+
+      mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
+        url: 'https://main--example--page.aem.page/page1',
+        checks: [checkH1Length],
+      });
+
+      mockDomSelector.getDomElementSelector.returns('body > h1');
+      mockDomSelector.toElementTargets.returns({
+        elements: [{ selector: 'body > h1' }],
+      });
+
+      const headingsModule = await esmock('../../src/preflight/headings.js', {
+        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/metatags/seo-checks.js': {
+          default: class {
+            // eslint-disable-next-line class-methods-use-this
+            getFewHealthyTags() {
+              return { title: [], description: [], h1: [] };
+            }
+          },
+        },
+      });
+
+      const auditContext = {
+        previewUrls: ['https://main--example--page.aem.page/page1'],
+        step: 'identify',
+        audits: new Map([
+          ['https://main--example--page.aem.page/page1', {
+            audits: [],
+          }],
+        ]),
+        auditsResult: [{
+          pageUrl: 'https://main--example--page.aem.page/page1',
+          audits: [],
+        }],
+        scrapedObjects: [{
+          data: {
+            scrapeResult: {
+              rawBody: '<body><h1>This is a very long H1 heading that exceeds the recommended length</h1></body>',
+            },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          },
+        }],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModule.default(context, auditContext);
+
+      expect(mockDomSelector.getDomElementSelector).to.have.been.called;
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h1']);
+    });
+
+    it('should use transformRules.selector for heading-order-invalid check', async () => {
+      // Setup heading-order-invalid check with transformRules
+      const checkOrderInvalid = {
+        success: false,
+        check: 'heading-order-invalid',
+        checkTitle: 'Invalid Heading Order',
+        description: 'Heading order is invalid',
+        explanation: 'Fix heading order',
+        transformRules: {
+          selector: 'h3.skipped-level',
+          action: 'replaceWith',
+        },
+      };
+
+      mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
+        url: 'https://main--example--page.aem.page/page1',
+        checks: [checkOrderInvalid],
+      });
+
+      mockDomSelector.toElementTargets.returns({
+        elements: [{ selector: 'h3.skipped-level' }],
+      });
+
+      const headingsModule = await esmock('../../src/preflight/headings.js', {
+        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/metatags/seo-checks.js': {
+          default: class {
+            // eslint-disable-next-line class-methods-use-this
+            getFewHealthyTags() {
+              return { title: [], description: [], h1: [] };
+            }
+          },
+        },
+      });
+
+      const auditContext = {
+        previewUrls: ['https://main--example--page.aem.page/page1'],
+        step: 'identify',
+        audits: new Map([
+          ['https://main--example--page.aem.page/page1', {
+            audits: [],
+          }],
+        ]),
+        auditsResult: [{
+          pageUrl: 'https://main--example--page.aem.page/page1',
+          audits: [],
+        }],
+        scrapedObjects: [{
+          data: {
+            scrapeResult: {
+              rawBody: '<body><h1>Title</h1><h3 class="skipped-level">Skipped H2</h3></body>',
+            },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          },
+        }],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModule.default(context, auditContext);
+
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['h3.skipped-level']);
+    });
+
+    it('should use check.selectors for unknown check types with selectors array', async () => {
+      // Setup unknown check type with selectors array
+      const checkWithSelectorsArray = {
+        success: false,
+        check: 'heading-unknown-check',
+        checkTitle: 'Unknown Check',
+        description: 'Unknown issue',
+        explanation: 'Fix unknown issue',
+        selectors: ['h2:nth-of-type(1)', 'h2:nth-of-type(2)'],
+      };
+
+      mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
+        url: 'https://main--example--page.aem.page/page1',
+        checks: [checkWithSelectorsArray],
+      });
+
+      mockDomSelector.toElementTargets.returns({
+        elements: [
+          { selector: 'h2:nth-of-type(1)' },
+          { selector: 'h2:nth-of-type(2)' },
+        ],
+      });
+
+      const headingsModule = await esmock('../../src/preflight/headings.js', {
+        '../../src/utils/dom-selector.js': mockDomSelector,
+        '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/metatags/seo-checks.js': {
+          default: class {
+            // eslint-disable-next-line class-methods-use-this
+            getFewHealthyTags() {
+              return { title: [], description: [], h1: [] };
+            }
+          },
+        },
+      });
+
+      const auditContext = {
+        previewUrls: ['https://main--example--page.aem.page/page1'],
+        step: 'identify',
+        audits: new Map([
+          ['https://main--example--page.aem.page/page1', {
+            audits: [],
+          }],
+        ]),
+        auditsResult: [{
+          pageUrl: 'https://main--example--page.aem.page/page1',
+          audits: [],
+        }],
+        scrapedObjects: [{
+          data: {
+            scrapeResult: {
+              rawBody: '<body><h2>First H2</h2><h2>Second H2</h2></body>',
+            },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          },
+        }],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModule.default(context, auditContext);
+
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['h2:nth-of-type(1)', 'h2:nth-of-type(2)']);
     });
   });
 });
