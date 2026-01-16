@@ -390,6 +390,7 @@ export async function reconcileDisappearedSuggestions({
         continue;
       }
 
+      log.info(`reconcileDisappearedSuggestions issue fixed for suggestion ${getPagePath(data)}`);
       // Mark suggestion as FIXED and prepare a PUBLISHED fix entity on the opportunity
       let suggestionMarkedFixed = false;
       try {

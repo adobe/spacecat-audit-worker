@@ -187,6 +187,7 @@ export const generateSuggestionData = async (context) => {
   // from current audit results.
   // If a previous suggestion's url_to now redirects to one of its urlsSuggested, mark it FIXED
   // and ensure a PUBLISHED fix entity exists.
+  log.info(`reconcileDisappearedSuggestions for ${site.getId()}`);
   await reconcileDisappearedSuggestions({
     opportunity,
     currentAuditData: auditResult.brokenBacklinks,
