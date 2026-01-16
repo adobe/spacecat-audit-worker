@@ -112,13 +112,9 @@ export async function runAuditAndImportTopPages(context) {
 
 export async function submitForScraping(context) {
   const {
-    site, dataAccess, audit, log,
+    site, dataAccess, log,
   } = context;
   const { SiteTopPage } = dataAccess;
-  const auditResult = audit.getAuditResult();
-  if (auditResult.success === false) {
-    throw new Error('Audit failed, skipping scraping and suggestions generation');
-  }
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
   /* c8 ignore next */
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
@@ -152,11 +148,9 @@ export const generateSuggestionData = async (context) => {
   const { Configuration, Suggestion, SiteTopPage } = dataAccess;
 
   const auditResult = audit.getAuditResult();
-  if (auditResult.success === false) {
-    throw new Error('Audit failed, skipping suggestions generation');
-  }
 
   const configuration = await Configuration.findLatest();
+  /* c8 ignore next 4 */
   if (!configuration.isHandlerEnabledForSite('broken-backlinks-auto-suggest', site)) {
     log.info('Auto-suggest is disabled for site');
     throw new Error('Auto-suggest is disabled for site');

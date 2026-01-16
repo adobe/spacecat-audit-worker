@@ -326,15 +326,6 @@ describe('Backlinks Tests', function () {
       sandbox.restore();
     });
 
-    it('throws error if audit result is unsuccessful', async () => {
-      context.audit.getAuditResult.returns({ success: false });
-
-      try {
-        await generateSuggestionData(context);
-      } catch (error) {
-        expect(error.message).to.equal('Audit failed, skipping suggestions generation');
-      }
-    });
 
     it('throws error if auto-suggest is disabled for the site', async () => {
       context.audit.getAuditResult.returns({ success: true });
