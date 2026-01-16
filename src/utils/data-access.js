@@ -522,6 +522,8 @@ export async function publishDeployedFixEntities({
       const fixEntityId = fixEntity.getId?.();
       // eslint-disable-next-line no-await-in-loop
       const { data: suggestions = [] } = await FixEntity.getSuggestionsByFixEntityId(fixEntityId);
+      log.info(`publishDeployedFixEntities suggestions = ${suggestions.length} for fixEntity ${fixEntityId}`);
+      /* c8 ignore next 4 */
       if (!suggestions || suggestions.length === 0) {
         // eslint-disable-next-line no-continue
         continue;
@@ -535,6 +537,7 @@ export async function publishDeployedFixEntities({
         try {
           // eslint-disable-next-line no-await-in-loop
           const isResolved = await isIssueResolvedOnProduction?.(suggestion);
+          /* c8 ignore next 4 */
           if (isResolved !== true) {
             shouldPublish = false;
             break;

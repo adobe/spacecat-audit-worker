@@ -221,7 +221,7 @@ describe('utils/data-access', () => {
       },
     });
     const { publishDeployedFixEntities } = utils;
-    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
+    const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
     await publishDeployedFixEntities({
       opportunityId: 'op1',
       log,
@@ -255,7 +255,7 @@ describe('utils/data-access', () => {
       },
     });
     const { publishDeployedFixEntities } = utils;
-    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
+    const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
     let first = true;
     await publishDeployedFixEntities({
       opportunityId: 'op1',
