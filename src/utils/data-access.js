@@ -495,6 +495,7 @@ export async function publishDeployedFixEntities({
   isIssueResolvedOnProduction,
 }) {
   try {
+    log.info(`publishDeployedFixEntities for opportunityId ${opportunityId}`);
     const FixEntity = FixEntityDataAccess;
     if (!FixEntity?.STATUSES?.DEPLOYED || !FixEntity?.STATUSES?.PUBLISHED) {
       log.debug('FixEntity status constants not available; skipping publish.');
@@ -513,6 +514,7 @@ export async function publishDeployedFixEntities({
       opportunityId,
       deployedStatus,
     );
+    log.info(`publishDeployedFixEntities deployedFixEntities = ${deployedFixEntities.length} for opportunityId ${opportunityId}`);
     if (!Array.isArray(deployedFixEntities) || deployedFixEntities.length === 0) {
       return;
     }
