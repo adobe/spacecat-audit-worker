@@ -1,3 +1,10 @@
+## [1.284.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.2...v1.284.3) (2026-01-16)
+
+
+### Bug Fixes
+
+* prerender handle updated mystique SQS payload ([#1857](https://github.com/adobe/spacecat-audit-worker/issues/1857)) ([a1c21d5](https://github.com/adobe/spacecat-audit-worker/commit/a1c21d51a753fcd46a60e980b22f8265a6e3ef15))
+
 ## [1.284.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.1...v1.284.2) (2026-01-16)
 
 
