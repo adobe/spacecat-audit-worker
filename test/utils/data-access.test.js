@@ -326,11 +326,16 @@ describe('utils/data-access', () => {
     expect(fe.save).to.not.have.been.called;
   });
 
-  it('reconcileDisappearedSuggestions skips already FIXED suggestions', async () => {
+  it('reconcileDisappearedSuggestions only processes suggestions in NEW status', async () => {
     const fixedSuggestion = {
       getId: () => 'fixed-1',
       getStatus: () => 'FIXED',
       getData: () => ({ urlTo: 'https://example.com/fixed', urlsSuggested: ['https://example.com/target'] }),
+    };
+    const approvedSuggestion = {
+      getId: () => 'approved-1',
+      getStatus: () => 'APPROVED',
+      getData: () => ({ urlTo: 'https://example.com/approved', urlsSuggested: ['https://example.com/target2'] }),
     };
     const newCandidate = {
       getId: () => 'candidate-1',
@@ -343,7 +348,7 @@ describe('utils/data-access', () => {
     };
     const opportunity = {
       getId: () => 'oppty-1',
-      getSuggestions: sandbox.stub().resolves([fixedSuggestion, newCandidate]),
+      getSuggestions: sandbox.stub().resolves([fixedSuggestion, approvedSuggestion, newCandidate]),
       addFixEntities: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
     };
     const site = {
@@ -352,7 +357,7 @@ describe('utils/data-access', () => {
 
     utils = await esmock('../../src/utils/data-access.js', {
       '@adobe/spacecat-shared-data-access': {
-        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
+        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW', APPROVED: 'APPROVED' } },
         FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
       },
     });
@@ -361,7 +366,7 @@ describe('utils/data-access', () => {
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
     await reconcileDisappearedSuggestions({
       opportunity,
-      currentAuditData: [], // both suggestions are candidates (not in current data)
+      currentAuditData: [], // all suggestions are candidates (not in current data)
       buildKey: (d) => d.urlTo,
       getPagePath: (d) => d?.urlFrom,
       getUpdatedValue: (d) => d?.urlsSuggested?.[0],
@@ -373,8 +378,8 @@ describe('utils/data-access', () => {
       isIssueFixed: async () => true, // mark as fixed
     });
 
-    // fixedSuggestion should NOT be processed (already FIXED)
-    // newCandidate should be processed and marked as FIXED
+    // Only newCandidate (in NEW status) should be processed
+    // fixedSuggestion and approvedSuggestion should be skipped (not in NEW status)
     expect(newCandidate.setStatus).to.have.been.calledWith('FIXED');
     expect(newCandidate.save).to.have.been.calledOnce;
   });

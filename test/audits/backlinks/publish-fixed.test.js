@@ -30,6 +30,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
     const addFixEntities = sandbox.stub().resolves();
     const suggestion = {
       getId: () => 'sug-redirect',
+      getStatus: () => 'NEW',
       getType: () => 'REDIRECT_UPDATE',
       getData: () => ({
         url_from: 'https://from.com/page',
@@ -115,6 +116,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
     const addFixEntities = sandbox.stub().resolves();
     const suggestion = {
       getId: () => 'sug-null-data',
+      getStatus: () => 'NEW',
       getType: () => 'REDIRECT_UPDATE',
       getData: () => null,
       setStatus: sandbox.stub(),
@@ -194,6 +196,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
     const addFixEntities = sandbox.stub().resolves();
     const suggestion = {
       getId: () => 'sug-no-resp-url',
+      getStatus: () => 'NEW',
       getType: () => 'REDIRECT_UPDATE',
       getData: () => ({
         url_from: 'https://from.com/page',
@@ -277,6 +280,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
     const addFixEntities = sandbox.stub().resolves();
     const suggestion = {
       getId: () => 'sug-urledited',
+      getStatus: () => 'NEW',
       getType: () => 'REDIRECT_UPDATE',
       getData: () => ({
         url_from: 'https://from.com/page',
@@ -363,6 +367,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
     const addFixEntities = sandbox.stub().resolves();
     const suggestion = {
       getId: () => 'sug-empty-first',
+      getStatus: () => 'NEW',
       getType: () => 'REDIRECT_UPDATE',
       getData: () => ({
         url_from: 'https://from.com/page',
@@ -448,6 +453,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
     const addFixEntities = sandbox.stub().resolves();
     const suggestion = {
       getId: () => 'sug-net-err',
+      getStatus: () => 'NEW',
       getType: () => 'REDIRECT_UPDATE',
       getData: () => ({
         url_from: 'https://from.com/page',
@@ -531,6 +537,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
     const addFixEntities = sandbox.stub().resolves();
     const suggestion = {
       getId: () => 'sug-save-err',
+      getStatus: () => 'NEW',
       getType: () => 'REDIRECT_UPDATE',
       getData: () => ({
         url_from: 'https://from.com/page',
@@ -613,6 +620,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
     const addFixEntities = sandbox.stub().rejects(new Error('add-fail'));
     const suggestion = {
       getId: () => 'sug-add-err',
+      getStatus: () => 'NEW',
       getType: () => 'REDIRECT_UPDATE',
       getData: () => ({
         url_from: 'https://from.com/page',
@@ -695,6 +703,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
     const addFixEntities = sandbox.stub().resolves();
     const suggestion = {
       getId: () => 'sug-no-targets',
+      getStatus: () => 'NEW',
       getType: () => 'REDIRECT_UPDATE',
       getData: () => ({
         url_from: 'https://from.com/page',
@@ -846,6 +855,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
     const addFixEntities = sandbox.stub().resolves();
     const suggestion = {
       getId: () => 'sug-non-string',
+      getStatus: () => 'NEW',
       getType: () => 'REDIRECT_UPDATE',
       getData: () => ({
         url_from: 'https://from.com/page',
@@ -929,6 +939,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
     const addFixEntities = sandbox.stub().resolves();
     const suggestion = {
       getId: () => 'sug-missing-urlto',
+      getStatus: () => 'NEW',
       getType: () => 'REDIRECT_UPDATE',
       getData: () => ({
         url_from: 'https://from.com/page',
@@ -1011,6 +1022,7 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
     const addFixEntities = sandbox.stub().resolves();
     const suggestion = {
       getId: () => 'sug-build-fail',
+      getStatus: () => 'NEW',
       getType: () => { throw new Error('getType-fail'); }, // Throws when building fix entity payload
       getData: () => ({
         url_from: 'https://from.com/page',

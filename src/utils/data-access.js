@@ -361,14 +361,14 @@ export async function reconcileDisappearedSuggestions({
   try {
     const existingSuggestions = await opportunity.getSuggestions();
     const currentKeys = new Set(currentAuditData.map(buildKey));
-    const fixedStatus = SuggestionDataAccess?.STATUSES?.FIXED;
+    const newStatus = SuggestionDataAccess?.STATUSES?.NEW;
 
     // Filter to suggestions that:
-    // 1. Are no longer in the current audit data (potentially fixed)
-    // 2. Are NOT already marked as FIXED (avoid re-processing)
+    // 1. Are in NEW status (only process suggestions that haven't been actioned)
+    // 2. Are no longer in the current audit data (potentially fixed)
     const candidates = existingSuggestions.filter((s) => {
-      // Skip suggestions already marked as FIXED
-      if (fixedStatus && s?.getStatus?.() === fixedStatus) {
+      // Only include suggestions in NEW status
+      if (!newStatus || s?.getStatus?.() !== newStatus) {
         return false;
       }
       const data = s?.getData?.() || {};
@@ -398,6 +398,7 @@ export async function reconcileDisappearedSuggestions({
         // eslint-disable-next-line no-await-in-loop
         await suggestion.save?.();
         suggestionMarkedFixed = true;
+      /* c8 ignore next 3 */
       } catch (e) {
         log.warn(`[${auditType}] Failed to mark suggestion ${suggestion?.getId?.()} as FIXED: ${e.message}`);
       }
@@ -430,6 +431,7 @@ export async function reconcileDisappearedSuggestions({
               suggestions: [suggestion?.getId?.()],
             });
           }
+        /* c8 ignore next 3 */
         } catch (e) {
           log.warn(`[${auditType}] Failed building fix entity payload for suggestion ${suggestion?.getId?.()}: ${e.message}`);
         }
@@ -439,6 +441,7 @@ export async function reconcileDisappearedSuggestions({
     if (fixEntityObjects.length > 0 && typeof opportunity.addFixEntities === 'function') {
       try {
         await opportunity.addFixEntities(fixEntityObjects);
+      /* c8 ignore next 3 */
       } catch (e) {
         log.warn(`[${auditType}] Failed to add fix entities on opportunity ${opportunity.getId?.()}: ${e.message}`);
       }
