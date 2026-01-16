@@ -187,11 +187,19 @@ export async function submitForScraping(context) {
   log.info(`[${AUDIT_TYPE}] ====== Submit for Scraping Step ======`);
   log.info(`[${AUDIT_TYPE}] Site: ${site.getId()}, BaseURL: ${site.getBaseURL()}`);
 
-  // Fetch Ahrefs top pages
+  // Fetch Ahrefs top pages with error handling
   log.debug(`[${AUDIT_TYPE}] Fetching Ahrefs top pages from database...`);
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  const topPagesUrls = topPages.map((page) => page.getUrl());
-  log.info(`[${AUDIT_TYPE}] Found ${topPagesUrls.length} Ahrefs top pages`);
+  let topPages = [];
+  let topPagesUrls = [];
+  try {
+    topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    topPagesUrls = topPages.map((page) => page.getUrl());
+    log.info(`[${AUDIT_TYPE}] Found ${topPagesUrls.length} Ahrefs top pages`);
+  } catch (error) {
+    log.warn(`[${AUDIT_TYPE}] Failed to fetch Ahrefs top pages: ${error.message}`);
+    log.warn(`[${AUDIT_TYPE}] Continuing with only siteConfig includedURLs`);
+    topPagesUrls = [];
+  }
 
   // Get manual includedURLs from siteConfig
   log.debug(`[${AUDIT_TYPE}] Fetching includedURLs from siteConfig...`);
@@ -211,6 +219,7 @@ export async function submitForScraping(context) {
 
   if (finalUrls.length === 0) {
     log.error(`[${AUDIT_TYPE}] No URLs found for site ${site.getId()} - neither Ahrefs top pages nor includedURLs`);
+    log.error(`[${AUDIT_TYPE}] Please configure includedURLs in siteConfig for 'broken-internal-links' or ensure Ahrefs data is available`);
     throw new Error(`[${AUDIT_TYPE}] No URLs found for site neither top pages nor included URLs for ${site.getId()}`);
   }
 
