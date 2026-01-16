@@ -1,3 +1,10 @@
+## [1.284.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.1...v1.284.2) (2026-01-16)
+
+
+### Bug Fixes
+
+* removing headings from ASO ([#1861](https://github.com/adobe/spacecat-audit-worker/issues/1861)) ([df0152a](https://github.com/adobe/spacecat-audit-worker/commit/df0152a8fdc778abc475cc3a006c73d4c565a195))
+
 ## [1.284.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.0...v1.284.1) (2026-01-16)
 
 
