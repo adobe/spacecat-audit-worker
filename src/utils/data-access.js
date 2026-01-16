@@ -469,6 +469,7 @@ export async function reconcileDisappearedSuggestions({
  *
  * @param {Object} params - The parameters object
  * @param {string} params.opportunityId - The opportunity ID to process fix entities for
+ * @param {Object} params.dataAccess - Data access object containing FixEntity
  * @param {Object} params.log - Logger object for debug/warn messages
  * @param {function(Object): Promise<boolean>} params.isIssueResolvedOnProduction - Async predicate
  *   that receives a suggestion object and returns:
@@ -480,6 +481,7 @@ export async function reconcileDisappearedSuggestions({
  * @example
  * await publishDeployedFixEntities({
  *   opportunityId: opportunity.getId(),
+ *   dataAccess,
  *   log,
  *   isIssueResolvedOnProduction: async (suggestion) => {
  *     const url = suggestion?.getData?.()?.targetUrl;
@@ -491,16 +493,18 @@ export async function reconcileDisappearedSuggestions({
  */
 export async function publishDeployedFixEntities({
   opportunityId,
+  dataAccess,
   log,
   isIssueResolvedOnProduction,
 }) {
   try {
     log.info(`publishDeployedFixEntities for opportunityId ${opportunityId}`);
-    const FixEntity = FixEntityDataAccess;
+    const { FixEntity } = dataAccess;
     if (!FixEntity?.STATUSES?.DEPLOYED || !FixEntity?.STATUSES?.PUBLISHED) {
       log.info('FixEntity status constants not available; skipping publish.');
       return;
     }
+    /* c8 ignore next 5 */
     if (typeof FixEntity?.allByOpportunityIdAndStatus !== 'function'
       || typeof FixEntity?.getSuggestionsByFixEntityId !== 'function') {
       log.info('FixEntity APIs not available; skipping publish.');

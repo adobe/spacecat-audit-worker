@@ -132,16 +132,12 @@ describe('utils/data-access', () => {
   });
 
   it('publishDeployedFixEntities returns early when STATUSES missing', async () => {
-    utils = await esmock('../../src/utils/data-access.js', {
-      '@adobe/spacecat-shared-data-access': {
-        Suggestion: SuggestionDataAccess,
-        FixEntity: {},
-      },
-    });
-    const { publishDeployedFixEntities } = utils;
+    const { publishDeployedFixEntities } = await import('../../src/utils/data-access.js');
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
+    const dataAccess = { FixEntity: {} };
     await publishDeployedFixEntities({
       opportunityId: 'op1',
+      dataAccess,
       log,
       isIssueResolvedOnProduction: async () => true,
     });
@@ -149,21 +145,17 @@ describe('utils/data-access', () => {
   });
 
   it('publishDeployedFixEntities returns when no deployed fix entities', async () => {
+    const { publishDeployedFixEntities } = await import('../../src/utils/data-access.js');
     const FixEntity = {
       STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
       allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
       getSuggestionsByFixEntityId: sandbox.stub(),
     };
-    utils = await esmock('../../src/utils/data-access.js', {
-      '@adobe/spacecat-shared-data-access': {
-        Suggestion: SuggestionDataAccess,
-        FixEntity,
-      },
-    });
-    const { publishDeployedFixEntities } = utils;
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
+    const dataAccess = { FixEntity };
     await publishDeployedFixEntities({
       opportunityId: 'op1',
+      dataAccess,
       log,
       isIssueResolvedOnProduction: async () => true,
     });
@@ -171,6 +163,7 @@ describe('utils/data-access', () => {
   });
 
   it('publishDeployedFixEntities continues when fix has no suggestions', async () => {
+    const { publishDeployedFixEntities } = await import('../../src/utils/data-access.js');
     const fe = {
       getId: () => 'fe1',
       getStatus: () => 'DEPLOYED',
@@ -183,16 +176,11 @@ describe('utils/data-access', () => {
       allByOpportunityIdAndStatus: sandbox.stub().resolves([fe]),
       getSuggestionsByFixEntityId: sandbox.stub().resolves({ data: [] }),
     };
-    utils = await esmock('../../src/utils/data-access.js', {
-      '@adobe/spacecat-shared-data-access': {
-        Suggestion: SuggestionDataAccess,
-        FixEntity,
-      },
-    });
-    const { publishDeployedFixEntities } = utils;
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
+    const dataAccess = { FixEntity };
     await publishDeployedFixEntities({
       opportunityId: 'op1',
+      dataAccess,
       log,
       isIssueResolvedOnProduction: async () => true,
     });
@@ -200,6 +188,7 @@ describe('utils/data-access', () => {
   });
 
   it('publishDeployedFixEntities publishes when all suggestions are resolved', async () => {
+    const { publishDeployedFixEntities } = await import('../../src/utils/data-access.js');
     const fe = {
       getId: () => 'fe1',
       getStatus: () => 'DEPLOYED',
@@ -214,16 +203,11 @@ describe('utils/data-access', () => {
         data: [{}, {}],
       }),
     };
-    utils = await esmock('../../src/utils/data-access.js', {
-      '@adobe/spacecat-shared-data-access': {
-        Suggestion: SuggestionDataAccess,
-        FixEntity,
-      },
-    });
-    const { publishDeployedFixEntities } = utils;
+    const dataAccess = { FixEntity };
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
     await publishDeployedFixEntities({
       opportunityId: 'op1',
+      dataAccess,
       log,
       isIssueResolvedOnProduction: async () => true,
     });
@@ -234,6 +218,7 @@ describe('utils/data-access', () => {
   });
 
   it('publishDeployedFixEntities skips publish when any suggestion check throws', async () => {
+    const { publishDeployedFixEntities } = await import('../../src/utils/data-access.js');
     const fe = {
       getId: () => 'fe1',
       getStatus: () => 'DEPLOYED',
@@ -248,17 +233,12 @@ describe('utils/data-access', () => {
         data: [{}, {}],
       }),
     };
-    utils = await esmock('../../src/utils/data-access.js', {
-      '@adobe/spacecat-shared-data-access': {
-        Suggestion: SuggestionDataAccess,
-        FixEntity,
-      },
-    });
-    const { publishDeployedFixEntities } = utils;
+    const dataAccess = { FixEntity };
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
     let first = true;
     await publishDeployedFixEntities({
       opportunityId: 'op1',
+      dataAccess,
       log,
       isIssueResolvedOnProduction: async () => {
         if (first) {
@@ -273,21 +253,17 @@ describe('utils/data-access', () => {
   });
 
   it('publishDeployedFixEntities warns when outer flow throws', async () => {
+    const { publishDeployedFixEntities } = await import('../../src/utils/data-access.js');
     const FixEntity = {
       STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
       allByOpportunityIdAndStatus: sandbox.stub().rejects(new Error('db')),
       getSuggestionsByFixEntityId: sandbox.stub(),
     };
-    utils = await esmock('../../src/utils/data-access.js', {
-      '@adobe/spacecat-shared-data-access': {
-        Suggestion: SuggestionDataAccess,
-        FixEntity,
-      },
-    });
-    const { publishDeployedFixEntities } = utils;
+    const dataAccess = { FixEntity };
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
     await publishDeployedFixEntities({
       opportunityId: 'op1',
+      dataAccess,
       log,
       isIssueResolvedOnProduction: async () => true,
     });
@@ -295,6 +271,7 @@ describe('utils/data-access', () => {
   });
 
   it('publishDeployedFixEntities skips publish when suggestion is not resolved', async () => {
+    const { publishDeployedFixEntities } = await import('../../src/utils/data-access.js');
     const fe = {
       getId: () => 'fe1',
       getStatus: () => 'DEPLOYED',
@@ -309,16 +286,11 @@ describe('utils/data-access', () => {
         data: [{ id: 's1' }],
       }),
     };
-    utils = await esmock('../../src/utils/data-access.js', {
-      '@adobe/spacecat-shared-data-access': {
-        Suggestion: SuggestionDataAccess,
-        FixEntity,
-      },
-    });
-    const { publishDeployedFixEntities } = utils;
+    const dataAccess = { FixEntity };
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
     await publishDeployedFixEntities({
       opportunityId: 'op1',
+      dataAccess,
       log,
       isIssueResolvedOnProduction: async () => false, // issue NOT resolved
     });

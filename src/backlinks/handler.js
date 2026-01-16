@@ -214,6 +214,7 @@ export const generateSuggestionData = async (context) => {
   try {
     await publishDeployedFixEntities({
       opportunityId: opportunity.getId(),
+      dataAccess,
       log,
       isIssueResolvedOnProduction: async (suggestion) => {
         const url = suggestion?.getData?.()?.url_to;

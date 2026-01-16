@@ -268,6 +268,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   try {
     await publishDeployedFixEntities({
       opportunityId: opportunity.getId(),
+      dataAccess,
       log,
       isIssueResolvedOnProduction: async (suggestion) => {
         const urlTo = suggestion?.getData?.()?.urlTo;
