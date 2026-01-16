@@ -180,7 +180,7 @@ describe('utils/data-access', () => {
     const FixEntity = {
       STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
       allByOpportunityIdAndStatus: sandbox.stub().resolves([fe]),
-      getSuggestionsByFixEntityId: sandbox.stub().resolves({ data: [] }),
+      getSuggestionsByFixEntityId: sandbox.stub().resolves([]),
     };
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
     const dataAccess = { FixEntity };
@@ -205,9 +205,7 @@ describe('utils/data-access', () => {
     const FixEntity = {
       STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
       allByOpportunityIdAndStatus: sandbox.stub().resolves([fe]),
-      getSuggestionsByFixEntityId: sandbox.stub().resolves({
-        data: [{}, {}],
-      }),
+      getSuggestionsByFixEntityId: sandbox.stub().resolves([{}, {}]),
     };
     const dataAccess = { FixEntity };
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
@@ -235,9 +233,7 @@ describe('utils/data-access', () => {
     const FixEntity = {
       STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
       allByOpportunityIdAndStatus: sandbox.stub().resolves([fe]),
-      getSuggestionsByFixEntityId: sandbox.stub().resolves({
-        data: [{}, {}],
-      }),
+      getSuggestionsByFixEntityId: sandbox.stub().resolves([{}, {}]),
     };
     const dataAccess = { FixEntity };
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
@@ -288,9 +284,7 @@ describe('utils/data-access', () => {
     const FixEntity = {
       STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
       allByOpportunityIdAndStatus: sandbox.stub().resolves([fe]),
-      getSuggestionsByFixEntityId: sandbox.stub().resolves({
-        data: [{ id: 's1' }],
-      }),
+      getSuggestionsByFixEntityId: sandbox.stub().resolves([{ id: 's1' }]),
     };
     const dataAccess = { FixEntity };
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
