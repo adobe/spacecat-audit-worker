@@ -132,7 +132,13 @@ describe('utils/data-access', () => {
   });
 
   it('publishDeployedFixEntities returns early when STATUSES missing', async () => {
-    const { publishDeployedFixEntities } = await import('../../src/utils/data-access.js');
+    utils = await esmock('../../src/utils/data-access.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Suggestion: SuggestionDataAccess,
+        FixEntity: {}, // No STATUSES
+      },
+    });
+    const { publishDeployedFixEntities } = utils;
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
     const dataAccess = { FixEntity: {} };
     await publishDeployedFixEntities({

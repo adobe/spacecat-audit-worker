@@ -500,11 +500,10 @@ export async function publishDeployedFixEntities({
   try {
     log.info(`publishDeployedFixEntities for opportunityId ${opportunityId}`);
     const { FixEntity } = dataAccess;
-    if (!FixEntity?.STATUSES?.DEPLOYED || !FixEntity?.STATUSES?.PUBLISHED) {
+    if (!FixEntityDataAccess?.STATUSES?.DEPLOYED || !FixEntityDataAccess?.STATUSES?.PUBLISHED) {
       log.info('FixEntity status constants not available; skipping publish.');
       return;
     }
-    /* c8 ignore next 5 */
     if (typeof FixEntity?.allByOpportunityIdAndStatus !== 'function'
       || typeof FixEntity?.getSuggestionsByFixEntityId !== 'function') {
       log.info('FixEntity APIs not available; skipping publish.');
