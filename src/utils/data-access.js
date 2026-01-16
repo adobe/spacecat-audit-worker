@@ -360,7 +360,7 @@ export async function reconcileDisappearedSuggestions({
 }) {
   try {
     const existingSuggestions = await opportunity.getSuggestions();
-    const currentKeys = new Set(currentAuditData.map(buildKey));
+    const currentKeys = new Set(currentAuditData?.map(buildKey));
     const newStatus = SuggestionDataAccess?.STATUSES?.NEW;
 
     // Filter to suggestions that:
