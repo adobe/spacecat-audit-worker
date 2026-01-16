@@ -120,14 +120,17 @@ export async function submitForScraping(context) {
     throw new Error('Audit failed, skipping scraping and suggestions generation');
   }
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  /* c8 ignore next */
+  const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
+  const pageUrls = [...new Set([...topPages.map((page) => page.getUrl()), ...includedURLs])];
 
-  // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
+  // Filter URLs by audit scope (subpath/locale) if baseURL has a subpath
   const baseURL = site.getBaseURL();
-  const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
+  const filteredUrls = filterByAuditScope(pageUrls, baseURL, {}, log);
 
-  log.info(`Found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope`);
+  log.info(`Found ${topPages.length} top pages, ${filteredUrls.length} within audit scope`);
 
-  if (filteredTopPages.length === 0) {
+  if (filteredUrls.length === 0) {
     if (topPages.length === 0) {
       throw new Error(`No top pages found in database for site ${site.getId()}. Ahrefs import required.`);
     } else {
@@ -136,7 +139,7 @@ export async function submitForScraping(context) {
   }
 
   return {
-    urls: filteredTopPages.map((topPage) => ({ url: topPage.getUrl() })),
+    urls: filteredUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'broken-backlinks',
   };
