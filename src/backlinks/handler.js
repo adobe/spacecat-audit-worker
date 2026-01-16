@@ -155,6 +155,7 @@ export const generateSuggestionData = async (context) => {
     log.info('Auto-suggest is disabled for site');
     throw new Error('Auto-suggest is disabled for site');
   }
+  log.info('Inside generateSuggestionData');
 
   // Check if there are broken backlinks BEFORE creating opportunity
   if (!auditResult?.brokenBacklinks
