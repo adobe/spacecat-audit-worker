@@ -745,6 +745,42 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       );
     });
 
+    it('should treat "Not available" aiSummary as empty string (case-insensitive)', async () => {
+      mockFetchSuccess({
+        opportunityId: 'opportunity-123',
+        suggestions: [
+          { url: 'https://example.com/page1', aiSummary: 'Not available', valuable: true },
+          { url: 'https://example.com/page2', aiSummary: 'NOT AVAILABLE', valuable: true },
+          { url: 'https://example.com/page3', aiSummary: 'not available', valuable: false },
+        ],
+      });
+
+      const message = {
+        siteId: 'site-123',
+        auditId: 'audit-123',
+        data: {
+          presignedUrl: 'https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...',
+          opportunityId: 'opportunity-123',
+        },
+      };
+
+      await handler.default(message, context);
+
+      // Should treat "Not available" as empty string for better UX (case-insensitive)
+      // Note: page3 is OUTDATED so will be skipped, only 2 suggestions will be saved
+      expect(Suggestion._saveMany).to.have.been.calledOnce;
+      const savedSuggestions = Suggestion._saveMany.getCall(0).args[0];
+      expect(savedSuggestions).to.have.lengthOf(2);
+      
+      // Verify all variations are converted to empty string
+      expect(savedSuggestions[0].setData).to.have.been.calledWith(
+        sinon.match({ aiSummary: '' }),
+      );
+      expect(savedSuggestions[1].setData).to.have.been.calledWith(
+        sinon.match({ aiSummary: '' }),
+      );
+    });
+
     it('should handle suggestions with null getData() by defaulting to empty object', async () => {
       const getDataStub = sinon.stub();
       getDataStub.onFirstCall().returns({ url: 'https://example.com/page1' }); // For indexing

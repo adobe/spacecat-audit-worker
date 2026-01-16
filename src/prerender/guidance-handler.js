@@ -169,7 +169,8 @@ export default async function handler(message, context) {
       const currentData = existing.getData() || {};
       const updatedData = {
         ...currentData,
-        aiSummary: aiSummary || '',
+        // Treat "Not available" (case-insensitive) as empty string for better UX
+        aiSummary: (aiSummary && aiSummary.toLowerCase() !== 'not available') ? aiSummary : '',
         // Default to true if not provided, but respect explicit boolean from Mystique
         valuable: typeof valuable === 'boolean' ? valuable : true,
       };
