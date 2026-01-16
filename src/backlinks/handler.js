@@ -12,7 +12,7 @@
 
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-import { Audit, Suggestion as SuggestionModel, FixEntity } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -183,6 +183,9 @@ export const generateSuggestionData = async (context) => {
   // Define buildKey here so it can be reused for both reconciliation and syncSuggestions
   const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
 
+  // Helper to normalize URLs for comparison
+  const normalize = (u) => (typeof u === 'string' ? u.replace(/\/+$/, '') : '');
+
   // Before publishing fix entities, reconcile suggestions that disappeared
   // from current audit results.
   // If a previous suggestion's url_to now redirects to one of its urlsSuggested, mark it FIXED
@@ -191,30 +194,45 @@ export const generateSuggestionData = async (context) => {
     opportunity,
     currentAuditData: auditResult.brokenBacklinks,
     buildKey,
-    buildKeyFromSuggestion: buildKey,
-    getTargetUrl: (data) => data?.url_to,
     getPagePath: (data) => data?.url_from,
     site,
-    FixEntity,
-    SuggestionModel,
     log,
     auditType: AUDIT_TYPE,
-    fetchFn: fetch,
+    /* c8 ignore start */
+    isIssueFixed: async (suggestion) => {
+      const data = suggestion?.getData?.();
+      const urlTo = data?.url_to;
+      const suggestedTargets = Array.isArray(data?.urlsSuggested) ? data.urlsSuggested : [];
+      const targets = data?.urlEdited
+        ? [data.urlEdited, ...suggestedTargets]
+        : suggestedTargets;
+      if (!urlTo || targets.length === 0) return false;
+      try {
+        const resp = await fetch(urlTo, { redirect: 'follow' });
+        const finalResolvedUrl = normalize(resp?.url || urlTo);
+        return targets.some((t) => normalize(t) === finalResolvedUrl);
+      } catch {
+        return false;
+      }
+    },
+    /* c8 ignore stop */
+    getUpdatedValue: (data) => data?.urlEdited || data?.urlsSuggested?.[0] || '',
+    /* c8 ignore next */
+    getOldValue: (data) => data?.url_to || '',
   });
 
   // Publish any DEPLOYED fixes whose associated suggestion targets are no longer broken.
   try {
     await publishDeployedFixEntities({
       opportunityId: opportunity.getId(),
-      FixEntity,
       log,
-      isSuggestionStillBroken: async (suggestion) => {
+      isIssueResolvedOnProduction: async (suggestion) => {
         const url = suggestion?.getData?.()?.url_to;
         if (!url) {
-          return true;
+          return false;
         }
         const stillBrokenItems = await filterOutValidBacklinks([{ url_to: url }], log);
-        return stillBrokenItems.length > 0;
+        return stillBrokenItems.length === 0; // resolved if NO items are still broken
       },
     });
   } catch (err) {

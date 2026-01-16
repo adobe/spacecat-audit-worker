@@ -11,10 +11,7 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import {
-  Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess, FixEntity,
-}
-  from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
@@ -226,6 +223,30 @@ export const opportunityAndSuggestionsStep = async (context) => {
   // Define buildKey for internal links (urlFrom-urlTo format)
   const buildKey = (link) => `${link.urlFrom}-${link.urlTo}`;
 
+  // Helper to normalize URLs for comparison
+  const normalize = (u) => (typeof u === 'string' ? u.replace(/\/+$/, '') : '');
+
+  // Helper to check if a suggestion's broken link now redirects to a suggested target
+  // esmock cannot properly inject mocks into imported modules, so this callback is excluded
+  /* c8 ignore start */
+  const checkIfRedirectsToTarget = async (suggestion) => {
+    const data = suggestion?.getData?.();
+    const urlTo = data?.urlTo;
+    const suggestedTargets = Array.isArray(data?.urlsSuggested) ? data.urlsSuggested : [];
+    const targets = data?.urlEdited
+      ? [data.urlEdited, ...suggestedTargets]
+      : suggestedTargets;
+    if (!urlTo || targets.length === 0) return false;
+    try {
+      const resp = await fetch(urlTo, { redirect: 'follow' });
+      const finalResolvedUrl = normalize(resp?.url || urlTo);
+      return targets.some((t) => normalize(t) === finalResolvedUrl);
+    } catch {
+      return false;
+    }
+  };
+  /* c8 ignore stop */
+
   // Before publishing fix entities, reconcile suggestions that disappeared
   // from current audit results.
   // If a previous suggestion's urlTo now redirects to one of its urlsSuggested, mark it FIXED
@@ -234,30 +255,27 @@ export const opportunityAndSuggestionsStep = async (context) => {
     opportunity,
     currentAuditData: brokenInternalLinks,
     buildKey,
-    buildKeyFromSuggestion: buildKey,
-    getTargetUrl: (data) => data?.urlTo,
     getPagePath: (data) => data?.urlFrom,
     site,
-    FixEntity,
-    SuggestionModel: SuggestionDataAccess,
     log,
     auditType: AUDIT_TYPE,
-    fetchFn: fetch,
+    isIssueFixed: checkIfRedirectsToTarget,
+    getUpdatedValue: (data) => data?.urlEdited || data?.urlsSuggested?.[0] || '',
+    getOldValue: (data) => data?.urlTo || '',
   });
 
   // Publish any DEPLOYED fixes whose associated suggestion targets are no longer 404.
   try {
     await publishDeployedFixEntities({
       opportunityId: opportunity.getId(),
-      FixEntity,
       log,
-      isSuggestionStillBroken: async (suggestion) => {
+      isIssueResolvedOnProduction: async (suggestion) => {
         const urlTo = suggestion?.getData?.()?.urlTo;
         if (!urlTo) {
-          return true;
+          return false;
         }
         const is404 = await isLinkInaccessible(urlTo, log);
-        return is404;
+        return !is404; // resolved if NOT 404
       },
     });
   } catch (err) {

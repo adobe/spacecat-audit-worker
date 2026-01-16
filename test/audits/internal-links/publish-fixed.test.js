@@ -19,27 +19,12 @@ describe('internal-links: publish FIXED fix entities when target no longer 404',
   });
 
   it('publishes DEPLOYED fix entities to PUBLISHED for non-404 urlTo', async () => {
-    // Mock FixEntity (module import)
+    let capturedIsIssueResolvedOnProduction;
+    const publishDeployedFixEntitiesStub = sandbox.stub().callsFake(async ({ isIssueResolvedOnProduction }) => {
+      capturedIsIssueResolvedOnProduction = isIssueResolvedOnProduction;
+    });
+
     const dataAccessModule = await import('@adobe/spacecat-shared-data-access');
-    const deployed = 'DEPLOYED';
-    const published = 'PUBLISHED';
-    const fixEntitySave = sandbox.stub().resolves();
-    const fixEntity = {
-      getId: () => 'fix-1',
-      getStatus: () => deployed,
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: fixEntitySave,
-    };
-    const mockFixEntity = {
-      ...dataAccessModule.FixEntity,
-      STATUSES: { DEPLOYED: deployed, PUBLISHED: published },
-      allByOpportunityIdAndStatus: sandbox.stub().resolves([fixEntity]),
-      getSuggestionsByFixEntityId: sandbox.stub().resolves({
-        data: [{ getData: () => ({ urlTo: 'https://interlink-example.com/ok' }) }],
-        unprocessed: [],
-      }),
-    };
 
     const handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
@@ -57,40 +42,12 @@ describe('internal-links: publish FIXED fix entities when target no longer 404',
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixEntities: async ({
-          opportunityId, FixEntity, log, isSuggestionStillBroken,
-        }) => {
-          const fixes = await FixEntity.allByOpportunityIdAndStatus(opportunityId, FixEntity.STATUSES.DEPLOYED);
-          const tasks = [];
-          // eslint-disable-next-line no-restricted-syntax
-          for (const fe of fixes) {
-            // eslint-disable-next-line no-await-in-loop
-            const { data: suggestions } = await FixEntity.getSuggestionsByFixEntityId(fe.getId());
-            let publish = true;
-            // eslint-disable-next-line no-restricted-syntax
-            for (const s of suggestions) {
-              // eslint-disable-next-line no-await-in-loop
-              const stillBroken = await isSuggestionStillBroken(s);
-              if (stillBroken !== false) {
-                publish = false;
-                break;
-              }
-            }
-            if (publish && fe.getStatus() === FixEntity.STATUSES.DEPLOYED) {
-              tasks.push((async () => {
-                fe.setStatus(FixEntity.STATUSES.PUBLISHED);
-                fe.setUpdatedBy('system');
-                await fe.save();
-                log.debug('Published fix entity');
-              })());
-            }
-          }
-          await Promise.all(tasks);
-        },
+        reconcileDisappearedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: publishDeployedFixEntitiesStub,
       },
       '@adobe/spacecat-shared-data-access': {
         ...dataAccessModule,
-        FixEntity: mockFixEntity,
+        Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED' } },
       },
     });
 
@@ -136,34 +93,24 @@ describe('internal-links: publish FIXED fix entities when target no longer 404',
 
     const result = await handler.opportunityAndSuggestionsStep(context);
     expect(result).to.deep.equal({ status: 'complete' });
-    expect(mockFixEntity.allByOpportunityIdAndStatus).to.have.been.calledOnceWith('oppty-1', deployed);
-    expect(mockFixEntity.getSuggestionsByFixEntityId).to.have.been.calledOnceWith('fix-1');
-    expect(fixEntity.setStatus).to.have.been.calledOnceWith(published);
-    expect(fixEntity.setUpdatedBy).to.have.been.calledOnceWith('system');
-    expect(fixEntitySave).to.have.been.calledOnce;
+
+    // Verify publishDeployedFixEntities was called
+    expect(publishDeployedFixEntitiesStub).to.have.been.calledOnce;
+
+    // Test the captured callback - urlTo is not 404, so issue is resolved
+    const suggestion = { getData: () => ({ urlTo: 'https://interlink-example.com/ok' }) };
+    const isResolved = await capturedIsIssueResolvedOnProduction(suggestion);
+    // isLinkInaccessible returns false (not 404), so !is404 means resolved = true
+    expect(isResolved).to.equal(true);
   });
 
   it('skips publish when suggestion urlTo is missing', async () => {
+    let capturedIsIssueResolvedOnProduction;
+    const publishDeployedFixEntitiesStub = sandbox.stub().callsFake(async ({ isIssueResolvedOnProduction }) => {
+      capturedIsIssueResolvedOnProduction = isIssueResolvedOnProduction;
+    });
+
     const dataAccessModule = await import('@adobe/spacecat-shared-data-access');
-    const deployed = 'DEPLOYED';
-    const published = 'PUBLISHED';
-    const fixEntitySave = sandbox.stub().resolves();
-    const fixEntity = {
-      getId: () => 'fix-1',
-      getStatus: () => deployed,
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: fixEntitySave,
-    };
-    const mockFixEntity = {
-      ...dataAccessModule.FixEntity,
-      STATUSES: { DEPLOYED: deployed, PUBLISHED: published },
-      allByOpportunityIdAndStatus: sandbox.stub().resolves([fixEntity]),
-      getSuggestionsByFixEntityId: sandbox.stub().resolves({
-        data: [{ getData: () => ({}) }], // missing urlTo
-        unprocessed: [],
-      }),
-    };
 
     const handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
@@ -181,40 +128,12 @@ describe('internal-links: publish FIXED fix entities when target no longer 404',
         calculatePriority: (arr) => arr,
       },
       '../../../src/utils/data-access.js': {
-        publishDeployedFixEntities: async ({
-          opportunityId, FixEntity, log, isSuggestionStillBroken,
-        }) => {
-          const fixes = await FixEntity.allByOpportunityIdAndStatus(opportunityId, FixEntity.STATUSES.DEPLOYED);
-          const tasks = [];
-          // eslint-disable-next-line no-restricted-syntax
-          for (const fe of fixes) {
-            // eslint-disable-next-line no-await-in-loop
-            const { data: suggestions } = await FixEntity.getSuggestionsByFixEntityId(fe.getId());
-            let publish = true;
-            // eslint-disable-next-line no-restricted-syntax
-            for (const s of suggestions) {
-              // eslint-disable-next-line no-await-in-loop
-              const stillBroken = await isSuggestionStillBroken(s);
-              if (stillBroken !== false) {
-                publish = false;
-                break;
-              }
-            }
-            if (publish && fe.getStatus() === FixEntity.STATUSES.DEPLOYED) {
-              tasks.push((async () => {
-                fe.setStatus(FixEntity.STATUSES.PUBLISHED);
-                fe.setUpdatedBy('system');
-                await fe.save();
-                log.debug('Published fix entity');
-              })());
-            }
-          }
-          await Promise.all(tasks);
-        },
+        reconcileDisappearedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: publishDeployedFixEntitiesStub,
       },
       '@adobe/spacecat-shared-data-access': {
         ...dataAccessModule,
-        FixEntity: mockFixEntity,
+        Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED' } },
       },
     });
 
@@ -259,8 +178,14 @@ describe('internal-links: publish FIXED fix entities when target no longer 404',
 
     const result = await handler.opportunityAndSuggestionsStep(context);
     expect(result).to.deep.equal({ status: 'complete' });
-    expect(mockFixEntity.allByOpportunityIdAndStatus).to.have.been.calledOnceWith('oppty-1', deployed);
-    expect(mockFixEntity.getSuggestionsByFixEntityId).to.have.been.calledOnceWith('fix-1');
-    expect(fixEntity.setStatus).to.not.have.been.called;
+
+    // Verify publishDeployedFixEntities was called
+    expect(publishDeployedFixEntitiesStub).to.have.been.calledOnce;
+
+    // Test the captured callback - when urlTo is missing, issue is not resolved
+    const suggestion = { getData: () => ({}) }; // missing urlTo
+    const isResolved = await capturedIsIssueResolvedOnProduction(suggestion);
+    // When urlTo is missing, handler returns false (not resolved)
+    expect(isResolved).to.equal(false);
   });
 });

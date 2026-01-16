@@ -1107,25 +1107,12 @@ describe('backlinks: publish FIXED fix entities when url_to no longer broken', (
   });
 
   it('publishes DEPLOYED fix entities to PUBLISHED for non-broken url_to', async () => {
-    const deployed = 'DEPLOYED';
-    const published = 'PUBLISHED';
-    const fixSave = sandbox.stub().resolves();
-    const fixEntity = {
-      getId: () => 'fix-1',
-      getStatus: () => deployed,
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: fixSave,
-    };
+    let capturedIsIssueResolvedOnProduction;
+    const publishDeployedFixEntitiesStub = sandbox.stub().callsFake(async ({ isIssueResolvedOnProduction }) => {
+      capturedIsIssueResolvedOnProduction = isIssueResolvedOnProduction;
+    });
 
     const shared = await import('@adobe/spacecat-shared-data-access');
-    const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([fixEntity]);
-    const getSuggestionsByFixEntityIdStub = sandbox.stub().resolves({
-      data: [
-        { getData: () => ({ url_to: 'https://backlinks-example.com/ok' }) },
-      ],
-      unprocessed: [],
-    });
 
     handler = await esmock('../../../src/backlinks/handler.js', {
       // Make filterOutValidBacklinks think URL is healthy by making fetch ok
@@ -1134,47 +1121,15 @@ describe('backlinks: publish FIXED fix entities when url_to no longer broken', (
       },
       '@adobe/spacecat-shared-data-access': {
         ...shared,
-        FixEntity: {
-          STATUSES: { DEPLOYED: deployed, PUBLISHED: published },
-          allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub,
-          getSuggestionsByFixEntityId: getSuggestionsByFixEntityIdStub,
-        },
+        Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED' } },
       },
       '../../../src/backlinks/kpi-metrics.js': {
         default: sandbox.stub().resolves({}), // calculateKpiMetrics
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: async ({
-          opportunityId, FixEntity, log, isSuggestionStillBroken,
-        }) => {
-          const fixes = await FixEntity.allByOpportunityIdAndStatus(opportunityId, FixEntity.STATUSES.DEPLOYED);
-          const tasks = [];
-          // eslint-disable-next-line no-restricted-syntax
-          for (const fe of fixes) {
-            // eslint-disable-next-line no-await-in-loop
-            const { data: suggestions } = await FixEntity.getSuggestionsByFixEntityId(fe.getId());
-            let publish = true;
-            // eslint-disable-next-line no-restricted-syntax
-            for (const s of suggestions) {
-              // eslint-disable-next-line no-await-in-loop
-              const stillBroken = await isSuggestionStillBroken(s);
-              if (stillBroken !== false) {
-                publish = false;
-                break;
-              }
-            }
-            if (publish && fe.getStatus() === FixEntity.STATUSES.DEPLOYED) {
-              tasks.push((async () => {
-                fe.setStatus(FixEntity.STATUSES.PUBLISHED);
-                fe.setUpdatedBy('system');
-                await fe.save();
-                log.debug('Published fix entity');
-              })());
-            }
-          }
-          await Promise.all(tasks);
-        },
+        reconcileDisappearedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: publishDeployedFixEntitiesStub,
       },
       '../../../src/common/opportunity.js': {
         convertToOpportunity: sandbox.stub().resolves({
@@ -1229,12 +1184,15 @@ describe('backlinks: publish FIXED fix entities when url_to no longer broken', (
     const result = await handler.generateSuggestionData(context);
     expect(result).to.deep.equal({ status: 'complete' });
 
-    // Verify publish happened
-    expect(allByOpportunityIdAndStatusStub).to.have.been.calledOnceWith('oppty-1', deployed);
-    expect(getSuggestionsByFixEntityIdStub).to.have.been.calledOnceWith('fix-1');
-    expect(fixEntity.setStatus).to.have.been.calledOnceWith(published);
-    expect(fixEntity.setUpdatedBy).to.have.been.calledOnceWith('system');
-    expect(fixSave).to.have.been.calledOnce;
+    // Verify publishDeployedFixEntities was called
+    expect(publishDeployedFixEntitiesStub).to.have.been.calledOnce;
+
+    // Test the captured callback - when URL is healthy (returns ok), issue is resolved
+    const suggestion = { getData: () => ({ url_to: 'https://backlinks-example.com/ok' }) };
+    const isResolved = await capturedIsIssueResolvedOnProduction(suggestion);
+    // filterOutValidBacklinks returns empty array for healthy URL, so stillBroken.length === 0, so returns true
+    expect(isResolved).to.equal(true);
+
     // Verify SQS was sent once with valid structure
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
 
@@ -1243,40 +1201,25 @@ describe('backlinks: publish FIXED fix entities when url_to no longer broken', (
   });
 
   it('skips fixed suggestion when url_to is missing (continue path)', async () => {
-    const deployed = 'DEPLOYED';
-    const published = 'PUBLISHED';
-    const fixSave = sandbox.stub().resolves();
-    const fixEntity = {
-      getId: () => 'fix-1',
-      getStatus: () => deployed,
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: fixSave,
-    };
+    let capturedIsIssueResolvedOnProduction;
+    const publishDeployedFixEntitiesStub = sandbox.stub().callsFake(async ({ isIssueResolvedOnProduction }) => {
+      capturedIsIssueResolvedOnProduction = isIssueResolvedOnProduction;
+    });
 
     const shared = await import('@adobe/spacecat-shared-data-access');
-    const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([fixEntity]);
-    const getSuggestionsByFixEntityIdStub = sandbox.stub().resolves({
-      data: [
-        { getData: () => ({}) }, // missing url_to
-      ],
-      unprocessed: [],
-    });
 
     handler = await esmock('../../../src/backlinks/handler.js', {
       '@adobe/spacecat-shared-data-access': {
         ...shared,
-        FixEntity: {
-          STATUSES: { DEPLOYED: deployed, PUBLISHED: published },
-          allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub,
-          getSuggestionsByFixEntityId: getSuggestionsByFixEntityIdStub,
-        },
+        Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED' } },
       },
       '../../../src/backlinks/kpi-metrics.js': {
         default: sandbox.stub().resolves({}), // calculateKpiMetrics
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: sandbox.stub().resolves(),
+        reconcileDisappearedSuggestions: sandbox.stub().resolves(),
+        publishDeployedFixEntities: publishDeployedFixEntitiesStub,
       },
       '../../../src/common/opportunity.js': {
         convertToOpportunity: sandbox.stub().resolves({
@@ -1330,10 +1273,15 @@ describe('backlinks: publish FIXED fix entities when url_to no longer broken', (
     const result = await handler.generateSuggestionData(context);
     expect(result).to.deep.equal({ status: 'complete' });
 
-    // Since url_to was missing, FixEntity publishing was never attempted
-    expect(allByOpportunityIdAndStatusStub).to.have.been.calledOnceWith('oppty-1', deployed);
-    expect(getSuggestionsByFixEntityIdStub).to.have.been.calledOnceWith('fix-1');
-    expect(fixEntity.setStatus).to.not.have.been.called;
+    // Verify publishDeployedFixEntities was called
+    expect(publishDeployedFixEntitiesStub).to.have.been.calledOnce;
+
+    // Test the captured callback - when url_to is missing, issue is not resolved
+    const suggestion = { getData: () => ({}) }; // missing url_to
+    const isResolved = await capturedIsIssueResolvedOnProduction(suggestion);
+    // When url_to is missing, handler returns false (not resolved)
+    expect(isResolved).to.equal(false);
+
     // But SQS should still be sent for NEW suggestions flow
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
 

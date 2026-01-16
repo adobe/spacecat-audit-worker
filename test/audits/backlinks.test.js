@@ -617,6 +617,7 @@ describe('Backlinks Tests', function () {
       // Re-import handler with failing publish helper
       const handler = await (await import('esmock')).default('../../src/backlinks/handler.js', {
         '../../src/utils/data-access.js': {
+          reconcileDisappearedSuggestions: sandbox.stub().resolves(),
           publishDeployedFixEntities: sandbox.stub().rejects(new Error('boom')),
           syncSuggestions: async (...args) => (await import('../../src/utils/data-access.js')).syncSuggestions(...args),
         },
