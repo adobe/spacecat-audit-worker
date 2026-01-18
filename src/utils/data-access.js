@@ -498,15 +498,14 @@ export async function publishDeployedFixEntities({
   isIssueResolvedOnProduction,
 }) {
   try {
-    log.info(`publishDeployedFixEntities for opportunityId ${opportunityId}`);
     const { FixEntity } = dataAccess;
     if (!FixEntityDataAccess?.STATUSES?.DEPLOYED || !FixEntityDataAccess?.STATUSES?.PUBLISHED) {
-      log.info('FixEntity status constants not available; skipping publish.');
+      log.debug('FixEntity status constants not available; skipping publish.');
       return;
     }
     if (typeof FixEntity?.allByOpportunityIdAndStatus !== 'function'
       || typeof FixEntity?.getSuggestionsByFixEntityId !== 'function') {
-      log.info('FixEntity APIs not available; skipping publish.');
+      log.debug('FixEntity APIs not available; skipping publish.');
       return;
     }
 
@@ -517,7 +516,6 @@ export async function publishDeployedFixEntities({
       opportunityId,
       deployedStatus,
     );
-    log.info(`publishDeployedFixEntities deployedFixEntities = ${deployedFixEntities.length} for opportunityId ${opportunityId}`);
     if (!Array.isArray(deployedFixEntities) || deployedFixEntities.length === 0) {
       return;
     }
@@ -527,8 +525,6 @@ export async function publishDeployedFixEntities({
       const fixEntityId = fixEntity.getId?.();
       // eslint-disable-next-line no-await-in-loop
       const suggestions = await FixEntity.getSuggestionsByFixEntityId(fixEntityId);
-      log.info(`publishDeployedFixEntities suggestions = ${suggestions.length} for fixEntity ${fixEntityId}`);
-      /* c8 ignore next 4 */
       if (!suggestions || suggestions.length === 0) {
         // eslint-disable-next-line no-continue
         continue;
@@ -542,7 +538,6 @@ export async function publishDeployedFixEntities({
         try {
           // eslint-disable-next-line no-await-in-loop
           const isResolved = await isIssueResolvedOnProduction?.(suggestion);
-          /* c8 ignore next 4 */
           if (isResolved !== true) {
             shouldPublish = false;
             break;

@@ -326,6 +326,15 @@ describe('Backlinks Tests', function () {
       sandbox.restore();
     });
 
+    it('throws error if audit result is unsuccessful', async () => {
+      context.audit.getAuditResult.returns({ success: false });
+
+      try {
+        await generateSuggestionData(context);
+      } catch (error) {
+        expect(error.message).to.equal('Audit failed, skipping suggestions generation');
+      }
+    });
 
     it('throws error if auto-suggest is disabled for the site', async () => {
       context.audit.getAuditResult.returns({ success: true });
@@ -336,6 +345,42 @@ describe('Backlinks Tests', function () {
       } catch (error) {
         expect(error.message).to.equal('Auto-suggest is disabled for site');
       }
+    });
+
+    it('returns { status: complete } if there are no broken backlinks in audit result', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: [],
+      });
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/No broken backlinks found/));
+    });
+
+    it('returns { status: complete } if brokenBacklinks is null', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: null,
+      });
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+    });
+
+    it('returns { status: complete } if brokenBacklinks is undefined', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+      });
+
+      const result = await generateSuggestionData(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
     });
 
     it('processes suggestions for broken backlinks and send message to mystique', async () => {

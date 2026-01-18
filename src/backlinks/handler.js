@@ -112,21 +112,22 @@ export async function runAuditAndImportTopPages(context) {
 
 export async function submitForScraping(context) {
   const {
-    site, dataAccess, log,
+    site, dataAccess, audit, log,
   } = context;
   const { SiteTopPage } = dataAccess;
+  const auditResult = audit.getAuditResult();
+  if (auditResult.success === false) {
+    throw new Error('Audit failed, skipping scraping and suggestions generation');
+  }
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  /* c8 ignore next */
-  const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
-  const pageUrls = [...new Set([...topPages.map((page) => page.getUrl()), ...includedURLs])];
 
-  // Filter URLs by audit scope (subpath/locale) if baseURL has a subpath
+  // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
   const baseURL = site.getBaseURL();
-  const filteredUrls = filterByAuditScope(pageUrls, baseURL, {}, log);
+  const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
 
-  log.info(`Found ${topPages.length} top pages, ${filteredUrls.length} within audit scope`);
+  log.info(`Found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope`);
 
-  if (filteredUrls.length === 0) {
+  if (filteredTopPages.length === 0) {
     if (topPages.length === 0) {
       throw new Error(`No top pages found in database for site ${site.getId()}. Ahrefs import required.`);
     } else {
@@ -135,7 +136,7 @@ export async function submitForScraping(context) {
   }
 
   return {
-    urls: filteredUrls.map((url) => ({ url })),
+    urls: filteredTopPages.map((topPage) => ({ url: topPage.getUrl() })),
     siteId: site.getId(),
     type: 'broken-backlinks',
   };
@@ -148,14 +149,25 @@ export const generateSuggestionData = async (context) => {
   const { Configuration, Suggestion, SiteTopPage } = dataAccess;
 
   const auditResult = audit.getAuditResult();
+  if (auditResult.success === false) {
+    throw new Error('Audit failed, skipping suggestions generation');
+  }
 
   const configuration = await Configuration.findLatest();
-  /* c8 ignore next 4 */
   if (!configuration.isHandlerEnabledForSite('broken-backlinks-auto-suggest', site)) {
     log.info('Auto-suggest is disabled for site');
     throw new Error('Auto-suggest is disabled for site');
   }
-  log.info('Inside generateSuggestionData');
+
+  // Check if there are broken backlinks BEFORE creating opportunity
+  if (!auditResult?.brokenBacklinks
+    || !Array.isArray(auditResult.brokenBacklinks)
+    || auditResult.brokenBacklinks.length === 0) {
+    log.info(`No broken backlinks found for ${site.getId()}, skipping opportunity creation`);
+    return {
+      status: 'complete',
+    };
+  }
 
   const kpiDeltas = await calculateKpiMetrics(audit, context, site);
 
@@ -178,7 +190,6 @@ export const generateSuggestionData = async (context) => {
   // from current audit results.
   // If a previous suggestion's url_to now redirects to one of its urlsSuggested, mark it FIXED
   // and ensure a PUBLISHED fix entity exists.
-  log.info(`reconcileDisappearedSuggestions for ${site.getId()}`);
   await reconcileDisappearedSuggestions({
     opportunity,
     currentAuditData: auditResult.brokenBacklinks,

@@ -147,7 +147,7 @@ describe('utils/data-access', () => {
       log,
       isIssueResolvedOnProduction: async () => true,
     });
-    expect(log.info).to.have.been.calledWith(sinon.match(/status constants not available/));
+    expect(log.debug).to.have.been.calledWith(sinon.match(/status constants not available/));
   });
 
   it('publishDeployedFixEntities returns when no deployed fix entities', async () => {
@@ -157,7 +157,7 @@ describe('utils/data-access', () => {
       allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
       getSuggestionsByFixEntityId: sandbox.stub(),
     };
-    const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
+    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
     const dataAccess = { FixEntity };
     await publishDeployedFixEntities({
       opportunityId: 'op1',
@@ -182,7 +182,7 @@ describe('utils/data-access', () => {
       allByOpportunityIdAndStatus: sandbox.stub().resolves([fe]),
       getSuggestionsByFixEntityId: sandbox.stub().resolves([]),
     };
-    const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
+    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
     const dataAccess = { FixEntity };
     await publishDeployedFixEntities({
       opportunityId: 'op1',
@@ -208,7 +208,7 @@ describe('utils/data-access', () => {
       getSuggestionsByFixEntityId: sandbox.stub().resolves([{}, {}]),
     };
     const dataAccess = { FixEntity };
-    const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
+    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
     await publishDeployedFixEntities({
       opportunityId: 'op1',
       dataAccess,
@@ -236,7 +236,7 @@ describe('utils/data-access', () => {
       getSuggestionsByFixEntityId: sandbox.stub().resolves([{}, {}]),
     };
     const dataAccess = { FixEntity };
-    const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
+    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
     let first = true;
     await publishDeployedFixEntities({
       opportunityId: 'op1',
@@ -262,7 +262,7 @@ describe('utils/data-access', () => {
       getSuggestionsByFixEntityId: sandbox.stub(),
     };
     const dataAccess = { FixEntity };
-    const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
+    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
     await publishDeployedFixEntities({
       opportunityId: 'op1',
       dataAccess,
@@ -287,7 +287,7 @@ describe('utils/data-access', () => {
       getSuggestionsByFixEntityId: sandbox.stub().resolves([{ id: 's1' }]),
     };
     const dataAccess = { FixEntity };
-    const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
+    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
     await publishDeployedFixEntities({
       opportunityId: 'op1',
       dataAccess,
