@@ -1399,6 +1399,61 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       expect(context.log.debug).to.have.been.calledWith(sinon.match(/Manual includedURLs:.*\.\.\./));
     });
+
+    it('should resolve redirects before submitting URLs for scraping', async () => {
+      // Mock fetch for redirect resolution
+      const fetchStub = sandbox.stub();
+      // First URL redirects
+      fetchStub.withArgs('https://example.com/redirect1').resolves({
+        ok: true,
+        url: 'https://example.com/final1',
+      });
+      // Second URL doesn't redirect
+      fetchStub.withArgs('https://example.com/page2').resolves({
+        ok: true,
+        url: 'https://example.com/page2',
+      });
+      // Third URL has error
+      fetchStub.withArgs('https://example.com/error').resolves({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+      });
+
+      // Temporarily replace global fetch
+      const originalFetch = global.fetch;
+      global.fetch = fetchStub;
+
+      try {
+        context.dataAccess.SiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/redirect1' },
+          ]),
+        };
+
+        context.site.getConfig = sandbox.stub().returns({
+          getIncludedURLs: sandbox.stub().returns(['https://example.com/page2', 'https://example.com/error']),
+        });
+
+        const result = await submitForScraping(context);
+
+        expect(result.urls).to.deep.equal([
+          { url: 'https://example.com/final1' }, // Redirect resolved
+          { url: 'https://example.com/page2' },  // No redirect
+        ]);
+
+        expect(context.log.debug).to.have.been.calledWith(
+          sinon.match(/Redirect resolved: https:\/\/example\.com\/redirect1 -> https:\/\/example\.com\/final1/),
+        );
+        expect(context.log.warn).to.have.been.calledWith(
+          sinon.match(/URL returned error status 404: https:\/\/example\.com\/error/),
+        );
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Redirect resolution completed/));
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Resolved 2 URLs, 1 errors/));
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
   });
 
   describe('runCrawlDetectionAndGenerateSuggestions', () => {

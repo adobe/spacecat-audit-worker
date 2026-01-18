@@ -243,8 +243,55 @@ export async function submitForScraping(context) {
 
   log.info(`[${AUDIT_TYPE}] Merged URLs: ${topPagesUrls.length} (Ahrefs) + ${includedURLs.length} (manual) = ${finalUrls.length} unique (${duplicatesRemoved} duplicates removed)`);
 
-  if (finalUrls.length === 0) {
-    log.warn(`[${AUDIT_TYPE}] No URLs found for site ${site.getId()} - neither Ahrefs top pages nor includedURLs available`);
+  // Resolve redirects before submitting for scraping
+  log.info(`[${AUDIT_TYPE}] Resolving redirects for ${finalUrls.length} URLs...`);
+  const redirectResolutionStart = Date.now();
+
+  const resolvedUrls = [];
+  const redirectErrors = [];
+
+  for (const url of finalUrls) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const response = await fetch(url, {
+        redirect: 'follow',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; SpaceCat/1.0)',
+        },
+      });
+
+      if (response.ok) {
+        const finalUrl = response.url;
+        if (finalUrl !== url) {
+          log.debug(`[${AUDIT_TYPE}] Redirect resolved: ${url} -> ${finalUrl}`);
+        }
+        resolvedUrls.push(finalUrl);
+      } else {
+        log.warn(`[${AUDIT_TYPE}] URL returned error status ${response.status}: ${url}`);
+        redirectErrors.push({ url, status: response.status, reason: response.statusText });
+      }
+    } catch (error) {
+      log.warn(`[${AUDIT_TYPE}] Failed to resolve redirects for ${url}: ${error.message}`);
+      redirectErrors.push({ url, error: error.message });
+      // Keep original URL if redirect resolution fails
+      resolvedUrls.push(url);
+    }
+  }
+
+  const redirectResolutionDuration = Date.now() - redirectResolutionStart;
+  log.info(`[${AUDIT_TYPE}] Redirect resolution completed in ${redirectResolutionDuration}ms`);
+  log.info(`[${AUDIT_TYPE}] Resolved ${resolvedUrls.length} URLs, ${redirectErrors.length} errors`);
+
+  // Remove duplicates after redirect resolution
+  const uniqueResolvedUrls = [...new Set(resolvedUrls)];
+  const finalDuplicatesRemoved = resolvedUrls.length - uniqueResolvedUrls.length;
+
+  if (finalDuplicatesRemoved > 0) {
+    log.info(`[${AUDIT_TYPE}] Removed ${finalDuplicatesRemoved} duplicates after redirect resolution`);
+  }
+
+  if (uniqueResolvedUrls.length === 0) {
+    log.warn(`[${AUDIT_TYPE}] No URLs found for site ${site.getId()} after redirect resolution - neither Ahrefs top pages nor includedURLs available`);
     log.warn(`[${AUDIT_TYPE}] Audit will proceed with RUM-only detection. Consider configuring includedURLs in siteConfig for enhanced crawl-based detection`);
     log.info(`[${AUDIT_TYPE}] Submitting empty URL list for scraping (will fallback to RUM-only results)`);
     log.info(`[${AUDIT_TYPE}] =======================================`);
@@ -259,12 +306,12 @@ export async function submitForScraping(context) {
   }
 
   // Filter out PDF and other unscrape-able files before scraping
-  const filteredUrls = finalUrls.filter((url) => !isUnscrapeable(url));
-  const unscrapeable = finalUrls.length - filteredUrls.length;
+  const filteredUrls = uniqueResolvedUrls.filter((url) => !isUnscrapeable(url));
+  const unscrapeable = uniqueResolvedUrls.length - filteredUrls.length;
 
   if (unscrapeable > 0) {
     log.info(`[${AUDIT_TYPE}] Filtered out ${unscrapeable} unscrape-able files (PDFs, Office docs, etc.)`);
-    log.debug(`[${AUDIT_TYPE}] Scrapeable URLs: ${filteredUrls.length}/${finalUrls.length}`);
+    log.debug(`[${AUDIT_TYPE}] Scrapeable URLs: ${filteredUrls.length}/${uniqueResolvedUrls.length}`);
   }
 
   log.info(`[${AUDIT_TYPE}] Submitting ${filteredUrls.length} URLs for scraping`);
