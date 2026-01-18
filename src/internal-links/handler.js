@@ -32,6 +32,33 @@ const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 /**
+ * Updates the audit result with prioritized broken internal links.
+ *
+ * @param {Object} audit - The audit object
+ * @param {Object} auditResult - The current audit result
+ * @param {Array} prioritizedLinks - Array of prioritized broken links
+ * @param {Object} log - Logger instance
+ */
+export async function updateAuditResult(audit, auditResult, prioritizedLinks, log) {
+  try {
+    const auditId = audit.getId();
+    const auditToUpdate = await Audit.findById(auditId);
+    if (auditToUpdate) {
+      auditToUpdate.setAuditResult({
+        ...auditResult,
+        brokenInternalLinks: prioritizedLinks,
+      });
+      await auditToUpdate.save();
+      log.info(`[${AUDIT_TYPE}] Updated audit result with ${prioritizedLinks.length} prioritized broken links`);
+    } else {
+      log.warn(`[${AUDIT_TYPE}] Audit not found for ID: ${auditId}, skipping result update`);
+    }
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}] Failed to update audit result: ${error.message}`);
+  }
+}
+
+/**
  * Perform an audit to check which internal links for domain are broken.
  *
  * @async
@@ -527,22 +554,7 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
   log.info(`[${AUDIT_TYPE}] Priority distribution: ${highPriority} high, ${mediumPriority} medium, ${lowPriority} low`);
 
   // Update audit result with prioritized links
-  try {
-    const auditId = audit.getId();
-    const auditToUpdate = await Audit.findById(auditId);
-    if (auditToUpdate) {
-      auditToUpdate.setAuditResult({
-        ...auditResult,
-        brokenInternalLinks: prioritizedLinks,
-      });
-      await auditToUpdate.save();
-      log.info(`[${AUDIT_TYPE}] Updated audit result with ${prioritizedLinks.length} prioritized broken links`);
-    } else {
-      log.warn(`[${AUDIT_TYPE}] Audit not found for ID: ${auditId}, skipping result update`);
-    }
-  } catch (error) {
-    log.error(`[${AUDIT_TYPE}] Failed to update audit result: ${error.message}`);
-  }
+  await updateAuditResult(audit, auditResult, prioritizedLinks, log);
   log.info(`[${AUDIT_TYPE}] ===================================`);
 
   // Now generate opportunities and suggestions

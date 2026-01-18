@@ -27,6 +27,7 @@ import {
   prepareScrapingStep,
   submitForScraping,
   runCrawlDetectionAndGenerateSuggestions,
+  updateAuditResult,
 } from '../../../src/internal-links/handler.js';
 import {
   internalLinksData,
@@ -1618,119 +1619,69 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       expect(context.log.debug).to.have.been.calledWith(sinon.match(/RUM links total traffic: 0 views/));
     });
 
-    it('should handle when audit is not found in database', async () => {
-      const rumLinks = [
-        { urlTo: 'https://example.com/rum1', urlFrom: 'https://example.com/page1', trafficDomain: 100 },
-      ];
 
-      context.audit = {
-        getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
-        getId: () => 'test-audit-id',
-      };
+    // Unit tests for updateAuditResult function to achieve 100% coverage
+    describe('updateAuditResult', () => {
+      let originalFindById;
 
-      // Mock database audit - return null (audit not found)
-      mockHandler.Audit = {
-        findById: sandbox.stub().resolves(null),
-        AUDIT_TYPES: {
-          BROKEN_INTERNAL_LINKS: 'broken-internal-links',
-        },
-        AUDIT_STEP_DESTINATIONS: {
-          IMPORT_WORKER: 'import-worker',
-          SCRAPE_CLIENT: 'scrape-client',
-        },
-      };
-
-      context.scrapeResultPaths = new Map([['https://example.com/page1', 's3-key-1']]);
-
-
-      await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
-
-      expect(context.log.warn).to.have.been.calledWith(sinon.match(/Audit not found for ID: test-audit-id/));
-      expect(mockHandler.Audit.findById).to.have.been.calledWith('test-audit-id');
-    });
-
-    it('should handle database errors during audit update', async () => {
-      const rumLinks = [
-        { urlTo: 'https://example.com/rum1', urlFrom: 'https://example.com/page1', trafficDomain: 100 },
-      ];
-
-      context.audit = {
-        getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
-        getId: () => 'test-audit-id',
-      };
-
-      // Mock database audit - throw error during save
-      const mockDbAudit = {
-        setAuditResult: sandbox.stub(),
-        save: sandbox.stub().rejects(new Error('Database connection failed')),
-      };
-
-      mockHandler.Audit = {
-        findById: sandbox.stub().resolves(mockDbAudit),
-        AUDIT_TYPES: {
-          BROKEN_INTERNAL_LINKS: 'broken-internal-links',
-        },
-        AUDIT_STEP_DESTINATIONS: {
-          IMPORT_WORKER: 'import-worker',
-          SCRAPE_CLIENT: 'scrape-client',
-        },
-      };
-
-      context.scrapeResultPaths = new Map([['https://example.com/page1', 's3-key-1']]);
-
-
-      await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
-
-      expect(context.log.error).to.have.been.calledWith(sinon.match(/Failed to update audit result: Database connection failed/));
-      expect(mockHandler.Audit.findById).to.have.been.calledWith('test-audit-id');
-      expect(mockDbAudit.setAuditResult).to.have.been.calledOnce;
-      expect(mockDbAudit.save).to.have.been.calledOnce;
-    });
-
-    // Simple test to cover audit update lines for 100% coverage
-    it('should execute audit update logic for coverage', async () => {
-      // This test manually executes the audit update logic to ensure coverage
-      const mockAudit = { getId: () => 'test-audit-id' };
-      const mockAuditResult = { brokenInternalLinks: [] };
-      const mockPrioritizedLinks = [{ urlTo: 'https://example.com/broken', priority: 'high' }];
-      const mockLog = { info: sinon.stub(), warn: sinon.stub(), error: sinon.stub() };
-
-      // Mock the database audit
-      const mockDbAudit = {
-        setAuditResult: sinon.stub(),
-        save: sinon.stub().resolves(),
-      };
-
-      // Temporarily replace Audit.findById
-      const originalFindById = (await import('@adobe/spacecat-shared-data-access')).Audit.findById;
-      (await import('@adobe/spacecat-shared-data-access')).Audit.findById = sinon.stub().resolves(mockDbAudit);
-
-      try {
-        // Execute the exact logic from the source code
-        const auditId = mockAudit.getId();
-        const auditToUpdate = await (await import('@adobe/spacecat-shared-data-access')).Audit.findById(auditId);
-        if (auditToUpdate) {
-          auditToUpdate.setAuditResult({
-            ...mockAuditResult,
-            brokenInternalLinks: mockPrioritizedLinks,
-          });
-          await auditToUpdate.save();
-          mockLog.info(`[broken-internal-links] Updated audit result with ${mockPrioritizedLinks.length} prioritized broken links`);
-        }
-      } catch (error) {
-        mockLog.error(`[broken-internal-links] Failed to update audit result: ${error.message}`);
-      } finally {
-        // Restore original function
-        (await import('@adobe/spacecat-shared-data-access')).Audit.findById = originalFindById;
-      }
-
-      // Verify the logic executed correctly
-      expect(mockDbAudit.setAuditResult).to.have.been.calledWith({
-        ...mockAuditResult,
-        brokenInternalLinks: mockPrioritizedLinks,
+      beforeEach(() => {
+        originalFindById = Audit.findById;
       });
-      expect(mockDbAudit.save).to.have.been.calledOnce;
-      expect(mockLog.info).to.have.been.calledWith('[broken-internal-links] Updated audit result with 1 prioritized broken links');
+
+      afterEach(() => {
+        Audit.findById = originalFindById;
+      });
+
+      it('should successfully update audit result when audit exists', async () => {
+        const mockAudit = { getId: () => 'test-audit-id' };
+        const mockAuditResult = { brokenInternalLinks: [] };
+        const mockPrioritizedLinks = [{ urlTo: 'https://example.com/broken', priority: 'high' }];
+        const mockLog = { info: sinon.stub(), warn: sinon.stub(), error: sinon.stub() };
+
+        const mockDbAudit = {
+          setAuditResult: sinon.stub(),
+          save: sinon.stub().resolves(),
+        };
+
+        Audit.findById = sinon.stub().resolves(mockDbAudit);
+
+        await updateAuditResult(mockAudit, mockAuditResult, mockPrioritizedLinks, mockLog);
+
+        expect(Audit.findById).to.have.been.calledWith('test-audit-id');
+        expect(mockDbAudit.setAuditResult).to.have.been.calledWith({
+          ...mockAuditResult,
+          brokenInternalLinks: mockPrioritizedLinks,
+        });
+        expect(mockDbAudit.save).to.have.been.calledOnce;
+        expect(mockLog.info).to.have.been.calledWith('[broken-internal-links] Updated audit result with 1 prioritized broken links');
+      });
+
+      it('should handle audit not found gracefully', async () => {
+        const mockAudit = { getId: () => 'test-audit-id' };
+        const mockAuditResult = { brokenInternalLinks: [] };
+        const mockPrioritizedLinks = [{ urlTo: 'https://example.com/broken', priority: 'high' }];
+        const mockLog = { info: sinon.stub(), warn: sinon.stub(), error: sinon.stub() };
+
+        Audit.findById = sinon.stub().resolves(null);
+
+        await updateAuditResult(mockAudit, mockAuditResult, mockPrioritizedLinks, mockLog);
+
+        expect(Audit.findById).to.have.been.calledWith('test-audit-id');
+        expect(mockLog.warn).to.have.been.calledWith('[broken-internal-links] Audit not found for ID: test-audit-id, skipping result update');
+      });
+
+      it('should handle database errors gracefully', async () => {
+        const mockAudit = { getId: () => 'test-audit-id' };
+        const mockAuditResult = { brokenInternalLinks: [] };
+        const mockPrioritizedLinks = [{ urlTo: 'https://example.com/broken', priority: 'high' }];
+        const mockLog = { info: sinon.stub(), warn: sinon.stub(), error: sinon.stub() };
+
+        Audit.findById = sinon.stub().throws(new Error('Database connection failed'));
+
+        await updateAuditResult(mockAudit, mockAuditResult, mockPrioritizedLinks, mockLog);
+
+        expect(mockLog.error).to.have.been.calledWith('[broken-internal-links] Failed to update audit result: Database connection failed');
+      });
     });
 
 
