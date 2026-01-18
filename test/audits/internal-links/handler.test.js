@@ -1227,6 +1227,21 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
   }).timeout(5000);
 
   describe('submitForScraping', () => {
+    let originalFetch;
+
+    beforeEach(() => {
+      // Mock fetch for redirect resolution - default behavior is no redirect
+      originalFetch = global.fetch;
+      global.fetch = sandbox.stub().callsFake((url) => Promise.resolve({
+        ok: true,
+        url: url, // No redirect by default
+      }));
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
     it('should fetch top pages, merge with includedURLs, and return scraping request', async () => {
       const mockTopPages = [
         { getUrl: () => 'https://example.com/page1' },
@@ -1398,6 +1413,74 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       await submitForScraping(context);
 
       expect(context.log.debug).to.have.been.calledWith(sinon.match(/Manual includedURLs:.*\.\.\./));
+    });
+
+    it('should resolve redirects before submitting URLs for scraping', async () => {
+      // Override the default fetch mock for this test
+      global.fetch = sandbox.stub();
+      // First URL redirects
+      global.fetch.withArgs('https://example.com/redirect1').resolves({
+        ok: true,
+        url: 'https://example.com/final1',
+      });
+      // Second URL redirects to same destination (creates duplicate)
+      global.fetch.withArgs('https://example.com/redirect2').resolves({
+        ok: true,
+        url: 'https://example.com/final1', // Same as first redirect
+      });
+      // Third URL doesn't redirect
+      global.fetch.withArgs('https://example.com/page2').resolves({
+        ok: true,
+        url: 'https://example.com/page2',
+      });
+      // Fourth URL has error
+      global.fetch.withArgs('https://example.com/error').resolves({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+      });
+      // Fifth URL throws network error
+      global.fetch.withArgs('https://example.com/network-error').throws(new Error('Network timeout'));
+
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+          { getUrl: () => 'https://example.com/redirect1' },
+        ]),
+      };
+
+      context.site.getConfig = sandbox.stub().returns({
+        getIncludedURLs: sandbox.stub().returns([
+          'https://example.com/redirect2', // Will redirect to same URL as redirect1
+          'https://example.com/page2',
+          'https://example.com/error',
+          'https://example.com/network-error'
+        ]),
+      });
+
+      const result = await submitForScraping(context);
+
+      expect(result.urls).to.deep.equal([
+        { url: 'https://example.com/final1' }, // Redirect resolved (duplicate removed)
+        { url: 'https://example.com/page2' },  // No redirect
+        { url: 'https://example.com/network-error' }, // Kept despite network error
+      ]);
+
+      expect(context.log.debug).to.have.been.calledWith(
+        sinon.match(/Redirect resolved: https:\/\/example\.com\/redirect1 -> https:\/\/example\.com\/final1/),
+      );
+      expect(context.log.debug).to.have.been.calledWith(
+        sinon.match(/Redirect resolved: https:\/\/example\.com\/redirect2 -> https:\/\/example\.com\/final1/),
+      );
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/URL returned error status 404: https:\/\/example\.com\/error/),
+      );
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to resolve redirects for https:\/\/example\.com\/network-error: Network timeout/),
+      );
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Redirect resolution completed/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Resolved 4 URLs, 2 errors/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Submitting 3 URLs for scraping/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Removed 1 duplicates after redirect resolution/));
     });
   });
 
