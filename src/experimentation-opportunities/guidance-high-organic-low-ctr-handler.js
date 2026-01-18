@@ -78,7 +78,7 @@ export default async function handler(message, context) {
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
   const { url, guidance, suggestions } = data;
-  log.debug(`Message received in high-organic-low-ctr handler: ${JSON.stringify(message, null, 2)}`);
+  log.info(`Message received in high-organic-low-ctr handler: ${JSON.stringify(message, null, 2)}`);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
