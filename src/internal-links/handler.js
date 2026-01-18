@@ -541,11 +541,19 @@ export const opportunityAndSuggestionsStep = async (context) => {
  */
 export async function runCrawlDetectionAndGenerateSuggestions(context) {
   const {
-    log, site, audit, scrapeResultPaths, dataAccess,
+    log, site, audit, dataAccess,
   } = context;
+
+  // Handle case where scrapeResultPaths might be undefined from framework
+  const scrapeResultPaths = context.scrapeResultPaths || new Map();
 
   log.info(`[${AUDIT_TYPE}] ====== Crawl Detection Step ======`);
   log.info(`[${AUDIT_TYPE}] Site: ${site.getId()}, BaseURL: ${site.getBaseURL()}`);
+  log.info(`[${AUDIT_TYPE}] scrapeResultPaths available: ${scrapeResultPaths.size}`);
+
+  if (scrapeResultPaths.size > 0) {
+    log.info(`[${AUDIT_TYPE}] Sample scrapeResultPaths: ${JSON.stringify([...scrapeResultPaths.entries()].slice(0, 3))}`);
+  }
 
   // Get RUM results from previous audit step
   const auditResult = audit.getAuditResult();
@@ -554,17 +562,18 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
   log.info(`[${AUDIT_TYPE}] RUM detection results: ${rumLinks.length} broken links`);
   if (rumLinks.length > 0) {
     const rumTraffic = rumLinks.reduce((sum, link) => sum + (link.trafficDomain || 0), 0);
-    log.debug(`[${AUDIT_TYPE}] RUM links total traffic: ${rumTraffic} views`);
+    log.info(`[${AUDIT_TYPE}] RUM links total traffic: ${rumTraffic} views`);
   }
 
   // Crawl-based detection is now enabled for all sites
   let finalLinks;
 
-  log.info(`[${AUDIT_TYPE}] 🚀 Using Ahrefs + siteConfig crawl detection (new behavior)`);
-  log.info(`[${AUDIT_TYPE}] Scrape result paths available: ${scrapeResultPaths.size}`);
+  log.info(`[${AUDIT_TYPE}] 🚀 Using Ahrefs + siteConfig crawl detection`);
 
+  // Check if we have scrape results to process
   if (scrapeResultPaths.size === 0) {
-    log.warn(`[${AUDIT_TYPE}] No scraped content available, falling back to RUM-only results`);
+    log.info(`[${AUDIT_TYPE}] ⚠️ No scraped content available from scraper. Falling back to RUM-only results.`);
+    log.info(`[${AUDIT_TYPE}] Note: Ensure the scraper completed successfully for job: ${context.auditContext?.scrapeJobId || 'N/A'}`);
     finalLinks = rumLinks;
   } else {
     // Run crawl detection

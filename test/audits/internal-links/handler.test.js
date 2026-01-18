@@ -1574,8 +1574,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
 
-      expect(context.log.warn).to.have.been.calledWith(sinon.match(/No scraped content available/));
-      expect(context.log.warn).to.have.been.calledWith(sinon.match(/falling back to RUM-only/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/No scraped content available.*Falling back to RUM-only/));
     });
 
     it('should log priority distribution after calculating priorities', async () => {
@@ -1699,7 +1698,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
 
-      expect(context.log.debug).to.have.been.calledWith(sinon.match(/RUM links total traffic: 0 views/));
+      // Now logs at INFO level instead of DEBUG
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/RUM links total traffic: 0 views/));
     });
 
 
