@@ -1613,5 +1613,80 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       expect(context.log.debug).to.have.been.calledWith(sinon.match(/RUM links total traffic: 0 views/));
     });
+
+    it('should handle when audit is not found in database', async () => {
+      const rumLinks = [
+        { urlTo: 'https://example.com/rum1', urlFrom: 'https://example.com/page1', trafficDomain: 100 },
+      ];
+
+      context.audit = {
+        getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
+        getId: () => 'test-audit-id',
+      };
+
+      // Mock database audit - return null (audit not found)
+      mockHandler.Audit = {
+        findById: sandbox.stub().resolves(null),
+        AUDIT_TYPES: {
+          BROKEN_INTERNAL_LINKS: 'broken-internal-links',
+        },
+        AUDIT_STEP_DESTINATIONS: {
+          IMPORT_WORKER: 'import-worker',
+          SCRAPE_CLIENT: 'scrape-client',
+        },
+      };
+
+      context.scrapeResultPaths = new Map([['https://example.com/page1', 's3-key-1']]);
+
+      // Mock opportunityAndSuggestionsStep
+      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
+      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
+
+      await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
+
+      expect(context.log.warn).to.have.been.calledWith(sinon.match(/Audit not found for ID: test-audit-id/));
+      expect(mockHandler.Audit.findById).to.have.been.calledWith('test-audit-id');
+    });
+
+    it('should handle database errors during audit update', async () => {
+      const rumLinks = [
+        { urlTo: 'https://example.com/rum1', urlFrom: 'https://example.com/page1', trafficDomain: 100 },
+      ];
+
+      context.audit = {
+        getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
+        getId: () => 'test-audit-id',
+      };
+
+      // Mock database audit - throw error during save
+      const mockDbAudit = {
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().rejects(new Error('Database connection failed')),
+      };
+
+      mockHandler.Audit = {
+        findById: sandbox.stub().resolves(mockDbAudit),
+        AUDIT_TYPES: {
+          BROKEN_INTERNAL_LINKS: 'broken-internal-links',
+        },
+        AUDIT_STEP_DESTINATIONS: {
+          IMPORT_WORKER: 'import-worker',
+          SCRAPE_CLIENT: 'scrape-client',
+        },
+      };
+
+      context.scrapeResultPaths = new Map([['https://example.com/page1', 's3-key-1']]);
+
+      // Mock opportunityAndSuggestionsStep
+      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
+      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
+
+      await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
+
+      expect(context.log.error).to.have.been.calledWith(sinon.match(/Failed to update audit result: Database connection failed/));
+      expect(mockHandler.Audit.findById).to.have.been.calledWith('test-audit-id');
+      expect(mockDbAudit.setAuditResult).to.have.been.calledOnce;
+      expect(mockDbAudit.save).to.have.been.calledOnce;
+    });
   });
 });
