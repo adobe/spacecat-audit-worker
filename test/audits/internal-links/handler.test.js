@@ -1575,6 +1575,48 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
 
       expect(context.log.info).to.have.been.calledWith(sinon.match(/No scraped content available.*Falling back to RUM-only/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Note: Ensure the scraper completed successfully for job:/));
+    });
+
+    it('should handle undefined scrapeResultPaths and log scraper job ID', async () => {
+      const rumLinks = [
+        { urlTo: 'https://example.com/rum1', urlFrom: 'https://example.com/page1', trafficDomain: 100 },
+      ];
+
+      context.audit = {
+        getAuditResult: () => ({ brokenInternalLinks: rumLinks, success: true }),
+        getId: () => 'test-audit-id',
+      };
+
+      // Mock database audit
+      const mockDbAudit = {
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      // Mock the Audit import
+      mockHandler.Audit = {
+        findById: sandbox.stub().resolves(mockDbAudit),
+        AUDIT_TYPES: {
+          BROKEN_INTERNAL_LINKS: 'broken-internal-links',
+        },
+        AUDIT_STEP_DESTINATIONS: {
+          IMPORT_WORKER: 'import-worker',
+          SCRAPE_CLIENT: 'scrape-client',
+        },
+      };
+
+      // Set auditContext with scrapeJobId
+      context.auditContext = { scrapeJobId: 'test-scrape-job-123' };
+
+      // Don't set scrapeResultPaths at all to trigger the fallback on line 548
+      // delete context.scrapeResultPaths; // This ensures it's undefined
+
+
+      await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
+
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/No scraped content available.*Falling back to RUM-only/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Ensure the scraper completed successfully for job: test-scrape-job-123/));
     });
 
     it('should log priority distribution after calculating priorities', async () => {
