@@ -58,7 +58,6 @@ export async function internalLinksAuditRunner(auditUrl, context) {
       interval: INTERVAL,
       granularity: 'hourly',
     };
-
     log.info(`[${AUDIT_TYPE}] Querying RUM API for 404 internal links (interval: ${INTERVAL} days)`);
 
     // 3. Query for 404 internal links

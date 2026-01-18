@@ -27,6 +27,7 @@ import {
   prepareScrapingStep,
   submitForScraping,
   runCrawlDetectionAndGenerateSuggestions,
+  updateAuditResult,
 } from '../../../src/internal-links/handler.js';
 import {
   internalLinksData,
@@ -385,6 +386,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       warn: sandbox.stub(),
     };
     context.sqs.sendMessage.resolves();
+    context.env = {
+      QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+    };
 
     context.dataAccess.Configuration = {
       findLatest: () => ({
@@ -393,9 +397,25 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     };
 
     context.dataAccess.Opportunity = {
-      allBySiteIdAndStatus: sandbox.stub(),
+      allBySiteIdAndStatus: sandbox.stub().resolves([]),
       addSuggestions: sandbox.stub(),
-      create: sandbox.stub(),
+      create: sandbox.stub().resolves({
+        getId: () => 'opportunity-id',
+        getSuggestions: sandbox.stub().resolves([]),
+        addSuggestions: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
+        setAuditId: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        setData: sandbox.stub(),
+        getData: sandbox.stub(),
+        setUpdatedBy: sandbox.stub().returnsThis(),
+      }),
+    };
+
+    context.dataAccess.Audit = {
+      findById: sandbox.stub().resolves({
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      }),
     };
 
     context.site = site;
@@ -1430,9 +1450,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       context.scrapeResultPaths = new Map([['https://example.com/page1', 's3-key-1']]);
 
-      // Mock opportunityAndSuggestionsStep
-      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
-      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
 
       await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
 
@@ -1471,9 +1488,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       context.scrapeResultPaths = new Map(); // Empty scrape results
 
-      // Mock opportunityAndSuggestionsStep
-      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
-      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
 
       await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
 
@@ -1518,9 +1532,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       context.scrapeResultPaths = new Map();
 
-      // Mock opportunityAndSuggestionsStep
-      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
-      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
 
       await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
 
@@ -1560,9 +1571,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       context.scrapeResultPaths = new Map();
 
-      // Mock opportunityAndSuggestionsStep
-      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
-      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
 
       await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
 
@@ -1605,9 +1613,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       context.scrapeResultPaths = new Map();
 
-      // Mock opportunityAndSuggestionsStep
-      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
-      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
 
       await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
 
@@ -1638,9 +1643,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       context.scrapeResultPaths = new Map([['https://example.com/page1', 's3-key-1']]);
 
-      // Mock opportunityAndSuggestionsStep
-      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
-      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
 
       await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
 
@@ -1677,9 +1679,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       context.scrapeResultPaths = new Map([['https://example.com/page1', 's3-key-1']]);
 
-      // Mock opportunityAndSuggestionsStep
-      const mockOpportunityStep = sandbox.stub().resolves({ status: 'complete' });
-      sandbox.stub(mockHandler, 'opportunityAndSuggestionsStep').callsFake(mockOpportunityStep);
 
       await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
 
@@ -1688,5 +1687,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       expect(mockDbAudit.setAuditResult).to.have.been.calledOnce;
       expect(mockDbAudit.save).to.have.been.calledOnce;
     });
+
   });
 });
