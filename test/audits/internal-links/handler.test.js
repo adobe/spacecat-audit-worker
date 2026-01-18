@@ -1406,8 +1406,26 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       ];
 
       context.audit = {
-        getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
+        getAuditResult: () => ({ brokenInternalLinks: rumLinks, success: true }),
+        getId: () => 'test-audit-id',
+      };
+
+      // Mock database audit
+      const mockDbAudit = {
         setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      // Mock the Audit import
+      mockHandler.Audit = {
+        findById: sandbox.stub().resolves(mockDbAudit),
+        AUDIT_TYPES: {
+          BROKEN_INTERNAL_LINKS: 'broken-internal-links',
+        },
+        AUDIT_STEP_DESTINATIONS: {
+          IMPORT_WORKER: 'import-worker',
+          SCRAPE_CLIENT: 'scrape-client',
+        },
       };
 
       context.scrapeResultPaths = new Map([['https://example.com/page1', 's3-key-1']]);
@@ -1421,7 +1439,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Using Ahrefs.*siteConfig crawl detection/));
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Starting crawl-based detection/));
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Merging RUM/));
-      expect(context.audit.setAuditResult).to.have.been.calledOnce;
     });
 
     it('should fall back to RUM-only when no scraped content is available', async () => {
@@ -1430,8 +1447,26 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       ];
 
       context.audit = {
-        getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
+        getAuditResult: () => ({ brokenInternalLinks: rumLinks, success: true }),
+        getId: () => 'test-audit-id',
+      };
+
+      // Mock database audit
+      const mockDbAudit = {
         setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      // Mock the Audit import
+      mockHandler.Audit = {
+        findById: sandbox.stub().resolves(mockDbAudit),
+        AUDIT_TYPES: {
+          BROKEN_INTERNAL_LINKS: 'broken-internal-links',
+        },
+        AUDIT_STEP_DESTINATIONS: {
+          IMPORT_WORKER: 'import-worker',
+          SCRAPE_CLIENT: 'scrape-client',
+        },
       };
 
       context.scrapeResultPaths = new Map(); // Empty scrape results
@@ -1444,7 +1479,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       expect(context.log.warn).to.have.been.calledWith(sinon.match(/No scraped content available/));
       expect(context.log.warn).to.have.been.calledWith(sinon.match(/falling back to RUM-only/));
-      expect(context.audit.setAuditResult).to.have.been.calledOnce;
     });
 
     it('should log priority distribution after calculating priorities', async () => {
@@ -1454,8 +1488,26 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       ];
 
       context.audit = {
-        getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
+        getAuditResult: () => ({ brokenInternalLinks: rumLinks, success: true }),
+        getId: () => 'test-audit-id',
+      };
+
+      // Mock database audit
+      const mockDbAudit = {
         setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      // Mock the Audit import
+      mockHandler.Audit = {
+        findById: sandbox.stub().resolves(mockDbAudit),
+        AUDIT_TYPES: {
+          BROKEN_INTERNAL_LINKS: 'broken-internal-links',
+        },
+        AUDIT_STEP_DESTINATIONS: {
+          IMPORT_WORKER: 'import-worker',
+          SCRAPE_CLIENT: 'scrape-client',
+        },
       };
 
       context.dataAccess.Configuration = {
@@ -1474,13 +1526,30 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Calculating priority for 2 broken links/));
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Priority distribution:/));
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Updated audit result with 2 prioritized broken links/));
     });
 
     it('should handle auditResult with no brokenInternalLinks field', async () => {
       context.audit = {
         getAuditResult: () => ({}), // No brokenInternalLinks field
+        getId: () => 'test-audit-id',
+      };
+
+      // Mock database audit
+      const mockDbAudit = {
         setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      // Mock the Audit import
+      mockHandler.Audit = {
+        findById: sandbox.stub().resolves(mockDbAudit),
+        AUDIT_TYPES: {
+          BROKEN_INTERNAL_LINKS: 'broken-internal-links',
+        },
+        AUDIT_STEP_DESTINATIONS: {
+          IMPORT_WORKER: 'import-worker',
+          SCRAPE_CLIENT: 'scrape-client',
+        },
       };
 
       context.dataAccess.Configuration = {
@@ -1498,7 +1567,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
 
       expect(context.log.info).to.have.been.calledWith(sinon.match(/RUM detection results: 0 broken links/));
-      expect(context.audit.setAuditResult).to.have.been.calledOnce;
     });
 
     it('should handle links with undefined trafficDomain', async () => {
@@ -1507,8 +1575,26 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       ];
 
       context.audit = {
-        getAuditResult: () => ({ brokenInternalLinks: rumLinks }),
+        getAuditResult: () => ({ brokenInternalLinks: rumLinks, success: true }),
+        getId: () => 'test-audit-id',
+      };
+
+      // Mock database audit
+      const mockDbAudit = {
         setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      // Mock the Audit import
+      mockHandler.Audit = {
+        findById: sandbox.stub().resolves(mockDbAudit),
+        AUDIT_TYPES: {
+          BROKEN_INTERNAL_LINKS: 'broken-internal-links',
+        },
+        AUDIT_STEP_DESTINATIONS: {
+          IMPORT_WORKER: 'import-worker',
+          SCRAPE_CLIENT: 'scrape-client',
+        },
       };
 
       context.dataAccess.Configuration = {

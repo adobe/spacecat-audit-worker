@@ -528,12 +528,22 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
   log.info(`[${AUDIT_TYPE}] Priority distribution: ${highPriority} high, ${mediumPriority} medium, ${lowPriority} low`);
 
   // Update audit result with prioritized links
-  audit.setAuditResult({
-    ...auditResult,
-    brokenInternalLinks: prioritizedLinks,
-  });
-
-  log.info(`[${AUDIT_TYPE}] Updated audit result with ${prioritizedLinks.length} prioritized broken links`);
+  try {
+    const auditId = audit.getId();
+    const auditToUpdate = await Audit.findById(auditId);
+    if (auditToUpdate) {
+      auditToUpdate.setAuditResult({
+        ...auditResult,
+        brokenInternalLinks: prioritizedLinks,
+      });
+      await auditToUpdate.save();
+      log.info(`[${AUDIT_TYPE}] Updated audit result with ${prioritizedLinks.length} prioritized broken links`);
+    } else {
+      log.warn(`[${AUDIT_TYPE}] Audit not found for ID: ${auditId}, skipping result update`);
+    }
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}] Failed to update audit result: ${error.message}`);
+  }
   log.info(`[${AUDIT_TYPE}] ===================================`);
 
   // Now generate opportunities and suggestions
