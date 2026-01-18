@@ -1265,7 +1265,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Filtered out 2 unscrape-able files/));
     });
 
-    it('should throw error when no URLs are found', async () => {
+    it('should handle gracefully when no URLs are found (fallback to RUM-only)', async () => {
       context.dataAccess.SiteTopPage = {
         allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
       };
@@ -1274,12 +1274,21 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         getIncludedURLs: sandbox.stub().returns([]),
       });
 
-      await expect(submitForScraping(context)).to.be.rejectedWith(
-        /No URLs found for site neither top pages nor included URLs/,
-      );
+      const result = await submitForScraping(context);
 
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/No URLs found for site/),
+      expect(result).to.deep.equal({
+        urls: [],
+        siteId: 'site-id-1',
+        type: 'broken-internal-links',
+        allowCache: false,
+        maxScrapeAge: 0,
+      });
+
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/No URLs found for site.*neither Ahrefs top pages nor includedURLs available/),
+      );
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Audit will proceed with RUM-only detection/),
       );
     });
 

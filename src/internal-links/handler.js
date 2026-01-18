@@ -218,9 +218,18 @@ export async function submitForScraping(context) {
   log.info(`[${AUDIT_TYPE}] Merged URLs: ${topPagesUrls.length} (Ahrefs) + ${includedURLs.length} (manual) = ${finalUrls.length} unique (${duplicatesRemoved} duplicates removed)`);
 
   if (finalUrls.length === 0) {
-    log.error(`[${AUDIT_TYPE}] No URLs found for site ${site.getId()} - neither Ahrefs top pages nor includedURLs`);
-    log.error(`[${AUDIT_TYPE}] Please configure includedURLs in siteConfig for 'broken-internal-links' or ensure Ahrefs data is available`);
-    throw new Error(`[${AUDIT_TYPE}] No URLs found for site neither top pages nor included URLs for ${site.getId()}`);
+    log.warn(`[${AUDIT_TYPE}] No URLs found for site ${site.getId()} - neither Ahrefs top pages nor includedURLs available`);
+    log.warn(`[${AUDIT_TYPE}] Audit will proceed with RUM-only detection. Consider configuring includedURLs in siteConfig for enhanced crawl-based detection`);
+    log.info(`[${AUDIT_TYPE}] Submitting empty URL list for scraping (will fallback to RUM-only results)`);
+    log.info(`[${AUDIT_TYPE}] =======================================`);
+
+    return {
+      urls: [],
+      siteId: site.getId(),
+      type: 'broken-internal-links',
+      allowCache: false,
+      maxScrapeAge: 0,
+    };
   }
 
   // Filter out PDF and other unscrape-able files before scraping
