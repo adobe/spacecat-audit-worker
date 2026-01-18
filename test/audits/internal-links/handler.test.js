@@ -1292,6 +1292,41 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       );
     });
 
+    it('should handle Ahrefs SSL error gracefully and continue with includedURLs', async () => {
+      const sslError = new Error('SSL routines:final_renegotiate:unsafe legacy renegotiation disabled');
+
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().rejects(sslError),
+      };
+
+      context.site.getConfig = sandbox.stub().returns({
+        getIncludedURLs: sandbox.stub().returns(['https://example.com/manual1', 'https://example.com/manual2']),
+      });
+
+      const result = await submitForScraping(context);
+
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://example.com/manual1' },
+          { url: 'https://example.com/manual2' },
+        ],
+        siteId: 'site-id-1',
+        type: 'broken-internal-links',
+        allowCache: false,
+        maxScrapeAge: 0,
+      });
+
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to fetch Ahrefs top pages.*SSL routines/),
+      );
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Continuing with only siteConfig includedURLs/),
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Found 2 manual includedURLs from siteConfig/),
+      );
+    });
+
     it('should work with only manual includedURLs (no top pages)', async () => {
       context.dataAccess.SiteTopPage = {
         allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
