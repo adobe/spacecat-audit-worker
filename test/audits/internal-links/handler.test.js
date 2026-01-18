@@ -1719,6 +1719,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         const mockAudit = { getId: () => 'test-audit-id' };
         const mockAuditResult = { brokenInternalLinks: [] };
         const mockPrioritizedLinks = [{ urlTo: 'https://example.com/broken', priority: 'high' }];
+        const mockDataAccess = { Audit: Audit };
         const mockLog = { info: sinon.stub(), warn: sinon.stub(), error: sinon.stub() };
 
         const mockDbAudit = {
@@ -1728,7 +1729,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
         Audit.findById = sinon.stub().resolves(mockDbAudit);
 
-        await updateAuditResult(mockAudit, mockAuditResult, mockPrioritizedLinks, mockLog);
+        await updateAuditResult(mockAudit, mockAuditResult, mockPrioritizedLinks, mockDataAccess, mockLog);
 
         expect(Audit.findById).to.have.been.calledWith('test-audit-id');
         expect(mockDbAudit.setAuditResult).to.have.been.calledWith({
@@ -1743,11 +1744,12 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         const mockAudit = { getId: () => 'test-audit-id' };
         const mockAuditResult = { brokenInternalLinks: [] };
         const mockPrioritizedLinks = [{ urlTo: 'https://example.com/broken', priority: 'high' }];
+        const mockDataAccess = { Audit: Audit };
         const mockLog = { info: sinon.stub(), warn: sinon.stub(), error: sinon.stub() };
 
         Audit.findById = sinon.stub().resolves(null);
 
-        await updateAuditResult(mockAudit, mockAuditResult, mockPrioritizedLinks, mockLog);
+        await updateAuditResult(mockAudit, mockAuditResult, mockPrioritizedLinks, mockDataAccess, mockLog);
 
         expect(Audit.findById).to.have.been.calledWith('test-audit-id');
         expect(mockLog.warn).to.have.been.calledWith('[broken-internal-links] Audit not found for ID: test-audit-id, skipping result update');
@@ -1757,11 +1759,12 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         const mockAudit = { getId: () => 'test-audit-id' };
         const mockAuditResult = { brokenInternalLinks: [] };
         const mockPrioritizedLinks = [{ urlTo: 'https://example.com/broken', priority: 'high' }];
+        const mockDataAccess = { Audit: Audit };
         const mockLog = { info: sinon.stub(), warn: sinon.stub(), error: sinon.stub() };
 
         Audit.findById = sinon.stub().throws(new Error('Database connection failed'));
 
-        await updateAuditResult(mockAudit, mockAuditResult, mockPrioritizedLinks, mockLog);
+        await updateAuditResult(mockAudit, mockAuditResult, mockPrioritizedLinks, mockDataAccess, mockLog);
 
         expect(mockLog.error).to.have.been.calledWith('[broken-internal-links] Failed to update audit result: Database connection failed');
       });

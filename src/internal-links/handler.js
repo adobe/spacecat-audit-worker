@@ -37,12 +37,13 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
  * @param {Object} audit - The audit object
  * @param {Object} auditResult - The current audit result
  * @param {Array} prioritizedLinks - Array of prioritized broken links
+ * @param {Object} dataAccess - Data access object containing models
  * @param {Object} log - Logger instance
  */
-export async function updateAuditResult(audit, auditResult, prioritizedLinks, log) {
+export async function updateAuditResult(audit, auditResult, prioritizedLinks, dataAccess, log) {
   try {
     const auditId = audit.getId();
-    const auditToUpdate = await Audit.findById(auditId);
+    const auditToUpdate = await dataAccess.Audit.findById(auditId);
     if (auditToUpdate) {
       auditToUpdate.setAuditResult({
         ...auditResult,
@@ -540,7 +541,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
  */
 export async function runCrawlDetectionAndGenerateSuggestions(context) {
   const {
-    log, site, audit, scrapeResultPaths,
+    log, site, audit, scrapeResultPaths, dataAccess,
   } = context;
 
   log.info(`[${AUDIT_TYPE}] ====== Crawl Detection Step ======`);
@@ -601,7 +602,7 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
   log.info(`[${AUDIT_TYPE}] Priority distribution: ${highPriority} high, ${mediumPriority} medium, ${lowPriority} low`);
 
   // Update audit result with prioritized links
-  await updateAuditResult(audit, auditResult, prioritizedLinks, log);
+  await updateAuditResult(audit, auditResult, prioritizedLinks, dataAccess, log);
   log.info(`[${AUDIT_TYPE}] ===================================`);
 
   // Now generate opportunities and suggestions
