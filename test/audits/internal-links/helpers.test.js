@@ -96,6 +96,7 @@ describe('isLinkInaccessible', () => {
       info: sinon.stub(),
       error: sinon.stub(),
       warn: sinon.stub(),
+      debug: sinon.stub(),
     };
     // Clear all nock interceptors
     nock.cleanAll();
@@ -158,20 +159,47 @@ describe('isLinkInaccessible', () => {
   });
 
   it('should return true for timeout errors', async function call() {
-    this.timeout(12000);
+    this.timeout(8000);
 
     nock('https://example.com')
       .head('/timeout')
-      .delay(11000) // Set delay just above the 10000ms timeout in isLinkInaccessible
+      .delay(6000) // Set delay just above the 10000ms timeout in isLinkInaccessible
       .reply(200)
       .get('/timeout')
-      .delay(11000)
+      .delay(6000)
       .reply(200);
 
     const result = await isLinkInaccessible('https://example.com/timeout', mockLog);
     expect(result).to.be.true;
     expect(mockLog.error.calledWith(
       'broken-internal-links audit: Error checking https://example.com/timeout with GET request: Request timed out after 10000ms',
+    )).to.be.true;
+  });
+
+  it('should fallback to GET when HEAD fails with server error', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .head('/server-error')
+      .reply(500) // HEAD returns server error
+      .get('/server-error')
+      .reply(500); // GET also returns server error
+
+    const result = await isLinkInaccessible('https://example.com/server-error', mockLog);
+    expect(result).to.be.true;
+  });
+
+  it('should use GET result when HEAD returns non-2xx status', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .head('/head-forbidden')
+      .reply(403) // HEAD forbidden
+      .get('/head-forbidden')
+      .reply(403); // GET also forbidden
+
+    const result = await isLinkInaccessible('https://example.com/head-forbidden', mockLog);
+    expect(result).to.be.true;
+    expect(mockLog.warn.calledWith(
+      'broken-internal-links audit: Warning: https://example.com/head-forbidden returned client error: 403',
     )).to.be.true;
   });
 });
