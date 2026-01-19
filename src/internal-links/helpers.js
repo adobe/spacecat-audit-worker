@@ -109,7 +109,10 @@ export async function isLinkInaccessible(url, log) {
     // URL is valid if status code is less than 400, otherwise it is invalid
     return status >= 400;
   } catch (getError) {
-    log.error(`broken-internal-links audit: Error checking ${url} with GET request: ${getError.code === 'ETIMEOUT' ? `Request timed out after ${LINK_TIMEOUT}ms` : getError.message}`);
+    const errorMessage = getError.code === 'ETIMEOUT'
+      ? `Request timed out after ${LINK_TIMEOUT}ms`
+      : getError.message;
+    log.error(`broken-internal-links audit: Error checking ${url} with GET request: ${errorMessage}`);
     // Any error means the URL is inaccessible
     return true;
   }
