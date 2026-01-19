@@ -109,7 +109,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
     if (!metaTag.attribs.content.includes('nonce-aem') || !metaTag.attribs.content.includes('strict-dynamic')) {
       log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: no enforcing CSP meta tag found`);
       findings.push({
-        type: 'csp-meta-tag-missing',
+        type: 'csp-meta-tag-non-enforcing',
       });
 
       const metaContent = responseBody
@@ -146,6 +146,45 @@ async function determineSuggestionsForPage(url, page, context, site) {
     findings,
     patch,
   };
+}
+
+function createGitPatch(findings) {
+  // create combined git patch
+  let gitPatch = '';
+  findings.forEach((finding) => {
+    if (gitPatch.length > 0) {
+      gitPatch += '\n';
+    }
+    gitPatch += finding.patch;
+
+    // eslint-disable-next-line no-param-reassign
+    delete finding.patch;
+  });
+  return gitPatch;
+}
+
+function createPrDescription(findings) {
+  return '### Enforce Content Security Policy: strict-dynamic + (cached) nonce\n\n'
+    + 'The following changes are suggested to enhance the Content Security Policy (CSP) of your web pages. '
+    + 'Implementing these changes will help improve the security posture of your application by enforcing stricter CSP rules.\n\n'
+    + `#### Suggested Changes:\n${
+      findings.map((finding) => {
+        const changes = finding.findings.map((f) => {
+          switch (f.type) {
+            case 'csp-nonce-missing':
+              return '  - Add nonces to all inline `<script>` tags to enhance script security.';
+            case 'csp-meta-tag-missing':
+              return '  - Add a CSP meta tag to enforce a strict Content Security Policy.';
+            case 'csp-meta-tag-move-to-header':
+              return '  - Update the CSP meta tag to include `move-to-http-header="true"` attribute for better security management.';
+            case 'csp-meta-tag-non-enforcing':
+              return '  - Modify the existing CSP meta tag to enforce a stricter policy with `nonce-aem` and `strict-dynamic`.';
+            default:
+              return '';
+          }
+        }).join('\n');
+        return `- **Page:** ${finding.page}\n${changes}`;
+      }).join('\n\n')}`;
 }
 
 export async function cspAutoSuggest(auditUrl, csp, context, site) {
@@ -202,23 +241,16 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
     return csp;
   }
 
-  // create combined git patch
-  let gitPatch = '';
-  findings.forEach((finding) => {
-    if (gitPatch.length > 0) {
-      gitPatch += '\n';
-    }
-    gitPatch += finding.patch;
-
-    // eslint-disable-next-line no-param-reassign
-    delete finding.patch;
-  });
+  // Create combined git patch + PR description
+  const patchContent = createGitPatch(findings);
+  const patchDescription = createPrDescription(findings);
 
   missingNonce.findings = findings;
   missingNonce.issues = [];
-  if (gitPatch.length > 0) {
+  if (patchContent.length > 0) {
     missingNonce.issues.push({
-      content: gitPatch,
+      content: patchContent,
+      value: patchDescription,
     });
   }
 

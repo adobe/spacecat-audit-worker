@@ -624,6 +624,7 @@ describe('CSP Post-processor', () => {
           findings: findingDetails,
           issues: [{
             content: fs.readFileSync(path.join(__dirname, 'testdata/missing-csp.patch'), 'utf8'),
+            value: fs.readFileSync(path.join(__dirname, 'testdata/missing-csp.md'), 'utf8')
           }],
         },
       ];
@@ -652,6 +653,7 @@ describe('CSP Post-processor', () => {
           findings: [...findingDetails.slice(0, 1)],
           issues: [{
             content: fs.readFileSync(path.join(__dirname, 'testdata/multiline-script.patch'), 'utf8'),
+            value: fs.readFileSync(path.join(__dirname, 'testdata/multiline-script.md'), 'utf8')
           }],
         },
       ];
@@ -680,6 +682,7 @@ describe('CSP Post-processor', () => {
           findings: [...findingDetails.slice(1, 2)],
           issues: [{
             content: fs.readFileSync(path.join(__dirname, 'testdata/nometa.patch'), 'utf8'),
+            value: fs.readFileSync(path.join(__dirname, 'testdata/nometa.md'), 'utf8')
           }],
         },
       ];
@@ -708,6 +711,7 @@ describe('CSP Post-processor', () => {
           findings: [...findingDetails.slice(0, 1)],
           issues: [{
             content: fs.readFileSync(path.join(__dirname, 'testdata/nometa-head.patch'), 'utf8'),
+            value: fs.readFileSync(path.join(__dirname, 'testdata/nometa-head.md'), 'utf8')
           }],
         },
       ];
@@ -747,6 +751,7 @@ describe('CSP Post-processor', () => {
           ],
           issues: [{
             content: fs.readFileSync(path.join(__dirname, 'testdata/meta-only.patch'), 'utf8'),
+            value: fs.readFileSync(path.join(__dirname, 'testdata/meta-only.md'), 'utf8')
           }],
         },
       ];
@@ -785,6 +790,7 @@ describe('CSP Post-processor', () => {
           ],
           issues: [{
             content: fs.readFileSync(path.join(__dirname, 'testdata/meta-noheader.patch'), 'utf8'),
+            value: fs.readFileSync(path.join(__dirname, 'testdata/meta-noheader.md'), 'utf8')
           }],
         },
       ];
@@ -813,7 +819,7 @@ describe('CSP Post-processor', () => {
             {
               findings: [
                 {
-                  "type": "csp-meta-tag-missing",
+                  "type": "csp-meta-tag-non-enforcing",
                 }
               ],
               page: "head.html",
@@ -823,6 +829,7 @@ describe('CSP Post-processor', () => {
           ],
           issues: [{
             content: fs.readFileSync(path.join(__dirname, 'testdata/meta-content.patch'), 'utf8'),
+            value: fs.readFileSync(path.join(__dirname, 'testdata/meta-content.md'), 'utf8')
           }],
         },
       ];
@@ -889,6 +896,7 @@ describe('CSP Post-processor', () => {
           findings: findingDetails,
           issues: [{
             content: fs.readFileSync(path.join(__dirname, 'testdata/missing-csp.patch'), 'utf8'),
+            value: fs.readFileSync(path.join(__dirname, 'testdata/missing-csp.md'), 'utf8')
           }],
         },
         {
