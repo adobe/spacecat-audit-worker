@@ -1176,6 +1176,248 @@ describe('Prerender Audit', () => {
         // Should not log about marking suggestions as outdated
         expect(infoLogs.some(msg => msg.includes('marking suggestions as outdated'))).to.be.false;
       });
+
+      it('should handle existing opportunity with null suggestions', async () => {
+        const mockOpportunity = {
+          getId: () => 'existing-opportunity-id',
+          getType: () => 'prerender',
+          getSuggestions: sandbox.stub().resolves(null), // null suggestions
+        };
+
+        const allBySiteIdAndStatusStub = sandbox.stub().resolves([mockOpportunity]);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js');
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          s3Client: {
+            send: sandbox.stub().resolves({
+              Body: { transformToString: () => Promise.resolve('') },
+            }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        // Should complete successfully
+        expect(result.status).to.equal('complete');
+
+        // Should log about finding opportunity
+        const infoLogs = context.log.info.args.map(call => call[0]);
+        expect(infoLogs.some(msg => msg.includes('Found existing opportunity with no new prerender needs'))).to.be.true;
+
+        // Should not log about marking suggestions (no suggestions to mark)
+        expect(infoLogs.some(msg => msg.includes('Marked'))).to.be.false;
+      });
+
+      it('should handle existing opportunity with empty suggestions array', async () => {
+        const mockOpportunity = {
+          getId: () => 'existing-opportunity-id',
+          getType: () => 'prerender',
+          getSuggestions: sandbox.stub().resolves([]), // empty array
+        };
+
+        const allBySiteIdAndStatusStub = sandbox.stub().resolves([mockOpportunity]);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js');
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          s3Client: {
+            send: sandbox.stub().resolves({
+              Body: { transformToString: () => Promise.resolve('') },
+            }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        // Should complete successfully
+        expect(result.status).to.equal('complete');
+
+        // Should log about finding opportunity
+        const infoLogs = context.log.info.args.map(call => call[0]);
+        expect(infoLogs.some(msg => msg.includes('Found existing opportunity with no new prerender needs'))).to.be.true;
+
+        // Should not log about marking suggestions (no suggestions to mark)
+        expect(infoLogs.some(msg => msg.includes('Marked'))).to.be.false;
+      });
+
+      it('should handle existing opportunity where all suggestions are already OUTDATED or FIXED', async () => {
+        const { Suggestion: SuggestionDataAccess } = await import('@adobe/spacecat-shared-data-access');
+
+        // All suggestions already have non-updatable statuses
+        const mockSuggestions = [
+          {
+            getId: () => 'suggestion-1',
+            getStatus: () => 'OUTDATED',
+            getData: () => ({ url: 'https://example.com/page1' }),
+          },
+          {
+            getId: () => 'suggestion-2',
+            getStatus: () => 'FIXED',
+            getData: () => ({ url: 'https://example.com/page2' }),
+          },
+          {
+            getId: () => 'suggestion-3',
+            getStatus: () => 'APPROVED',
+            getData: () => ({ url: 'https://example.com/page3' }),
+          },
+        ];
+
+        const mockOpportunity = {
+          getId: () => 'existing-opportunity-id',
+          getType: () => 'prerender',
+          getSuggestions: sandbox.stub().resolves(mockSuggestions),
+        };
+
+        const bulkUpdateStatusStub = sandbox.stub().resolves();
+        const allBySiteIdAndStatusStub = sandbox.stub().resolves([mockOpportunity]);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-data-access': {
+            Suggestion: {
+              bulkUpdateStatus: bulkUpdateStatusStub,
+              STATUSES: SuggestionDataAccess.STATUSES,
+            },
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          s3Client: {
+            send: sandbox.stub().resolves({
+              Body: { transformToString: () => Promise.resolve('') },
+            }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        // Should complete successfully
+        expect(result.status).to.equal('complete');
+
+        // Should log about finding opportunity
+        const infoLogs = context.log.info.args.map(call => call[0]);
+        expect(infoLogs.some(msg => msg.includes('Found existing opportunity with no new prerender needs'))).to.be.true;
+
+        // bulkUpdateStatus should NOT be called since no suggestions need updating
+        expect(bulkUpdateStatusStub).to.not.have.been.called;
+
+        // Should not log about marking suggestions (no eligible suggestions)
+        expect(infoLogs.some(msg => msg.includes('Marked'))).to.be.false;
+      });
+
+      it('should handle errors when saving audit results', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js');
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().rejects(new Error('Database save failed')),
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+            },
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          s3Client: {
+            send: sandbox.stub().resolves({
+              Body: { transformToString: () => Promise.resolve('') },
+            }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        // Should complete successfully despite save error
+        expect(result.status).to.equal('complete');
+
+        // Should log error about save failure
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/Failed to save audit result/)
+        );
+      });
     });
 
     describe('processOpportunityAndSuggestions', () => {
@@ -2159,9 +2401,14 @@ describe('Prerender Audit', () => {
           setAuditResult: sinon.stub(),
           save: sinon.stub().resolves(),
         },
+        dataAccess: {
+          Opportunity: {
+            allBySiteIdAndStatus: sinon.stub().resolves([]),
+          },
+        },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: {},
-        env: { S3_SCRAPER_BUCKETNAME: 'b' },
+        env: { S3_SCRAPER_BUCKET_NAME: 'b' },
         auditContext: { scrapeJobId: 'test-job-id' },
       };
       const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
@@ -2278,6 +2525,11 @@ describe('Prerender Audit', () => {
           setAuditResult: sinon.stub(),
           save: sinon.stub().resolves(),
         },
+        dataAccess: {
+          Opportunity: {
+            allBySiteIdAndStatus: sinon.stub().resolves([]),
+          },
+        },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: { send: sinon.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -2331,6 +2583,11 @@ describe('Prerender Audit', () => {
           setAuditResult: sinon.stub(),
           save: sinon.stub().resolves(),
         },
+        dataAccess: {
+          Opportunity: {
+            allBySiteIdAndStatus: sinon.stub().resolves([]),
+          },
+        },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: { send: sinon.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -2381,9 +2638,14 @@ describe('Prerender Audit', () => {
           setAuditResult: sinon.stub(),
           save: sinon.stub().resolves(),
         },
+        dataAccess: {
+          Opportunity: {
+            allBySiteIdAndStatus: sinon.stub().resolves([]),
+          },
+        },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: {},
-        env: { S3_SCRAPER_BUCKETNAME: 'b' },
+        env: { S3_SCRAPER_BUCKET_NAME: 'b' },
         auditContext: { scrapeJobId: 'test-job-id' },
       };
       const res = await mockHandler.processContentAndGenerateOpportunities(ctx);
@@ -2460,6 +2722,11 @@ describe('Prerender Audit', () => {
           getId: () => 'a',
           setAuditResult: sinon.stub(),
           save: sinon.stub().resolves(),
+        },
+        dataAccess: {
+          Opportunity: {
+            allBySiteIdAndStatus: sinon.stub().resolves([]),
+          },
         },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: { send: sinon.stub().resolves({}) },
