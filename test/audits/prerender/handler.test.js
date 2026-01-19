@@ -1365,6 +1365,114 @@ describe('Prerender Audit', () => {
         // Should not log about marking suggestions (no eligible suggestions)
         expect(infoLogs.some(msg => msg.includes('Marked'))).to.be.false;
       });
+
+      it('should successfully update LatestAudit with detailed results', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js');
+        const latestAuditCreateStub = sandbox.stub().resolves();
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getIsLive: () => true,
+          },
+          audit: {
+            getId: () => 'audit-id',
+            getFullAuditRef: () => 'https://example.com',
+            getAuditedAt: () => '2024-01-01T00:00:00Z',
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+            },
+            LatestAudit: {
+              create: latestAuditCreateStub,
+            },
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          s3Client: {
+            send: sandbox.stub().resolves({
+              Body: { transformToString: () => Promise.resolve('') },
+            }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        // Should complete successfully
+        expect(result.status).to.equal('complete');
+
+        // Should call LatestAudit.create with correct data
+        expect(latestAuditCreateStub).to.have.been.calledOnce;
+        const createCall = latestAuditCreateStub.firstCall.args[0];
+        expect(createCall).to.have.property('siteId', 'test-site-id');
+        expect(createCall).to.have.property('auditType', 'prerender');
+        expect(createCall).to.have.property('auditResult');
+        expect(createCall).to.have.property('fullAuditRef', 'https://example.com');
+        expect(createCall).to.have.property('isLive', true);
+        expect(createCall).to.have.property('isError', false);
+
+        // Should log success message
+        const infoLogs = context.log.info.args.map(call => call[0]);
+        expect(infoLogs.some(msg => msg.includes('Updated LatestAudit with detailed results'))).to.be.true;
+      });
+
+      it('should handle errors when updating LatestAudit', async () => {
+        const mockHandler = await esmock('../../../src/prerender/handler.js');
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getIsLive: () => true,
+          },
+          audit: {
+            getId: () => 'audit-id',
+            getFullAuditRef: () => 'https://example.com',
+            getAuditedAt: () => '2024-01-01T00:00:00Z',
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+            },
+            LatestAudit: {
+              create: sandbox.stub().rejects(new Error('Database error')),
+            },
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          s3Client: {
+            send: sandbox.stub().resolves({
+              Body: { transformToString: () => Promise.resolve('') },
+            }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        // Should complete successfully despite LatestAudit error
+        expect(result.status).to.equal('complete');
+
+        // Should log error about LatestAudit failure
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/Failed to update LatestAudit/)
+        );
+      });
     });
 
     describe('processOpportunityAndSuggestions', () => {
