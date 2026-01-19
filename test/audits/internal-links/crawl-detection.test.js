@@ -316,6 +316,56 @@ describe('Crawl Detection for Broken Internal Links', () => {
       expect(isLinkInaccessibleStub).to.not.have.been.calledWith('https://external.com/link');
     });
 
+    it('should handle www vs non-www subdomains correctly', async () => {
+      // Site baseURL is example.com, but scraped pages are from www.example.com
+      const siteWithoutWww = {
+        getBaseURL: () => 'https://example.com',
+        getId: () => 'site-id-1',
+      };
+
+      const contextWithoutWww = {
+        ...mockContext,
+        site: siteWithoutWww,
+      };
+
+      const mixedLinksHTML = `
+        <html>
+          <body>
+            <main>
+              <a href="/page1">Relative Link</a>
+              <a href="https://www.example.com/page2">Absolute with www</a>
+              <a href="https://example.com/page3">Absolute without www</a>
+              <a href="https://other.com/page4">External</a>
+            </main>
+          </body>
+        </html>
+      `;
+
+      const scrapeResultPaths = new Map([
+        ['https://www.example.com/start', 's3-key-1'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          rawBody: mixedLinksHTML,
+        },
+        finalUrl: 'https://www.example.com/start',
+      });
+
+      isWithinAuditScopeStub.returns(true);
+      isLinkInaccessibleStub.resolves(false);
+
+      await detectBrokenLinksFromCrawl(scrapeResultPaths, contextWithoutWww);
+
+      // Should check all internal links regardless of www
+      expect(isLinkInaccessibleStub).to.have.been.calledThrice;
+      expect(isLinkInaccessibleStub).to.have.been.calledWith('https://www.example.com/page1');
+      expect(isLinkInaccessibleStub).to.have.been.calledWith('https://www.example.com/page2');
+      expect(isLinkInaccessibleStub).to.have.been.calledWith('https://example.com/page3');
+      // Should NOT check external link
+      expect(isLinkInaccessibleStub).to.not.have.been.calledWith('https://other.com/page4');
+    });
+
     it('should handle invalid hrefs gracefully', async () => {
       const invalidHrefHTML = `
         <html>
@@ -382,7 +432,7 @@ describe('Crawl Detection for Broken Internal Links', () => {
       // Should not check any links since they're all external
       expect(isLinkInaccessibleStub).to.not.have.been.called;
       expect(result).to.have.lengthOf(0);
-      expect(mockContext.log.debug).to.have.been.calledWith(
+      expect(mockContext.log.info).to.have.been.calledWith(
         sinon.match(/No internal links to validate/),
       );
     });
@@ -446,7 +496,7 @@ describe('Crawl Detection for Broken Internal Links', () => {
       expect(result).to.have.lengthOf(0);
 
       // Verify the page was processed despite URL parsing errors
-      expect(mockContext.log.debug).to.have.been.calledWith(
+      expect(mockContext.log.info).to.have.been.calledWith(
         sinon.match(/Processing page/),
       );
     });

@@ -27,11 +27,13 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
   } = context;
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   const baseURL = site.getBaseURL();
-  const siteOrigin = new URL(baseURL).origin;
+  // Extract site hostname without www for flexible origin matching
+  const baseURLObj = new URL(baseURL);
+  const baseHostname = baseURLObj.hostname.replace(/^www\./, '');
 
   log.info(`[broken-internal-links-crawl] Starting crawl detection for site: ${site.getId()}`);
   log.info(`[broken-internal-links-crawl] Processing ${scrapeResultPaths.size} scraped pages from S3 bucket: ${bucketName}`);
-  log.info(`[broken-internal-links-crawl] Site origin: ${siteOrigin}, BaseURL: ${baseURL}`);
+  log.info(`[broken-internal-links-crawl] Base hostname (normalized): ${baseHostname}, BaseURL: ${baseURL}`);
 
   const brokenLinksMap = new Map(); // Key: urlFrom|urlTo, Value: link object
   let totalLinksFound = 0;
@@ -58,17 +60,16 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
         const pageUrl = object.finalUrl || url;
         const htmlSize = html.length;
 
-        log.debug(`[broken-internal-links-crawl] Processing page ${pageUrl} (HTML size: ${htmlSize} bytes)`);
-
         // Parse HTML with Cheerio
         const $ = cheerioLoad(html);
         const anchors = $('a[href]');
         const totalAnchors = anchors.length;
 
-        log.debug(`[broken-internal-links-crawl] Found ${totalAnchors} total <a> tags on ${pageUrl}`);
+        log.info(`[broken-internal-links-crawl] Processing page ${pageUrl} (HTML size: ${htmlSize} bytes, Total <a> tags: ${totalAnchors})`);
 
         // Extract internal links (skip header/footer like preflight does)
         const internalLinks = new Set();
+        const sampleHrefs = []; // Collect sample hrefs for debugging
         let headerFooterLinksSkipped = 0;
         let externalLinksSkipped = 0;
         let invalidHrefsSkipped = 0;
@@ -84,10 +85,19 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
 
           try {
             const href = $a.attr('href');
+
+            // Collect sample hrefs for debugging (first 10)
+            if (sampleHrefs.length < 10) {
+              sampleHrefs.push(href);
+            }
+
+            // Resolve relative links (e.g., /about, ../products) to absolute URLs
+            // using pageUrl as base
             const absoluteUrl = new URL(href, pageUrl).toString();
 
-            // Only include internal links (same origin)
-            if (new URL(absoluteUrl).origin === siteOrigin) {
+            // Only include internal links (same hostname, ignoring www)
+            const linkHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
+            if (linkHostname === baseHostname) {
               internalLinks.add(absoluteUrl);
             } else {
               externalLinksSkipped += 1;
@@ -100,16 +110,33 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
 
         totalLinksFound += internalLinks.size;
 
-        log.debug(`[broken-internal-links-crawl] Page ${pageUrl} - Internal links: ${internalLinks.size}, Header/Footer: ${headerFooterLinksSkipped}, External: ${externalLinksSkipped}, Invalid: ${invalidHrefsSkipped}`);
+        log.info(`[broken-internal-links-crawl] Page ${pageUrl} - Found ${totalAnchors} total <a> tags`);
+
+        // Log sample raw hrefs to show relative vs absolute links
+        if (sampleHrefs.length > 0) {
+          log.info(`[broken-internal-links-crawl] Sample raw href attributes: ${JSON.stringify(sampleHrefs)}`);
+        }
+
+        log.info(`[broken-internal-links-crawl] Page ${pageUrl} - Internal links: ${internalLinks.size}, Header/Footer skipped: ${headerFooterLinksSkipped}, External: ${externalLinksSkipped}, Invalid: ${invalidHrefsSkipped}`);
+
+        // Log sample resolved internal links for investigation
+        if (internalLinks.size > 0) {
+          const linksList = Array.from(internalLinks);
+          const sampleSize = Math.min(5, linksList.length);
+          log.info(`[broken-internal-links-crawl] Sample resolved internal links: ${JSON.stringify(linksList.slice(0, sampleSize))}`);
+          if (linksList.length > sampleSize) {
+            log.info(`[broken-internal-links-crawl] ... and ${linksList.length - sampleSize} more internal links on this page`);
+          }
+        }
 
         if (internalLinks.size === 0) {
-          log.debug(`[broken-internal-links-crawl] No internal links to validate on ${pageUrl}`);
+          log.info(`[broken-internal-links-crawl] No internal links to validate on ${pageUrl} - Total anchors=${totalAnchors}, Header/Footer=${headerFooterLinksSkipped}, External=${externalLinksSkipped}, Invalid=${invalidHrefsSkipped}`);
           pagesProcessed += 1;
           return;
         }
 
         // Validate each internal link in parallel
-        log.debug(`[broken-internal-links-crawl] Validating ${internalLinks.size} internal links from ${pageUrl}`);
+        log.info(`[broken-internal-links-crawl] Validating ${internalLinks.size} internal links from ${pageUrl}`);
 
         const linkValidations = await Promise.all(
           Array.from(internalLinks).map(async (linkUrl) => {

@@ -43,12 +43,15 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 export async function updateAuditResult(audit, auditResult, prioritizedLinks, dataAccess, log) {
   try {
     const auditId = audit.getId();
-    const auditToUpdate = await dataAccess.Audit.findById(auditId);
+    const auditToUpdate = await Audit.findById(auditId);
     if (auditToUpdate) {
-      auditToUpdate.setAuditResult({
+      // Update the audit result with prioritized links
+      const updatedAuditResult = {
         ...auditResult,
         brokenInternalLinks: prioritizedLinks,
-      });
+      };
+
+      auditToUpdate.setAuditResult(updatedAuditResult);
       await auditToUpdate.save();
       log.info(`[${AUDIT_TYPE}] Updated audit result with ${prioritizedLinks.length} prioritized broken links`);
     } else {
