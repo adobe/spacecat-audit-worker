@@ -573,7 +573,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -608,7 +612,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().rejects(new Error('Database error')) } },
           log: { info: sandbox.stub(), debug: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
           scrapeResultPaths: new Map(),
@@ -643,7 +651,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: {
             SiteTopPage: {
               // No top pages, we don't want to exercise that path here
@@ -694,7 +706,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -725,7 +741,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -786,7 +806,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
           },
@@ -863,7 +887,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
           },
@@ -883,14 +911,14 @@ describe('Prerender Audit', () => {
         expect(result.status).to.equal('complete');
         expect(result.auditResult.scrapeForbidden).to.be.true;
         expect(result.auditResult.urlsNeedingPrerender).to.equal(0);
-        
+
         // Verify that convertToOpportunity was called for notification
         expect(convertToOpportunityStub).to.have.been.calledOnce;
-        
+
         // Verify log message for dummy opportunity
         const infoLogs = context.log.info.args.map(call => call[0]);
         expect(infoLogs.some(msg => msg.includes('Creating dummy opportunity for forbidden scraping'))).to.be.true;
-        
+
         // Verify that convertToOpportunity was called with correct parameters
         expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com'); // auditUrl
       });
@@ -934,6 +962,219 @@ describe('Prerender Audit', () => {
         expect(context.log.info).to.have.been.calledWith(
           'Prerender - Creating dummy opportunity for forbidden scraping. baseUrl=https://example.com, siteId=test-site-id'
         );
+      });
+    });
+
+    describe('No Opportunity Found - Outdated Suggestions', () => {
+      it('should mark existing suggestions as outdated when no prerender opportunity is found', async () => {
+        const { Suggestion: SuggestionDataAccess } = await import('@adobe/spacecat-shared-data-access');
+
+        // Create mock suggestions with different statuses
+        const mockSuggestions = [
+          {
+            getId: () => 'suggestion-1',
+            getStatus: () => 'NEW',
+            getData: () => ({ url: 'https://example.com/page1' }),
+          },
+          {
+            getId: () => 'suggestion-2',
+            getStatus: () => 'PENDING_VALIDATION',
+            getData: () => ({ url: 'https://example.com/page2' }),
+          },
+          {
+            getId: () => 'suggestion-3',
+            getStatus: () => 'SKIPPED',
+            getData: () => ({ url: 'https://example.com/page3' }),
+          },
+          {
+            getId: () => 'suggestion-4',
+            getStatus: () => 'OUTDATED', // Already outdated - should not be updated
+            getData: () => ({ url: 'https://example.com/page4' }),
+          },
+          {
+            getId: () => 'suggestion-5',
+            getStatus: () => 'FIXED', // Already fixed - should not be updated
+            getData: () => ({ url: 'https://example.com/page5' }),
+          },
+        ];
+
+        const mockOpportunity = {
+          getId: () => 'existing-opportunity-id',
+          getType: () => 'prerender',
+          getSuggestions: sandbox.stub().resolves(mockSuggestions),
+        };
+
+        const bulkUpdateStatusStub = sandbox.stub().resolves();
+        const allBySiteIdAndStatusStub = sandbox.stub().resolves([mockOpportunity]);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '@adobe/spacecat-shared-data-access': {
+            Suggestion: {
+              bulkUpdateStatus: bulkUpdateStatusStub,
+              STATUSES: SuggestionDataAccess.STATUSES,
+            },
+          },
+        });
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          s3Client: {
+            send: sandbox.stub().resolves({
+              Body: { transformToString: () => Promise.resolve('') },
+            }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        expect(result.auditResult.urlsNeedingPrerender).to.equal(0);
+
+        // Verify that we checked for existing opportunities
+        expect(allBySiteIdAndStatusStub).to.have.been.calledWith('test-site-id', 'NEW');
+
+        // Verify that suggestions were fetched
+        expect(mockOpportunity.getSuggestions).to.have.been.called;
+
+        // Verify that bulkUpdateStatus was called with NEW, PENDING_VALIDATION, and SKIPPED suggestions
+        // (OUTDATED and FIXED suggestions should not be updated)
+        expect(bulkUpdateStatusStub).to.have.been.calledOnce;
+        const suggestionsToUpdate = bulkUpdateStatusStub.firstCall.args[0];
+        expect(suggestionsToUpdate).to.have.length(3);
+        expect(suggestionsToUpdate[0].getId()).to.equal('suggestion-1');
+        expect(suggestionsToUpdate[1].getId()).to.equal('suggestion-2');
+        expect(suggestionsToUpdate[2].getId()).to.equal('suggestion-3');
+
+        // Verify the status we're updating to
+        expect(bulkUpdateStatusStub.firstCall.args[1]).to.equal(SuggestionDataAccess.STATUSES.OUTDATED);
+
+        // Verify log message
+        const infoLogs = context.log.info.args.map(call => call[0]);
+        expect(infoLogs.some(msg => msg.includes('Marked 3 suggestions as outdated'))).to.be.true;
+      });
+
+      it('should handle errors gracefully when marking suggestions as outdated', async () => {
+        const mockOpportunity = {
+          getId: () => 'existing-opportunity-id',
+          getType: () => 'prerender',
+          getSuggestions: sandbox.stub().rejects(new Error('Database error')),
+        };
+
+        const allBySiteIdAndStatusStub = sandbox.stub().resolves([mockOpportunity]);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js');
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          s3Client: {
+            send: sandbox.stub().resolves({
+              Body: { transformToString: () => Promise.resolve('') },
+            }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        // Should still complete successfully despite the error
+        expect(result.status).to.equal('complete');
+
+        // Verify error was logged
+        expect(context.log.error).to.have.been.called;
+        const errorLogs = context.log.error.args.map(call => call[0]);
+        expect(errorLogs.some(msg => msg.includes('Failed to update existing suggestions to outdated'))).to.be.true;
+      });
+
+      it('should not attempt to update suggestions when no existing opportunity is found', async () => {
+        const allBySiteIdAndStatusStub = sandbox.stub().resolves([]);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js');
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          s3Client: {
+            send: sandbox.stub().resolves({
+              Body: { transformToString: () => Promise.resolve('') },
+            }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          auditContext: { scrapeJobId: 'test-job-id' },
+          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        // Should complete successfully
+        expect(result.status).to.equal('complete');
+
+        // Verify log message indicates no opportunity was found
+        const infoLogs = context.log.info.args.map(call => call[0]);
+        expect(infoLogs.some(msg => msg.includes('No opportunity found'))).to.be.true;
+
+        // Should not log about marking suggestions as outdated
+        expect(infoLogs.some(msg => msg.includes('marking suggestions as outdated'))).to.be.false;
       });
     });
 
@@ -1913,7 +2154,11 @@ describe('Prerender Audit', () => {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({ getIncludedURLs: () => ['https://example.com/inc'] }),
         },
-        audit: { getId: () => 'a' },
+        audit: {
+          getId: () => 'a',
+          setAuditResult: sinon.stub(),
+          save: sinon.stub().resolves(),
+        },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: {},
         env: { S3_SCRAPER_BUCKETNAME: 'b' },
@@ -2028,7 +2273,11 @@ describe('Prerender Audit', () => {
           // Use absolute URL so keys align with results and sheet mapping on '/inc'
           getConfig: () => ({ getIncludedURLs: () => ['https://example.com/inc'] }),
         },
-        audit: { getId: () => 'a' },
+        audit: {
+          getId: () => 'a',
+          setAuditResult: sinon.stub(),
+          save: sinon.stub().resolves(),
+        },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: { send: sinon.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -2077,7 +2326,11 @@ describe('Prerender Audit', () => {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({ getIncludedURLs: () => ['https://example.com/inc'] }),
         },
-        audit: { getId: () => 'a' },
+        audit: {
+          getId: () => 'a',
+          setAuditResult: sinon.stub(),
+          save: sinon.stub().resolves(),
+        },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: { send: sinon.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -2123,7 +2376,11 @@ describe('Prerender Audit', () => {
           getBaseURL: () => 'invalid', // force new URL(fullUrl, baseUrl) to throw in toPath
           getConfig: () => ({ getIncludedURLs: () => ['::'] }),
         },
-        audit: { getId: () => 'a' },
+        audit: {
+          getId: () => 'a',
+          setAuditResult: sinon.stub(),
+          save: sinon.stub().resolves(),
+        },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: {},
         env: { S3_SCRAPER_BUCKETNAME: 'b' },
@@ -2199,7 +2456,11 @@ describe('Prerender Audit', () => {
       });
       const ctx = {
         site: { getId: () => 'site', getBaseURL: () => 'https://example.com', getConfig: () => ({ getIncludedURLs: () => [] }) },
-        audit: { getId: () => 'a' },
+        audit: {
+          getId: () => 'a',
+          setAuditResult: sinon.stub(),
+          save: sinon.stub().resolves(),
+        },
         log: { info: sinon.stub(), warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: { send: sinon.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -2246,7 +2507,11 @@ describe('Prerender Audit', () => {
           getBaseURL: () => 'https://example.com',
           getConfig: () => { throw new Error('config failed'); },
         },
-        audit: { getId: () => 'a' },
+        audit: {
+          getId: () => 'a',
+          setAuditResult: sinon.stub(),
+          save: sinon.stub().resolves(),
+        },
         log: { info: sinon.stub(), warn, debug: sinon.stub(), error: err },
         s3Client: { send: sinon.stub().resolves({}) },
         env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -2427,7 +2692,11 @@ describe('Prerender Audit', () => {
             getIncludedURLs: () => ['https://example.com/included'],
           }),
         },
-        audit: { getId: () => 'a' },
+        audit: {
+          getId: () => 'a',
+          setAuditResult: sinon.stub(),
+          save: sinon.stub().resolves(),
+        },
         dataAccess: {
           SiteTopPage: {
             allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
@@ -2744,13 +3013,13 @@ describe('Prerender Audit', () => {
       it('should handle HTML with complex whitespace', async () => {
         // Create HTML with complex whitespace scenarios
         const htmlWithComplexWhitespace = `<html><body>
-        
+
         <p>Content with multiple spaces</p>
-        
-        
+
+
         <div>Content after empty lines</div>
         <span>	Tab-spaced content	</span>
-        
+
         <p>Final content</p>
         </body></html>`;
 
@@ -2799,7 +3068,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -2851,7 +3124,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           auditContext: { scrapeJobId: 'test-job-id' },
         };
@@ -2886,7 +3163,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -2937,7 +3218,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -3019,7 +3304,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -3069,7 +3358,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -3168,8 +3461,8 @@ describe('Prerender Audit', () => {
         const htmlWithComplexLineBreaks = `<html><body>
         Line one\r\n
         \t\tTab-indented line\t\t
-        
-        
+
+
         Multiple empty lines above
         \r
         Windows line ending above
@@ -3308,7 +3601,7 @@ describe('Prerender Audit', () => {
         // Test complex line break scenarios
         const htmlWithLines = `<html><body>
         Line one content here
-        
+
         Line two content here
         \r\n
         Line three with carriage return
@@ -3355,7 +3648,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -3399,7 +3696,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -3449,7 +3750,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -3527,7 +3832,7 @@ describe('Prerender Audit', () => {
         expect(mappedSuggestion.data.originalHtmlKey).to.include('server-side.html');
         expect(mappedSuggestion.data.prerenderedHtmlKey).to.include('client-side.html');
         expect(mappedSuggestion.data).to.not.have.property('needsPrerender');
-        
+
         // Test mergeDataFunction for individual suggestions
         const mergeDataFn = individualSyncCall.args[0].mergeDataFunction;
         const existingData = { url: 'https://example.com/page1', customField: 'preserved' };
@@ -3607,7 +3912,7 @@ describe('Prerender Audit', () => {
         const existingOpportunity = {
           getId: () => 'existing-opp-id',
           getType: () => 'prerender',
-          getData: () => ({ 
+          getData: () => ({
             dataSources: ['ahrefs'],
             oldField: 'should-be-preserved',
             scrapeForbidden: true, // Old value
@@ -3623,7 +3928,7 @@ describe('Prerender Audit', () => {
         };
 
         const convertToOpportunityModule = await import('../../../src/common/opportunity.js');
-        
+
         const auditData = {
           siteId: 'test-site-id',
           id: 'new-audit-id',
@@ -3663,13 +3968,13 @@ describe('Prerender Audit', () => {
         // Verify setData was called with merged data (lines 95-98)
         expect(existingOpportunity.setData).to.have.been.calledOnce;
         const setDataCall = existingOpportunity.setData.getCall(0).args[0];
-        
+
         // Should merge all fields from opportunityInstance.data
         expect(setDataCall).to.have.property('oldField', 'should-be-preserved'); // From existing
         expect(setDataCall).to.have.property('dataSources');
         expect(setDataCall).to.have.property('scrapeForbidden', false); // Updated value
         expect(setDataCall).to.have.property('newField', 'new-value'); // New field
-        
+
         // Verify save was called
         expect(existingOpportunity.save).to.have.been.calledOnce;
       });
@@ -3732,7 +4037,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -3781,7 +4090,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -3830,7 +4143,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -3881,7 +4198,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -3931,7 +4252,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -3976,7 +4301,11 @@ describe('Prerender Audit', () => {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
           },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
@@ -4016,7 +4345,11 @@ describe('Prerender Audit', () => {
 
         const context = {
           site: { getId: () => 'test-site', getBaseURL: () => 'https://example.com' },
-          audit: { getId: () => 'audit-id' },
+          audit: {
+            getId: () => 'audit-id',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          },
           dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
             { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
           ]) } },
@@ -4027,7 +4360,7 @@ describe('Prerender Audit', () => {
         };
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
-        
+
         expect(result.auditResult.results[0].scrapeError).to.be.undefined;
       });
     });
@@ -4108,7 +4441,7 @@ describe('Prerender Audit', () => {
       expect(uploadedData.urlsNeedingPrerender).to.equal(2);
       expect(uploadedData.scrapeForbidden).to.equal(false);
       expect(uploadedData.pages).to.have.lengthOf(2);
-      
+
       expect(uploadedData.pages[0]).to.deep.equal({
         url: 'https://example.com/page1',
         scrapingStatus: 'success',

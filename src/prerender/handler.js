@@ -1015,7 +1015,39 @@ export async function processContentAndGenerateOpportunities(context) {
         scrapeJobId,
       }, context);
     } else {
+      // No opportunities found - check if there are existing suggestions to mark as outdated
       log.info(`Prerender - No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}`);
+
+      try {
+        const { dataAccess } = context;
+        const { Opportunity } = dataAccess;
+        const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+        const existingOpportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
+
+        if (existingOpportunity) {
+          log.info(`Prerender - Found existing opportunity with no new prerender needs, marking suggestions as outdated. baseUrl=${site.getBaseURL()}, siteId=${siteId}, opportunityId=${existingOpportunity.getId()}`);
+
+          // Get all suggestions for this opportunity
+          const suggestions = await existingOpportunity.getSuggestions();
+
+          // Mark only NEW, PENDING_VALIDATION, and SKIPPED suggestions as outdated
+          if (suggestions && suggestions.length > 0) {
+            const suggestionsToUpdate = suggestions.filter((s) => [
+              Suggestion.STATUSES.NEW,
+              Suggestion.STATUSES.PENDING_VALIDATION,
+              Suggestion.STATUSES.SKIPPED,
+            ].includes(s.getStatus()));
+
+            if (suggestionsToUpdate.length > 0) {
+              await Suggestion.bulkUpdateStatus(suggestionsToUpdate, Suggestion.STATUSES.OUTDATED);
+              log.info(`Prerender - Marked ${suggestionsToUpdate.length} suggestions as outdated. baseUrl=${site.getBaseURL()}, siteId=${siteId}, opportunityId=${existingOpportunity.getId()}`);
+            }
+          }
+        }
+      } catch (error) {
+        log.error(`Prerender - Failed to update existing suggestions to outdated: ${error.message}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`, error);
+        // Don't throw - this is a cleanup step and shouldn't fail the audit
+      }
     }
 
     const endTime = process.hrtime(startTime);
@@ -1044,6 +1076,19 @@ export async function processContentAndGenerateOpportunities(context) {
 
     // Upload status summary to S3 (post-processing)
     await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
+
+    // Update the audit record with the detailed results from step 3
+    try {
+      if (audit) {
+        audit.setAuditResult(auditResult);
+        await audit.save();
+        log.info(`Prerender - Saved detailed audit result for auditId: ${audit.getId()}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+      } else {
+        log.warn(`Prerender - Audit not available to save results. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+      }
+    } catch (error) {
+      log.error(`Prerender - Failed to save audit result for auditId: ${audit?.getId()}: ${error.message}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`, error);
+    }
 
     return {
       status: 'complete',
