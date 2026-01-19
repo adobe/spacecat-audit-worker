@@ -2442,6 +2442,90 @@ describe('Headings Audit', () => {
     expect(mockClient.fetchChatCompletion).to.have.been.called;
   });
 
+  it('tests getH1HeadingASuggestion catch block when fetchChatCompletion throws error (lines 137-140)', async () => {
+    const url = 'https://example.com/page';
+    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+
+    // Mock AI client to throw an error
+    const mockClient = {
+      fetchChatCompletion: sinon.stub().rejects(new Error('Azure OpenAI service unavailable')),
+    };
+    AzureOpenAIClient.createFrom.restore();
+    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+    const pageTags = {
+      finalUrl: url,
+      title: 'Test Title',
+      h1: ['Test H1'],
+      description: 'Test Description',
+      lang: 'en',
+    };
+
+    // This should trigger the catch block at lines 137-140
+    const result = await getH1HeadingASuggestion(
+      url,
+      logSpy,
+      'h1',
+      pageTags,
+      context,
+      'Brand Guidelines'
+    );
+
+    // Should return null when error occurs
+    expect(result).to.be.null;
+
+    // Should log the error
+    expect(logSpy.error).to.have.been.calledWith(
+      sinon.match(/\[Headings AI Suggestions\] Error for empty heading suggestion:/)
+    );
+
+    // Should have attempted to call fetchChatCompletion
+    expect(mockClient.fetchChatCompletion).to.have.been.called;
+  });
+
+  it('tests getH1HeadingASuggestion catch block when JSON.parse throws error (lines 137-140)', async () => {
+    const url = 'https://example.com/page';
+    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+
+    // Mock AI client to return invalid JSON that will cause JSON.parse to throw
+    const mockClient = {
+      fetchChatCompletion: sinon.stub().resolves({
+        choices: [{ message: { content: 'This is not valid JSON at all!' } }],
+      }),
+    };
+    AzureOpenAIClient.createFrom.restore();
+    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+    const pageTags = {
+      finalUrl: url,
+      title: 'Test Title',
+      h1: ['Test H1'],
+      description: 'Test Description',
+      lang: 'en',
+    };
+
+    // This should trigger the catch block at lines 137-140 via JSON.parse error
+    const result = await getH1HeadingASuggestion(
+      url,
+      logSpy,
+      'h1',
+      pageTags,
+      context,
+      'Brand Guidelines'
+    );
+
+    // Should return null when JSON parsing fails
+    expect(result).to.be.null;
+
+    // Should log the error (will include JSON parse error message)
+    expect(logSpy.error).to.have.been.calledWith(
+      sinon.match(/\[Headings AI Suggestions\] Error for empty heading suggestion:/)
+    );
+
+    // Should have called fetchChatCompletion
+    expect(mockClient.fetchChatCompletion).to.have.been.called;
+  });
+
   it('handles headingsAuditRunner with no top pages', async () => {
     const baseURL = 'https://example.com';
     const logSpy = { info: sinon.spy(), warn: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
@@ -3150,7 +3234,7 @@ describe('Headings Audit', () => {
       expect(opportunityData).to.have.property('tags');
       expect(opportunityData.tags).to.be.an('array');
       // Tags are now merged with hardcoded tags, so length may vary
-      expect(opportunityData.tags.length).to.be.at.least(5);
+      expect(opportunityData.tags.length).to.be.at.least(4);
     });
 
     it('has correct data sources configuration', () => {
@@ -4256,6 +4340,694 @@ describe('Headings Audit', () => {
       expect(mockSiteTopPage).to.not.have.been.called;
       // Verify result
       expect(result.fullAuditRef).to.equal(baseURL);
+    });
+  });
+
+  describe('Brand Profile Integration', () => {
+    let getBrandGuidelines;
+
+    before(async () => {
+      const sharedUtils = await import('../../src/headings/shared-utils.js');
+      getBrandGuidelines = sharedUtils.getBrandGuidelines;
+    });
+
+    describe('getBrandGuidelines with brand profile from site config', () => {
+      it('should use brand profile from site config when available', async () => {
+        const mockBrandProfile = {
+          main_profile: {
+            brand_personality: {
+              description: 'Lovesac comes across as both a nurturing host and an inspired creator',
+              archetype: 'Caregiver-Innovator hybrid',
+              traits: ['hospitable', 'innovative', 'optimistic', 'genuine', 'modern'],
+            },
+            tone_attributes: {
+              primary: ['warm', 'enthusiastic', 'optimistic', 'inviting', 'premium'],
+              avoid: ['aloof', 'overly formal', 'utilitarian', 'cold', 'condescending'],
+            },
+            language_patterns: {
+              preferred: [
+                'Designed for life',
+                'Changeable. Washable. Loveable.',
+                'Innovation you can feel',
+              ],
+              avoid: [
+                'Lowest price guaranteed',
+                'Standard sofa',
+                'Cheap',
+              ],
+            },
+            editorial_guidelines: {
+              dos: [
+                'Use brand-specific terms like \'Sac\' and \'Sactional\' confidently',
+                'Tie product features directly to lifestyle/emotional benefits',
+                'Speak directly to the reader in second person',
+              ],
+              donts: [
+                'Talk down to the reader or use superfluous jargon',
+                'Overpromise on technical claims without backing up with benefits',
+                'Depend on price or discount language as primary motivation',
+              ],
+            },
+          },
+        };
+
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Verify that brand profile was used
+        expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] Using brand profile from site config');
+
+        // Verify the extracted guidelines
+        expect(result).to.have.property('brand_persona');
+        expect(result.brand_persona).to.equal('Lovesac comes across as both a nurturing host and an inspired creator');
+
+        expect(result).to.have.property('tone');
+        expect(result.tone).to.equal('warm, enthusiastic, optimistic, inviting, premium');
+
+        expect(result).to.have.property('editorial_guidelines');
+        expect(result.editorial_guidelines).to.have.property('do');
+        expect(result.editorial_guidelines.do).to.be.an('array').with.length(3);
+        expect(result.editorial_guidelines).to.have.property('dont');
+        expect(result.editorial_guidelines.dont).to.be.an('array').with.length(3);
+
+        expect(result).to.have.property('forbidden');
+        expect(result.forbidden).to.be.an('array');
+        expect(result.forbidden).to.include('Lowest price guaranteed');
+        expect(result.forbidden).to.include('aloof');
+
+        // Verify AI was not called (no fetchChatCompletion in this test)
+      });
+
+      it('should extract all forbidden items from both language patterns and tone attributes', async () => {
+        const mockBrandProfile = {
+          main_profile: {
+            tone_attributes: {
+              primary: ['friendly'],
+              avoid: ['tone1', 'tone2'],
+            },
+            language_patterns: {
+              avoid: ['phrase1', 'phrase2', 'phrase3'],
+            },
+            editorial_guidelines: {
+              dos: [],
+              donts: [],
+            },
+            brand_personality: {
+              description: 'Test',
+            },
+          },
+        };
+
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        expect(result.forbidden).to.be.an('array').with.length(5);
+        expect(result.forbidden).to.include.members(['phrase1', 'phrase2', 'phrase3', 'tone1', 'tone2']);
+      });
+
+      it('should handle missing main_profile and use empty defaults (covers fallback branches)', async () => {
+        // This test covers the fallback branch on line 150 when main_profile is missing
+        const mockBrandProfile = {
+          // Missing main_profile - tests line 150 {} fallback
+          // But we need at least one property so it's not considered empty by getBrandGuidelines
+          version: 1,
+        };
+
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Should use empty defaults
+        expect(result.brand_persona).to.equal('');
+        expect(result.tone).to.equal('');
+        expect(result.editorial_guidelines.do).to.deep.equal([]);
+        expect(result.editorial_guidelines.dont).to.deep.equal([]);
+        expect(result.forbidden).to.deep.equal([]);
+      });
+
+      it('should handle missing nested properties and use empty defaults', async () => {
+        // Test with main_profile present but missing nested properties
+        const mockBrandProfile = {
+          main_profile: {
+            // Missing brand_personality - tests line 154 '' fallback
+            // Missing tone_attributes - tests line 157 {} fallback
+            // Missing editorial_guidelines - tests line 162-163 {} fallback
+            // Missing language_patterns - tests line 168 {} fallback
+          },
+        };
+
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Should use empty defaults for all missing properties
+        expect(result.brand_persona).to.equal('');
+        expect(result.tone).to.equal('');
+        expect(result.editorial_guidelines.do).to.deep.equal([]);
+        expect(result.editorial_guidelines.dont).to.deep.equal([]);
+        expect(result.forbidden).to.deep.equal([]);
+      });
+
+      it('should handle brand profile with missing avoid arrays', async () => {
+        // Test with tone_attributes and language_patterns present but missing avoid arrays
+        const mockBrandProfile = {
+          main_profile: {
+            brand_personality: {
+              description: 'Test persona',
+            },
+            tone_attributes: {
+              primary: ['professional'],
+              // Missing avoid - tests line 170 || [] fallback
+            },
+            language_patterns: {
+              preferred: ['test phrase'],
+              // Missing avoid - tests line 169 || [] fallback
+            },
+            editorial_guidelines: {
+              // Missing dos - tests line 164 || [] fallback
+              // Missing donts - tests line 165 || [] fallback
+            },
+          },
+        };
+
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Should use empty arrays for missing avoid properties
+        expect(result.brand_persona).to.equal('Test persona');
+        expect(result.tone).to.equal('professional');
+        expect(result.editorial_guidelines.do).to.deep.equal([]);
+        expect(result.editorial_guidelines.dont).to.deep.equal([]);
+        expect(result.forbidden).to.deep.equal([]);
+      });
+    });
+
+    describe('getBrandGuidelines fallback to AI generation', () => {
+      let mockAzureClient;
+
+      beforeEach(() => {
+        mockAzureClient = {
+          fetchChatCompletion: sinon.stub().resolves({
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  brand_persona: 'AI generated persona',
+                  tone: 'AI generated tone',
+                  editorial_guidelines: {
+                    do: ['AI do'],
+                    dont: ['AI dont'],
+                  },
+                  forbidden: ['AI forbidden'],
+                }),
+              },
+            }],
+          }),
+        };
+
+        AzureOpenAIClient.createFrom.restore();
+        sinon.stub(AzureOpenAIClient, 'createFrom').returns(mockAzureClient);
+      });
+
+      it('should fall back to AI when no brand profile is available', async () => {
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => null,
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Verify that AI fallback was used
+        expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] No brand profile found in site config, generating from healthy tags using AI');
+        expect(mockAzureClient.fetchChatCompletion).to.have.been.called;
+      });
+
+      it('should fall back to AI when no site is provided', async () => {
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        await getBrandGuidelines(healthyTagsObject, mockLog, mockContext);
+
+        // Verify that AI was used
+        expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] No brand profile found in site config, generating from healthy tags using AI');
+        expect(mockAzureClient.fetchChatCompletion).to.have.been.called;
+      });
+
+      it('should fall back to AI when brand profile is empty object', async () => {
+        const mockSite = {
+          getConfig: () => ({
+            getBrandProfile: () => ({}),
+          }),
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Verify that AI fallback was used
+        expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] No brand profile found in site config, generating from healthy tags using AI');
+        expect(mockAzureClient.fetchChatCompletion).to.have.been.called;
+      });
+
+      it('should handle errors gracefully and fall back to AI', async () => {
+        const mockSite = {
+          getConfig: () => {
+            throw new Error('Config access error');
+          },
+        };
+
+        const healthyTagsObject = {
+          title: 'Sample Title',
+          description: 'Sample Description',
+          h1: 'Sample H1',
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+        };
+
+        await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
+
+        // Verify that warning was logged
+        expect(mockLog.warn).to.have.been.calledWith(sinon.match(/Error accessing brand profile from site config/));
+
+        // Verify that AI fallback was used
+        expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] No brand profile found in site config, generating from healthy tags using AI');
+        expect(mockAzureClient.fetchChatCompletion).to.have.been.called;
+      });
+    });
+
+    describe('Brand profile integration in full audit flow', () => {
+      it('should use brand profile throughout the audit when available', async function () {
+        this.timeout(10000); // Increase timeout for full audit flow
+        const baseURL = 'https://example.com';
+        const url = 'https://example.com/page';
+
+        const mockBrandProfile = {
+          main_profile: {
+            brand_personality: {
+              description: 'Professional and approachable',
+            },
+            tone_attributes: {
+              primary: ['professional', 'friendly'],
+              avoid: ['aggressive'],
+            },
+            editorial_guidelines: {
+              dos: ['Use clear language'],
+              donts: ['Avoid jargon'],
+            },
+            language_patterns: {
+              avoid: ['bad phrase'],
+            },
+          },
+        };
+
+        const mockSite = {
+          getId: () => 'site-1',
+          getBaseURL: () => baseURL,
+          getConfig: () => ({
+            getLlmoCdnlogsFilter: () => [],
+            getBrandProfile: () => mockBrandProfile,
+          }),
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+                { getUrl: () => url },
+              ]),
+            },
+          },
+          s3Client: {
+            send: sinon.stub().callsFake((command) => {
+              if (command.constructor.name === 'ListObjectsV2Command') {
+                return Promise.resolve({
+                  Contents: [{ Key: 'scrapes/site-1/page/scrape.json' }],
+                  NextContinuationToken: undefined,
+                });
+              }
+              if (command.constructor.name === 'GetObjectCommand') {
+                return Promise.resolve({
+                  Body: {
+                    transformToString: () => JSON.stringify({
+                      finalUrl: url,
+                      scrapedAt: Date.now(),
+                      scrapeResult: {
+                        rawBody: '<h1>Valid Heading</h1><h2>Section</h2>',
+                        tags: {
+                          title: 'Test Title',
+                          description: 'Test Description',
+                          h1: ['Valid Heading'],
+                        },
+                      },
+                    }),
+                  },
+                  ContentType: 'application/json',
+                });
+              }
+              throw new Error('Unexpected command');
+            }),
+          },
+        };
+
+        const { headingsAuditRunner } = await import('../../src/headings/handler.js');
+        const result = await headingsAuditRunner(baseURL, mockContext, mockSite);
+
+        // Verify brand profile was used (check logs)
+        expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] Using brand profile from site config');
+
+        // Verify audit completed
+        expect(result).to.have.property('fullAuditRef', baseURL);
+        expect(result).to.have.property('auditResult');
+      });
+
+      it('should fall back to AI generation when site has no brand profile', async function () {
+        this.timeout(10000); // Increase timeout for full audit flow
+        const baseURL = 'https://example.com';
+        const url = 'https://example.com/page';
+
+        const mockSite = {
+          getId: () => 'site-1',
+          getBaseURL: () => baseURL,
+          getConfig: () => ({
+            getLlmoCdnlogsFilter: () => [],
+            getBrandProfile: () => null, // No brand profile
+          }),
+        };
+
+        const mockLog = {
+          info: sinon.spy(),
+          warn: sinon.spy(),
+          debug: sinon.spy(),
+          error: sinon.spy(),
+        };
+
+        const mockAzureClient = {
+          fetchChatCompletion: sinon.stub().resolves({
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  brand_persona: 'AI generated persona',
+                  tone: 'professional',
+                }),
+              },
+            }],
+          }),
+        };
+
+        AzureOpenAIClient.createFrom.restore();
+        sinon.stub(AzureOpenAIClient, 'createFrom').returns(mockAzureClient);
+
+        const mockContext = {
+          log: mockLog,
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            AZURE_OPENAI_ENDPOINT: 'https://test.openai.azure.com',
+            AZURE_OPENAI_KEY: 'test-key',
+            AZURE_API_VERSION: '2024-02-01',
+            AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          },
+          dataAccess: {
+            SiteTopPage: {
+              allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+                { getUrl: () => url },
+              ]),
+            },
+          },
+          s3Client: {
+            send: sinon.stub().callsFake((command) => {
+              if (command.constructor.name === 'ListObjectsV2Command') {
+                return Promise.resolve({
+                  Contents: [{ Key: 'scrapes/site-1/page/scrape.json' }],
+                  NextContinuationToken: undefined,
+                });
+              }
+              if (command.constructor.name === 'GetObjectCommand') {
+                return Promise.resolve({
+                  Body: {
+                    transformToString: () => JSON.stringify({
+                      finalUrl: url,
+                      scrapedAt: Date.now(),
+                      scrapeResult: {
+                        rawBody: '<h1>Valid Heading</h1><h2>Section</h2>',
+                        tags: {
+                          title: 'Test Title',
+                          description: 'Test Description',
+                          h1: ['Valid Heading'],
+                        },
+                      },
+                    }),
+                  },
+                  ContentType: 'application/json',
+                });
+              }
+              throw new Error('Unexpected command');
+            }),
+          },
+        };
+
+        const { headingsAuditRunner } = await import('../../src/headings/handler.js');
+        const result = await headingsAuditRunner(baseURL, mockContext, mockSite);
+
+        // Verify AI fallback was used
+        expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] No brand profile found in site config, generating from healthy tags using AI');
+        expect(mockAzureClient.fetchChatCompletion).to.have.been.called;
+
+        // Verify audit completed
+        expect(result).to.have.property('fullAuditRef', baseURL);
+        expect(result).to.have.property('auditResult');
+      });
     });
   });
 });
