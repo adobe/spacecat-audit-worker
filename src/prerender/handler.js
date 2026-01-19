@@ -1115,6 +1115,7 @@ export async function processContentAndGenerateOpportunities(context) {
       const { LatestAudit } = dataAccess;
 
       await LatestAudit.create({
+        auditId: audit.getId(),
         siteId,
         auditType: AUDIT_TYPE,
         auditResult,
@@ -1122,6 +1123,7 @@ export async function processContentAndGenerateOpportunities(context) {
         auditedAt: audit.getAuditedAt(),
         isLive: site.getIsLive(),
         isError: false,
+        invocationId: audit.getInvocationId(),
       });
 
       log.info(`Prerender - Updated LatestAudit with detailed results. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);

@@ -1380,6 +1380,7 @@ describe('Prerender Audit', () => {
             getId: () => 'audit-id',
             getFullAuditRef: () => 'https://example.com',
             getAuditedAt: () => '2024-01-01T00:00:00Z',
+            getInvocationId: () => 'invocation-123',
           },
           dataAccess: {
             Opportunity: {
@@ -1413,12 +1414,15 @@ describe('Prerender Audit', () => {
         // Should call LatestAudit.create with correct data
         expect(latestAuditCreateStub).to.have.been.calledOnce;
         const createCall = latestAuditCreateStub.firstCall.args[0];
+        expect(createCall).to.have.property('auditId', 'audit-id');
         expect(createCall).to.have.property('siteId', 'test-site-id');
         expect(createCall).to.have.property('auditType', 'prerender');
         expect(createCall).to.have.property('auditResult');
         expect(createCall).to.have.property('fullAuditRef', 'https://example.com');
+        expect(createCall).to.have.property('auditedAt', '2024-01-01T00:00:00Z');
         expect(createCall).to.have.property('isLive', true);
         expect(createCall).to.have.property('isError', false);
+        expect(createCall).to.have.property('invocationId', 'invocation-123');
 
         // Should log success message
         const infoLogs = context.log.info.args.map(call => call[0]);
@@ -1438,6 +1442,7 @@ describe('Prerender Audit', () => {
             getId: () => 'audit-id',
             getFullAuditRef: () => 'https://example.com',
             getAuditedAt: () => '2024-01-01T00:00:00Z',
+            getInvocationId: () => 'invocation-123',
           },
           dataAccess: {
             Opportunity: {
