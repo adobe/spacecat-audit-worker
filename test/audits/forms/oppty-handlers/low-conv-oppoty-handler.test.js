@@ -90,8 +90,8 @@ describe('createLowConversionOpportunities handler method', () => {
     for (let i = 0; i < 2; i++) {
       const createdOpportunity = dataAccessStub.Opportunity.create.getCall(i).args[0];
       expect(createdOpportunity.tags).to.be.an('array');
-      expect(createdOpportunity.tags).to.include('Form Conversion');
-      expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags plus 'Form Conversion'
+      expect(createdOpportunity.tags).to.include('Conversion');
+      expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags: 'Form CTR', 'Conversion'
     }
     // Verify first opportunity matches expected data (excluding tags which are now merged)
     const createdOpportunity = dataAccessStub.Opportunity.create.getCall(0).args[0];
@@ -136,8 +136,8 @@ describe('createLowConversionOpportunities handler method', () => {
     // Verify tags are merged correctly
     const createdOpportunity = dataAccessStub.Opportunity.create.getCall(0).args[0];
     expect(createdOpportunity.tags).to.be.an('array');
-    expect(createdOpportunity.tags).to.include('Form Conversion');
-    expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags plus 'Form Conversion'
+    expect(createdOpportunity.tags).to.include('Conversion');
+    expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags: 'Form CTR', 'Conversion'
     // Verify other fields match expected data (excluding tags which are now merged)
     const expectedData = { ...testData.opportunityData2 };
     delete expectedData.tags;
@@ -162,8 +162,8 @@ describe('createLowConversionOpportunities handler method', () => {
     // Verify tags are merged correctly
     const createdOpportunity = dataAccessStub.Opportunity.create.getCall(0).args[0];
     expect(createdOpportunity.tags).to.be.an('array');
-    expect(createdOpportunity.tags).to.include('Form Conversion');
-    expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags plus 'Form Conversion'
+    expect(createdOpportunity.tags).to.include('Conversion');
+    expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags: 'Form CTR', 'Conversion'
     // Verify other fields match expected data (excluding tags which are now merged)
     const expectedOpportunityData = { ...testData.opportunityData3 };
     expectedOpportunityData.data.scrapedStatus = true;
@@ -183,8 +183,8 @@ describe('createLowConversionOpportunities handler method', () => {
     // Verify tags are merged correctly
     const createdOpportunity = dataAccessStub.Opportunity.create.getCall(0).args[0];
     expect(createdOpportunity.tags).to.be.an('array');
-    expect(createdOpportunity.tags).to.include('Form Conversion');
-    expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags plus 'Form Conversion'
+    expect(createdOpportunity.tags).to.include('Conversion');
+    expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags: 'Form CTR', 'Conversion'
     // Verify other fields match expected data (excluding tags which are now merged)
     const expectedData = { ...testData.opportunityData4 };
     delete expectedData.tags;
@@ -273,8 +273,8 @@ describe('createLowConversionOpportunities handler method', () => {
     // Verify tags are merged correctly
     const createdOpportunity = dataAccessStub.Opportunity.create.getCall(0).args[0];
     expect(createdOpportunity.tags).to.be.an('array');
-    expect(createdOpportunity.tags).to.include('Form Conversion');
-    expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags plus 'Form Conversion'
+    expect(createdOpportunity.tags).to.include('Conversion');
+    expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags: 'Form CTR', 'Conversion'
     // Verify other fields match expected data (excluding tags which are now merged)
     const expectedData = { ...testData.opportunityData5 };
     delete expectedData.tags;

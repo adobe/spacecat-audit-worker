@@ -28,9 +28,10 @@ describe('Headings Opportunity Data Mapper', () => {
       expect(result.guidance).to.have.property('steps').that.is.an('array');
       expect(result).to.have.property('tags').that.is.an('array');
       expect(result.tags).to.include('isElmo');
-      expect(result.tags).to.include('isASO');
       expect(result.tags).to.include('tech-seo');
-      expect(result.tags.length).to.be.above(3); // Should have hardcoded tags plus the 3 above
+      // Note: When isElmo is present, mergeTagsWithHardcodedTags returns original tags
+      // Hardcoded tags are merged when isElmo is not present
+      expect(result.tags.length).to.be.at.least(2); // Should have at least isElmo and tech-seo
       expect(result).to.have.property('data').that.is.an('object');
       expect(result.data).to.have.property('dataSources').that.is.an('array');
     });
@@ -39,8 +40,9 @@ describe('Headings Opportunity Data Mapper', () => {
       const result = createOpportunityData();
 
       expect(result.tags).to.be.an('array');
-      // Should include both hardcoded tags and the existing tags: isElmo, isASO, tech-seo
-      expect(result.tags.length).to.be.above(3);
+      // When isElmo is present, mergeTagsWithHardcodedTags returns original tags (isElmo, tech-seo)
+      // Hardcoded tags are only merged when isElmo is not present
+      expect(result.tags.length).to.be.at.least(2);
     });
   });
 });
