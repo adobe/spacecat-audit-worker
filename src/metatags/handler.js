@@ -11,7 +11,7 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { calculateCPCValue } from '../support/utils.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
@@ -23,7 +23,6 @@ import { getBaseUrl } from '../utils/url-utils.js';
 import {
   DESCRIPTION,
   H1,
-  MYSTIQUE_BATCH_SIZE,
   PROJECTED_VALUE_THRESHOLD,
   TITLE,
 } from './constants.js';
@@ -35,14 +34,6 @@ const auditType = Audit.AUDIT_TYPES.META_TAGS;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 export const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent || ''}`;
-
-export const chunkArray = (array, chunkSize) => {
-  const chunks = [];
-  for (let i = 0; i < array.length; i += chunkSize) {
-    chunks.push(array.slice(i, i + chunkSize));
-  }
-  return chunks;
-};
 
 export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const opportunity = await convertToOpportunity(
@@ -374,7 +365,7 @@ export async function runAuditAndGenerateSuggestions(context) {
 
   const syncedSuggestions = await Suggestion.allByOpportunityIdAndStatus(
     opportunity.getId(),
-    Suggestion.STATUSES.NEW,
+    SuggestionModel.STATUSES.NEW,
   );
 
   // Build suggestion map with actual DB IDs
@@ -389,51 +380,31 @@ export async function runAuditAndGenerateSuggestions(context) {
     };
   });
 
-  // Chunk suggestions into batches for Mystique
-  const suggestionChunks = chunkArray(suggestionMap, MYSTIQUE_BATCH_SIZE);
-  log.info(`[metatags] Sending ${suggestionMap.length} suggestions to Mystique in ${suggestionChunks.length} chunk(s) (batch size: ${MYSTIQUE_BATCH_SIZE})`);
+  // Build unique pageUrls from all suggestions
+  const pageUrls = [...new Set(suggestionMap.map((s) => `${site.getBaseURL()}${s.endpoint}`))];
 
-  // Send all chunks as separate SQS messages in parallel
+  log.info(`[metatags] Sending ${suggestionMap.length} suggestions to Mystique (${pageUrls.length} unique pages)`);
+
+  // Send single SQS message with all suggestions
   const { sqs, env } = context;
-  await Promise.all(suggestionChunks.map(async (chunk, i) => {
-    // Build detectedTags for this chunk (only relevant endpoints)
-    const chunkDetectedTags = {};
-    chunk.forEach((s) => {
-      if (!chunkDetectedTags[s.endpoint]) {
-        chunkDetectedTags[s.endpoint] = validatedDetectedTags[s.endpoint];
-      }
-    });
+  const message = {
+    type: 'guidance:metatags',
+    siteId: site.getId(),
+    auditId: audit.getId(),
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      detectedTags: validatedDetectedTags,
+      healthyTags: allTags.healthyTags,
+      suggestionMap,
+      baseUrl: site.getBaseURL(),
+      pageUrls,
+      opportunityId: opportunity.getId(),
+    },
+  };
 
-    // Build unique pageUrls for this chunk
-    const chunkPageUrls = [...new Set(chunk.map((s) => `${site.getBaseURL()}${s.endpoint}`))];
-
-    const message = {
-      type: 'guidance:metatags',
-      siteId: site.getId(),
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      data: {
-        detectedTags: chunkDetectedTags,
-        healthyTags: allTags.healthyTags, // Same for all chunks
-        suggestionMap: chunk,
-        baseUrl: site.getBaseURL(),
-        pageUrls: chunkPageUrls,
-        opportunityId: opportunity.getId(),
-        chunkInfo: { // Metadata for tracking
-          chunkIndex: i,
-          totalChunks: suggestionChunks.length,
-          chunkSize: chunk.length,
-          totalSuggestions: suggestionMap.length,
-        },
-      },
-    };
-
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`[metatags] Sent chunk ${i + 1}/${suggestionChunks.length} with ${chunk.length} suggestions to Mystique`);
-  }));
-
-  log.info(`[metatags] All ${suggestionChunks.length} chunks sent to Mystique successfully in parallel`);
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+  log.info(`[metatags] Successfully sent all ${suggestionMap.length} suggestions to Mystique`);
 
   log.info(`[metatags] Finish runAuditAndGenerateSuggestions step for: ${site.getId()}`);
 

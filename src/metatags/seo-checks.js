@@ -13,7 +13,7 @@
 import { hasText, isObject } from '@adobe/spacecat-shared-utils';
 import {
   DESCRIPTION, TITLE, H1, ISSUE, ISSUE_DETAILS, SEO_IMPACT, HIGH, SEO_RECOMMENDATION,
-  MODERATE, MULTIPLE_H1_ON_PAGE, ONE_H1_ON_A_PAGE, TAG_LENGTHS, SHOULD_BE_PRESENT,
+  MODERATE, LOW, MULTIPLE_H1_ON_PAGE, ONE_H1_ON_A_PAGE, TAG_LENGTHS, SHOULD_BE_PRESENT,
   TITLE_LENGTH_SUGGESTION, DESCRIPTION_LENGTH_SUGGESTION, H1_LENGTH_SUGGESTION, UNIQUE_ACROSS_PAGES,
 } from './constants.js';
 
@@ -98,9 +98,23 @@ class SeoChecks {
         issueImpact = MODERATE;
         recommendation = getLengthSuggestion(tagName);
       } else if (tagContent?.length < TAG_LENGTHS[tagName].minLength) {
+        // Exists, but below absolute minimum
         issue = `${capitalizedTagName} too short`;
         issueDetails = `${TAG_LENGTHS[tagName].idealMinLength - tagContent.length} chars below limit`;
         issueImpact = MODERATE;
+        recommendation = getLengthSuggestion(tagName);
+      } else if (tagContent?.length < TAG_LENGTHS[tagName].idealMinLength) {
+        // Below ideal but above minimum
+        issue = `${capitalizedTagName} too short`;
+        issueDetails = `${TAG_LENGTHS[tagName].idealMinLength - tagContent.length} chars below limit`;
+        issueImpact = MODERATE;
+        recommendation = getLengthSuggestion(tagName);
+      } else if (tagContent?.length > TAG_LENGTHS[tagName].idealMaxLength
+        && tagContent?.length <= TAG_LENGTHS[tagName].maxLength) {
+        // Above ideal but below maximum
+        issue = `${capitalizedTagName} above ideal length`;
+        issueDetails = `${tagContent.length - TAG_LENGTHS[tagName].idealMaxLength} chars above ideal maximum`;
+        issueImpact = LOW;
         recommendation = getLengthSuggestion(tagName);
       }
       if (issue) {

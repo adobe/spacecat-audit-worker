@@ -141,8 +141,8 @@ async function createOpportunity(auditId, siteId, context) {
       runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
       type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
       origin: 'AUTOMATION',
-      title: 'Accessibility - Assistive technology is incompatible on form',
-      description: '',
+      title: 'Forms missing key accessibility attributes — enhancements prepared to support all users',
+      description: 'Improving accessibility for forms ensures assistive technologies can correctly interpret each input, helps users understand what\'s required, and makes form completion more intuitive for everyone.',
       tags: [
         'Forms Accessibility',
       ],
@@ -333,10 +333,16 @@ export async function createAccessibilityOpportunity(auditData, context) {
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site, Opportunity } = dataAccess;
-  const { auditId, siteId, data } = message;
+  const {
+    auditId, siteId, data, options,
+  } = message;
   const { opportunityId, a11y } = data;
   log.debug(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
-
+  // if a11y preflight is detected, skip guidance and creation of opportunity
+  if (options && options.a11yPreflight) {
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y preflight detected, skipping guidance`);
+    return ok();
+  }
   const site = await Site.findById(siteId);
   if (!site) {
     log.error(`[Form Opportunity] [Site Id: ${siteId}] Site not found for siteId: ${siteId}`);

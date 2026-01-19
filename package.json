@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.274.2",
+  "version": "1.284.3",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -106,7 +106,7 @@
     "aws-xray-sdk": "3.12.0",
     "cheerio": "1.1.2",
     "date-fns": "4.1.0",
-    "diff": "8.0.2",
+    "diff": "8.0.3",
     "exceljs": "4.4.0",
     "franc-min": "6.2.0",
     "get-xpath": "3.3.0",

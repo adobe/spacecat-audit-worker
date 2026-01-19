@@ -1,3 +1,180 @@
+## [1.284.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.2...v1.284.3) (2026-01-16)
+
+
+### Bug Fixes
+
+* prerender handle updated mystique SQS payload ([#1857](https://github.com/adobe/spacecat-audit-worker/issues/1857)) ([a1c21d5](https://github.com/adobe/spacecat-audit-worker/commit/a1c21d51a753fcd46a60e980b22f8265a6e3ef15))
+
+## [1.284.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.1...v1.284.2) (2026-01-16)
+
+
+### Bug Fixes
+
+* removing headings from ASO ([#1861](https://github.com/adobe/spacecat-audit-worker/issues/1861)) ([df0152a](https://github.com/adobe/spacecat-audit-worker/commit/df0152a8fdc778abc475cc3a006c73d4c565a195))
+
+## [1.284.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.0...v1.284.1) (2026-01-16)
+
+
+### Bug Fixes
+
+* The SQS message chunking function has been removed ([#1860](https://github.com/adobe/spacecat-audit-worker/issues/1860)) ([2f1920c](https://github.com/adobe/spacecat-audit-worker/commit/2f1920c438ac66cc3e659c9cfac7d43a9f93714f))
+
+# [1.284.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.283.0...v1.284.0) (2026-01-15)
+
+
+### Features
+
+* implement step-based architecture for CWV with code import ([#1831](https://github.com/adobe/spacecat-audit-worker/issues/1831)) ([22558d8](https://github.com/adobe/spacecat-audit-worker/commit/22558d80634d8a26308ff6d66fdcbe15543c3ab9))
+
+# [1.283.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.282.2...v1.283.0) (2026-01-15)
+
+
+### Features
+
+* SITES-38255 - metatags: reduce minimum character limit for TITLE ([#1852](https://github.com/adobe/spacecat-audit-worker/issues/1852)) ([a48c342](https://github.com/adobe/spacecat-audit-worker/commit/a48c342d9502d8a2b454ec4dea1eab11266fc68f))
+
+## [1.282.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.282.1...v1.282.2) (2026-01-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency diff to v8.0.3 [security] ([#1854](https://github.com/adobe/spacecat-audit-worker/issues/1854)) ([01c060f](https://github.com/adobe/spacecat-audit-worker/commit/01c060f626c9ba4e1747000f426dc100eb433d45))
+
+## [1.282.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.282.0...v1.282.1) (2026-01-15)
+
+
+### Bug Fixes
+
+* adding brand profile for headings ([#1836](https://github.com/adobe/spacecat-audit-worker/issues/1836)) ([ebae81f](https://github.com/adobe/spacecat-audit-worker/commit/ebae81f010e144b735f5271937bd7610946f1122))
+
+# [1.282.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.281.1...v1.282.0) (2026-01-14)
+
+
+### Features
+
+* **LLMO-1023:** add automatic trace ID propagation in SQS wrapper ([#1847](https://github.com/adobe/spacecat-audit-worker/issues/1847)) ([f81520e](https://github.com/adobe/spacecat-audit-worker/commit/f81520e8c44413b060a56401faea4379c1644d55))
+
+## [1.281.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.281.0...v1.281.1) (2026-01-14)
+
+
+### Bug Fixes
+
+* correct URL format & fall back to site url ([#1848](https://github.com/adobe/spacecat-audit-worker/issues/1848)) ([b851bae](https://github.com/adobe/spacecat-audit-worker/commit/b851bae1bd43a885f63131408c6a76d0573bf289))
+
+# [1.281.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.280.3...v1.281.0) (2026-01-14)
+
+
+### Features
+
+* prerender mystique integration ([#1824](https://github.com/adobe/spacecat-audit-worker/issues/1824)) ([5e9dcfd](https://github.com/adobe/spacecat-audit-worker/commit/5e9dcfd0cd540369eab64ebf7a300674ef6fb9da))
+
+## [1.280.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.280.2...v1.280.3) (2026-01-14)
+
+
+### Bug Fixes
+
+* adding comprehensive preflight docs ([#1817](https://github.com/adobe/spacecat-audit-worker/issues/1817)) ([e414960](https://github.com/adobe/spacecat-audit-worker/commit/e4149603c3651efd24d2224aae653767939491bf))
+* www resolver for agentic URLs ([#1843](https://github.com/adobe/spacecat-audit-worker/issues/1843)) ([8298bb7](https://github.com/adobe/spacecat-audit-worker/commit/8298bb7c5f5dae0e3358ea6567ed7d975dac86d3))
+
+## [1.280.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.280.1...v1.280.2) (2026-01-13)
+
+
+### Bug Fixes
+
+* use baseURL instead of organizationId for Wikipedia company name ([#1842](https://github.com/adobe/spacecat-audit-worker/issues/1842)) ([c083749](https://github.com/adobe/spacecat-audit-worker/commit/c08374932f401a7df7aae6bd78e9b33073df3cff))
+
+## [1.280.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.280.0...v1.280.1) (2026-01-13)
+
+
+### Bug Fixes
+
+* **llmo-referral-traffic:** remove empty sheet generation ([#1840](https://github.com/adobe/spacecat-audit-worker/issues/1840)) ([a6b05ba](https://github.com/adobe/spacecat-audit-worker/commit/a6b05baba8b909f9d5fb1d3cf9944181f40b1896))
+
+# [1.280.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.4...v1.280.0) (2026-01-12)
+
+
+### Features
+
+* Migrate to async suggestions through mystique ([#1823](https://github.com/adobe/spacecat-audit-worker/issues/1823)) ([61204b2](https://github.com/adobe/spacecat-audit-worker/commit/61204b282dd238059b1df5dcb22a494cf661b9ea))
+
+## [1.279.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.3...v1.279.4) (2026-01-12)
+
+
+### Bug Fixes
+
+* empty suggestions ([#1811](https://github.com/adobe/spacecat-audit-worker/issues/1811)) ([dba072a](https://github.com/adobe/spacecat-audit-worker/commit/dba072a58ac9883d4e1d29ee36e9045b40ebce4b))
+
+## [1.279.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.2...v1.279.3) (2026-01-12)
+
+
+### Bug Fixes
+
+* change guidance format from array to object in Wikipedia analysis handler ([#1838](https://github.com/adobe/spacecat-audit-worker/issues/1838)) ([7f9ed0c](https://github.com/adobe/spacecat-audit-worker/commit/7f9ed0c728693fb88e0d0a8b77461ad73ede5333))
+
+## [1.279.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.1...v1.279.2) (2026-01-08)
+
+
+### Bug Fixes
+
+* refactoring headings toc ([#1827](https://github.com/adobe/spacecat-audit-worker/issues/1827)) ([b0fb70e](https://github.com/adobe/spacecat-audit-worker/commit/b0fb70e316462f0c31e570475839cc1b2de99649))
+
+## [1.279.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.279.0...v1.279.1) (2026-01-08)
+
+
+### Bug Fixes
+
+* filter out other agent types ([#1832](https://github.com/adobe/spacecat-audit-worker/issues/1832)) ([4b483f6](https://github.com/adobe/spacecat-audit-worker/commit/4b483f664116a0cd6ec45260cefb1cdb2d7fd637))
+
+# [1.279.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.278.0...v1.279.0) (2026-01-08)
+
+
+### Features
+
+* Remove manual validation for Reports ([#1818](https://github.com/adobe/spacecat-audit-worker/issues/1818)) ([a61339a](https://github.com/adobe/spacecat-audit-worker/commit/a61339a94a7708f537e71323fd3d3a4a6599c008))
+
+# [1.278.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.277.0...v1.278.0) (2026-01-07)
+
+
+### Features
+
+* remove unnecessary tags from the analysis ([#1828](https://github.com/adobe/spacecat-audit-worker/issues/1828)) ([7ddbfdb](https://github.com/adobe/spacecat-audit-worker/commit/7ddbfdbff5aa46d2ba41c5a38b4bcd355899c869))
+
+# [1.277.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.276.2...v1.277.0) (2026-01-07)
+
+
+### Features
+
+* add schema version support to recreate tables ([#1810](https://github.com/adobe/spacecat-audit-worker/issues/1810)) ([e2bd896](https://github.com/adobe/spacecat-audit-worker/commit/e2bd896f32c18d1ecd85062f2139750e0a7a7569))
+
+## [1.276.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.276.1...v1.276.2) (2026-01-07)
+
+
+### Bug Fixes
+
+* Changed URL resolver for permissions ([#1803](https://github.com/adobe/spacecat-audit-worker/issues/1803)) ([6858925](https://github.com/adobe/spacecat-audit-worker/commit/68589259b735190bd32308891d0a60bab14c694e))
+* changed URL resolver for vulnerabilities ([#1807](https://github.com/adobe/spacecat-audit-worker/issues/1807)) ([e8be5a3](https://github.com/adobe/spacecat-audit-worker/commit/e8be5a30f7a8cea309cbb69a7b336598fed25b89)), closes [#1803](https://github.com/adobe/spacecat-audit-worker/issues/1803)
+
+## [1.276.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.276.0...v1.276.1) (2026-01-07)
+
+
+### Bug Fixes
+
+* Update title description ([#1815](https://github.com/adobe/spacecat-audit-worker/issues/1815)) ([82df5e3](https://github.com/adobe/spacecat-audit-worker/commit/82df5e3d115b714bc1a17ab789fd06b97be4e487))
+
+# [1.276.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.275.0...v1.276.0) (2026-01-06)
+
+
+### Features
+
+* Revert "SITES-37055: Migrate to async suggestions through mystique ([#1797](https://github.com/adobe/spacecat-audit-worker/issues/1797))" ([#1821](https://github.com/adobe/spacecat-audit-worker/issues/1821)) ([bd96a8a](https://github.com/adobe/spacecat-audit-worker/commit/bd96a8a18780240b32f187e59ccaa04a53e47034))
+
+# [1.275.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.274.2...v1.275.0) (2026-01-06)
+
+
+### Features
+
+* new improved selector gen ([#1819](https://github.com/adobe/spacecat-audit-worker/issues/1819)) ([2a14107](https://github.com/adobe/spacecat-audit-worker/commit/2a14107a4c79342cd746c3722e4d46d35cc34b28))
+
 ## [1.274.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.274.1...v1.274.2) (2026-01-06)
 
 

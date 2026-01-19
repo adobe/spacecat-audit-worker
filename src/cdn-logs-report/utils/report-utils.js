@@ -64,29 +64,6 @@ export function validateCountryCode(code) {
   return DEFAULT_COUNTRY_CODE;
 }
 
-export async function ensureTableExists(athenaClient, databaseName, reportConfig, log) {
-  const {
-    createTableSql, tableName, aggregatedLocation,
-  } = reportConfig;
-
-  try {
-    const createTableQuery = await loadSql(createTableSql, {
-      databaseName,
-      tableName,
-      aggregatedLocation,
-    });
-
-    log.debug(`Creating or checking table: ${tableName}`);
-    const sqlCreateTableDescription = `[Athena Query] Create table ${databaseName}.${tableName}`;
-    await athenaClient.execute(createTableQuery, databaseName, sqlCreateTableDescription);
-
-    log.debug(`Table ${tableName} is ready`);
-  } catch (error) {
-    log.error(`Failed to ensure table exists: ${error.message}`);
-    throw error;
-  }
-}
-
 /**
  * Generates reporting periods data for past weeks
  * @param {number|Date} [offsetOrDate=-1] - If number: weeks offset. If Date: reference date
