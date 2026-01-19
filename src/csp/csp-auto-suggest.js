@@ -171,8 +171,6 @@ function createPrDescription(findings) {
       findings.map((finding) => {
         const changes = finding.findings.map((f) => {
           switch (f.type) {
-            case 'csp-nonce-missing':
-              return '  - Add nonces to all inline `<script>` tags to enhance script security.';
             case 'csp-meta-tag-missing':
               return '  - Add a CSP meta tag to enforce a strict Content Security Policy.';
             case 'csp-meta-tag-move-to-header':
@@ -180,7 +178,7 @@ function createPrDescription(findings) {
             case 'csp-meta-tag-non-enforcing':
               return '  - Modify the existing CSP meta tag to enforce a stricter policy with `nonce-aem` and `strict-dynamic`.';
             default:
-              return '';
+              return '  - Add nonces to all inline `<script>` tags to enhance script security.';
           }
         }).join('\n');
         return `- **Page:** ${finding.page}\n${changes}`;
