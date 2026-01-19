@@ -143,18 +143,24 @@ describe('isLinkInaccessible', () => {
 
   it('should return true for network errors', async function call() {
     this.timeout(6000);
+
+    // Mock HEAD to throw error
     nock('https://example.com')
       .head('/error')
-      .replyWithError('Network error')
+      .replyWithError(new Error('Connection failed'));
+
+    // Mock GET to also throw error (should reach this after HEAD fails)
+    nock('https://example.com')
       .get('/error')
-      .replyWithError('Network error');
+      .replyWithError(new Error('GET connection failed'));
 
     const result = await isLinkInaccessible('https://example.com/error', mockLog);
     expect(result).to.be.true;
     expect(mockLog.error.called).to.be.true;
+    expect(mockLog.debug.called).to.be.true; // HEAD failed, triggered GET fallback
   });
 
-  // Timeout test removed - network error test covers the error handling path
+  // Removed timeout test - network error test covers GET error path
 
   it('should fallback to GET when HEAD fails with server error', async function call() {
     this.timeout(6000);
