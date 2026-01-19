@@ -500,6 +500,55 @@ describe('Crawl Detection for Broken Internal Links', () => {
         sinon.match(/Processing page/),
       );
     });
+
+    it('should log sample of internal links when there are more than 5', async () => {
+      // Create HTML with 8 internal links to trigger the "and X more" logging
+      const manyLinksHTML = `
+        <html>
+          <body>
+            <main>
+              <a href="/link1">Link 1</a>
+              <a href="/link2">Link 2</a>
+              <a href="/link3">Link 3</a>
+              <a href="/link4">Link 4</a>
+              <a href="/link5">Link 5</a>
+              <a href="/link6">Link 6</a>
+              <a href="/link7">Link 7</a>
+              <a href="/link8">Link 8</a>
+            </main>
+          </body>
+        </html>
+      `;
+
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          rawBody: manyLinksHTML,
+        },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isWithinAuditScopeStub.returns(true);
+      isLinkInaccessibleStub.resolves(false);
+
+      const result = await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
+
+      // All links should be accessible (no broken links)
+      expect(result).to.have.lengthOf(0);
+
+      // Verify sample logging (first 5 links)
+      expect(mockContext.log.info).to.have.been.calledWith(
+        sinon.match(/Sample resolved internal links:.*link1.*link2.*link3.*link4.*link5/),
+      );
+
+      // Verify "and X more" logging when there are more than 5 links
+      expect(mockContext.log.info).to.have.been.calledWith(
+        sinon.match(/\.\.\. and 3 more internal links on this page/),
+      );
+    });
   });
 
   describe('mergeAndDeduplicate', () => {
