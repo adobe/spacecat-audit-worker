@@ -575,8 +575,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -614,8 +612,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().rejects(new Error('Database error')) } },
           log: { info: sandbox.stub(), debug: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
@@ -653,8 +649,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: {
             SiteTopPage: {
@@ -708,8 +702,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -743,8 +735,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -808,8 +798,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
@@ -889,8 +877,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
@@ -1023,12 +1009,13 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: {
             Opportunity: {
               allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
+            LatestAudit: {
+              create: sandbox.stub().resolves(),
             },
           },
           log: {
@@ -1093,12 +1080,13 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: {
             Opportunity: {
               allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
+            LatestAudit: {
+              create: sandbox.stub().resolves(),
             },
           },
           log: {
@@ -1140,12 +1128,13 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: {
             Opportunity: {
               allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
+            LatestAudit: {
+              create: sandbox.stub().resolves(),
             },
           },
           log: {
@@ -1195,12 +1184,13 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: {
             Opportunity: {
               allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
+            LatestAudit: {
+              create: sandbox.stub().resolves(),
             },
           },
           log: {
@@ -1250,12 +1240,13 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: {
             Opportunity: {
               allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
+            LatestAudit: {
+              create: sandbox.stub().resolves(),
             },
           },
           log: {
@@ -1334,12 +1325,13 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: {
             Opportunity: {
               allBySiteIdAndStatus: allBySiteIdAndStatusStub,
+            },
+            LatestAudit: {
+              create: sandbox.stub().resolves(),
             },
           },
           log: {
@@ -1372,51 +1364,6 @@ describe('Prerender Audit', () => {
 
         // Should not log about marking suggestions (no eligible suggestions)
         expect(infoLogs.some(msg => msg.includes('Marked'))).to.be.false;
-      });
-
-      it('should handle errors when saving audit results', async () => {
-        const mockHandler = await esmock('../../../src/prerender/handler.js');
-
-        const context = {
-          site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://example.com',
-          },
-          audit: {
-            getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().rejects(new Error('Database save failed')),
-          },
-          dataAccess: {
-            Opportunity: {
-              allBySiteIdAndStatus: sandbox.stub().resolves([]),
-            },
-          },
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-          s3Client: {
-            send: sandbox.stub().resolves({
-              Body: { transformToString: () => Promise.resolve('') },
-            }),
-          },
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-          auditContext: { scrapeJobId: 'test-job-id' },
-          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
-        };
-
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
-
-        // Should complete successfully despite save error
-        expect(result.status).to.equal('complete');
-
-        // Should log error about save failure
-        expect(context.log.error).to.have.been.calledWith(
-          sinon.match(/Failed to save audit result/)
-        );
       });
     });
 
@@ -2398,8 +2345,6 @@ describe('Prerender Audit', () => {
         },
         audit: {
           getId: () => 'a',
-          setAuditResult: sinon.stub(),
-          save: sinon.stub().resolves(),
         },
         dataAccess: {
           Opportunity: {
@@ -2522,8 +2467,6 @@ describe('Prerender Audit', () => {
         },
         audit: {
           getId: () => 'a',
-          setAuditResult: sinon.stub(),
-          save: sinon.stub().resolves(),
         },
         dataAccess: {
           Opportunity: {
@@ -2580,8 +2523,6 @@ describe('Prerender Audit', () => {
         },
         audit: {
           getId: () => 'a',
-          setAuditResult: sinon.stub(),
-          save: sinon.stub().resolves(),
         },
         dataAccess: {
           Opportunity: {
@@ -2635,8 +2576,6 @@ describe('Prerender Audit', () => {
         },
         audit: {
           getId: () => 'a',
-          setAuditResult: sinon.stub(),
-          save: sinon.stub().resolves(),
         },
         dataAccess: {
           Opportunity: {
@@ -2720,8 +2659,6 @@ describe('Prerender Audit', () => {
         site: { getId: () => 'site', getBaseURL: () => 'https://example.com', getConfig: () => ({ getIncludedURLs: () => [] }) },
         audit: {
           getId: () => 'a',
-          setAuditResult: sinon.stub(),
-          save: sinon.stub().resolves(),
         },
         dataAccess: {
           Opportunity: {
@@ -2776,8 +2713,6 @@ describe('Prerender Audit', () => {
         },
         audit: {
           getId: () => 'a',
-          setAuditResult: sinon.stub(),
-          save: sinon.stub().resolves(),
         },
         log: { info: sinon.stub(), warn, debug: sinon.stub(), error: err },
         s3Client: { send: sinon.stub().resolves({}) },
@@ -2961,8 +2896,6 @@ describe('Prerender Audit', () => {
         },
         audit: {
           getId: () => 'a',
-          setAuditResult: sinon.stub(),
-          save: sinon.stub().resolves(),
         },
         dataAccess: {
           SiteTopPage: {
@@ -3337,8 +3270,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -3393,8 +3324,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           auditContext: { scrapeJobId: 'test-job-id' },
@@ -3432,8 +3361,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -3487,8 +3414,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -3573,8 +3498,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -3627,8 +3550,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -3917,8 +3838,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -3965,8 +3884,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -4019,8 +3936,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -4306,8 +4221,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -4359,8 +4272,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -4412,8 +4323,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -4467,8 +4376,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -4521,8 +4428,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -4570,8 +4475,6 @@ describe('Prerender Audit', () => {
           },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
@@ -4614,8 +4517,6 @@ describe('Prerender Audit', () => {
           site: { getId: () => 'test-site', getBaseURL: () => 'https://example.com' },
           audit: {
             getId: () => 'audit-id',
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
           },
           dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
             { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },

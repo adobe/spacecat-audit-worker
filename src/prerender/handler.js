@@ -1108,13 +1108,25 @@ export async function processContentAndGenerateOpportunities(context) {
     // Upload status summary to S3 (post-processing)
     await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
 
-    // Update the audit record with the detailed results from step 3
+    // Update LatestAudit with the detailed results from step 3
+    // LatestAudit is upsertable, unlike the immutable Audit records
     try {
-      audit.setAuditResult(auditResult);
-      await audit.save();
-      log.info(`Prerender - Saved detailed audit result for auditId: ${audit.getId()}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+      const { dataAccess } = context;
+      const { LatestAudit } = dataAccess;
+
+      await LatestAudit.create({
+        siteId,
+        auditType: AUDIT_TYPE,
+        auditResult,
+        fullAuditRef: audit.getFullAuditRef(),
+        auditedAt: audit.getAuditedAt(),
+        isLive: site.getIsLive(),
+        isError: false,
+      });
+
+      log.info(`Prerender - Updated LatestAudit with detailed results. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
     } catch (error) {
-      log.error(`Prerender - Failed to save audit result for auditId: ${audit?.getId()}: ${error.message}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`, error);
+      log.error(`Prerender - Failed to update LatestAudit: ${error.message}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`, error);
     }
 
     return {
