@@ -25,13 +25,19 @@ import {
   Suggestion,
 } from '@adobe/spacecat-shared-data-access';
 import { isIsoDate } from '@adobe/spacecat-shared-utils';
-import createLHSAuditRunner from '../../src/lhs/lib.js';
-import { MockContextBuilder } from '../shared.js';
-import { cspOpportunityAndSuggestions } from '../../src/csp/csp.js';
-import { cspAutoSuggest } from '../../src/csp/csp-auto-suggest.js';
+import createLHSAuditRunner from '../../../src/lhs/lib.js';
+import { MockContextBuilder } from '../../shared.js';
+import { cspOpportunityAndSuggestions } from '../../../src/csp/csp.js';
+import { cspAutoSuggest } from '../../../src/csp/csp-auto-suggest.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 use(sinonChai);
 use(chaiAsPromised);
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const message = {
   type: 'lhs-mobile',
@@ -85,161 +91,32 @@ describe('CSP Post-processor', () => {
 
   const siteUrl = 'https://adobe.com/';
 
-  // Sample page content (extracted from aem.live)
-  const htmlContentHead = '<!-- v7 -->\n'
-      + '\n'
-      + '<meta name="viewport" content="width=device-width, initial-scale=1"/>\n'
-      + '<script src="/scripts/lib-franklin.js" type="module"></script>\n'
-      + '<script src="/scripts/scripts.js" type="module"></script>\n'
-      + '<script src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>\n'
-      + '<link rel="stylesheet" href="/styles/styles.css"/>\n';
-  const htmlContent404 = '<!DOCTYPE html>\n'
-      + '<html>\n'
-      + '\n'
-      + '<head>\n'
-      + '  \n'
-      + '  <title>Page not found</title>\n'
-      + '  <script type="text/javascript">\n'
-      + '    window.isErrorPage = true;\n'
-      + '    window.errorCode = \'404\';\n'
-      + '  </script>\n'
-      + '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'
-      + '  <meta property="og:title" content="Page not found">\n'
-      + '  <script src="/scripts/scripts.js" type="module" crossorigin="use-credentials"></script>\n'
-      + '  <script type="module">\n'
-      + '    window.addEventListener(\'load\', () => {\n'
-      + '      if (document.referrer) {\n'
-      + '        const { origin, pathname } = new URL(document.referrer);\n'
-      + '        if (origin === window.location.origin) {\n'
-      + '          const backBtn = document.createElement(\'a\');\n'
-      + '          backBtn.classList.add(\'button\', \'error-button-back\');\n'
-      + '          backBtn.href = pathname;\n'
-      + '          backBtn.textContent = \'Go back\';\n'
-      + '          backBtn.title = \'Go back\';\n'
-      + '          const btnContainer = document.querySelector(\'.button-container\');\n'
-      + '          btnContainer.append(backBtn);\n'
-      + '        }\n'
-      + '      }\n'
-      + '    });\n'
-      + '  </script>\n'
-      + '  <script type="module">\n'
-      + '    import { sampleRUM } from \'/scripts/lib-franklin.js\';\n'
-      + '    import { applyRedirects } from \'/scripts/redirects.js\';\n'
-      + '    await applyRedirects();\n'
-      + '    sampleRUM(\'404\', { source: document.referrer });\n'
-      + '  </script>\n'
-      + '  <link rel="stylesheet" href="/styles/styles.css">\n'
-      + '  <style>\n'
-      + '    main.error {\n'
-      + '      min-height: calc(100vh - var(--nav-height));\n'
-      + '      display: flex;\n'
-      + '      align-items: center;\n'
-      + '    }\n'
-      + '\n'
-      + '    main.error .error-number {\n'
-      + '      width: 100%;\n'
-      + '    }\n'
-      + '\n'
-      + '    main.error .error-number text {\n'
-      + '      font-family: monospace;\n'
-      + '    }\n'
-      + '  </style>\n'
-      + '  <link rel="stylesheet" href="/styles/lazy-styles.css">\n'
-      + '</head>\n'
-      + '\n'
-      + '<body>\n'
-      + '  <header></header>\n'
-      + '  <main class="error">\n'
-      + '    <div class="section">\n'
-      + '      <svg viewBox="1 0 38 18" class="error-number">\n'
-      + '        <text x="0" y="17">404</text>\n'
-      + '      </svg>\n'
-      + '      <h2 class="error-message">Page Not Found</h2>\n'
-      + '      <p class="button-container">\n'
-      + '        <a href="/" class="button secondary error-button-home">Go home</a>\n'
-      + '      </p>\n'
-      + '    </div>\n'
-      + '  </main>\n'
-      + '  <footer></footer>\n'
-      + '</body>\n'
-      + '\n'
-      + '</html>';
-
-  const htmlContentHeadWithMultilineScript = '<!-- v7 -->\n'
-      + '\n'
-      + '<meta name="viewport" content="width=device-width, initial-scale=1"/>\n'
-      + '<script \n '
-      + '  src="/scripts/lib-franklin.js" \n'
-      + '  type="module">\n'
-      + '</script>\n'
-      + '<script src="/scripts/scripts.js" type="module"></script>\n'
-      + '<script src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>\n'
-      + '<link rel="stylesheet" href="/styles/styles.css"/>\n';
-  const htmlContentHeadWithExistingNonce = '<!-- v7 -->\n'
-      + '\n'
-      + '<meta name="viewport" content="width=device-width, initial-scale=1"/>\n'
-      + '<script nonce="aem" src="/scripts/lib-franklin.js" type="module"></script>\n'
-      + '<script nonce="aem" src="/scripts/scripts.js" type="module"></script>\n'
-      + '<script \n'
-      + '  nonce="aem" \n'
-      + '  src="/scripts/indexing-test.js?date=2024-08-16" \n'
-      + '  type="module"></script>\n'
-      + '<link rel="stylesheet" href="/styles/styles.css"/>\n';
-
   const findingDetails = [
     {
       type: 'static-content',
       url: 'https://adobe.com/head.html',
-      page: '/head.html',
+      page: 'head.html',
       findings: [
         {
-          scriptContent: '<script src="/scripts/lib-franklin.js" type="module"></script>',
-          suggestedContent: '<script nonce="aem" src="/scripts/lib-franklin.js" type="module"></script>',
-          lineNumber: 4,
+          "type": "csp-nonce-missing"
         },
         {
-          scriptContent: '<script src="/scripts/scripts.js" type="module"></script>',
-          suggestedContent: '<script nonce="aem" src="/scripts/scripts.js" type="module"></script>',
-          lineNumber: 5,
-        },
-        {
-          scriptContent: '<script src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>',
-          suggestedContent: '<script nonce="aem" src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>',
-          lineNumber: 6,
-        },
+          "type": "csp-meta-tag-missing"
+        }
       ],
-      suggestedBody: '<!-- v7 -->\n\n<meta name="viewport" content="width=device-width, initial-scale=1"/>\n<script nonce="aem" src="/scripts/lib-franklin.js" type="module"></script>\n<script nonce="aem" src="/scripts/scripts.js" type="module"></script>\n<script nonce="aem" src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>\n<link rel="stylesheet" href="/styles/styles.css"/>\n',
     },
     {
       type: 'static-content',
       url: 'https://adobe.com/404.html',
-      page: '/404.html',
+      page: '404.html',
       findings: [
         {
-          scriptContent: "<script type=\"text/javascript\">\n    window.isErrorPage = true;\n    window.errorCode = '404';\n  </script>",
-          suggestedContent: "<script nonce=\"aem\" type=\"text/javascript\">\n    window.isErrorPage = true;\n    window.errorCode = '404';\n  </script>",
-          lineNumber: 7,
+          "type": "csp-nonce-missing"
         },
         {
-          scriptContent: '<script src="/scripts/scripts.js" type="module" crossorigin="use-credentials"></script>',
-          suggestedContent: '<script nonce="aem" src="/scripts/scripts.js" type="module" crossorigin="use-credentials"></script>',
-          lineNumber: 13,
-        },
-        {
-          scriptContent: "<script type=\"module\">\n    window.addEventListener('load', () => {\n      if (document.referrer) {\n        const { origin, pathname } = new URL(document.referrer);\n        if (origin === window.location.origin) {\n          const backBtn = document.createElement('a');\n          backBtn.classList.add('button', 'error-button-back');\n          backBtn.href = pathname;\n          backBtn.textContent = 'Go back';\n          backBtn.title = 'Go back';\n          const btnContainer = document.querySelector('.button-container');\n          btnContainer.append(backBtn);\n        }\n      }\n    });\n  </script>",
-          suggestedContent: "<script nonce=\"aem\" type=\"module\">\n    window.addEventListener('load', () => {\n      if (document.referrer) {\n        const { origin, pathname } = new URL(document.referrer);\n        if (origin === window.location.origin) {\n          const backBtn = document.createElement('a');\n          backBtn.classList.add('button', 'error-button-back');\n          backBtn.href = pathname;\n          backBtn.textContent = 'Go back';\n          backBtn.title = 'Go back';\n          const btnContainer = document.querySelector('.button-container');\n          btnContainer.append(backBtn);\n        }\n      }\n    });\n  </script>",
-          lineNumber: 14,
-        },
-        {
-          scriptContent: "<script type=\"module\">\n    import { sampleRUM } from '/scripts/lib-franklin.js';\n    import { applyRedirects } from '/scripts/redirects.js';\n    await applyRedirects();\n    sampleRUM('404', { source: document.referrer });\n  </script>",
-          suggestedContent: "<script nonce=\"aem\" type=\"module\">\n    import { sampleRUM } from '/scripts/lib-franklin.js';\n    import { applyRedirects } from '/scripts/redirects.js';\n    await applyRedirects();\n    sampleRUM('404', { source: document.referrer });\n  </script>",
-          lineNumber: 30,
-        },
+          "type": "csp-meta-tag-missing"
+        }
       ],
-      suggestedBody: "<!DOCTYPE html>\n<html>\n\n<head>\n  \n  <title>Page not found</title>\n  <script nonce=\"aem\" type=\"text/javascript\">\n    window.isErrorPage = true;\n    window.errorCode = '404';\n  </script>\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <meta property=\"og:title\" content=\"Page not found\">\n  <script nonce=\"aem\" src=\"/scripts/scripts.js\" type=\"module\" crossorigin=\"use-credentials\"></script>\n  <script nonce=\"aem\" type=\"module\">\n    window.addEventListener('load', () => {\n      if (document.referrer) {\n        const { origin, pathname } = new URL(document.referrer);\n        if (origin === window.location.origin) {\n          const backBtn = document.createElement('a');\n          backBtn.classList.add('button', 'error-button-back');\n          backBtn.href = pathname;\n          backBtn.textContent = 'Go back';\n          backBtn.title = 'Go back';\n          const btnContainer = document.querySelector('.button-container');\n          btnContainer.append(backBtn);\n        }\n      }\n    });\n  </script>\n  <script nonce=\"aem\" type=\"module\">\n    import { sampleRUM } from '/scripts/lib-franklin.js';\n    import { applyRedirects } from '/scripts/redirects.js';\n    await applyRedirects();\n    sampleRUM('404', { source: document.referrer });\n  </script>\n  <link rel=\"stylesheet\" href=\"/styles/styles.css\">\n  <style>\n    main.error {\n      min-height: calc(100vh - var(--nav-height));\n      display: flex;\n      align-items: center;\n    }\n\n    main.error .error-number {\n      width: 100%;\n    }\n\n    main.error .error-number text {\n      font-family: monospace;\n    }\n  </style>\n  <link rel=\"stylesheet\" href=\"/styles/lazy-styles.css\">\n</head>\n\n<body>\n  <header></header>\n  <main class=\"error\">\n    <div class=\"section\">\n      <svg viewBox=\"1 0 38 18\" class=\"error-number\">\n        <text x=\"0\" y=\"17\">404</text>\n      </svg>\n      <h2 class=\"error-message\">Page Not Found</h2>\n      <p class=\"button-container\">\n        <a href=\"/\" class=\"button secondary error-button-home\">Go home</a>\n      </p>\n    </div>\n  </main>\n  <footer></footer>\n</body>\n\n</html>",
-    },
-    {
-      type: 'csp-header',
     },
   ];
 
@@ -745,15 +622,19 @@ describe('CSP Post-processor', () => {
         {
           ...csp[0],
           findings: findingDetails,
+          issues: [{
+            content: fs.readFileSync(path.join(__dirname, 'testdata/missing-csp.patch'), 'utf8'),
+          }],
         },
       ];
 
-      nock('https://adobe.com').get('/head.html').reply(200, htmlContentHead);
-      nock('https://adobe.com').get('/404.html').reply(200, htmlContent404);
+      nock('https://adobe.com').get('/head.html').reply(200, fs.readFileSync(path.join(__dirname, 'testdata/head.html'), 'utf8'));
+      nock('https://adobe.com').get('/404.html').reply(200, fs.readFileSync(path.join(__dirname, 'testdata/404.html'), 'utf8'));
 
       const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
       expect(cspResult).to.deep.equal(expectedCsp);
 
+      expect(context.log.warn).not.to.have.been.calledWithMatch(sinon.match('no place found to insert CSP meta tag'));
       expect(context.log.error).not.to.have.been.calledWithMatch(sinon.match('Error fetching one or more pages. Skipping CSP auto-suggest.'));
     });
 
@@ -768,43 +649,76 @@ describe('CSP Post-processor', () => {
       const expectedCsp = [
         {
           ...csp[0],
-          findings: [
-            {
-              type: 'static-content',
-              url: 'https://adobe.com/head.html',
-              page: '/head.html',
-              findings: [
-                {
-                  scriptContent: '<script \n   src="/scripts/lib-franklin.js" \n  type="module">\n</script>',
-                  suggestedContent: '<script nonce="aem" \n   src="/scripts/lib-franklin.js" \n  type="module">\n</script>',
-                  lineNumber: 4,
-                },
-                {
-                  scriptContent: '<script src="/scripts/scripts.js" type="module"></script>',
-                  suggestedContent: '<script nonce="aem" src="/scripts/scripts.js" type="module"></script>',
-                  lineNumber: 8,
-                },
-                {
-                  scriptContent: '<script src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>',
-                  suggestedContent: '<script nonce="aem" src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>',
-                  lineNumber: 9,
-                },
-              ],
-              suggestedBody: '<!-- v7 -->\n\n<meta name="viewport" content="width=device-width, initial-scale=1"/>\n<script nonce="aem" \n   src="/scripts/lib-franklin.js" \n  type="module">\n</script>\n<script nonce="aem" src="/scripts/scripts.js" type="module"></script>\n<script nonce="aem" src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>\n<link rel="stylesheet" href="/styles/styles.css"/>\n',
-            },
-            {
-              type: 'csp-header',
-            },
-          ],
+          findings: [...findingDetails.slice(0, 1)],
+          issues: [{
+            content: fs.readFileSync(path.join(__dirname, 'testdata/multiline-script.patch'), 'utf8'),
+          }],
         },
       ];
 
-      nock('https://adobe.com').get('/head.html').reply(200, htmlContentHeadWithMultilineScript);
+      nock('https://adobe.com').get('/head.html').reply(200, fs.readFileSync(path.join(__dirname, 'testdata/head-multiline.html')));
       nock('https://adobe.com').get('/404.html').reply(200, '');
 
       const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
       expect(cspResult).to.deep.equal(expectedCsp);
 
+      expect(context.log.warn).not.to.have.been.calledWithMatch(sinon.match('no place found to insert CSP meta tag'));
+      expect(context.log.error).not.to.have.been.calledWithMatch(sinon.match('Error fetching one or more pages. Skipping CSP auto-suggest.'));
+    });
+
+    it('should provide suggestions for content without meta tags', async () => {
+      sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp-auto-suggest');
+      const csp = [
+        {
+          severity: 'High',
+          description: 'No CSP found in enforcement mode',
+        },
+      ];
+      const expectedCsp = [
+        {
+          ...csp[0],
+          findings: [...findingDetails.slice(1, 2)],
+          issues: [{
+            content: fs.readFileSync(path.join(__dirname, 'testdata/nometa.patch'), 'utf8'),
+          }],
+        },
+      ];
+
+      nock('https://adobe.com').get('/head.html').reply(200, '');
+      nock('https://adobe.com').get('/404.html').reply(200, fs.readFileSync(path.join(__dirname, 'testdata/404-nometa.html')));
+
+      const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
+      expect(cspResult).to.deep.equal(expectedCsp);
+
+      expect(context.log.warn).not.to.have.been.calledWithMatch(sinon.match('no place found to insert CSP meta tag'));
+      expect(context.log.error).not.to.have.been.calledWithMatch(sinon.match('Error fetching one or more pages. Skipping CSP auto-suggest.'));
+    });
+
+    it('should warn for content without meta and head tags', async () => {
+      sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp-auto-suggest');
+      const csp = [
+        {
+          severity: 'High',
+          description: 'No CSP found in enforcement mode',
+        },
+      ];
+      const expectedCsp = [
+        {
+          ...csp[0],
+          findings: [...findingDetails.slice(0, 1)],
+          issues: [{
+            content: fs.readFileSync(path.join(__dirname, 'testdata/nometa-head.patch'), 'utf8'),
+          }],
+        },
+      ];
+
+      nock('https://adobe.com').get('/head.html').reply(200, fs.readFileSync(path.join(__dirname, 'testdata/head-nometa.html')));
+      nock('https://adobe.com').get('/404.html').reply(200, '');
+
+      const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
+      expect(cspResult).to.deep.equal(expectedCsp);
+
+      expect(context.log.warn).to.have.been.calledWithMatch(sinon.match('no place found to insert CSP meta tag'));
       expect(context.log.error).not.to.have.been.calledWithMatch(sinon.match('Error fetching one or more pages. Skipping CSP auto-suggest.'));
     });
 
@@ -819,11 +733,25 @@ describe('CSP Post-processor', () => {
       const expectedCsp = [
         {
           ...csp[0],
-          findings: [{ type: 'csp-header' }],
+          findings: [
+            {
+              findings: [
+                {
+                  type: "csp-meta-tag-missing",
+                }
+              ],
+              page: "head.html",
+              type: "static-content",
+              url: "https://adobe.com/head.html"
+            }
+          ],
+          issues: [{
+            content: fs.readFileSync(path.join(__dirname, 'testdata/meta-only.patch'), 'utf8'),
+          }],
         },
       ];
 
-      nock('https://adobe.com').get('/head.html').reply(200, htmlContentHeadWithExistingNonce);
+      nock('https://adobe.com').get('/head.html').reply(200, fs.readFileSync(path.join(__dirname, 'testdata/head-nonce.html')));
       nock('https://adobe.com').get('/404.html').reply(200, '');
 
       const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
@@ -854,7 +782,10 @@ describe('CSP Post-processor', () => {
       const expectedCsp = [
         {
           ...csp[0],
-          findings: findingDetails
+          findings: findingDetails,
+          issues: [{
+            content: fs.readFileSync(path.join(__dirname, 'testdata/missing-csp.patch'), 'utf8'),
+          }],
         },
         {
           ...csp[1]
@@ -864,8 +795,8 @@ describe('CSP Post-processor', () => {
         },
       ];
 
-      nock('https://adobe.com').get('/head.html').reply(200, htmlContentHead);
-      nock('https://adobe.com').get('/404.html').reply(200, htmlContent404);
+      nock('https://adobe.com').get('/head.html').reply(200, fs.readFileSync(path.join(__dirname, 'testdata/head.html')));
+      nock('https://adobe.com').get('/404.html').reply(200, fs.readFileSync(path.join(__dirname, 'testdata/404.html')));
 
       const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
       expect(cspResult).to.deep.equal(expectedCsp);
@@ -923,8 +854,8 @@ describe('CSP Post-processor', () => {
       expect(scopeHead.isDone()).to.equal(true);
       expect(scope404.isDone()).to.equal(true);
 
-      expect(context.log.error).to.have.been.calledWithMatch(sinon.match('[security-csp] [Site: some-site-id]: Error downloading page /head.html'));
-      expect(context.log.error).to.have.been.calledWithMatch(sinon.match('[security-csp] [Site: some-site-id]: Error downloading page /404.html'));
+      expect(context.log.error).to.have.been.calledWithMatch(sinon.match('[security-csp] [Site: some-site-id]: Error downloading page head.html'));
+      expect(context.log.error).to.have.been.calledWithMatch(sinon.match('[security-csp] [Site: some-site-id]: Error downloading page 404.html'));
       expect(context.log.error).to.have.been.calledWithMatch(sinon.match('[security-csp] [Site: some-site-id]: Error fetching one or more pages. Skipping CSP auto-suggest.'));
     });
 
