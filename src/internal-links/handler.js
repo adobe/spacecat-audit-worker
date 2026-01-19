@@ -43,14 +43,23 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 export async function updateAuditResult(audit, auditResult, prioritizedLinks, dataAccess, log) {
   try {
     const auditId = audit.getId();
-    const auditToUpdate = await Audit.findById(auditId);
-    if (auditToUpdate) {
-      // Update the audit result with prioritized links
-      const updatedAuditResult = {
-        ...auditResult,
-        brokenInternalLinks: prioritizedLinks,
-      };
 
+    // Update the audit result with prioritized links
+    const updatedAuditResult = {
+      ...auditResult,
+      brokenInternalLinks: prioritizedLinks,
+    };
+
+    // IMPORTANT: Update the in-memory audit object first if it has the method
+    // This ensures opportunityAndSuggestionsStep sees the correct data
+    if (typeof audit.setAuditResult === 'function') {
+      audit.setAuditResult(updatedAuditResult);
+      log.debug(`[${AUDIT_TYPE}] Updated in-memory audit object`);
+    }
+
+    // Then persist to database
+    const auditToUpdate = await dataAccess.Audit.findById(auditId);
+    if (auditToUpdate) {
       auditToUpdate.setAuditResult(updatedAuditResult);
       await auditToUpdate.save();
       log.info(`[${AUDIT_TYPE}] Updated audit result with ${prioritizedLinks.length} prioritized broken links`);

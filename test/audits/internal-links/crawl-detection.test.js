@@ -248,7 +248,7 @@ describe('Crawl Detection for Broken Internal Links', () => {
       expect(result).to.have.lengthOf(1);
       expect(result[0].urlFrom).to.equal('https://example.com/page2');
       expect(mockContext.log.warn).to.have.been.calledWith(
-        sinon.match(/No rawBody found in S3/),
+        sinon.match(/No rawBody in scrapeResult/),
       );
     });
 

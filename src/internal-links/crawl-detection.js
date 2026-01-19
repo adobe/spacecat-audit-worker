@@ -46,12 +46,29 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
   await Promise.all(
     [...scrapeResultPaths].map(async ([url, s3Key]) => {
       try {
-        log.debug(`[broken-internal-links-crawl] Fetching scraped content for ${url} from S3 key: ${s3Key}`);
+        log.info(`[broken-internal-links-crawl] 📥 Fetching scraped content for ${url} from S3 key: ${s3Key}`);
 
         // Fetch scraped content from S3
         const object = await getObjectFromKey(s3Client, bucketName, s3Key, log);
-        if (!object?.scrapeResult?.rawBody) {
-          log.warn(`[broken-internal-links-crawl] No rawBody found in S3 for ${url}, skipping page`);
+
+        if (!object) {
+          log.warn(`[broken-internal-links-crawl] ❌ No object returned from S3 for ${url} (key: ${s3Key})`);
+          pagesSkipped += 1;
+          return;
+        }
+
+        log.info(`[broken-internal-links-crawl] ✅ Object fetched for ${url}. Top-level keys: ${Object.keys(object).join(', ')}`);
+
+        if (!object.scrapeResult) {
+          log.warn(`[broken-internal-links-crawl] ❌ No scrapeResult in object for ${url}. Available keys: ${Object.keys(object).join(', ')}`);
+          pagesSkipped += 1;
+          return;
+        }
+
+        log.info(`[broken-internal-links-crawl] scrapeResult keys: ${Object.keys(object.scrapeResult).join(', ')}`);
+
+        if (!object.scrapeResult.rawBody) {
+          log.warn(`[broken-internal-links-crawl] ❌ No rawBody in scrapeResult for ${url}. scrapeResult keys: ${Object.keys(object.scrapeResult).join(', ')}`);
           pagesSkipped += 1;
           return;
         }
