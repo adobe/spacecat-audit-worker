@@ -117,7 +117,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
       const currentCsp = metaTag.attribs.content;
       const suggestedContent = metaContent.replace(currentCsp, suggestedCsp);
       suggestedBody = suggestedBody.replace(metaContent, suggestedContent);
-    } else if (!metaTag.attribs['move-to-http-header'] || (metaTag.attribs['move-to-http-header'] !== 'true')) {
+    } else if (!metaTag.attribs['move-to-http-header']) {
       log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: enforcing CSP meta tag not marked to be moved to header`);
 
       findings.push({
@@ -132,7 +132,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
   }
 
   if (findings.length === 0) {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: no script tags without nonce found`);
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: no CSP findings found`);
     return null;
   }
 
