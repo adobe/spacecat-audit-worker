@@ -760,6 +760,44 @@ describe('CSP Post-processor', () => {
       expect(context.log.error).not.to.have.been.calledWithMatch(sinon.match('Error fetching one or more pages. Skipping CSP auto-suggest.'));
     });
 
+    it('should provide suggestion to update existing meta element', async () => {
+      sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp-auto-suggest');
+      const csp = [
+        {
+          severity: 'High',
+          description: 'No CSP found in enforcement mode',
+        },
+      ];
+      const expectedCsp = [
+        {
+          ...csp[0],
+          findings: [
+            {
+              findings: [
+                {
+                  "type": "csp-meta-tag-move-to-header",
+                }
+              ],
+              page: "head.html",
+              type: "static-content",
+              url: "https://adobe.com/head.html"
+            }
+          ],
+          issues: [{
+            content: fs.readFileSync(path.join(__dirname, 'testdata/meta-noheader.patch'), 'utf8'),
+          }],
+        },
+      ];
+
+      nock('https://adobe.com').get('/head.html').reply(200, fs.readFileSync(path.join(__dirname, 'testdata/head-meta-noheader.html')));
+      nock('https://adobe.com').get('/404.html').reply(200, '');
+
+      const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
+      expect(cspResult).to.deep.equal(expectedCsp);
+
+      expect(context.log.error).not.to.have.been.calledWithMatch(sinon.match('Error fetching one or more pages. Skipping CSP auto-suggest.'));
+    });
+
     it('auto-suggest info is returned for nonce CSP findings', async () => {
       sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp-auto-suggest');
       const csp = [
