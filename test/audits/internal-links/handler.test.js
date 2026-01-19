@@ -1810,6 +1810,38 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
         expect(mockLog.error).to.have.been.calledWith('[broken-internal-links] Failed to update audit result: Database connection failed');
       });
+
+      it('should update in-memory audit object when setAuditResult method exists', async () => {
+        const mockAudit = {
+          getId: () => 'test-audit-id',
+          setAuditResult: sinon.stub()
+        };
+        const mockAuditResult = { brokenInternalLinks: [] };
+        const mockPrioritizedLinks = [{ urlTo: 'https://example.com/broken', priority: 'high' }];
+        const mockDataAccess = { Audit: Audit };
+        const mockLog = { info: sinon.stub(), warn: sinon.stub(), error: sinon.stub(), debug: sinon.stub() };
+
+        const mockDbAudit = {
+          setAuditResult: sinon.stub(),
+          save: sinon.stub().resolves(),
+        };
+
+        Audit.findById = sinon.stub().resolves(mockDbAudit);
+
+        await updateAuditResult(mockAudit, mockAuditResult, mockPrioritizedLinks, mockDataAccess, mockLog);
+
+        // Should update both in-memory audit object and database
+        expect(mockAudit.setAuditResult).to.have.been.calledWith({
+          ...mockAuditResult,
+          brokenInternalLinks: mockPrioritizedLinks,
+        });
+        expect(mockLog.debug).to.have.been.calledWith('[broken-internal-links] Updated in-memory audit object');
+        expect(mockDbAudit.setAuditResult).to.have.been.calledWith({
+          ...mockAuditResult,
+          brokenInternalLinks: mockPrioritizedLinks,
+        });
+        expect(mockDbAudit.save).to.have.been.calledOnce;
+      });
     });
 
 

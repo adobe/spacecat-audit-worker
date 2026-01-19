@@ -437,6 +437,43 @@ describe('Crawl Detection for Broken Internal Links', () => {
       );
     });
 
+    it('should handle when getObjectFromKey returns null', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      // Simulate getObjectFromKey returning null
+      getObjectFromKeyStub.resolves(null);
+
+      const result = await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
+
+      // Should return empty result and log warning
+      expect(result).to.have.lengthOf(0);
+      expect(mockContext.log.warn).to.have.been.calledWith(
+        sinon.match(/No object returned from S3 for https:\/\/example\.com\/page1/),
+      );
+    });
+
+    it('should handle when object has no scrapeResult', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      // Simulate object without scrapeResult
+      getObjectFromKeyStub.resolves({
+        finalUrl: 'https://example.com/page1',
+        // No scrapeResult property
+      });
+
+      const result = await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
+
+      // Should return empty result and log warning
+      expect(result).to.have.lengthOf(0);
+      expect(mockContext.log.warn).to.have.been.calledWith(
+        sinon.match(/No scrapeResult in object for https:\/\/example\.com\/page1/),
+      );
+    });
+
     it('should log debug message when page is out of scope', async () => {
       const scrapeResultPaths = new Map([
         ['https://example.com/fr/page1', 's3-key-1'],
