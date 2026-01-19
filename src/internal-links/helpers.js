@@ -11,7 +11,7 @@
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
-const LINK_TIMEOUT = 3000;
+const LINK_TIMEOUT = 10000;
 export const CPC_DEFAULT_VALUE = 1;
 export const TRAFFIC_MULTIPLIER = 0.01; // 1%
 export const MAX_LINKS_TO_CONSIDER = 10;
@@ -77,7 +77,7 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
  */
 export async function isLinkInaccessible(url, log) {
   try {
-    const response = await fetch(url, { timeout: LINK_TIMEOUT });
+    const response = await fetch(url, { method: 'HEAD', timeout: LINK_TIMEOUT });
     const { status } = response;
 
     // Log non-404, non-200 status codes
@@ -88,7 +88,7 @@ export async function isLinkInaccessible(url, log) {
     // URL is valid if status code is less than 400, otherwise it is invalid
     return status >= 400;
   } catch (error) {
-    log.error(`broken-internal-links audit: Error checking ${url}: ${error.code === 'ETIMEOUT' ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
+    log.error(`broken-internal-links audit: Error checking ${url} with HEAD request: ${error.code === 'ETIMEOUT' ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
     // Any error means the URL is inaccessible
     return true;
   }

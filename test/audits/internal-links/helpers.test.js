@@ -108,7 +108,7 @@ describe('isLinkInaccessible', () => {
   it('should return false for accessible links (status 200)', async function call() {
     this.timeout(6000);
     nock('https://example.com')
-      .get('/')
+      .head('/')
       .reply(200);
 
     const result = await isLinkInaccessible('https://example.com', mockLog);
@@ -118,7 +118,7 @@ describe('isLinkInaccessible', () => {
   it('should return true for 404 responses', async function call() {
     this.timeout(6000);
     nock('https://example.com')
-      .get('/notfound')
+      .head('/notfound')
       .reply(404);
 
     const result = await isLinkInaccessible('https://example.com/notfound', mockLog);
@@ -128,7 +128,7 @@ describe('isLinkInaccessible', () => {
   it('should return true and log warning for non-404 client errors', async function call() {
     this.timeout(6000);
     nock('https://example.com')
-      .get('/forbidden')
+      .head('/forbidden')
       .reply(403);
 
     const result = await isLinkInaccessible('https://example.com/forbidden', mockLog);
@@ -141,28 +141,28 @@ describe('isLinkInaccessible', () => {
   it('should return true for network errors', async function call() {
     this.timeout(6000);
     nock('https://example.com')
-      .get('/error')
+      .head('/error')
       .replyWithError('Network error');
 
     const result = await isLinkInaccessible('https://example.com/error', mockLog);
     expect(result).to.be.true;
     expect(mockLog.error.calledWith(
-      'broken-internal-links audit: Error checking https://example.com/error: Network error',
+      'broken-internal-links audit: Error checking https://example.com/error with HEAD request: Network error',
     )).to.be.true;
   });
 
   it('should return true for timeout errors', async function call() {
-    this.timeout(5000);
+    this.timeout(12000);
 
     nock('https://example.com')
-      .get('/timeout')
-      .delay(6000) // Set delay just above the 3000ms timeout in isLinkInaccessible
+      .head('/timeout')
+      .delay(11000) // Set delay just above the 10000ms timeout in isLinkInaccessible
       .reply(200);
 
     const result = await isLinkInaccessible('https://example.com/timeout', mockLog);
     expect(result).to.be.true;
     expect(mockLog.error.calledWith(
-      'broken-internal-links audit: Error checking https://example.com/timeout: Request timed out after 3000ms',
+      'broken-internal-links audit: Error checking https://example.com/timeout with HEAD request: Request timed out after 10000ms',
     )).to.be.true;
   });
 });
