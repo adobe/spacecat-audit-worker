@@ -76,9 +76,30 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
  * false if reachable/accessible
  */
 export async function isLinkInaccessible(url, log) {
+  // First try HEAD request (faster, lighter)
   try {
-    const response = await fetch(url, { method: 'HEAD', timeout: LINK_TIMEOUT });
-    const { status } = response;
+    const headResponse = await fetch(url, { method: 'HEAD', timeout: LINK_TIMEOUT });
+    const { status } = headResponse;
+
+    // If HEAD returns success (2xx) or redirect (3xx), consider it accessible
+    if (status < 400) {
+      return false;
+    }
+
+    // If HEAD returns client error (4xx) or server error (5xx), it might be broken
+    // But some servers don't properly support HEAD, so let's verify with GET
+    if (status >= 400) {
+      log.debug(`broken-internal-links audit: HEAD request returned ${status} for ${url}, verifying with GET`);
+    }
+  } catch (headError) {
+    // HEAD failed, could be timeout or network error
+    log.debug(`broken-internal-links audit: HEAD request failed for ${url}, trying GET: ${headError.message}`);
+  }
+
+  // Fallback to GET request for verification
+  try {
+    const getResponse = await fetch(url, { method: 'GET', timeout: LINK_TIMEOUT });
+    const { status } = getResponse;
 
     // Log non-404, non-200 status codes
     if (status >= 400 && status < 500 && status !== 404) {
@@ -87,8 +108,8 @@ export async function isLinkInaccessible(url, log) {
 
     // URL is valid if status code is less than 400, otherwise it is invalid
     return status >= 400;
-  } catch (error) {
-    log.error(`broken-internal-links audit: Error checking ${url} with HEAD request: ${error.code === 'ETIMEOUT' ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
+  } catch (getError) {
+    log.error(`broken-internal-links audit: Error checking ${url} with GET request: ${getError.code === 'ETIMEOUT' ? `Request timed out after ${LINK_TIMEOUT}ms` : getError.message}`);
     // Any error means the URL is inaccessible
     return true;
   }

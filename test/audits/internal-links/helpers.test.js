@@ -119,6 +119,8 @@ describe('isLinkInaccessible', () => {
     this.timeout(6000);
     nock('https://example.com')
       .head('/notfound')
+      .reply(404)
+      .get('/notfound')
       .reply(404);
 
     const result = await isLinkInaccessible('https://example.com/notfound', mockLog);
@@ -129,6 +131,8 @@ describe('isLinkInaccessible', () => {
     this.timeout(6000);
     nock('https://example.com')
       .head('/forbidden')
+      .reply(403)
+      .get('/forbidden')
       .reply(403);
 
     const result = await isLinkInaccessible('https://example.com/forbidden', mockLog);
@@ -142,12 +146,14 @@ describe('isLinkInaccessible', () => {
     this.timeout(6000);
     nock('https://example.com')
       .head('/error')
+      .replyWithError('Network error')
+      .get('/error')
       .replyWithError('Network error');
 
     const result = await isLinkInaccessible('https://example.com/error', mockLog);
     expect(result).to.be.true;
     expect(mockLog.error.calledWith(
-      'broken-internal-links audit: Error checking https://example.com/error with HEAD request: Network error',
+      'broken-internal-links audit: Error checking https://example.com/error with GET request: Network error',
     )).to.be.true;
   });
 
@@ -157,12 +163,15 @@ describe('isLinkInaccessible', () => {
     nock('https://example.com')
       .head('/timeout')
       .delay(11000) // Set delay just above the 10000ms timeout in isLinkInaccessible
+      .reply(200)
+      .get('/timeout')
+      .delay(11000)
       .reply(200);
 
     const result = await isLinkInaccessible('https://example.com/timeout', mockLog);
     expect(result).to.be.true;
     expect(mockLog.error.calledWith(
-      'broken-internal-links audit: Error checking https://example.com/timeout with HEAD request: Request timed out after 10000ms',
+      'broken-internal-links audit: Error checking https://example.com/timeout with GET request: Request timed out after 10000ms',
     )).to.be.true;
   });
 });
