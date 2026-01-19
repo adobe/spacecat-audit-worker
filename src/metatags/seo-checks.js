@@ -16,7 +16,6 @@ import {
   MODERATE, LOW, MULTIPLE_H1_ON_PAGE, ONE_H1_ON_A_PAGE, TAG_LENGTHS, SHOULD_BE_PRESENT,
   TITLE_LENGTH_SUGGESTION, DESCRIPTION_LENGTH_SUGGESTION, H1_LENGTH_SUGGESTION, UNIQUE_ACROSS_PAGES,
 } from './constants.js';
-import { toElementTargets } from '../utils/dom-selector.js';
 
 class SeoChecks {
   constructor(log) {
@@ -32,7 +31,6 @@ class SeoChecks {
       [DESCRIPTION]: [],
       [H1]: [],
     };
-    this.pageSelectors = {};
   }
 
   /**
@@ -128,7 +126,6 @@ class SeoChecks {
           [ISSUE_DETAILS]: issueDetails,
           [SEO_RECOMMENDATION]: recommendation,
           ...(tagContent && { tagContent }),
-          ...this.buildElementsPayload(urlPath, tagName, { firstOnly: true }),
         });
       } else {
         this.healthyTags[tagName].push(tagContent);
@@ -176,7 +173,6 @@ class SeoChecks {
               [ISSUE]: `Duplicate ${capitalisedTagName}`,
               [ISSUE_DETAILS]: `${pageUrls.length} pages share same ${tagName}`,
               [SEO_RECOMMENDATION]: UNIQUE_ACROSS_PAGES,
-              ...this.buildElementsPayload(url, tagName, { firstOnly: tagName !== H1 }),
             };
           });
         }
@@ -211,13 +207,12 @@ class SeoChecks {
     if (!hasText(urlPath) || !isObject(pageTags)) {
       return;
     }
-    this.pageSelectors[urlPath] = pageTags.selectors || {};
     this.checkForMissingTags(urlPath, pageTags);
     this.checkForTagsLength(urlPath, pageTags);
     // store tag data in all tags object to be used in later checks like uniqueness
     this.addToAllTags(urlPath, TITLE, pageTags[TITLE]);
     this.addToAllTags(urlPath, DESCRIPTION, pageTags[DESCRIPTION]);
-    (pageTags[H1]).forEach((tagContent) => this.addToAllTags(urlPath, H1, tagContent));
+    pageTags[H1].forEach((tagContent) => this.addToAllTags(urlPath, H1, tagContent));
   }
 
   /**
@@ -242,18 +237,6 @@ class SeoChecks {
 
   finalChecks() {
     this.checkForUniqueness();
-  }
-
-  buildElementsPayload(urlPath, tagName, options = {}) {
-    const selectors = this.pageSelectors[urlPath]?.[tagName];
-    if (!selectors) {
-      return {};
-    }
-    let normalizedSelectors = selectors;
-    if (options.firstOnly && Array.isArray(selectors)) {
-      normalizedSelectors = selectors.length > 0 ? selectors[0] : null;
-    }
-    return toElementTargets(normalizedSelectors);
   }
 }
 

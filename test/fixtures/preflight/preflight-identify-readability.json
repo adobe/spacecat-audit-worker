@@ -54,6 +54,11 @@
             "tagName": "h1"
           },
           {
+            "elements": [
+              {
+                "selector": "head > title"
+              }
+            ],
             "issue": "Title too short",
             "issueDetails": "19 chars below limit",
             "seoImpact": "Moderate",

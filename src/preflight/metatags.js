@@ -11,11 +11,44 @@
  */
 
 import { stripTrailingSlash } from '@adobe/spacecat-shared-utils';
+import { load as cheerioLoad } from 'cheerio';
 import { saveIntermediateResults } from './utils.js';
 import { metatagsAutoDetect } from '../metatags/handler.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
+import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
+import { getObjectFromKey } from '../utils/s3-utils.js';
 
 export const PREFLIGHT_METATAGS = 'metatags';
+
+/**
+ * Extract selectors for metatag elements from the scraped HTML
+ * @param {string} rawBody - The HTML content (must be truthy - caller should validate)
+ * @param {string} tagName - The tag name (title, description, h1)
+ * @returns {string|string[]|null} Selector(s) for the tag
+ */
+function generateSelectorsForTag(rawBody, tagName) {
+  const $ = cheerioLoad(rawBody);
+
+  if (tagName === 'title') {
+    const titleElement = $('head > title').get(0);
+    return titleElement ? getDomElementSelector(titleElement) : null;
+  }
+
+  if (tagName === 'description') {
+    const descElement = $('head > meta[name="description"]').get(0);
+    /* c8 ignore next - null branch for missing description element */
+    return descElement ? getDomElementSelector(descElement) : null;
+  }
+
+  if (tagName === 'h1') {
+    const h1Elements = $('h1').toArray();
+    return h1Elements
+      .map((h1) => getDomElementSelector(h1))
+      .filter(Boolean);
+  }
+  /* c8 ignore next 2 - unreachable: only title/description/h1 tag names from metatags audit */
+  return null;
+}
 
 export default async function metatags(context, auditContext) {
   const {
@@ -50,6 +83,28 @@ export default async function metatags(context, auditContext) {
     detectedTags,
     extractedTags,
   } = await metatagsAutoDetect(site, pageMap, context);
+
+  // Fetch scraped objects to get rawBody for selector generation
+  const { s3Client } = context;
+  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  const scrapeDataByPath = new Map();
+
+  await Promise.all([...pageMap].map(async ([url, s3Key]) => {
+    try {
+      const object = await getObjectFromKey(s3Client, bucketName, s3Key, log);
+      if (object?.scrapeResult?.rawBody) {
+        /* c8 ignore next 2 - fallback branch for when finalUrl is not present */
+        const pageUrl = object.finalUrl ? new URL(object.finalUrl).pathname
+          : new URL(url).pathname;
+        const normalizedPath = stripTrailingSlash(pageUrl);
+        scrapeDataByPath.set(normalizedPath, object.scrapeResult.rawBody);
+      }
+    /* c8 ignore next 3 - defensive error handling for S3 fetch failures */
+    } catch (error) {
+      log.warn(`[preflight-metatags] Failed to fetch scrape data for ${url}: ${error.message}`);
+    }
+  }));
+
   try {
     const tagCollection = step === 'suggest'
       ? await metatagsAutoSuggest({
@@ -66,10 +121,31 @@ export default async function metatags(context, auditContext) {
         return previewPath === targetPath;
       });
       const audit = audits.get(pageUrl)?.audits.find((a) => a.name === PREFLIGHT_METATAGS);
-      return tags && Object.values(tags).forEach((data, tag) => audit.opportunities.push({
-        ...data,
-        tagName: Object.keys(tags)[tag],
-      }));
+
+      // Get the scraped HTML for this path to generate selectors
+      const normalizedPath = stripTrailingSlash(path);
+      const rawBody = scrapeDataByPath.get(normalizedPath);
+
+      return tags && Object.values(tags).forEach((data, tag) => {
+        const tagName = Object.keys(tags)[tag];
+        const opportunity = {
+          ...data,
+          tagName,
+        };
+
+        // Generate and add selectors for this tag
+        if (rawBody) {
+          const selectors = generateSelectorsForTag(rawBody, tagName);
+          if (selectors) {
+            const elementData = toElementTargets(selectors);
+            if (elementData && (elementData.elements?.length > 0 || elementData.selector)) {
+              Object.assign(opportunity, elementData);
+            }
+          }
+        }
+
+        audit.opportunities.push(opportunity);
+      });
     });
   } catch (error) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit failed: ${error.message}`);
