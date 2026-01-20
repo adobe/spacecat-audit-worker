@@ -88,13 +88,13 @@ export async function submitForScraping(context) {
   } = context;
   const siteId = site.getId();
 
-  log.info(`[canonical] Start submitForScraping step for: ${siteId}`);
+  log.info(`Start submitForScraping step for: ${siteId}`);
 
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
 
   if (!isNonEmptyArray(topPages)) {
-    log.info(`[canonical] No top pages found for site ${siteId}, skipping scraping`);
+    log.info(`No top pages found for site ${siteId}, skipping scraping`);
     return {
       auditResult: {
         status: 'NO_OPPORTUNITIES',
@@ -105,7 +105,7 @@ export async function submitForScraping(context) {
   }
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
-  log.info(`[canonical] Found ${topPagesUrls.length} top pages for scraping`);
+  log.info(`Found ${topPagesUrls.length} top pages for scraping`);
 
   // Filter out auth pages and PDFs
   const shouldSkipAuthPage = (u) => {
@@ -134,17 +134,17 @@ export async function submitForScraping(context) {
 
   const filteredUrls = topPagesUrls.filter((url) => {
     if (shouldSkipAuthPage(url)) {
-      log.info(`[canonical] Skipping auth/login page: ${url}`);
+      log.info(`Skipping auth/login page: ${url}`);
       return false;
     }
     if (isPdfUrl(url)) {
-      log.info(`[canonical] Skipping PDF file: ${url}`);
+      log.info(`Skipping PDF file: ${url}`);
       return false;
     }
     return true;
   });
 
-  log.info(`[canonical] Finish submitForScraping step for: ${siteId}`);
+  log.info(`Finish submitForScraping step for: ${siteId}`);
 
   return {
     auditResult: {
@@ -198,7 +198,7 @@ export async function validateCanonicalFromHTML(
   const cheerioCanonicalInHead = $('head link[rel="canonical"]').length > 0;
   const canonicalLinks = $('link[rel="canonical"]');
 
-  log.info(`[canonical] Cheerio found ${canonicalLinks.length} canonical link(s) for ${url}, ${cheerioCanonicalInHead ? 'in HEAD' : 'NOT in HEAD'}`);
+  log.info(`Cheerio found ${canonicalLinks.length} canonical link(s), ${cheerioCanonicalInHead ? 'in HEAD' : 'NOT in HEAD'}`);
 
   const checks = [];
   let canonicalUrl = null;
@@ -210,13 +210,13 @@ export async function validateCanonicalFromHTML(
       success: false,
       explanation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
     });
-    log.info(`[canonical] No canonical tag found for URL: ${url}`);
+    log.info(`No canonical tag found for URL: ${url}`);
   } else {
     checks.push({
       check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
       success: true,
     });
-    log.info(`[canonical] Canonical tag exists for URL: ${url}`);
+    log.info(`Canonical tag exists for URL: ${url}`);
   }
 
   // Proceed with the checks only if there is at least one canonical tag
@@ -227,7 +227,7 @@ export async function validateCanonicalFromHTML(
         success: false,
         explanation: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.explanation,
       });
-      log.info(`[canonical] Multiple canonical tags found for URL: ${url}`);
+      log.info(`Multiple canonical tags found for URL: ${url}`);
     } else {
       const canonicalLink = canonicalLinks.first();
       const href = canonicalLink.attr('href');
@@ -237,7 +237,7 @@ export async function validateCanonicalFromHTML(
           success: false,
           explanation: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.explanation,
         });
-        log.info(`[canonical] Empty canonical tag found for URL: ${url}`);
+        log.info(`Empty canonical tag found for URL: ${url}`);
       } else {
         try {
           canonicalUrl = href.startsWith('/')
@@ -278,14 +278,14 @@ export async function validateCanonicalFromHTML(
               check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
               success: true,
             });
-            log.info(`[canonical] Canonical URL ${canonicalUrl} references itself`);
+            log.info(`Canonical URL ${canonicalUrl} references itself`);
           } else {
             checks.push({
               check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
               success: false,
               explanation: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.explanation,
             });
-            log.info(`[canonical] Canonical URL ${canonicalUrl} does not reference itself`);
+            log.info(`Canonical URL ${canonicalUrl} does not reference itself`);
           }
         } catch {
           checks.push({
@@ -293,7 +293,7 @@ export async function validateCanonicalFromHTML(
             success: false,
             explanation: CANONICAL_CHECKS.CANONICAL_URL_INVALID.explanation,
           });
-          log.info(`[canonical] Invalid canonical URL found for page ${url}`);
+          log.info(`Invalid canonical URL found for page ${url}`);
         }
       }
 
@@ -304,13 +304,13 @@ export async function validateCanonicalFromHTML(
           success: false,
           explanation: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.explanation,
         });
-        log.info('[canonical] Canonical tag is not in the head section (detected via Cheerio)');
+        log.info('Canonical tag is not in the head section (detected via Cheerio)');
       } else {
         checks.push({
           check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
           success: true,
         });
-        log.info('[canonical] Canonical tag is in the head section (verified via Cheerio)');
+        log.info('Canonical tag is in the head section (verified via Cheerio)');
       }
     }
   }
@@ -578,11 +578,11 @@ export async function processScrapedContent(context) {
   const baseURL = site.getBaseURL();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
 
-  log.info(`[canonical] Start processScrapedContent step for: ${siteId}`);
+  log.info(`Start processScrapedContent step for: ${siteId}`);
 
   if (!bucketName) {
     const errorMsg = 'Missing S3 bucket configuration for canonical audit';
-    log.error(`[canonical] ${errorMsg}`);
+    log.error(`${errorMsg}`);
     return {
       auditResult: {
         status: 'PROCESSING_FAILED',
@@ -604,9 +604,9 @@ export async function processScrapedContent(context) {
       1000,
       'scrape.json',
     );
-    log.info(`[canonical] Found ${scrapeKeys.length} scraped objects in S3 for site ${siteId}`);
+    log.info(`Found ${scrapeKeys.length} scraped objects in S3 for site ${siteId}`);
   } catch (error) {
-    log.error(`[canonical] Error retrieving S3 keys for site ${siteId}: ${error.message}`);
+    log.error(`Error retrieving S3 keys for site ${siteId}: ${error.message}`);
     return {
       auditResult: {
         status: 'PROCESSING_FAILED',
@@ -617,7 +617,7 @@ export async function processScrapedContent(context) {
   }
 
   if (scrapeKeys.length === 0) {
-    log.info(`[canonical] No scraped content found for site ${siteId}`);
+    log.info(`No scraped content found for site ${siteId}`);
     return {
       auditResult: {
         status: 'NO_OPPORTUNITIES',
@@ -633,13 +633,13 @@ export async function processScrapedContent(context) {
       const scrapedObject = await getObjectFromKey(s3Client, bucketName, key, log);
 
       if (!scrapedObject?.scrapeResult?.rawBody) {
-        log.warn(`[canonical] No HTML content in S3 object: ${key}`);
+        log.warn(`No HTML content in S3 object: ${key}`);
         return null;
       }
 
       const url = scrapedObject.url || scrapedObject.finalUrl;
       if (!url) {
-        log.warn(`[canonical] No URL found in S3 object: ${key}`);
+        log.warn(`No URL found in S3 object: ${key}`);
         return null;
       }
 
@@ -647,7 +647,7 @@ export async function processScrapedContent(context) {
       const finalUrl = scrapedObject.finalUrl || url;
       const isPreview = isPreviewPage(baseURL);
 
-      log.info(`[canonical] Processing scraped content for: ${url}`);
+      log.info(`Processing scraped content for: ${url}`);
 
       // Validate canonical from the JavaScript-rendered HTML
       const {
@@ -657,7 +657,7 @@ export async function processScrapedContent(context) {
       const checks = [...canonicalTagChecks];
 
       if (canonicalUrl) {
-        log.info(`[canonical] Found Canonical URL: ${canonicalUrl}`);
+        log.info(`Found Canonical URL: ${canonicalUrl}`);
 
         const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log, isPreview);
         checks.push(...urlFormatChecks);
@@ -680,7 +680,7 @@ export async function processScrapedContent(context) {
           });
         } else {
           // if not self-referenced - validate accessibility
-          log.info(`[canonical] Canonical URL points to different page, validating accessibility: ${canonicalUrl}`);
+          log.info(`Canonical URL points to different page, validating accessibility: ${canonicalUrl}`);
 
           const options = {};
           if (isPreview) {
@@ -702,7 +702,7 @@ export async function processScrapedContent(context) {
 
       return { url, checks };
     } catch (error) {
-      log.error(`[canonical] Error processing scraped content from ${key}: ${error.message}`);
+      log.error(`Error processing scraped content from ${key}: ${error.message}`);
       return null;
     }
   });
@@ -737,7 +737,7 @@ export async function processScrapedContent(context) {
     ),
   );
 
-  log.info(`[canonical] Successfully completed canonical audit for site: ${baseURL}`);
+  log.info(`Successfully completed canonical audit for site: ${baseURL}`);
 
   // all checks are successful, no issues were found
   if (Object.keys(filteredAggregatedResults).length === 0) {
