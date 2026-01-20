@@ -309,6 +309,45 @@ describe('data-access', () => {
       expect(existingSuggestions[0].save).to.have.been.called;
     });
 
+    it('should preserve REJECTED status when same suggestion appears again in audit', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      const newData = [
+        { key: '1', title: 'updated title' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that REJECTED status is NOT changed (setStatus should not be called)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      // Verify that debug log is called with the correct message
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
+      // Verify that save is called
+      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that setData is called to update the data
+      expect(existingSuggestions[0].setData).to.have.been.calledWith(newData[0]);
+    });
+
     it('should update suggestions when they are detected again', async () => {
       const suggestionsData = [
         { key: '1', title: 'old title' },
