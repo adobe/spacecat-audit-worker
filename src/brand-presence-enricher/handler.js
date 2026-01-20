@@ -24,15 +24,136 @@ import {
 } from '../utils/report-uploader.js';
 import { promptToLinks } from './prompt-to-links.js';
 
-const AUDIT_NAME = 'BRAND_PRESENCE_ENRICHER';
-const SHEET_NAME = 'shared-all';
+const AUDIT_NAME = 'brand-presence-enriched';
 const RELATED_URL_COLUMN = 'Related URL';
+
+// Regex to parse brand presence sheet names: brandpresence-<provider>-w<WW>-<YYYY>
+const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-(?<year>\d{4})(?:-\d+)?$/;
 
 // Column indices from the brand presence spreadsheet (1-based)
 const SPREADSHEET_COLUMNS = {
   PROMPT: 3,
   URL: 7,
 };
+
+/**
+ * Fetches the list of brand presence sheets from the query-index SharePoint file
+ * and returns the latest one based on week/year in the filename.
+ * @param {Object} site - The site object to get LLMO data folder from
+ * @param {Object} context - The context object containing env and log
+ * @param {Object} sharepointClient - The SharePoint client instance
+ * @returns {Promise<{ sourceFolder: string, filename: string, sheetName: string } | null>}
+ */
+async function findLatestBrandPresenceSheet(site, context, sharepointClient) {
+  const { log } = context;
+  const siteId = site.getId();
+
+  log.info(`%s: Starting query-index fetch to find latest sheet for siteId: ${siteId}`, AUDIT_NAME);
+
+  // Get the site's LLMO data folder
+  const dataFolder = site.getConfig()?.getLlmoDataFolder?.();
+  if (!dataFolder) {
+    log.error(`%s: No LLMO data folder configured for site ${siteId}`, AUDIT_NAME);
+    return null;
+  }
+
+  log.info(`%s: Reading query-index from SharePoint for siteId: ${siteId}, path: ${dataFolder}/query-index.xlsx`, AUDIT_NAME);
+
+  // Read the query-index.xlsx file from SharePoint
+  const queryIndexBuffer = await readFromSharePoint('query-index.xlsx', dataFolder, sharepointClient, log);
+
+  log.info(`%s: Query-index file downloaded for siteId: ${siteId} (${queryIndexBuffer.length} bytes)`, AUDIT_NAME);
+
+  // Parse the Excel file to extract paths
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(queryIndexBuffer);
+
+  const latestPaths = [];
+  const regularPaths = [];
+
+  // Iterate through all worksheets to find path data
+  workbook.worksheets.forEach((worksheet) => {
+    worksheet.eachRow((row, rowNumber) => {
+      // Skip header row
+      if (rowNumber === 1) return;
+
+      // Look for path-like data in any column
+      row.eachCell((cell) => {
+        const cellValue = cell.value;
+        if (cellValue && typeof cellValue === 'string') {
+          // Check for brand-presence/latest/ first (priority)
+          if (cellValue.includes('/brand-presence/latest/')) {
+            const filename = cellValue.split('/').pop();
+            if (filename) {
+              const filenameWithoutExt = filename.replace(/\.json$/i, '');
+              if (!latestPaths.includes(filenameWithoutExt)) {
+                latestPaths.push(filenameWithoutExt);
+              }
+            }
+          } else if (cellValue.includes('/brand-presence/') && !cellValue.includes('/brand-presence/latest/')) {
+            const filename = cellValue.split('/').pop();
+            if (filename) {
+              const filenameWithoutExt = filename.replace(/\.json$/i, '');
+              if (!regularPaths.includes(filenameWithoutExt)) {
+                regularPaths.push(filenameWithoutExt);
+              }
+            }
+          }
+        }
+      });
+    });
+  });
+
+  // Use latest paths if available, otherwise fall back to regular paths
+  const allPaths = latestPaths.length > 0 ? latestPaths : regularPaths;
+  const brandPresenceFolder = latestPaths.length > 0 ? 'brand-presence/latest' : 'brand-presence';
+  const sourceFolder = `${dataFolder}/${brandPresenceFolder}`;
+
+  log.info(`%s: Found ${allPaths.length} brand presence sheets for siteId: ${siteId}`, AUDIT_NAME);
+
+  if (allPaths.length === 0) {
+    log.warn(`%s: No brand presence sheets found in query-index for siteId: ${siteId}`, AUDIT_NAME);
+    return null;
+  }
+
+  // Parse and sort sheets by week/year to find the latest one
+  const parsedSheets = allPaths
+    .map((sheetName) => {
+      const match = RE_SHEET_NAME.exec(sheetName);
+      if (!match) {
+        log.debug(`%s: Skipping invalid sheet name format: ${sheetName}`, AUDIT_NAME);
+        return null;
+      }
+      const { week, year } = match.groups;
+      return {
+        sheetName,
+        week: parseInt(week, 10),
+        year: parseInt(year, 10),
+        // Create a sortable date value (year * 100 + week for simple comparison)
+        sortKey: parseInt(year, 10) * 100 + parseInt(week, 10),
+      };
+    })
+    .filter((sheet) => sheet !== null);
+
+  if (parsedSheets.length === 0) {
+    log.warn(`%s: No valid brand presence sheets found after parsing for siteId: ${siteId}`, AUDIT_NAME);
+    return null;
+  }
+
+  // Sort by sortKey descending to get the latest first
+  parsedSheets.sort((a, b) => b.sortKey - a.sortKey);
+
+  const latestSheet = parsedSheets[0];
+  const filename = `${latestSheet.sheetName}.xlsx`;
+
+  log.info(`%s: Latest brand presence sheet for siteId: ${siteId} is ${filename} (week ${latestSheet.week}, year ${latestSheet.year})`, AUDIT_NAME);
+
+  return {
+    sourceFolder,
+    filename,
+    sheetName: latestSheet.sheetName,
+  };
+}
 
 /**
  * Finds or creates the "Related URL" column in the worksheet
@@ -73,7 +194,7 @@ function ensureRelatedUrlColumn(worksheet, log) {
 
 /**
  * The brand presence enricher audit runner.
- * Reads the brand presence spreadsheet, enriches rows missing URLs using ContentAI,
+ * Reads the latest brand presence spreadsheet, enriches rows missing URLs using ContentAI,
  * and saves the updated spreadsheet.
  *
  * @async
@@ -91,34 +212,25 @@ export async function brandPresenceEnricherRunner(auditUrl, context, site) {
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
 
-  // Get output location from site config
-  const outputLocation = `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
-  const filename = 'brandpresence-shared-all.xlsx';
-
-  log.info(`%s: Reading spreadsheet from ${outputLocation}/${filename}`, AUDIT_NAME);
-
   let sharepointClient;
   let workbook;
   let worksheet;
+  let outputLocation;
+  let filename;
 
   try {
     // Create SharePoint client
     sharepointClient = await createLLMOSharepointClient(context);
 
-    // Read the Excel file from SharePoint
-    const buffer = await readFromSharePoint(filename, outputLocation, sharepointClient, log);
-    workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
+    // Find the latest brand presence sheet
+    const latestSheet = await findLatestBrandPresenceSheet(site, context, sharepointClient);
 
-    // Get the "shared-all" sheet
-    worksheet = workbook.getWorksheet(SHEET_NAME);
-    if (!worksheet) {
-      const availableSheets = workbook.worksheets.map((ws) => ws.name).join(', ');
-      log.error(`%s: Sheet "${SHEET_NAME}" not found. Available sheets: ${availableSheets}`, AUDIT_NAME);
+    if (!latestSheet) {
+      log.error(`%s: No brand presence sheets found for siteId: ${siteId}`, AUDIT_NAME);
       return {
         auditResult: {
           success: false,
-          error: `Sheet "${SHEET_NAME}" not found`,
+          error: 'No brand presence sheets found in query-index',
           siteId,
           baseURL,
         },
@@ -126,7 +238,32 @@ export async function brandPresenceEnricherRunner(auditUrl, context, site) {
       };
     }
 
-    log.info(`%s: Found sheet "${SHEET_NAME}" with ${worksheet.rowCount} rows`, AUDIT_NAME);
+    outputLocation = latestSheet.sourceFolder;
+    filename = latestSheet.filename;
+
+    log.info(`%s: Reading latest spreadsheet from ${outputLocation}/${filename}`, AUDIT_NAME);
+
+    // Read the Excel file from SharePoint
+    const buffer = await readFromSharePoint(filename, outputLocation, sharepointClient, log);
+    workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+
+    // Get the first worksheet (brand presence sheets typically have one main sheet)
+    [worksheet] = workbook.worksheets;
+    if (!worksheet) {
+      log.error(`%s: No worksheets found in ${filename}`, AUDIT_NAME);
+      return {
+        auditResult: {
+          success: false,
+          error: `No worksheets found in ${filename}`,
+          siteId,
+          baseURL,
+        },
+        fullAuditRef: auditUrl,
+      };
+    }
+
+    log.info(`%s: Found worksheet "${worksheet.name}" with ${worksheet.rowCount} rows`, AUDIT_NAME);
   } catch (error) {
     log.error(`%s: Failed to read spreadsheet: ${error.message}`, AUDIT_NAME);
     return {
@@ -230,7 +367,7 @@ export async function brandPresenceEnricherRunner(auditUrl, context, site) {
     };
   }
 
-  // Return audit result in the same format as geo-brand-presence
+  // Return audit result
   return {
     auditResult: {
       success: true,
