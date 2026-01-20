@@ -482,6 +482,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   // Filter alternatives by locales/subpaths present in broken links
   // This limits suggestions to relevant locales only
   const allTopPageUrls = filteredTopPages.map((page) => page.getUrl());
+  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] allTopPageUrls: ${allTopPageUrls.length} URLs`);
 
   // Extract unique locales/subpaths from broken links
   const brokenLinkLocales = new Set();
@@ -491,6 +492,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
       brokenLinkLocales.add(locale);
     }
   });
+  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] brokenLinks: ${brokenLinks.length}, brokenLinkLocales: ${Array.from(brokenLinkLocales)}`);
 
   // Filter alternatives to only include URLs matching broken links' locales
   // If no locales found (no subpath), include all alternatives
@@ -502,9 +504,11 @@ export const opportunityAndSuggestionsStep = async (context) => {
       // Include if URL matches one of the broken links' locales, or has no locale
       return !urlLocale || brokenLinkLocales.has(urlLocale);
     });
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] After locale filtering: ${alternativeUrls.length} URLs`);
   } else {
     // No locale prefixes found, include all alternatives
     alternativeUrls = allTopPageUrls;
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No locale filtering needed: ${alternativeUrls.length} URLs`);
   }
 
   // Filter out unscrape-able file types before sending to Mystique
