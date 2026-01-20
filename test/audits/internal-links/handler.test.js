@@ -2111,16 +2111,58 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         expect(mockLog.info).to.have.been.calledWith('[broken-internal-links] Updated audit result with 1 prioritized broken links');
       });
 
-      it('should handle audit without setAuditResult method gracefully', async () => {
+      it('should fallback to database update when audit lacks setAuditResult method', async () => {
+        const mockAudit = {
+          getId: () => 'test-audit-id',
+          // No setAuditResult method
+        };
+        const mockAuditResult = { brokenInternalLinks: [] };
+        const mockPrioritizedLinks = [{ urlTo: 'https://example.com/broken', priority: 'high' }];
+        const mockDataAccess = { Audit: Audit };
+        const mockLog = { info: sinon.stub(), warn: sinon.stub(), error: sinon.stub() };
+
+        // Mock database audit
+        const mockDbAudit = {
+          setAuditResult: sinon.stub(),
+          save: sinon.stub().resolves(),
+        };
+        Audit.findById = sinon.stub().resolves(mockDbAudit);
+
+        await updateAuditResult(mockAudit, mockAuditResult, mockPrioritizedLinks, mockDataAccess, mockLog);
+
+        // Should update via database lookup
+        expect(Audit.findById).to.have.been.calledWith('test-audit-id');
+        expect(mockDbAudit.setAuditResult).to.have.been.calledWith({
+          ...mockAuditResult,
+          brokenInternalLinks: mockPrioritizedLinks,
+        });
+        expect(mockDbAudit.save).to.have.been.calledOnce;
+        expect(mockLog.info).to.have.been.calledWith('[broken-internal-links] Updated audit result via database lookup with 1 prioritized broken links');
+      });
+
+      it('should handle audit without setAuditResult method by falling back to database update', async () => {
         const mockAudit = { getId: () => 'test-audit-id' }; // No setAuditResult method
         const mockAuditResult = { brokenInternalLinks: [] };
         const mockPrioritizedLinks = [{ urlTo: 'https://example.com/broken', priority: 'high' }];
         const mockDataAccess = { Audit: Audit };
         const mockLog = { info: sinon.stub(), warn: sinon.stub(), error: sinon.stub() };
 
+        // Mock database audit
+        const mockDbAudit = {
+          setAuditResult: sinon.stub(),
+          save: sinon.stub().resolves(),
+        };
+        Audit.findById = sinon.stub().resolves(mockDbAudit);
+
         await updateAuditResult(mockAudit, mockAuditResult, mockPrioritizedLinks, mockDataAccess, mockLog);
 
-        expect(mockLog.warn).to.have.been.calledWith('[broken-internal-links] Audit object does not have setAuditResult method, cannot update');
+        // Should fall back to database update
+        expect(Audit.findById).to.have.been.calledWith('test-audit-id');
+        expect(mockDbAudit.setAuditResult).to.have.been.calledWith({
+          ...mockAuditResult,
+          brokenInternalLinks: mockPrioritizedLinks,
+        });
+        expect(mockDbAudit.save).to.have.been.calledOnce;
       });
 
       it('should handle errors gracefully', async () => {

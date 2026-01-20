@@ -42,19 +42,28 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
  */
 export async function updateAuditResult(audit, auditResult, prioritizedLinks, dataAccess, log) {
   try {
-    // Update the audit result with prioritized links
+    const auditId = audit.getId ? audit.getId() : audit.id;
     const updatedAuditResult = {
       ...auditResult,
       brokenInternalLinks: prioritizedLinks,
     };
 
-    // Update the in-memory audit object and persist to database
+    // Try to update in-memory audit object first
     if (typeof audit.setAuditResult === 'function') {
       audit.setAuditResult(updatedAuditResult);
       await audit.save();
       log.info(`[${AUDIT_TYPE}] Updated audit result with ${prioritizedLinks.length} prioritized broken links`);
     } else {
-      log.warn(`[${AUDIT_TYPE}] Audit object does not have setAuditResult method, cannot update`);
+      // Fallback: Update via database lookup
+      const { Audit: AuditModel } = dataAccess;
+      const auditToUpdate = await AuditModel.findById(auditId);
+      if (auditToUpdate) {
+        auditToUpdate.setAuditResult(updatedAuditResult);
+        await auditToUpdate.save();
+        log.info(`[${AUDIT_TYPE}] Updated audit result via database lookup with ${prioritizedLinks.length} prioritized broken links`);
+      } else {
+        log.error(`[${AUDIT_TYPE}] Could not find audit with ID ${auditId} to update`);
+      }
     }
   } catch (error) {
     log.error(`[${AUDIT_TYPE}] Failed to update audit result: ${error.message}`);
