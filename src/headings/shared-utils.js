@@ -142,13 +142,69 @@ export async function loadScrapeJson(url, site, allKeys, s3Client, S3_SCRAPER_BU
 }
 
 /**
- * Get brand guidelines from healthy tags using AI
+ * Extract brand guidelines from brand profile
+ * @param {Object} brandProfile - Brand profile from site config
+ * @returns {Object} Formatted brand guidelines
+ */
+function extractBrandGuidelinesFromProfile(brandProfile) {
+  const mainProfile = brandProfile.main_profile || {};
+  // Extract brand persona (short description)
+  const brandPersona = mainProfile.brand_personality?.description || '';
+
+  // Extract tone
+  const toneAttributes = mainProfile.tone_attributes || {};
+  const primaryTones = toneAttributes.primary || [];
+  const tone = primaryTones.join(', ');
+
+  // Extract editorial guidelines
+  const editorialGuidelines = mainProfile.editorial_guidelines || {};
+  const dos = editorialGuidelines.dos || [];
+  const donts = editorialGuidelines.donts || [];
+
+  // Extract forbidden items
+  const languagePatterns = mainProfile.language_patterns || {};
+  const avoidPatterns = languagePatterns.avoid || [];
+  const avoidTones = toneAttributes.avoid || [];
+  const forbidden = [...avoidPatterns, ...avoidTones];
+
+  return {
+    brand_persona: brandPersona,
+    tone,
+    editorial_guidelines: {
+      do: dos,
+      dont: donts,
+    },
+    forbidden,
+  };
+}
+
+/**
+ * Get brand guidelines from site config or generate from healthy tags using AI
  * @param {Object} healthyTagsObject - Object with healthy title, description, h1
  * @param {Object} log - Logger instance
  * @param {Object} context - Audit context
+ * @param {Object} site - Site object (optional, for accessing brand profile)
  * @returns {Promise<Object>} Brand guidelines
  */
-export async function getBrandGuidelines(healthyTagsObject, log, context) {
+export async function getBrandGuidelines(healthyTagsObject, log, context, site = null) {
+  // First, try to get brand profile from site config
+  if (site) {
+    try {
+      const config = site.getConfig();
+      const brandProfile = config?.getBrandProfile?.();
+      if (brandProfile && typeof brandProfile === 'object' && Object.keys(brandProfile).length > 0) {
+        log.info('[Brand Guidelines] Using brand profile from site config');
+        const guidelines = extractBrandGuidelinesFromProfile(brandProfile);
+        log.debug(`[Brand Guidelines] Extracted guidelines: ${JSON.stringify(guidelines)}`);
+        return guidelines;
+      }
+    } catch (error) {
+      log.warn(`[Brand Guidelines] Error accessing brand profile from site config: ${error.message}`);
+    }
+  }
+
+  // Fall back to AI-generated guidelines
+  log.info('[Brand Guidelines] No brand profile found in site config, generating from healthy tags using AI');
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
   const prompt = await getPrompt(
     {
