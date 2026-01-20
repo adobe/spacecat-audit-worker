@@ -277,31 +277,56 @@ export async function submitForScraping(context) {
   const redirectErrors = [];
 
   for (const url of finalUrls) {
+    // Validate URL format before making request
+    let parsedUrl;
+    let isValidUrl = true;
     try {
-      // eslint-disable-next-line no-await-in-loop
-      const response = await fetch(url, {
-        redirect: 'follow',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; SpaceCat/1.0)',
-        },
-      });
-
-      if (response.ok) {
-        const finalUrl = response.url;
-        if (finalUrl !== url) {
-          log.debug(`[${AUDIT_TYPE}] Redirect resolved: ${url} -> ${finalUrl}`);
-        }
-        resolvedUrls.push(finalUrl);
-      } else {
-        log.warn(`[${AUDIT_TYPE}] URL returned error status ${response.status}: ${url}`);
-        redirectErrors.push({ url, status: response.status, reason: response.statusText });
+      parsedUrl = new URL(url);
+      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        throw new Error(`Unsupported protocol: ${parsedUrl.protocol}`);
       }
-    } catch (error) {
-      log.warn(`[${AUDIT_TYPE}] Failed to resolve redirects for ${url}: ${error.message}`);
-      redirectErrors.push({ url, error: error.message });
-      // Keep original URL if redirect resolution fails
-      resolvedUrls.push(url);
+    } catch (urlError) {
+      log.warn(`[${AUDIT_TYPE}] Invalid URL format: ${url} - ${urlError.message}`);
+      redirectErrors.push({ url, error: `Invalid URL: ${urlError.message}` });
+      isValidUrl = false;
     }
+
+    if (!isValidUrl) {
+      // Skip invalid URLs
+    } else {
+      try {
+      // eslint-disable-next-line no-await-in-loop
+        const response = await fetch(url, {
+          redirect: 'follow',
+          timeout: 10000, // 10 second timeout to match link checking
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0',
+          },
+        });
+
+        if (response.ok) {
+          const finalUrl = response.url;
+          // Basic check for self-redirect (though Node.js fetch should prevent infinite loops)
+          if (finalUrl === url) {
+            resolvedUrls.push(finalUrl);
+          } else {
+            log.debug(`[${AUDIT_TYPE}] Redirect resolved: ${url} -> ${finalUrl}`);
+            resolvedUrls.push(finalUrl);
+          }
+        } else {
+          log.warn(`[${AUDIT_TYPE}] URL returned error status ${response.status}: ${url}`);
+          redirectErrors.push({ url, status: response.status, reason: response.statusText });
+        }
+      } catch (error) {
+        const errorMessage = error.code === 'ETIMEOUT'
+          ? 'Request timed out after 10000ms'
+          : error.message;
+        log.warn(`[${AUDIT_TYPE}] Failed to resolve redirects for ${url}: ${errorMessage}`);
+        redirectErrors.push({ url, error: errorMessage });
+      // Skip URLs that fail redirect resolution entirely
+      // resolvedUrls.push(url); // Removed - no longer keeping failed URLs
+      }
+    } // Close the else block for valid URLs
   }
 
   const redirectResolutionDuration = Date.now() - redirectResolutionStart;

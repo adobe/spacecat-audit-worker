@@ -1805,6 +1805,10 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       });
       // Fifth URL throws network error (kept in results as fallback)
       global.fetch.withArgs('https://example.com/network-error').throws(new Error('Network timeout'));
+      // Sixth URL throws timeout error (tests ETIMEOUT code path)
+      const timeoutError = new Error('Request timed out');
+      timeoutError.code = 'ETIMEOUT';
+      global.fetch.withArgs('https://example.com/timeout-error').throws(timeoutError);
 
       context.dataAccess.SiteTopPage = {
         allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
@@ -1817,7 +1821,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
           'https://example.com/redirect2', // Will redirect to final1
           'https://example.com/page2',
           'https://example.com/error',
-          'https://example.com/network-error'
+          'https://example.com/network-error',
+          'https://example.com/timeout-error'
         ]),
       });
 
@@ -1828,7 +1833,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         { url: 'https://example.com/final' }, // Redirect resolved from redirect1 (Ahrefs)
         { url: 'https://example.com/final1' }, // Redirect resolved from redirect2
         { url: 'https://example.com/page2' },  // No redirect
-        { url: 'https://example.com/network-error' }, // Kept despite network error
+        // network-error and timeout-error URLs are SKIPPED (redirect resolution failed)
         // error URL is NOT included (404 status)
       ]);
 
@@ -1847,10 +1852,50 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/Failed to resolve redirects for https:\/\/example\.com\/network-error: Network timeout/),
       );
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to resolve redirects for https:\/\/example\.com\/timeout-error: Request timed out after 10000ms/),
+      );
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Redirect resolution completed/));
-      // With new logic: 1 Ahrefs + 4 includedURLs = 5 total, 1 has 404 error (not added to results) = 4 resolved, 2 errors
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Resolved 4 URLs, 2 errors/));
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Submitting 4 URLs for scraping/));
+      // With new logic: 1 Ahrefs + 5 includedURLs = 6 total, 2 fail redirect resolution + 1 has 404 error = 3 resolved, 3 errors
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Resolved 3 URLs, 3 errors/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Submitting 3 URLs for scraping/));
+    });
+
+    it('should handle invalid URLs gracefully in redirect resolution', async () => {
+      // Override the default fetch mock for this test
+      global.fetch = sandbox.stub();
+
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+      };
+
+      context.site.getConfig = sandbox.stub().returns({
+        getIncludedURLs: sandbox.stub().returns([
+          'invalid-url', // Invalid URL format
+          'ftp://example.com/file.txt', // Non-HTTP protocol
+          'https://example.com/valid-url', // Valid URL
+        ]),
+      });
+
+      // Only mock the valid URL
+      global.fetch.withArgs('https://example.com/valid-url').resolves({
+        ok: true,
+        url: 'https://example.com/valid-url',
+      });
+
+      const result = await submitForScraping(context);
+
+      // Should only include the valid URL
+      expect(result.urls).to.have.lengthOf(1);
+      expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/valid-url' });
+
+      // Should log warnings for invalid URLs
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Invalid URL format: invalid-url/),
+      );
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Invalid URL format: ftp:\/\/example\.com\/file\.txt/),
+      );
     });
 
     it('should remove duplicates after redirect resolution and log it', async () => {

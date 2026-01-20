@@ -742,5 +742,43 @@ describe('Crawl Detection for Broken Internal Links', () => {
       expect(result).to.have.lengthOf(1);
       expect(result[0].urlTo).to.equal('https://example.com/broken-link');
     });
+
+    it('should handle empty anchor text', async () => {
+      const emptyAnchorHTML = `
+        <html>
+          <body>
+            <main>
+              <a href="/broken-link"></a>
+              <a href="/good-link">Good Link</a>
+            </main>
+          </body>
+        </html>
+      `;
+
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          rawBody: emptyAnchorHTML,
+        },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isWithinAuditScopeStub.returns(true);
+      isLinkInaccessibleStub.withArgs('https://example.com/broken-link').resolves(true);
+      isLinkInaccessibleStub.withArgs('https://example.com/good-link').resolves(false);
+
+      const result = await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.deep.equal({
+        urlFrom: 'https://example.com/page1',
+        urlTo: 'https://example.com/broken-link',
+        anchorText: '[empty]', // Should use default for empty anchor text
+        trafficDomain: 0,
+      });
+    });
   });
 });
