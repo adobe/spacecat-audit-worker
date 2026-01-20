@@ -68,10 +68,11 @@ export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
  */
 /* c8 ignore start */
 export async function importTopPages(context) {
-  const { site, finalUrl } = context;
+  const { site, finalUrl, log } = context;
+
+  log.info('🚀 CANONICAL MULTI-STEP AUDIT v2.0 - STARTED (JS rendering enabled)');
 
   return {
-    auditResult: { status: 'importing' },
     fullAuditRef: finalUrl,
     siteId: site.getId(),
   };
@@ -88,6 +89,7 @@ export async function submitForScraping(context) {
   } = context;
   const siteId = site.getId();
 
+  log.info(`🔍 CANONICAL STEP 2: Submitting pages for scraping with JS rendering (siteId: ${siteId})`);
   log.info(`Start submitForScraping step for: ${siteId}`);
 
   const { SiteTopPage } = dataAccess;
@@ -96,11 +98,8 @@ export async function submitForScraping(context) {
   if (!isNonEmptyArray(topPages)) {
     log.info(`No top pages found for site ${siteId}, skipping scraping`);
     return {
-      auditResult: {
-        status: 'NO_OPPORTUNITIES',
-        message: 'No top pages found, skipping audit',
-      },
-      fullAuditRef: finalUrl,
+      status: 'NO_OPPORTUNITIES',
+      message: 'No top pages found, skipping audit',
     };
   }
 
@@ -147,11 +146,6 @@ export async function submitForScraping(context) {
   log.info(`Finish submitForScraping step for: ${siteId}`);
 
   return {
-    auditResult: {
-      status: 'SCRAPING_REQUESTED',
-      message: 'Content scraping for canonical audit initiated.',
-      scrapedUrls: filteredUrls,
-    },
     fullAuditRef: finalUrl,
     // Data for the CONTENT_SCRAPER
     urls: filteredUrls.map((url) => ({ url })),
@@ -579,6 +573,7 @@ export async function processScrapedContent(context) {
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
 
   log.info(`Start processScrapedContent step for: ${siteId}`);
+  log.info(`✅ CANONICAL STEP 3: Processing scraped HTML from S3 (siteId: ${siteId})`);
 
   if (!bucketName) {
     const errorMsg = 'Missing S3 bucket configuration for canonical audit';

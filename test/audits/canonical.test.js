@@ -1868,7 +1868,6 @@ describe('Canonical URL Tests', () => {
         const result = await importTopPages(testContext);
 
         expect(result).to.deep.equal({
-          auditResult: { status: 'importing' },
           fullAuditRef: 'https://example.com',
           siteId: 'test-site-id',
         });
@@ -1890,11 +1889,6 @@ describe('Canonical URL Tests', () => {
 
         const result = await submitForScraping(testContext);
 
-        expect(result).to.have.property('auditResult');
-        expect(result.auditResult).to.have.property('status', 'SCRAPING_REQUESTED');
-        expect(result.auditResult).to.have.property('message', 'Content scraping for canonical audit initiated.');
-        expect(result.auditResult).to.have.property('scrapedUrls');
-        expect(result.auditResult.scrapedUrls).to.have.lengthOf(2);
         expect(result).to.have.property('urls');
         expect(result.urls).to.have.lengthOf(2);
         expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });
@@ -1921,11 +1915,8 @@ describe('Canonical URL Tests', () => {
         const result = await submitForScraping(testContext);
 
         expect(result).to.deep.equal({
-          auditResult: {
-            status: 'NO_OPPORTUNITIES',
-            message: 'No top pages found, skipping audit',
-          },
-          fullAuditRef: 'https://example.com',
+          status: 'NO_OPPORTUNITIES',
+          message: 'No top pages found, skipping audit',
         });
         expect(context.log.info).to.have.been.calledWith('No top pages found for site test-site-id, skipping scraping');
       });
