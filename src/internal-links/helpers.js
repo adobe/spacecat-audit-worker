@@ -99,7 +99,11 @@ export async function isLinkInaccessible(url, log) {
     }
   } catch (headError) {
     // HEAD failed, could be timeout or network error
-    log.debug(`broken-internal-links audit: HEAD request failed for ${url}, trying GET: ${headError.message}`);
+    if (headError.code === 'ETIMEOUT') {
+      log.debug(`broken-internal-links audit: HEAD request timed out for ${url}, trying GET`);
+    } else {
+      log.debug(`broken-internal-links audit: HEAD request failed for ${url}, trying GET: ${headError.message}`);
+    }
   }
 
   // Fallback to GET request for verification
@@ -124,7 +128,14 @@ export async function isLinkInaccessible(url, log) {
     const errorMessage = getError.code === 'ETIMEOUT'
       ? `Request timed out after ${LINK_TIMEOUT}ms`
       : getError.message;
+
+    // Specifically log timeouts as they're treated as broken links
+    if (getError.code === 'ETIMEOUT') {
+      log.warn(`broken-internal-links audit: TIMEOUT - ${url} timed out after ${LINK_TIMEOUT}ms, considering as broken link`);
+    }
+    // Always log at error level for test compatibility
     log.error(`broken-internal-links audit: Error checking ${url} with GET request: ${errorMessage}`);
+
     // Any error means the URL is inaccessible
     return true;
   }

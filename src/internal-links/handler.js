@@ -90,12 +90,10 @@ export async function internalLinksAuditRunner(auditUrl, context) {
   const { log, site } = context;
   const finalUrl = await wwwUrlResolver(site, context);
 
-  log.info(`[${AUDIT_TYPE}] ====== RUM Detection Phase ======`);
-  log.info(`[${AUDIT_TYPE}] Site: ${site.getId()}, Domain: ${finalUrl}`);
+  log.info(`[${AUDIT_TYPE}] Starting RUM detection for site: ${site.getId()}`);
 
   try {
     // 1. Create RUM API client
-    log.debug(`[${AUDIT_TYPE}] Creating RUM API client...`);
     const rumAPIClient = RUMAPIClient.createFrom(context);
 
     // 2. Prepare query options
@@ -104,19 +102,14 @@ export async function internalLinksAuditRunner(auditUrl, context) {
       interval: INTERVAL,
       granularity: 'hourly',
     };
-    log.info(`[${AUDIT_TYPE}] Querying RUM API for 404 internal links (interval: ${INTERVAL} days)`);
 
     // 3. Query for 404 internal links
-    const startTime = Date.now();
     const internal404Links = await rumAPIClient.query('404-internal-links', options);
-    const queryDuration = Date.now() - startTime;
 
-    log.info(`[${AUDIT_TYPE}] RUM API query completed in ${queryDuration}ms`);
-    log.info(`[${AUDIT_TYPE}] Found ${internal404Links.length} 404 internal links from RUM data`);
+    log.info(`[${AUDIT_TYPE}] RUM query completed: ${internal404Links.length} broken links found`);
 
     if (internal404Links.length === 0) {
-      log.info(`[${AUDIT_TYPE}] No 404 internal links found in RUM data`);
-      log.info(`[${AUDIT_TYPE}] ================================`);
+      log.info(`[${AUDIT_TYPE}] No broken links found in RUM data`);
       return {
         auditResult: {
           brokenInternalLinks: [],
@@ -130,26 +123,15 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     }
 
     // 4. Check accessibility in parallel before transformation
-    log.info(`[${AUDIT_TYPE}] Validating ${internal404Links.length} links to confirm they are still broken...`);
-    const validationStartTime = Date.now();
-
     const accessibilityResults = await Promise.all(
       internal404Links.map(async (link) => {
         const inaccessible = await isLinkInaccessible(link.url_to, log);
-        if (inaccessible) {
-          log.debug(`[${AUDIT_TYPE}] RUM: ${link.url_to} is still broken (traffic: ${link.traffic_domain})`);
-        } else {
-          log.debug(`[${AUDIT_TYPE}] RUM: ${link.url_to} is now fixed (was broken in RUM data)`);
-        }
         return {
           link,
           inaccessible,
         };
       }),
     );
-
-    const validationDuration = Date.now() - validationStartTime;
-    log.info(`[${AUDIT_TYPE}] Link validation completed in ${validationDuration}ms`);
 
     // Count validation results
     const stillBroken = accessibilityResults.filter((r) => r.inaccessible).length;
@@ -229,7 +211,6 @@ export async function submitForScraping(context) {
   } = context;
   const { SiteTopPage } = dataAccess;
 
-  log.info(`[${AUDIT_TYPE}] ====== Submit for Scraping Step ======`);
   log.info(`[${AUDIT_TYPE}] Site: ${site.getId()}, BaseURL: ${site.getBaseURL()}`);
 
   // Fetch Ahrefs top pages with error handling
@@ -262,16 +243,14 @@ export async function submitForScraping(context) {
 
   log.info(`[${AUDIT_TYPE}] Merged URLs: ${topPagesUrls.length} (Ahrefs) + ${includedURLs.length} (manual) = ${finalUrls.length} unique (${duplicatesRemoved} duplicates removed)`);
 
-  // Limit to max 200 URLs to prevent excessive processing and message size issues
-  const MAX_URLS_TO_PROCESS = 200;
+  // Limit to max 500 URLs to prevent excessive processing and message size issues
+  const MAX_URLS_TO_PROCESS = 500;
   if (finalUrls.length > MAX_URLS_TO_PROCESS) {
     log.warn(`[${AUDIT_TYPE}] Total URLs (${finalUrls.length}) exceeds limit. Capping at ${MAX_URLS_TO_PROCESS} URLs.`);
     finalUrls = finalUrls.slice(0, MAX_URLS_TO_PROCESS);
   }
 
   // Resolve redirects before submitting for scraping
-  log.info(`[${AUDIT_TYPE}] Resolving redirects for ${finalUrls.length} URLs...`);
-  const redirectResolutionStart = Date.now();
 
   const resolvedUrls = [];
   const redirectErrors = [];
@@ -329,10 +308,6 @@ export async function submitForScraping(context) {
     } // Close the else block for valid URLs
   }
 
-  const redirectResolutionDuration = Date.now() - redirectResolutionStart;
-  log.info(`[${AUDIT_TYPE}] Redirect resolution completed in ${redirectResolutionDuration}ms`);
-  log.info(`[${AUDIT_TYPE}] Resolved ${resolvedUrls.length} URLs, ${redirectErrors.length} errors`);
-
   // Remove duplicates after redirect resolution
   const uniqueResolvedUrls = [...new Set(resolvedUrls)];
   const finalDuplicatesRemoved = resolvedUrls.length - uniqueResolvedUrls.length;
@@ -358,15 +333,6 @@ export async function submitForScraping(context) {
 
   // Filter out PDF and other unscrape-able files before scraping
   const filteredUrls = uniqueResolvedUrls.filter((url) => !isUnscrapeable(url));
-  const unscrapeable = uniqueResolvedUrls.length - filteredUrls.length;
-
-  if (unscrapeable > 0) {
-    log.info(`[${AUDIT_TYPE}] Filtered out ${unscrapeable} unscrape-able files (PDFs, Office docs, etc.)`);
-    log.debug(`[${AUDIT_TYPE}] Scrapeable URLs: ${filteredUrls.length}/${uniqueResolvedUrls.length}`);
-  }
-
-  log.info(`[${AUDIT_TYPE}] Submitting ${filteredUrls.length} URLs for scraping`);
-  log.info(`[${AUDIT_TYPE}] =======================================`);
 
   return {
     urls: filteredUrls.map((url) => ({ url })),
@@ -461,6 +427,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
       kpiDeltas,
     },
   );
+
   await syncBrokenInternalLinksSuggestions({
     opportunity,
     brokenInternalLinks,
@@ -484,14 +451,13 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   // Get includedURLs from siteConfig
   const includedURLs = await site?.getConfig()?.getIncludedURLs('broken-internal-links') || [];
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Found ${includedURLs.length} includedURLs from siteConfig`);
 
   // Merge Ahrefs + includedURLs
   const includedTopPages = includedURLs.map((url) => ({ getUrl: () => url }));
   let topPages = [...ahrefsTopPages, ...includedTopPages];
 
-  // Limit to max 200 URLs to prevent excessive processing and message size issues
-  const MAX_URLS_TO_PROCESS = 200;
+  // Limit to max 500 URLs to prevent excessive processing and message size issues
+  const MAX_URLS_TO_PROCESS = 500;
   if (topPages.length > MAX_URLS_TO_PROCESS) {
     log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Total URLs (${topPages.length}) exceeds limit. Capping at ${MAX_URLS_TO_PROCESS} URLs.`);
     topPages = topPages.slice(0, MAX_URLS_TO_PROCESS);
@@ -511,7 +477,6 @@ export const opportunityAndSuggestionsStep = async (context) => {
   );
 
   // Auto-suggest is now enabled for all sites
-  log.info(`[${AUDIT_TYPE}] 🚀 Generating suggestions for Mystique (auto-suggest enabled)`);
   const suggestions = await Suggestion.allByOpportunityIdAndStatus(
     opportunity.getId(),
     SuggestionDataAccess.STATUSES.NEW,
@@ -567,25 +532,17 @@ export const opportunityAndSuggestionsStep = async (context) => {
   }
 
   // Limit data size to prevent SQS message size limit (256KB)
-  // AWS SQS max message size is 262144 bytes
+  // Limit alternative URLs to prevent excessive message sizes
   const MAX_ALTERNATIVE_URLS = 100;
-  const MAX_BROKEN_LINKS = 100;
-
   if (alternativeUrls.length > MAX_ALTERNATIVE_URLS) {
     log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Limiting alternativeUrls from ${alternativeUrls.length} to ${MAX_ALTERNATIVE_URLS} to prevent SQS message size limit`);
     alternativeUrls = alternativeUrls.slice(0, MAX_ALTERNATIVE_URLS);
   }
 
-  let limitedBrokenLinks = brokenLinks;
-  if (brokenLinks.length > MAX_BROKEN_LINKS) {
-    log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Limiting brokenLinks from ${brokenLinks.length} to ${MAX_BROKEN_LINKS} to prevent SQS message size limit`);
-    limitedBrokenLinks = brokenLinks.slice(0, MAX_BROKEN_LINKS);
-  }
-
   // Validate before sending to Mystique
-  if (limitedBrokenLinks.length === 0) {
+  if (brokenInternalLinks.length === 0) {
     log.warn(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] No valid broken links to send to Mystique. Skipping message.`,
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] No broken links to send to Mystique. Skipping message.`,
     );
     return {
       status: 'complete',
@@ -610,22 +567,56 @@ export const opportunityAndSuggestionsStep = async (context) => {
     };
   }
 
-  const message = {
-    type: 'guidance:broken-links',
-    siteId: site.getId(),
-    auditId: audit.getId(),
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
-    data: {
-      alternativeUrls,
-      opportunityId: opportunity.getId(),
-      brokenLinks: limitedBrokenLinks,
-    },
-  };
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-  log.debug(`Message sent to Mystique: ${JSON.stringify(message)}`);
+  // Send broken links in batches to avoid SQS size limits
+  const BATCH_SIZE = 50; // Smaller batches to be safe
+  const batches = [];
+  for (let i = 0; i < brokenInternalLinks.length; i += BATCH_SIZE) {
+    batches.push(brokenInternalLinks.slice(i, i + BATCH_SIZE));
+  }
+
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Sending ${batches.length} batches of broken links to Mystique (total: ${brokenInternalLinks.length} links)`);
+
+  // Send all batches
+  const sendPromises = batches.map(async (batch, index) => {
+    const message = {
+      type: 'guidance:broken-links',
+      siteId: site.getId(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      batchIndex: index,
+      totalBatches: batches.length,
+      data: {
+        alternativeUrls,
+        opportunityId: opportunity.getId(),
+        brokenLinks: batch,
+      },
+    };
+
+    try {
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+      return true;
+    } catch (error) {
+      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Failed to send batch ${index + 1}/${batches.length}: ${error.message}`);
+      return false;
+    }
+  });
+
+  const results = await Promise.all(sendPromises);
+  const successfulBatches = results.filter(Boolean).length;
+
+  if (successfulBatches === 0) {
+    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Failed to send any batches to Mystique`);
+    return {
+      status: 'error',
+      message: 'Failed to send any batches to Mystique',
+    };
+  }
+
   return {
     status: 'complete',
+    batchesSent: successfulBatches,
+    totalBatches: batches.length,
   };
 };
 
@@ -635,29 +626,19 @@ export const opportunityAndSuggestionsStep = async (context) => {
  */
 export async function runCrawlDetectionAndGenerateSuggestions(context) {
   const {
-    log, site, audit, dataAccess,
+    log, audit, dataAccess,
   } = context;
 
   // Handle case where scrapeResultPaths might be undefined from framework
   const scrapeResultPaths = context.scrapeResultPaths || new Map();
 
-  log.info(`[${AUDIT_TYPE}] ====== Crawl Detection Step ======`);
-  log.info(`[${AUDIT_TYPE}] Site: ${site.getId()}, BaseURL: ${site.getBaseURL()}`);
-  log.info(`[${AUDIT_TYPE}] scrapeResultPaths available: ${scrapeResultPaths.size}`);
-
   if (scrapeResultPaths.size > 0) {
-    log.info(`[${AUDIT_TYPE}] Sample scrapeResultPaths: ${JSON.stringify([...scrapeResultPaths.entries()].slice(0, 3))}`);
+    // Has scrape results
   }
 
   // Get RUM results from previous audit step
   const auditResult = audit.getAuditResult();
   const rumLinks = auditResult.brokenInternalLinks || [];
-
-  log.info(`[${AUDIT_TYPE}] RUM detection results: ${rumLinks.length} broken links`);
-  if (rumLinks.length > 0) {
-    const rumTraffic = rumLinks.reduce((sum, link) => sum + (link.trafficDomain || 0), 0);
-    log.info(`[${AUDIT_TYPE}] RUM links total traffic: ${rumTraffic} views`);
-  }
 
   // Crawl-based detection is now enabled for all sites
   let finalLinks;
@@ -681,39 +662,18 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
     log.info(`[${AUDIT_TYPE}] Crawl detected ${crawlLinks.length} broken links`);
 
     // Merge crawl + RUM results (RUM takes priority for traffic data)
-    log.info(`[${AUDIT_TYPE}] Merging RUM (${rumLinks.length}) + Crawl (${crawlLinks.length}) results...`);
     finalLinks = mergeAndDeduplicate(crawlLinks, rumLinks, log);
 
-    const crawlOnlyLinks = finalLinks.filter((link) => link.trafficDomain === 0);
-    const rumOnlyLinks = finalLinks.filter(
-      (link) => link.trafficDomain > 0 && !crawlLinks.some((c) => c.urlTo === link.urlTo),
-    );
-    const overlapLinks = finalLinks.length - crawlOnlyLinks.length - rumOnlyLinks.length;
 
-    log.info(`[${AUDIT_TYPE}] Merge results: ${finalLinks.length} total (${crawlOnlyLinks.length} crawl-only, ${rumOnlyLinks.length} RUM-only, ${overlapLinks} overlap)`);
   }
 
   // Calculate priority for all links
-  log.info(`[${AUDIT_TYPE}] Calculating priority for ${finalLinks.length} broken links...`);
 
   // Log all broken URLs found for manual inspection
   if (finalLinks.length > 0) {
-    const brokenUrls = finalLinks.map((link) => link.urlTo);
-    const sampleSize = Math.min(10, brokenUrls.length);
-    log.info(`[${AUDIT_TYPE}] Broken URLs found: ${JSON.stringify(brokenUrls.slice(0, sampleSize))}`);
-    if (brokenUrls.length > sampleSize) {
-      log.info(`[${AUDIT_TYPE}] ... and ${brokenUrls.length - sampleSize} more broken URLs`);
-    }
   }
 
   const prioritizedLinks = calculatePriority(finalLinks);
-
-  // Count by priority
-  const highPriority = prioritizedLinks.filter((link) => link.priority === 'high').length;
-  const mediumPriority = prioritizedLinks.filter((link) => link.priority === 'medium').length;
-  const lowPriority = prioritizedLinks.filter((link) => link.priority === 'low').length;
-
-  log.info(`[${AUDIT_TYPE}] Priority distribution: ${highPriority} high, ${mediumPriority} medium, ${lowPriority} low`);
 
   // Update audit result with prioritized links and get the updated result
   const updatedAuditResult = await updateAuditResult(
@@ -723,7 +683,6 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
     dataAccess,
     log,
   );
-  log.info(`[${AUDIT_TYPE}] ===================================`);
 
   // Now generate opportunities and suggestions
   // Pass the updated audit result through context to avoid stale data
@@ -744,7 +703,6 @@ export async function prepareScrapingStep(context) {
   let ahrefsTopPages = [];
   try {
     ahrefsTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Found ${ahrefsTopPages.length} top pages from Ahrefs`);
   } catch (error) {
     log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Failed to fetch Ahrefs top pages: ${error.message}`);
     log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Continuing with only includedURLs from siteConfig`);
@@ -753,14 +711,13 @@ export async function prepareScrapingStep(context) {
 
   // Get includedURLs from siteConfig
   const includedURLs = await site?.getConfig()?.getIncludedURLs('broken-internal-links') || [];
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Found ${includedURLs.length} includedURLs from siteConfig`);
 
   // Merge Ahrefs + includedURLs
   const includedTopPages = includedURLs.map((url) => ({ getUrl: () => url }));
   let topPages = [...ahrefsTopPages, ...includedTopPages];
 
-  // Limit to max 200 URLs to prevent excessive processing and message size issues
-  const MAX_URLS_TO_PROCESS = 200;
+  // Limit to max 500 URLs to prevent excessive processing and message size issues
+  const MAX_URLS_TO_PROCESS = 500;
   if (topPages.length > MAX_URLS_TO_PROCESS) {
     log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Total URLs (${topPages.length}) exceeds limit. Capping at ${MAX_URLS_TO_PROCESS} URLs.`);
     topPages = topPages.slice(0, MAX_URLS_TO_PROCESS);
@@ -778,14 +735,13 @@ export async function prepareScrapingStep(context) {
     } else {
       throw new Error(`All ${topPages.length} top pages filtered out by audit scope. BaseURL: ${baseURL} requires subpath match but no pages match scope.`);
     }
-  }
+}
 
   const urls = filteredTopPages
     .map((page) => page.getUrl())
     .filter((url) => !isUnscrapeable(url))
     .map((url) => ({ url }));
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Sending ${urls.length} scrapeable URLs (filtered out PDFs and other file types) for scraping`);
 
   return {
     urls,

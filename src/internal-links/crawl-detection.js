@@ -16,6 +16,13 @@ import { isLinkInaccessible } from './helpers.js';
 import { isWithinAuditScope } from './subpath-filter.js';
 
 /**
+ * Sleep utility function to add delays between processing
+ * @param {number} ms - Milliseconds to sleep
+ * @returns {Promise} Promise that resolves after the delay
+ */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
  * Extracts and validates broken internal links from scraped HTML content
  * @param {Map} scrapeResultPaths - Map of URL to S3 path (url -> s3Key)
  * @param {Object} context - Context object with s3Client, log, env, site
@@ -31,20 +38,16 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
   const baseURLObj = new URL(baseURL);
   const baseHostname = baseURLObj.hostname.replace(/^www\./, '');
 
-  log.info(`[broken-internal-links-crawl] Starting crawl detection for site: ${site.getId()}`);
-  log.info(`[broken-internal-links-crawl] Processing ${scrapeResultPaths.size} scraped pages from S3 bucket: ${bucketName}`);
-  log.info(`[broken-internal-links-crawl] Base hostname (normalized): ${baseHostname}, BaseURL: ${baseURL}`);
+  log.info(`[broken-internal-links-crawl] Starting crawl detection: ${scrapeResultPaths.size} pages to process`);
 
   const brokenLinksMap = new Map(); // Key: urlFrom|urlTo, Value: link object
+  const brokenUrlsSet = new Set(); // Track URLs already validated as broken to avoid re-validation
+  const workingUrlsSet = new Set(); // Track URLs already validated as working to avoid re-validation
   let totalLinksFound = 0;
-  let totalLinksValidated = 0;
   let pagesProcessed = 0;
-  let pagesSkipped = 0;
-  let linksOutOfScope = 0;
 
-  // Process each scraped page
-  await Promise.all(
-    [...scrapeResultPaths].map(async ([url, s3Key]) => {
+  // Process each scraped page sequentially with sleep between pages
+  for (const [url, s3Key] of scrapeResultPaths) {
       try {
         log.info(`[broken-internal-links-crawl] 📥 Fetching scraped content for ${url} from S3 key: ${s3Key}`);
 
@@ -53,7 +56,6 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
 
         if (!object) {
           log.warn(`[broken-internal-links-crawl] ❌ No object returned from S3 for ${url} (key: ${s3Key})`);
-          pagesSkipped += 1;
           return;
         }
 
@@ -87,18 +89,12 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
         // Extract internal links (skip header/footer like preflight does)
         // Store as array of objects with url and anchorText
         const internalLinks = [];
-        const sampleHrefs = []; // Collect sample hrefs for debugging
-        let headerFooterLinksSkipped = 0;
-        let externalLinksSkipped = 0;
-        let anchorLinksSkipped = 0;
-        let invalidHrefsSkipped = 0;
 
         anchors.each((i, a) => {
           const $a = $(a);
 
           // Skip links in header or footer (navigation)
           if ($a.closest('header').length || $a.closest('footer').length) {
-            headerFooterLinksSkipped += 1;
             return;
           }
 
@@ -108,13 +104,7 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
             // Skip anchor-only links (page fragments like #section)
             // These are not broken links, just references to sections on the same page
             if (href && href.startsWith('#')) {
-              anchorLinksSkipped += 1;
               return;
-            }
-
-            // Collect sample hrefs for debugging (first 10)
-            if (sampleHrefs.length < 10) {
-              sampleHrefs.push(href);
             }
 
             // Resolve relative links (e.g., /about, ../products) to absolute URLs
@@ -129,44 +119,23 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
                 url: absoluteUrl,
                 anchorText,
               });
-            } else {
-              externalLinksSkipped += 1;
             }
           } catch {
             // Skip invalid hrefs
-            invalidHrefsSkipped += 1;
           }
         });
 
         totalLinksFound += internalLinks.length;
 
-        log.info(`[broken-internal-links-crawl] Page ${pageUrl} - Found ${totalAnchors} total <a> tags`);
 
-        // Log sample raw hrefs to show relative vs absolute links
-        if (sampleHrefs.length > 0) {
-          log.info(`[broken-internal-links-crawl] Sample raw href attributes: ${JSON.stringify(sampleHrefs)}`);
-        }
-
-        log.info(`[broken-internal-links-crawl] Page ${pageUrl} - Internal links: ${internalLinks.size}, Header/Footer skipped: ${headerFooterLinksSkipped}, External: ${externalLinksSkipped}, Anchors: ${anchorLinksSkipped}, Invalid: ${invalidHrefsSkipped}`);
-
-        // Log sample resolved internal links for investigation
-        if (internalLinks.length > 0) {
-          const linksList = internalLinks.map((link) => link.url);
-          const sampleSize = Math.min(5, linksList.length);
-          log.info(`[broken-internal-links-crawl] Sample resolved internal links: ${JSON.stringify(linksList.slice(0, sampleSize))}`);
-          if (linksList.length > sampleSize) {
-            log.info(`[broken-internal-links-crawl] ... and ${linksList.length - sampleSize} more internal links on this page`);
-          }
-        }
 
         if (internalLinks.length === 0) {
-          log.info(`[broken-internal-links-crawl] No internal links to validate on ${pageUrl} - Total anchors=${totalAnchors}, Header/Footer=${headerFooterLinksSkipped}, External=${externalLinksSkipped}, Anchors=${anchorLinksSkipped}, Invalid=${invalidHrefsSkipped}`);
           pagesProcessed += 1;
           return;
         }
 
         // Validate each internal link in parallel
-        log.info(`[broken-internal-links-crawl] Validating ${internalLinks.length} internal links from ${pageUrl}`);
+        // Skip logging individual validation counts to reduce noise
 
         const linkValidations = await Promise.all(
           internalLinks.map(async (link) => {
@@ -178,69 +147,70 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
             const linkInScope = isWithinAuditScope(linkUrl, baseURL);
 
             if (!pageInScope || !linkInScope) {
-              if (!pageInScope) {
-                log.debug(`[broken-internal-links-crawl] Page ${pageUrl} is out of audit scope, skipping link validation`);
-              }
-              if (!linkInScope) {
-                log.debug(`[broken-internal-links-crawl] Link ${linkUrl} is out of audit scope, skipping`);
-              }
-              linksOutOfScope += 1;
               return null;
             }
 
-            totalLinksValidated += 1;
+            // Check if URL is already cached as broken or working (avoid re-validation)
+            if (brokenUrlsSet.has(linkUrl)) {
+              return {
+                urlFrom: pageUrl,
+                urlTo: linkUrl,
+                anchorText: link.anchorText,
+                trafficDomain: 0, // Crawl-discovered links have no traffic data
+              };
+            }
+
+            if (workingUrlsSet.has(linkUrl)) {
+              return null; // Working links don't get added to broken links list
+            }
+
             const isBroken = await isLinkInaccessible(linkUrl, log);
 
             if (isBroken) {
-              log.debug(`[broken-internal-links-crawl] ✗ BROKEN: ${linkUrl} (from ${pageUrl})`);
+              // Add to set of known broken URLs to avoid future validations
+              brokenUrlsSet.add(linkUrl);
               return {
                 urlFrom: pageUrl,
                 urlTo: linkUrl,
                 anchorText,
                 trafficDomain: 0, // Crawl-discovered links have no traffic data
               };
+            } else {
+              // Add to set of known working URLs to avoid future validations
+              workingUrlsSet.add(linkUrl);
             }
 
-            log.debug(`[broken-internal-links-crawl] ✓ OK: ${linkUrl}`);
             return null;
           }),
         );
 
         // Add broken links to map (deduplicate by urlFrom|urlTo)
-        let brokenLinksOnPage = 0;
         linkValidations.forEach((link) => {
           if (link) {
             const key = `${link.urlFrom}|${link.urlTo}`;
             if (!brokenLinksMap.has(key)) {
               brokenLinksMap.set(key, link);
-              brokenLinksOnPage += 1;
             }
           }
         });
 
-        if (brokenLinksOnPage > 0) {
-          log.info(`[broken-internal-links-crawl] Found ${brokenLinksOnPage} broken links on ${pageUrl}`);
-        }
 
         pagesProcessed += 1;
+
+        // Add delay between processing pages to avoid overloading target system
+        await sleep(30);
       } catch (error) {
         log.error(`[broken-internal-links-crawl] Error processing ${url}: ${error.message}`, error);
-        pagesSkipped += 1;
+
+        // Still add delay even on error to avoid rapid-fire retries
+        await sleep(30);
       }
-    }),
-  );
+    }
 
   const brokenLinks = Array.from(brokenLinksMap.values());
 
-  // Log summary statistics
-  log.info('[broken-internal-links-crawl] ====== Crawl Detection Summary ======');
-  log.info(`[broken-internal-links-crawl] Pages processed: ${pagesProcessed}`);
-  log.info(`[broken-internal-links-crawl] Pages skipped (errors/no content): ${pagesSkipped}`);
-  log.info(`[broken-internal-links-crawl] Total internal links found: ${totalLinksFound}`);
-  log.info(`[broken-internal-links-crawl] Links validated: ${totalLinksValidated}`);
-  log.info(`[broken-internal-links-crawl] Links out of scope: ${linksOutOfScope}`);
-  log.info(`[broken-internal-links-crawl] Broken links detected: ${brokenLinks.length}`);
-  log.info('[broken-internal-links-crawl] =====================================');
+  // Log essential summary only
+  log.info(`[broken-internal-links-crawl] Completed: ${pagesProcessed} pages, ${brokenLinks.length} broken links found, ${brokenUrlsSet.size + workingUrlsSet.size} URLs cached`);
 
   return brokenLinks;
 }
@@ -257,19 +227,25 @@ export function mergeAndDeduplicate(crawlLinks, rumLinks, log) {
   log.info(`[broken-internal-links-merge] Input - RUM links: ${rumLinks.length}, Crawl links: ${crawlLinks.length}`);
 
   const linkMap = new Map();
-  let rumLinksAdded = 0;
-  let crawlOnlyCount = 0;
   let overlapCount = 0;
 
   // Step 1: Add RUM links first (they have traffic_domain)
   rumLinks.forEach((link) => {
     const key = `${link.urlFrom}|${link.urlTo}`;
     linkMap.set(key, link);
-    rumLinksAdded += 1;
-    log.debug(`[broken-internal-links-merge] RUM: ${link.urlTo} (traffic: ${link.trafficDomain}) from ${link.urlFrom}`);
   });
 
-  log.info(`[broken-internal-links-merge] Added ${rumLinksAdded} RUM-detected links with traffic data`);
+  // Step 2: Add crawl links (only if not already from RUM)
+  crawlLinks.forEach((link) => {
+    const key = `${link.urlFrom}|${link.urlTo}`;
+    if (!linkMap.has(key)) {
+      // Crawl-only links keep trafficDomain: 0 (lowest priority)
+      linkMap.set(key, link);
+    } else {
+      overlapCount += 1;
+    }
+  });
+
 
   // Step 2: Add crawl links (only if not already from RUM)
   crawlLinks.forEach((link) => {
@@ -278,28 +254,12 @@ export function mergeAndDeduplicate(crawlLinks, rumLinks, log) {
       // Crawl-only links keep trafficDomain: 0 (lowest priority)
       linkMap.set(key, link);
       crawlOnlyCount += 1;
-      log.debug(`[broken-internal-links-merge] CRAWL-ONLY: ${link.urlTo} (traffic: 0) from ${link.urlFrom}`);
     } else {
       overlapCount += 1;
-      log.debug(`[broken-internal-links-merge] OVERLAP (skipped): ${link.urlTo} already found by RUM`);
     }
   });
 
   const mergedLinks = Array.from(linkMap.values());
-
-  // Calculate traffic statistics
-  const linksWithTraffic = mergedLinks.filter((link) => link.trafficDomain > 0).length;
-  const linksWithoutTraffic = mergedLinks.filter((link) => link.trafficDomain === 0).length;
-  const totalTraffic = mergedLinks.reduce((sum, link) => sum + (link.trafficDomain || 0), 0);
-
-  // Log summary statistics
-  log.info(`[broken-internal-links-merge] Crawl-only links: ${crawlOnlyCount} (not found by RUM)`);
-  log.info(`[broken-internal-links-merge] Overlapping links: ${overlapCount} (found by both, using RUM data)`);
-  log.info(`[broken-internal-links-merge] Total merged: ${mergedLinks.length} unique broken links`);
-  log.info(`[broken-internal-links-merge] Links with traffic data: ${linksWithTraffic}`);
-  log.info(`[broken-internal-links-merge] Links without traffic data: ${linksWithoutTraffic}`);
-  log.info(`[broken-internal-links-merge] Total traffic affected: ${totalTraffic} views`);
-  log.info('[broken-internal-links-merge] =================================');
 
   // Step 3: Return merged array
   return mergedLinks;
