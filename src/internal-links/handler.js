@@ -42,29 +42,19 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
  */
 export async function updateAuditResult(audit, auditResult, prioritizedLinks, dataAccess, log) {
   try {
-    const auditId = audit.getId();
-
     // Update the audit result with prioritized links
     const updatedAuditResult = {
       ...auditResult,
       brokenInternalLinks: prioritizedLinks,
     };
 
-    // IMPORTANT: Update the in-memory audit object first if it has the method
-    // This ensures opportunityAndSuggestionsStep sees the correct data
+    // Update the in-memory audit object and persist to database
     if (typeof audit.setAuditResult === 'function') {
       audit.setAuditResult(updatedAuditResult);
-      log.debug(`[${AUDIT_TYPE}] Updated in-memory audit object`);
-    }
-
-    // Then persist to database
-    const auditToUpdate = await dataAccess.Audit.findById(auditId);
-    if (auditToUpdate) {
-      auditToUpdate.setAuditResult(updatedAuditResult);
-      await auditToUpdate.save();
+      await audit.save();
       log.info(`[${AUDIT_TYPE}] Updated audit result with ${prioritizedLinks.length} prioritized broken links`);
     } else {
-      log.warn(`[${AUDIT_TYPE}] Audit not found for ID: ${auditId}, skipping result update`);
+      log.warn(`[${AUDIT_TYPE}] Audit object does not have setAuditResult method, cannot update`);
     }
   } catch (error) {
     log.error(`[${AUDIT_TYPE}] Failed to update audit result: ${error.message}`);
@@ -226,22 +216,8 @@ export async function submitForScraping(context) {
   log.info(`[${AUDIT_TYPE}] ====== Submit for Scraping Step ======`);
   log.info(`[${AUDIT_TYPE}] Site: ${site.getId()}, BaseURL: ${site.getBaseURL()}`);
 
-  // Fetch Ahrefs top pages with error handling
-  log.debug(`[${AUDIT_TYPE}] Fetching Ahrefs top pages from database...`);
-  let topPages = [];
-  let topPagesUrls = [];
-  try {
-    topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-    topPagesUrls = topPages.map((page) => page.getUrl());
-    log.info(`[${AUDIT_TYPE}] Found ${topPagesUrls.length} Ahrefs top pages`);
-  } catch (error) {
-    log.warn(`[${AUDIT_TYPE}] Failed to fetch Ahrefs top pages: ${error.message}`);
-    log.warn(`[${AUDIT_TYPE}] Continuing with only siteConfig includedURLs`);
-    topPagesUrls = [];
-  }
-
-  // Get manual includedURLs from siteConfig
-  log.debug(`[${AUDIT_TYPE}] Fetching includedURLs from siteConfig...`);
+  // Get manual includedURLs from siteConfig FIRST
+  log.debug(`[${AUDIT_TYPE}] Checking for includedURLs from siteConfig...`);
   const includedURLs = await site?.getConfig()?.getIncludedURLs('broken-internal-links') || [];
   log.info(`[${AUDIT_TYPE}] Found ${includedURLs.length} manual includedURLs from siteConfig`);
 
@@ -249,12 +225,42 @@ export async function submitForScraping(context) {
     log.debug(`[${AUDIT_TYPE}] Manual includedURLs: ${includedURLs.slice(0, 5).join(', ')}${includedURLs.length > 5 ? '...' : ''}`);
   }
 
-  // Merge and deduplicate
-  const beforeMerge = topPagesUrls.length + includedURLs.length;
-  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-  const duplicatesRemoved = beforeMerge - finalUrls.length;
+  let topPagesUrls = [];
+  let finalUrls = [];
 
-  log.info(`[${AUDIT_TYPE}] Merged URLs: ${topPagesUrls.length} (Ahrefs) + ${includedURLs.length} (manual) = ${finalUrls.length} unique (${duplicatesRemoved} duplicates removed)`);
+  // PRIORITY: If includedURLs exist, use ONLY those (skip Ahrefs)
+  if (includedURLs.length > 0) {
+    log.info(`[${AUDIT_TYPE}] ✅ Using ONLY includedURLs from siteConfig (${includedURLs.length} URLs)`);
+    log.info(`[${AUDIT_TYPE}] 🚫 SKIPPING Ahrefs top pages to reduce audit scope as requested`);
+    finalUrls = [...includedURLs];
+  } else {
+    // Fallback to Ahrefs only if no includedURLs are configured
+    log.info(`[${AUDIT_TYPE}] ⚠️ No includedURLs configured. Falling back to Ahrefs top pages...`);
+    log.debug(`[${AUDIT_TYPE}] Fetching Ahrefs top pages from database...`);
+    let topPages = [];
+    try {
+      topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+      topPagesUrls = topPages.map((page) => page.getUrl());
+      log.info(`[${AUDIT_TYPE}] Found ${topPagesUrls.length} Ahrefs top pages`);
+      finalUrls = [...topPagesUrls];
+    } catch (error) {
+      log.warn(`[${AUDIT_TYPE}] Failed to fetch Ahrefs top pages: ${error.message}`);
+      log.warn(`[${AUDIT_TYPE}] No URLs available for scraping`);
+      topPagesUrls = [];
+      finalUrls = [];
+    }
+  }
+
+  // Remove duplicates (though should not have any in single-source mode)
+  const beforeDedup = finalUrls.length;
+  finalUrls = [...new Set(finalUrls)];
+  const duplicatesRemoved = beforeDedup - finalUrls.length;
+
+  if (duplicatesRemoved > 0) {
+    log.info(`[${AUDIT_TYPE}] Removed ${duplicatesRemoved} duplicate URLs`);
+  }
+
+  log.info(`[${AUDIT_TYPE}] Total URLs for scraping: ${finalUrls.length}`);
 
   // Resolve redirects before submitting for scraping
   log.info(`[${AUDIT_TYPE}] Resolving redirects for ${finalUrls.length} URLs...`);
@@ -429,11 +435,19 @@ export const opportunityAndSuggestionsStep = async (context) => {
     log,
   });
 
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  // Check for includedURLs first, fallback to Ahrefs if not configured
+  const includedURLs = await site?.getConfig()?.getIncludedURLs('broken-internal-links') || [];
+  let topPages = [];
 
-  log.info(
-    `[${AUDIT_TYPE}] [Site: ${site.getId()}] Found ${topPages.length} top pages from Ahrefs`,
-  );
+  if (includedURLs.length > 0) {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Using ${includedURLs.length} includedURLs from siteConfig (Ahrefs skipped)`);
+    // Convert includedURLs to topPage-like objects for filtering
+    topPages = includedURLs.map((url) => ({ getUrl: () => url }));
+  } else {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No includedURLs configured, fetching Ahrefs top pages...`);
+    topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Found ${topPages.length} top pages from Ahrefs`);
+  }
 
   // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
   // This determines what alternatives Mystique will see:
@@ -639,7 +653,20 @@ export async function prepareScrapingStep(context) {
   if (!success) {
     throw new Error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skip scraping and suggestion generation`);
   }
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+  // Check for includedURLs first, fallback to Ahrefs if not configured
+  const includedURLs = await site?.getConfig()?.getIncludedURLs('broken-internal-links') || [];
+  let topPages = [];
+
+  if (includedURLs.length > 0) {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Using ${includedURLs.length} includedURLs from siteConfig (Ahrefs skipped)`);
+    // Convert includedURLs to topPage-like objects for filtering
+    topPages = includedURLs.map((url) => ({ getUrl: () => url }));
+  } else {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No includedURLs configured, fetching Ahrefs top pages...`);
+    topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Found ${topPages.length} top pages from Ahrefs`);
+  }
 
   // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
   const baseURL = site.getBaseURL();
@@ -649,7 +676,7 @@ export async function prepareScrapingStep(context) {
 
   if (filteredTopPages.length === 0) {
     if (topPages.length === 0) {
-      throw new Error(`No top pages found in database for site ${site.getId()}. Ahrefs import required.`);
+      throw new Error(`No top pages found for site ${site.getId()}. Please configure includedURLs in siteConfig.`);
     } else {
       throw new Error(`All ${topPages.length} top pages filtered out by audit scope. BaseURL: ${baseURL} requires subpath match but no pages match scope.`);
     }
