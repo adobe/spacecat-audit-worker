@@ -146,6 +146,7 @@ export const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.FIXED,
       SuggestionDataAccess.STATUSES.ERROR,
       SuggestionDataAccess.STATUSES.SKIPPED,
+      SuggestionDataAccess.STATUSES.REJECTED,
     ].includes(existing.getStatus()))
     .filter((existing) => {
       // mark suggestions as outdated only if their URL was actually scraped
@@ -202,6 +203,8 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * Synchronizes existing suggestions with new data.
  * Handles outdated suggestions by updating their status, either to OUTDATED or the provided one.
  * Updates existing suggestions with new data if they match based on the provided key.
+ * Preserves REJECTED status when an existing suggestion with REJECTED status appears again
+ * in the audit run.
  *
  * Prepares new suggestions from the new data and adds them to the opportunity.
  * Maps new data to suggestion objects using the provided mapping function.

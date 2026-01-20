@@ -348,6 +348,95 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setData).to.have.been.calledWith(newData[0]);
     });
 
+    it('should not mark REJECTED suggestions as OUTDATED when they do not appear in new audit data', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+      // Existing REJECTED suggestion that doesn't appear in new audit
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: { url: 'https://example.com/page1', key: 'page1' },
+          getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+          getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        },
+        {
+          id: '2',
+          data: { url: 'https://example.com/page2', key: 'page2' },
+          getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+      ];
+
+      // New audit data only has page3 (page1 and page2 are not in new data)
+      const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+      const scrapedUrlsSet = new Set([
+        'https://example.com/page1',
+        'https://example.com/page2',
+        'https://example.com/page3',
+      ]);
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet,
+      });
+
+      // Verify that bulkUpdateStatus was called only with NEW suggestion (not REJECTED)
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [existingSuggestions[1]], // Only the NEW suggestion, not REJECTED
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+    });
+
+    it('should not mark REJECTED suggestions as OUTDATED even when scrapedUrlsSet is null', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+      // Existing REJECTED and NEW suggestions that don't appear in new audit
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: { url: 'https://example.com/page1', key: 'page1' },
+          getData: sinon.stub().returns({ key: 'page1' }),
+          getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        },
+        {
+          id: '2',
+          data: { url: 'https://example.com/page2', key: 'page2' },
+          getData: sinon.stub().returns({ key: 'page2' }),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+      ];
+
+      // New audit data only has page3 (page1 and page2 are not in new data)
+      const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+      // scrapedUrlsSet is null (no URL filtering)
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet: null, // Explicitly null
+      });
+
+      // Verify that bulkUpdateStatus was called only with NEW suggestion (not REJECTED)
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [existingSuggestions[1]], // Only the NEW suggestion, not REJECTED
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+    });
+
     it('should update suggestions when they are detected again', async () => {
       const suggestionsData = [
         { key: '1', title: 'old title' },
