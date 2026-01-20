@@ -161,45 +161,45 @@ describe('isLinkInaccessible', () => {
   });
 
   it('should handle GET request timeouts with ETIMEOUT error code', async function call() {
-    this.timeout(3000);
+    this.timeout(6000);
 
-    // Create a custom version of isLinkInaccessible with short timeout for testing
-    const testIsLinkInaccessible = async (url, log) => {
-      const LINK_TIMEOUT = 100; // Very short timeout for testing
-      const { tracingFetch } = await import('@adobe/spacecat-shared-utils');
+    // Mock HEAD to fail first
+    nock('https://example.com')
+      .head('/timeout-test')
+      .replyWithError(new Error('HEAD timeout'));
 
-      try {
-        const headResponse = await tracingFetch(url, { method: 'HEAD', timeout: LINK_TIMEOUT });
-        const { status } = headResponse;
+    // Mock GET to timeout with ETIMEOUT code
+    const timeoutError = new Error('Request timeout');
+    timeoutError.code = 'ETIMEOUT';
+    nock('https://example.com')
+      .get('/timeout-test')
+      .replyWithError(timeoutError);
 
-        if (status < 400) {
-          return false;
-        }
-
-        log.debug(`broken-internal-links audit: HEAD request returned ${status} for ${url}, verifying with GET`);
-      } catch (headError) {
-        log.debug(`broken-internal-links audit: HEAD request failed for ${url}, trying GET: ${headError.message}`);
-      }
-
-      try {
-        const getResponse = await tracingFetch(url, { method: 'GET', timeout: LINK_TIMEOUT });
-        const { status } = getResponse;
-
-        if (status >= 400 && status < 500 && status !== 404) {
-          log.warn(`broken-internal-links audit: Warning: ${url} returned client error: ${status}`);
-        }
-
-        return status >= 400;
-      } catch (getError) {
-        log.error(`broken-internal-links audit: Error checking ${url} with GET request: ${getError.code === 'ETIMEOUT' ? `Request timed out after ${LINK_TIMEOUT}ms` : getError.message}`);
-        return true;
-      }
-    };
-
-    // Test with a slow URL that will timeout with 100ms timeout
-    const result = await testIsLinkInaccessible('https://httpbin.org/delay/1', mockLog);
+    const result = await isLinkInaccessible('https://example.com/timeout-test', mockLog);
     expect(result).to.be.true;
-    expect(mockLog.error.called).to.be.true;
+    // Check that the timeout-specific message was logged (covers the true branch of ternary)
+    expect(mockLog.error.calledWith(sinon.match('Error checking https://example.com/timeout-test with GET request: Request timed out after 10000ms'))).to.be.true;
+  });
+
+  it('should handle GET request errors with non-ETIMEOUT error code', async function call() {
+    this.timeout(6000);
+
+    // Mock HEAD to fail first
+    nock('https://example.com')
+      .head('/network-error')
+      .replyWithError(new Error('HEAD connection failed'));
+
+    // Mock GET to fail with non-ETIMEOUT error
+    const dnsError = new Error('DNS lookup failed');
+    dnsError.code = 'ENOTFOUND';
+    nock('https://example.com')
+      .get('/network-error')
+      .replyWithError(dnsError);
+
+    const result = await isLinkInaccessible('https://example.com/network-error', mockLog);
+    expect(result).to.be.true;
+    // Check that the non-timeout error message was logged (covers the else branch of ternary)
+    expect(mockLog.error.calledWith(sinon.match('Error checking https://example.com/network-error with GET request: DNS lookup failed'))).to.be.true;
   });
 
   it('should fallback to GET when HEAD fails with server error', async function call() {

@@ -1453,7 +1453,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     it('should remove duplicate URLs before redirect resolution', async () => {
       const duplicateUrl = 'https://example.com/page1';
-      
+
       context.dataAccess.SiteTopPage = {
         allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
       };
@@ -1473,6 +1473,27 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       // Verify duplicate removal log (lines 260-261)
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Removed 2 duplicate URLs/));
+    });
+
+    it('should handle null site gracefully in includedURLs check', async () => {
+      const originalContext = context.site;
+      // Create a minimal site object that won't crash
+      context.site = {
+        getId: () => 'null-site-test',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => null // getConfig returns null to test optional chaining
+      };
+
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+      };
+
+      await submitForScraping(context);
+
+      // Should use empty array ([]) as includedURLs when getConfig returns null
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/No includedURLs configured/));
+
+      context.site = originalContext; // Restore original site
     });
 
     it('should resolve redirects before submitting URLs for scraping', async () => {
