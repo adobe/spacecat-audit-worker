@@ -323,7 +323,7 @@ describe('Broken internal links audit', () => {
     };
 
     await expect(prepareScrapingStep(context))
-      .to.be.rejectedWith(`No top pages found for site ${site.getId()}. Please configure includedURLs in siteConfig.`);
+      .to.be.rejectedWith(`No top pages found for site ${site.getId()}. Ahrefs import required.`);
   }).timeout(5000);
 
   it('prepareScrapingStep should throw error when all top pages filtered out by audit scope', async () => {
@@ -354,15 +354,19 @@ describe('Broken internal links audit', () => {
       .to.be.rejectedWith(`All 2 top pages filtered out by audit scope. BaseURL: https://example.com/blog requires subpath match but no pages match scope.`);
   }).timeout(5000);
 
-  it('prepareScrapingStep should use includedURLs and skip Ahrefs when configured', async () => {
+  it('prepareScrapingStep should merge Ahrefs and includedURLs when both are configured', async () => {
     const includedURLs = ['https://example.com/page1', 'https://example.com/page2'];
+    const ahrefsPages = [
+      { getUrl: () => 'https://example.com/ahrefs1' },
+      { getUrl: () => 'https://example.com/ahrefs2' },
+    ];
     
     context.site.getConfig = () => ({
       getIncludedURLs: (type) => (type === 'broken-internal-links' ? includedURLs : []),
     });
     
     context.dataAccess.SiteTopPage = {
-      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(ahrefsPages),
     };
     
     context.audit = {
@@ -374,15 +378,59 @@ describe('Broken internal links audit', () => {
 
     const result = await prepareScrapingStep(context);
     
-    // Verify Ahrefs was NOT called
-    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+    // Verify Ahrefs WAS called (we now merge both)
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.called;
     
-    // Verify log message about using includedURLs
+    // Verify log messages for both Ahrefs and includedURLs
     expect(context.log.info).to.have.been.calledWith(
-      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Using 2 includedURLs from siteConfig (Ahrefs skipped)`,
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Found 2 top pages from Ahrefs`,
+    );
+    expect(context.log.info).to.have.been.calledWith(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Found 2 includedURLs from siteConfig`,
     );
     
-    // Verify result contains includedURLs
+    // Verify result contains BOTH Ahrefs and includedURLs (4 total)
+    // Order: Ahrefs first, then includedURLs
+    expect(result.urls).to.have.lengthOf(4);
+    expect(result.urls[0].url).to.equal('https://example.com/ahrefs1');
+    expect(result.urls[1].url).to.equal('https://example.com/ahrefs2');
+    expect(result.urls[2].url).to.equal('https://example.com/page1');
+    expect(result.urls[3].url).to.equal('https://example.com/page2');
+  }).timeout(5000);
+
+  it('prepareScrapingStep should handle Ahrefs fetch failure and continue with includedURLs', async () => {
+    const includedURLs = ['https://example.com/page1', 'https://example.com/page2'];
+    
+    context.site.getConfig = () => ({
+      getIncludedURLs: (type) => (type === 'broken-internal-links' ? includedURLs : []),
+    });
+    
+    // Simulate Ahrefs fetch failure
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().rejects(new Error('Database connection failed')),
+    };
+    
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
+
+    const result = await prepareScrapingStep(context);
+    
+    // Verify Ahrefs was attempted
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.called;
+    
+    // Verify warning was logged
+    expect(context.log.warn).to.have.been.calledWith(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Failed to fetch Ahrefs top pages: Database connection failed`,
+    );
+    expect(context.log.warn).to.have.been.calledWith(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Continuing with only includedURLs from siteConfig`,
+    );
+    
+    // Verify result contains only includedURLs (2 total)
     expect(result.urls).to.have.lengthOf(2);
     expect(result.urls[0].url).to.equal('https://example.com/page1');
     expect(result.urls[1].url).to.equal('https://example.com/page2');
@@ -793,6 +841,54 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     const messageArg = context.sqs.sendMessage.getCall(0).args[1];
     expect(messageArg.data.alternativeUrls).to.have.lengthOf(1);
     expect(messageArg.data.alternativeUrls[0]).to.equal('https://example.com/page1');
+  }).timeout(5000);
+
+  it('should handle Ahrefs fetch failure and continue with includedURLs', async () => {
+    const includedURLs = ['https://example.com/page1', 'https://example.com/page2'];
+    
+    const validSuggestions = [
+      {
+        getData: () => ({
+          urlFrom: 'https://example.com/',
+          urlTo: 'https://example.com/broken',
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+    
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    context.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+    
+    // Configure includedURLs
+    context.site.getConfig = () => ({
+      getIncludedURLs: (type) => (type === 'broken-internal-links' ? includedURLs : []),
+    });
+    
+    // Simulate Ahrefs fetch failure
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .rejects(new Error('Database connection failed'));
+    
+    context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(result.status).to.equal('complete');
+    
+    // Verify warning was logged (main goal: confirm error handling works)
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Failed to fetch Ahrefs top pages: Database connection failed/),
+    );
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Continuing with only includedURLs from siteConfig/),
+    );
+    
+    // Verify includedURLs were logged
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/Found 2 includedURLs from siteConfig/),
+    );
   }).timeout(5000);
 
   it('Existing opportunity and suggestions are updated if no broken internal links found', async () => {
@@ -1281,7 +1377,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       global.fetch = originalFetch;
     });
 
-    it('should use ONLY includedURLs when present (skip Ahrefs)', async () => {
+    it('should merge Ahrefs and includedURLs and deduplicate', async () => {
       const mockTopPages = [
         { getUrl: () => 'https://example.com/page1' },
         { getUrl: () => 'https://example.com/page2' },
@@ -1297,11 +1393,12 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       const result = await submitForScraping(context);
 
-      // NEW BEHAVIOR: When includedURLs are configured, Ahrefs is SKIPPED
+      // NEW BEHAVIOR: Ahrefs + includedURLs are merged and deduplicated
       expect(result).to.deep.equal({
         urls: [
-          { url: 'https://example.com/page3' },
           { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+          { url: 'https://example.com/page3' },
         ],
         siteId: 'site-id-1',
         type: 'broken-internal-links',
@@ -1309,11 +1406,11 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         maxScrapeAge: 0,
       });
 
-      // Verify Ahrefs was NOT called
-      expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+      // Verify Ahrefs WAS called (we now merge both)
+      expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Found 2 Ahrefs top pages/));
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Found 2 manual includedURLs/));
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Using ONLY includedURLs/));
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/SKIPPING Ahrefs/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/2 \(Ahrefs\) \+ 2 \(manual\) = 3 unique \(1 duplicates removed\)/));
     });
 
     it('should filter out unscrapeable URLs (PDFs, Office docs)', async () => {
@@ -1394,14 +1491,17 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         sinon.match(/Failed to fetch Ahrefs top pages.*SSL routines/),
       );
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/No URLs available for scraping/),
+        sinon.match(/Continuing with only siteConfig includedURLs/),
       );
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/Found 0 manual includedURLs from siteConfig/),
       );
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Merged URLs: 0 \(Ahrefs\) \+ 0 \(manual\) = 0 unique/),
+      );
     });
 
-    it('should work with only manual includedURLs (Ahrefs skipped)', async () => {
+    it('should work with only manual includedURLs (Ahrefs returns empty)', async () => {
       context.dataAccess.SiteTopPage = {
         allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
       };
@@ -1416,10 +1516,10 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         { url: 'https://example.com/manual1' },
       ]);
 
-      // With new logic, Ahrefs is NOT called when includedURLs exist
-      expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+      // With new logic, Ahrefs IS always called (but returns empty array)
+      expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Found 0 Ahrefs top pages/));
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Found 1 manual includedURLs/));
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Using ONLY includedURLs/));
     });
 
     it('should handle site with no config or getIncludedURLs undefined', async () => {
@@ -1476,8 +1576,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       await submitForScraping(context);
 
-      // Verify duplicate removal log (lines 260-261)
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Removed 2 duplicate URLs/));
+      // Verify duplicate removal log (should show 2 duplicates removed)
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/0 \(Ahrefs\) \+ 5 \(manual\) = 3 unique \(2 duplicates removed\)/));
     });
 
     it('should handle null site gracefully in includedURLs check', async () => {
@@ -1496,7 +1596,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       await submitForScraping(context);
 
       // Should use empty array ([]) as includedURLs when getConfig returns null
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/No includedURLs configured/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Found 0 manual includedURLs from siteConfig/));
 
       context.site = originalContext; // Restore original site
     });
@@ -1519,7 +1619,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       await submitForScraping(context);
 
       // Should use empty array ([]) when getIncludedURLs returns null
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/No includedURLs configured/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Found 0 manual includedURLs from siteConfig/));
 
       context.site = originalContext; // Restore original site
     });
@@ -1542,7 +1642,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       await submitForScraping(context);
 
       // Should use empty array ([]) when getIncludedURLs returns undefined
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/No includedURLs configured/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Found 0 manual includedURLs from siteConfig/));
 
       context.site = originalContext; // Restore original site
     });
@@ -1552,23 +1652,28 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     it('should resolve redirects before submitting URLs for scraping', async () => {
       // Override the default fetch mock for this test
       global.fetch = sandbox.stub();
-      // First URL redirects (from includedURLs)
+      // First URL redirects (from Ahrefs)
+      global.fetch.withArgs('https://example.com/redirect1').resolves({
+        ok: true,
+        url: 'https://example.com/final',
+      });
+      // Second URL redirects (from includedURLs)
       global.fetch.withArgs('https://example.com/redirect2').resolves({
         ok: true,
         url: 'https://example.com/final1',
       });
-      // Second URL doesn't redirect
+      // Third URL doesn't redirect
       global.fetch.withArgs('https://example.com/page2').resolves({
         ok: true,
         url: 'https://example.com/page2',
       });
-      // Third URL has error (404 - not added to results)
+      // Fourth URL has error (404 - not added to results)
       global.fetch.withArgs('https://example.com/error').resolves({
         ok: false,
         status: 404,
         statusText: 'Not Found',
       });
-      // Fourth URL throws network error (kept in results as fallback)
+      // Fifth URL throws network error (kept in results as fallback)
       global.fetch.withArgs('https://example.com/network-error').throws(new Error('Network timeout'));
 
       context.dataAccess.SiteTopPage = {
@@ -1588,17 +1693,21 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       const result = await submitForScraping(context);
 
-      // NEW BEHAVIOR: Ahrefs is SKIPPED when includedURLs exist, so redirect1 is not included
+      // NEW BEHAVIOR: Ahrefs + includedURLs are merged, so final redirect includes both
       expect(result.urls).to.deep.equal([
+        { url: 'https://example.com/final' }, // Redirect resolved from redirect1 (Ahrefs)
         { url: 'https://example.com/final1' }, // Redirect resolved from redirect2
         { url: 'https://example.com/page2' },  // No redirect
         { url: 'https://example.com/network-error' }, // Kept despite network error
         // error URL is NOT included (404 status)
       ]);
 
-      // Verify Ahrefs was NOT called
-      expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
+      // Verify Ahrefs WAS called (we now merge both)
+      expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.called;
 
+      expect(context.log.debug).to.have.been.calledWith(
+        sinon.match(/Redirect resolved: https:\/\/example\.com\/redirect1 -> https:\/\/example\.com\/final/),
+      );
       expect(context.log.debug).to.have.been.calledWith(
         sinon.match(/Redirect resolved: https:\/\/example\.com\/redirect2 -> https:\/\/example\.com\/final1/),
       );
@@ -1609,9 +1718,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         sinon.match(/Failed to resolve redirects for https:\/\/example\.com\/network-error: Network timeout/),
       );
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Redirect resolution completed/));
-      // With new logic: 4 includedURLs, but 1 has 404 error (not added to results) = 3 resolved, 2 errors
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Resolved 3 URLs, 2 errors/));
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Submitting 3 URLs for scraping/));
+      // With new logic: 1 Ahrefs + 4 includedURLs = 5 total, 1 has 404 error (not added to results) = 4 resolved, 2 errors
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Resolved 4 URLs, 2 errors/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Submitting 4 URLs for scraping/));
     });
 
     it('should remove duplicates after redirect resolution and log it', async () => {
@@ -1630,6 +1739,10 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         ok: true,
         url: 'https://example.com/final',  // Same as redirect1 and redirect2
       });
+
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]), // No Ahrefs pages
+      };
 
       context.site.getConfig = sandbox.stub().returns({
         getIncludedURLs: sandbox.stub().returns([
@@ -1971,8 +2084,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       // Verify Ahrefs was called
       expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith('site-id-1', 'ahrefs', 'global');
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/No includedURLs configured, fetching Ahrefs top pages/));
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Found 2 top pages from Ahrefs/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Found 0 includedURLs from siteConfig/));
     });
 
     it('should filter out unscrape-able files from alternatives before sending to Mystique', async () => {
