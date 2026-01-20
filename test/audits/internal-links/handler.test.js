@@ -763,6 +763,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // Stub allBySiteIdAndStatus to return empty array so a new opportunity is created
     context.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
+    // Ensure no includedURLs are configured to force Ahrefs path
+    context.site.getConfig = () => null;
     // Include various unscrape-able file types in top pages to trigger filtering
     context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
       .resolves([
@@ -971,6 +973,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
     context.site.getBaseURL = () => 'https://bulk.com/uk'; // Site with subpath
     context.site.getDeliveryType = () => 'aem_edge';
+    context.site.getConfig = () => null; // Force Ahrefs path
 
     // Create suggestions where urlTo has prefix
     const suggestionsWithUrlToPrefix = [
@@ -1030,6 +1033,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
     context.site.getBaseURL = () => 'https://bulk.com/uk'; // Site with subpath
     context.site.getDeliveryType = () => 'aem_edge';
+    context.site.getConfig = () => null; // Force Ahrefs path
 
     // Create suggestions where urlTo has no prefix (root URL) but urlFrom has prefix
     const suggestionsWithPrefixFallback = [
@@ -1182,6 +1186,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
     context.site.getBaseURL = () => 'https://bulk.com'; // Root domain, no subpath
     context.site.getDeliveryType = () => 'aem_edge';
+    context.site.getConfig = () => null; // Force Ahrefs path
 
     // Create suggestions with URLs that have pathname '/' (extractPathPrefix returns '')
     // This triggers the else branch where brokenLinkLocales.size === 0
