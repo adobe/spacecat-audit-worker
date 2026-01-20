@@ -1496,6 +1496,54 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       context.site = originalContext; // Restore original site
     });
 
+    it('should handle getIncludedURLs returning null', async () => {
+      const originalContext = context.site;
+      // Create site where getIncludedURLs exists but returns null
+      context.site = {
+        getId: () => 'getIncludedURLs-null-test',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getIncludedURLs: () => Promise.resolve(null) // getIncludedURLs returns promise resolving to null
+        })
+      };
+
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+      };
+
+      await submitForScraping(context);
+
+      // Should use empty array ([]) when getIncludedURLs returns null
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/No includedURLs configured/));
+
+      context.site = originalContext; // Restore original site
+    });
+
+    it('should handle getIncludedURLs returning undefined', async () => {
+      const originalContext = context.site;
+      // Create site where getIncludedURLs exists but returns undefined
+      context.site = {
+        getId: () => 'getIncludedURLs-undefined-test',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getIncludedURLs: () => Promise.resolve(undefined) // getIncludedURLs returns promise resolving to undefined
+        })
+      };
+
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+      };
+
+      await submitForScraping(context);
+
+      // Should use empty array ([]) when getIncludedURLs returns undefined
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/No includedURLs configured/));
+
+      context.site = originalContext; // Restore original site
+    });
+
+
+
     it('should resolve redirects before submitting URLs for scraping', async () => {
       // Override the default fetch mock for this test
       global.fetch = sandbox.stub();
@@ -1976,6 +2024,51 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
       // Verify unscrape-able files were filtered out (lines 515-516)
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Filtered out 2 unscrape-able file URLs \(PDFs, Office docs, etc\.\) from alternative URLs before sending to Mystique/));
+    });
+
+    it('should handle optional chaining in runCrawlDetectionAndGenerateSuggestions when getConfig returns undefined', async () => {
+      const rumLinks = [
+        { urlTo: 'https://example.com/rum1', urlFrom: 'https://example.com/page1', trafficDomain: 100 },
+      ];
+
+      context.audit = {
+        getAuditResult: () => ({ brokenInternalLinks: rumLinks, success: true }),
+        getId: () => 'test-audit-id',
+        setAuditResult: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      // Set site config to return undefined
+      context.site.getConfig = () => undefined;
+
+      context.dataAccess.Opportunity = {
+        create: sandbox.stub().resolves({
+          getId: () => 'opp-123',
+          getSuggestions: sandbox.stub().resolves([]),
+          addSuggestions: sandbox.stub().resolves([]),
+        }),
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      context.dataAccess.Suggestion = {
+        create: sandbox.stub().resolves({ getId: () => 'sugg-123' }),
+        allBySuggestionType: sandbox.stub().resolves([]),
+        allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      // Disable Mystique to avoid complex flow
+      context.dataAccess.Configuration = {
+        findLatest: () => ({
+          isHandlerEnabledForSite: () => false,
+        }),
+      };
+
+      context.scrapeResultPaths = new Map();
+
+      await mockHandler.runCrawlDetectionAndGenerateSuggestions(context);
+
+      // Should work even when getConfig returns undefined
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Using Ahrefs/));
     });
 
 
