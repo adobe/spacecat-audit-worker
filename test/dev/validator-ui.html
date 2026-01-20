@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SEO Indexability Checker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .input-section {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+            resize: vertical;
+            min-height: 120px;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #666;
+        }
+        
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .info {
+            background: #f0f7ff;
+            border-left: 4px solid #667eea;
+            padding: 12px 16px;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 20px;
+        }
+        
+        .results {
+            margin-top: 30px;
+            display: none;
+        }
+        
+        .results.visible {
+            display: block;
+        }
+        
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-card.success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+        
+        .stat-card.error {
+            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+        }
+        
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .url-result {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .url-result.clean {
+            border-left: 4px solid #38ef7d;
+        }
+        
+        .url-result.blocked {
+            border-left: 4px solid #f45c43;
+        }
+        
+        .url-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .status-icon {
+            font-size: 20px;
+        }
+        
+        .url-text {
+            flex: 1;
+            font-weight: 600;
+            word-break: break-all;
+            color: #333;
+        }
+        
+        .checks {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .check-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+        }
+        
+        .check-icon {
+            font-size: 16px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            display: none;
+        }
+        
+        .loading.visible {
+            display: block;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .export-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 8px;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            cursor: pointer;
+            margin-bottom: -2px;
+        }
+        
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+        
+        .error-message {
+            background: #fff0f0;
+            border-left: 4px solid #f45c43;
+            padding: 12px 16px;
+            border-radius: 4px;
+            color: #c62828;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 SEO Indexability Checker</h1>
+            <p>Check URLs for technical SEO issues: HTTP errors, redirects, canonical, noindex, robots.txt</p>
+        </div>
+        
+        <div class="content">
+            <div class="input-section">
+                <label for="urls">Enter URLs (one per line):</label>
+                <textarea id="urls" placeholder="https://example.com/page1
+https://example.com/page2
+https://example.com/page3"></textarea>
+                
+                <div class="info">
+                    💡 <strong>Tip:</strong> Paste your URLs (one per line), then click "Check URLs". The tool will validate HTTP status, redirects, canonical tags, noindex directives, and robots.txt rules.
+                </div>
+            </div>
+            
+            <div class="button-group">
+                <button class="btn-primary" id="checkBtn" onclick="checkUrls()">
+                    🚀 Check URLs
+                </button>
+                <button class="btn-secondary" onclick="clearAll()">
+                    🗑️ Clear
+                </button>
+            </div>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Checking URLs... This may take a moment.</p>
+            </div>
+            
+            <div class="results" id="results">
+                <h2 style="margin-bottom: 20px;">Results</h2>
+                
+                <div class="summary" id="summary"></div>
+                
+                <div class="export-buttons">
+                    <button class="btn-secondary" onclick="exportJSON()">
+                        📥 Download JSON
+                    </button>
+                    <button class="btn-secondary" onclick="exportCSV()">
+                        📊 Download CSV
+                    </button>
+                    <button class="btn-secondary" onclick="copyCleanUrls()">
+                        📋 Copy Clean URLs
+                    </button>
+                </div>
+                
+                <div class="tabs">
+                    <button class="tab active" data-tab="all" onclick="switchTab('all')">All (0)</button>
+                    <button class="tab" data-tab="clean" onclick="switchTab('clean')">Clean (0)</button>
+                    <button class="tab" data-tab="blocked" onclick="switchTab('blocked')">Blocked (0)</button>
+                </div>
+                
+                <div id="urlResults"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let resultsData = null;
+        let currentTab = 'all';
+
+        async function checkUrls() {
+            const textarea = document.getElementById('urls');
+            const urls = textarea.value
+                .split('\n')
+                .map(url => url.trim())
+                .filter(url => url.length > 0);
+            
+            if (urls.length === 0) {
+                alert('Please enter at least one URL');
+                return;
+            }
+            
+            // Show loading, hide results
+            document.getElementById('loading').classList.add('visible');
+            document.getElementById('results').classList.remove('visible');
+            document.getElementById('checkBtn').disabled = true;
+            
+            try {
+                // Call the backend validator
+                const response = await fetch('http://localhost:3033/validate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ urls })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Validation failed');
+                }
+                
+                resultsData = await response.json();
+                displayResults(resultsData);
+                
+            } catch (error) {
+                document.getElementById('loading').classList.remove('visible');
+                document.getElementById('urlResults').innerHTML = `
+                    <div class="error-message">
+                        ❌ <strong>Error:</strong> ${error.message}. Make sure the validation server is running on port 3033.
+                        <br><br>
+                        To start the server, run: <code>node test/dev/server.mjs</code>
+                    </div>
+                `;
+                document.getElementById('results').classList.add('visible');
+            } finally {
+                document.getElementById('checkBtn').disabled = false;
+            }
+        }
+        
+        function displayResults(data) {
+            document.getElementById('loading').classList.remove('visible');
+            document.getElementById('results').classList.add('visible');
+            
+            // Summary stats
+            const total = data.metadata.totalUrls;
+            const clean = data.metadata.cleanUrls;
+            const blocked = data.metadata.blockedUrls;
+            const percentage = total > 0 ? Math.round((clean / total) * 100) : 0;
+            
+            document.getElementById('summary').innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-value">${total}</div>
+                    <div class="stat-label">Total URLs</div>
+                </div>
+                <div class="stat-card success">
+                    <div class="stat-value">${clean}</div>
+                    <div class="stat-label">Clean (${percentage}%)</div>
+                </div>
+                <div class="stat-card error">
+                    <div class="stat-value">${blocked}</div>
+                    <div class="stat-label">Blocked (${100-percentage}%)</div>
+                </div>
+            `;
+            
+            // Update tab counts
+            document.querySelector('[data-tab="all"]').textContent = `All (${total})`;
+            document.querySelector('[data-tab="clean"]').textContent = `Clean (${clean})`;
+            document.querySelector('[data-tab="blocked"]').textContent = `Blocked (${blocked})`;
+            
+            // Display URL list based on current tab
+            displayUrlList(currentTab);
+        }
+        
+        function displayUrlList(tab) {
+            if (!resultsData) return;
+            
+            let urls = [];
+            if (tab === 'all') {
+                urls = [...resultsData.cleanUrls, ...resultsData.blockedUrls];
+            } else if (tab === 'clean') {
+                urls = resultsData.cleanUrls;
+            } else if (tab === 'blocked') {
+                urls = resultsData.blockedUrls;
+            }
+            
+            if (urls.length === 0) {
+                document.getElementById('urlResults').innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">No URLs to display</p>';
+                return;
+            }
+            
+            const urlsHtml = urls.map(url => {
+                const isClean = url.indexable;
+                const icon = isClean ? '✅' : '❌';
+                
+                return `
+                    <div class="url-result ${isClean ? 'clean' : 'blocked'}">
+                        <div class="url-header">
+                            <span class="status-icon">${icon}</span>
+                            <span class="url-text">${url.url}</span>
+                        </div>
+                        <div class="checks">
+                            ${renderCheck('HTTP', url.checks.httpStatus)}
+                            ${renderCheck('Redirects', url.checks.redirects)}
+                            ${renderCheck('Canonical', url.checks.canonical)}
+                            ${renderCheck('Noindex', url.checks.noindex)}
+                            ${renderCheck('Robots.txt', url.checks.robotsTxt)}
+                        </div>
+                        ${url.blockers.length > 0 ? `
+                            <div style="margin-top: 10px; padding: 8px; background: #fff5f5; border-radius: 4px; font-size: 12px; color: #c62828;">
+                                <strong>Blockers:</strong> ${url.blockers.join(', ')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+            
+            document.getElementById('urlResults').innerHTML = urlsHtml;
+        }
+        
+        function renderCheck(label, check) {
+            const icon = check.passed ? '✅' : '❌';
+            const status = check.passed ? 'pass' : 'fail';
+            return `
+                <div class="check-item">
+                    <span class="check-icon">${icon}</span>
+                    <span>${label}</span>
+                </div>
+            `;
+        }
+        
+        function exportJSON() {
+            if (!resultsData) return;
+            
+            const dataStr = JSON.stringify(resultsData, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `seo-validation-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        function exportCSV() {
+            if (!resultsData) return;
+            
+            const allUrls = [...resultsData.cleanUrls, ...resultsData.blockedUrls];
+            const csv = [
+                ['URL', 'Indexable', 'HTTP Status', 'Redirects', 'Canonical', 'Noindex', 'Robots.txt', 'Blockers'],
+                ...allUrls.map(url => [
+                    url.url,
+                    url.indexable ? 'Yes' : 'No',
+                    url.checks.httpStatus.passed ? 'Pass' : 'Fail',
+                    url.checks.redirects.passed ? 'Pass' : 'Fail',
+                    url.checks.canonical.passed ? 'Pass' : 'Fail',
+                    url.checks.noindex.passed ? 'Pass' : 'Fail',
+                    url.checks.robotsTxt.passed ? 'Pass' : 'Fail',
+                    url.blockers.join('; ')
+                ])
+            ].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `seo-validation-${Date.now()}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        function copyCleanUrls() {
+            if (!resultsData) return;
+            
+            const cleanUrls = resultsData.cleanUrls.map(item => item.url).join('\n');
+            
+            navigator.clipboard.writeText(cleanUrls).then(() => {
+                alert(`✅ ${resultsData.cleanUrls.length} clean URLs copied to clipboard!`);
+            }).catch(err => {
+                alert('❌ Failed to copy to clipboard');
+                console.error('Copy error:', err);
+            });
+        }
+        
+        function switchTab(tab) {
+            currentTab = tab;
+            
+            // Update active tab
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+            
+            // Display filtered URL list
+            displayUrlList(tab);
+        }
+        
+        function clearAll() {
+            document.getElementById('urls').value = '';
+            document.getElementById('results').classList.remove('visible');
+            resultsData = null;
+            currentTab = 'all';
+        }
+    </script>
+</body>
+</html>
+

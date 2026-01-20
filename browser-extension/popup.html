@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SEO Validator</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 SEO Validator</h1>
+            <p>Check URLs for technical SEO issues</p>
+        </div>
+        
+        <div class="content">
+            <div class="input-section">
+                <label for="urls">Paste URLs (any format):</label>
+                <textarea 
+                    id="urls" 
+                    placeholder="Paste URLs here in any format:
+• Comma-separated
+• Line-separated  
+• Bullet points
+• With or without quotes
+
+Example:
+https://example.com/page1
+https://example.com/page2, https://example.com/page3
+- https://example.com/page4"></textarea>
+                
+                <div class="button-group">
+                    <button id="validateBtn" class="btn-primary">
+                        🚀 Validate URLs
+                    </button>
+                    <button id="clearBtn" class="btn-secondary">
+                        🗑️ Clear
+                    </button>
+                </div>
+                
+                <div class="settings">
+                    <label>
+                        <input type="checkbox" id="useLocalhost" checked>
+                        Use local server (localhost:3033)
+                    </label>
+                    <input type="text" id="serverUrl" value="http://localhost:3033" placeholder="Server URL">
+                </div>
+            </div>
+            
+            <div id="status" class="status hidden"></div>
+            
+            <div id="results" class="results hidden">
+                <div class="summary" id="summary"></div>
+                
+                <div class="export-buttons">
+                    <button id="exportJson" class="btn-export">
+                        📥 Download JSON
+                    </button>
+                    <button id="exportCsv" class="btn-export">
+                        📊 Download CSV
+                    </button>
+                    <button id="copyUrls" class="btn-export">
+                        📋 Copy Clean URLs
+                    </button>
+                </div>
+                
+                <div class="tabs">
+                    <button class="tab active" data-tab="all">All (0)</button>
+                    <button class="tab" data-tab="clean">Clean (0)</button>
+                    <button class="tab" data-tab="blocked">Blocked (0)</button>
+                </div>
+                
+                <div id="urlList" class="url-list"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>
+

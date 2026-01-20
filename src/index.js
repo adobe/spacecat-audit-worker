@@ -100,6 +100,7 @@ import pageCitability from './page-citability/handler.js';
 import healthCheck from './health-check/handler.js';
 import wikipediaAnalysis from './wikipedia-analysis/handler.js';
 import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
+import seoOpportunities from './seo-opportunities/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -189,6 +190,8 @@ const HANDLERS = {
   'health-check': healthCheck,
   'wikipedia-analysis': wikipediaAnalysis,
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
+  'seo-opportunities': seoOpportunities,
+  'detect:seo-indexability': seoOpportunities,
   dummy: (message) => ok(message),
 };
 
