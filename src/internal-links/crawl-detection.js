@@ -89,6 +89,7 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
         const sampleHrefs = []; // Collect sample hrefs for debugging
         let headerFooterLinksSkipped = 0;
         let externalLinksSkipped = 0;
+        let anchorLinksSkipped = 0;
         let invalidHrefsSkipped = 0;
 
         anchors.each((i, a) => {
@@ -102,6 +103,13 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
 
           try {
             const href = $a.attr('href');
+
+            // Skip anchor-only links (page fragments like #section)
+            // These are not broken links, just references to sections on the same page
+            if (href && href.startsWith('#')) {
+              anchorLinksSkipped += 1;
+              return;
+            }
 
             // Collect sample hrefs for debugging (first 10)
             if (sampleHrefs.length < 10) {
@@ -134,7 +142,7 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
           log.info(`[broken-internal-links-crawl] Sample raw href attributes: ${JSON.stringify(sampleHrefs)}`);
         }
 
-        log.info(`[broken-internal-links-crawl] Page ${pageUrl} - Internal links: ${internalLinks.size}, Header/Footer skipped: ${headerFooterLinksSkipped}, External: ${externalLinksSkipped}, Invalid: ${invalidHrefsSkipped}`);
+        log.info(`[broken-internal-links-crawl] Page ${pageUrl} - Internal links: ${internalLinks.size}, Header/Footer skipped: ${headerFooterLinksSkipped}, External: ${externalLinksSkipped}, Anchors: ${anchorLinksSkipped}, Invalid: ${invalidHrefsSkipped}`);
 
         // Log sample resolved internal links for investigation
         if (internalLinks.size > 0) {
@@ -147,7 +155,7 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
         }
 
         if (internalLinks.size === 0) {
-          log.info(`[broken-internal-links-crawl] No internal links to validate on ${pageUrl} - Total anchors=${totalAnchors}, Header/Footer=${headerFooterLinksSkipped}, External=${externalLinksSkipped}, Invalid=${invalidHrefsSkipped}`);
+          log.info(`[broken-internal-links-crawl] No internal links to validate on ${pageUrl} - Total anchors=${totalAnchors}, Header/Footer=${headerFooterLinksSkipped}, External=${externalLinksSkipped}, Anchors=${anchorLinksSkipped}, Invalid=${invalidHrefsSkipped}`);
           pagesProcessed += 1;
           return;
         }
