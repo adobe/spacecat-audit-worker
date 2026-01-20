@@ -640,6 +640,17 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
 
   // Calculate priority for all links
   log.info(`[${AUDIT_TYPE}] Calculating priority for ${finalLinks.length} broken links...`);
+
+  // Log all broken URLs found for manual inspection
+  if (finalLinks.length > 0) {
+    const brokenUrls = finalLinks.map((link) => link.urlTo);
+    const sampleSize = Math.min(10, brokenUrls.length);
+    log.info(`[${AUDIT_TYPE}] Broken URLs found: ${JSON.stringify(brokenUrls.slice(0, sampleSize))}`);
+    if (brokenUrls.length > sampleSize) {
+      log.info(`[${AUDIT_TYPE}] ... and ${brokenUrls.length - sampleSize} more broken URLs`);
+    }
+  }
+
   const prioritizedLinks = calculatePriority(finalLinks);
 
   // Count by priority
