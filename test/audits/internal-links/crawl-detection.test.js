@@ -124,6 +124,7 @@ describe('Crawl Detection for Broken Internal Links', () => {
       expect(result[0]).to.deep.equal({
         urlFrom: 'https://example.com/page1',
         urlTo: 'https://example.com/broken-link',
+        anchorText: 'Broken Link',
         trafficDomain: 0,
       });
 
@@ -194,6 +195,7 @@ describe('Crawl Detection for Broken Internal Links', () => {
       expect(result[0]).to.deep.equal({
         urlFrom: 'https://example.com/page1',
         urlTo: 'https://example.com/broken-link',
+        anchorText: 'Broken Link 1', // First anchor text found
         trafficDomain: 0,
       });
     });
@@ -591,14 +593,14 @@ describe('Crawl Detection for Broken Internal Links', () => {
   describe('mergeAndDeduplicate', () => {
     it('should merge crawl and RUM links, prioritizing RUM traffic data', () => {
       const crawlLinks = [
-        { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', trafficDomain: 0 },
-        { urlFrom: 'https://example.com/page2', urlTo: 'https://example.com/broken2', trafficDomain: 0 },
-        { urlFrom: 'https://example.com/page3', urlTo: 'https://example.com/broken3', trafficDomain: 0 },
+        { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', anchorText: 'Broken 1', trafficDomain: 0 },
+        { urlFrom: 'https://example.com/page2', urlTo: 'https://example.com/broken2', anchorText: 'Broken 2', trafficDomain: 0 },
+        { urlFrom: 'https://example.com/page3', urlTo: 'https://example.com/broken3', anchorText: 'Broken 3', trafficDomain: 0 },
       ];
 
       const rumLinks = [
-        { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', trafficDomain: 500 },
-        { urlFrom: 'https://example.com/page4', urlTo: 'https://example.com/broken4', trafficDomain: 300 },
+        { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', anchorText: 'Broken 1', trafficDomain: 500 },
+        { urlFrom: 'https://example.com/page4', urlTo: 'https://example.com/broken4', anchorText: 'Broken 4', trafficDomain: 300 },
       ];
 
       const result = mergeAndDeduplicate(crawlLinks, rumLinks, mockContext.log);
@@ -616,12 +618,12 @@ describe('Crawl Detection for Broken Internal Links', () => {
 
     it('should deduplicate by urlFrom|urlTo key', () => {
       const crawlLinks = [
-        { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', trafficDomain: 0 },
-        { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', trafficDomain: 0 },
+        { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', anchorText: 'Broken 1', trafficDomain: 0 },
+        { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', anchorText: 'Broken 1', trafficDomain: 0 },
       ];
 
       const rumLinks = [
-        { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', trafficDomain: 500 },
+        { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', anchorText: 'Broken 1', trafficDomain: 500 },
       ];
 
       const result = mergeAndDeduplicate(crawlLinks, rumLinks, mockContext.log);
@@ -636,7 +638,7 @@ describe('Crawl Detection for Broken Internal Links', () => {
       expect(result1).to.have.lengthOf(0);
 
       const result2 = mergeAndDeduplicate(
-        [{ urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', trafficDomain: 0 }],
+        [{ urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', anchorText: 'Broken 1', trafficDomain: 0 }],
         [],
         mockContext.log,
       );
@@ -644,7 +646,7 @@ describe('Crawl Detection for Broken Internal Links', () => {
 
       const result3 = mergeAndDeduplicate(
         [],
-        [{ urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', trafficDomain: 500 }],
+        [{ urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', anchorText: 'Broken 1', trafficDomain: 500 }],
         mockContext.log,
       );
       expect(result3).to.have.lengthOf(1);
@@ -679,7 +681,7 @@ describe('Crawl Detection for Broken Internal Links', () => {
       ];
 
       const rumLinks = [
-        { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', trafficDomain: 500 },
+        { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', anchorText: 'Broken 1', trafficDomain: 500 },
       ];
 
       mergeAndDeduplicate(crawlLinks, rumLinks, mockContext.log);

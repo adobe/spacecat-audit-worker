@@ -257,10 +257,17 @@ export async function submitForScraping(context) {
 
   // Merge and deduplicate
   const beforeMerge = topPagesUrls.length + includedURLs.length;
-  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
+  let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
   const duplicatesRemoved = beforeMerge - finalUrls.length;
 
   log.info(`[${AUDIT_TYPE}] Merged URLs: ${topPagesUrls.length} (Ahrefs) + ${includedURLs.length} (manual) = ${finalUrls.length} unique (${duplicatesRemoved} duplicates removed)`);
+
+  // Limit to max 200 URLs to prevent excessive processing and message size issues
+  const MAX_URLS_TO_PROCESS = 200;
+  if (finalUrls.length > MAX_URLS_TO_PROCESS) {
+    log.warn(`[${AUDIT_TYPE}] Total URLs (${finalUrls.length}) exceeds limit. Capping at ${MAX_URLS_TO_PROCESS} URLs.`);
+    finalUrls = finalUrls.slice(0, MAX_URLS_TO_PROCESS);
+  }
 
   // Resolve redirects before submitting for scraping
   log.info(`[${AUDIT_TYPE}] Resolving redirects for ${finalUrls.length} URLs...`);
@@ -456,7 +463,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   // Merge Ahrefs + includedURLs
   const includedTopPages = includedURLs.map((url) => ({ getUrl: () => url }));
-  const topPages = [...ahrefsTopPages, ...includedTopPages];
+  let topPages = [...ahrefsTopPages, ...includedTopPages];
+
+  // Limit to max 200 URLs to prevent excessive processing and message size issues
+  const MAX_URLS_TO_PROCESS = 200;
+  if (topPages.length > MAX_URLS_TO_PROCESS) {
+    log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Total URLs (${topPages.length}) exceeds limit. Capping at ${MAX_URLS_TO_PROCESS} URLs.`);
+    topPages = topPages.slice(0, MAX_URLS_TO_PROCESS);
+  }
 
   // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
   // This determines what alternatives Mystique will see:
@@ -527,8 +541,24 @@ export const opportunityAndSuggestionsStep = async (context) => {
     log.info(`[${AUDIT_TYPE}] Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs (PDFs, Office docs, etc.) from alternative URLs before sending to Mystique`);
   }
 
+  // Limit data size to prevent SQS message size limit (256KB)
+  // AWS SQS max message size is 262144 bytes
+  const MAX_ALTERNATIVE_URLS = 100;
+  const MAX_BROKEN_LINKS = 100;
+
+  if (alternativeUrls.length > MAX_ALTERNATIVE_URLS) {
+    log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Limiting alternativeUrls from ${alternativeUrls.length} to ${MAX_ALTERNATIVE_URLS} to prevent SQS message size limit`);
+    alternativeUrls = alternativeUrls.slice(0, MAX_ALTERNATIVE_URLS);
+  }
+
+  let limitedBrokenLinks = brokenLinks;
+  if (brokenLinks.length > MAX_BROKEN_LINKS) {
+    log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Limiting brokenLinks from ${brokenLinks.length} to ${MAX_BROKEN_LINKS} to prevent SQS message size limit`);
+    limitedBrokenLinks = brokenLinks.slice(0, MAX_BROKEN_LINKS);
+  }
+
   // Validate before sending to Mystique
-  if (brokenLinks.length === 0) {
+  if (limitedBrokenLinks.length === 0) {
     log.warn(
       `[${AUDIT_TYPE}] [Site: ${site.getId()}] No valid broken links to send to Mystique. Skipping message.`,
     );
@@ -564,7 +594,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
     data: {
       alternativeUrls,
       opportunityId: opportunity.getId(),
-      brokenLinks,
+      brokenLinks: limitedBrokenLinks,
     },
   };
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
@@ -702,7 +732,14 @@ export async function prepareScrapingStep(context) {
 
   // Merge Ahrefs + includedURLs
   const includedTopPages = includedURLs.map((url) => ({ getUrl: () => url }));
-  const topPages = [...ahrefsTopPages, ...includedTopPages];
+  let topPages = [...ahrefsTopPages, ...includedTopPages];
+
+  // Limit to max 200 URLs to prevent excessive processing and message size issues
+  const MAX_URLS_TO_PROCESS = 200;
+  if (topPages.length > MAX_URLS_TO_PROCESS) {
+    log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Total URLs (${topPages.length}) exceeds limit. Capping at ${MAX_URLS_TO_PROCESS} URLs.`);
+    topPages = topPages.slice(0, MAX_URLS_TO_PROCESS);
+  }
 
   // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
   const baseURL = site.getBaseURL();

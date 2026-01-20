@@ -435,6 +435,39 @@ describe('Broken internal links audit', () => {
     expect(result.urls[0].url).to.equal('https://example.com/page1');
     expect(result.urls[1].url).to.equal('https://example.com/page2');
   }).timeout(5000);
+
+  it('prepareScrapingStep should limit total URLs to 200', async () => {
+    // Create 150 Ahrefs pages + 100 includedURLs = 250 total (should be capped at 200)
+    const ahrefsPages = Array.from({ length: 150 }, (_, i) => ({ 
+      getUrl: () => `https://example.com/ahrefs${i}` 
+    }));
+    const includedURLs = Array.from({ length: 100 }, (_, i) => `https://example.com/manual${i}`);
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(ahrefsPages),
+    };
+
+    context.site.getConfig = () => ({
+      getIncludedURLs: (type) => (type === 'broken-internal-links' ? includedURLs : []),
+    });
+
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
+
+    const result = await prepareScrapingStep(context);
+
+    // Should be capped at 200 URLs (minus any filtered out by audit scope or file type)
+    expect(result.urls.length).to.be.at.most(200);
+    
+    // Verify warning was logged
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Total URLs \(250\) exceeds limit\. Capping at 200 URLs/),
+    );
+  }).timeout(5000);
 });
 
 describe('broken-internal-links audit opportunity and suggestions', () => {
@@ -889,6 +922,103 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(context.log.info).to.have.been.calledWith(
       sinon.match(/Found 2 includedURLs from siteConfig/),
     );
+  }).timeout(5000);
+
+  it('should limit total URLs to 200 in opportunityAndSuggestionsStep', async () => {
+    // Create 150 Ahrefs pages + 100 includedURLs = 250 total (should be capped at 200)
+    const ahrefsPages = Array.from({ length: 150 }, (_, i) => ({ 
+      getUrl: () => `https://www.example.com/ahrefs${i}` 
+    }));
+    const includedURLs = Array.from({ length: 100 }, (_, i) => `https://www.example.com/manual${i}`);
+
+    const validSuggestions = [
+      {
+        getData: () => ({
+          urlFrom: 'https://www.example.com/',
+          urlTo: 'https://www.example.com/broken',
+        }),
+        getId: () => 'suggestion-1',
+      },
+    ];
+
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    context.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+    
+    context.site.getConfig = () => ({
+      getIncludedURLs: (type) => (type === 'broken-internal-links' ? includedURLs : []),
+    });
+    
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves(ahrefsPages);
+    context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
+    context.site.getBaseURL = () => 'https://www.example.com';
+
+    await handler.opportunityAndSuggestionsStep(context);
+    
+    // Verify warning was logged for 200 URL limit
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Total URLs \(250\) exceeds limit\. Capping at 200 URLs/),
+    );
+  }).timeout(5000);
+
+  it('should limit brokenLinks to 100 to prevent SQS message size limit', async () => {
+    // Create 150 broken links (matching www.example.com base URL)
+    const manyBrokenLinks = Array.from({ length: 150 }, (_, i) => ({
+      trafficDomain: 100,
+      urlTo: `https://www.example.com/broken${i}`,
+      urlFrom: `https://www.example.com/source${i}`,
+    }));
+
+    const validSuggestions = manyBrokenLinks.map((link, i) => ({
+      getData: () => link,
+      getId: () => `suggestion-${i}`,
+    }));
+
+    // Create many top pages to provide alternatives
+    const manyTopPages = Array.from({ length: 50 }, (_, i) => ({ 
+      getUrl: () => `https://www.example.com/alternative${i}` 
+    }));
+
+    // Override audit data with many broken links
+    const manyBrokenLinksAudit = {
+      ...auditData,
+      auditResult: {
+        brokenInternalLinks: manyBrokenLinks,
+        success: true,
+      },
+      getAuditResult: () => ({
+        brokenInternalLinks: manyBrokenLinks,
+        success: true,
+      }),
+    };
+
+    context.audit = manyBrokenLinksAudit;
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    context.dataAccess.Opportunity.allBySiteIdAndStatus = sandbox.stub().resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+    context.site.getConfig = () => null;
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves(manyTopPages);
+    context.site.getLatestAuditByAuditType = () => manyBrokenLinksAudit;
+    context.site.getDeliveryType = () => 'aem_edge';
+    context.site.getBaseURL = () => 'https://www.example.com';
+
+    await handler.opportunityAndSuggestionsStep(context);
+    
+    // Verify warning was logged for brokenLinks limit
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Limiting brokenLinks from 150 to 100 to prevent SQS message size limit/),
+    );
+
+    // Verify SQS message was sent with max 100 brokenLinks
+    if (context.sqs.sendMessage.calledOnce) {
+      const messageArg = context.sqs.sendMessage.getCall(0).args[1];
+      expect(messageArg.data.brokenLinks).to.have.lengthOf(100);
+    }
   }).timeout(5000);
 
   it('Existing opportunity and suggestions are updated if no broken internal links found', async () => {
@@ -1764,6 +1894,32 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         `[${AUDIT_TYPE}] Removed 2 duplicates after redirect resolution`,
       );
     });
+
+    it('should limit total URLs to 200 when combined sources exceed limit', async () => {
+      // Create 150 Ahrefs pages + 100 includedURLs = 250 total (should be capped at 200)
+      const ahrefsPages = Array.from({ length: 150 }, (_, i) => ({ 
+        getUrl: () => `https://example.com/ahrefs${i}` 
+      }));
+      const includedURLs = Array.from({ length: 100 }, (_, i) => `https://example.com/manual${i}`);
+
+      context.dataAccess.SiteTopPage = {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(ahrefsPages),
+      };
+
+      context.site.getConfig = sandbox.stub().returns({
+        getIncludedURLs: sandbox.stub().returns(includedURLs),
+      });
+
+      const result = await submitForScraping(context);
+
+      // Should be capped at 200 URLs
+      expect(result.urls.length).to.be.at.most(200);
+      
+      // Verify warning was logged
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Total URLs \(250\) exceeds limit\. Capping at 200 URLs/),
+      );
+    }).timeout(10000);
   });
 
   describe('runCrawlDetectionAndGenerateSuggestions', () => {

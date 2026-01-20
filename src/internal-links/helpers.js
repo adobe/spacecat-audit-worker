@@ -78,7 +78,13 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
 export async function isLinkInaccessible(url, log) {
   // First try HEAD request (faster, lighter)
   try {
-    const headResponse = await fetch(url, { method: 'HEAD', timeout: LINK_TIMEOUT });
+    const headResponse = await fetch(url, {
+      method: 'HEAD',
+      timeout: LINK_TIMEOUT,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0',
+      },
+    });
     const { status } = headResponse;
 
     // If HEAD returns success (2xx) or redirect (3xx), consider it accessible
@@ -98,7 +104,13 @@ export async function isLinkInaccessible(url, log) {
 
   // Fallback to GET request for verification
   try {
-    const getResponse = await fetch(url, { method: 'GET', timeout: LINK_TIMEOUT });
+    const getResponse = await fetch(url, {
+      method: 'GET',
+      timeout: LINK_TIMEOUT,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0',
+      },
+    });
     const { status } = getResponse;
 
     // Log non-404, non-200 status codes
