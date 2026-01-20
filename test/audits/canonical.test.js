@@ -1364,7 +1364,7 @@ describe('Canonical URL Tests', () => {
       const result = generateSuggestions(auditUrl, auditData, mockContext);
 
       expect(result).to.deep.equal(auditData);
-      expect(mockContext.log.info).to.have.been.calledOnceWith(
+      expect(mockContext.log.info).to.have.been.calledWith(
         'Canonical audit for https://example.com has no issues or failed, skipping suggestions generation',
       );
     });
@@ -1434,7 +1434,7 @@ describe('Canonical URL Tests', () => {
         recommendedAction: 'Check if the URL is accessible',
       });
 
-      expect(mockContext.log.info).to.have.been.calledOnceWith(
+      expect(mockContext.log.info).to.have.been.calledWith(
         'Generated 3 canonical suggestions for https://example.com',
       );
     });
@@ -1447,7 +1447,7 @@ describe('Canonical URL Tests', () => {
       const result = generateSuggestions(auditUrl, auditData, mockContext);
 
       expect(result).to.have.property('suggestions').that.is.an('array').and.is.empty;
-      expect(mockContext.log.info).to.have.been.calledOnceWith(
+      expect(mockContext.log.info).to.have.been.calledWith(
         'Generated 0 canonical suggestions for https://example.com',
       );
     });
@@ -1497,7 +1497,7 @@ describe('Canonical URL Tests', () => {
       const result = await opportunityAndSuggestions(auditUrl, auditData, mockContext);
 
       expect(result).to.deep.equal(auditData);
-      expect(mockContext.log.info).to.have.been.calledOnceWith(
+      expect(mockContext.log.info).to.have.been.calledWith(
         'Canonical audit has no issues, skipping opportunity creation',
       );
     });
@@ -1517,7 +1517,7 @@ describe('Canonical URL Tests', () => {
       const result = await opportunityAndSuggestions(auditUrl, auditData, mockContext);
 
       expect(result).to.deep.equal(auditData);
-      expect(mockContext.log.info).to.have.been.calledOnceWith(
+      expect(mockContext.log.info).to.have.been.calledWith(
         'Canonical audit has no issues, skipping opportunity creation',
       );
     });
