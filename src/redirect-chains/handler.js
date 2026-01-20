@@ -82,7 +82,7 @@ function buildUniqueKey(result) {
  *    error: string - Error message if any occurred, empty otherwise
  *   }
  */
-async function countRedirects(url, maxRedirects = STOP_AFTER_N_REDIRECTS) {
+export async function countRedirects(url, maxRedirects = STOP_AFTER_N_REDIRECTS) {
   const domain = new URL(url).hostname; // Given: https://www.example.com/subpath --> www.example.com
   let redirectUrl = url;
 
