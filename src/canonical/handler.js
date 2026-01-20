@@ -73,6 +73,9 @@ export async function importTopPages(context) {
   log.info('🚀 CANONICAL MULTI-STEP AUDIT v2.0 - STARTED (JS rendering enabled)');
 
   return {
+    auditResult: {
+      status: 'preparing',
+    },
     fullAuditRef: finalUrl,
     siteId: site.getId(),
   };
@@ -98,8 +101,11 @@ export async function submitForScraping(context) {
   if (!isNonEmptyArray(topPages)) {
     log.info(`No top pages found for site ${siteId}, skipping scraping`);
     return {
-      status: 'NO_OPPORTUNITIES',
-      message: 'No top pages found, skipping audit',
+      auditResult: {
+        status: 'NO_OPPORTUNITIES',
+        message: 'No top pages found, skipping audit',
+      },
+      fullAuditRef: finalUrl,
     };
   }
 
@@ -146,6 +152,9 @@ export async function submitForScraping(context) {
   log.info(`Finish submitForScraping step for: ${siteId}`);
 
   return {
+    auditResult: {
+      status: 'scraping',
+    },
     fullAuditRef: finalUrl,
     // Data for the CONTENT_SCRAPER
     urls: filteredUrls.map((url) => ({ url })),
