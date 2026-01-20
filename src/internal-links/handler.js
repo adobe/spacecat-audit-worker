@@ -41,12 +41,13 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
  * @param {Object} log - Logger instance
  */
 export async function updateAuditResult(audit, auditResult, prioritizedLinks, dataAccess, log) {
+  const updatedAuditResult = {
+    ...auditResult,
+    brokenInternalLinks: prioritizedLinks,
+  };
+
   try {
     const auditId = audit.getId ? audit.getId() : audit.id;
-    const updatedAuditResult = {
-      ...auditResult,
-      brokenInternalLinks: prioritizedLinks,
-    };
 
     // Try to update in-memory audit object first
     if (typeof audit.setAuditResult === 'function') {
@@ -56,7 +57,10 @@ export async function updateAuditResult(audit, auditResult, prioritizedLinks, da
     } else {
       // Fallback: Update via database lookup
       const { Audit: AuditModel } = dataAccess;
+      log.info(`[${AUDIT_TYPE}] Falling back to database lookup for auditId: ${auditId}`);
+
       const auditToUpdate = await AuditModel.findById(auditId);
+
       if (auditToUpdate) {
         auditToUpdate.setAuditResult(updatedAuditResult);
         await auditToUpdate.save();
@@ -68,6 +72,9 @@ export async function updateAuditResult(audit, auditResult, prioritizedLinks, da
   } catch (error) {
     log.error(`[${AUDIT_TYPE}] Failed to update audit result: ${error.message}`);
   }
+
+  // Return the updated result so caller can use it directly
+  return updatedAuditResult;
 }
 
 /**
@@ -372,11 +379,13 @@ export async function runAuditAndImportTopPagesStep(context) {
 
 export const opportunityAndSuggestionsStep = async (context) => {
   const {
-    log, site, finalUrl, sqs, env, dataAccess, audit,
+    log, site, finalUrl, sqs, env, dataAccess, audit, updatedAuditResult,
   } = context;
   const { Suggestion, SiteTopPage } = dataAccess;
 
-  const { brokenInternalLinks, success } = audit.getAuditResult();
+  // Use updatedAuditResult if passed (from crawl detection), otherwise read from audit
+  const auditResultToUse = updatedAuditResult || audit.getAuditResult();
+  const { brokenInternalLinks, success } = auditResultToUse;
 
   if (!success) {
     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
@@ -660,12 +669,19 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
 
   log.info(`[${AUDIT_TYPE}] Priority distribution: ${highPriority} high, ${mediumPriority} medium, ${lowPriority} low`);
 
-  // Update audit result with prioritized links
-  await updateAuditResult(audit, auditResult, prioritizedLinks, dataAccess, log);
+  // Update audit result with prioritized links and get the updated result
+  const updatedAuditResult = await updateAuditResult(
+    audit,
+    auditResult,
+    prioritizedLinks,
+    dataAccess,
+    log,
+  );
   log.info(`[${AUDIT_TYPE}] ===================================`);
 
   // Now generate opportunities and suggestions
-  return opportunityAndSuggestionsStep(context);
+  // Pass the updated audit result through context to avoid stale data
+  return opportunityAndSuggestionsStep({ ...context, updatedAuditResult });
 }
 
 export async function prepareScrapingStep(context) {
