@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.280.2",
+  "version": "1.284.5",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -107,7 +107,7 @@
     "aws-xray-sdk": "3.12.0",
     "cheerio": "1.1.2",
     "date-fns": "4.1.0",
-    "diff": "8.0.2",
+    "diff": "8.0.3",
     "exceljs": "4.4.0",
     "franc-min": "6.2.0",
     "get-xpath": "3.3.0",
@@ -120,8 +120,8 @@
     "syllable": "5.0.1",
     "text-readability": "1.1.1",
     "urijs": "1.19.11",
-    "zod": "4.1.13",
-    "uuid": "13.0.0"
+    "uuid": "13.0.0",
+    "zod": "4.1.13"
   },
   "devDependencies": {
     "@adobe/eslint-config-helix": "3.0.15",
