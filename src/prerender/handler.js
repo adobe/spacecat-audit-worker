@@ -894,66 +894,6 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
 }
 
 /**
- * Filters suggestions that can be marked as outdated.
- * Only NEW, PENDING_VALIDATION, and SKIPPED suggestions are eligible.
- * @param {Object} opportunity - The opportunity entity
- * @returns {Promise<Array>} Suggestions eligible for outdating
- */
-async function getOutdateableSuggestions(opportunity) {
-  const suggestions = await opportunity.getSuggestions();
-
-  if (!suggestions || suggestions.length === 0) {
-    return [];
-  }
-
-  const OUTDATEABLE_STATUSES = [
-    Suggestion.STATUSES.NEW,
-    Suggestion.STATUSES.PENDING_VALIDATION,
-    Suggestion.STATUSES.SKIPPED,
-  ];
-
-  return suggestions.filter((s) => OUTDATEABLE_STATUSES.includes(s.getStatus()));
-}
-
-/**
- * Marks existing outdated suggestions when no new prerender opportunities are found.
- * This cleanup ensures old suggestions don't persist when a site no longer needs prerendering.
- * @param {string} siteId - Site identifier
- * @param {Object} context - Audit context
- * @returns {Promise<void>}
- */
-async function markExistingSuggestionsAsOutdated(siteId, context) {
-  const { dataAccess, log, site } = context;
-  const { Opportunity } = dataAccess;
-
-  try {
-    // Find existing NEW prerender opportunity for this site
-    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-    const existingOpportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
-
-    if (!existingOpportunity) {
-      return; // No existing opportunity, nothing to clean up
-    }
-
-    log.info(`Prerender - Found existing opportunity with no new prerender needs, marking suggestions as outdated. baseUrl=${site.getBaseURL()}, siteId=${siteId}, opportunityId=${existingOpportunity.getId()}`);
-
-    // Get suggestions that should be marked outdated
-    const suggestionsToUpdate = await getOutdateableSuggestions(existingOpportunity);
-
-    if (suggestionsToUpdate.length === 0) {
-      return; // No suggestions to update
-    }
-
-    // Mark them as outdated
-    await Suggestion.bulkUpdateStatus(suggestionsToUpdate, Suggestion.STATUSES.OUTDATED);
-    log.info(`Prerender - Marked ${suggestionsToUpdate.length} suggestions as outdated. baseUrl=${site.getBaseURL()}, siteId=${siteId}, opportunityId=${existingOpportunity.getId()}`);
-  } catch (error) {
-    log.error(`Prerender - Failed to update existing suggestions to outdated: ${error.message}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`, error);
-    // Don't throw - this is a cleanup step and shouldn't fail the audit
-  }
-}
-
-/**
  * Step 3: Process scraped content and compare server-side vs client-side HTML
  * OR skip if ai-only mode
  * @param {Object} context - Audit context with site, audit, and other dependencies
@@ -961,7 +901,7 @@ async function markExistingSuggestionsAsOutdated(siteId, context) {
  */
 export async function processContentAndGenerateOpportunities(context) {
   const {
-    site, audit, log, scrapeResultPaths, data,
+    site, audit, log, scrapeResultPaths, data, dataAccess,
   } = context;
 
   // Check for AI-only mode - skip processing step (step 1 already triggered Mystique)
@@ -1078,7 +1018,20 @@ export async function processContentAndGenerateOpportunities(context) {
       // No opportunities found - check if there are existing suggestions to mark as outdated
       log.info(`Prerender - No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}`);
 
-      await markExistingSuggestionsAsOutdated(siteId, context);
+      // syncSuggestions with empty array marks all existing suggestions as OUTDATED
+      const { Opportunity } = dataAccess;
+      const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+      const existingOpportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
+
+      if (existingOpportunity) {
+        await syncSuggestions({
+          opportunity: existingOpportunity,
+          newData: [], // Empty array = all existing suggestions become outdated
+          context,
+          buildKey: (suggestion) => suggestion.url,
+          mapNewSuggestion: () => ({}), // Not used since newData is empty
+        });
+      }
     }
 
     const endTime = process.hrtime(startTime);
@@ -1111,7 +1064,6 @@ export async function processContentAndGenerateOpportunities(context) {
     // Update LatestAudit with the detailed results from step 3
     // LatestAudit is upsertable, unlike the immutable Audit records
     try {
-      const { dataAccess } = context;
       const { LatestAudit } = dataAccess;
 
       await LatestAudit.create({
