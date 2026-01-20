@@ -70,8 +70,7 @@ export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
 export async function importTopPages(context) {
   const { site, finalUrl, log } = context;
 
-  log.info('🚀 CANONICAL MULTI-STEP AUDIT v2.0 - STARTED (JS rendering enabled)');
-
+  log.info('CANONICAL[20012026] - importTopPages');
   return {
     auditResult: {
       status: 'preparing',
@@ -92,7 +91,7 @@ export async function submitForScraping(context) {
   } = context;
   const siteId = site.getId();
 
-  log.info(`🔍 CANONICAL STEP 2: Submitting pages for scraping with JS rendering (siteId: ${siteId})`);
+  log.info('CANONICAL[20012026] - submitForScraping');
   log.info(`Start submitForScraping step for: ${siteId}`);
 
   const { SiteTopPage } = dataAccess;
@@ -186,6 +185,8 @@ export async function validateCanonicalFromHTML(
   isPreview = false,
   finalUrl = null,
 ) {
+  log.info('CANONICAL[20012026] - validateCanonicalFromHTML');
+
   if (!html) {
     log.error(`No HTML content provided for URL: ${url}`);
     return {
@@ -331,6 +332,8 @@ export async function validateCanonicalFromHTML(
  * @returns {Promise<Object>} An object containing the canonical URL and an array of checks.
  */
 export async function validateCanonicalTag(url, log, options = {}, isPreview = false) {
+  log.info('CANONICAL[20012026] - validateCanonicalTag');
+
   // in case of undefined or null URL in the 200 top pages list
   if (!url) {
     log.error('URL is undefined or null, cannot validate canonical tags');
@@ -374,6 +377,8 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
  * @returns {Array<Object>} Array of check results.
  */
 export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = false) {
+  log.info('CANONICAL[20012026] - validateCanonicalFormat');
+
   const checks = [];
   let base;
 
@@ -483,6 +488,8 @@ export async function validateCanonicalRecursively(
   options = {},
   visitedUrls = new Set(),
 ) {
+  log.info('CANONICAL[20012026] - validateCanonicalRecursively');
+
   const checks = [];
 
   // Check for redirect loops
@@ -581,8 +588,8 @@ export async function processScrapedContent(context) {
   const baseURL = site.getBaseURL();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
 
+  log.info('CANONICAL[20012026] - processScrapedContent');
   log.info(`Start processScrapedContent step for: ${siteId}`);
-  log.info(`✅ CANONICAL STEP 3: Processing scraped HTML from S3 (siteId: ${siteId})`);
 
   if (!bucketName) {
     const errorMsg = 'Missing S3 bucket configuration for canonical audit';
@@ -784,6 +791,8 @@ export async function canonicalAuditRunner(baseURL, context, site) {
   const MAX_CONCURRENT_FETCH_CALLS = 10;
   const siteId = site.getId();
   const { log, dataAccess } = context;
+
+  log.info('CANONICAL[20012026] - canonicalAuditRunner (OLD SINGLE-STEP)');
   log.info(`Starting Canonical Audit with siteId: ${JSON.stringify(siteId)}`);
 
   try {
@@ -1024,6 +1033,8 @@ export async function canonicalAuditRunner(baseURL, context, site) {
 export function generateSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
+  log.info('CANONICAL[20012026] - generateSuggestions');
+
   // if audit failed or has no issues, skip suggestions generation
   if (!Array.isArray(auditData.auditResult)) {
     log.info(`Canonical audit for ${auditUrl} has no issues or failed, skipping suggestions generation`);
@@ -1098,6 +1109,8 @@ export function generateSuggestions(auditUrl, auditData, context) {
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
+  log.info('CANONICAL[20012026] - opportunityAndSuggestions');
+
   // if audit failed or has no suggestions, skip opportunity creation
   if (!Array.isArray(auditData.auditResult) || !auditData.suggestions?.length) {
     log.info('Canonical audit has no issues, skipping opportunity creation');
@@ -1150,6 +1163,9 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
  */
 export async function opportunityAndSuggestionsForElmo(auditUrl, auditData, context) {
   const { log } = context;
+
+  log.info('CANONICAL[20012026] - opportunityAndSuggestionsForElmo');
+
   if (!auditData.elmoSuggestions?.length) {
     log.info('Canonical audit has no issues, skipping opportunity creation for Elmo');
     return { ...auditData };
