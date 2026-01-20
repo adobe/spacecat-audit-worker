@@ -2183,6 +2183,85 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     });
 
+    describe('Database fallback scenarios', () => {
+      it('should handle audit not found in database', async () => {
+        const audit = {};
+        const auditResult = { brokenInternalLinks: [] };
+        const prioritizedLinks = [];
+        const dataAccess = {
+          Audit: { findById: sandbox.stub().resolves(null) },
+        };
+        const log = { error: sandbox.stub(), info: sandbox.stub() };
+
+        await updateAuditResult(audit, auditResult, prioritizedLinks, dataAccess, log);
+
+        expect(dataAccess.Audit.findById).to.have.been.calledOnce;
+        expect(log.error).to.have.been.calledWith('[broken-internal-links] Could not find audit with ID undefined to update');
+      });
+    });
+
+    describe('Broken URLs logging', () => {
+      it('should log "and X more" when more than 10 broken URLs found', async () => {
+        // Create 15 broken links from RUM data to trigger the >10 logging
+        const rumLinks = [];
+        for (let i = 0; i < 15; i++) {
+          rumLinks.push({
+            urlFrom: `https://example.com/rum-page${i}`,
+            urlTo: `https://example.com/broken-rum${i}`,
+            statusCode: 404,
+            traffic: 100 + i,
+            priority: 'high'
+          });
+        }
+
+        // Create test context with mocked RUM data
+        const testContext = new MockContextBuilder()
+          .withSandbox(sandbox)
+          .withOverrides({
+            runtime: { name: 'aws-lambda', region: 'us-east-1' },
+            func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+            site: {
+              ...site,
+              getConfig: sinon.stub().returns(null), // Force Ahrefs path
+            },
+            dataAccess: {
+              ...context.dataAccess,
+              Audit: {
+                findById: sinon.stub().resolves({
+                  setAuditResult: sinon.stub(),
+                  save: sinon.stub().resolves(),
+                  getId: () => 'audit-id',
+                }),
+              },
+            },
+            rumApiClient: {
+              query: sinon.stub().resolves(rumLinks), // Return 15 broken links
+            },
+            log: context.log,
+          })
+          .build();
+
+        // Add audit object to context
+        testContext.audit = {
+          getAuditResult: () => ({ brokenInternalLinks: rumLinks, success: true }),
+          getId: () => 'test-audit-id',
+        };
+
+        // Mock empty scrape results to avoid crawl detection
+        testContext.scrapeResultPaths = new Map();
+
+        // Call the function - this should trigger the logging for >10 URLs
+        await runCrawlDetectionAndGenerateSuggestions(testContext);
+
+        // Verify the logging was called for more than 10 URLs
+        const logCalls = context.log.info.getCalls();
+        const moreUrlsCall = logCalls.find(call => call.args[0] && call.args[0].includes('... and'));
+        expect(moreUrlsCall).to.exist;
+        expect(moreUrlsCall.args[0]).to.include('... and 5 more broken URLs');
+      });
+    });
+
+
 
   });
 });

@@ -714,5 +714,31 @@ describe('Crawl Detection for Broken Internal Links', () => {
       expect(result[0].urlFrom).to.equal('https://example.com/page1');
       expect(result[0].urlTo).to.equal('https://example.com/broken');
     });
+
+    it('should skip anchor links (href="#section")', async () => {
+      const html = `
+        <html>
+          <body>
+            <a href="#section1">Section 1</a>
+            <a href="#d1">Design 1</a>
+            <a href="/broken-link">Broken Link</a>
+          </body>
+        </html>
+      `;
+      const scrapeResultPaths = new Map([['https://example.com/page1', 's3-key-1']]);
+
+      getObjectFromKeyStub.resolves({
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: { rawBody: html },
+      });
+      isWithinAuditScopeStub.returns(true);
+      isLinkInaccessibleStub.resolves(true); // Broken link is inaccessible
+
+      const result = await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
+
+      // Should only return the broken link, anchor links should be skipped
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].urlTo).to.equal('https://example.com/broken-link');
+    });
   });
 });
