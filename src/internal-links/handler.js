@@ -663,15 +663,11 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
 
     // Merge crawl + RUM results (RUM takes priority for traffic data)
     finalLinks = mergeAndDeduplicate(crawlLinks, rumLinks, log);
-
-
   }
 
   // Calculate priority for all links
 
-  // Log all broken URLs found for manual inspection
-  if (finalLinks.length > 0) {
-  }
+  // Process final links
 
   const prioritizedLinks = calculatePriority(finalLinks);
 
@@ -735,13 +731,12 @@ export async function prepareScrapingStep(context) {
     } else {
       throw new Error(`All ${topPages.length} top pages filtered out by audit scope. BaseURL: ${baseURL} requires subpath match but no pages match scope.`);
     }
-}
+  }
 
   const urls = filteredTopPages
     .map((page) => page.getUrl())
     .filter((url) => !isUnscrapeable(url))
     .map((url) => ({ url }));
-
 
   return {
     urls,

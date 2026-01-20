@@ -20,7 +20,9 @@ import { isWithinAuditScope } from './subpath-filter.js';
  * @param {number} ms - Milliseconds to sleep
  * @returns {Promise} Promise that resolves after the delay
  */
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms) => new Promise((resolve) => {
+  setTimeout(resolve, ms);
+});
 
 /**
  * Extracts and validates broken internal links from scraped HTML content
@@ -41,171 +43,179 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
   log.info(`[broken-internal-links-crawl] Starting crawl detection: ${scrapeResultPaths.size} pages to process`);
 
   const brokenLinksMap = new Map(); // Key: urlFrom|urlTo, Value: link object
-  const brokenUrlsSet = new Set(); // Track URLs already validated as broken to avoid re-validation
-  const workingUrlsSet = new Set(); // Track URLs already validated as working to avoid re-validation
-  let totalLinksFound = 0;
+  const brokenUrlsSet = new Set(); // Track URLs validated as broken
+  const workingUrlsSet = new Set(); // Track URLs validated as working
   let pagesProcessed = 0;
 
   // Process each scraped page sequentially with sleep between pages
   for (const [url, s3Key] of scrapeResultPaths) {
-      try {
-        log.info(`[broken-internal-links-crawl] 📥 Fetching scraped content for ${url} from S3 key: ${s3Key}`);
+    try {
+      log.info(`[broken-internal-links-crawl] 📥 Fetching scraped content for ${url} from S3 key: ${s3Key}`);
 
-        // Fetch scraped content from S3
-        const object = await getObjectFromKey(s3Client, bucketName, s3Key, log);
+      // Fetch scraped content from S3
+      // eslint-disable-next-line no-await-in-loop
+      const object = await getObjectFromKey(s3Client, bucketName, s3Key, log);
 
-        if (!object) {
-          log.warn(`[broken-internal-links-crawl] ❌ No object returned from S3 for ${url} (key: ${s3Key})`);
+      if (!object) {
+        log.warn(`[broken-internal-links-crawl] ❌ No object returned from S3 for ${url} (key: ${s3Key})`);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(30);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      log.info(`[broken-internal-links-crawl] ✅ Object fetched for ${url}. Top-level keys: ${Object.keys(object).join(', ')}`);
+
+      if (!object.scrapeResult) {
+        log.warn(`[broken-internal-links-crawl] ❌ No scrapeResult in object for ${url}. Available keys: ${Object.keys(object).join(', ')}`);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(30);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      log.info(`[broken-internal-links-crawl] scrapeResult keys: ${Object.keys(object.scrapeResult).join(', ')}`);
+
+      if (!object.scrapeResult.rawBody) {
+        log.warn(`[broken-internal-links-crawl] ❌ No rawBody in scrapeResult for ${url}. scrapeResult keys: ${Object.keys(object.scrapeResult).join(', ')}`);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(30);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      const html = object.scrapeResult.rawBody;
+      const pageUrl = object.finalUrl || url;
+      const htmlSize = html.length;
+
+      // Parse HTML with Cheerio
+      const $ = cheerioLoad(html);
+      const anchors = $('a[href]');
+      const totalAnchors = anchors.length;
+
+      log.info(`[broken-internal-links-crawl] Processing page ${pageUrl} (HTML size: ${htmlSize} bytes, Total <a> tags: ${totalAnchors})`);
+
+      // Extract internal links (skip header/footer like preflight does)
+      // Store as array of objects with url and anchorText
+      const internalLinks = [];
+
+      anchors.each((i, a) => {
+        const $a = $(a);
+
+        // Skip links in header or footer (navigation)
+        if ($a.closest('header').length || $a.closest('footer').length) {
           return;
         }
 
-        log.info(`[broken-internal-links-crawl] ✅ Object fetched for ${url}. Top-level keys: ${Object.keys(object).join(', ')}`);
+        try {
+          const href = $a.attr('href');
 
-        if (!object.scrapeResult) {
-          log.warn(`[broken-internal-links-crawl] ❌ No scrapeResult in object for ${url}. Available keys: ${Object.keys(object).join(', ')}`);
-          pagesSkipped += 1;
-          return;
-        }
-
-        log.info(`[broken-internal-links-crawl] scrapeResult keys: ${Object.keys(object.scrapeResult).join(', ')}`);
-
-        if (!object.scrapeResult.rawBody) {
-          log.warn(`[broken-internal-links-crawl] ❌ No rawBody in scrapeResult for ${url}. scrapeResult keys: ${Object.keys(object.scrapeResult).join(', ')}`);
-          pagesSkipped += 1;
-          return;
-        }
-
-        const html = object.scrapeResult.rawBody;
-        const pageUrl = object.finalUrl || url;
-        const htmlSize = html.length;
-
-        // Parse HTML with Cheerio
-        const $ = cheerioLoad(html);
-        const anchors = $('a[href]');
-        const totalAnchors = anchors.length;
-
-        log.info(`[broken-internal-links-crawl] Processing page ${pageUrl} (HTML size: ${htmlSize} bytes, Total <a> tags: ${totalAnchors})`);
-
-        // Extract internal links (skip header/footer like preflight does)
-        // Store as array of objects with url and anchorText
-        const internalLinks = [];
-
-        anchors.each((i, a) => {
-          const $a = $(a);
-
-          // Skip links in header or footer (navigation)
-          if ($a.closest('header').length || $a.closest('footer').length) {
+          // Skip anchor-only links (page fragments like #section)
+          // These are not broken links, just references to sections on the same page
+          if (href && href.startsWith('#')) {
             return;
           }
 
-          try {
-            const href = $a.attr('href');
+          // Resolve relative links (e.g., /about, ../products) to absolute URLs
+          // using pageUrl as base
+          const absoluteUrl = new URL(href, pageUrl).toString();
 
-            // Skip anchor-only links (page fragments like #section)
-            // These are not broken links, just references to sections on the same page
-            if (href && href.startsWith('#')) {
-              return;
-            }
-
-            // Resolve relative links (e.g., /about, ../products) to absolute URLs
-            // using pageUrl as base
-            const absoluteUrl = new URL(href, pageUrl).toString();
-
-            // Only include internal links (same hostname, ignoring www)
-            const linkHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
-            if (linkHostname === baseHostname) {
-              const anchorText = $a.text().trim() || '[empty]';
-              internalLinks.push({
-                url: absoluteUrl,
-                anchorText,
-              });
-            }
-          } catch {
-            // Skip invalid hrefs
+          // Only include internal links (same hostname, ignoring www)
+          const linkHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
+          if (linkHostname === baseHostname) {
+            const anchorText = $a.text().trim() || '[empty]';
+            internalLinks.push({
+              url: absoluteUrl,
+              anchorText,
+            });
           }
-        });
-
-        totalLinksFound += internalLinks.length;
-
-
-
-        if (internalLinks.length === 0) {
-          pagesProcessed += 1;
-          return;
+        } catch {
+          // Skip invalid hrefs
         }
+      });
 
-        // Validate each internal link in parallel
-        // Skip logging individual validation counts to reduce noise
-
-        const linkValidations = await Promise.all(
-          internalLinks.map(async (link) => {
-            const linkUrl = link.url;
-            const { anchorText } = link;
-
-            // Filter by audit scope before validation
-            const pageInScope = isWithinAuditScope(pageUrl, baseURL);
-            const linkInScope = isWithinAuditScope(linkUrl, baseURL);
-
-            if (!pageInScope || !linkInScope) {
-              return null;
-            }
-
-            // Check if URL is already cached as broken or working (avoid re-validation)
-            if (brokenUrlsSet.has(linkUrl)) {
-              return {
-                urlFrom: pageUrl,
-                urlTo: linkUrl,
-                anchorText: link.anchorText,
-                trafficDomain: 0, // Crawl-discovered links have no traffic data
-              };
-            }
-
-            if (workingUrlsSet.has(linkUrl)) {
-              return null; // Working links don't get added to broken links list
-            }
-
-            const isBroken = await isLinkInaccessible(linkUrl, log);
-
-            if (isBroken) {
-              // Add to set of known broken URLs to avoid future validations
-              brokenUrlsSet.add(linkUrl);
-              return {
-                urlFrom: pageUrl,
-                urlTo: linkUrl,
-                anchorText,
-                trafficDomain: 0, // Crawl-discovered links have no traffic data
-              };
-            } else {
-              // Add to set of known working URLs to avoid future validations
-              workingUrlsSet.add(linkUrl);
-            }
-
-            return null;
-          }),
-        );
-
-        // Add broken links to map (deduplicate by urlFrom|urlTo)
-        linkValidations.forEach((link) => {
-          if (link) {
-            const key = `${link.urlFrom}|${link.urlTo}`;
-            if (!brokenLinksMap.has(key)) {
-              brokenLinksMap.set(key, link);
-            }
-          }
-        });
-
-
+      if (internalLinks.length === 0) {
         pagesProcessed += 1;
-
-        // Add delay between processing pages to avoid overloading target system
+        // eslint-disable-next-line no-await-in-loop
         await sleep(30);
-      } catch (error) {
-        log.error(`[broken-internal-links-crawl] Error processing ${url}: ${error.message}`, error);
-
-        // Still add delay even on error to avoid rapid-fire retries
-        await sleep(30);
+        // eslint-disable-next-line no-continue
+        continue;
       }
+
+      // Validate each internal link in parallel
+      // Skip logging individual validation counts to reduce noise
+
+      // eslint-disable-next-line no-await-in-loop
+      const linkValidations = await Promise.all(
+        internalLinks.map(async (link) => {
+          const linkUrl = link.url;
+          const { anchorText } = link;
+
+          // Filter by audit scope before validation
+          const pageInScope = isWithinAuditScope(pageUrl, baseURL);
+          const linkInScope = isWithinAuditScope(linkUrl, baseURL);
+
+          if (!pageInScope || !linkInScope) {
+            return null;
+          }
+
+          // Check if URL is already cached as broken or working (avoid re-validation)
+          if (brokenUrlsSet.has(linkUrl)) {
+            return {
+              urlFrom: pageUrl,
+              urlTo: linkUrl,
+              anchorText: link.anchorText,
+              trafficDomain: 0, // Crawl-discovered links have no traffic data
+            };
+          }
+
+          if (workingUrlsSet.has(linkUrl)) {
+            return null; // Working links don't get added to broken links list
+          }
+
+          const isBroken = await isLinkInaccessible(linkUrl, log);
+
+          if (isBroken) {
+            // Add to set of known broken URLs to avoid future validations
+            brokenUrlsSet.add(linkUrl);
+            return {
+              urlFrom: pageUrl,
+              urlTo: linkUrl,
+              anchorText,
+              trafficDomain: 0, // Crawl-discovered links have no traffic data
+            };
+          } else {
+            // Add to set of known working URLs to avoid future validations
+            workingUrlsSet.add(linkUrl);
+          }
+
+          return null;
+        }),
+      );
+
+      // Add broken links to map (deduplicate by urlFrom|urlTo)
+      linkValidations.forEach((link) => {
+        if (link) {
+          const key = `${link.urlFrom}|${link.urlTo}`;
+          if (!brokenLinksMap.has(key)) {
+            brokenLinksMap.set(key, link);
+          }
+        }
+      });
+
+      pagesProcessed += 1;
+
+      // Add delay between processing pages to avoid overloading target system
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(30);
+    } catch (error) {
+      log.error(`[broken-internal-links-crawl] Error processing ${url}: ${error.message}`, error);
+
+      // Still add delay even on error to avoid rapid-fire retries
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(30);
     }
+  }
 
   const brokenLinks = Array.from(brokenLinksMap.values());
 
@@ -227,7 +237,6 @@ export function mergeAndDeduplicate(crawlLinks, rumLinks, log) {
   log.info(`[broken-internal-links-merge] Input - RUM links: ${rumLinks.length}, Crawl links: ${crawlLinks.length}`);
 
   const linkMap = new Map();
-  let overlapCount = 0;
 
   // Step 1: Add RUM links first (they have traffic_domain)
   rumLinks.forEach((link) => {
@@ -241,21 +250,6 @@ export function mergeAndDeduplicate(crawlLinks, rumLinks, log) {
     if (!linkMap.has(key)) {
       // Crawl-only links keep trafficDomain: 0 (lowest priority)
       linkMap.set(key, link);
-    } else {
-      overlapCount += 1;
-    }
-  });
-
-
-  // Step 2: Add crawl links (only if not already from RUM)
-  crawlLinks.forEach((link) => {
-    const key = `${link.urlFrom}|${link.urlTo}`;
-    if (!linkMap.has(key)) {
-      // Crawl-only links keep trafficDomain: 0 (lowest priority)
-      linkMap.set(key, link);
-      crawlOnlyCount += 1;
-    } else {
-      overlapCount += 1;
     }
   });
 
