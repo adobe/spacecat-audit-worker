@@ -93,30 +93,14 @@ describe('CSP Post-processor', () => {
 
   const findingDetails = [
     {
-      type: 'static-content',
       url: 'https://adobe.com/head.html',
       page: 'head.html',
-      findings: [
-        {
-          "type": "csp-nonce-missing"
-        },
-        {
-          "type": "csp-meta-tag-missing"
-        }
-      ],
+      problems: ["csp-nonce-missing", "csp-meta-tag-missing"],
     },
     {
-      type: 'static-content',
       url: 'https://adobe.com/404.html',
       page: '404.html',
-      findings: [
-        {
-          "type": "csp-nonce-missing"
-        },
-        {
-          "type": "csp-meta-tag-missing"
-        }
-      ],
+      problems: ["csp-nonce-missing", "csp-meta-tag-missing"],
     },
   ];
 
@@ -739,13 +723,8 @@ describe('CSP Post-processor', () => {
           ...csp[0],
           findings: [
             {
-              findings: [
-                {
-                  type: "csp-meta-tag-missing",
-                }
-              ],
+              problems: ["csp-meta-tag-missing"],
               page: "head.html",
-              type: "static-content",
               url: "https://adobe.com/head.html"
             }
           ],
@@ -778,13 +757,8 @@ describe('CSP Post-processor', () => {
           ...csp[0],
           findings: [
             {
-              findings: [
-                {
-                  "type": "csp-meta-tag-move-to-header",
-                }
-              ],
+              problems: ["csp-meta-tag-move-to-header"],
               page: "head.html",
-              type: "static-content",
               url: "https://adobe.com/head.html"
             }
           ],
@@ -817,13 +791,8 @@ describe('CSP Post-processor', () => {
           ...csp[0],
           findings: [
             {
-              findings: [
-                {
-                  "type": "csp-meta-tag-non-enforcing",
-                }
-              ],
+              problems: ["csp-meta-tag-non-enforcing"],
               page: "head.html",
-              type: "static-content",
               url: "https://adobe.com/head.html"
             }
           ],

@@ -34,7 +34,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
   }
 
   let suggestedBody = responseBody;
-  const findings = [];
+  const problems = [];
   const $ = cheerioLoad(responseBody, { sourceCodeLocationInfo: true }, false);
 
   // check for script tags without nonce
@@ -59,9 +59,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
   });
 
   if (hasMissingNonce) {
-    findings.push({
-      type: 'csp-nonce-missing',
-    });
+    problems.push('csp-nonce-missing');
   }
 
   // check for missing metadata header
@@ -70,9 +68,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
   const suggestedCsp = 'script-src \'nonce-aem\' \'strict-dynamic\' \'unsafe-inline\' http: https:; base-uri \'self\'; object-src \'none\';';
   if (metaTags.length === 0) {
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: no CSP meta tag found`);
-    findings.push({
-      type: 'csp-meta-tag-missing',
-    });
+    problems.push('csp-meta-tag-missing');
 
     // insert before first meta tag (if available)
     const allMetaTags = $('meta');
@@ -108,9 +104,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
 
     if (!metaTag.attribs.content.includes('nonce-aem') || !metaTag.attribs.content.includes('strict-dynamic')) {
       log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: no enforcing CSP meta tag found`);
-      findings.push({
-        type: 'csp-meta-tag-non-enforcing',
-      });
+      problems.push('csp-meta-tag-non-enforcing');
 
       const metaContent = responseBody
         .substring(metaTag.sourceCodeLocation.startOffset, metaTag.sourceCodeLocation.endOffset);
@@ -120,9 +114,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
     } else if (!metaTag.attribs['move-to-http-header']) {
       log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: enforcing CSP meta tag not marked to be moved to header`);
 
-      findings.push({
-        type: 'csp-meta-tag-move-to-header',
-      });
+      problems.push('csp-meta-tag-move-to-header');
 
       const metaContent = responseBody
         .substring(metaTag.sourceCodeLocation.startOffset, metaTag.sourceCodeLocation.endOffset);
@@ -131,7 +123,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
     }
   }
 
-  if (findings.length === 0) {
+  if (problems.length === 0) {
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: no CSP findings found`);
     return null;
   }
@@ -140,10 +132,9 @@ async function determineSuggestionsForPage(url, page, context, site) {
   const patch = createPatch(page, responseBody, suggestedBody);
 
   return {
-    type: 'static-content',
     url: url.toString(),
     page,
-    findings,
+    problems,
     patch,
   };
 }
@@ -171,8 +162,8 @@ function createPrDescription(findings) {
     + '[AEM documentation](https://www.aem.live/docs/csp-strict-dynamic-cached-nonce).\n\n'
     + `#### Suggested Changes:\n${
       findings.map((finding) => {
-        const changes = finding.findings.map((f) => {
-          switch (f.type) {
+        const changes = finding.problems.map((f) => {
+          switch (f) {
             case 'csp-meta-tag-missing':
               return '  - Add a CSP meta tag to enforce a strict Content Security Policy.';
             case 'csp-meta-tag-move-to-header':
