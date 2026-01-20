@@ -85,7 +85,7 @@
     "@adobe/spacecat-helix-content-sdk": "1.4.33",
     "@adobe/spacecat-shared-ahrefs-client": "1.10.3",
     "@adobe/spacecat-shared-athena-client": "1.9.1",
-    "@adobe/spacecat-shared-data-access": "https://gist.github.com/Sugandhgyl/ec9e671121d224d42dd0cb4be05930db/raw/ae72fd76bfa333a5a3b16a30de2559c5e26a41d5/adobe-spacecat-shared-data-access-2.96.0.tgz",
+    "@adobe/spacecat-shared-data-access": "https://gist.github.com/Sugandhgyl/ec9e671121d224d42dd0cb4be05930db/raw/31d0444e4f9a36dac5af92e8648c5e5cb6d33dd0/adobe-spacecat-shared-data-access-2.96.0.tgz",
     "@adobe/spacecat-shared-google-client": "1.4.62",
     "@adobe/spacecat-shared-gpt-client": "1.6.15",
     "@adobe/spacecat-shared-html-analyzer": "1.2.0",
