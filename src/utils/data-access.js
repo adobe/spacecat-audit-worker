@@ -256,7 +256,11 @@ export async function syncSuggestions({
       .map((existing) => {
         const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
         existing.setData(mergeDataFunction(existing.getData(), newDataItem));
-        if ([SuggestionDataAccess.STATUSES.OUTDATED].includes(existing.getStatus())) {
+
+        if (existing.getStatus() === SuggestionDataAccess.STATUSES.REJECTED) {
+          // Keep REJECTED status when same suggestion appears again in audit
+          log.debug('REJECTED suggestion found in audit. Preserving REJECTED status.');
+        } else if ([SuggestionDataAccess.STATUSES.OUTDATED].includes(existing.getStatus())) {
           log.warn('Resolved suggestion found in audit. Possible regression.');
           const { site } = context;
           const requiresValidation = Boolean(site?.requiresValidation);
