@@ -1868,9 +1868,10 @@ describe('Canonical URL Tests', () => {
         const result = await importTopPages(testContext);
 
         expect(result).to.deep.equal({
-          auditResult: { status: 'preparing' },
-          fullAuditRef: 'https://example.com',
+          type: 'top-pages',
           siteId: 'test-site-id',
+          auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+          fullAuditRef: 'scrapes/test-site-id/',
         });
       });
     });

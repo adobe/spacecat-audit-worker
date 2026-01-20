@@ -69,14 +69,17 @@ export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
 /* c8 ignore start */
 export async function importTopPages(context) {
   const { site, finalUrl, log } = context;
+  const siteId = site.getId();
+  const s3BucketPath = `scrapes/${siteId}/`;
 
   log.info('CANONICAL[20012026] - importTopPages');
+  log.info(`[canonical] importTopPages step requested for ${siteId}, bucket path: ${s3BucketPath}`);
+
   return {
-    auditResult: {
-      status: 'preparing',
-    },
-    fullAuditRef: finalUrl,
-    siteId: site.getId(),
+    type: 'top-pages',
+    siteId,
+    auditResult: { status: 'preparing', finalUrl },
+    fullAuditRef: s3BucketPath,
   };
 }
 /* c8 ignore stop */
