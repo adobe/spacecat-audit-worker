@@ -240,7 +240,7 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
   missingNonce.issues = [];
   if (patchContent.length > 0) {
     missingNonce.issues.push({
-      content: patchContent,
+      patchContent,
       value: patchDescription,
     });
   }
