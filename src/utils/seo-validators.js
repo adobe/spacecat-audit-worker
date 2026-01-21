@@ -276,9 +276,11 @@ export async function validateUrls(urls, context) {
   const results = await limitConcurrencyAllSettled(
     urls,
     async (urlData) => {
-      const result = await validateUrl(urlData.url, context);
+      // Handle both string URLs and object URLs
+      const url = typeof urlData === 'string' ? urlData : urlData.url;
+      const result = await validateUrl(url, context);
       return {
-        ...urlData, // Preserve keyword data from Mystique
+        ...(typeof urlData === 'object' ? urlData : {}), // Preserve keyword data from Mystique
         ...result,
       };
     },
