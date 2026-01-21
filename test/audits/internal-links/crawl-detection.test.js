@@ -605,8 +605,8 @@ describe('Crawl Detection Module', () => {
     });
 
     it('should add delay between link check batches with multiple batches', async () => {
-      // Create page with 25 links to trigger multiple batches (batch size is 20)
-      const linksHtml = Array.from({ length: 25 }, (_, i) => 
+      // Create page with 35 links to trigger multiple batches (batch size is 30)
+      const linksHtml = Array.from({ length: 35 }, (_, i) => 
         `<a href="/link-${i + 1}">Link ${i + 1}</a>`
       ).join('\n');
       
@@ -625,9 +625,9 @@ describe('Crawl Detection Module', () => {
 
       await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
 
-      // With 25 links and batch size 20, should have 2 batches
+      // With 35 links and batch size 30, should have 2 batches
       // Delay should be added between batches (covers lines 169-171)
-      expect(isLinkInaccessibleStub.callCount).to.equal(25);
+      expect(isLinkInaccessibleStub.callCount).to.equal(35);
     });
   });
 });

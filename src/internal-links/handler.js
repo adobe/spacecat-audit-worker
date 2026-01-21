@@ -30,8 +30,7 @@ import { detectBrokenLinksFromCrawl, mergeAndDeduplicate } from './crawl-detecti
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
-const MAX_URLS_TO_PROCESS = 500;
-const MAX_ALTERNATIVE_URLS = 100;
+const MAX_URLS_TO_PROCESS = 100;
 const MAX_BROKEN_LINKS = 100;
 
 /**
@@ -418,11 +417,8 @@ export const opportunityAndSuggestionsStep = async (context) => {
     log.info(`[${AUDIT_TYPE}] Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs`);
   }
 
-  // Limit alternativeUrls to prevent message size issues (these are duplicated in each batch)
-  if (alternativeUrls.length > MAX_ALTERNATIVE_URLS) {
-    log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Limiting alternativeUrls from ${alternativeUrls.length} to ${MAX_ALTERNATIVE_URLS}`);
-    alternativeUrls = alternativeUrls.slice(0, MAX_ALTERNATIVE_URLS);
-  }
+  // Note: alternativeUrls limit removed as it's unreachable
+  // topPages is capped to MAX_URLS_TO_PROCESS, so alternativeUrls can't exceed it
 
   // Validate before sending to Mystique
   if (brokenLinks.length === 0) {

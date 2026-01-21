@@ -339,9 +339,9 @@ describe('Broken internal links audit', () => {
     nock.cleanAll();
     context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
     
-    // Create 600 URLs total (400 Ahrefs + 200 manual = 600, exceeds 500)
-    const manyPages = Array.from({ length: 400 }, (_, i) => ({ getUrl: () => `https://example.com/ah${i}` }));
-    const manualUrls = Array.from({ length: 200 }, (_, i) => `https://example.com/man${i}`);
+    // Create 150 URLs total (100 Ahrefs + 50 manual = 150, exceeds 100)
+    const manyPages = Array.from({ length: 100 }, (_, i) => ({ getUrl: () => `https://example.com/ah${i}` }));
+    const manualUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/man${i}`);
     
     const testCtx = { ...context };
     testCtx.log = context.log;
@@ -352,7 +352,7 @@ describe('Broken internal links audit', () => {
     nock('https://example.com').persist().head(/\/(ah|man)\d+/).reply(200);
     await prepareScrapingStep(testCtx);
     
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Total URLs \(600\) exceeds limit/));
+    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Total URLs \(150\) exceeds limit/));
     nock.cleanAll();
   }).timeout(120000);
 
@@ -1376,7 +1376,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     context.site.getDeliveryType = () => 'aem_edge';
     context.site.getBaseURL = () => 'https://example.com';
     context.site.getConfig = () => ({
-      getIncludedURLs: () => Array.from({ length: 400 }, (_, i) => `https://example.com/en/included${i}`),
+      getIncludedURLs: () => Array.from({ length: 80 }, (_, i) => `https://example.com/en/included${i}`),
     });
 
     opportunity.getSuggestions = sandbox.stub().resolves([]);
@@ -1397,8 +1397,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       getId: () => 'suggestion-1',
     }];
 
-    // Create 200 Ahrefs pages + 400 includedURLs = 600 total (exceeds 500)
-    const manyTopPages = Array.from({ length: 200 }, (_, i) => ({
+    // Create 70 Ahrefs pages + 80 includedURLs = 150 total (exceeds 100)
+    const manyTopPages = Array.from({ length: 70 }, (_, i) => ({
       getUrl: () => `https://example.com/en/page${i}`,
     }));
 
@@ -1412,63 +1412,18 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     await handler.opportunityAndSuggestionsStep(context);
 
-    // Verify warning was logged for capping URLs (600 > 500)
+    // Verify warning was logged for capping URLs (150 > 100)
     expect(context.log.warn).to.have.been.calledWith(
-      sinon.match(/Capping URLs from 600 to 500/),
+      sinon.match(/Capping URLs from 150 to 100/),
     );
   }).timeout(10000);
 
-  it('should limit alternativeUrls when exceeding MAX_ALTERNATIVE_URLS', async () => {
-    context.dataAccess.Configuration = {
-      findLatest: () => ({
-        isHandlerEnabledForSite: () => true,
-      }),
-    };
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    context.dataAccess.Opportunity.create.resolves(opportunity);
-
-    context.site.getLatestAuditByAuditType = () => auditData;
-    context.site.getDeliveryType = () => 'aem_edge';
-    context.site.getBaseURL = () => 'https://example.com';
-
-    opportunity.getSuggestions = sandbox.stub().resolves([]);
-    opportunity.addSuggestions = sandbox.stub().resolves({ createdItems: [], errorItems: [] });
-
-    handler = await esmock('../../../src/internal-links/handler.js', {
-      '../../../src/internal-links/suggestions-generator.js': {
-        generateSuggestionData: () => [],
-        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
-      },
-    });
-
-    // Create suggestion for broken links
-    const validSuggestions = [{
-      getData: () => ({
-        urlTo: 'https://example.com/en/broken1',
-        urlFrom: 'https://example.com/en/source1',
-      }),
-      getId: () => 'suggestion-1',
-    }];
-
-    // Create 150 top pages (more than MAX_ALTERNATIVE_URLS of 100)
-    const manyTopPages = Array.from({ length: 150 }, (_, i) => ({
-      getUrl: () => `https://example.com/en/page${i}`,
-    }));
-
-    if (!context.dataAccess.Suggestion) {
-      context.dataAccess.Suggestion = {};
-    }
-    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
-      .callsFake(() => Promise.resolve(validSuggestions));
-    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
-      .resolves(manyTopPages);
-
-    await handler.opportunityAndSuggestionsStep(context);
-
-    // Verify warning was logged for limiting alternativeUrls (150 Ahrefs pages > 100)
-    expect(context.log.warn).to.have.been.calledWith(
-      sinon.match(/Limiting alternativeUrls from \d+ to 100/),
-    );
+  // Note: This test is skipped because with MAX_URLS_TO_PROCESS = 100 and MAX_ALTERNATIVE_URLS = 100,
+  // the alternativeUrls limit (lines 423-425 in handler.js) can never be reached.
+  // topPages is capped to 100, so alternativeUrls (derived from filtered topPages) can never exceed 100.
+  // This code path was reachable when MAX_URLS_TO_PROCESS was 500, but is now unreachable.
+  it.skip('should limit alternativeUrls when exceeding MAX_ALTERNATIVE_URLS', async () => {
+    // Test skipped - unreachable code path with current MAX_URLS_TO_PROCESS = MAX_ALTERNATIVE_URLS = 100
   }).timeout(10000);
 
 });
