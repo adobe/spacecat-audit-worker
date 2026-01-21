@@ -25,6 +25,7 @@ import {
   internalLinksAuditRunner,
   runAuditAndImportTopPagesStep,
   prepareScrapingStep,
+  normalizeUrlToDomain,
 } from '../../../src/internal-links/handler.js';
 import {
   internalLinksData,
@@ -133,6 +134,13 @@ describe('Broken internal links audit', () => {
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
+  });
+
+  it('normalizeUrlToDomain returns original URL when parsing fails', () => {
+    const invalidUrl = 'not-a-valid-url';
+    const canonicalDomain = 'example.com';
+    const result = normalizeUrlToDomain(invalidUrl, canonicalDomain);
+    expect(result).to.equal(invalidUrl);
   });
 
   it('broken-internal-links audit runs rum api client 404 query', async () => {

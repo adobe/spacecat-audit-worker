@@ -36,7 +36,7 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
  * @param {string} canonicalDomain - The site's canonical domain (e.g., 'hdfc.bank.in')
  * @returns {string} Normalized URL
  */
-function normalizeUrlToDomain(url, canonicalDomain) {
+export function normalizeUrlToDomain(url, canonicalDomain) {
   try {
     const urlObj = new URL(url);
     const canonicalHostname = new URL(`https://${canonicalDomain}`).hostname;
