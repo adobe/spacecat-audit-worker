@@ -239,16 +239,16 @@ export async function submitForScraping(context) {
   let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
   log.info(`[${AUDIT_TYPE}] Merged URLs: ${topPagesUrls.length} (Ahrefs) + ${includedURLs.length} (manual) = ${finalUrls.length} unique`);
 
-  // Limit to max URLs
+  // Filter by audit scope BEFORE capping to ensure all URLs are in scope
+  const baseURL = site.getBaseURL();
+  finalUrls = finalUrls.filter((url) => isWithinAuditScope(url, baseURL));
+  log.info(`[${AUDIT_TYPE}] After audit scope filtering: ${finalUrls.length} URLs`);
+
+  // Limit to max URLs (after scope filtering)
   if (finalUrls.length > MAX_URLS_TO_PROCESS) {
     log.warn(`[${AUDIT_TYPE}] Total URLs (${finalUrls.length}) exceeds limit. Capping at ${MAX_URLS_TO_PROCESS}`);
     finalUrls = finalUrls.slice(0, MAX_URLS_TO_PROCESS);
   }
-
-  // Filter by audit scope
-  const baseURL = site.getBaseURL();
-  finalUrls = finalUrls.filter((url) => isWithinAuditScope(url, baseURL));
-  log.info(`[${AUDIT_TYPE}] After audit scope filtering: ${finalUrls.length} URLs`);
 
   // Filter out unscrape-able files
   const beforeFilter = finalUrls.length;

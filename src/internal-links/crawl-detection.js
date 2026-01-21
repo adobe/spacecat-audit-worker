@@ -17,7 +17,7 @@ import { isWithinAuditScope } from './subpath-filter.js';
 
 // Aggressive optimizations for maximum speed
 const SCRAPE_FETCH_DELAY_MS = 40; // No delay between S3 fetches (S3 is fast)
-const LINK_CHECK_BATCH_SIZE = 30; // Check 20 links at a time (4x original)
+const LINK_CHECK_BATCH_SIZE = 20; // Check 20 links at a time (4x original)
 const LINK_CHECK_DELAY_MS = 40; // No delay between batches (let system handle throttling)
 
 /**
