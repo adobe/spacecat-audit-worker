@@ -28,6 +28,7 @@ import readability from '../readability/preflight/handler.js';
 import accessibility from './accessibility.js';
 import headings from './headings.js';
 import formAccessibility from './form-accessibility.js';
+import imageAltText from './image-alt-text.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const PREFLIGHT_STEP_IDENTIFY = 'identify';
@@ -51,6 +52,7 @@ export const AUDIT_ACCESSIBILITY = 'accessibility';
 export const AUDIT_READABILITY = 'readability';
 export const AUDIT_HEADINGS = 'headings';
 export const AUDIT_FORM_ACCESSIBILITY = 'form-accessibility';
+export const AUDIT_IMAGE_ALT_TEXT = 'alt-text';
 
 const AVAILABLE_CHECKS = [
   AUDIT_CANONICAL,
@@ -63,6 +65,7 @@ const AVAILABLE_CHECKS = [
   AUDIT_READABILITY,
   AUDIT_HEADINGS,
   AUDIT_FORM_ACCESSIBILITY,
+  AUDIT_IMAGE_ALT_TEXT,
 ];
 
 export const PREFLIGHT_HANDLERS = {
@@ -73,6 +76,7 @@ export const PREFLIGHT_HANDLERS = {
   readability,
   accessibility,
   'form-accessibility': formAccessibility,
+  'alt-text': imageAltText,
 };
 
 export async function scrapePages(context) {
@@ -140,6 +144,7 @@ export const preflightAudit = async (context) => {
   }
 
   // Compute enabled preflight checks for the site and store in job metadata
+  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Computing enabled checks.`);
   let enabledChecks = [];
   try {
     enabledChecks = (await Promise.all(
@@ -148,6 +153,8 @@ export const preflightAudit = async (context) => {
         return enabled ? audit : null;
       }),
     )).filter(Boolean);
+
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Enabled checks: ${JSON.stringify(enabledChecks)}`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
     const currentMetadata = jobEntity.getMetadata();
@@ -163,6 +170,7 @@ export const preflightAudit = async (context) => {
   } catch (e) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Failed to persist enabled checks in job metadata.`, e);
   }
+  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Enabled checks computation persisted in job metadata.`);
 
   const timeExecutionBreakdown = [];
 
