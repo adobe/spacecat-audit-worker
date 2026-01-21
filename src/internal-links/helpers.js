@@ -11,9 +11,9 @@
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
-// Increased timeout to handle slow-responding URLs (30 seconds)
-// Some servers with redirects (HTTPS→HTTP) can take 15+ seconds to respond
-const LINK_TIMEOUT = 30000;
+// Reduced timeout to prevent Lambda timeout (5 seconds)
+// AWS Lambda has 15-minute limit; with 189 pages and 50+ links/page, we need fast timeouts
+const LINK_TIMEOUT = 5000;
 export const CPC_DEFAULT_VALUE = 1;
 export const TRAFFIC_MULTIPLIER = 0.01; // 1%
 export const MAX_LINKS_TO_CONSIDER = 10;
@@ -128,9 +128,15 @@ export async function isLinkInaccessible(url, log) {
     // URL is valid if status code is less than 400, otherwise it is invalid
     return status >= 400;
   } catch (getError) {
-    const errorMessage = getError.code === 'ETIMEOUT'
-      ? `Request timed out after ${LINK_TIMEOUT}ms`
-      : getError.message;
+    // Build detailed error message with code and type info
+    const code = getError.code || '';
+    const type = getError.type || '';
+    const errno = getError.errno || '';
+    const message = getError.message || 'Unknown error';
+
+    const errorParts = [code, type, errno, message].filter(Boolean);
+    const errorMessage = errorParts.length > 1 ? errorParts.join(': ') : message;
+
     log.error(`broken-internal-links audit: Error checking ${url} with GET request: ${errorMessage}`);
     // Any error means the URL is inaccessible
     return true;
