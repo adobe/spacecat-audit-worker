@@ -38,49 +38,49 @@ const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () =>
 const AUDIT_RESULT_DATA = [
   {
     trafficDomain: 1800,
-    urlTo: 'https://www.petplace.com/a01',
-    urlFrom: 'https://www.petplace.com/a02nf',
+    urlTo: 'https://www.example.com/a01',
+    urlFrom: 'https://www.example.com/a02nf',
     priority: 'high',
   },
   {
     trafficDomain: 1200,
-    urlTo: 'https://www.petplace.com/ax02',
-    urlFrom: 'https://www.petplace.com/ax02nf',
+    urlTo: 'https://www.example.com/ax02',
+    urlFrom: 'https://www.example.com/ax02nf',
     priority: 'medium',
   },
   {
     trafficDomain: 200,
-    urlTo: 'https://www.petplace.com/a01',
-    urlFrom: 'https://www.petplace.com/a01nf',
+    urlTo: 'https://www.example.com/a01',
+    urlFrom: 'https://www.example.com/a01nf',
     priority: 'low',
   },
 ];
 const AUDIT_RESULT_DATA_WITH_SUGGESTIONS = [
   {
     trafficDomain: 1800,
-    urlTo: 'https://www.petplace.com/a01',
-    urlFrom: 'https://www.petplace.com/a02nf',
+    urlTo: 'https://www.example.com/a01',
+    urlFrom: 'https://www.example.com/a02nf',
     priority: 'high',
     urlsSuggested: [
-      'https://petplace.com/suggestion1',
-      'https://petplace.com/suggestion12',
+      'https://example.com/suggestion1',
+      'https://example.com/suggestion12',
     ],
     aiRationale: 'Some Rationale',
   },
   {
     trafficDomain: 1200,
-    urlTo: 'https://www.petplace.com/ax02',
-    urlFrom: 'https://www.petplace.com/ax02nf',
+    urlTo: 'https://www.example.com/ax02',
+    urlFrom: 'https://www.example.com/ax02nf',
     priority: 'medium',
-    urlsSuggested: ['https://petplace.com/suggestion2'],
+    urlsSuggested: ['https://example.com/suggestion2'],
     aiRationale: 'Some Rationale',
   },
   {
     trafficDomain: 200,
-    urlTo: 'https://www.petplace.com/a01',
-    urlFrom: 'https://www.petplace.com/a01nf',
+    urlTo: 'https://www.example.com/a01',
+    urlFrom: 'https://www.example.com/a01nf',
     priority: 'low',
-    urlsSuggested: ['https://petplace.com/suggestion3'],
+    urlsSuggested: ['https://example.com/suggestion3'],
     aiRationale: 'Some Rationale',
   },
 ];
@@ -413,7 +413,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
     expect(suggestionsArg).to.be.an('array').with.lengthOf(3);
     expect(suggestionsArg[0].data.urlTo).to.equal(
-      'https://www.petplace.com/a01',
+      'https://www.example.com/a01',
     );
   }).timeout(10000);
 
@@ -658,6 +658,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     const messageArg = context.sqs.sendMessage.getCall(0).args[1];
     expect(messageArg.data.alternativeUrls).to.have.lengthOf(1);
     expect(messageArg.data.alternativeUrls[0]).to.equal('https://example.com/page1');
+    // Verify siteBaseURL is included for URL normalization
+    expect(messageArg.data.siteBaseURL).to.equal('https://www.example.com');
   }).timeout(5000);
 
   it('Existing opportunity and suggestions are updated if no broken internal links found', async () => {
@@ -882,6 +884,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     messageArg.data.alternativeUrls.forEach((url) => {
       expect(url).to.include('/uk/');
     });
+    // Verify siteBaseURL is included for URL normalization
+    expect(messageArg.data.siteBaseURL).to.equal('https://www.example.com');
   }).timeout(5000);
 
   it('should use urlFrom prefix when urlTo has no prefix', async () => {
@@ -944,6 +948,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     messageArg.data.alternativeUrls.forEach((url) => {
       expect(url).to.include('/uk/');
     });
+    // Verify siteBaseURL is included for URL normalization
+    expect(messageArg.data.siteBaseURL).to.equal('https://www.example.com');
   }).timeout(5000);
 
   it('should skip sending to Mystique when all broken links are filtered out', async () => {
@@ -1088,6 +1094,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(messageArg.data.alternativeUrls).to.include('https://bulk.com/uk/home');
     expect(messageArg.data.alternativeUrls).to.include('https://bulk.com/de/home');
     expect(messageArg.data.alternativeUrls).to.include('https://bulk.com/about');
+    // Verify siteBaseURL is included for URL normalization
+    expect(messageArg.data.siteBaseURL).to.equal('https://www.example.com');
   }).timeout(5000);
 
   it('should skip sending to Mystique when alternativeUrls is empty', async () => {
