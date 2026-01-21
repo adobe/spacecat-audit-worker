@@ -253,11 +253,9 @@ describe('Broken internal links audit', () => {
 
     const result = await prepareScrapingStep(context);
     expect(result).to.deep.equal({
+      urls: topPages.map((page) => ({ url: page.getUrl() })),
       siteId: site.getId(),
       type: 'broken-internal-links',
-      urls: topPages.map((page) => ({ url: page.getUrl() })),
-      allowCache: false,
-      maxScrapeAge: 0,
     });
   }).timeout(10000);
 

@@ -446,16 +446,17 @@ export async function submitForScraping(context) {
     log.warn(`[${AUDIT_TYPE}] Audit will proceed with RUM-only detection`);
   }
 
-  log.info(`[${AUDIT_TYPE}] Submitting ${uniqueResolvedUrls.length} URLs for scraping`);
-  log.info(`[${AUDIT_TYPE}] =======================================`);
-
-  return {
+  const scrapingPayload = {
     urls: uniqueResolvedUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'broken-internal-links',
-    allowCache: false,
-    maxScrapeAge: 0,
   };
+
+  log.info(`[${AUDIT_TYPE}] Submitting ${uniqueResolvedUrls.length} URLs for scraping`);
+  log.info(`[${AUDIT_TYPE}] Scraping job details: siteId=${site.getId()}, type=${scrapingPayload.type}, urlCount=${uniqueResolvedUrls.length}`);
+  log.info(`[${AUDIT_TYPE}] =======================================`);
+
+  return scrapingPayload;
 }
 
 export const opportunityAndSuggestionsStep = async (context) => {
