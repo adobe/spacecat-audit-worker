@@ -36,6 +36,7 @@ const LOG_PREFIX = 'Prerender -';
 
 const IS_DOMAIN_WIDE_FIELD = 'isDomainWide';
 const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
+<<<<<<< HEAD
 
 function isDomainWideSuggestionData(data) {
   if (!data) {
@@ -52,6 +53,8 @@ function isDomainWideSuggestionData(data) {
   }
   return false;
 }
+=======
+>>>>>>> 4f291c74 (Optimization: creating domain wide suggestion only if required)
 
 async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIMIT) {
   const { dataAccess, log, site } = context;
@@ -759,6 +762,7 @@ async function determineDomainWideSuggestionAction(
 
   let shouldCreateNewDomainWideSuggestion = true;
   let existingDomainWideSuggestionData = null;
+  let isOutdated = false;
 
   if (allDomainWideSuggestions.length > 0) {
     // Find the first active domain-wide suggestion (if any)
@@ -839,20 +843,17 @@ export async function processOpportunityAndSuggestions(
     auditData, // Pass auditData as props so createOpportunityData receives it
   );
 
-  // Prepare domain-wide suggestion data first
-  const domainWideSuggestion = await prepareDomainWideAggregateSuggestion(
-    preRenderSuggestions,
-    auditUrl,
-    context,
-  );
-
   // Build key function that handles both individual and domain-wide suggestions
   const buildKey = (data) => {
     if (data.key) {
       return data.key;
     }
 
+<<<<<<< HEAD
     if (isDomainWideSuggestionData(data)) {
+=======
+    if (data?.[IS_DOMAIN_WIDE_FIELD] === true) {
+>>>>>>> 4f291c74 (Optimization: creating domain wide suggestion only if required)
       return DOMAIN_WIDE_SUGGESTION_KEY;
     }
     // Individual suggestions use URL-based key
@@ -892,10 +893,15 @@ export async function processOpportunityAndSuggestions(
   const allSuggestions = [...preRenderSuggestions];
   if (!shouldCreateNewDomainWideSuggestion && existingDomainWideSuggestionData) {
     allSuggestions.push({
-      key: domainWideSuggestion.key,
+      key: DOMAIN_WIDE_SUGGESTION_KEY,
       data: existingDomainWideSuggestionData,
     });
   } else {
+    const domainWideSuggestion = await prepareDomainWideAggregateSuggestion(
+      preRenderSuggestions,
+      auditUrl,
+      context,
+    );
     allSuggestions.push(domainWideSuggestion);
   }
 
