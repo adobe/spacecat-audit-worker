@@ -41,6 +41,12 @@ Resources:
           CONTENTAI_CLIENT_SECRET: !Ref CONTENTAI_CLIENT_SECRET
           CONTENTAI_CLIENT_SCOPE: !Ref CONTENTAI_CLIENT_SCOPE
           CONTENTAI_ENDPOINT: !Ref CONTENTAI_ENDPOINT
+          S3_CONFIG_BUCKET: !Ref S3_CONFIG_BUCKET
+          AZURE_OPENAI_ENDPOINT: !Ref AZURE_OPENAI_ENDPOINT
+          AZURE_OPENAI_KEY: !Ref AZURE_OPENAI_KEY
+          AZURE_API_VERSION: !Ref AZURE_API_VERSION
+          AZURE_COMPLETION_DEPLOYMENT: !Ref AZURE_COMPLETION_DEPLOYMENT
+          S3_MYSTIQUE_BUCKET_NAME: !Ref S3_MYSTIQUE_BUCKET_NAME
       Role: arn:aws:iam::682033462621:role/spacecat-role-lambda-generic
       Events:
         ApiEvent:
@@ -141,3 +147,21 @@ Parameters:
   CONTENTAI_ENDPOINT:
     Type: String
     Description: ContentAI Endpoint
+  S3_CONFIG_BUCKET:
+    Type: String
+    Description: S3 Config Bucket Name
+  AZURE_OPENAI_ENDPOINT:
+    Type: String
+    Description: Azure OpenAI Endpoint
+  AZURE_OPENAI_KEY:
+    Type: String
+    Description: Azure OpenAI API Key
+  AZURE_API_VERSION:
+    Type: String
+    Description: Azure API Version
+  AZURE_COMPLETION_DEPLOYMENT:
+    Type: String
+    Description: Azure Completion Deployment Name
+  S3_MYSTIQUE_BUCKET_NAME:
+    Type: String
+    Description: S3 Mystique Bucket Name
