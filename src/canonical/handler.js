@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { composeBaseURL, tracingFetch as fetch, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { composeBaseURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
 import { load as cheerioLoad } from 'cheerio';
@@ -22,7 +22,6 @@ import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-acce
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { CANONICAL_CHECKS } from './constants.js';
-import { limitConcurrencyAllSettled } from '../support/utils.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 
 /**
@@ -33,40 +32,8 @@ const auditType = Audit.AUDIT_TYPES.CANONICAL;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 /**
- * Retrieves the top pages for a given site.
- *
- * @param dataAccess
- * @param {string} siteId - The page of the site to retrieve the top pages for.
- * @param {Object} context - The context object containing necessary information.
- * @param log
- * @param {Object} context.log - The logging object to log information.
- * @returns {Promise<Array<Object>>} A promise that resolves to an array of top pages.
- */
-export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
-  try {
-    const { SiteTopPage } = dataAccess;
-    const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-    log.info('Received top pages response:', JSON.stringify(result, null, 2));
-
-    const topPages = result || [];
-    if (topPages.length > 0) {
-      const topPagesUrls = topPages.map((page) => ({ url: page.getUrl() }));
-      log.info(`Found ${topPagesUrls.length} top pages`);
-      return topPagesUrls;
-    } else {
-      log.info('No top pages found');
-      return [];
-    }
-  } catch (error) {
-    log.error(`Error retrieving top pages for site ${siteId}: ${error.message}`);
-    throw error;
-  }
-}
-
-/**
  * Step 1: Import top pages (used in multi-step audit)
  */
-/* c8 ignore start */
 export async function importTopPages(context) {
   const { site, finalUrl, log } = context;
   const siteId = site.getId();
@@ -82,37 +49,28 @@ export async function importTopPages(context) {
     fullAuditRef: s3BucketPath,
   };
 }
-/* c8 ignore stop */
 
 /**
  * Step 2: Submit pages for scraping with JavaScript rendering
  */
-/* c8 ignore start */
 export async function submitForScraping(context) {
   const {
     site, log, finalUrl, dataAccess,
   } = context;
   const siteId = site.getId();
+  const { SiteTopPage } = dataAccess;
 
   log.info('CANONICAL[20012026] - submitForScraping');
   log.info(`Start submitForScraping step for: ${siteId}`);
 
-  const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-
-  if (!isNonEmptyArray(topPages)) {
-    log.info(`No top pages found for site ${siteId}, skipping scraping`);
-    return {
-      auditResult: {
-        status: 'NO_OPPORTUNITIES',
-        message: 'No top pages found, skipping audit',
-      },
-      fullAuditRef: finalUrl,
-    };
-  }
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
   log.info(`Found ${topPagesUrls.length} top pages for scraping`);
+
+  if (topPagesUrls.length === 0) {
+    throw new Error(`No top pages URLs found for site  ${site.getId()}`);
+  }
 
   // Filter out auth pages and PDFs
   const shouldSkipAuthPage = (u) => {
@@ -151,6 +109,7 @@ export async function submitForScraping(context) {
     return true;
   });
 
+  log.info('CANONICAL[20012026] - finish submitForScraping');
   log.info(`Finish submitForScraping step for: ${siteId}`);
 
   return {
@@ -161,15 +120,14 @@ export async function submitForScraping(context) {
     // Data for the CONTENT_SCRAPER
     urls: filteredUrls.map((url) => ({ url })),
     siteId,
-    type: 'default',
+    processingType: 'default',
     allowCache: false,
     maxScrapeAge: 0,
     options: {
-      waitTimeoutForMetaTags: 5000, // Wait for JavaScript to execute
+      waitTimeoutForMetaTags: 5000,
     },
   };
 }
-/* c8 ignore stop */
 
 /**
  * Validates the canonical tag from HTML content
@@ -781,248 +739,259 @@ export async function processScrapedContent(context) {
 }
 /* c8 ignore stop */
 
-/**
- * Audits the canonical URLs for a given site (legacy single-step function).
- *
- * @param {string} baseURL -- not sure if baseURL like in apex or siteId as we see in logs
- * @param {Object} context - The context object containing necessary information.
- * @param {Object} context.log - The logging object to log information.
- * @param {Object} site
- * @returns {Promise<Object>} An object containing the audit results.
- */
-export async function canonicalAuditRunner(baseURL, context, site) {
-  const MAX_CONCURRENT_FETCH_CALLS = 10;
-  const siteId = site.getId();
-  const { log, dataAccess } = context;
+// /**
+//  * Audits the canonical URLs for a given site (legacy single-step function).
+//  *
+//  * @param {string} baseURL -- not sure if baseURL like in apex or siteId as we see in logs
+//  * @param {Object} context - The context object containing necessary information.
+//  * @param {Object} context.log - The logging object to log information.
+//  * @param {Object} site
+//  * @returns {Promise<Object>} An object containing the audit results.
+//  */
+// export async function canonicalAuditRunner(baseURL, context, site) {
+//   const MAX_CONCURRENT_FETCH_CALLS = 10;
+//   const siteId = site.getId();
+//   const { log, dataAccess } = context;
 
-  log.info('CANONICAL[20012026] - canonicalAuditRunner (OLD SINGLE-STEP)');
-  log.info(`Starting Canonical Audit with siteId: ${JSON.stringify(siteId)}`);
+//   log.info('CANONICAL[20012026] - canonicalAuditRunner (OLD SINGLE-STEP)');
+//   log.info(`Starting Canonical Audit with siteId: ${JSON.stringify(siteId)}`);
 
-  try {
-    const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-    log.info(`Top pages for baseURL ${baseURL}: ${JSON.stringify(topPages)}`);
+//   try {
+//     const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
+//     log.info(`Top pages for baseURL ${baseURL}: ${JSON.stringify(topPages)}`);
 
-    if (topPages.length === 0) {
-      log.info('No top pages found, ending audit.');
+//     if (topPages.length === 0) {
+//       log.info('No top pages found, ending audit.');
 
-      return {
-        fullAuditRef: baseURL,
-        auditResult: {
-          check: CANONICAL_CHECKS.TOPPAGES.check,
-          success: false,
-          explanation: CANONICAL_CHECKS.TOPPAGES.explanation,
-        },
-      };
-    }
+//       return {
+//         fullAuditRef: baseURL,
+//         auditResult: {
+//           check: CANONICAL_CHECKS.TOPPAGES.check,
+//           success: false,
+//           explanation: CANONICAL_CHECKS.TOPPAGES.explanation,
+//         },
+//       };
+//     }
 
-    /**
-     * @type {RequestOptions}
-     */
-    const options = {};
-    if (isPreviewPage(baseURL)) {
-      try {
-        log.info(`Retrieving page authentication for pageUrl ${baseURL}`);
-        const token = await retrievePageAuthentication(site, context);
-        options.headers = {
-          Authorization: `token ${token}`,
-        };
-      } catch (error) {
-        log.error(`Error retrieving page authentication for pageUrl ${baseURL}: ${error.message}`);
-      }
-    }
+//     /**
+//      * @type {RequestOptions}
+//      */
+//     const options = {};
+//     if (isPreviewPage(baseURL)) {
+//       try {
+//         log.info(`Retrieving page authentication for pageUrl ${baseURL}`);
+//         const token = await retrievePageAuthentication(site, context);
+//         options.headers = {
+//           Authorization: `token ${token}`,
+//         };
+//       } catch (error) {
+//         log.error(
+//           `Error retrieving page authentication for pageUrl ${baseURL}: ${error.message}`,
+//         );
+//       }
+//     }
 
-    // Exclude login/authentication-related pages from canonical checks
-    const shouldSkipAuthPage = (u) => {
-      try {
-        const pathname = new URL(u).pathname.toLowerCase();
-        return pathname.includes('/login')
-          || pathname.includes('/signin')
-          || pathname.includes('/authenticate')
-          || pathname.includes('/oauth')
-          || pathname.includes('/sso')
-          || pathname === '/auth'
-          || pathname.startsWith('/auth/');
-      } catch {
-        // If URL is malformed, don't skip it (return false)
-        return false;
-      }
-    };
+//     // Exclude login/authentication-related pages from canonical checks
+//     const shouldSkipAuthPage = (u) => {
+//       try {
+//         const pathname = new URL(u).pathname.toLowerCase();
+//         return pathname.includes('/login')
+//           || pathname.includes('/signin')
+//           || pathname.includes('/authenticate')
+//           || pathname.includes('/oauth')
+//           || pathname.includes('/sso')
+//           || pathname === '/auth'
+//           || pathname.startsWith('/auth/');
+//       } catch {
+//         // If URL is malformed, don't skip it (return false)
+//         return false;
+//       }
+//     };
 
-    // Exclude PDF files from canonical checks
-    const isPdfUrl = (u) => {
-      try {
-        const pathname = new URL(u).pathname.toLowerCase();
-        return pathname.endsWith('.pdf');
-      } catch {
-        return false;
-      }
-    };
+//     // Exclude PDF files from canonical checks
+//     const isPdfUrl = (u) => {
+//       try {
+//         const pathname = new URL(u).pathname.toLowerCase();
+//         return pathname.endsWith('.pdf');
+//       } catch {
+//         return false;
+//       }
+//     };
 
-    const filteredTopPages = topPages.filter(({ url }) => {
-      if (shouldSkipAuthPage(url)) {
-        log.info(`Skipping canonical checks for auth/login page: ${url}`);
-        return false;
-      }
-      if (isPdfUrl(url)) {
-        log.info(`Skipping canonical checks for PDF file: ${url}`);
-        return false;
-      }
-      return true;
-    });
+//     const filteredTopPages = topPages.filter(({ url }) => {
+//       if (shouldSkipAuthPage(url)) {
+//         log.info(`Skipping canonical checks for auth/login page: ${url}`);
+//         return false;
+//       }
+//       if (isPdfUrl(url)) {
+//         log.info(`Skipping canonical checks for PDF file: ${url}`);
+//         return false;
+//       }
+//       return true;
+//     });
 
-    // Check which pages return 200 status
-    log.info('Checking HTTP status for top pages...');
-    const statusCheckPromises = filteredTopPages.map(({ url }) => async () => {
-      try {
-        const response = await fetch(url, options);
-        const { status } = response;
-        const finalUrl = response.url;
+//     // Check which pages return 200 status
+//     log.info('Checking HTTP status for top pages...');
+//     const statusCheckPromises = filteredTopPages.map(({ url }) => async () => {
+//       try {
+//         const response = await fetch(url, options);
+//         const { status } = response;
+//         const finalUrl = response.url;
 
-        // Check if page redirected to an auth/login page
-        if (finalUrl !== url && shouldSkipAuthPage(finalUrl)) {
-          log.info(`Page ${url} redirected to auth page ${finalUrl}, skipping`);
-          return {
-            url, status, isOk: false,
-          };
-        }
+//         // Check if page redirected to an auth/login page
+//         if (finalUrl !== url && shouldSkipAuthPage(finalUrl)) {
+//           log.info(`Page ${url} redirected to auth page ${finalUrl}, skipping`);
+//           return {
+//             url, status, isOk: false,
+//           };
+//         }
 
-        log.info(`Page ${url} returned status: ${status}`);
-        return { url, status, isOk: status === 200 };
-      } catch (error) {
-        log.error(`Error fetching ${url}: ${error.message}`);
-        return { url, status: null, isOk: false };
-      }
-    });
+//         log.info(`Page ${url} returned status: ${status}`);
+//         return { url, status, isOk: status === 200 };
+//       } catch (error) {
+//         log.error(`Error fetching ${url}: ${error.message}`);
+//         return { url, status: null, isOk: false };
+//       }
+//     });
 
-    // Using AllSettled variant to continue processing other pages even if some fail
-    const statusCheckResults = await limitConcurrencyAllSettled(
-      statusCheckPromises,
-      MAX_CONCURRENT_FETCH_CALLS,
-    );
-    const pagesWithOkStatus = statusCheckResults.filter(({ isOk }) => isOk);
+//     // Using AllSettled variant to continue processing other pages even if some fail
+//     const statusCheckResults = await limitConcurrencyAllSettled(
+//       statusCheckPromises,
+//       MAX_CONCURRENT_FETCH_CALLS,
+//     );
+//     const pagesWithOkStatus = statusCheckResults.filter(({ isOk }) => isOk);
 
-    if (pagesWithOkStatus.length === 0) {
-      log.info('No pages returned 200 status, ending audit without creating opportunities.');
-      return {
-        fullAuditRef: baseURL,
-        auditResult: {
-          status: 'success',
-          message: 'No pages with 200 status found to analyze for canonical tags',
-        },
-      };
-    }
+//     if (pagesWithOkStatus.length === 0) {
+//       log.info('No pages returned 200 status, ending audit without creating opportunities.');
+//       return {
+//         fullAuditRef: baseURL,
+//         auditResult: {
+//           status: 'success',
+//           message: 'No pages with 200 status found to analyze for canonical tags',
+//         },
+//       };
+//     }
 
-    log.info(`Found ${pagesWithOkStatus.length} pages with 200 status out of ${filteredTopPages.length} filtered pages`);
+//     log.info(
+//       `Found ${pagesWithOkStatus.length} pages with 200 status out of `
+//       + `${filteredTopPages.length} filtered pages`,
+//     );
 
-    const auditPromises = pagesWithOkStatus.map(({ url }) => async () => {
-      const checks = [];
+//     const auditPromises = pagesWithOkStatus.map(({ url }) => async () => {
+//       const checks = [];
 
-      const {
-        canonicalUrl, checks: canonicalTagChecks,
-      } = await validateCanonicalTag(url, log, options);
-      checks.push(...canonicalTagChecks);
+//       const {
+//         canonicalUrl, checks: canonicalTagChecks,
+//       } = await validateCanonicalTag(url, log, options);
+//       checks.push(...canonicalTagChecks);
 
-      if (canonicalUrl) {
-        log.info(`Found Canonical URL: ${canonicalUrl}`);
+//       if (canonicalUrl) {
+//         log.info(`Found Canonical URL: ${canonicalUrl}`);
 
-        const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log);
-        checks.push(...urlFormatChecks);
+//         const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log);
+//         checks.push(...urlFormatChecks);
 
-        // self-reference check
-        const selfRefCheck = canonicalTagChecks.find(
-          (c) => c.check === CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-        );
-        const isSelfReferenced = selfRefCheck?.success === true;
+//         // self-reference check
+//         const selfRefCheck = canonicalTagChecks.find(
+//           (c) => c.check === CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+//         );
+//         const isSelfReferenced = selfRefCheck?.success === true;
 
-        // if self-referenced - skip accessibility
-        if (isSelfReferenced) {
-          checks.push({
-            check: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
-            success: true,
-          });
-          checks.push({
-            check: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
-            success: true,
-          });
-        } else {
-          // if not self-referenced  - validate accessibility
-          log.info(`Canonical URL points to different page, validating accessibility: ${canonicalUrl}`);
-          const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log, options);
-          checks.push(...urlContentCheck);
-        }
-      }
-      return { url, checks };
-    });
+//         // if self-referenced - skip accessibility
+//         if (isSelfReferenced) {
+//           checks.push({
+//             check: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
+//             success: true,
+//           });
+//           checks.push({
+//             check: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
+//             success: true,
+//           });
+//         } else {
+//           // if not self-referenced  - validate accessibility
+//           log.info(
+//             `Canonical URL points to different page, validating accessibility: ${canonicalUrl}`,
+//           );
+//           const urlContentCheck = await validateCanonicalRecursively(
+//             canonicalUrl,
+//             log,
+//             options,
+//           );
+//           checks.push(...urlContentCheck);
+//         }
+//       }
+//       return { url, checks };
+//     });
 
-    // Using AllSettled variant to continue processing other pages even if some fail
-    const auditResultsArray = await limitConcurrencyAllSettled(
-      auditPromises,
-      MAX_CONCURRENT_FETCH_CALLS,
-    );
-    const aggregatedResults = auditResultsArray.reduce((acc, result) => {
-      const { url, checks } = result;
-      checks.forEach((check) => {
-        const { check: checkType, success, explanation } = check;
+//     // Using AllSettled variant to continue processing other pages even if some fail
+//     const auditResultsArray = await limitConcurrencyAllSettled(
+//       auditPromises,
+//       MAX_CONCURRENT_FETCH_CALLS,
+//     );
+//     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
+//       const { url, checks } = result;
+//       checks.forEach((check) => {
+//         const { check: checkType, success, explanation } = check;
 
-        // only process failed checks
-        if (success === false) {
-          if (!acc[checkType]) {
-            acc[checkType] = {
-              explanation,
-              urls: [],
-            };
-          }
-          acc[checkType].urls.push(url);
-        }
-      });
-      return acc;
-    }, {});
+//         // only process failed checks
+//         if (success === false) {
+//           if (!acc[checkType]) {
+//             acc[checkType] = {
+//               explanation,
+//               urls: [],
+//             };
+//           }
+//           acc[checkType].urls.push(url);
+//         }
+//       });
+//       return acc;
+//     }, {});
 
-    const filteredAggregatedResults = Object.fromEntries(
-      Object.entries(aggregatedResults).filter(
-        ([checkType]) => checkType !== CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
-      ),
-    );
+//     const filteredAggregatedResults = Object.fromEntries(
+//       Object.entries(aggregatedResults).filter(
+//         ([checkType]) => checkType !== CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
+//       ),
+//     );
 
-    log.info(`Successfully completed Canonical Audit for site: ${baseURL}`);
+//     log.info(`Successfully completed Canonical Audit for site: ${baseURL}`);
 
-    // all checks are successful, no issues were found
-    if (Object.keys(filteredAggregatedResults).length === 0) {
-      return {
-        fullAuditRef: baseURL,
-        auditResult: {
-          status: 'success',
-          message: 'No canonical issues detected',
-        },
-      };
-    }
+//     // all checks are successful, no issues were found
+//     if (Object.keys(filteredAggregatedResults).length === 0) {
+//       return {
+//         fullAuditRef: baseURL,
+//         auditResult: {
+//           status: 'success',
+//           message: 'No canonical issues detected',
+//         },
+//       };
+//     }
 
-    // final results structure
-    const results = Object.entries(filteredAggregatedResults).map(([checkType, checkData]) => ({
-      type: checkType,
-      explanation: checkData.explanation,
-      affectedUrls: checkData.urls.map((url) => ({
-        url,
-        suggestion: generateCanonicalSuggestion(checkType),
-      })),
-    }));
+//     // final results structure
+//     const results = Object.entries(filteredAggregatedResults).map(([checkType, checkData]) => ({
+//       type: checkType,
+//       explanation: checkData.explanation,
+//       affectedUrls: checkData.urls.map((url) => ({
+//         url,
+//         suggestion: generateCanonicalSuggestion(checkType),
+//       })),
+//     }));
 
-    return {
-      fullAuditRef: baseURL,
-      auditResult: results,
-    };
-  } catch (error) {
-    log.info(`Canonical audit failed for site ${siteId}: ${error.message}`);
+//     return {
+//       fullAuditRef: baseURL,
+//       auditResult: results,
+//     };
+//   } catch (error) {
+//     log.info(`Canonical audit failed for site ${siteId}: ${error.message}`);
 
-    return {
-      fullAuditRef: baseURL,
-      auditResult: {
-        error: `Audit failed with error: ${error.message}`,
-        success: false,
-      },
-    };
-  }
-}
+//     return {
+//       fullAuditRef: baseURL,
+//       auditResult: {
+//         error: `Audit failed with error: ${error.message}`,
+//         success: false,
+//       },
+//     };
+//   }
+// }
 
 /**
  * Generates suggestions based on canonical audit results.
