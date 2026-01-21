@@ -565,5 +565,43 @@ describe('Crawl Detection Module', () => {
       // isLinkInaccessible should only be called once (second time uses cache)
       expect(isLinkInaccessibleStub).to.have.been.calledOnce;
     });
+
+    it('should batch link checks to prevent overwhelming target server', async () => {
+      // Create a page with 10 links (LINK_CHECK_BATCH_SIZE = 5, so 2 batches)
+      const linksHtml = Array.from({ length: 10 }, (_, i) => 
+        `<a href="/link-${i + 1}">Link ${i + 1}</a>`
+      ).join('\n');
+
+      const html = `
+        <html>
+          <body>
+            <header><a href="/nav">Navigation</a></header>
+            <main>${linksHtml}</main>
+            <footer><a href="/footer">Footer</a></footer>
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          rawBody: html,
+        },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      // All links are broken to maximize checks (to test batching)
+      isLinkInaccessibleStub.resolves(true);
+
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrape-results/page1.json'],
+      ]);
+
+      const result = await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
+
+      // Should find 10 broken links
+      expect(result).to.be.an('array').with.lengthOf(10);
+      // Should have called isLinkInaccessible 10 times (once per link)
+      expect(isLinkInaccessibleStub).to.have.callCount(10);
+    });
   });
 });

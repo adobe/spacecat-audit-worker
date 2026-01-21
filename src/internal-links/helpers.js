@@ -94,8 +94,14 @@ export async function isLinkInaccessible(url, log) {
       return false;
     }
 
-    // If HEAD returns client error (4xx) or server error (5xx), verify with GET
-    if (status >= 400) {
+    // If HEAD confirms it's broken (404 or 5xx), no need to verify with GET
+    if (status === 404 || status >= 500) {
+      log.debug(`broken-internal-links audit: HEAD request confirmed broken (${status}) for ${url}`);
+      return true;
+    }
+
+    // For other client errors (401, 403, etc.), verify with GET as they might be false positives
+    if (status >= 400 && status < 500) {
       log.debug(`broken-internal-links audit: HEAD request returned ${status} for ${url}, verifying with GET`);
     }
   } catch (headError) {

@@ -13,7 +13,7 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
   from '@adobe/spacecat-shared-data-access';
-import { isNonEmptyArray, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { isUnscrapeable } from '../utils/url-utils.js';
@@ -33,8 +33,6 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 const MAX_URLS_TO_PROCESS = 500;
 const MAX_ALTERNATIVE_URLS = 100;
 const MAX_BROKEN_LINKS = 100;
-const REDIRECT_BATCH_SIZE = 5; // Process 5 redirects at a time to prevent server overload
-const REDIRECT_BATCH_DELAY_MS = 100; // 100ms delay between batches
 
 /**
  * Updates the audit result with prioritized broken internal links.
@@ -272,179 +270,10 @@ export async function submitForScraping(context) {
     };
   }
 
-  // Resolve redirects before submitting for scraping
-  // Use HEAD requests for efficiency - lighter than GET, sufficient for redirect resolution
-  log.info(`[${AUDIT_TYPE}] Resolving redirects for ${finalUrls.length} URLs...`);
-  const redirectResolutionStart = Date.now();
-
-  const MAX_REDIRECTS = 10; // Explicit limit to prevent infinite redirect loops
-  const REDIRECT_TIMEOUT = 5000; // 5 seconds per request (HEAD is fast)
-
-  /**
-   * Resolve redirects for a single URL using HEAD requests
-   * Falls back to GET if HEAD fails (some servers don't support HEAD)
-   */
-  const resolveRedirect = async (url) => {
-    // Validate URL format
-    try {
-      const parsedUrl = new URL(url);
-      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-        return { url, error: `Unsupported protocol: ${parsedUrl.protocol}` };
-      }
-    } catch (urlError) {
-      return { url, error: `Invalid URL: ${urlError.message}` };
-    }
-
-    let currentUrl = url;
-    let redirectCount = 0;
-    const visitedUrls = new Set([url]); // Track visited URLs for circular redirect detection
-
-    while (redirectCount < MAX_REDIRECTS) {
-      try {
-        // Try HEAD first (faster, lighter on server)
-        // eslint-disable-next-line no-await-in-loop
-        const response = await fetch(currentUrl, {
-          method: 'HEAD',
-          redirect: 'manual', // Don't auto-follow, we control the loop
-          timeout: REDIRECT_TIMEOUT,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0',
-          },
-        });
-
-        const { status } = response;
-
-        // Success - no more redirects
-        if (status >= 200 && status < 300) {
-          if (currentUrl !== url) {
-            log.debug(`[${AUDIT_TYPE}] Redirect resolved: ${url} -> ${currentUrl} (${redirectCount} hops)`);
-          }
-          return { url, resolvedUrl: currentUrl, redirectCount };
-        }
-
-        // Redirect - follow it
-        if (status >= 300 && status < 400) {
-          const location = response.headers.get('location');
-          if (!location) {
-            return { url, error: `Redirect ${status} without Location header` };
-          }
-
-          // Resolve relative redirects
-          const nextUrl = new URL(location, currentUrl).toString();
-
-          // Check for circular redirects
-          if (visitedUrls.has(nextUrl)) {
-            return { url, error: `Circular redirect detected: ${nextUrl}` };
-          }
-
-          // Check for protocol downgrade (HTTPS -> HTTP) - security concern
-          const currentParsed = new URL(currentUrl);
-          const nextParsed = new URL(nextUrl);
-          if (currentParsed.protocol === 'https:' && nextParsed.protocol === 'http:') {
-            log.warn(`[${AUDIT_TYPE}] Protocol downgrade detected: ${currentUrl} -> ${nextUrl}`);
-          }
-
-          visitedUrls.add(nextUrl);
-          currentUrl = nextUrl;
-          redirectCount += 1;
-          // Continue loop to follow redirect
-        } else {
-          // Client or server error
-          return { url, error: `HTTP ${status}`, status };
-        }
-      } catch (error) {
-        // HEAD failed, try GET as fallback (some servers don't support HEAD)
-        if (error.message?.includes('HEAD')) {
-          try {
-            // eslint-disable-next-line no-await-in-loop
-            const getResponse = await fetch(currentUrl, {
-              method: 'GET',
-              redirect: 'follow', // Let fetch handle remaining redirects
-              timeout: REDIRECT_TIMEOUT * 2, // GET might take longer
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0',
-              },
-            });
-
-            if (getResponse.ok) {
-              const finalUrl = getResponse.url;
-              if (finalUrl !== url) {
-                log.debug(`[${AUDIT_TYPE}] Redirect resolved (GET fallback): ${url} -> ${finalUrl}`);
-              }
-              return { url, resolvedUrl: finalUrl, redirectCount: -1 }; // -1 indicates GET fallback
-            }
-            return { url, error: `HTTP ${getResponse.status}`, status: getResponse.status };
-          } catch (getError) {
-            const errorMessage = getError.code === 'ETIMEOUT'
-              ? 'Request timed out'
-              : getError.message;
-            return { url, error: errorMessage };
-          }
-        }
-
-        const errorMessage = error.code === 'ETIMEOUT'
-          ? 'Request timed out'
-          : error.message;
-        return { url, error: errorMessage };
-      }
-    }
-
-    // Exceeded max redirects
-    return { url, error: `Too many redirects (>${MAX_REDIRECTS})` };
-  };
-
-  // Process URLs in batches with delays to prevent overwhelming target servers
-  const results = [];
-  for (let i = 0; i < finalUrls.length; i += REDIRECT_BATCH_SIZE) {
-    const batch = finalUrls.slice(i, i + REDIRECT_BATCH_SIZE);
-    // eslint-disable-next-line no-await-in-loop
-    const batchResults = await Promise.all(batch.map(resolveRedirect));
-    results.push(...batchResults);
-
-    // Add delay between batches to prevent server overload
-    if (i + REDIRECT_BATCH_SIZE < finalUrls.length) {
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => {
-        setTimeout(resolve, REDIRECT_BATCH_DELAY_MS);
-      });
-    }
-  }
-
-  // Separate successful resolutions from errors
-  const resolvedUrls = [];
-  const redirectErrors = [];
-
-  results.forEach((result) => {
-    if (result.resolvedUrl) {
-      // Validate resolved URL is still within audit scope (cross-domain redirect check)
-      if (isWithinAuditScope(result.resolvedUrl, baseURL)) {
-        resolvedUrls.push(result.resolvedUrl);
-      } else {
-        log.warn(`[${AUDIT_TYPE}] Cross-domain redirect filtered: ${result.url} -> ${result.resolvedUrl}`);
-        redirectErrors.push({ url: result.url, error: 'Redirected outside audit scope' });
-      }
-    } else {
-      log.warn(`[${AUDIT_TYPE}] Failed to resolve: ${result.url} - ${result.error}`);
-      redirectErrors.push(result);
-    }
-  });
-
-  const redirectResolutionDuration = Date.now() - redirectResolutionStart;
-  log.info(`[${AUDIT_TYPE}] Redirect resolution completed in ${redirectResolutionDuration}ms`);
-  log.info(`[${AUDIT_TYPE}] Resolved ${resolvedUrls.length} URLs, ${redirectErrors.length} errors`);
-
-  // Remove duplicates after redirect resolution (multiple URLs may resolve to same final URL)
-  const uniqueResolvedUrls = [...new Set(resolvedUrls)];
-  const finalDuplicatesRemoved = resolvedUrls.length - uniqueResolvedUrls.length;
-
-  if (finalDuplicatesRemoved > 0) {
-    log.info(`[${AUDIT_TYPE}] Removed ${finalDuplicatesRemoved} duplicates after redirect resolution`);
-  }
-
-  if (uniqueResolvedUrls.length === 0) {
-    log.warn(`[${AUDIT_TYPE}] No URLs available after redirect resolution`);
-    log.warn(`[${AUDIT_TYPE}] Audit will proceed with RUM-only detection`);
-  }
+  // Skip redirect resolution to avoid delays and timeouts
+  // Assume Ahrefs top pages and configured URLs are already valid
+  log.info(`[${AUDIT_TYPE}] Skipping redirect resolution (assuming ${finalUrls.length} URLs are valid)`);
+  const uniqueResolvedUrls = finalUrls;
 
   const scrapingPayload = {
     urls: uniqueResolvedUrls.map((url) => ({ url })),

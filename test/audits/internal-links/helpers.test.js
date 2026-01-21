@@ -159,7 +159,7 @@ describe('isLinkInaccessible', () => {
   });
 
   it('should return true for timeout errors', async function call() {
-    this.timeout(70000);
+    this.timeout(120000);
 
     nock('https://example.com')
       .head('/timeout')

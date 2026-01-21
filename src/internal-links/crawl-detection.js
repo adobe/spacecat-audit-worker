@@ -17,6 +17,8 @@ import { isWithinAuditScope } from './subpath-filter.js';
 
 // Delay between fetching scrape results to prevent overwhelming target systems
 const SCRAPE_FETCH_DELAY_MS = 100; // 100ms delay between S3 fetches
+const LINK_CHECK_BATCH_SIZE = 5; // Check 5 links at a time per page
+const LINK_CHECK_DELAY_MS = 200; // 200ms delay between link check batches
 
 /**
  * Sleep utility to add delays between operations
@@ -48,6 +50,8 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
   const workingUrlsCache = new Set();
   let pagesProcessed = 0;
   let pagesSkipped = 0;
+  let totalLinksAnalyzed = 0;
+  let linksCheckedViaAPI = 0;
 
   for (const [url, s3Key] of scrapeResultPaths) {
     try {
@@ -96,35 +100,54 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
         }
       });
 
-      // Validate links
+      // Validate links in batches to prevent overwhelming target server
+      const validations = [];
       // eslint-disable-next-line no-await-in-loop
-      const validations = await Promise.all(
-        internalLinks.map(async (link) => {
-          if (!isWithinAuditScope(link.url, baseURL)) return null;
-          if (brokenUrlsCache.has(link.url)) {
-            return {
-              urlFrom: pageUrl,
-              urlTo: link.url,
-              anchorText: link.anchorText,
-              trafficDomain: 0,
-            };
-          }
-          if (workingUrlsCache.has(link.url)) return null;
+      for (let i = 0; i < internalLinks.length; i += LINK_CHECK_BATCH_SIZE) {
+        const batch = internalLinks.slice(i, i + LINK_CHECK_BATCH_SIZE);
 
-          const isBroken = await isLinkInaccessible(link.url, log);
-          if (isBroken) {
-            brokenUrlsCache.add(link.url);
-            return {
-              urlFrom: pageUrl,
-              urlTo: link.url,
-              anchorText: link.anchorText,
-              trafficDomain: 0,
-            };
-          }
-          workingUrlsCache.add(link.url);
-          return null;
-        }),
-      );
+        // eslint-disable-next-line no-await-in-loop
+        const batchResults = await Promise.all(
+          batch.map(async (link) => {
+            if (!isWithinAuditScope(link.url, baseURL)) return null;
+
+            if (brokenUrlsCache.has(link.url)) {
+              return {
+                urlFrom: pageUrl,
+                urlTo: link.url,
+                anchorText: link.anchorText,
+                trafficDomain: 0,
+              };
+            }
+            if (workingUrlsCache.has(link.url)) return null;
+
+            const isBroken = await isLinkInaccessible(link.url, log);
+            if (isBroken) {
+              brokenUrlsCache.add(link.url);
+              return {
+                urlFrom: pageUrl,
+                urlTo: link.url,
+                anchorText: link.anchorText,
+                trafficDomain: 0,
+              };
+            }
+            workingUrlsCache.add(link.url);
+            return null;
+          }),
+        );
+
+        // Track stats after batch completes
+        totalLinksAnalyzed += batch.filter((link) => isWithinAuditScope(link.url, baseURL)).length;
+        linksCheckedViaAPI += batchResults.filter(Boolean).length;
+
+        validations.push(...batchResults);
+
+        // Add delay between batches to prevent server overload
+        if (i + LINK_CHECK_BATCH_SIZE < internalLinks.length) {
+          // eslint-disable-next-line no-await-in-loop
+          await sleep(LINK_CHECK_DELAY_MS);
+        }
+      }
 
       validations.filter(Boolean).forEach((link) => {
         const key = `${link.urlFrom}|${link.urlTo}`;
@@ -143,8 +166,18 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
   }
 
   const result = Array.from(brokenLinksMap.values());
-  log.info(`[broken-internal-links-crawl] Processed ${pagesProcessed} pages, skipped ${pagesSkipped}`);
-  log.info(`[broken-internal-links-crawl] Found ${result.length} broken links from crawl`);
+
+  // Summary logging
+  log.info('[broken-internal-links-crawl] ========== CRAWL DETECTION SUMMARY ==========');
+  log.info(`[broken-internal-links-crawl] Pages processed: ${pagesProcessed}, skipped: ${pagesSkipped}`);
+  log.info(`[broken-internal-links-crawl] Total internal links analyzed: ${totalLinksAnalyzed}`);
+  log.info(`[broken-internal-links-crawl] Links checked via API: ${linksCheckedViaAPI}`);
+  log.info(`[broken-internal-links-crawl] Links skipped (cached): ${totalLinksAnalyzed - linksCheckedViaAPI}`);
+  log.info(`[broken-internal-links-crawl] Unique broken URLs found: ${brokenUrlsCache.size}`);
+  log.info(`[broken-internal-links-crawl] Unique working URLs found: ${workingUrlsCache.size}`);
+  log.info(`[broken-internal-links-crawl] Total broken link instances: ${result.length}`);
+  log.info('[broken-internal-links-crawl] =============================================');
+
   return result;
 }
 
