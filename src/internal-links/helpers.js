@@ -11,9 +11,10 @@
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
-// Reduced timeout to prevent Lambda timeout (5 seconds)
+// Reduced timeout to prevent Lambda timeout (2 seconds)
 // AWS Lambda has 15-minute limit; with 189 pages and 50+ links/page, we need fast timeouts
-const LINK_TIMEOUT = 5000;
+// Most valid pages respond in <500ms; 2s is enough to catch real issues
+const LINK_TIMEOUT = 2000;
 export const CPC_DEFAULT_VALUE = 1;
 export const TRAFFIC_MULTIPLIER = 0.01; // 1%
 export const MAX_LINKS_TO_CONSIDER = 10;

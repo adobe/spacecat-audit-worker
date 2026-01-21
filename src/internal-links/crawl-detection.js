@@ -15,10 +15,10 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import { isLinkInaccessible } from './helpers.js';
 import { isWithinAuditScope } from './subpath-filter.js';
 
-// Optimized delays to prevent Lambda timeout (15 min limit)
-const SCRAPE_FETCH_DELAY_MS = 10; // 10ms delay between S3 fetches (reduced from 20ms)
-const LINK_CHECK_BATCH_SIZE = 10; // Check 10 links at a time per page (increased from 5)
-const LINK_CHECK_DELAY_MS = 10; // 10ms delay between link check batches (reduced from 20ms)
+// Aggressive optimizations for maximum speed
+const SCRAPE_FETCH_DELAY_MS = 30; // No delay between S3 fetches (S3 is fast)
+const LINK_CHECK_BATCH_SIZE = 20; // Check 20 links at a time (4x original)
+const LINK_CHECK_DELAY_MS = 30; // No delay between batches (let system handle throttling)
 
 /**
  * Sleep utility to add delays between operations
@@ -43,7 +43,10 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
   const baseURL = site.getBaseURL();
   const baseHostname = new URL(baseURL).hostname.replace(/^www\./, '');
 
-  log.info(`[broken-internal-links-crawl] Processing ${scrapeResultPaths.size} scraped pages`);
+  const startTime = Date.now();
+  const formatElapsed = () => `[${((Date.now() - startTime) / 1000).toFixed(1)}s]`;
+
+  log.info(`[broken-internal-links-crawl] ${formatElapsed()} Processing ${scrapeResultPaths.size} scraped pages`);
 
   const brokenLinksMap = new Map();
   const brokenUrlsCache = new Set();
@@ -51,15 +54,17 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
   const allValidationResults = []; // Collect all results for final stats
   let pagesProcessed = 0;
   let pagesSkipped = 0;
-  const startTime = Date.now();
 
-  log.info(`[broken-internal-links-crawl] Starting crawl detection for ${scrapeResultPaths.size} pages`);
+  log.info(`[broken-internal-links-crawl] ${formatElapsed()} Starting crawl detection for ${scrapeResultPaths.size} pages`);
 
   for (const [url, s3Key] of scrapeResultPaths) {
     try {
       pagesProcessed += 1;
 
-      log.info(`[broken-internal-links-crawl] Progress: ${pagesProcessed}/${scrapeResultPaths.size} pages`);
+      // Log progress every 2 pages with timestamp
+      if (pagesProcessed % 2 === 1) {
+        log.info(`[broken-internal-links-crawl] ${formatElapsed()} Progress: ${pagesProcessed}/${scrapeResultPaths.size} pages`);
+      }
 
       // eslint-disable-next-line no-await-in-loop
       const s3Object = await getObjectFromKey(s3Client, bucketName, s3Key, log);
@@ -110,7 +115,7 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
       const validations = [];
       const totalBatches = Math.ceil(internalLinks.length / LINK_CHECK_BATCH_SIZE);
       if (internalLinks.length > 0) {
-        log.debug(`[broken-internal-links-crawl] Checking ${internalLinks.length} links in ${totalBatches} batches of ${LINK_CHECK_BATCH_SIZE}`);
+        log.debug(`[broken-internal-links-crawl] ${formatElapsed()} Checking ${internalLinks.length} links in ${totalBatches} batches of ${LINK_CHECK_BATCH_SIZE}`);
       }
 
       // eslint-disable-next-line no-await-in-loop
@@ -173,8 +178,6 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
         const key = `${link.urlFrom}|${link.urlTo}`;
         if (!brokenLinksMap.has(key)) brokenLinksMap.set(key, link);
       });
-
-      pagesProcessed += 1;
     } catch (error) {
       log.error(`[broken-internal-links-crawl] Error processing ${url}: ${error.message}`);
       pagesSkipped += 1;
@@ -206,17 +209,17 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
   const avgTimePerPage = pagesProcessed > 0 ? (totalTime / pagesProcessed).toFixed(2) : 0;
   const avgLinksPerPage = pagesProcessed > 0 ? (totalLinksAnalyzed / pagesProcessed).toFixed(1) : 0;
 
-  log.info('[broken-internal-links-crawl] ========== CRAWL DETECTION SUMMARY ==========');
-  log.info(`[broken-internal-links-crawl] Time: ${totalTime}s total (${avgTimePerPage}s per page)`);
-  log.info(`[broken-internal-links-crawl] Pages: ${pagesProcessed} processed, ${pagesSkipped} skipped`);
-  log.info(`[broken-internal-links-crawl] Links: ${totalLinksAnalyzed} total analyzed (avg ${avgLinksPerPage} per page)`);
-  log.info(`[broken-internal-links-crawl] API Calls: ${linksCheckedViaAPI} (${apiCallRate}%)`);
-  log.info(`[broken-internal-links-crawl] Cache Hits: ${totalCacheHits} (${cacheHitRate}%) - ${cacheHitsBroken} broken, ${cacheHitsWorking} working`);
-  log.info(`[broken-internal-links-crawl] Cache Sizes: ${brokenUrlsCache.size} broken URLs, ${workingUrlsCache.size} working URLs cached`);
-  log.info(`[broken-internal-links-crawl] Results: ${brokenUrlsCache.size} unique broken URLs, ${result.length} total instances`);
-  log.info(`[broken-internal-links-crawl] Efficiency: Avoided ${totalCacheHits} duplicate checks (${totalLinksAnalyzed > 0 ? ((totalCacheHits / totalLinksAnalyzed) * 100).toFixed(1) : 0}% savings)`);
-  log.info(`[broken-internal-links-crawl] Performance: Batch size ${LINK_CHECK_BATCH_SIZE}, delays ${LINK_CHECK_DELAY_MS}ms/${SCRAPE_FETCH_DELAY_MS}ms`);
-  log.info('[broken-internal-links-crawl] =============================================');
+  log.info(`[broken-internal-links-crawl] [${totalTime}s] ========== CRAWL DETECTION SUMMARY ==========`);
+  log.info(`[broken-internal-links-crawl] [${totalTime}s] Time: ${totalTime}s total (${avgTimePerPage}s per page)`);
+  log.info(`[broken-internal-links-crawl] [${totalTime}s] Pages: ${pagesProcessed} processed, ${pagesSkipped} skipped`);
+  log.info(`[broken-internal-links-crawl] [${totalTime}s] Links: ${totalLinksAnalyzed} total analyzed (avg ${avgLinksPerPage} per page)`);
+  log.info(`[broken-internal-links-crawl] [${totalTime}s] API Calls: ${linksCheckedViaAPI} (${apiCallRate}%)`);
+  log.info(`[broken-internal-links-crawl] [${totalTime}s] Cache Hits: ${totalCacheHits} (${cacheHitRate}%) - ${cacheHitsBroken} broken, ${cacheHitsWorking} working`);
+  log.info(`[broken-internal-links-crawl] [${totalTime}s] Cache Sizes: ${brokenUrlsCache.size} broken URLs, ${workingUrlsCache.size} working URLs cached`);
+  log.info(`[broken-internal-links-crawl] [${totalTime}s] Results: ${brokenUrlsCache.size} unique broken URLs, ${result.length} total instances`);
+  log.info(`[broken-internal-links-crawl] [${totalTime}s] Efficiency: Avoided ${totalCacheHits} duplicate checks (${totalLinksAnalyzed > 0 ? ((totalCacheHits / totalLinksAnalyzed) * 100).toFixed(1) : 0}% savings)`);
+  log.info(`[broken-internal-links-crawl] [${totalTime}s] Performance: Batch size ${LINK_CHECK_BATCH_SIZE}, delays ${LINK_CHECK_DELAY_MS}ms/${SCRAPE_FETCH_DELAY_MS}ms`);
+  log.info(`[broken-internal-links-crawl] [${totalTime}s] =============================================`);
 
   return result;
 }
