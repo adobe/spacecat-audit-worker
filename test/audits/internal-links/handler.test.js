@@ -63,8 +63,8 @@ const AUDIT_RESULT_DATA_WITH_SUGGESTIONS = [
     urlFrom: 'https://www.petplace.com/a02nf',
     priority: 'high',
     urlsSuggested: [
-      'https://example.com/suggestion1',
-      'https://example.com/suggestion12',
+      'https://petplace.com/suggestion1',
+      'https://petplace.com/suggestion12',
     ],
     aiRationale: 'Some Rationale',
   },
@@ -73,7 +73,7 @@ const AUDIT_RESULT_DATA_WITH_SUGGESTIONS = [
     urlTo: 'https://www.petplace.com/ax02',
     urlFrom: 'https://www.petplace.com/ax02nf',
     priority: 'medium',
-    urlsSuggested: ['https://example.com/suggestion2'],
+    urlsSuggested: ['https://petplace.com/suggestion2'],
     aiRationale: 'Some Rationale',
   },
   {
@@ -81,7 +81,7 @@ const AUDIT_RESULT_DATA_WITH_SUGGESTIONS = [
     urlTo: 'https://www.petplace.com/a01',
     urlFrom: 'https://www.petplace.com/a01nf',
     priority: 'low',
-    urlsSuggested: ['https://example.com/suggestion3'],
+    urlsSuggested: ['https://petplace.com/suggestion3'],
     aiRationale: 'Some Rationale',
   },
 ];
