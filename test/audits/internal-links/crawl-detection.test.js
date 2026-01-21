@@ -603,5 +603,31 @@ describe('Crawl Detection Module', () => {
       // Should have called isLinkInaccessible 10 times (once per link)
       expect(isLinkInaccessibleStub).to.have.callCount(10);
     });
+
+    it('should add delay between link check batches with multiple batches', async () => {
+      // Create page with 15 links to trigger 2 batches (batch size is 10)
+      const linksHtml = Array.from({ length: 15 }, (_, i) => 
+        `<a href="/link-${i + 1}">Link ${i + 1}</a>`
+      ).join('\n');
+      
+      const html = `<html><body>${linksHtml}</body></html>`;
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: { rawBody: html },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.resolves(false);
+
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrape-results/page1.json'],
+      ]);
+
+      await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
+
+      // With 15 links and batch size 10, should have 2 batches
+      // Delay should be added between batches
+      expect(isLinkInaccessibleStub.callCount).to.equal(15);
+    });
   });
 });

@@ -19,7 +19,6 @@ import { isWithinAuditScope } from './subpath-filter.js';
 const SCRAPE_FETCH_DELAY_MS = 10; // 10ms delay between S3 fetches (reduced from 20ms)
 const LINK_CHECK_BATCH_SIZE = 10; // Check 10 links at a time per page (increased from 5)
 const LINK_CHECK_DELAY_MS = 10; // 10ms delay between link check batches (reduced from 20ms)
-const PROGRESS_LOG_INTERVAL = 20; // Log progress every 20 pages
 
 /**
  * Sleep utility to add delays between operations
@@ -60,13 +59,7 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
     try {
       pagesProcessed += 1;
 
-      // Log progress periodically
-      if (pagesProcessed % PROGRESS_LOG_INTERVAL === 0) {
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        const avgTimePerPage = (elapsed / pagesProcessed).toFixed(2);
-        const estimatedTotal = ((avgTimePerPage * scrapeResultPaths.size) / 60).toFixed(1);
-        log.info(`[broken-internal-links-crawl] Progress: ${pagesProcessed}/${scrapeResultPaths.size} pages (${elapsed}s elapsed, ~${estimatedTotal}m total estimated)`);
-      }
+      log.info(`[broken-internal-links-crawl] Progress: ${pagesProcessed}/${scrapeResultPaths.size} pages`);
 
       // eslint-disable-next-line no-await-in-loop
       const s3Object = await getObjectFromKey(s3Client, bucketName, s3Key, log);
