@@ -662,9 +662,10 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
   } = context;
 
   const scrapeResultPaths = context.scrapeResultPaths || new Map();
+  const scrapeJobId = context.scrapeJobId || 'N/A';
 
   log.info(`[${AUDIT_TYPE}] ====== Crawl Detection Step ======`);
-  log.info(`[${AUDIT_TYPE}] Site: ${site.getId()}, scrapeResultPaths: ${scrapeResultPaths.size}`);
+  log.info(`[${AUDIT_TYPE}] Site: ${site.getId()}, scrapeJobId: ${scrapeJobId}, scrapeResultPaths: ${scrapeResultPaths.size}`);
 
   // Get RUM results from previous audit step
   const auditResult = audit.getAuditResult();
