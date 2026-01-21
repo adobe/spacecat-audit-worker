@@ -351,48 +351,77 @@ describe('SEO Validators', function () {
       expect(result.blockerType).to.be.null;
     });
 
-    it('should check Googlebot access', async () => {
+    it('should fail when Googlebot is blocked (non-cached)', async () => {
       mockTracingFetch.resolves({
         ok: true,
         text: () => Promise.resolve('User-agent: Googlebot\nDisallow: /'),
       });
 
-      const result = await seoValidators.validateRobotsTxt('https://example.com/page', log);
+      const result = await seoValidators.validateRobotsTxt('https://blocked-domain.com/page', log);
 
-      expect(result).to.have.property('passed');
-      expect(result).to.have.property('blockerType');
-      expect(result).to.have.property('details');
+      // robots-parser will actually parse this and block correctly
+      expect(result.passed).to.be.false;
+      expect(result.blockerType).to.equal('robots-txt-blocked');
+      expect(result.details.googlebot).to.be.false;
+      expect(result.details.cached).to.be.false;
     });
 
-    it('should check general crawler access', async () => {
+    it('should fail when general crawler is blocked (non-cached)', async () => {
       mockTracingFetch.resolves({
         ok: true,
         text: () => Promise.resolve('User-agent: *\nDisallow: /'),
       });
 
-      const result = await seoValidators.validateRobotsTxt('https://example.com/page', log);
+      const result = await seoValidators.validateRobotsTxt('https://blocked-all.com/page', log);
 
-      expect(result).to.have.property('passed');
-      expect(result).to.have.property('blockerType');
-      expect(result).to.have.property('details');
+      // robots-parser will actually parse this and block correctly
+      expect(result.passed).to.be.false;
+      expect(result.blockerType).to.equal('robots-txt-blocked');
+      expect(result.details.general).to.be.false;
+      expect(result.details.cached).to.be.false;
     });
 
-    it('should use cache on second call to same domain', async () => {
+    it('should use cache on second call to same domain (allowed)', async () => {
       mockTracingFetch.resolves({
         ok: true,
         text: () => Promise.resolve('User-agent: *\nAllow: /'),
       });
 
-      // First call
-      await seoValidators.validateRobotsTxt('https://example.com/page1', log);
+      // First call - populates cache
+      const result1 = await seoValidators.validateRobotsTxt('https://cached-domain.com/page1', log);
+      expect(result1.details.cached).to.be.false;
       const firstCallCount = mockTracingFetch.callCount;
 
       // Second call - should use cache
-      await seoValidators.validateRobotsTxt('https://example.com/page2', log);
+      const result2 = await seoValidators.validateRobotsTxt('https://cached-domain.com/page2', log);
+      expect(result2.details.cached).to.be.true;
+      expect(result2.passed).to.be.true;
+      expect(result2.blockerType).to.be.null;
 
-      // Should still be called twice (once per URL)
-      // since we can't actually test caching with fresh module load
-      expect(mockTracingFetch.callCount).to.be.at.least(firstCallCount);
+      // Should not fetch robots.txt again
+      expect(mockTracingFetch.callCount).to.equal(firstCallCount);
+    });
+
+    it('should use cache on second call to same domain (blocked)', async () => {
+      mockTracingFetch.resolves({
+        ok: true,
+        text: () => Promise.resolve('User-agent: *\nDisallow: /'),
+      });
+
+      // First call - populates cache with blocking rules
+      const result1 = await seoValidators.validateRobotsTxt('https://cached-blocked.com/page1', log);
+      expect(result1.details.cached).to.be.false;
+      expect(result1.passed).to.be.false;
+      const firstCallCount = mockTracingFetch.callCount;
+
+      // Second call - should use cache and still block
+      const result2 = await seoValidators.validateRobotsTxt('https://cached-blocked.com/page2', log);
+      expect(result2.details.cached).to.be.true;
+      expect(result2.passed).to.be.false;
+      expect(result2.blockerType).to.equal('robots-txt-blocked');
+
+      // Should not fetch robots.txt again
+      expect(mockTracingFetch.callCount).to.equal(firstCallCount);
     });
 
     it('should fetch robots.txt for different domains', async () => {
