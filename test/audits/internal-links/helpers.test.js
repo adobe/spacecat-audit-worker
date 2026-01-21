@@ -143,21 +143,131 @@ describe('isLinkInaccessible', () => {
     )).to.be.true;
   });
 
-  it('should return true for network errors', async function call() {
+  it('should return true for network errors and log error', async function call() {
     this.timeout(15000);
     nock('https://example.com')
       .head('/network-error')
-      .replyWithError(new Error('ECONNREFUSED'))
+      .replyWithError(new Error('Network failure'))
       .get('/network-error')
-      .replyWithError(new Error('ECONNREFUSED'));
+      .replyWithError(new Error('Network failure'));
 
     const result = await isLinkInaccessible('https://example.com/network-error', mockLog);
     expect(result).to.be.true;
-    expect(mockLog.error).to.have.been.called;
+    expect(mockLog.error.calledOnce).to.be.true;
   });
 
-  // Note: Timeout test removed - tracingFetch timeout behavior is tested in integration
-  // Keeping coverage at ~98% to prioritize Lambda performance over edge case testing
+  it('should handle error with code property', async function call() {
+    this.timeout(15000);
+    const codeError = new Error('Connection failed');
+    codeError.code = 'ECONNRESET';
+
+    nock('https://example.com')
+      .head('/code-err')
+      .replyWithError(codeError)
+      .get('/code-err')
+      .replyWithError(codeError);
+
+    const result = await isLinkInaccessible('https://example.com/code-err', mockLog);
+    expect(result).to.be.true;
+  });
+
+  it('should handle error with type property', async function call() {
+    this.timeout(15000);
+    const typeError = new Error('System error');
+    typeError.type = 'system';
+
+    nock('https://example.com')
+      .head('/type-err')
+      .replyWithError(typeError)
+      .get('/type-err')
+      .replyWithError(typeError);
+
+    const result = await isLinkInaccessible('https://example.com/type-err', mockLog);
+    expect(result).to.be.true;
+  });
+
+  it('should handle error with errno property', async function call() {
+    this.timeout(15000);
+    const errnoError = new Error('Permission issue');
+    errnoError.errno = -13;
+
+    nock('https://example.com')
+      .head('/errno-err')
+      .replyWithError(errnoError)
+      .get('/errno-err')
+      .replyWithError(errnoError);
+
+    const result = await isLinkInaccessible('https://example.com/errno-err', mockLog);
+    expect(result).to.be.true;
+  });
+
+  it('should handle error with empty message', async function call() {
+    this.timeout(15000);
+    const emptyMsgError = new Error('');
+
+    nock('https://example.com')
+      .head('/empty-msg')
+      .replyWithError(emptyMsgError)
+      .get('/empty-msg')
+      .replyWithError(emptyMsgError);
+
+    const result = await isLinkInaccessible('https://example.com/empty-msg', mockLog);
+    expect(result).to.be.true;
+  });
+
+  it('should handle error with all properties for join path', async function call() {
+    this.timeout(15000);
+    const fullError = new Error('Full error');
+    fullError.code = 'CODE1';
+    fullError.type = 'TYPE1';
+    fullError.errno = 'ERRNO1';
+
+    nock('https://example.com')
+      .head('/full-err')
+      .replyWithError(fullError)
+      .get('/full-err')
+      .replyWithError(fullError);
+
+    const result = await isLinkInaccessible('https://example.com/full-err', mockLog);
+    expect(result).to.be.true;
+  });
+
+  it('should handle error with only message for single property path', async function call() {
+    this.timeout(15000);
+    // Create a minimal error with only message, no code/type/errno
+    const simpleError = Object.create(Error.prototype);
+    simpleError.message = 'Just message';
+    // Explicitly set others to undefined to ensure they're not present
+    simpleError.code = undefined;
+    simpleError.type = undefined;
+    simpleError.errno = undefined;
+
+    nock('https://example.com')
+      .head('/simple-err')
+      .replyWithError(simpleError)
+      .get('/simple-err')
+      .replyWithError(simpleError);
+
+    const result = await isLinkInaccessible('https://example.com/simple-err', mockLog);
+    expect(result).to.be.true;
+    // This should log just "Just message" without any colons/joining
+  });
+
+  it('should handle error with no properties using Unknown error fallback', async function call() {
+    this.timeout(15000);
+    // Create an error-like object with no properties at all
+    const emptyError = Object.create(Error.prototype);
+
+    nock('https://example.com')
+      .head('/empty-err')
+      .replyWithError(emptyError)
+      .get('/empty-err')
+      .replyWithError(emptyError);
+
+    const result = await isLinkInaccessible('https://example.com/empty-err', mockLog);
+    expect(result).to.be.true;
+    // Should use 'Unknown error' as fallback
+  });
 });
 
 describe('calculatePriority', () => {

@@ -128,14 +128,19 @@ export async function isLinkInaccessible(url, log) {
     // URL is valid if status code is less than 400, otherwise it is invalid
     return status >= 400;
   } catch (getError) {
-    // Build detailed error message with code and type info
-    const code = getError.code || '';
-    const type = getError.type || '';
-    const errno = getError.errno || '';
-    const message = getError.message || 'Unknown error';
+    // Build detailed error message including code, type, errno if present
+    let errorMessage = getError.message || 'Unknown error';
 
-    const errorParts = [code, type, errno, message].filter(Boolean);
-    const errorMessage = errorParts.length > 1 ? errorParts.join(': ') : message;
+    // Prepend error code/type/errno if they exist
+    if (getError.code) {
+      errorMessage = `${getError.code}: ${errorMessage}`;
+    }
+    if (getError.type) {
+      errorMessage = `${getError.type} - ${errorMessage}`;
+    }
+    if (getError.errno) {
+      errorMessage = `${errorMessage} (errno: ${getError.errno})`;
+    }
 
     log.error(`broken-internal-links audit: Error checking ${url} with GET request: ${errorMessage}`);
     // Any error means the URL is inaccessible
