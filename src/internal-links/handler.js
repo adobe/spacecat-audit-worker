@@ -30,7 +30,7 @@ import { detectBrokenLinksFromCrawl, mergeAndDeduplicate } from './crawl-detecti
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
-const MAX_URLS_TO_PROCESS = 500;
+const MAX_URLS_TO_PROCESS = 100;
 const MAX_ALTERNATIVE_URLS = 100;
 const MAX_BROKEN_LINKS = 100;
 
