@@ -13,20 +13,20 @@
 export const internalLinksData = [
   {
     traffic_domain: 1800,
-    url_to: 'https://www.example.com/a01',
-    url_from: 'https://www.example.com/a02nf',
+    url_to: 'https://www.petplace.com/a01',
+    url_from: 'https://www.petplace.com/a02nf',
     priority: 'high',
   },
   {
     traffic_domain: 1200,
-    url_to: 'https://www.example.com/ax02',
-    url_from: 'https://www.example.com/ax02nf',
+    url_to: 'https://www.petplace.com/ax02',
+    url_from: 'https://www.petplace.com/ax02nf',
     priority: 'medium',
   },
   {
     traffic_domain: 200,
-    url_to: 'https://www.example.com/a01',
-    url_from: 'https://www.example.com/a01nf',
+    url_to: 'https://www.petplace.com/a01',
+    url_from: 'https://www.petplace.com/a01nf',
     priority: 'low',
   },
 ];
@@ -59,8 +59,8 @@ export const expectedSuggestions = [
     rank: 100,
     data: {
       trafficDomain: 1800,
-      urlTo: 'https://www.example.com/a01',
-      urlFrom: 'https://www.example.com/a02nf',
+      urlTo: 'https://www.petplace.com/a01',
+      urlFrom: 'https://www.petplace.com/a02nf',
       priority: 'high',
     },
   },
@@ -69,8 +69,8 @@ export const expectedSuggestions = [
     rank: 100,
     data: {
       trafficDomain: 1200,
-      urlTo: 'https://www.example.com/ax02-changed',
-      urlFrom: 'https://www.example.com/ax02nf',
+      urlTo: 'https://www.petplace.com/ax02-changed',
+      urlFrom: 'https://www.petplace.com/ax02nf',
       priority: 'medium',
     },
   },
@@ -79,8 +79,8 @@ export const expectedSuggestions = [
     rank: 100,
     data: {
       trafficDomain: 200,
-      urlTo: 'https://www.example.com/a01',
-      urlFrom: 'https://www.example.com/a01nf',
+      urlTo: 'https://www.petplace.com/a01',
+      urlFrom: 'https://www.petplace.com/a01nf',
       priority: 'low',
     },
   },

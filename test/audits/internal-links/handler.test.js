@@ -39,28 +39,28 @@ const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () =>
 const AUDIT_RESULT_DATA = [
   {
     trafficDomain: 1800,
-    urlTo: 'https://www.example.com/a01',
-    urlFrom: 'https://www.example.com/a02nf',
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a02nf',
     priority: 'high',
   },
   {
     trafficDomain: 1200,
-    urlTo: 'https://www.example.com/ax02',
-    urlFrom: 'https://www.example.com/ax02nf',
+    urlTo: 'https://www.petplace.com/ax02',
+    urlFrom: 'https://www.petplace.com/ax02nf',
     priority: 'medium',
   },
   {
     trafficDomain: 200,
-    urlTo: 'https://www.example.com/a01',
-    urlFrom: 'https://www.example.com/a01nf',
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a01nf',
     priority: 'low',
   },
 ];
 const AUDIT_RESULT_DATA_WITH_SUGGESTIONS = [
   {
     trafficDomain: 1800,
-    urlTo: 'https://www.example.com/a01',
-    urlFrom: 'https://www.example.com/a02nf',
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a02nf',
     priority: 'high',
     urlsSuggested: [
       'https://example.com/suggestion1',
@@ -70,16 +70,16 @@ const AUDIT_RESULT_DATA_WITH_SUGGESTIONS = [
   },
   {
     trafficDomain: 1200,
-    urlTo: 'https://www.example.com/ax02',
-    urlFrom: 'https://www.example.com/ax02nf',
+    urlTo: 'https://www.petplace.com/ax02',
+    urlFrom: 'https://www.petplace.com/ax02nf',
     priority: 'medium',
     urlsSuggested: ['https://example.com/suggestion2'],
     aiRationale: 'Some Rationale',
   },
   {
     trafficDomain: 200,
-    urlTo: 'https://www.example.com/a01',
-    urlFrom: 'https://www.example.com/a01nf',
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a01nf',
     priority: 'low',
     urlsSuggested: ['https://example.com/suggestion3'],
     aiRationale: 'Some Rationale',
@@ -421,7 +421,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
     expect(suggestionsArg).to.be.an('array').with.lengthOf(3);
     expect(suggestionsArg[0].data.urlTo).to.equal(
-      'https://www.example.com/a01',
+      'https://www.petplace.com/a01',
     );
   }).timeout(10000);
 
