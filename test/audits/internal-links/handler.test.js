@@ -25,6 +25,8 @@ import {
   internalLinksAuditRunner,
   runAuditAndImportTopPagesStep,
   prepareScrapingStep,
+  runCrawlDetectionAndGenerateSuggestions,
+  updateAuditResult,
 } from '../../../src/internal-links/handler.js';
 import {
   internalLinksData,
@@ -35,7 +37,27 @@ import { MockContextBuilder } from '../../shared.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () => 'https://example.com/page2' }];
+// Audit result without priority (priority is calculated after merge step)
 const AUDIT_RESULT_DATA = [
+  {
+    trafficDomain: 1800,
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a02nf',
+  },
+  {
+    trafficDomain: 1200,
+    urlTo: 'https://www.petplace.com/ax02',
+    urlFrom: 'https://www.petplace.com/ax02nf',
+  },
+  {
+    trafficDomain: 200,
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a01nf',
+  },
+];
+
+// Audit result with priority (after merge step calculates priority)
+const AUDIT_RESULT_DATA_WITH_PRIORITY = [
   {
     trafficDomain: 1800,
     urlTo: 'https://www.petplace.com/a01',
@@ -160,6 +182,22 @@ describe('Broken internal links audit', () => {
     });
   }).timeout(5000);
 
+  it('broken-internal-links audit returns empty when no RUM links found', async () => {
+    const emptyContext = { ...context, rumApiClient: { query: sinon.stub().resolves([]) } };
+    
+    const result = await internalLinksAuditRunner(
+      'www.example.com',
+      emptyContext,
+      site,
+    );
+    
+    expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+    expect(result.auditResult.success).to.equal(true);
+    expect(emptyContext.log.info).to.have.been.calledWith(
+      sinon.match(/No 404 internal links found in RUM data/),
+    );
+  }).timeout(5000);
+
   it('broken-internal-links audit runs ans throws error incase of error in audit', async () => {
     context.rumApiClient.query.rejects(new Error('error'));
     expect(await internalLinksAuditRunner(
@@ -205,13 +243,23 @@ describe('Broken internal links audit', () => {
       }),
     };
 
+    // Mock redirect resolution requests (HEAD requests for redirect resolution)
+    nock('https://example.com')
+      .head('/page1')
+      .reply(200);
+    nock('https://example.com')
+      .head('/page2')
+      .reply(200);
+
     const result = await prepareScrapingStep(context);
     expect(result).to.deep.equal({
       siteId: site.getId(),
       type: 'broken-internal-links',
       urls: topPages.map((page) => ({ url: page.getUrl() })),
+      allowCache: false,
+      maxScrapeAge: 0,
     });
-  }).timeout(5000);
+  }).timeout(10000);
 
   it('prepareScrapingStep should throw error when audit failed', async () => {
     context.dataAccess.SiteTopPage = {
@@ -231,7 +279,7 @@ describe('Broken internal links audit', () => {
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
   }).timeout(5000);
 
-  it('prepareScrapingStep should throw error when no top pages found in database', async () => {
+  it('prepareScrapingStep should return empty URLs when no top pages found', async () => {
     context.dataAccess.SiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]), // Empty array
     };
@@ -242,11 +290,75 @@ describe('Broken internal links audit', () => {
       }),
     };
 
-    await expect(prepareScrapingStep(context))
-      .to.be.rejectedWith(`No top pages found in database for site ${site.getId()}. Ahrefs import required.`);
+    const result = await prepareScrapingStep(context);
+    expect(result.urls).to.have.lengthOf(0);
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/No URLs available for scraping/),
+    );
   }).timeout(5000);
 
-  it('prepareScrapingStep should throw error when all top pages filtered out by audit scope', async () => {
+  it('prepareScrapingStep should handle Ahrefs fetch error', async () => {
+    const testContext = { ...context };
+    testContext.dataAccess = { ...context.dataAccess };
+    testContext.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().rejects(new Error('Ahrefs API error')),
+    };
+    testContext.site = { ...site, getConfig: () => ({ getIncludedURLs: () => ['https://example.com/manual1'] }) };
+    testContext.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
+
+    nock('https://example.com').head('/manual1').reply(200);
+    const result = await prepareScrapingStep(testContext);
+    
+    expect(testContext.log.warn).to.have.been.calledWith(
+      sinon.match(/Failed to fetch Ahrefs top pages/),
+    );
+    expect(result.urls).to.have.lengthOf(1); // Still has includedURLs
+  }).timeout(10000);
+
+
+  it('prepareScrapingStep should log when filtering unscrape-able files', async () => {
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    context.dataAccess.SiteTopPage = { 
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+        { getUrl: () => 'https://example.com/page1.html' },
+        { getUrl: () => 'https://example.com/doc.pdf' },
+        { getUrl: () => 'https://example.com/sheet.xlsx' },
+      ]) 
+    };
+    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    nock('https://example.com').head('/page1.html').reply(200);
+    await prepareScrapingStep(context);
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/Filtered out \d+ unscrape-able files/));
+  }).timeout(10000);
+
+  it('prepareScrapingStep should cap when total URLs exceed MAX_URLS_TO_PROCESS', async () => {
+    nock.cleanAll();
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    
+    // Create 600 URLs total (400 Ahrefs + 200 manual = 600, exceeds 500)
+    const manyPages = Array.from({ length: 400 }, (_, i) => ({ getUrl: () => `https://example.com/ah${i}` }));
+    const manualUrls = Array.from({ length: 200 }, (_, i) => `https://example.com/man${i}`);
+    
+    const testCtx = { ...context };
+    testCtx.log = context.log;
+    testCtx.dataAccess = { ...context.dataAccess, SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(manyPages) } };
+    testCtx.site = { ...site, getConfig: () => ({ getIncludedURLs: () => manualUrls }) };
+    testCtx.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    nock('https://example.com').persist().head(/\/(ah|man)\d+/).reply(200);
+    await prepareScrapingStep(testCtx);
+    
+    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Total URLs \(600\) exceeds limit/));
+    nock.cleanAll();
+  }).timeout(120000);
+
+  it('prepareScrapingStep should filter URLs by audit scope', async () => {
     // Mock site with subpath
     const siteWithSubpath = {
       ...site,
@@ -270,9 +382,365 @@ describe('Broken internal links audit', () => {
       }),
     };
 
-    await expect(prepareScrapingStep(context))
-      .to.be.rejectedWith(`All 2 top pages filtered out by audit scope. BaseURL: https://example.com/blog requires subpath match but no pages match scope.`);
+    const result = await prepareScrapingStep(context);
+    expect(result.urls).to.have.lengthOf(0); // All filtered out
   }).timeout(5000);
+
+  it('prepareScrapingStep should handle redirect without Location header', async () => {
+    context.log = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+        { getUrl: () => 'https://example.com/page1' },
+      ]),
+    };
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
+
+    // Mock redirect response without Location header
+    nock('https://example.com')
+      .head('/page1')
+      .reply(301); // 301 redirect without any headers
+
+    const result = await prepareScrapingStep(context);
+    
+    // URL should be filtered out due to missing Location header
+    expect(result.urls).to.have.lengthOf(0);
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Failed to resolve.*without Location header/),
+    );
+  }).timeout(15000);
+
+  it('prepareScrapingStep should detect circular redirects', async () => {
+    context.log = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+        { getUrl: () => 'https://example.com/page1' },
+      ]),
+    };
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
+
+    // Mock circular redirect: page1 -> page2 -> page1
+    nock('https://example.com')
+      .head('/page1')
+      .reply(301, '', { Location: 'https://example.com/page2' });
+    nock('https://example.com')
+      .head('/page2')
+      .reply(301, '', { Location: 'https://example.com/page1' });
+
+    const result = await prepareScrapingStep(context);
+    
+    expect(result.urls).to.have.lengthOf(0);
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Failed to resolve.*Circular redirect detected/),
+    );
+  }).timeout(15000);
+
+  it('prepareScrapingStep should warn on protocol downgrade', async () => {
+    context.log = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+        { getUrl: () => 'https://example.com/page1' },
+      ]),
+    };
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
+
+    // Mock HTTPS -> HTTP redirect (protocol downgrade)
+    nock('https://example.com')
+      .head('/page1')
+      .reply(301, '', { Location: 'http://example.com/page1-insecure' });
+    nock('http://example.com')
+      .head('/page1-insecure')
+      .reply(200);
+
+    await prepareScrapingStep(context);
+    
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Protocol downgrade detected/),
+    );
+  }).timeout(15000);
+
+  it('prepareScrapingStep should filter cross-domain redirects when site has subpath', async () => {
+    context.log = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+    
+    // Use baseURL WITH subpath so domain checking is triggered
+    context.site = {
+      ...site,
+      getId: () => 'site-id-test',
+      getBaseURL: () => 'https://example.com/en',
+    };
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+        { getUrl: () => 'https://example.com/en/page1' },
+      ]),
+    };
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
+
+    // Mock redirect to different domain
+    nock('https://example.com')
+      .head('/en/page1')
+      .reply(301, '', { Location: 'https://otherdomain.com/en/page1' });
+    nock('https://otherdomain.com')
+      .head('/en/page1')
+      .reply(200);
+
+    const result = await prepareScrapingStep(context);
+    
+    expect(result.urls).to.have.lengthOf(0);
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Cross-domain redirect filtered/),
+    );
+  }).timeout(15000);
+
+  it('prepareScrapingStep should log duplicate removal after redirect resolution', async () => {
+    context.log = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+        { getUrl: () => 'https://example.com/page1' },
+        { getUrl: () => 'https://example.com/page2' },
+      ]),
+    };
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
+
+    // Both redirect to same final URL
+    nock('https://example.com')
+      .head('/page1')
+      .reply(301, '', { Location: 'https://example.com/final' });
+    nock('https://example.com')
+      .head('/page2')
+      .reply(301, '', { Location: 'https://example.com/final' });
+    nock('https://example.com')
+      .head('/final')
+      .times(2)
+      .reply(200);
+
+    await prepareScrapingStep(context);
+    
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/Removed \d+ duplicates after redirect resolution/),
+    );
+  }).timeout(15000);
+
+  it('prepareScrapingStep redirect: should handle unsupported protocol', async () => {
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'ftp://example.com/file' }]) };
+    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    const result = await prepareScrapingStep(context);
+    expect(result.urls).to.have.lengthOf(0);
+  }).timeout(5000);
+
+  it('prepareScrapingStep redirect: should handle invalid URL', async () => {
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'not-a-valid-url' }]) };
+    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    const result = await prepareScrapingStep(context);
+    expect(result.urls).to.have.lengthOf(0);
+  }).timeout(5000);
+
+  it('prepareScrapingStep redirect: should handle missing Location header', async () => {
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/p1' }]) };
+    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    nock('https://example.com').head('/p1').reply(302, '', {}); // No Location header
+    const result = await prepareScrapingStep(context);
+    expect(result.urls).to.have.lengthOf(0);
+  }).timeout(10000);
+
+  it('prepareScrapingStep redirect: should detect circular redirects', async () => {
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/p1' }]) };
+    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    nock('https://example.com').head('/p1').reply(301, '', { Location: '/p2' });
+    nock('https://example.com').head('/p2').reply(301, '', { Location: '/p1' }); // Circular
+    const result = await prepareScrapingStep(context);
+    expect(result.urls).to.have.lengthOf(0);
+  }).timeout(10000);
+
+  it('prepareScrapingStep redirect: should warn on HTTPS to HTTP downgrade', async () => {
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/p1' }]) };
+    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    nock('https://example.com').head('/p1').reply(301, '', { Location: 'http://example.com/p2' });
+    nock('http://example.com').head('/p2').reply(200);
+    await prepareScrapingStep(context);
+    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Protocol downgrade detected/));
+  }).timeout(10000);
+
+  it('prepareScrapingStep redirect: should use GET fallback when HEAD fails', async () => {
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/p1' }]) };
+    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    nock('https://example.com').head('/p1').replyWithError(new Error('HEAD method not allowed'));
+    nock('https://example.com').get('/p1').reply(200);
+    const result = await prepareScrapingStep(context);
+    expect(result.urls).to.have.lengthOf(1);
+  }).timeout(10000);
+
+  it('prepareScrapingStep redirect: should log GET fallback with redirect', async () => {
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/p1' }]) };
+    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    nock('https://example.com').head('/p1').replyWithError(new Error('HEAD method not allowed'));
+    nock('https://example.com').get('/p1').reply(301, '', { Location: 'https://example.com/p2' });
+    nock('https://example.com').get('/p2').reply(200);
+    const result = await prepareScrapingStep(context);
+    expect(result.urls).to.have.lengthOf(1);
+    expect(context.log.debug).to.have.been.calledWith(sinon.match(/Redirect resolved \(GET fallback\)/));
+  }).timeout(10000);
+
+  it('prepareScrapingStep redirect: should handle GET fallback with timeout error', async () => {
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/p1' }]) };
+    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    nock('https://example.com').head('/p1').replyWithError(new Error('HEAD method not allowed'));
+    nock('https://example.com').get('/p1').delay(15000).reply(200);
+    const result = await prepareScrapingStep(context);
+    expect(result.urls).to.have.lengthOf(0);
+  }).timeout(30000);
+
+  it('prepareScrapingStep redirect: should handle GET fallback with non-timeout error', async () => {
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/p1' }]) };
+    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    nock('https://example.com').head('/p1').replyWithError(new Error('HEAD method not allowed'));
+    nock('https://example.com').get('/p1').replyWithError(new Error('Connection refused'));
+    const result = await prepareScrapingStep(context);
+    expect(result.urls).to.have.lengthOf(0);
+  }).timeout(10000);
+
+  it('prepareScrapingStep redirect: should handle GET fallback returning 404', async () => {
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/p1' }]) };
+    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    nock('https://example.com').head('/p1').replyWithError(new Error('HEAD method not allowed'));
+    nock('https://example.com').get('/p1').reply(404);
+    const result = await prepareScrapingStep(context);
+    expect(result.urls).to.have.lengthOf(0);
+  }).timeout(10000);
+
+  it('prepareScrapingStep redirect: should handle non-HEAD error timeout', async () => {
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/p1' }]) };
+    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    nock('https://example.com').head('/p1').replyWithError({ code: 'ETIMEOUT' });
+    const result = await prepareScrapingStep(context);
+    expect(result.urls).to.have.lengthOf(0);
+  }).timeout(10000);
+
+  it('prepareScrapingStep redirect: should handle non-HEAD non-timeout error', async () => {
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/p1' }]) };
+    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    nock('https://example.com').head('/p1').replyWithError(new Error('Network error'));
+    const result = await prepareScrapingStep(context);
+    expect(result.urls).to.have.lengthOf(0);
+    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Failed to resolve.*Network error/));
+  }).timeout(10000);
+
+  it('prepareScrapingStep redirect: should handle too many redirects', async () => {
+    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
+    context.dataAccess.SiteTopPage = { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/p1' }]) };
+    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    
+    // Create 11 redirects (exceeds MAX of 10)
+    for (let i = 1; i <= 11; i++) {
+      nock('https://example.com').head(`/p${i}`).reply(301, '', { Location: `/p${i + 1}` });
+    }
+    const result = await prepareScrapingStep(context);
+    expect(result.urls).to.have.lengthOf(0);
+  }).timeout(10000);
+
+  it('prepareScrapingStep should warn when no URLs available after redirect resolution', async () => {
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+        { getUrl: () => 'https://example.com/page1' },
+      ]),
+    };
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
+
+    // Mock redirect that fails
+    nock('https://example.com')
+      .head('/page1')
+      .reply(500, 'Server Error');
+
+    const result = await prepareScrapingStep(context);
+    
+    expect(result.urls).to.have.lengthOf(0);
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/No URLs available|URL returned error status 500/),
+    );
+  }).timeout(15000);
+
 });
 
 describe('broken-internal-links audit opportunity and suggestions', () => {
@@ -571,7 +1039,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // Verify SQS messages were sent
     expect(context.sqs.sendMessage).to.have.been.called;
     expect(context.log.debug).to.have.been.calledWith(
-      sinon.match('Message sent to Mystique:'),
+      sinon.match(/Batch.*sent to Mystique/),
     );
   }).timeout(5000);
 
@@ -650,7 +1118,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     // Verify the log message about filtering file types was called
     expect(context.log.info).to.have.been.calledWith(
-      sinon.match(/Filtered out 5 unscrape-able file URLs \(PDFs, Office docs, etc\.\) from alternative URLs before sending to Mystique/),
+      sinon.match(/Filtered out 5 unscrape-able file URLs/),
     );
 
     // Verify SQS was called with only scrapeable URLs
@@ -1126,4 +1594,546 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       sinon.match(/No alternative URLs available/),
     );
   }).timeout(5000);
+
+  it('should batch brokenLinks into multiple SQS messages when exceeding batch size', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+
+    context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
+    context.site.getBaseURL = () => 'https://example.com';
+
+    // Setup opportunity methods
+    opportunity.getSuggestions = sandbox.stub().resolves([]);
+    opportunity.addSuggestions = sandbox.stub().resolves({ createdItems: [], errorItems: [] });
+
+    // Re-create handler with esmock to stub syncBrokenInternalLinksSuggestions
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    // Create 150 suggestions that will become broken links
+    // Use same prefix pattern so locale filtering doesn't remove alternatives
+    const validSuggestions = Array.from({ length: 150 }, (_, i) => ({
+      getData: () => ({
+        urlTo: `https://example.com/en/broken${i}`,
+        urlFrom: `https://example.com/en/source${i}`,
+      }),
+      getId: () => `suggestion-${i}`,
+    }));
+
+    // Create top pages for alternatives - use same "en" prefix
+    const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
+      getUrl: () => `https://example.com/en/alternative${i}`,
+    }));
+
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves(manyTopPages);
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(result.status).to.equal('complete');
+
+    // Verify batching - 150 links should be sent in 2 batches (100 + 50)
+    expect(context.sqs.sendMessage.callCount).to.equal(2);
+
+    // Verify first batch has 100 links
+    const firstBatch = context.sqs.sendMessage.getCall(0).args[1];
+    expect(firstBatch.data.brokenLinks).to.have.lengthOf(100);
+    expect(firstBatch.data.batchInfo.batchIndex).to.equal(0);
+    expect(firstBatch.data.batchInfo.totalBatches).to.equal(2);
+    expect(firstBatch.data.batchInfo.totalBrokenLinks).to.equal(150);
+
+    // Verify second batch has 50 links
+    const secondBatch = context.sqs.sendMessage.getCall(1).args[1];
+    expect(secondBatch.data.brokenLinks).to.have.lengthOf(50);
+    expect(secondBatch.data.batchInfo.batchIndex).to.equal(1);
+    expect(secondBatch.data.batchInfo.totalBatches).to.equal(2);
+
+    // Verify log message about batching
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/Sending 150 broken links in 2 batch\(es\) to Mystique/),
+    );
+  }).timeout(10000);
+
+  it('should handle Ahrefs fetch error gracefully in opportunityAndSuggestionsStep', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+
+    context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
+    context.site.getBaseURL = () => 'https://example.com';
+
+    opportunity.getSuggestions = sandbox.stub().resolves([]);
+    opportunity.addSuggestions = sandbox.stub().resolves({ createdItems: [], errorItems: [] });
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    const validSuggestions = [{
+      getData: () => ({
+        urlTo: 'https://example.com/en/broken1',
+        urlFrom: 'https://example.com/en/source1',
+      }),
+      getId: () => 'suggestion-1',
+    }];
+
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    
+    // Make Ahrefs fetch fail
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .rejects(new Error('Ahrefs API error'));
+
+    // Should still complete without throwing
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(result.status).to.equal('complete');
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Failed to fetch Ahrefs top pages/),
+    );
+  }).timeout(10000);
+
+
+  it('should cap URLs in opportunityAndSuggestionsStep when exceeding MAX_URLS_TO_PROCESS', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+
+    context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
+    context.site.getBaseURL = () => 'https://example.com';
+    context.site.getConfig = () => ({
+      getIncludedURLs: () => Array.from({ length: 400 }, (_, i) => `https://example.com/en/included${i}`),
+    });
+
+    opportunity.getSuggestions = sandbox.stub().resolves([]);
+    opportunity.addSuggestions = sandbox.stub().resolves({ createdItems: [], errorItems: [] });
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    const validSuggestions = [{
+      getData: () => ({
+        urlTo: 'https://example.com/en/broken1',
+        urlFrom: 'https://example.com/en/source1',
+      }),
+      getId: () => 'suggestion-1',
+    }];
+
+    // Create 200 Ahrefs pages + 400 includedURLs = 600 total (exceeds 500)
+    const manyTopPages = Array.from({ length: 200 }, (_, i) => ({
+      getUrl: () => `https://example.com/en/page${i}`,
+    }));
+
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves(manyTopPages);
+
+    await handler.opportunityAndSuggestionsStep(context);
+
+    // Verify warning was logged for capping URLs (600 > 500)
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Capping URLs from 600 to 500/),
+    );
+  }).timeout(10000);
+
+  it('should limit alternativeUrls when exceeding MAX_ALTERNATIVE_URLS', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+
+    context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
+    context.site.getBaseURL = () => 'https://example.com';
+
+    opportunity.getSuggestions = sandbox.stub().resolves([]);
+    opportunity.addSuggestions = sandbox.stub().resolves({ createdItems: [], errorItems: [] });
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    // Create suggestion for broken links
+    const validSuggestions = [{
+      getData: () => ({
+        urlTo: 'https://example.com/en/broken1',
+        urlFrom: 'https://example.com/en/source1',
+      }),
+      getId: () => 'suggestion-1',
+    }];
+
+    // Create 150 top pages (more than MAX_ALTERNATIVE_URLS of 100)
+    const manyTopPages = Array.from({ length: 150 }, (_, i) => ({
+      getUrl: () => `https://example.com/en/page${i}`,
+    }));
+
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves(manyTopPages);
+
+    await handler.opportunityAndSuggestionsStep(context);
+
+    // Verify warning was logged for limiting alternativeUrls (150 Ahrefs pages > 100)
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Limiting alternativeUrls from \d+ to 100/),
+    );
+  }).timeout(10000);
+
+});
+
+describe('runCrawlDetectionAndGenerateSuggestions', () => {
+  let sandbox;
+  let context;
+  let mockAudit;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    
+    mockAudit = {
+      getId: () => 'audit-id-1',
+      getAuditResult: () => ({
+        brokenInternalLinks: [
+          { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', trafficDomain: 100 },
+        ],
+        success: true,
+      }),
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    context = {
+      log: {
+        info: sandbox.stub(),
+        warn: sandbox.stub(),
+        error: sandbox.stub(),
+        debug: sandbox.stub(),
+      },
+      site: {
+        getId: () => 'site-id-1',
+        getBaseURL: () => 'https://example.com',
+        getDeliveryType: () => 'aem_edge',
+        getConfig: () => null,
+      },
+      audit: mockAudit,
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves(mockAudit),
+        },
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          create: sandbox.stub().resolves({
+            getId: () => 'oppty-id-1',
+            getType: () => 'broken-internal-links',
+            getSiteId: () => 'site-id-1',
+            addSuggestions: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
+            getSuggestions: sandbox.stub().resolves([]),
+            setAuditId: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+            setData: () => {},
+            getData: () => {},
+            setUpdatedBy: sandbox.stub().returnsThis(),
+          }),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+      },
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub(),
+      },
+      finalUrl: 'https://example.com',
+      scrapeResultPaths: new Map(),
+    };
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should process RUM-only results when no scrapeResultPaths available', async () => {
+    context.scrapeResultPaths = new Map(); // Empty map
+
+    const result = await runCrawlDetectionAndGenerateSuggestions(context);
+
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/No scraped content available, using RUM-only results/),
+    );
+    expect(result.status).to.equal('complete');
+  }).timeout(10000);
+
+  it('should handle undefined scrapeResultPaths gracefully', async () => {
+    // Explicitly test the || new Map() fallback
+    context.scrapeResultPaths = undefined;
+
+    const result = await runCrawlDetectionAndGenerateSuggestions(context);
+
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/No scraped content available, using RUM-only results/),
+    );
+    expect(result.status).to.equal('complete');
+  }).timeout(10000);
+
+  it('should handle missing brokenInternalLinks in audit result', async () => {
+    // Test the || [] fallback when brokenInternalLinks is undefined
+    mockAudit.getAuditResult = () => ({
+      success: true,
+      // No brokenInternalLinks property
+    });
+
+    const result = await runCrawlDetectionAndGenerateSuggestions(context);
+
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/RUM detection results: 0 broken links/),
+    );
+    expect(result.status).to.equal('complete');
+  }).timeout(10000);
+
+  it('should merge crawl and RUM results when scrapeResultPaths available', async () => {
+    // Mock scrape result paths
+    context.scrapeResultPaths = new Map([
+      ['https://example.com/page1', 'scrape-results/page1.json'],
+    ]);
+
+    // Mock S3 response with HTML containing a broken link
+    context.s3Client.send.resolves({
+      Body: {
+        transformToString: () => JSON.stringify({
+          scrapeResult: {
+            rawBody: '<html><body><a href="https://example.com/crawl-broken">Link</a></body></html>',
+          },
+          finalUrl: 'https://example.com/page1',
+        }),
+      },
+    });
+
+    // Use esmock to stub dependencies
+    const handlerWithMocks = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/crawl-detection.js': {
+        detectBrokenLinksFromCrawl: sandbox.stub().resolves([
+          { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/crawl-broken', trafficDomain: 0 },
+        ]),
+        mergeAndDeduplicate: sandbox.stub().returns([
+          { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', trafficDomain: 100 },
+          { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/crawl-broken', trafficDomain: 0 },
+        ]),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    const result = await handlerWithMocks.runCrawlDetectionAndGenerateSuggestions(context);
+
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/Crawl detected/),
+    );
+    expect(result.status).to.equal('complete');
+  }).timeout(10000);
+});
+
+describe('updateAuditResult', () => {
+  let sandbox;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should update audit result using setAuditResult when available', async () => {
+    const mockAudit = {
+      getId: () => 'audit-id-1',
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const log = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const prioritizedLinks = [{ urlFrom: 'a', urlTo: 'b', priority: 'high' }];
+    const auditResult = { success: true, brokenInternalLinks: [] };
+
+    const result = await updateAuditResult(mockAudit, auditResult, prioritizedLinks, {}, log);
+
+    expect(mockAudit.setAuditResult).to.have.been.calledOnce;
+    expect(mockAudit.save).to.have.been.calledOnce;
+    expect(result.brokenInternalLinks).to.deep.equal(prioritizedLinks);
+  });
+
+  it('should use audit.id when getId method not available', async () => {
+    const mockAuditFromDb = {
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockAudit = {
+      // No getId method - should use id property instead
+      id: 'audit-id-1',
+      // No setAuditResult method
+    };
+
+    const log = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const prioritizedLinks = [];
+    const auditResult = { success: true };
+    const dataAccess = {
+      Audit: {
+        findById: sandbox.stub().resolves(mockAuditFromDb),
+      },
+    };
+
+    const result = await updateAuditResult(mockAudit, auditResult, prioritizedLinks, dataAccess, log);
+
+    expect(dataAccess.Audit.findById).to.have.been.calledWith('audit-id-1');
+    expect(mockAuditFromDb.setAuditResult).to.have.been.calledOnce;
+    expect(result.brokenInternalLinks).to.deep.equal(prioritizedLinks);
+  });
+
+  it('should fallback to database lookup when setAuditResult not available', async () => {
+    const mockAuditFromDb = {
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockAudit = {
+      getId: () => 'audit-id-1',
+      id: 'audit-id-1',
+      // No setAuditResult method
+    };
+
+    const log = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const dataAccess = {
+      Audit: {
+        findById: sandbox.stub().resolves(mockAuditFromDb),
+      },
+    };
+
+    const prioritizedLinks = [{ urlFrom: 'a', urlTo: 'b', priority: 'high' }];
+    const auditResult = { success: true, brokenInternalLinks: [] };
+
+    const result = await updateAuditResult(mockAudit, auditResult, prioritizedLinks, dataAccess, log);
+
+    expect(dataAccess.Audit.findById).to.have.been.calledWith('audit-id-1');
+    expect(mockAuditFromDb.setAuditResult).to.have.been.calledOnce;
+    expect(result.brokenInternalLinks).to.deep.equal(prioritizedLinks);
+  });
+
+  it('should log error when audit not found in database', async () => {
+    const mockAudit = {
+      getId: () => 'audit-id-1',
+      id: 'audit-id-1',
+    };
+
+    const log = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const dataAccess = {
+      Audit: {
+        findById: sandbox.stub().resolves(null), // Not found
+      },
+    };
+
+    const prioritizedLinks = [];
+    const auditResult = { success: true };
+
+    await updateAuditResult(mockAudit, auditResult, prioritizedLinks, dataAccess, log);
+
+    expect(log.error).to.have.been.calledWith(
+      sinon.match(/Could not find audit with ID/),
+    );
+  });
+
+  it('should handle errors during update', async () => {
+    const mockAudit = {
+      getId: () => 'audit-id-1',
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().rejects(new Error('Save failed')),
+    };
+
+    const log = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const prioritizedLinks = [];
+    const auditResult = { success: true };
+
+    await updateAuditResult(mockAudit, auditResult, prioritizedLinks, {}, log);
+
+    expect(log.error).to.have.been.calledWith(
+      sinon.match(/Failed to update audit result/),
+    );
+  });
 });

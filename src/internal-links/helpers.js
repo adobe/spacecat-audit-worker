@@ -11,7 +11,9 @@
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
-const LINK_TIMEOUT = 3000;
+// Increased timeout to handle slow-responding URLs (30 seconds)
+// Some servers with redirects (HTTPS→HTTP) can take 15+ seconds to respond
+const LINK_TIMEOUT = 30000;
 export const CPC_DEFAULT_VALUE = 1;
 export const TRAFFIC_MULTIPLIER = 0.01; // 1%
 export const MAX_LINKS_TO_CONSIDER = 10;
@@ -76,9 +78,41 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
  * false if reachable/accessible
  */
 export async function isLinkInaccessible(url, log) {
+  // First try HEAD request (faster, lighter)
   try {
-    const response = await fetch(url, { timeout: LINK_TIMEOUT });
-    const { status } = response;
+    const headResponse = await fetch(url, {
+      method: 'HEAD',
+      timeout: LINK_TIMEOUT,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0',
+      },
+    });
+    const { status } = headResponse;
+
+    // If HEAD returns success (2xx) or redirect (3xx), consider it accessible
+    if (status < 400) {
+      return false;
+    }
+
+    // If HEAD returns client error (4xx) or server error (5xx), verify with GET
+    if (status >= 400) {
+      log.debug(`broken-internal-links audit: HEAD request returned ${status} for ${url}, verifying with GET`);
+    }
+  } catch (headError) {
+    // HEAD failed, could be timeout or network error
+    log.debug(`broken-internal-links audit: HEAD request failed for ${url}, trying GET: ${headError.message}`);
+  }
+
+  // Fallback to GET request for verification
+  try {
+    const getResponse = await fetch(url, {
+      method: 'GET',
+      timeout: LINK_TIMEOUT,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0',
+      },
+    });
+    const { status } = getResponse;
 
     // Log non-404, non-200 status codes
     if (status >= 400 && status < 500 && status !== 404) {
@@ -87,22 +121,25 @@ export async function isLinkInaccessible(url, log) {
 
     // URL is valid if status code is less than 400, otherwise it is invalid
     return status >= 400;
-  } catch (error) {
-    log.error(`broken-internal-links audit: Error checking ${url}: ${error.code === 'ETIMEOUT' ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
+  } catch (getError) {
+    const errorMessage = getError.code === 'ETIMEOUT'
+      ? `Request timed out after ${LINK_TIMEOUT}ms`
+      : getError.message;
+    log.error(`broken-internal-links audit: Error checking ${url} with GET request: ${errorMessage}`);
     // Any error means the URL is inaccessible
     return true;
   }
 }
 
 /**
- * Classifies links into priority categories based on views
+ * Classifies links into priority categories based on trafficDomain.
  * High: top 25%, Medium: next 25%, Low: bottom 50%
- * @param {Array} links - Array of objects with views property
- * @returns {Array} - Links with priority classifications included
+ * @param {Array} links - Array of objects with trafficDomain property
+ * @returns {Array} - Links sorted by trafficDomain (descending) with priority classifications
  */
 export function calculatePriority(links) {
-  // Sort links by views in descending order
-  const sortedLinks = [...links].sort((a, b) => b.views - a.views);
+  // Sort links by trafficDomain in descending order (handle undefined/null)
+  const sortedLinks = [...links].sort((a, b) => (b.trafficDomain || 0) - (a.trafficDomain || 0));
 
   // Calculate indices for the 25% and 50% marks
   const quarterIndex = Math.ceil(sortedLinks.length * 0.25);

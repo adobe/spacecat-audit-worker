@@ -22,6 +22,7 @@ import {
   TRAFFIC_MULTIPLIER,
   CPC_DEFAULT_VALUE,
   isLinkInaccessible,
+  calculatePriority,
 } from '../../../src/internal-links/helpers.js';
 import { auditData } from '../../fixtures/internal-links-data.js';
 
@@ -95,6 +96,7 @@ describe('isLinkInaccessible', () => {
       info: sinon.stub(),
       error: sinon.stub(),
       warn: sinon.stub(),
+      debug: sinon.stub(),
     };
     // Clear all nock interceptors
     nock.cleanAll();
@@ -107,7 +109,7 @@ describe('isLinkInaccessible', () => {
   it('should return false for accessible links (status 200)', async function call() {
     this.timeout(6000);
     nock('https://example.com')
-      .get('/')
+      .head('/')
       .reply(200);
 
     const result = await isLinkInaccessible('https://example.com', mockLog);
@@ -117,6 +119,8 @@ describe('isLinkInaccessible', () => {
   it('should return true for 404 responses', async function call() {
     this.timeout(6000);
     nock('https://example.com')
+      .head('/notfound')
+      .reply(404)
       .get('/notfound')
       .reply(404);
 
@@ -127,6 +131,8 @@ describe('isLinkInaccessible', () => {
   it('should return true and log warning for non-404 client errors', async function call() {
     this.timeout(6000);
     nock('https://example.com')
+      .head('/forbidden')
+      .reply(403)
       .get('/forbidden')
       .reply(403);
 
@@ -140,28 +146,88 @@ describe('isLinkInaccessible', () => {
   it('should return true for network errors', async function call() {
     this.timeout(6000);
     nock('https://example.com')
+      .head('/error')
+      .replyWithError('Network error')
       .get('/error')
       .replyWithError('Network error');
 
     const result = await isLinkInaccessible('https://example.com/error', mockLog);
     expect(result).to.be.true;
     expect(mockLog.error.calledWith(
-      'broken-internal-links audit: Error checking https://example.com/error: Network error',
+      'broken-internal-links audit: Error checking https://example.com/error with GET request: Network error',
     )).to.be.true;
   });
 
   it('should return true for timeout errors', async function call() {
-    this.timeout(5000);
+    this.timeout(70000);
 
     nock('https://example.com')
+      .head('/timeout')
+      .delay(32000) // Set delay just above the 30000ms timeout
+      .reply(200)
       .get('/timeout')
-      .delay(6000) // Set delay just above the 3000ms timeout in isLinkInaccessible
+      .delay(32000)
       .reply(200);
 
     const result = await isLinkInaccessible('https://example.com/timeout', mockLog);
     expect(result).to.be.true;
     expect(mockLog.error.calledWith(
-      'broken-internal-links audit: Error checking https://example.com/timeout: Request timed out after 3000ms',
+      'broken-internal-links audit: Error checking https://example.com/timeout with GET request: Request timed out after 30000ms',
     )).to.be.true;
+  });
+});
+
+describe('calculatePriority', () => {
+  it('should assign high priority to top 25% of links', () => {
+    const links = [
+      { urlTo: '/a', trafficDomain: 1000 },
+      { urlTo: '/b', trafficDomain: 500 },
+      { urlTo: '/c', trafficDomain: 200 },
+      { urlTo: '/d', trafficDomain: 100 },
+    ];
+
+    const result = calculatePriority(links);
+
+    expect(result[0].priority).to.equal('high');
+    expect(result[1].priority).to.equal('medium');
+    expect(result[2].priority).to.equal('low');
+    expect(result[3].priority).to.equal('low');
+  });
+
+  it('should handle empty array', () => {
+    const result = calculatePriority([]);
+    expect(result).to.be.an('array').that.is.empty;
+  });
+
+  it('should handle single link', () => {
+    const links = [{ urlTo: '/a', trafficDomain: 100 }];
+    const result = calculatePriority(links);
+    expect(result[0].priority).to.equal('high');
+  });
+
+  it('should handle links with undefined trafficDomain', () => {
+    const links = [
+      { urlTo: '/a', trafficDomain: 100 },
+      { urlTo: '/b' }, // undefined trafficDomain
+      { urlTo: '/c', trafficDomain: 0 },
+    ];
+
+    const result = calculatePriority(links);
+    // Should sort: 100, 0, undefined (treated as 0)
+    expect(result[0].urlTo).to.equal('/a');
+    expect(result[0].trafficDomain).to.equal(100);
+  });
+
+  it('should sort links by trafficDomain in descending order', () => {
+    const links = [
+      { urlTo: '/low', trafficDomain: 10 },
+      { urlTo: '/high', trafficDomain: 1000 },
+      { urlTo: '/med', trafficDomain: 500 },
+    ];
+
+    const result = calculatePriority(links);
+    expect(result[0].trafficDomain).to.equal(1000);
+    expect(result[1].trafficDomain).to.equal(500);
+    expect(result[2].trafficDomain).to.equal(10);
   });
 });
