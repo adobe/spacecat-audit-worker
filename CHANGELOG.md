@@ -1,3 +1,10 @@
+## [1.284.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.5...v1.284.6) (2026-01-21)
+
+
+### Bug Fixes
+
+* prerender saving final audit result & handling no opp case ([#1866](https://github.com/adobe/spacecat-audit-worker/issues/1866)) ([6db96c1](https://github.com/adobe/spacecat-audit-worker/commit/6db96c185cf95e6dc276334759bcf52182e5f91e))
+
 ## [1.284.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.4...v1.284.5) (2026-01-19)
 
 
