@@ -36,6 +36,8 @@ import { MockContextBuilder } from '../../shared.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () => 'https://example.com/page2' }];
+
+// Raw RUM data (before normalization)
 const AUDIT_RESULT_DATA = [
   {
     trafficDomain: 1800,
@@ -53,6 +55,28 @@ const AUDIT_RESULT_DATA = [
     trafficDomain: 200,
     urlTo: 'https://www.petplace.com/a01',
     urlFrom: 'https://www.petplace.com/a01nf',
+    priority: 'low',
+  },
+];
+
+// Normalized data (after normalizeUrlToDomain with canonical domain www.example.com)
+const NORMALIZED_AUDIT_RESULT_DATA = [
+  {
+    trafficDomain: 1800,
+    urlTo: 'https://www.example.com/a01',
+    urlFrom: 'https://www.example.com/a02nf',
+    priority: 'high',
+  },
+  {
+    trafficDomain: 1200,
+    urlTo: 'https://www.example.com/ax02',
+    urlFrom: 'https://www.example.com/ax02nf',
+    priority: 'medium',
+  },
+  {
+    trafficDomain: 200,
+    urlTo: 'https://www.example.com/a01',
+    urlFrom: 'https://www.example.com/a01nf',
     priority: 'low',
   },
 ];
@@ -156,7 +180,7 @@ describe('Broken internal links audit', () => {
     });
     expect(result).to.deep.equal({
       auditResult: {
-        brokenInternalLinks: AUDIT_RESULT_DATA,
+        brokenInternalLinks: NORMALIZED_AUDIT_RESULT_DATA,
         fullAuditRef: auditUrl,
         finalUrl: auditUrl,
         success: true,
@@ -190,7 +214,7 @@ describe('Broken internal links audit', () => {
       type: 'top-pages',
       siteId: site.getId(),
       auditResult: {
-        brokenInternalLinks: AUDIT_RESULT_DATA,
+        brokenInternalLinks: NORMALIZED_AUDIT_RESULT_DATA,
         fullAuditRef: auditUrl,
         success: true,
         finalUrl: 'www.example.com',
