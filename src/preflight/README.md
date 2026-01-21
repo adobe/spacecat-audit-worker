@@ -196,6 +196,26 @@ if (newCheckEnabled) {
 }
 ```
 
+4. **Update the MFE types** in the [Preflight MFE repository](https://github.com/OneAdobe/aem-sites-optimizer-preflight-mfe/blob/main/src/types/audits.ts#L18-L28):
+   - Add your new audit to the `audits` type definition to maintain the UI contract
+   - This ensures consistent human-friendly labels, gates audit-specific rendering, and powers the loading UX before any API response arrives
+   ```typescript
+   export const audits = [
+     'canonical',
+     'metatags',
+     // ... existing audits
+     'your-check',  // Add here
+   ] as const;
+   ```
+
+5. **Update Preflight API contract** in [spacecat-api-service repository](https://github.com/adobe/spacecat-api-service/blob/main/docs/openapi/preflight-api.yaml):
+   - Add your new check name to the `checks.items.enum` list in [spacecat-api-service/docs/openapi/preflight-api.yaml](https://github.com/adobe/spacecat-api-service/blob/main/docs/openapi/preflight-api.yaml#L36)
+   - If you change API request / response structure beyond introducing a new check name, also update the relevant schemas in [spacecat-api-service/docs/openapi/schemas.yaml](https://github.com/adobe/spacecat-api-service/blob/main/docs/openapi/schemas.yaml#L5060-L5223)
+   - Validate the OpenAPI docs after the change in [spacecat-api-service](https://github.com/adobe/spacecat-api-service/tree/main):
+     - `npm run docs:lint`
+     - `npm run docs` (Build documentation locally)
+     - `npm run docs:serve` (Serve documentation locally)
+
 ### Option 2: Add a Handler-Based Check (Complex)
 
 For checks that need external API calls, AI suggestions, or complex logic:
@@ -321,6 +341,14 @@ export const PREFLIGHT_HANDLERS = {
      'your-check',  // Add here
    ] as const;
    ```
+
+5. **Update Preflight API contract** in [spacecat-api-service repository](https://github.com/adobe/spacecat-api-service/blob/main/docs/openapi/preflight-api.yaml):
+   - Add your new check name to the `checks.items.enum` list in [spacecat-api-service/docs/openapi/preflight-api.yaml](https://github.com/adobe/spacecat-api-service/blob/main/docs/openapi/preflight-api.yaml#L36)
+   - If you change API request / response structure beyond introducing a new check name, also update the relevant schemas in [spacecat-api-service/docs/openapi/schemas.yaml](https://github.com/adobe/spacecat-api-service/blob/main/docs/openapi/schemas.yaml#L5060-L5223)
+   - Validate the OpenAPI docs after the change in [spacecat-api-service](https://github.com/adobe/spacecat-api-service/tree/main):
+     - `npm run docs:lint`
+     - `npm run docs` (Build documentation locally)
+     - `npm run docs:serve` (Serve documentation locally)
 
 ### Handler Contract
 
