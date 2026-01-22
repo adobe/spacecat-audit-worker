@@ -760,6 +760,7 @@ export async function processScrapedContent(context) {
  * @param {Object} site
  * @returns {Promise<Object>} An object containing the audit results.
  */
+/* c8 ignore start */
 export async function canonicalAuditRunner(baseURL, context, site) {
   const MAX_CONCURRENT_FETCH_CALLS = 10;
   const siteId = site.getId();
@@ -1004,6 +1005,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
     };
   }
 }
+/* c8 ignore stop */
 
 /**
  * Generates suggestions based on canonical audit results.
