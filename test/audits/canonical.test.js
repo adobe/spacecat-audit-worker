@@ -19,12 +19,13 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import esmock from 'esmock';
 import {
-  getTopPagesForSiteId, validateCanonicalTag, validateCanonicalFormat,
+  validateCanonicalTag, validateCanonicalFormat,
   validateCanonicalRecursively, canonicalAuditRunner,
   generateCanonicalSuggestion, generateSuggestions, opportunityAndSuggestions,
   opportunityAndSuggestionsForElmo, importTopPages, submitForScraping,
   processScrapedContent, validateCanonicalFromHTML,
 } from '../../src/canonical/handler.js';
+import { getTopPagesForSiteId } from '../../src/utils/data-access.js';
 import { CANONICAL_CHECKS } from '../../src/canonical/constants.js';
 import { createOpportunityData, createOpportunityDataForElmo } from '../../src/canonical/opportunity-data-mapper.js';
 
