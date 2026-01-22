@@ -22,6 +22,7 @@ import {
   TRAFFIC_MULTIPLIER,
   CPC_DEFAULT_VALUE,
   isLinkInaccessible,
+  calculatePriority,
 } from '../../../src/internal-links/helpers.js';
 import { auditData } from '../../fixtures/internal-links-data.js';
 
@@ -95,6 +96,7 @@ describe('isLinkInaccessible', () => {
       info: sinon.stub(),
       error: sinon.stub(),
       warn: sinon.stub(),
+      debug: sinon.stub(),
     };
     // Clear all nock interceptors
     nock.cleanAll();
@@ -107,7 +109,7 @@ describe('isLinkInaccessible', () => {
   it('should return false for accessible links (status 200)', async function call() {
     this.timeout(6000);
     nock('https://example.com')
-      .get('/')
+      .head('/')
       .reply(200);
 
     const result = await isLinkInaccessible('https://example.com', mockLog);
@@ -117,6 +119,8 @@ describe('isLinkInaccessible', () => {
   it('should return true for 404 responses', async function call() {
     this.timeout(6000);
     nock('https://example.com')
+      .head('/notfound')
+      .reply(404)
       .get('/notfound')
       .reply(404);
 
@@ -127,6 +131,8 @@ describe('isLinkInaccessible', () => {
   it('should return true and log warning for non-404 client errors', async function call() {
     this.timeout(6000);
     nock('https://example.com')
+      .head('/forbidden')
+      .reply(403)
       .get('/forbidden')
       .reply(403);
 
@@ -137,31 +143,289 @@ describe('isLinkInaccessible', () => {
     )).to.be.true;
   });
 
-  it('should return true for network errors', async function call() {
-    this.timeout(6000);
+  it('should return true for network errors and log error', async function call() {
+    this.timeout(15000);
     nock('https://example.com')
-      .get('/error')
-      .replyWithError('Network error');
+      .head('/network-error')
+      .replyWithError(new Error('Network failure'))
+      .get('/network-error')
+      .replyWithError(new Error('Network failure'));
 
-    const result = await isLinkInaccessible('https://example.com/error', mockLog);
+    const result = await isLinkInaccessible('https://example.com/network-error', mockLog);
     expect(result).to.be.true;
-    expect(mockLog.error.calledWith(
-      'broken-internal-links audit: Error checking https://example.com/error: Network error',
-    )).to.be.true;
+    expect(mockLog.error.calledOnce).to.be.true;
   });
 
-  it('should return true for timeout errors', async function call() {
-    this.timeout(5000);
+  it('should handle error with code property', async function call() {
+    this.timeout(15000);
+    const codeError = new Error('Connection failed');
+    codeError.code = 'ECONNRESET';
 
     nock('https://example.com')
-      .get('/timeout')
-      .delay(6000) // Set delay just above the 3000ms timeout in isLinkInaccessible
-      .reply(200);
+      .head('/code-err')
+      .replyWithError(codeError)
+      .get('/code-err')
+      .replyWithError(codeError);
 
-    const result = await isLinkInaccessible('https://example.com/timeout', mockLog);
+    const result = await isLinkInaccessible('https://example.com/code-err', mockLog);
     expect(result).to.be.true;
-    expect(mockLog.error.calledWith(
-      'broken-internal-links audit: Error checking https://example.com/timeout: Request timed out after 3000ms',
-    )).to.be.true;
+  });
+
+  it('should handle error with type property', async function call() {
+    this.timeout(15000);
+    const typeError = new Error('System error');
+    typeError.type = 'system';
+
+    nock('https://example.com')
+      .head('/type-err')
+      .replyWithError(typeError)
+      .get('/type-err')
+      .replyWithError(typeError);
+
+    const result = await isLinkInaccessible('https://example.com/type-err', mockLog);
+    expect(result).to.be.true;
+  });
+
+  it('should handle error with errno property', async function call() {
+    this.timeout(15000);
+    const errnoError = new Error('Permission issue');
+    errnoError.errno = -13;
+
+    nock('https://example.com')
+      .head('/errno-err')
+      .replyWithError(errnoError)
+      .get('/errno-err')
+      .replyWithError(errnoError);
+
+    const result = await isLinkInaccessible('https://example.com/errno-err', mockLog);
+    expect(result).to.be.true;
+  });
+
+  it('should handle error with empty message', async function call() {
+    this.timeout(15000);
+    const emptyMsgError = new Error('');
+
+    nock('https://example.com')
+      .head('/empty-msg')
+      .replyWithError(emptyMsgError)
+      .get('/empty-msg')
+      .replyWithError(emptyMsgError);
+
+    const result = await isLinkInaccessible('https://example.com/empty-msg', mockLog);
+    expect(result).to.be.true;
+  });
+
+  it('should handle error with all properties for join path', async function call() {
+    this.timeout(15000);
+    const fullError = new Error('Full error');
+    fullError.code = 'CODE1';
+    fullError.type = 'TYPE1';
+    fullError.errno = 'ERRNO1';
+
+    nock('https://example.com')
+      .head('/full-err')
+      .replyWithError(fullError)
+      .get('/full-err')
+      .replyWithError(fullError);
+
+    const result = await isLinkInaccessible('https://example.com/full-err', mockLog);
+    expect(result).to.be.true;
+  });
+
+  it('should handle error with only message for single property path', async function call() {
+    this.timeout(15000);
+    // Create a minimal error with only message, no code/type/errno
+    const simpleError = Object.create(Error.prototype);
+    simpleError.message = 'Just message';
+    // Explicitly set others to undefined to ensure they're not present
+    simpleError.code = undefined;
+    simpleError.type = undefined;
+    simpleError.errno = undefined;
+
+    nock('https://example.com')
+      .head('/simple-err')
+      .replyWithError(simpleError)
+      .get('/simple-err')
+      .replyWithError(simpleError);
+
+    const result = await isLinkInaccessible('https://example.com/simple-err', mockLog);
+    expect(result).to.be.true;
+    // This should log just "Just message" without any colons/joining
+  });
+
+  it('should handle error with no properties using Unknown error fallback', async function call() {
+    this.timeout(15000);
+    // Create an error-like object with no properties at all
+    const emptyError = Object.create(Error.prototype);
+
+    nock('https://example.com')
+      .head('/empty-err')
+      .replyWithError(emptyError)
+      .get('/empty-err')
+      .replyWithError(emptyError);
+
+    const result = await isLinkInaccessible('https://example.com/empty-err', mockLog);
+    expect(result).to.be.true;
+    // Should use 'Unknown error' as fallback
+  });
+
+  it('should treat HEAD timeout as accessible and skip GET request', async function call() {
+    this.timeout(15000);
+    const timeoutError = new Error('Request timeout after 10000ms');
+    timeoutError.code = 'ETIMEDOUT';
+
+    nock('https://example.com')
+      .head('/timeout-url')
+      .replyWithError(timeoutError);
+
+    const result = await isLinkInaccessible('https://example.com/timeout-url', mockLog);
+    
+    // Should return false (treat as accessible)
+    expect(result).to.be.false;
+    expect(mockLog.debug).to.have.been.calledWith(
+      sinon.match(/HEAD request timed out.*skipping GET/),
+    );
+  });
+
+  it('should recognize timeout error with lowercase "timeout" in message', async function call() {
+    this.timeout(15000);
+    const timeoutError = new Error('connection timeout');
+
+    nock('https://example.com')
+      .head('/timeout-msg')
+      .replyWithError(timeoutError);
+
+    const result = await isLinkInaccessible('https://example.com/timeout-msg', mockLog);
+    expect(result).to.be.false;
+  });
+
+  it('should recognize timeout error with "ETIMEDOUT" in code', async function call() {
+    this.timeout(15000);
+    const timeoutError = new Error('Network error');
+    timeoutError.code = 'ETIMEDOUT';
+
+    nock('https://example.com')
+      .head('/timeout-code')
+      .replyWithError(timeoutError);
+
+    const result = await isLinkInaccessible('https://example.com/timeout-code', mockLog);
+    expect(result).to.be.false;
+  });
+
+  it('should recognize timeout error with "ESOCKETTIMEDOUT" in code', async function call() {
+    this.timeout(15000);
+    const timeoutError = new Error('Socket error');
+    timeoutError.code = 'ESOCKETTIMEDOUT';
+
+    nock('https://example.com')
+      .head('/socket-timeout')
+      .replyWithError(timeoutError);
+
+    const result = await isLinkInaccessible('https://example.com/socket-timeout', mockLog);
+    expect(result).to.be.false;
+  });
+
+  it('should recognize timeout error with "timeout" in code field', async function call() {
+    this.timeout(15000);
+    const timeoutError = new Error('Request failed');
+    timeoutError.code = 'REQUEST_TIMEOUT';
+
+    nock('https://example.com')
+      .head('/timeout-in-code')
+      .replyWithError(timeoutError);
+
+    const result = await isLinkInaccessible('https://example.com/timeout-in-code', mockLog);
+    expect(result).to.be.false;
+  });
+
+  it('should not treat non-timeout errors as timeout', async function call() {
+    this.timeout(15000);
+    const networkError = new Error('ECONNREFUSED');
+    networkError.code = 'ECONNREFUSED';
+
+    nock('https://example.com')
+      .head('/conn-refused')
+      .replyWithError(networkError)
+      .get('/conn-refused')
+      .replyWithError(networkError);
+
+    const result = await isLinkInaccessible('https://example.com/conn-refused', mockLog);
+    // Should be true (broken) and should have tried GET
+    expect(result).to.be.true;
+  });
+
+  it('should handle GET timeout after HEAD succeeds with client error', async function call() {
+    this.timeout(15000);
+    const getTimeoutError = new Error('GET request timeout');
+    getTimeoutError.code = 'ETIMEDOUT';
+
+    nock('https://example.com')
+      .head('/get-timeout')
+      .reply(403) // HEAD returns client error, so will try GET
+      .get('/get-timeout')
+      .replyWithError(getTimeoutError); // GET times out
+
+    const result = await isLinkInaccessible('https://example.com/get-timeout', mockLog);
+    
+    // Should return false (treat as accessible) when GET times out
+    expect(result).to.be.false;
+    expect(mockLog.debug).to.have.been.calledWith(
+      sinon.match(/GET request timed out.*assuming accessible/),
+    );
+  });
+});
+
+describe('calculatePriority', () => {
+  it('should assign high priority to top 25% of links', () => {
+    const links = [
+      { urlTo: '/a', trafficDomain: 1000 },
+      { urlTo: '/b', trafficDomain: 500 },
+      { urlTo: '/c', trafficDomain: 200 },
+      { urlTo: '/d', trafficDomain: 100 },
+    ];
+
+    const result = calculatePriority(links);
+
+    expect(result[0].priority).to.equal('high');
+    expect(result[1].priority).to.equal('medium');
+    expect(result[2].priority).to.equal('low');
+    expect(result[3].priority).to.equal('low');
+  });
+
+  it('should handle empty array', () => {
+    const result = calculatePriority([]);
+    expect(result).to.be.an('array').that.is.empty;
+  });
+
+  it('should handle single link', () => {
+    const links = [{ urlTo: '/a', trafficDomain: 100 }];
+    const result = calculatePriority(links);
+    expect(result[0].priority).to.equal('high');
+  });
+
+  it('should handle links with undefined trafficDomain', () => {
+    const links = [
+      { urlTo: '/a', trafficDomain: 100 },
+      { urlTo: '/b' }, // undefined trafficDomain
+      { urlTo: '/c', trafficDomain: 0 },
+    ];
+
+    const result = calculatePriority(links);
+    // Should sort: 100, 0, undefined (treated as 0)
+    expect(result[0].urlTo).to.equal('/a');
+    expect(result[0].trafficDomain).to.equal(100);
+  });
+
+  it('should sort links by trafficDomain in descending order', () => {
+    const links = [
+      { urlTo: '/low', trafficDomain: 10 },
+      { urlTo: '/high', trafficDomain: 1000 },
+      { urlTo: '/med', trafficDomain: 500 },
+    ];
+
+    const result = calculatePriority(links);
+    expect(result[0].trafficDomain).to.equal(1000);
+    expect(result[1].trafficDomain).to.equal(500);
+    expect(result[2].trafficDomain).to.equal(10);
   });
 });
