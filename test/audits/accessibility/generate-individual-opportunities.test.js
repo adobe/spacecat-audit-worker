@@ -4951,3 +4951,210 @@ describe('sendMystiqueMessage', () => {
     });
   });
 });
+
+describe('sendOpportunitySuggestionsToMystique', () => {
+  let sandbox;
+  let mockLog;
+  let mockIsAuditEnabledForSite;
+  let module;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+    mockIsAuditEnabledForSite = sandbox.stub().resolves(true);
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should skip when mystique is disabled for site', async () => {
+    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any).resolves(false);
+
+    module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    const mockContext = {
+      log: mockLog,
+      site: { getId: () => 'site-1' },
+      dataAccess: {},
+      sqs: {},
+      env: {},
+    };
+
+    const result = await module.sendOpportunitySuggestionsToMystique('oppty-1', mockContext);
+
+    expect(result.success).to.be.true;
+    expect(result.messagesProcessed).to.equal(0);
+    expect(mockLog.info).to.have.been.calledWith('[A11yCodefix] Mystique suggestions are disabled for site, skipping message sending');
+  });
+
+  it('should skip mystique check when skipMystiqueEnabledCheck is true', async () => {
+    const mockOpportunity = {
+      getId: () => 'oppty-1',
+      getSiteId: () => 'site-1',
+      getAuditId: () => 'audit-1',
+      getSuggestions: () => Promise.resolve([]),
+    };
+
+    module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    const mockContext = {
+      log: mockLog,
+      site: { getId: () => 'site-1' },
+      dataAccess: {
+        Opportunity: {
+          findById: sandbox.stub().resolves(mockOpportunity),
+        },
+      },
+      sqs: {},
+      env: {},
+    };
+
+    const result = await module.sendOpportunitySuggestionsToMystique('oppty-1', mockContext, { skipMystiqueEnabledCheck: true });
+
+    expect(result.success).to.be.true;
+    // Should not check a11y-mystique-auto-suggest since we skipped the check
+    expect(mockIsAuditEnabledForSite).to.not.have.been.calledWith('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any);
+  });
+
+  it('should return error when opportunity not found', async () => {
+    module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    const mockContext = {
+      log: mockLog,
+      site: { getId: () => 'site-1' },
+      dataAccess: {
+        Opportunity: {
+          findById: sandbox.stub().resolves(null),
+        },
+      },
+      sqs: {},
+      env: {},
+    };
+
+    const result = await module.sendOpportunitySuggestionsToMystique('oppty-1', mockContext, { skipMystiqueEnabledCheck: true });
+
+    expect(result.success).to.be.false;
+    expect(result.error).to.equal('Opportunity not found');
+    expect(mockLog.error).to.have.been.calledWith('[A11yCodefix] Opportunity not found: oppty-1');
+  });
+
+  it('should return success when no suggestions found', async () => {
+    const mockOpportunity = {
+      getId: () => 'oppty-1',
+      getSiteId: () => 'site-1',
+      getAuditId: () => 'audit-1',
+      getSuggestions: () => Promise.resolve([]),
+    };
+
+    module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    const mockContext = {
+      log: mockLog,
+      site: { getId: () => 'site-1' },
+      dataAccess: {
+        Opportunity: {
+          findById: sandbox.stub().resolves(mockOpportunity),
+        },
+      },
+      sqs: {},
+      env: {},
+    };
+
+    const result = await module.sendOpportunitySuggestionsToMystique('oppty-1', mockContext, { skipMystiqueEnabledCheck: true });
+
+    expect(result.success).to.be.true;
+    expect(result.messagesProcessed).to.equal(0);
+    expect(mockLog.info).to.have.been.calledWith('[A11yCodefix] No suggestions found for opportunity');
+  });
+
+  it('should handle errors gracefully', async () => {
+    module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: sandbox.stub().rejects(new Error('Database error')),
+      },
+    });
+
+    const mockContext = {
+      log: mockLog,
+      site: { getId: () => 'site-1' },
+      dataAccess: {},
+      sqs: {},
+      env: {},
+    };
+
+    const result = await module.sendOpportunitySuggestionsToMystique('oppty-1', mockContext);
+
+    expect(result.success).to.be.false;
+    expect(result.error).to.equal('Database error');
+    expect(mockLog.error).to.have.been.calledWith('[A11yCodefix][A11yProcessingError] Failed to send suggestions to Mystique for opportunity oppty-1: Database error');
+  });
+
+  it('should successfully send messages when suggestions exist', async () => {
+    const mockSendMessage = sandbox.stub().resolves();
+    const mockOpportunity = {
+      getId: () => 'oppty-1',
+      getSiteId: () => 'site-1',
+      getAuditId: () => 'audit-1',
+      getSuggestions: () => Promise.resolve([
+        {
+          getData: () => ({
+            url: 'https://example.com',
+            issues: [{ type: 'aria-allowed-attr', htmlWithIssues: [] }],
+          }),
+          getId: () => 'sugg-1',
+        },
+      ]),
+    };
+
+    module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          { url: 'https://example.com', issuesList: [{ issueName: 'aria-allowed-attr' }], aggregationKey: 'key-1' },
+        ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    const mockContext = {
+      log: mockLog,
+      site: { getId: () => 'site-1', getDeliveryType: () => 'aem_edge' },
+      dataAccess: {
+        Opportunity: {
+          findById: sandbox.stub().resolves(mockOpportunity),
+        },
+      },
+      sqs: { sendMessage: mockSendMessage },
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'mystique-queue' },
+    };
+
+    const result = await module.sendOpportunitySuggestionsToMystique('oppty-1', mockContext, { skipMystiqueEnabledCheck: true });
+
+    expect(result.success).to.be.true;
+    expect(result.messagesProcessed).to.equal(1);
+    expect(mockSendMessage).to.have.been.called;
+  });
+});
