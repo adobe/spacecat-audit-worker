@@ -901,7 +901,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
  */
 export async function processContentAndGenerateOpportunities(context) {
   const {
-    site, audit, log, scrapeResultPaths, data,
+    site, audit, log, scrapeResultPaths, data, dataAccess,
   } = context;
 
   // Check for AI-only mode - skip processing step (step 1 already triggered Mystique)
@@ -1015,7 +1015,23 @@ export async function processContentAndGenerateOpportunities(context) {
         scrapeJobId,
       }, context);
     } else {
+      // No opportunities found - check if there are existing suggestions to mark as outdated
       log.info(`Prerender - No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}`);
+
+      // syncSuggestions with empty array marks all existing suggestions as OUTDATED
+      const { Opportunity } = dataAccess;
+      const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+      const existingOpportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
+
+      if (existingOpportunity) {
+        await syncSuggestions({
+          opportunity: existingOpportunity,
+          newData: [], // Empty array = all existing suggestions become outdated
+          context,
+          buildKey: (suggestion) => suggestion.url,
+          mapNewSuggestion: () => ({}), // Not used since newData is empty
+        });
+      }
     }
 
     const endTime = process.hrtime(startTime);
@@ -1044,6 +1060,28 @@ export async function processContentAndGenerateOpportunities(context) {
 
     // Upload status summary to S3 (post-processing)
     await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
+
+    // Update LatestAudit with the detailed results from step 3
+    // LatestAudit is upsertable, unlike the immutable Audit records
+    try {
+      const { LatestAudit } = dataAccess;
+
+      await LatestAudit.create({
+        auditId: audit.getId(),
+        siteId,
+        auditType: AUDIT_TYPE,
+        auditResult,
+        fullAuditRef: audit.getFullAuditRef(),
+        auditedAt: audit.getAuditedAt(),
+        isLive: site.getIsLive(),
+        isError: false,
+        invocationId: audit.getInvocationId(),
+      });
+
+      log.info(`Prerender - Updated LatestAudit with detailed results. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+    } catch (error) {
+      log.error(`Prerender - Failed to update LatestAudit: ${error.message}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`, error);
+    }
 
     return {
       status: 'complete',
