@@ -36,24 +36,10 @@ export async function queryBotProtectionLogs(scrapeJobId, context, searchStartTi
   const startTime = searchStartTime - BUFFER_MS;
   const endTime = Date.now();
 
-  /* c8 ignore start */
-  log.info('[BOT-CHECK] Querying CloudWatch logs:');
-  log.info(`[BOT-CHECK]   Log Group: ${logGroupName}`);
-  log.info(`[BOT-CHECK]   Scrape Job ID: ${scrapeJobId}`);
-  log.info(`[BOT-CHECK]   Time Range: ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
-  log.info(`[BOT-CHECK]   Search Start Time (raw): ${new Date(searchStartTime).toISOString()}`);
-  log.info('[BOT-CHECK]   Buffer Applied: 5 minutes');
-  /* c8 ignore stop */
-
   log.debug(`Querying bot protection logs from ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()} (5min buffer applied) for scrape job ${scrapeJobId}`);
 
   try {
     const filterPattern = `"[BOT-BLOCKED]" "${scrapeJobId}"`;
-
-    /* c8 ignore start */
-    log.info(`[BOT-CHECK] Filter Pattern: ${filterPattern}`);
-    log.info('[BOT-CHECK] Sending CloudWatch query...');
-    /* c8 ignore stop */
 
     const command = new FilterLogEventsCommand({
       logGroupName,
@@ -67,22 +53,10 @@ export async function queryBotProtectionLogs(scrapeJobId, context, searchStartTi
 
     const response = await cloudwatchClient.send(command);
 
-    /* c8 ignore start */
-    log.info(`[BOT-CHECK] CloudWatch query completed. Events found: ${response.events?.length || 0}`);
-    /* c8 ignore stop */
-
     if (!response.events || response.events.length === 0) {
-      /* c8 ignore start */
-      log.info('[BOT-CHECK] No bot protection events found in CloudWatch response');
-      /* c8 ignore stop */
       log.debug(`No bot protection logs found for scrape job ${scrapeJobId}`);
       return [];
     }
-
-    /* c8 ignore start */
-    log.info(`[BOT-CHECK] Raw CloudWatch events count: ${response.events.length}`);
-    log.info(`[BOT-CHECK] Sample event message: ${response.events[0]?.message?.substring(0, 200)}`);
-    /* c8 ignore stop */
 
     log.info(`Found ${response.events.length} bot protection events in CloudWatch logs for scrape job ${scrapeJobId}`);
 
@@ -95,9 +69,6 @@ export async function queryBotProtectionLogs(scrapeJobId, context, searchStartTi
           if (messageMatch) {
             return JSON.parse(messageMatch[1]);
           }
-          /* c8 ignore start */
-          log.warn(`[BOT-CHECK] Event message did not match expected pattern: ${event.message?.substring(0, 100)}`);
-          /* c8 ignore stop */
           return null;
         } catch (parseError) {
           log.warn(`Failed to parse bot protection log event: ${event.message}`);
@@ -105,10 +76,6 @@ export async function queryBotProtectionLogs(scrapeJobId, context, searchStartTi
         }
       })
       .filter((event) => event !== null);
-
-    /* c8 ignore start */
-    log.info(`[BOT-CHECK] Successfully parsed ${botProtectionEvents.length} bot protection events`);
-    /* c8 ignore stop */
 
     return botProtectionEvents;
   } catch (error) {
