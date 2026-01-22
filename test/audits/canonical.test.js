@@ -18,7 +18,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import esmock from 'esmock';
-import {
+import canonicalAudit, {
   validateCanonicalTag, validateCanonicalFormat,
   validateCanonicalRecursively, canonicalAuditRunner,
   generateCanonicalSuggestion, generateSuggestions, opportunityAndSuggestions,
@@ -1928,6 +1928,81 @@ describe('Canonical URL Tests', () => {
         });
         expect(context.log.info).to.have.been.calledWith('No top pages found for site test-site-id, skipping scraping');
       });
+
+      it('should filter out auth/login pages', async () => {
+        context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+          { getUrl: () => 'https://example.com/page1' },
+          { getUrl: () => 'https://example.com/login' },
+          { getUrl: () => 'https://example.com/signin' },
+          { getUrl: () => 'https://example.com/authenticate' },
+          { getUrl: () => 'https://example.com/oauth/callback' },
+          { getUrl: () => 'https://example.com/sso' },
+          { getUrl: () => 'https://example.com/auth' },
+          { getUrl: () => 'https://example.com/auth/provider' },
+        ]);
+
+        const testContext = {
+          ...context,
+          site,
+          finalUrl: 'https://example.com',
+        };
+
+        const result = await submitForScraping(testContext);
+
+        expect(result.urls).to.have.lengthOf(1);
+        expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });
+        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/login');
+        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/signin');
+        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/authenticate');
+        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/oauth/callback');
+        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/sso');
+        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/auth');
+        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/auth/provider');
+      });
+
+      it('should filter out PDF files', async () => {
+        context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+          { getUrl: () => 'https://example.com/page1' },
+          { getUrl: () => 'https://example.com/document.pdf' },
+          { getUrl: () => 'https://example.com/files/guide.PDF' },
+        ]);
+
+        const testContext = {
+          ...context,
+          site,
+          finalUrl: 'https://example.com',
+        };
+
+        const result = await submitForScraping(testContext);
+
+        expect(result.urls).to.have.lengthOf(1);
+        expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });
+        expect(context.log.info).to.have.been.calledWith('Skipping PDF file: https://example.com/document.pdf');
+        expect(context.log.info).to.have.been.calledWith('Skipping PDF file: https://example.com/files/guide.PDF');
+      });
+
+      it('should filter out both auth pages and PDFs', async () => {
+        context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+          { getUrl: () => 'https://example.com/page1' },
+          { getUrl: () => 'https://example.com/login' },
+          { getUrl: () => 'https://example.com/document.pdf' },
+          { getUrl: () => 'https://example.com/page2' },
+        ]);
+
+        const testContext = {
+          ...context,
+          site,
+          finalUrl: 'https://example.com',
+        };
+
+        const result = await submitForScraping(testContext);
+
+        expect(result.urls).to.have.lengthOf(2);
+        expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });
+        expect(result.urls[1]).to.deep.equal({ url: 'https://example.com/page2' });
+        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/login');
+        expect(context.log.info).to.have.been.calledWith('Skipping PDF file: https://example.com/document.pdf');
+      });
     });
 
     describe('validateCanonicalFromHTML', () => {
@@ -2093,6 +2168,14 @@ describe('Canonical URL Tests', () => {
           },
         });
       });
+    });
+  });
+
+  describe('Default Export - Canonical Audit Builder', () => {
+    it('should export the built audit with all steps and post-processors', () => {
+      expect(canonicalAudit).to.be.an('object');
+      expect(canonicalAudit).to.have.property('executor');
+      expect(canonicalAudit.executor).to.be.a('function');
     });
   });
 });
