@@ -205,7 +205,7 @@ export default async function links(context, auditContext) {
       return null;
     }).get().filter((link) => link !== null);
 
-    if (insecureLinks.length > 0) {
+    if (audit && insecureLinks.length > 0) {
       audit.opportunities.push({ check: 'bad-links', issue: insecureLinks });
     }
   });
