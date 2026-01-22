@@ -196,3 +196,51 @@ ORDER BY traffic_loss DESC
 ${limit ? `LIMIT ${limit}` : ''}
 `.trim();
 }
+
+/**
+ * Generates SQL query for differential metrics calculation.
+ * Fetches bounce rates for both consent='show' and consent='hidden' by traffic source.
+ * Used to calculate: projectedTrafficLost = PV_shown × max(0, BR_shown - BR_hidden)
+ *
+ * @param {Object} params - Template parameters
+ * @param {string} params.siteId - Site ID
+ * @param {string} params.tableName - Table name
+ * @param {string} params.temporalCondition - Temporal condition
+ * @returns {string} The SQL query string
+ */
+export function getDifferentialMetricsTemplate({
+  siteId,
+  tableName,
+  temporalCondition,
+}) {
+  return `
+WITH raw AS (
+    SELECT
+        trf_type,
+        consent,
+        pageviews,
+        engaged
+    FROM ${tableName}
+    WHERE siteid = '${siteId}'
+    AND consent IN ('show', 'hidden')
+    AND (${temporalCondition})
+),
+agg AS (
+    SELECT
+        trf_type,
+        consent,
+        COUNT(*) AS row_count,
+        CAST(SUM(pageviews) AS BIGINT) AS pageviews,
+        CAST(SUM(engaged) AS BIGINT) AS engagements
+    FROM raw
+    GROUP BY trf_type, consent
+)
+SELECT
+    trf_type,
+    consent,
+    pageviews,
+    1 - CAST(engagements AS DOUBLE) / NULLIF(row_count, 0) AS bounce_rate
+FROM agg
+ORDER BY trf_type, consent
+`.trim();
+}

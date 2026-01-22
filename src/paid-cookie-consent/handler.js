@@ -18,10 +18,12 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import {
   // getPaidTrafficAnalysisTemplate,
   getTop3PagesWithTrafficLostTemplate,
+  getDifferentialMetricsTemplate,
 } from './queries.js';
 
 // const MAX_PAGES_TO_AUDIT = 3;
 const CUT_OFF_BOUNCE_RATE = 0.3;
+const DEFAULT_CPC = 0.8;
 
 const AUDIT_CONSTANTS = {
   GUIDANCE_TYPE: 'guidance:paid-cookie-consent',
@@ -105,6 +107,102 @@ async function executeTop3TrafficLostPagesQuery(
 
 // const hasValues = (segment) => segment?.value?.length > 0;
 
+/**
+ * Executes the differential metrics query to get bounce rates
+ * for both consent='show' and consent='hidden' by traffic source.
+ */
+async function executeDifferentialMetricsQuery(
+  athenaClient,
+  siteId,
+  temporalCondition,
+  config,
+  log,
+) {
+  const tableName = `${config.rumMetricsDatabase}.${config.rumMetricsCompactTable}`;
+
+  const query = getDifferentialMetricsTemplate({
+    siteId,
+    tableName,
+    temporalCondition,
+  });
+
+  const description = `differential metrics (show vs hidden) for siteId: ${siteId}`;
+
+  log.debug('[DEBUG] Differential Metrics Query:', query);
+
+  const result = await athenaClient.query(query, config.rumMetricsDatabase, description);
+  return result.map((item) => ({
+    trfType: item.trf_type,
+    consent: item.consent,
+    pageViews: parseInt(item.pageviews || 0, 10),
+    bounceRate: parseFloat(item.bounce_rate || 0),
+  }));
+}
+
+/**
+ * Calculates projected traffic lost using differential attribution.
+ * Formula: sum of (PV_show × max(0, BR_show - BR_hidden)) per trf_type
+ *
+ * @param {Array} differentialData - Array of {trfType, consent, pageViews, bounceRate}
+ * @param {Object} log - Logger instance
+ * @returns {Object} { projectedTrafficLost, hasShowData, hasHiddenData }
+ */
+export function calculateDifferentialLoss(differentialData, log) {
+  // Group by trf_type
+  const byTrfType = {};
+  for (const row of differentialData) {
+    if (!byTrfType[row.trfType]) {
+      byTrfType[row.trfType] = {};
+    }
+    byTrfType[row.trfType][row.consent] = {
+      pageViews: row.pageViews,
+      bounceRate: row.bounceRate,
+    };
+  }
+
+  // Check if we have any show or hidden data at all
+  const hasShowData = Object.values(byTrfType).some((data) => data.show);
+  const hasHiddenData = Object.values(byTrfType).some((data) => data.hidden);
+
+  if (!hasShowData) {
+    log.warn('[paid-audit] No show consent data found; cannot calculate differential');
+    return { projectedTrafficLost: 0, hasShowData: false, hasHiddenData };
+  }
+
+  if (!hasHiddenData) {
+    log.warn('[paid-audit] No hidden consent data found; cannot calculate differential');
+    return { projectedTrafficLost: 0, hasShowData, hasHiddenData: false };
+  }
+
+  // Calculate differential loss per trf_type
+  let totalLoss = 0;
+  for (const [trfType, data] of Object.entries(byTrfType)) {
+    const showData = data.show;
+    const hiddenData = data.hidden;
+
+    if (!showData) {
+      log.debug(`[paid-audit] No show data for trf_type=${trfType}; skipping`);
+    } else if (!hiddenData) {
+      log.debug(`[paid-audit] No hidden data for trf_type=${trfType}; skipping`);
+    } else {
+      // delta = max(0, BR_show - BR_hidden)
+      const delta = Math.max(0, showData.bounceRate - hiddenData.bounceRate);
+      // loss = PV_show × delta
+      const loss = showData.pageViews * delta;
+
+      log.debug(
+        `[paid-audit] trf_type=${trfType}: BR_show=${showData.bounceRate.toFixed(3)}, `
+        + `BR_hidden=${hiddenData.bounceRate.toFixed(3)}, delta=${delta.toFixed(3)}, `
+        + `PV_show=${showData.pageViews}, loss=${loss.toFixed(0)}`,
+      );
+
+      totalLoss += loss;
+    }
+  }
+
+  return { projectedTrafficLost: totalLoss, hasShowData: true, hasHiddenData: true };
+}
+
 function buildMystiqueMessage(site, auditId, url) {
   return {
     type: AUDIT_CONSTANTS.GUIDANCE_TYPE,
@@ -137,8 +235,51 @@ export async function paidAuditRunner(auditUrl, context, site) {
   const athenaClient = AWSAthenaClient.fromContext(context, `${config.athenaTemp}/paid-audit-cookie-consent/${siteId}-${Date.now()}`);
 
   try {
-    log.debug(`[paid-audit] [Site: ${auditUrl}] Executing three separate Athena queries for paid traffic segments`);
+    log.debug(`[paid-audit] [Site: ${auditUrl}] Executing Athena queries for paid traffic segments`);
 
+    // Execute differential metrics query for main projected traffic lost calculation
+    const differentialData = await executeDifferentialMetricsQuery(
+      athenaClient,
+      siteId,
+      temporalCondition,
+      config,
+      log,
+    );
+
+    // Calculate projected traffic lost using differential attribution
+    const {
+      projectedTrafficLost,
+      hasShowData,
+      hasHiddenData,
+    } = calculateDifferentialLoss(differentialData, log);
+
+    // Abort if no show data - we can't do meaningful differential calculation
+    if (!hasShowData) {
+      log.warn(
+        `[paid-audit] [Site: ${auditUrl}] No show consent data available; `
+        + 'cannot calculate differential metrics. Aborting audit.',
+      );
+      return {
+        auditResult: null,
+        fullAuditRef: auditUrl,
+      };
+    }
+
+    // Abort if no hidden data - we can't do meaningful differential calculation
+    if (!hasHiddenData) {
+      log.warn(
+        `[paid-audit] [Site: ${auditUrl}] No hidden consent data available; `
+        + 'cannot calculate differential metrics. Aborting audit.',
+      );
+      return {
+        auditResult: null,
+        fullAuditRef: auditUrl,
+      };
+    }
+
+    const projectedTrafficValue = projectedTrafficLost * DEFAULT_CPC;
+
+    // Continue with existing queries for top3 pages and device breakdown
     const lostTrafficSummary = await executeTop3TrafficLostPagesQuery(athenaClient, ['device'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition, 0, null, config, log, baseURL);
     const top3PagesTrafficLost = await executeTop3TrafficLostPagesQuery(athenaClient, ['path'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition, 0, 3, config, log, baseURL);
     const top3PagesTrafficLostByDevice = await executeTop3TrafficLostPagesQuery(athenaClient, ['path', 'device'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition, 0, null, config, log, baseURL);
@@ -150,13 +291,6 @@ export async function paidAuditRunner(auditUrl, context, site) {
     // await executeTop3TrafficLostPagesQuery(athenaClient,
     // ['path', 'trf_type', 'device'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition,
     // config.pageViewThreshold, null, config, log);
-
-    // the following data is needed on opportunity level
-    // projectedTrafficLost = sum of "traffic_loss" column across the 3 devices
-    const projectedTrafficLost = lostTrafficSummary
-      .reduce((sum, item) => sum + item.trafficLoss, 0);
-    // projectedTrafficValue = projectedTrafficLost * 0.8
-    const projectedTrafficValue = projectedTrafficLost * 0.8;
     // top 3 pages with highest projectedTrafficLost
     const top3Pages = top3PagesTrafficLost;
     // averagePageViewsTop3  /  averageTrafficLostTop3  / averageBounceRateMobileTop3
