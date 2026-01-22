@@ -129,11 +129,15 @@ export default async function handler(message, context) {
   const sheetSize = sheet.byteLength;
   log.info(`%s: Sheet fetched successfully for auditId: ${auditId}, siteId: ${siteId} (${sheetSize} bytes in ${fetchDuration}ms)`, AUDIT_NAME);
 
+  const xlsxName = extractXlsxName(presignedURL);
+
+  // Note: URL enrichment now happens BEFORE Mystique (in handler.js via JSON enrichment)
+  // The Excel sheet we receive already has Related URLs populated
+
   // upload to sharepoint & publish via hlx admin api
   log.info(`%s: Creating SharePoint client for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
   const sharepointClient = await createLLMOSharepointClient(context);
 
-  const xlsxName = extractXlsxName(presignedURL);
   log.info(`%s: Starting SharePoint upload for auditId: ${auditId}, siteId: ${siteId}, file: ${xlsxName}, locations: ${outputLocations.length}`, AUDIT_NAME);
 
   const uploadStartTime = Date.now();
