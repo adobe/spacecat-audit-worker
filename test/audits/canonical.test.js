@@ -2198,8 +2198,13 @@ describe('Canonical URL Tests', () => {
   describe('Default Export - Canonical Audit Builder', () => {
     it('should export the built audit with all steps and post-processors', () => {
       expect(canonicalAudit).to.be.an('object');
-      expect(canonicalAudit).to.have.property('executor');
-      expect(canonicalAudit.executor).to.be.a('function');
+      expect(canonicalAudit).to.have.property('steps');
+      expect(canonicalAudit).to.have.property('stepNames');
+      expect(canonicalAudit.stepNames).to.include('importTopPages');
+      expect(canonicalAudit.stepNames).to.include('submitForScraping');
+      expect(canonicalAudit.stepNames).to.include('processScrapedContent');
+      expect(canonicalAudit).to.have.property('run');
+      expect(canonicalAudit.run).to.be.a('function');
     });
   });
 });
