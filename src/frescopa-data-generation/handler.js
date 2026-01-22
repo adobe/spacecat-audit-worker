@@ -39,8 +39,14 @@ const FILE_CONFIGS = [
 /**
  * Regex pattern to extract week identifier from filename.
  * Matches patterns like: agentictraffic-w02-2026.json or brandpresence-all-w03-2026.json
+ * Also matches .xlsx files for SharePoint operations
  */
-const WEEK_PATTERN = /-(w\d{2}-\d{4})\.json$/;
+const WEEK_PATTERN = /-(w\d{2}-\d{4})\.(json|xlsx)$/;
+
+/**
+ * Minimum number of files required for sliding window operation
+ */
+const REQUIRED_FILE_COUNT = 5;
 
 /**
  * Parses a week identifier (e.g., "w03-2026") into a comparable value.
@@ -91,60 +97,6 @@ async function fetchQueryIndex(log) {
 }
 
 /**
- * Finds the most recent file for a given file prefix from the query index.
- * @param {Array<{ path: string, lastModified: string }>} files - Array of file entries
- * @param {string} filePrefix -
- * The file prefix to match (e.g., "agentictraffic", "brandpresence-all", "referral-traffic")
- * @param {object} log - Logger instance
- * @returns {{ path: string, weekIdentifier: string } | null} The most recent file info, or null
- */
-function findMostRecentFile(files, filePrefix, log) {
-  // Filter files that match the prefix pattern
-  const matchingFiles = files
-    .filter((file) => {
-      const filename = file.path.split('/').pop();
-      return filename.startsWith(filePrefix) && WEEK_PATTERN.test(filename);
-    })
-    .map((file) => {
-      const filename = file.path.split('/').pop();
-      const weekMatch = WEEK_PATTERN.exec(filename);
-      return {
-        path: file.path,
-        weekIdentifier: weekMatch[1],
-      };
-    })
-    .filter((file) => file.weekIdentifier !== null);
-
-  if (matchingFiles.length === 0) {
-    log.warn(`%s: No files found matching prefix "${filePrefix}"`, AUDIT_NAME);
-    return null;
-  }
-
-  // Sort by week identifier (most recent first)
-  matchingFiles.sort((a, b) => compareWeekIdentifiers(b.weekIdentifier, a.weekIdentifier));
-
-  const mostRecent = matchingFiles[0];
-  log.info(
-    `%s: Found most recent file for "${filePrefix}": ${mostRecent.path} (${mostRecent.weekIdentifier})`,
-    AUDIT_NAME,
-  );
-
-  return mostRecent;
-}
-
-/**
- * Gets the template file path (xlsx) from a json file path.
- * @param {string} jsonPath -
- * The path to the JSON file (e.g., "/frescopa.coffee/brand-presence/file.json")
- * @returns {string} The SharePoint path to the xlsx file
- */
-function getTemplateXlsxPath(jsonPath) {
-  // Convert JSON path to xlsx path and add SharePoint prefix
-  const xlsxPath = jsonPath.replace(/\.json$/, '.xlsx');
-  return `/sites/elmo-ui-data${xlsxPath}`;
-}
-
-/**
  * Calculates the ISO week number for a given date.
  * ISO weeks start on Monday and the first week contains January 4th.
  * @param {Date} date - The date to calculate the week for
@@ -187,9 +139,162 @@ function generateWeekIdentifier(date = new Date()) {
 }
 
 /**
+ * Calculates the target week identifier (previous week).
+ * @param {Date} [date] - The date to calculate from (defaults to current date)
+ * @returns {string} The target week identifier (e.g., "w02-2026")
+ */
+function getTargetWeekIdentifier(date = new Date()) {
+  // Go back 7 days to get previous week
+  const previousWeek = new Date(date);
+  previousWeek.setDate(previousWeek.getDate() - 7);
+  return generateWeekIdentifier(previousWeek);
+}
+
+/**
+ * Gets the last N files for a given file prefix from the query index.
+ * @param {Array<{ path: string, lastModified: string }>} files - Array of file entries
+ * @param {string} filePrefix - The file prefix to match
+ * @param {number} count - Number of most recent files to return
+ * @param {object} log - Logger instance
+ * @returns {Array<{ path: string, weekIdentifier: string }>} Array of most recent files
+ */
+function getLastNFiles(files, filePrefix, count, log) {
+  // Filter files that match the prefix pattern
+  const matchingFiles = files
+    .filter((file) => {
+      const filename = file.path.split('/').pop();
+      return filename.startsWith(filePrefix) && WEEK_PATTERN.test(filename);
+    })
+    .map((file) => {
+      const filename = file.path.split('/').pop();
+      const weekMatch = WEEK_PATTERN.exec(filename);
+      return {
+        path: file.path,
+        weekIdentifier: weekMatch[1],
+      };
+    })
+    .filter((file) => file.weekIdentifier !== null);
+
+  if (matchingFiles.length === 0) {
+    log.warn(`%s: No files found matching prefix "${filePrefix}"`, AUDIT_NAME);
+    return [];
+  }
+
+  // Sort by week identifier (most recent first)
+  matchingFiles.sort((a, b) => compareWeekIdentifiers(b.weekIdentifier, a.weekIdentifier));
+
+  // Return the last N files
+  const result = matchingFiles.slice(0, count);
+  log.info(
+    `%s: Found ${result.length} files for "${filePrefix}" (requested ${count})`,
+    AUDIT_NAME,
+  );
+
+  return result;
+}
+
+/**
+ * Builds the SharePoint file path for a given file.
+ * @param {string} folder - The folder name (e.g., "agentic-traffic")
+ * @param {string} filePrefix - The file prefix
+ * @param {string} weekIdentifier - The week identifier
+ * @returns {string} The SharePoint file path
+ */
+function buildSharePointPath(folder, filePrefix, weekIdentifier) {
+  const fileName = `${filePrefix}-${weekIdentifier}.xlsx`;
+  return `/sites/elmo-ui-data/${DATA_FOLDER}/${folder}/${fileName}`;
+}
+
+/**
+ * Performs the sliding window operation for a report type.
+ * Takes the 5 most recent files and:
+ * 1. Copies the newest file to create the target week file
+ * 2. Renames each of the next 4 files to the next week number (in reverse order)
+ * 3. This effectively "shifts" all files forward by one week
+ *
+ * @param {object} sharepointClient - The SharePoint client
+ * @param {Array<{ path: string, weekIdentifier: string }>} files - The 5 files sorted newest first
+ * @param {string} targetWeekId - The target week identifier to create
+ * @param {object} config - The file configuration
+ * @param {object} log - Logger instance
+ * @returns {Promise<Array<{ fileName: string, operation: string, status: string }>>} Results
+ */
+async function performSlidingWindow(sharepointClient, files, targetWeekId, config, log) {
+  const { destinationFolder, filePrefix } = config;
+  const operations = [];
+
+  try {
+    log.info(
+      `%s: Starting sliding window for ${filePrefix}, target week: ${targetWeekId}`,
+      AUDIT_NAME,
+    );
+
+    // Step 1: Copy the newest file (position 0) to create target week file
+    const newestFile = files[0];
+    const newestPath = `/sites/elmo-ui-data${newestFile.path.replace('.json', '.xlsx')}`;
+    const targetPath = buildSharePointPath(destinationFolder, filePrefix, targetWeekId);
+
+    log.info(`%s: Copying ${newestFile.weekIdentifier} -> ${targetWeekId}`, AUDIT_NAME);
+    const newestDoc = sharepointClient.getDocument(newestPath);
+    await newestDoc.copy(targetPath);
+    operations.push({
+      fileName: `${filePrefix}-${targetWeekId}.xlsx`,
+      operation: 'copy',
+      status: 'success',
+    });
+
+    // Step 2: Perform moves in reverse order (oldest to newest) to avoid conflicts
+    // We need to move files[4] -> files[3] week, files[3] -> files[2] week, etc.
+    // Process from index 4 down to 1
+    for (let i = files.length - 1; i >= 1; i -= 1) {
+      const currentFile = files[i];
+      const targetWeekForThisFile = files[i - 1].weekIdentifier;
+
+      const currentPath = `/sites/elmo-ui-data${currentFile.path.replace('.json', '.xlsx')}`;
+      const newPath = buildSharePointPath(destinationFolder, filePrefix, targetWeekForThisFile);
+
+      log.info(
+        `%s: Moving ${currentFile.weekIdentifier} -> ${targetWeekForThisFile}`,
+        AUDIT_NAME,
+      );
+
+      const doc = sharepointClient.getDocument(currentPath);
+      // eslint-disable-next-line no-await-in-loop
+      await doc.move(newPath);
+
+      operations.push({
+        fileName: `${filePrefix}-${targetWeekForThisFile}.xlsx`,
+        operation: 'move',
+        status: 'success',
+        from: currentFile.weekIdentifier,
+        to: targetWeekForThisFile,
+      });
+    }
+
+    log.info(`%s: Sliding window completed for ${filePrefix}`, AUDIT_NAME);
+    return operations;
+  } catch (error) {
+    log.error(
+      `%s: Error during sliding window for ${filePrefix}: ${error.message}`,
+      AUDIT_NAME,
+      error,
+    );
+    operations.push({
+      fileName: `${filePrefix}-${targetWeekId}.xlsx`,
+      operation: 'sliding_window',
+      status: 'error',
+      error: error.message,
+    });
+    throw error;
+  }
+}
+
+/**
  * Main handler for Frescopa data generation job.
- * This job runs weekly (typically on Monday) and creates Excel files
- * for agentic-traffic, brand-presence, and referral-traffic.
+ * This job runs weekly and performs a sliding window operation:
+ * - Takes the 5 most recent files for each report type
+ * - Creates a new file for the target week (previous week) by copying the newest file
+ * - Shifts all other files forward by one week (renames them)
  *
  * @param {object} message - The SQS message
  * @param {object} context - The execution context
@@ -199,10 +304,14 @@ async function run(message, context) {
   const { log } = context;
   const startTime = Date.now();
 
-  // Allow week identifier to be passed in auditContext, otherwise calculate it
-  const weekIdentifier = message.auditContext?.weekIdentifier || generateWeekIdentifier();
+  // Calculate target week (previous week, or use override from auditContext)
+  const targetWeekIdentifier = message.auditContext?.weekIdentifier
+    || getTargetWeekIdentifier();
 
-  log.info(`%s: Starting Frescopa data generation for week ${weekIdentifier}`, AUDIT_NAME);
+  log.info(
+    `%s: Starting Frescopa sliding window data generation for target week ${targetWeekIdentifier}`,
+    AUDIT_NAME,
+  );
 
   try {
     // Fetch the query index to discover existing files
@@ -217,117 +326,122 @@ async function run(message, context) {
     // Process each file configuration
     for (const config of FILE_CONFIGS) {
       const { destinationFolder, filePrefix } = config;
-      const newFileName = `${filePrefix}-${weekIdentifier}.xlsx`;
-      const destinationFolderPath = `${DATA_FOLDER}/${destinationFolder}`;
-      const destinationFilePath = `/${destinationFolderPath}/${newFileName}`;
 
       try {
-        log.info(`%s: Processing ${newFileName}...`, AUDIT_NAME);
+        log.info(`%s: Processing report type: ${filePrefix}`, AUDIT_NAME);
 
-        // Find the most recent file of this type to use as template
-        const templateInfo = findMostRecentFile(queryIndexFiles, filePrefix, log);
+        // Get the last 5 files for this type
+        const last5Files = getLastNFiles(
+          queryIndexFiles,
+          filePrefix,
+          REQUIRED_FILE_COUNT,
+          log,
+        );
 
-        if (!templateInfo) {
-          const errorMsg = `No template file found for type "${filePrefix}"`;
-          log.error(`%s: ${errorMsg}. Skipping ${newFileName}.`, AUDIT_NAME);
-          errors.push({ file: newFileName, error: errorMsg });
+        // Validate we have enough files
+        if (last5Files.length < REQUIRED_FILE_COUNT) {
+          const errorMsg = `Insufficient files found for "${filePrefix}": `
+            + `found ${last5Files.length}, required ${REQUIRED_FILE_COUNT}`;
+          log.error(`%s: ${errorMsg}`, AUDIT_NAME);
+          errors.push({ filePrefix, error: errorMsg });
           // eslint-disable-next-line no-continue
           continue;
         }
 
-        // Check if we're trying to create a file for the same week as the template
-        if (templateInfo.weekIdentifier === weekIdentifier) {
+        // Check if the newest file matches target week (already processed)
+        const newestWeek = last5Files[0].weekIdentifier;
+        if (newestWeek === targetWeekIdentifier) {
           log.info(
-            `%s: File for ${weekIdentifier} already exists (${templateInfo.path}). Skipping.`,
+            `%s: Target week ${targetWeekIdentifier} already exists for ${filePrefix}. Re-running sliding window.`,
             AUDIT_NAME,
           );
-          results.push({
-            fileName: newFileName,
-            folder: destinationFolder,
-            status: 'skipped',
-            reason: 'already exists',
-          });
-          // eslint-disable-next-line no-continue
-          continue;
+          // Continue with sliding window - it will replace existing files
         }
 
-        // Check if destination folder exists
-        const folder = sharepointClient.getDocument(`/sites/elmo-ui-data/${destinationFolderPath}/`);
-        // eslint-disable-next-line no-await-in-loop
-        const folderExists = await folder.exists();
+        log.info(
+          `%s: Found 5 files for ${filePrefix}. Newest: ${newestWeek}, Creating: ${targetWeekIdentifier}`,
+          AUDIT_NAME,
+        );
 
-        if (!folderExists) {
-          const errorMsg = `Folder ${destinationFolderPath} does not exist`;
-          log.error(`%s: ${errorMsg}. Skipping ${newFileName}.`, AUDIT_NAME);
-          errors.push({ file: newFileName, error: errorMsg });
-          // eslint-disable-next-line no-continue
-          continue;
+        // Perform sliding window operation
+        // eslint-disable-next-line no-await-in-loop
+        const operations = await performSlidingWindow(
+          sharepointClient,
+          last5Files,
+          targetWeekIdentifier,
+          config,
+          log,
+        );
+
+        // Publish all 5 files
+        const weeksToPublish = [
+          targetWeekIdentifier,
+          last5Files[0].weekIdentifier,
+          last5Files[1].weekIdentifier,
+          last5Files[2].weekIdentifier,
+          last5Files[3].weekIdentifier,
+        ];
+
+        log.info(`%s: Publishing ${weeksToPublish.length} files for ${filePrefix}`, AUDIT_NAME);
+
+        for (const weekId of weeksToPublish) {
+          const fileName = `${filePrefix}-${weekId}.xlsx`;
+          const folderPath = `${DATA_FOLDER}/${destinationFolder}`;
+
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await publishToAdminHlx(fileName, folderPath, log);
+            log.info(`%s: Published ${fileName}`, AUDIT_NAME);
+          } catch (publishError) {
+            log.error(
+              `%s: Failed to publish ${fileName}: ${publishError.message}`,
+              AUDIT_NAME,
+              publishError,
+            );
+            // Don't fail the whole operation if publish fails
+          }
         }
-
-        // Check if the new file already exists in SharePoint
-        const newFile = sharepointClient.getDocument(`/sites/elmo-ui-data/${destinationFolderPath}/${newFileName}`);
-        // eslint-disable-next-line no-await-in-loop
-        const fileExists = await newFile.exists();
-
-        if (fileExists) {
-          log.info(`%s: File ${newFileName} already exists in ${destinationFolder}. Skipping.`, AUDIT_NAME);
-          results.push({
-            fileName: newFileName,
-            folder: destinationFolder,
-            status: 'skipped',
-            reason: 'already exists',
-          });
-          // eslint-disable-next-line no-continue
-          continue;
-        }
-
-        // Get the template xlsx path and copy it to the new destination
-        const templateXlsxPath = getTemplateXlsxPath(templateInfo.path);
-        log.info(`%s: Using template: ${templateXlsxPath}`, AUDIT_NAME);
-
-        const templateFile = sharepointClient.getDocument(templateXlsxPath);
-        // eslint-disable-next-line no-await-in-loop
-        await templateFile.copy(destinationFilePath);
-
-        log.info(`%s: Created file ${newFileName} in ${destinationFolderPath}`, AUDIT_NAME);
-
-        // Publish the file
-        // eslint-disable-next-line no-await-in-loop
-        await publishToAdminHlx(newFileName, destinationFolderPath, log);
 
         results.push({
-          fileName: newFileName,
+          filePrefix,
           folder: destinationFolder,
-          status: 'created',
-          template: templateInfo.path,
-          templateWeek: templateInfo.weekIdentifier,
-          live: `https://main--project-elmo-ui-data--adobe.aem.live/${destinationFolderPath}/${filePrefix}-${weekIdentifier}.json`,
+          targetWeek: targetWeekIdentifier,
+          operations,
+          published: weeksToPublish,
+          status: 'success',
         });
       } catch (fileError) {
-        log.error(`%s: Error processing ${newFileName}: ${fileError.message}`, AUDIT_NAME, fileError);
-        errors.push({ file: newFileName, error: fileError.message });
+        log.error(
+          `%s: Error processing ${filePrefix}: ${fileError.message}`,
+          AUDIT_NAME,
+          fileError,
+        );
+        errors.push({ filePrefix, error: fileError.message });
       }
     }
 
     const duration = Date.now() - startTime;
-    const successCount = results.filter((r) => r.status === 'created').length;
-    const skippedCount = results.filter((r) => r.status === 'skipped').length;
+    const successCount = results.filter((r) => r.status === 'success').length;
 
     log.info(
-      `%s: Frescopa data generation completed for week ${weekIdentifier} in ${duration}ms. `
-      + `Created: ${successCount}, Skipped: ${skippedCount}, Errors: ${errors.length}`,
+      `%s: Frescopa sliding window completed for target week ${targetWeekIdentifier} in ${duration}ms. `
+      + `Success: ${successCount}, Errors: ${errors.length}`,
       AUDIT_NAME,
     );
 
     return ok({
-      weekIdentifier,
+      targetWeekIdentifier,
       results,
       errors,
       duration,
     });
   } catch (error) {
     const duration = Date.now() - startTime;
-    log.error(`%s: Failed to generate Frescopa data for week ${weekIdentifier} after ${duration}ms`, AUDIT_NAME, error);
+    log.error(
+      `%s: Failed to generate Frescopa data for target week ${targetWeekIdentifier} after ${duration}ms`,
+      AUDIT_NAME,
+      error,
+    );
     return internalServerError(`Frescopa data generation failed: ${error.message}`);
   }
 }
