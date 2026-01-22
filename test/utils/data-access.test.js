@@ -309,9 +309,9 @@ describe('data-access', () => {
       expect(existingSuggestions[0].save).to.have.been.called;
     });
 
-    it('should preserve REJECTED status when same suggestion appears again in audit', async () => {
+    it('should preserve REJECTED status when same suggestion appears again with no data changes', async () => {
       const suggestionsData = [
-        { key: '1', title: 'old title' },
+        { key: '1', title: 'same title', url: 'https://example.com/page1' },
       ];
       const existingSuggestions = [{
         id: '1',
@@ -324,8 +324,9 @@ describe('data-access', () => {
         setUpdatedBy: sinon.stub().returnsThis(),
       }];
 
+      // Exact same data (no changes)
       const newData = [
-        { key: '1', title: 'updated title' },
+        { key: '1', title: 'same title', url: 'https://example.com/page1' },
       ];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
@@ -341,11 +342,145 @@ describe('data-access', () => {
       // Verify that REJECTED status is NOT changed (setStatus should not be called)
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
-      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit with no data changes. Preserving REJECTED status.');
       // Verify that save is called
       expect(existingSuggestions[0].save).to.have.been.called;
       // Verify that setData is called to update the data
-      expect(existingSuggestions[0].setData).to.have.been.calledWith(newData[0]);
+      expect(existingSuggestions[0].setData).to.have.been.called;
+    });
+
+    it('should change REJECTED status to NEW when data changes', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', description: 'old description' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Data changed (title changed)
+      const newData = [
+        { key: '1', title: 'new title', description: 'old description' },
+      ];
+
+      // Mock site without requiresValidation (should set to NEW)
+      context.site = {
+        requiresValidation: false,
+      };
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that status is changed to NEW
+      expect(existingSuggestions[0].setStatus)
+        .to.have.been.calledWith(SuggestionDataAccess.STATUSES.NEW);
+      // Verify that debug log is called with the correct message
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found with changed data. Updating status to allow reconsideration.');
+      // Verify that save is called
+      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that setData is called to update the data
+      expect(existingSuggestions[0].setData).to.have.been.called;
+    });
+
+    it('should change REJECTED status to PENDING_VALIDATION when data changes and site requires validation', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Data changed (url changed)
+      const newData = [
+        { key: '1', title: 'old title', url: 'https://example.com/page2' },
+      ];
+
+      // Mock site with requiresValidation (should set to PENDING_VALIDATION)
+      context.site = {
+        requiresValidation: true,
+      };
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that status is changed to PENDING_VALIDATION
+      expect(existingSuggestions[0].setStatus)
+        .to.have.been.calledWith(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
+      // Verify that debug log is called with the correct message
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found with changed data. Updating status to allow reconsideration.');
+      // Verify that save is called
+      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that setData is called to update the data
+      expect(existingSuggestions[0].setData).to.have.been.called;
+    });
+
+    it('should detect changes in nested objects and arrays for REJECTED suggestions', async () => {
+      const suggestionsData = [
+        { key: '1', metrics: [{ value: 100 }], issues: [{ type: 'error1' }] },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Nested object/array changed in data
+      const newData = [
+        { key: '1', metrics: [{ value: 200 }], issues: [{ type: 'error2' }] },
+      ];
+
+      context.site = {
+        requiresValidation: false,
+      };
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that status is changed to NEW (nested changes detected)
+      expect(existingSuggestions[0].setStatus)
+        .to.have.been.calledWith(SuggestionDataAccess.STATUSES.NEW);
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found with changed data. Updating status to allow reconsideration.');
+      expect(existingSuggestions[0].save).to.have.been.called;
+      expect(existingSuggestions[0].setData).to.have.been.called;
     });
 
     it('should not mark REJECTED suggestions as OUTDATED when they do not appear in new audit data', async () => {

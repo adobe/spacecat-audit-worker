@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { isNonEmptyArray, isObject } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, isObject, deepEqual } from '@adobe/spacecat-shared-utils';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 /**
@@ -200,11 +200,28 @@ const defaultMergeDataFunction = (existingData, newData) => ({
 });
 
 /**
+ * Checks if the suggestion data object has changed using deep comparison.
+ *
+ * @param {Object} existingData - The existing suggestion data object.
+ * @param {Object} newData - The new data object to compare against.
+ * @returns {boolean} - True if data has changed, false otherwise.
+ */
+function hasDataChanged(existingData, newData) {
+  if (!existingData || !newData) {
+    return false;
+  }
+  return !deepEqual(existingData, newData);
+}
+
+/**
  * Synchronizes existing suggestions with new data.
  * Handles outdated suggestions by updating their status, either to OUTDATED or the provided one.
  * Updates existing suggestions with new data if they match based on the provided key.
- * Preserves REJECTED status when an existing suggestion with REJECTED status appears again
- * in the audit run.
+ * For REJECTED suggestions that appear again:
+ * - Updates data field with new audit data
+ * - If any field in data obj changed, changes status from REJECTED to
+ *   PENDING_VALIDATION/NEW
+ * - If data unchanged, preserves REJECTED status
  *
  * Prepares new suggestions from the new data and adds them to the opportunity.
  * Maps new data to suggestion objects using the provided mapping function.
@@ -257,12 +274,25 @@ export async function syncSuggestions({
         return newDataKeys.has(existingKey);
       })
       .map((existing) => {
-        const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
+        const existingData = existing.getData();
+        const newDataItem = newData.find((data) => buildKey(data) === buildKey(existingData));
         existing.setData(mergeDataFunction(existing.getData(), newDataItem));
 
         if (existing.getStatus() === SuggestionDataAccess.STATUSES.REJECTED) {
-          // Keep REJECTED status when same suggestion appears again in audit
-          log.debug('REJECTED suggestion found in audit. Preserving REJECTED status.');
+          // Check if data has changed
+          const dataChanged = hasDataChanged(existingData, newDataItem);
+          if (dataChanged) {
+            // Data changed, change status to PENDING_VALIDATION/NEW
+            const { site } = context;
+            const requiresValidation = Boolean(site?.requiresValidation);
+            existing.setStatus(requiresValidation
+              ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+              : SuggestionDataAccess.STATUSES.NEW);
+            log.debug('REJECTED suggestion found with changed data. Updating status to allow reconsideration.');
+          } else {
+            // No data changes, keep REJECTED status
+            log.debug('REJECTED suggestion found in audit with no data changes. Preserving REJECTED status.');
+          }
         } else if (SuggestionDataAccess.STATUSES.OUTDATED === existing.getStatus()) {
           log.warn('Resolved suggestion found in audit. Possible regression.');
           const { site } = context;
