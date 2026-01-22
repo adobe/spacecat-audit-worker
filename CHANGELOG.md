@@ -1,3 +1,52 @@
+# [1.287.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.286.0...v1.287.0) (2026-01-22)
+
+
+### Features
+
+* adjust security-csp audit to store patch data for auto-fix (CQ-4361223) ([#1865](https://github.com/adobe/spacecat-audit-worker/issues/1865)) ([5b7b269](https://github.com/adobe/spacecat-audit-worker/commit/5b7b26938d7a0a78329e0f355fea7930d7c746b2))
+
+# [1.286.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.285.1...v1.286.0) (2026-01-22)
+
+
+### Features
+
+* SITES-39444 Autofix Slack trigger ([#1877](https://github.com/adobe/spacecat-audit-worker/issues/1877)) ([bc1f4ab](https://github.com/adobe/spacecat-audit-worker/commit/bc1f4ab2fc58522b94ec143c00a6033d9259876e))
+
+## [1.285.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.285.0...v1.285.1) (2026-01-21)
+
+
+### Bug Fixes
+
+* add audit null check ([#1868](https://github.com/adobe/spacecat-audit-worker/issues/1868)) ([c49a519](https://github.com/adobe/spacecat-audit-worker/commit/c49a51923a3305eff6b33c1249d3f70ede1fce75))
+
+# [1.285.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.6...v1.285.0) (2026-01-21)
+
+
+### Features
+
+* SITES-38255 - metatags: remove maximum character limit for TITLE ([#1871](https://github.com/adobe/spacecat-audit-worker/issues/1871)) ([23aa183](https://github.com/adobe/spacecat-audit-worker/commit/23aa1832fbeff061ac3f400462591a28c3d3d0a5))
+
+## [1.284.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.5...v1.284.6) (2026-01-21)
+
+
+### Bug Fixes
+
+* prerender saving final audit result & handling no opp case ([#1866](https://github.com/adobe/spacecat-audit-worker/issues/1866)) ([6db96c1](https://github.com/adobe/spacecat-audit-worker/commit/6db96c185cf95e6dc276334759bcf52182e5f91e))
+
+## [1.284.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.4...v1.284.5) (2026-01-19)
+
+
+### Bug Fixes
+
+* SITES-37785 ([#1600](https://github.com/adobe/spacecat-audit-worker/issues/1600)) ([fc5fc96](https://github.com/adobe/spacecat-audit-worker/commit/fc5fc964132c7d78457cc32edaa33e1872a9868d))
+
+## [1.284.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.3...v1.284.4) (2026-01-19)
+
+
+### Bug Fixes
+
+* updated spacecat-shared-utils to get the new getTemporalConditions ([#1864](https://github.com/adobe/spacecat-audit-worker/issues/1864)) ([f4fb4bd](https://github.com/adobe/spacecat-audit-worker/commit/f4fb4bd80cd7771dd15dbd920c6852933cd9cdfd))
+
 ## [1.284.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.2...v1.284.3) (2026-01-16)
 
 
