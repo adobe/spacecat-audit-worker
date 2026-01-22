@@ -208,7 +208,13 @@ export const generateSuggestionData = async (context) => {
         : suggestedTargets;
       if (!urlTo || targets.length === 0) return false;
       try {
-        const resp = await fetch(urlTo, { redirect: 'follow' });
+        const resp = await fetch(urlTo, {
+          redirect: 'follow',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0',
+          },
+          signal: AbortSignal.timeout(10000),
+        });
         const finalResolvedUrl = normalize(resp?.url || urlTo);
         return targets.some((t) => normalize(t) === finalResolvedUrl);
       } catch {

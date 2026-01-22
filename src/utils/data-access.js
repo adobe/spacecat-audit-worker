@@ -437,7 +437,6 @@ export async function reconcileDisappearedSuggestions({
         continue;
       }
 
-      log.info(`reconcileDisappearedSuggestions issue fixed for suggestion ${getPagePath(data)}`);
       // Mark suggestion as FIXED and prepare a PUBLISHED fix entity on the opportunity
       let suggestionMarkedFixed = false;
       try {
@@ -489,6 +488,7 @@ export async function reconcileDisappearedSuggestions({
     if (fixEntityObjects.length > 0 && typeof opportunity.addFixEntities === 'function') {
       try {
         await opportunity.addFixEntities(fixEntityObjects);
+        log.info(`[${auditType}] Added ${fixEntityObjects.length} fix entities for opportunity ${opportunity.getId?.()}`);
       /* c8 ignore next 3 */
       } catch (e) {
         log.warn(`[${auditType}] Failed to add fix entities on opportunity ${opportunity.getId?.()}: ${e.message}`);
