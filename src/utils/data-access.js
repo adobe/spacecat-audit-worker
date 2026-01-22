@@ -274,12 +274,59 @@ export async function syncSuggestions({
   log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
   // Prepare new suggestions
+  // For FIXED suggestions with ALL fix entities in PUBLISHED state, allow creating
+  // a new suggestion (regression scenario). Otherwise, block duplicate creation.
+  const fixedStatus = SuggestionDataAccess.STATUSES.FIXED;
+  const publishedStatus = FixEntityDataAccess?.STATUSES?.PUBLISHED;
+  /* c8 ignore next */
+  const { Suggestion } = context.dataAccess || {};
+
+  // Build a set of keys for FIXED suggestions where ALL fix entities are PUBLISHED
+  // These should be excluded from the "existing" check to allow regression detection
+  const fullyPublishedFixedKeys = new Set();
+  const fixedSuggestions = existingSuggestions.filter((s) => s.getStatus() === fixedStatus);
+
+  if (fixedSuggestions.length > 0 && publishedStatus && Suggestion?.getFixEntitiesBySuggestionId) {
+    await Promise.all(fixedSuggestions.map(async (suggestion) => {
+      try {
+        const suggestionId = suggestion.getId?.();
+        if (!suggestionId) return;
+
+        const { data: fixEntities = [] } = await Suggestion.getFixEntitiesBySuggestionId(
+          suggestionId,
+        );
+
+        // Only consider it a completed fix if there are fix entities AND all are PUBLISHED
+        if (fixEntities.length > 0
+          && fixEntities.every((fe) => fe.getStatus?.() === publishedStatus)) {
+          fullyPublishedFixedKeys.add(buildKey(suggestion.getData()));
+        }
+      } catch (e) {
+        log.debug(`Failed to check fix entities for suggestion: ${e.message}`);
+      }
+    }));
+  }
+
   const { site } = context;
   const requiresValidation = Boolean(site?.requiresValidation);
   const newSuggestions = newData
-    .filter((data) => !existingSuggestions.some(
-      (existing) => buildKey(existing.getData()) === buildKey(data),
-    ))
+    .filter((data) => {
+      const key = buildKey(data);
+      const existingMatch = existingSuggestions.find(
+        (existing) => buildKey(existing.getData()) === key,
+      );
+
+      // No existing suggestion with this key - allow creation
+      if (!existingMatch) return true;
+
+      // Existing suggestion is FIXED and all fix entities are PUBLISHED - allow regression
+      if (existingMatch.getStatus() === fixedStatus && fullyPublishedFixedKeys.has(key)) {
+        return true;
+      }
+
+      // Otherwise, block creation (existing non-FIXED or FIXED but not fully PUBLISHED)
+      return false;
+    })
     .map((data) => {
       const suggestion = mapNewSuggestion(data);
       return {

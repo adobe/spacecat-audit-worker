@@ -17,7 +17,7 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import { Suggestion as SuggestionDataAccess, FixEntity as FixEntityDataAccess } from '@adobe/spacecat-shared-data-access';
 import {
   retrieveSiteBySiteId,
   syncSuggestions,
@@ -574,6 +574,277 @@ describe('data-access', () => {
       expect(actualArgs[1].status).to.equal('PENDING_VALIDATION');
       expect(actualArgs[1].data).to.deep.equal({ key: '4' });
       expect(mockLogger.error).to.not.have.been.called;
+    });
+
+    it('should create new suggestion for regression when FIXED suggestion has all PUBLISHED fix entities', async () => {
+      // Existing FIXED suggestion with key '1'
+      const fixedSuggestion = {
+        id: 'fixed-1',
+        getId: sinon.stub().returns('fixed-1'),
+        data: { key: '1' },
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      };
+      // Same issue reappears in audit (key '1')
+      const newData = [{ key: '1' }];
+
+      // Mock fix entities - all PUBLISHED
+      const publishedFixEntity = {
+        getStatus: sinon.stub().returns(FixEntityDataAccess.STATUSES.PUBLISHED),
+      };
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [{ data: { key: '1' } }] });
+
+      // Add Suggestion.getFixEntitiesBySuggestionId to context
+      context.dataAccess.Suggestion = {
+        ...context.dataAccess.Suggestion,
+        getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [publishedFixEntity] }),
+      };
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify a NEW suggestion is created for the regression
+      expect(mockOpportunity.addSuggestions).to.have.been.calledOnce;
+      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0).args[0];
+      expect(addedSuggestions.length).to.equal(1);
+      expect(addedSuggestions[0].data).to.deep.equal({ key: '1' });
+      expect(addedSuggestions[0].status).to.equal(SuggestionDataAccess.STATUSES.NEW);
+    });
+
+    it('should NOT create new suggestion when FIXED suggestion has non-PUBLISHED fix entities', async () => {
+      // Existing FIXED suggestion with key '1'
+      const fixedSuggestion = {
+        id: 'fixed-1',
+        getId: sinon.stub().returns('fixed-1'),
+        data: { key: '1' },
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      };
+      // Same issue reappears in audit (key '1')
+      const newData = [{ key: '1' }];
+
+      // Mock fix entities - one DEPLOYED (not yet PUBLISHED)
+      const deployedFixEntity = {
+        getStatus: sinon.stub().returns(FixEntityDataAccess.STATUSES.DEPLOYED),
+      };
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
+
+      // Add Suggestion.getFixEntitiesBySuggestionId to context
+      context.dataAccess.Suggestion = {
+        ...context.dataAccess.Suggestion,
+        getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [deployedFixEntity] }),
+      };
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify NO new suggestion is created (fix not yet fully published)
+      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
+      expect(addedSuggestions.length).to.equal(0);
+    });
+
+    it('should NOT create new suggestion when FIXED suggestion has no fix entities', async () => {
+      // Existing FIXED suggestion with key '1' but no fix entities
+      const fixedSuggestion = {
+        id: 'fixed-1',
+        getId: sinon.stub().returns('fixed-1'),
+        data: { key: '1' },
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      };
+      // Same issue reappears in audit (key '1')
+      const newData = [{ key: '1' }];
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
+
+      // Add Suggestion.getFixEntitiesBySuggestionId to context - returns empty
+      context.dataAccess.Suggestion = {
+        ...context.dataAccess.Suggestion,
+        getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
+      };
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify NO new suggestion is created (no fix entities = fix not complete)
+      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
+      expect(addedSuggestions.length).to.equal(0);
+    });
+
+    it('should skip FIXED suggestion when getId returns undefined', async () => {
+      // FIXED suggestion without getId method
+      const fixedSuggestionNoId = {
+        data: { key: '1' },
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
+        getId: sinon.stub().returns(undefined), // No ID
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      };
+      const newData = [{ key: '1' }];
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestionNoId]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
+
+      // Add Suggestion.getFixEntitiesBySuggestionId to context
+      context.dataAccess.Suggestion = {
+        ...context.dataAccess.Suggestion,
+        getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
+      };
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // getFixEntitiesBySuggestionId should NOT have been called (skipped due to no ID)
+      expect(context.dataAccess.Suggestion.getFixEntitiesBySuggestionId).to.not.have.been.called;
+      // Should not create new suggestion (FIXED suggestion blocks it but wasn't fully processed)
+      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
+      expect(addedSuggestions.length).to.equal(0);
+    });
+
+    it('should handle getFixEntitiesBySuggestionId throwing an error', async () => {
+      const fixedSuggestion = {
+        id: 'fixed-1',
+        getId: sinon.stub().returns('fixed-1'),
+        data: { key: '1' },
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      };
+      const newData = [{ key: '1' }];
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
+
+      // Make getFixEntitiesBySuggestionId throw an error
+      context.dataAccess.Suggestion = {
+        ...context.dataAccess.Suggestion,
+        getFixEntitiesBySuggestionId: sinon.stub().rejects(new Error('Database connection failed')),
+      };
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Should log the error and continue
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Failed to check fix entities for suggestion/),
+      );
+      // Should not create new suggestion (error = conservative approach)
+      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
+      expect(addedSuggestions.length).to.equal(0);
+    });
+
+    it('should handle context.dataAccess without Suggestion property', async () => {
+      const fixedSuggestion = {
+        id: 'fixed-1',
+        getId: sinon.stub().returns('fixed-1'),
+        data: { key: '1' },
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      };
+      const newData = [{ key: '1' }];
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
+
+      // Create context with dataAccess but without Suggestion.getFixEntitiesBySuggestionId
+      const contextWithoutSuggestionMethod = {
+        log: mockLogger,
+        site: {},
+        dataAccess: {
+          Suggestion: {
+            bulkUpdateStatus: sinon.stub().resolves(),
+            // No getFixEntitiesBySuggestionId method
+          },
+        },
+      };
+
+      await syncSuggestions({
+        context: contextWithoutSuggestionMethod,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Should not crash and should not create new suggestion (FIXED blocks it, but can't verify)
+      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
+      expect(addedSuggestions.length).to.equal(0);
+    });
+
+    it('should not create duplicate suggestion when existing non-FIXED suggestion matches', async () => {
+      // Existing NEW suggestion with key '1'
+      const newSuggestion = {
+        id: 'new-1',
+        data: { key: '1' },
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      };
+      // Same issue appears in audit (key '1')
+      const newData = [{ key: '1' }];
+
+      mockOpportunity.getSuggestions.resolves([newSuggestion]);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify NO new suggestion is created (existing one is updated instead)
+      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
+      expect(addedSuggestions.length).to.equal(0);
     });
 
     it('should not handle outdated suggestions if context is not provided', async () => {
