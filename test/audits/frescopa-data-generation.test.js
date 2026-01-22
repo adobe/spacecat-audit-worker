@@ -28,6 +28,7 @@ describe('Frescopa Data Generation Handler', () => {
   let mockDocument;
   let handlerModule;
   let fetchStub;
+  let publishToAdminHlxStub;
 
   const mockQueryIndexData = {
     data: [
@@ -88,10 +89,12 @@ describe('Frescopa Data Generation Handler', () => {
       })
       .build();
 
+    publishToAdminHlxStub = sandbox.stub().resolves();
+
     handlerModule = await esmock('../../src/frescopa-data-generation/handler.js', {
       '../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: sandbox.stub().resolves(mockSharepointClient),
-        publishToAdminHlx: sandbox.stub().resolves(),
+        publishToAdminHlx: publishToAdminHlxStub,
       },
     });
   });
@@ -108,21 +111,22 @@ describe('Frescopa Data Generation Handler', () => {
         },
       };
 
-      const result = await handlerModule.default.run(message, context);
+      const response = await handlerModule.default.run(message, context);
+      const result = await response.json();
 
-      expect(result.status).to.equal(200);
-      expect(result.body).to.have.property('targetWeekIdentifier', 'w05-2025');
-      expect(result.body.results).to.have.lengthOf(3);
-      expect(result.body.errors).to.have.lengthOf(0);
+      expect(response.status).to.equal(200);
+      expect(result).to.have.property('targetWeekIdentifier', 'w05-2025');
+      expect(result.results).to.have.lengthOf(3);
+      expect(result.errors).to.have.lengthOf(0);
 
       // Verify each report type was processed
-      const reportTypes = result.body.results.map((r) => r.filePrefix);
+      const reportTypes = result.results.map((r) => r.filePrefix);
       expect(reportTypes).to.include('agentictraffic');
       expect(reportTypes).to.include('brandpresence-all');
       expect(reportTypes).to.include('referral-traffic');
 
       // Verify operations were performed
-      result.body.results.forEach((report) => {
+      result.results.forEach((report) => {
         expect(report.status).to.equal('success');
         expect(report.operations).to.have.lengthOf(5); // 1 copy + 4 moves
         expect(report.published).to.have.lengthOf(5);
@@ -168,12 +172,10 @@ describe('Frescopa Data Generation Handler', () => {
         },
       };
 
-      const { publishToAdminHlx } = await import('../../src/utils/report-uploader.js');
-
       await handlerModule.default.run(message, context);
 
       // 5 files × 3 report types = 15 publish calls
-      expect(publishToAdminHlx).to.have.callCount(15);
+      expect(publishToAdminHlxStub).to.have.callCount(15);
     });
 
     it('should calculate target week automatically when not provided', async () => {
@@ -181,12 +183,13 @@ describe('Frescopa Data Generation Handler', () => {
         auditContext: {},
       };
 
-      const result = await handlerModule.default.run(message, context);
+      const response = await handlerModule.default.run(message, context);
+      const result = await response.json();
 
-      expect(result.status).to.equal(200);
-      expect(result.body).to.have.property('targetWeekIdentifier');
+      expect(response.status).to.equal(200);
+      expect(result).to.have.property('targetWeekIdentifier');
       // Should be in format wXX-YYYY
-      expect(result.body.targetWeekIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      expect(result.targetWeekIdentifier).to.match(/^w\d{2}-\d{4}$/);
     });
 
     it('should handle re-running for the same week', async () => {
@@ -262,13 +265,14 @@ describe('Frescopa Data Generation Handler', () => {
         },
       };
 
-      const result = await handlerModule.default.run(message, context);
+      const response = await handlerModule.default.run(message, context);
+      const result = await response.json();
 
-      expect(result.status).to.equal(200);
-      expect(result.body.results).to.have.lengthOf(2); // Only brand-presence and referral-traffic
-      expect(result.body.errors).to.have.lengthOf(1);
-      expect(result.body.errors[0].filePrefix).to.equal('agentictraffic');
-      expect(result.body.errors[0].error).to.include('Insufficient files');
+      expect(response.status).to.equal(200);
+      expect(result.results).to.have.lengthOf(2); // Only brand-presence and referral-traffic
+      expect(result.errors).to.have.lengthOf(1);
+      expect(result.errors[0].filePrefix).to.equal('agentictraffic');
+      expect(result.errors[0].error).to.include('Insufficient files');
     });
 
     it('should continue processing other types when one type fails', async () => {
@@ -288,12 +292,13 @@ describe('Frescopa Data Generation Handler', () => {
         },
       };
 
-      const result = await handlerModule.default.run(message, context);
+      const response = await handlerModule.default.run(message, context);
+      const result = await response.json();
 
-      expect(result.status).to.equal(200);
-      expect(result.body.results).to.have.lengthOf(2); // brand-presence and referral-traffic succeeded
-      expect(result.body.errors).to.have.lengthOf(1);
-      expect(result.body.errors[0].filePrefix).to.equal('agentictraffic');
+      expect(response.status).to.equal(200);
+      expect(result.results).to.have.lengthOf(2); // brand-presence and referral-traffic succeeded
+      expect(result.errors).to.have.lengthOf(1);
+      expect(result.errors[0].filePrefix).to.equal('agentictraffic');
     });
 
     it('should continue publishing even if one publish fails', async () => {
@@ -342,10 +347,12 @@ describe('Frescopa Data Generation Handler', () => {
         },
       };
 
-      const result = await handlerModule.default.run(message, context);
+      const response = await handlerModule.default.run(message, context);
+      const result = await response.json();
 
-      expect(result.status).to.equal(500);
-      expect(result.body).to.include('Frescopa data generation failed');
+      expect(response.status).to.equal(500);
+      expect(result).to.be.an('object');
+      expect(result.message).to.include('Frescopa data generation failed');
     });
 
     it('should log detailed operation information', async () => {
@@ -394,11 +401,12 @@ describe('Frescopa Data Generation Handler', () => {
         },
       };
 
-      const result = await handlerModule.default.run(message, context);
+      const response = await handlerModule.default.run(message, context);
+      const result = await response.json();
 
-      expect(result.body).to.have.property('duration');
-      expect(result.body.duration).to.be.a('number');
-      expect(result.body.duration).to.be.greaterThan(0);
+      expect(result).to.have.property('duration');
+      expect(result.duration).to.be.a('number');
+      expect(result.duration).to.be.at.least(0);
     });
 
     it('should return correct operation details in result', async () => {
@@ -408,9 +416,10 @@ describe('Frescopa Data Generation Handler', () => {
         },
       };
 
-      const result = await handlerModule.default.run(message, context);
+      const response = await handlerModule.default.run(message, context);
+      const result = await response.json();
 
-      const agenticResult = result.body.results.find((r) => r.filePrefix === 'agentictraffic');
+      const agenticResult = result.results.find((r) => r.filePrefix === 'agentictraffic');
       
       expect(agenticResult).to.exist;
       expect(agenticResult.operations).to.be.an('array');
@@ -436,10 +445,11 @@ describe('Frescopa Data Generation Handler', () => {
         },
       };
 
-      const result = await handlerModule.default.run(message, context);
+      const response = await handlerModule.default.run(message, context);
+      const result = await response.json();
 
       // Week identifier should be in correct format
-      expect(result.body.targetWeekIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      expect(result.targetWeekIdentifier).to.match(/^w\d{2}-\d{4}$/);
     });
 
     it('should handle year boundaries correctly', async () => {
@@ -462,7 +472,11 @@ describe('Frescopa Data Generation Handler', () => {
       // Sunday, January 5, 2025 is in week 01 of 2025
       // We need to mock the current date to be a Sunday to trigger automatic week calculation
       
-      const clock = sandbox.useFakeTimers(new Date('2025-01-05T00:00:00Z').getTime()); // This is a Sunday
+      const clock = sandbox.useFakeTimers({
+        now: new Date('2025-01-05T00:00:00Z').getTime(), // This is a Sunday
+        shouldAdvanceTime: true,
+        advanceTimeDelta: 20,
+      });
       
       const sundayQueryIndex = {
         data: [
@@ -494,17 +508,19 @@ describe('Frescopa Data Generation Handler', () => {
         auditContext: {}, // No weekIdentifier - will auto-calculate using Sunday date
       };
 
-      const response = await handlerModule.default.run(message, context);
-      const result = await response.json();
+      try {
+        const response = await handlerModule.default.run(message, context);
+        const result = await response.json();
 
-      // Should calculate week identifier using Sunday logic (|| 7 branch)
-      // Current date is 2025-01-05 (Sunday, week 01), previous week would be w52-2024
-      expect(response.status).to.equal(200);
-      expect(result.targetWeekIdentifier).to.equal('w52-2024'); // Previous week from Jan 5, 2025
-      expect(result.results).to.have.lengthOf(3);
-      expect(result.errors).to.have.lengthOf(0);
-      
-      clock.restore();
+        // Should calculate week identifier using Sunday logic (|| 7 branch)
+        // Current date is 2025-01-05 (Sunday, week 01), previous week would be w52-2024
+        expect(response.status).to.equal(200);
+        expect(result.targetWeekIdentifier).to.equal('w52-2024'); // Previous week from Jan 5, 2025
+        expect(result.results).to.have.lengthOf(3);
+        expect(result.errors).to.have.lengthOf(0);
+      } finally {
+        clock.restore();
+      }
     });
   });
 
@@ -539,10 +555,11 @@ describe('Frescopa Data Generation Handler', () => {
         },
       };
 
-      const result = await handlerModule.default.run(message, context);
+      const response = await handlerModule.default.run(message, context);
+      const result = await response.json();
 
       // Each type should have found exactly 5 files
-      result.body.results.forEach((report) => {
+      result.results.forEach((report) => {
         expect(report.published).to.have.lengthOf(5);
       });
     });
@@ -623,12 +640,13 @@ describe('Frescopa Data Generation Handler', () => {
         },
       };
 
-      const result = await handlerModule.default.run(message, context);
+      const response = await handlerModule.default.run(message, context);
+      const result = await response.json();
 
-      expect(result.status).to.equal(200);
-      expect(result.body.results).to.have.lengthOf(2); // Only brand-presence and referral-traffic
-      expect(result.body.errors).to.have.lengthOf(1);
-      expect(result.body.errors[0].filePrefix).to.equal('agentictraffic');
+      expect(response.status).to.equal(200);
+      expect(result.results).to.have.lengthOf(2); // Only brand-presence and referral-traffic
+      expect(result.errors).to.have.lengthOf(1);
+      expect(result.errors[0].filePrefix).to.equal('agentictraffic');
       expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/No files found matching prefix "agentictraffic"/),
       );
@@ -667,11 +685,12 @@ describe('Frescopa Data Generation Handler', () => {
         },
       };
 
-      const result = await handlerModule.default.run(message, context);
+      const response = await handlerModule.default.run(message, context);
+      const result = await response.json();
 
       // Should still process successfully with correct ordering
-      expect(result.status).to.equal(200);
-      expect(result.body.results).to.have.lengthOf(3);
+      expect(response.status).to.equal(200);
+      expect(result.results).to.have.lengthOf(3);
     });
   });
 });
