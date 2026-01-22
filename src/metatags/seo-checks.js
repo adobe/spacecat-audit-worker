@@ -93,9 +93,11 @@ class SeoChecks {
         issueImpact = HIGH;
         recommendation = getLengthSuggestion(tagName);
       } else if (tagContent?.length > TAG_LENGTHS[tagName].maxLength) {
-        issue = `${capitalizedTagName} too long`;
+        // For Title, exceeding maxLength is just a warning (LOW), not an error
+        // For other tags (Description, H1), it remains MODERATE impact
+        issue = tagName === TITLE ? `${capitalizedTagName} above ideal length` : `${capitalizedTagName} too long`;
         issueDetails = `${tagContent.length - TAG_LENGTHS[tagName].idealMaxLength} chars over limit`;
-        issueImpact = MODERATE;
+        issueImpact = tagName === TITLE ? LOW : MODERATE;
         recommendation = getLengthSuggestion(tagName);
       } else if (tagContent?.length < TAG_LENGTHS[tagName].minLength) {
         // Exists, but below absolute minimum

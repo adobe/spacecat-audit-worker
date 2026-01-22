@@ -1,3 +1,17 @@
+## [1.285.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.285.0...v1.285.1) (2026-01-21)
+
+
+### Bug Fixes
+
+* add audit null check ([#1868](https://github.com/adobe/spacecat-audit-worker/issues/1868)) ([c49a519](https://github.com/adobe/spacecat-audit-worker/commit/c49a51923a3305eff6b33c1249d3f70ede1fce75))
+
+# [1.285.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.6...v1.285.0) (2026-01-21)
+
+
+### Features
+
+* SITES-38255 - metatags: remove maximum character limit for TITLE ([#1871](https://github.com/adobe/spacecat-audit-worker/issues/1871)) ([23aa183](https://github.com/adobe/spacecat-audit-worker/commit/23aa1832fbeff061ac3f400462591a28c3d3d0a5))
+
 ## [1.284.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.284.5...v1.284.6) (2026-01-21)
 
 
