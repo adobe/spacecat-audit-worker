@@ -87,7 +87,12 @@ function compareWeekIdentifiers(a, b) {
 async function fetchQueryIndex(log) {
   log.info(`%s: Fetching query index from ${QUERY_INDEX_URL}`, AUDIT_NAME);
 
-  const response = await fetch(QUERY_INDEX_URL);
+  const response = await fetch(QUERY_INDEX_URL, {
+    headers: {
+      'User-Agent': 'spacecat-audit-worker',
+      Authorization: `token ${process.env.LLMO_HLX_API_KEY}`,
+    },
+  });
   if (!response.ok) {
     throw new Error(`Failed to fetch query index: ${response.status} ${response.statusText}`);
   }
