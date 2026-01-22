@@ -115,6 +115,7 @@
     "hyphen": "1.10.6",
     "is-language-code": "5.1.0",
     "js-beautify": "1.15.4",
+    "jsdiff": "^1.1.1",
     "robots-parser": "3.0.1",
     "syllable": "5.0.1",
     "text-readability": "1.1.1",
