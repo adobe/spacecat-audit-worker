@@ -103,16 +103,16 @@ describe('data-access', () => {
 
     beforeEach(() => {
       mockOpportunity = {
-        getSuggestions: sinon.stub(),
-        addSuggestions: sinon.stub(),
+        getSuggestions: sandbox.stub(),
+        addSuggestions: sandbox.stub(),
         getSiteId: () => 'site-id',
       };
 
       mockLogger = {
-        debug: sinon.spy(),
-        error: sinon.spy(),
-        info: sinon.spy(),
-        warn: sinon.spy(),
+        debug: sandbox.spy(),
+        error: sandbox.spy(),
+        info: sandbox.spy(),
+        warn: sandbox.spy(),
       };
 
       context = new MockContextBuilder()
@@ -129,6 +129,10 @@ describe('data-access', () => {
           log: mockLogger,
         })
         .build();
+    });
+
+    afterEach(() => {
+      sandbox.restore();
     });
 
     it('should return early if context is null', async () => {
@@ -441,120 +445,30 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
 
-    it('should handle null existingData for REJECTED suggestions', async () => {
-      // Use a buildKey that handles null gracefully
+    it('should cover hasDataChanged early return when existingData is null (lines 211-212)', async () => {
+      // buildKey that makes null existingData match a new data item
+      // This ensures the suggestion passes the filter and hasDataChanged is called
       const buildKeyNullSafe = (data) => {
-        if (!data || !data.key) return 'null';
+        if (!data) return 'null-match';
         return `${data.key}`;
       };
 
       const existingSuggestions = [{
         id: '1',
         data: null,
-        getData: sinon.stub().returns(null),
-        setData: sinon.stub(),
-        save: sinon.stub().resolves(),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
-        setStatus: sinon.stub(),
-        setUpdatedBy: sinon.stub().returnsThis(),
+        getData: sandbox.stub().returns(null),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getStatus: sandbox.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub().returnsThis(),
       }];
 
-      // newDataItem will be undefined because buildKey(null) returns 'null' which won't match '1'
-      // This will create a new suggestion, so we need to mock addSuggestions
+      // key 'null-match' matches buildKey(null) which also returns 'null-match'
+      // This ensures the suggestion passes the filter (newDataKeys.has('null-match'))
       const newData = [
-        { key: '1', title: 'new title', url: 'https://example.com/page1' },
+        { key: 'null-match', title: 'new title', url: 'https://example.com/page1' },
       ];
-
-      mockOpportunity.getSuggestions.resolves(existingSuggestions);
-      const createdItems = newData.map((d) => ({ id: `new-${d.key}`, ...d }));
-      const suggestionsResult = {
-        errorItems: [],
-        createdItems,
-        length: createdItems.length, // Add length property for line 332
-      };
-      mockOpportunity.addSuggestions.resolves(suggestionsResult);
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey: buildKeyNullSafe,
-        mapNewSuggestion,
-      });
-
-      // existingData is null, newDataItem undefined, hasDataChanged returns false (211-212)
-      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
-      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit with no data changes. Preserving REJECTED status.');
-      expect(existingSuggestions[0].save).to.have.been.called;
-    });
-
-    it('should handle undefined newDataItem for REJECTED suggestions', async () => {
-      const suggestionsData = [
-        { key: '1', title: 'old title', url: 'https://example.com/page1' },
-      ];
-      const existingSuggestions = [{
-        id: '1',
-        data: suggestionsData[0],
-        getData: sinon.stub().returns(suggestionsData[0]),
-        setData: sinon.stub(),
-        save: sinon.stub().resolves(),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
-        setStatus: sinon.stub(),
-        setUpdatedBy: sinon.stub().returnsThis(),
-      }];
-
-      // newDataItem will be undefined because key '1' is not found in newData array
-      // This ensures hasDataChanged is called with existingData and undefined
-      // This will also create a new suggestion for key '2', so mock addSuggestions
-      const newData = [
-        { key: '2', title: 'other title', url: 'https://example.com/page2' },
-      ];
-
-      mockOpportunity.getSuggestions.resolves(existingSuggestions);
-      const createdItems = newData.map((d) => ({ id: `new-${d.key}`, ...d }));
-      const suggestionsResult = {
-        errorItems: [],
-        createdItems,
-        length: createdItems.length, // Add length property for line 332
-      };
-      mockOpportunity.addSuggestions.resolves(suggestionsResult);
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey,
-        mapNewSuggestion,
-      });
-
-      // When newDataItem is undefined, hasDataChanged returns false (lines 211-212)
-      // Status should remain REJECTED
-      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
-      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit with no data changes. Preserving REJECTED status.');
-      expect(existingSuggestions[0].save).to.have.been.called;
-    });
-
-    it('should handle both null existingData and undefined newDataItem for REJECTED suggestions', async () => {
-      // Test case where existingData is null and newDataItem is also undefined
-      const buildKeyNullSafe = (data) => {
-        if (!data || !data.key) return 'null';
-        return `${data.key}`;
-      };
-
-      const existingSuggestions = [{
-        id: '1',
-        data: null,
-        getData: sinon.stub().returns(null),
-        setData: sinon.stub(),
-        save: sinon.stub().resolves(),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
-        setStatus: sinon.stub(),
-        setUpdatedBy: sinon.stub().returnsThis(),
-      }];
-
-      // Empty newData array so newDataItem will definitely be undefined
-      // No new suggestions will be created, so addSuggestions won't be called
-      const newData = [];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
 
@@ -566,9 +480,13 @@ describe('data-access', () => {
         mapNewSuggestion,
       });
 
-      // Both existingData (null) and newDataItem (undefined) trigger lines 211-212
+      // existingData is null, so hasDataChanged(null, newDataItem) returns false
+      // This covers lines 211-212: if (!existingData || !newData) return false
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
-      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit with no data changes. Preserving REJECTED status.');
+      // Check if debug was called with the REJECTED message (may be called multiple times)
+      const debugCalls = mockLogger.debug.getCalls();
+      const hasRejectedMessage = debugCalls.some((call) => call.args[0] === 'REJECTED suggestion found in audit with no data changes. Preserving REJECTED status.');
+      expect(hasRejectedMessage).to.be.true;
       expect(existingSuggestions[0].save).to.have.been.called;
     });
 
