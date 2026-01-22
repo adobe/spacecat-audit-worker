@@ -74,7 +74,14 @@ export async function submitForScraping(context) {
   log.info(`Found ${topPagesUrls.length} top pages for scraping`);
 
   if (topPagesUrls.length === 0) {
-    throw new Error(`No top pages URLs found for site  ${site.getId()}`);
+    log.info(`No top pages found for site ${siteId}, skipping scraping`);
+    return {
+      auditResult: {
+        status: 'NO_OPPORTUNITIES',
+        message: 'No top pages found, skipping audit',
+      },
+      fullAuditRef: finalUrl,
+    };
   }
 
   // Filter out auth pages and PDFs
@@ -122,10 +129,10 @@ export async function submitForScraping(context) {
       status: 'scraping',
     },
     fullAuditRef: finalUrl,
-    // Data for the CONTENT_SCRAPER
+    // Data for the SCRAPE_CLIENT
     urls: filteredUrls.map((url) => ({ url })),
     siteId,
-    processingType: 'default',
+    type: 'default',
     allowCache: false,
     maxScrapeAge: 0,
     options: {
