@@ -459,12 +459,20 @@ describe('data-access', () => {
         setUpdatedBy: sinon.stub().returnsThis(),
       }];
 
-      // newDataItem will be undefined because buildKey(null) returns 'null' which won't match
+      // newDataItem will be undefined because buildKey(null) returns 'null' which won't match '1'
+      // This will create a new suggestion, so we need to mock addSuggestions
       const newData = [
         { key: '1', title: 'new title', url: 'https://example.com/page1' },
       ];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      const createdItems = newData.map((d) => ({ id: `new-${d.key}`, ...d }));
+      const suggestionsResult = {
+        errorItems: [],
+        createdItems,
+        length: createdItems.length, // Add length property for line 332
+      };
+      mockOpportunity.addSuggestions.resolves(suggestionsResult);
 
       await syncSuggestions({
         context,
@@ -474,7 +482,7 @@ describe('data-access', () => {
         mapNewSuggestion,
       });
 
-      // existingData is null, newDataItem undefined, hasDataChanged returns false
+      // existingData is null, newDataItem undefined, hasDataChanged returns false (211-212)
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit with no data changes. Preserving REJECTED status.');
       expect(existingSuggestions[0].save).to.have.been.called;
@@ -497,11 +505,19 @@ describe('data-access', () => {
 
       // newDataItem will be undefined because key '1' is not found in newData array
       // This ensures hasDataChanged is called with existingData and undefined
+      // This will also create a new suggestion for key '2', so mock addSuggestions
       const newData = [
         { key: '2', title: 'other title', url: 'https://example.com/page2' },
       ];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      const createdItems = newData.map((d) => ({ id: `new-${d.key}`, ...d }));
+      const suggestionsResult = {
+        errorItems: [],
+        createdItems,
+        length: createdItems.length, // Add length property for line 332
+      };
+      mockOpportunity.addSuggestions.resolves(suggestionsResult);
 
       await syncSuggestions({
         context,
@@ -537,6 +553,7 @@ describe('data-access', () => {
       }];
 
       // Empty newData array so newDataItem will definitely be undefined
+      // No new suggestions will be created, so addSuggestions won't be called
       const newData = [];
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
