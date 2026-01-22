@@ -506,6 +506,9 @@ async function enrichPromptWithRelatedUrl(prompt, index, site, context, log) {
     const urls = await promptToLinks(promptText, site, context);
     if (urls && urls.length > 0) {
       const [firstUrl] = urls;
+      // first returned URL is the most relevant
+      // being its content the one semantically
+      // closest to the input prompt
       // eslint-disable-next-line no-param-reassign
       prompt.relatedUrl = firstUrl;
       return true;
