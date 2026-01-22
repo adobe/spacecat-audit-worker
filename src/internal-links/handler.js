@@ -31,6 +31,27 @@ const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 /**
+ * Normalize URL to match site's canonical baseURL (handles www/non-www variations).
+ * @param {string} url - The URL to normalize
+ * @param {string} canonicalDomain - The site's canonical domain (e.g., 'hdfc.bank.in')
+ * @returns {string} Normalized URL
+ */
+export function normalizeUrlToDomain(url, canonicalDomain) {
+  try {
+    const urlObj = new URL(url);
+    const canonicalHostname = new URL(`https://${canonicalDomain}`).hostname;
+
+    // Replace hostname with canonical hostname (handles www/non-www)
+    urlObj.hostname = canonicalHostname;
+
+    return urlObj.toString();
+  } catch (e) {
+    // If URL parsing fails, return original
+    return url;
+  }
+}
+
+/**
  * Perform an audit to check which internal links for domain are broken.
  *
  * @async
@@ -68,6 +89,10 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     // 5. Filter only inaccessible links and transform for further processing
     // Also filter by audit scope (subpath/locale) if baseURL has a subpath
     const baseURL = site.getBaseURL();
+    // Use finalUrl as canonical domain - it respects overrideBaseURL from wwwUrlResolver
+    // finalUrl is just hostname, so add protocol for URL parsing
+    const canonicalDomain = finalUrl;
+
     const inaccessibleLinks = accessibilityResults
       .filter((result) => result.inaccessible)
       .filter((result) => (
@@ -77,8 +102,11 @@ export async function internalLinksAuditRunner(auditUrl, context) {
         && isWithinAuditScope(result.link.url_to, baseURL)
       ))
       .map((result) => ({
-        urlFrom: result.link.url_from,
-        urlTo: result.link.url_to,
+        // Normalize URLs to match site's canonical domain (respects overrideBaseURL)
+        // This ensures consistency: RUM may have www.example.com but site is example.com
+        // All stored URLs will match the resolved canonical domain
+        urlFrom: normalizeUrlToDomain(result.link.url_from, canonicalDomain),
+        urlTo: normalizeUrlToDomain(result.link.url_to, canonicalDomain),
         trafficDomain: result.link.traffic_domain,
       }));
 
@@ -266,6 +294,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
     // Build broken links array without per-link alternatives
     // Mystique expects: brokenLinks with only urlFrom, urlTo, suggestionId
+    // URLs are already normalized at audit time (step 5 in internalLinksAuditRunner)
     const brokenLinks = suggestions
       .map((suggestion) => ({
         urlFrom: suggestion?.getData()?.urlFrom,
@@ -347,6 +376,9 @@ export const opportunityAndSuggestionsStep = async (context) => {
         alternativeUrls,
         opportunityId: opportunity.getId(),
         brokenLinks,
+        // Include canonical domain for Mystique to use when looking up content
+        // This ensures Mystique uses the same domain as the normalized URLs
+        siteBaseURL: `https://${finalUrl}`,
       },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
