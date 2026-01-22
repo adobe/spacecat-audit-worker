@@ -2003,6 +2003,30 @@ describe('Canonical URL Tests', () => {
         expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/login');
         expect(context.log.info).to.have.been.calledWith('Skipping PDF file: https://example.com/document.pdf');
       });
+
+      it('should handle malformed URLs gracefully in filter functions', async () => {
+        context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+          { getUrl: () => 'https://example.com/page1' },
+          { getUrl: () => 'not-a-valid-url' },
+          { getUrl: () => 'another-invalid-url' },
+          { getUrl: () => 'https://example.com/page2' },
+        ]);
+
+        const testContext = {
+          ...context,
+          site,
+          finalUrl: 'https://example.com',
+        };
+
+        const result = await submitForScraping(testContext);
+
+        // Malformed URLs should not be filtered out (catch blocks return false)
+        expect(result.urls).to.have.lengthOf(4);
+        expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });
+        expect(result.urls[1]).to.deep.equal({ url: 'not-a-valid-url' });
+        expect(result.urls[2]).to.deep.equal({ url: 'another-invalid-url' });
+        expect(result.urls[3]).to.deep.equal({ url: 'https://example.com/page2' });
+      });
     });
 
     describe('validateCanonicalFromHTML', () => {
