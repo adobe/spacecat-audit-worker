@@ -1731,6 +1731,7 @@ describe('Prerender Audit', () => {
         // This test specifically ensures lines 460-466 are covered (mapNewSuggestion and mergeDataFunction)
         const mockOpportunity = { getId: () => 'test-opp-id' };
         const syncSuggestionsStub = sinon.stub().resolves();
+        const mockIsPaidCustomer = sinon.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': {
@@ -1738,6 +1739,9 @@ describe('Prerender Audit', () => {
           },
           '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidCustomer: mockIsPaidCustomer,
           },
         });
 
@@ -1843,10 +1847,12 @@ describe('Prerender Audit', () => {
 
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
+        const mockIsPaidCustomer = sandbox.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
           '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+          '../../../src/prerender/utils/utils.js': { isPaidCustomer: mockIsPaidCustomer },
         });
 
         const context = {
@@ -1906,10 +1912,12 @@ describe('Prerender Audit', () => {
 
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
+        const mockIsPaidCustomer = sandbox.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
           '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+          '../../../src/prerender/utils/utils.js': { isPaidCustomer: mockIsPaidCustomer },
         });
 
         const context = {
@@ -1979,10 +1987,12 @@ describe('Prerender Audit', () => {
 
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
+        const mockIsPaidCustomer = sandbox.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
           '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+          '../../../src/prerender/utils/utils.js': { isPaidCustomer: mockIsPaidCustomer },
         });
 
         const context = {
@@ -2048,10 +2058,12 @@ describe('Prerender Audit', () => {
 
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
+        const mockIsPaidCustomer = sandbox.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
           '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+          '../../../src/prerender/utils/utils.js': { isPaidCustomer: mockIsPaidCustomer },
         });
 
         const context = {
@@ -2104,10 +2116,12 @@ describe('Prerender Audit', () => {
 
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
+        const mockIsPaidCustomer = sandbox.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
           '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+          '../../../src/prerender/utils/utils.js': { isPaidCustomer: mockIsPaidCustomer },
         });
 
         const context = {
@@ -2192,10 +2206,12 @@ describe('Prerender Audit', () => {
 
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
+        const mockIsPaidCustomer = sandbox.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
           '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+          '../../../src/prerender/utils/utils.js': { isPaidCustomer: mockIsPaidCustomer },
         });
 
         const context = {
@@ -3958,6 +3974,7 @@ describe('Prerender Audit', () => {
         // Test the full opportunity creation and suggestion sync flow including S3 key generation
         const mockOpportunity = { getId: () => 'test-opportunity-id' };
         const syncSuggestionsStub = sinon.stub().resolves();
+        const mockIsPaidCustomer = sinon.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': {
@@ -3965,6 +3982,9 @@ describe('Prerender Audit', () => {
           },
           '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidCustomer: mockIsPaidCustomer,
           },
         });
 
@@ -4041,6 +4061,7 @@ describe('Prerender Audit', () => {
       it('should prefer scrapeJobId over siteId when building S3 HTML keys', async () => {
         const mockOpportunity = { getId: () => 'test-opportunity-id' };
         const syncSuggestionsStub = sinon.stub().resolves();
+        const mockIsPaidCustomer = sinon.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': {
@@ -4048,6 +4069,9 @@ describe('Prerender Audit', () => {
           },
           '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidCustomer: mockIsPaidCustomer,
           },
         });
 
