@@ -35,7 +35,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
 
   let suggestedBody = responseBody;
   const problems = [];
-  const $ = cheerioLoad(responseBody, { sourceCodeLocationInfo: true }, false);
+  let $ = cheerioLoad(responseBody, { sourceCodeLocationInfo: true }, false);
 
   // check for script tags without nonce
   const scriptTags = $('script');
@@ -63,6 +63,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
   }
 
   // check for missing metadata header
+  $ = cheerioLoad(suggestedBody, { sourceCodeLocationInfo: true }, false);
   const metaTags = $('meta[http-equiv="Content-Security-Policy"]');
 
   const suggestedCsp = 'script-src \'nonce-aem\' \'strict-dynamic\' \'unsafe-inline\' http: https:; base-uri \'self\'; object-src \'none\';';
@@ -78,7 +79,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
       const firstMetaTag = allMetaTags[0];
 
       const start1stMeta = firstMetaTag.sourceCodeLocation.startOffset;
-      const lastLineBreak = responseBody.lastIndexOf('\n', start1stMeta);
+      const lastLineBreak = suggestedBody.lastIndexOf('\n', start1stMeta);
 
       for (let i = lastLineBreak; i < start1stMeta - 1; i += 1) {
         suggestedContent = ` ${suggestedContent}`;
@@ -92,7 +93,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
         const titleTag = allTitleTags[0];
 
         const startTitleTag = titleTag.sourceCodeLocation.startOffset;
-        const lastLineBreak = responseBody.lastIndexOf('\n', startTitleTag);
+        const lastLineBreak = suggestedBody.lastIndexOf('\n', startTitleTag);
         suggestedContent = `  ${suggestedContent}`;
         suggestedBody = `${suggestedBody.substring(0, lastLineBreak + 1)}${suggestedContent}\n${suggestedBody.substring(lastLineBreak + 1)}`;
       } else {
@@ -106,7 +107,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
       log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: no enforcing CSP meta tag found`);
       problems.push('csp-meta-tag-non-enforcing');
 
-      const metaContent = responseBody
+      const metaContent = suggestedBody
         .substring(metaTag.sourceCodeLocation.startOffset, metaTag.sourceCodeLocation.endOffset);
       const currentCsp = metaTag.attribs.content;
       const suggestedContent = metaContent.replace(currentCsp, suggestedCsp);
@@ -116,7 +117,7 @@ async function determineSuggestionsForPage(url, page, context, site) {
 
       problems.push('csp-meta-tag-move-to-header');
 
-      const metaContent = responseBody
+      const metaContent = suggestedBody
         .substring(metaTag.sourceCodeLocation.startOffset, metaTag.sourceCodeLocation.endOffset);
       const suggestedContent = metaContent.replace(/<meta/, '<meta move-to-http-header="true"');
       suggestedBody = suggestedBody.replace(metaContent, suggestedContent);

@@ -24,9 +24,8 @@ Index: 404.html
 +    <script nonce="aem" type="text/javascript">
          window.isErrorPage = true;
          window.errorCode = '404';
--    </script>
-+      <meta http-equiv="Content-Security-Policy" content="script-src 'nonce-aem' 'strict-dynamic' 'unsafe-inline' http: https:; base-uri 'self'; object-src 'none';" move-to-http-header="true">
-+  </script>
+     </script>
++    <meta http-equiv="Content-Security-Policy" content="script-src 'nonce-aem' 'strict-dynamic' 'unsafe-inline' http: https:; base-uri 'self'; object-src 'none';" move-to-http-header="true">
      <meta name="viewport" content="width=device-width, initial-scale=1">
      <meta property="og:title" content="Page not found">
 -    <script src="/scripts/scripts.js" type="module"></script>
