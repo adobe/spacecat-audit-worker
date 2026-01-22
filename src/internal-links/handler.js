@@ -283,7 +283,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
 
   log.info(
-    `[${AUDIT_TYPE}] [Site: ${site.getId()}] After audit scope filtering: ${filteredTopPages.availability} top pages available`,
+    `[${AUDIT_TYPE}] [Site: ${site.getId()}] After audit scope filtering: ${filteredTopPages.length} top pages available`,
   );
 
   if (configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
