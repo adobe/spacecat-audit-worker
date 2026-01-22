@@ -23,6 +23,7 @@ import accessibility from './accessibility/handler.js';
 import accessibilityDesktop from './accessibility/handler-desktop.js';
 import accessibilityMobile from './accessibility/handler-mobile.js';
 import apex from './apex/handler.js';
+import contentFragmentUnused from './content-fragment-unused/handler.js';
 import cwv from './cwv/handler.js';
 import lhsDesktop from './lhs/handler-desktop.js';
 import lhsMobile from './lhs/handler-mobile.js';
@@ -107,6 +108,7 @@ const HANDLERS = {
   'accessibility-mobile': accessibilityMobile,
   apex,
   cwv,
+  'content-fragment-unused': contentFragmentUnused,
   'lhs-mobile': lhsMobile,
   'lhs-desktop': lhsDesktop,
   sitemap,
