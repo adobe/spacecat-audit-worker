@@ -144,15 +144,13 @@ function generateWeekIdentifier(date = new Date()) {
 }
 
 /**
- * Calculates the target week identifier (previous week).
+ * Calculates the target week identifier (current week).
  * @param {Date} [date] - The date to calculate from (defaults to current date)
- * @returns {string} The target week identifier (e.g., "w02-2026")
+ * @returns {string} The target week identifier (e.g., "w05-2026")
  */
 function getTargetWeekIdentifier(date = new Date()) {
-  // Go back 7 days to get previous week
-  const previousWeek = new Date(date);
-  previousWeek.setDate(previousWeek.getDate() - 7);
-  return generateWeekIdentifier(previousWeek);
+  // Return the current week identifier
+  return generateWeekIdentifier(date);
 }
 
 /**
@@ -203,11 +201,57 @@ function getLastNFiles(files, filePrefix, count, log) {
  * @param {string} folder - The folder name (e.g., "agentic-traffic")
  * @param {string} filePrefix - The file prefix
  * @param {string} weekIdentifier - The week identifier
- * @returns {string} The SharePoint file path
+ * @returns {string} The SharePoint file path (relative to SharePoint baseUri)
  */
 function buildSharePointPath(folder, filePrefix, weekIdentifier) {
   const fileName = `${filePrefix}-${weekIdentifier}.xlsx`;
-  return `/sites/elmo-ui-data/${DATA_FOLDER}/${folder}/${fileName}`;
+  return `/${DATA_FOLDER}/${folder}/${fileName}`;
+}
+
+/**
+ * Unpublishes a file from admin.hlx.page (both preview and live).
+ * @param {string} filename - The filename without extension
+ * @param {string} folder - The folder path
+ * @param {object} log - Logger instance
+ * @returns {Promise<void>}
+ */
+async function unpublishFromAdminHlx(filename, folder, log) {
+  const org = 'adobe';
+  const site = 'project-elmo-ui-data';
+  const ref = 'main';
+  const jsonFilename = `${filename.replace(/\.[^/.]+$/, '')}.json`;
+  const path = `${DATA_FOLDER}/${folder}/${jsonFilename}`;
+
+  try {
+    log.info(`%s: Unpublishing from admin.hlx.page: ${path}`, AUDIT_NAME);
+
+    const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}` };
+    const baseUrl = 'https://admin.hlx.page';
+    const endpoints = [
+      { name: 'live', url: `${baseUrl}/live/${org}/${site}/${ref}/${path}` },
+      { name: 'preview', url: `${baseUrl}/preview/${org}/${site}/${ref}/${path}` },
+    ];
+
+    for (const endpoint of endpoints) {
+      log.info(`%s: Unpublishing from ${endpoint.name}: ${endpoint.url}`, AUDIT_NAME);
+      // eslint-disable-next-line no-await-in-loop
+      const response = await fetch(endpoint.url, {
+        method: 'DELETE',
+        headers,
+      });
+
+      if (response.ok) {
+        log.info(`%s: Successfully unpublished from ${endpoint.name}`, AUDIT_NAME);
+      } else {
+        log.warn(`%s: Failed to unpublish from ${endpoint.name}: ${response.status} ${response.statusText}`, AUDIT_NAME);
+      }
+    }
+
+    log.info(`%s: Successfully unpublished ${path}`, AUDIT_NAME);
+  } catch (error) {
+    log.error(`%s: Failed to unpublish ${path}: ${error.message}`, AUDIT_NAME, error);
+    // Don't throw - unpublish failures shouldn't break the sliding window
+  }
 }
 
 /**
@@ -248,10 +292,10 @@ async function performSlidingWindow(sharepointClient, files, targetWeekId, confi
       status: 'success',
     });
 
-    // Step 2: Perform moves in reverse order (oldest to newest) to avoid conflicts
-    // We need to move files[4] -> files[3] week, files[3] -> files[2] week, etc.
-    // Process from index 4 down to 1
-    for (let i = files.length - 1; i >= 1; i -= 1) {
+    // Step 2: Perform moves from newest to oldest to avoid overwriting files before they're moved
+    // We need to move files[1] -> files[0] week, files[2] -> files[1] week, etc.
+    // Process from index 1 to files.length - 1
+    for (let i = 1; i < files.length; i += 1) {
       const currentFile = files[i];
       const targetWeekForThisFile = files[i - 1].weekIdentifier;
 
@@ -262,6 +306,14 @@ async function performSlidingWindow(sharepointClient, files, targetWeekId, confi
         `%s: Moving ${currentFile.weekIdentifier} -> ${targetWeekForThisFile}`,
         AUDIT_NAME,
       );
+
+      // Only delete on first iteration - the file at files[0] week still exists after copy
+      // Subsequent iterations move into locations already vacated by previous moves
+      if (i === 1) {
+        const targetDoc = sharepointClient.getDocument(newPath);
+        // eslint-disable-next-line no-await-in-loop
+        await targetDoc.delete();
+      }
 
       const doc = sharepointClient.getDocument(currentPath);
       // eslint-disable-next-line no-await-in-loop
@@ -275,6 +327,19 @@ async function performSlidingWindow(sharepointClient, files, targetWeekId, confi
         to: targetWeekForThisFile,
       });
     }
+
+    // Step 3: Unpublish the oldest file from its original location
+    // The last file in the array (files[files.length - 1]) was moved, so we need to unpublish
+    // it from its original week identifier
+    const oldestFile = files[files.length - 1];
+    const oldestFileName = `${filePrefix}-${oldestFile.weekIdentifier}.xlsx`;
+    log.info(`%s: Unpublishing oldest file: ${oldestFileName}`, AUDIT_NAME);
+    await unpublishFromAdminHlx(oldestFileName, destinationFolder, log);
+    operations.push({
+      fileName: oldestFileName,
+      operation: 'unpublish',
+      status: 'success',
+    });
 
     log.info(`%s: Sliding window completed for ${filePrefix}`, AUDIT_NAME);
     return operations;
