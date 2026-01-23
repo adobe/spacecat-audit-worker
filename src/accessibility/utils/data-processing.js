@@ -412,7 +412,9 @@ export function mergeAccessibilityData(existingData, newData, log, logIdentifier
  * @param {string} outputKey - the key for the aggregated output file
  * @param {string} auditType - the type of audit (accessibility or forms-accessibility)
  * @param {string} version - the version/date to filter by
- * @param {number} maxRetries - maximum number of retries for failed promises (default: 1)
+ * @param {number} [maxRetries] - maximum number of retries for failed promises
+* @param {Map<string, string>|string[]} [scrapeResultPaths]
+*   optional scrape paths supplied by ScrapeClient
  * @returns {Promise<{success: boolean, aggregatedData: object, message: string}>} - result
  */
 export async function aggregateAccessibilityData(
@@ -423,7 +425,8 @@ export async function aggregateAccessibilityData(
   outputKey,
   auditType,
   version,
-  maxRetries = 2,
+  maxRetries,
+  scrapeResultPaths,
 ) {
   if (!s3Client || !bucketName || !siteId || !auditType) {
     const message = 'Missing required parameters for aggregateAccessibilityData';
@@ -450,24 +453,48 @@ export async function aggregateAccessibilityData(
 
   const { storagePrefix, logIdentifier } = getAuditPrefixes(auditType);
 
-  try {
-    // Get object keys from subfolders
-    const objectKeysResult = await getObjectKeysFromSubfolders(
-      s3Client,
-      bucketName,
-      storagePrefix,
-      siteId,
-      version,
-      log,
-    );
+  const scrapePathValues = (() => {
+    if (scrapeResultPaths instanceof Map) {
+      return Array.from(scrapeResultPaths.values());
+    }
+    if (Array.isArray(scrapeResultPaths)) {
+      return scrapeResultPaths;
+    }
+    return [];
+  })();
+  const useScrapeResultPaths = scrapePathValues.length > 0;
+  const retries = typeof maxRetries === 'number' ? maxRetries : 2;
 
-    // Check if the call succeeded
-    if (!objectKeysResult.success) {
-      return { success: false, aggregatedData: null, message: objectKeysResult.message };
+  try {
+    let objectKeys = [];
+
+    if (useScrapeResultPaths) {
+      log.debug(`[${logIdentifier}] Aggregating ${scrapePathValues.length} scrapeResultPaths for site ${siteId}`);
+      objectKeys = scrapePathValues;
+    } else {
+      // Get object keys from subfolders
+      const objectKeysResult = await getObjectKeysFromSubfolders(
+        s3Client,
+        bucketName,
+        storagePrefix,
+        siteId,
+        version,
+        log,
+      );
+
+      // Check if the call succeeded
+      if (!objectKeysResult.success) {
+        return { success: false, aggregatedData: null, message: objectKeysResult.message };
+      }
+
+      objectKeys = objectKeysResult.objectKeys;
     }
 
-    // Combine object keys from both sources
-    const { objectKeys } = objectKeysResult;
+    if (objectKeys.length === 0) {
+      const message = `[${logIdentifier}] No data files found for site ${siteId}`;
+      log.error(`[A11yProcessingError] ${message}`);
+      return { success: false, aggregatedData: null, message };
+    }
 
     // Process files with retry logic
     const { results } = await processFilesWithRetry(
@@ -475,7 +502,7 @@ export async function aggregateAccessibilityData(
       bucketName,
       objectKeys,
       log,
-      maxRetries,
+      retries,
     );
 
     // Check if we have any successful results to process
@@ -552,7 +579,9 @@ export async function aggregateAccessibilityData(
       log.debug(`[${logIdentifier}] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
     }
 
-    await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
+    if (!useScrapeResultPaths) {
+      await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
+    }
 
     return {
       success: true,

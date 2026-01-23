@@ -119,10 +119,9 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
       scrapedUrls: remainingUrls,
     },
     fullAuditRef: finalUrl,
-    // Data for the CONTENT_SCRAPER
+    // Data for the scrape client
     urls: remainingUrls,
     siteId,
-    jobId: siteId,
     processingType: AUDIT_TYPE_ACCESSIBILITY,
     options: {
       storagePrefix,
@@ -135,7 +134,7 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
 // Second step: gets data from the first step and processes it to create new opportunities
 export async function processAccessibilityOpportunities(context) {
   const {
-    site, log, s3Client, env, dataAccess, sqs,
+    site, log, s3Client, env, dataAccess, sqs, scrapeResultPaths,
   } = context;
   const siteId = site.getId();
   const version = new Date().toISOString().split('T')[0];
@@ -145,6 +144,15 @@ export async function processAccessibilityOpportunities(context) {
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   if (!bucketName) {
     const errorMsg = 'Missing S3 bucket configuration for accessibility audit';
+    log.error(`[A11yProcessingError] ${errorMsg}`);
+    return {
+      status: 'PROCESSING_FAILED',
+      error: errorMsg,
+    };
+  }
+
+  if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
+    const errorMsg = 'Missing scrape result paths for accessibility audit';
     log.error(`[A11yProcessingError] ${errorMsg}`);
     return {
       status: 'PROCESSING_FAILED',
@@ -165,6 +173,8 @@ export async function processAccessibilityOpportunities(context) {
       outputKey,
       AUDIT_TYPE_ACCESSIBILITY,
       version,
+      undefined,
+      scrapeResultPaths,
     );
 
     if (!aggregationResult.success) {
@@ -262,7 +272,7 @@ export async function processAccessibilityOpportunities(context) {
 export function createProcessAccessibilityOpportunitiesWithDevice(deviceType) {
   return async function processAccessibilityOpportunitiesWithDevice(context) {
     const {
-      site, log, s3Client, env, dataAccess, sqs,
+      site, log, s3Client, env, dataAccess, sqs, scrapeResultPaths,
     } = context;
     const siteId = site.getId();
     const version = new Date().toISOString().split('T')[0];
@@ -272,6 +282,15 @@ export function createProcessAccessibilityOpportunitiesWithDevice(deviceType) {
     const bucketName = env.S3_SCRAPER_BUCKET_NAME;
     if (!bucketName) {
       const errorMsg = 'Missing S3 bucket configuration for accessibility audit';
+      log.error(`[A11yProcessingError] ${errorMsg}`);
+      return {
+        status: 'PROCESSING_FAILED',
+        error: errorMsg,
+      };
+    }
+
+    if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
+      const errorMsg = `Missing scrape result paths for ${deviceType} accessibility audit`;
       log.error(`[A11yProcessingError] ${errorMsg}`);
       return {
         status: 'PROCESSING_FAILED',
@@ -292,6 +311,8 @@ export function createProcessAccessibilityOpportunitiesWithDevice(deviceType) {
         outputKey,
         `${AUDIT_TYPE_ACCESSIBILITY}-${deviceType}`,
         version,
+        undefined,
+        scrapeResultPaths,
       );
 
       if (!aggregationResult.success) {
@@ -437,7 +458,7 @@ export default new AuditBuilder()
   .addStep(
     'scrapeAccessibilityData',
     scrapeAccessibilityData,
-    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+    AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT,
   )
   .addStep('codeImport', codeImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('processAccessibilityOpportunities', processAccessibilityOpportunities)

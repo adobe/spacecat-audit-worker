@@ -2121,6 +2121,153 @@ describe('data-processing utility functions', () => {
       expect(result.finalResultFiles.current['https://example.com/newsletter?source=.newsletter-signup-form'].traffic).to.equal(25);
     });
 
+    it('should aggregate using scrapeResultPaths Map without listing prefixes', async () => {
+      const targetDate = '2024-02-02';
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'scrapes/job-123/page1.json'],
+        ['https://example.com/page2', 'scrapes/job-123/page2.json'],
+      ]);
+      const page1Data = {
+        url: 'https://example.com/page1',
+        violations: {
+          total: 2,
+          critical: { count: 1, items: { 'crit-1': { count: 1, description: 'crit', level: 'critical' } } },
+          serious: { count: 1, items: {} },
+        },
+        traffic: 42,
+      };
+      const page2Data = {
+        url: 'https://example.com/page2',
+        violations: {
+          total: 1,
+          critical: { count: 0, items: {} },
+          serious: { count: 1, items: { 'ser-1': { count: 1, description: 'ser', level: 'serious' } } },
+        },
+        traffic: 10,
+      };
+
+      const getObjectFromKeyStub = sandbox.stub();
+      getObjectFromKeyStub
+        .withArgs(mockS3Client, 'test-bucket', 'scrapes/job-123/page1.json', mockLog)
+        .resolves(page1Data);
+      getObjectFromKeyStub
+        .withArgs(mockS3Client, 'test-bucket', 'scrapes/job-123/page2.json', mockLog)
+        .resolves(page2Data);
+      const getObjectKeysUsingPrefixStub = sandbox.stub().resolves([]);
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectFromKey: getObjectFromKeyStub,
+          getObjectKeysUsingPrefix: getObjectKeysUsingPrefixStub,
+        },
+      });
+
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'accessibility',
+        targetDate,
+        undefined,
+        scrapeResultPaths,
+      );
+
+      expect(result.success).to.be.true;
+      expect(result.message).to.equal('Successfully aggregated 2 files into output-key');
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/page1');
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/page2');
+      expect(mockLog.debug.calledWith('[A11yAudit] Aggregating 2 scrapeResultPaths for site test-site')).to.be.true;
+      expect(getObjectKeysUsingPrefixStub.calledOnce).to.be.true;
+      expect(mockS3Client.send.calledWith(sinon.match.instanceOf(ListObjectsV2Command))).to.be.false;
+      expect(mockS3Client.send.calledWith(sinon.match.instanceOf(DeleteObjectCommand))).to.be.false;
+      expect(mockS3Client.send.calledWith(sinon.match.instanceOf(DeleteObjectsCommand))).to.be.false;
+    });
+
+    it('should aggregate using scrapeResultPaths array and default retries', async () => {
+      const targetDate = '2024-03-03';
+      const scrapeResultPaths = ['scrapes/job-456/page1.json'];
+      const pageData = {
+        url: 'https://example.com/page-array',
+        violations: {
+          total: 4,
+          critical: { count: 2, items: {} },
+          serious: { count: 2, items: {} },
+        },
+        traffic: 88,
+      };
+
+      const getObjectFromKeyStub = sandbox.stub();
+      getObjectFromKeyStub
+        .withArgs(mockS3Client, 'test-bucket', 'scrapes/job-456/page1.json', mockLog)
+        .resolves(pageData);
+      const getObjectKeysUsingPrefixStub = sandbox.stub().resolves([]);
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectFromKey: getObjectFromKeyStub,
+          getObjectKeysUsingPrefix: getObjectKeysUsingPrefixStub,
+        },
+      });
+
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'accessibility',
+        targetDate,
+        undefined,
+        scrapeResultPaths,
+      );
+
+      expect(result.success).to.be.true;
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/page-array');
+      expect(getObjectKeysUsingPrefixStub.calledOnce).to.be.true;
+      expect(mockLog.debug.calledWith('[A11yAudit] Aggregating 1 scrapeResultPaths for site test-site')).to.be.true;
+      expect(mockS3Client.send.calledWith(sinon.match.instanceOf(DeleteObjectCommand))).to.be.false;
+      expect(mockS3Client.send.calledWith(sinon.match.instanceOf(DeleteObjectsCommand))).to.be.false;
+    });
+
+    it('should return error when scrapeResultPaths appear populated but resolve empty', async () => {
+      const targetDate = '2024-05-05';
+      const scrapeArrayTarget = ['scrapes/job-789/page.json'];
+      let lengthCalls = 0;
+      const scrapeArray = new Proxy(scrapeArrayTarget, {
+        get(target, prop, receiver) {
+          if (prop === 'length') {
+            lengthCalls += 1;
+            return lengthCalls === 1 ? 1 : 0;
+          }
+          return Reflect.get(target, prop, receiver);
+        },
+      });
+
+      const result = await aggregateAccessibilityData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'accessibility',
+        targetDate,
+        undefined,
+        scrapeArray,
+      );
+
+      expect(result.success).to.be.false;
+      expect(result.aggregatedData).to.be.null;
+      expect(result.message).to.equal('[A11yAudit] No data files found for site test-site');
+      expect(mockLog.error.calledWith('[A11yProcessingError] [A11yAudit] No data files found for site test-site')).to.be.true;
+      expect(lengthCalls).to.be.at.least(2);
+    });
+
     it('should return error with correct log identifier for forms-opportunities when no files processed', async () => {
       const targetDate = '2024-01-01';
       const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
@@ -5449,9 +5596,10 @@ describe('data-processing utility functions', () => {
         },
       };
 
-      // Act & Assert
-      await expect(
-        generateReportOpportunityMocked(
+      // Act
+      let caughtError;
+      try {
+        await generateReportOpportunityMocked(
           reportData,
           mockGenMdFn,
           mockCreateOpportunityFn,
@@ -5459,8 +5607,14 @@ describe('data-processing utility functions', () => {
           false,
           'desktop',
           '',
-        )
-      ).to.be.rejectedWith('Suggestion creation failed');
+        );
+      } catch (error) {
+        caughtError = error;
+      }
+
+      // Assert
+      expect(caughtError).to.exist;
+      expect(caughtError.message).to.equal('Suggestion creation failed');
 
       expect(mockLog.error).to.have.been.called;
     });
