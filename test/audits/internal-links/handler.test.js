@@ -29,6 +29,7 @@ import {
   runCrawlDetectionBatch,
   updateAuditResult,
   finalizeCrawlDetection,
+  normalizeUrlToDomain,
 } from '../../../src/internal-links/handler.js';
 import {
   internalLinksData,
@@ -39,7 +40,9 @@ import { MockContextBuilder } from '../../shared.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () => 'https://example.com/page2' }];
+
 // Audit result without priority (priority is calculated after merge step)
+// Raw RUM data (before normalization)
 const AUDIT_RESULT_DATA = [
   {
     trafficDomain: 1800,
@@ -76,6 +79,28 @@ const AUDIT_RESULT_DATA_WITH_PRIORITY = [
     trafficDomain: 200,
     urlTo: 'https://www.petplace.com/a01',
     urlFrom: 'https://www.petplace.com/a01nf',
+    priority: 'low',
+  },
+];
+
+// Normalized data (after normalizeUrlToDomain with canonical domain www.example.com)
+const NORMALIZED_AUDIT_RESULT_DATA = [
+  {
+    trafficDomain: 1800,
+    urlTo: 'https://www.example.com/a01',
+    urlFrom: 'https://www.example.com/a02nf',
+    priority: 'high',
+  },
+  {
+    trafficDomain: 1200,
+    urlTo: 'https://www.example.com/ax02',
+    urlFrom: 'https://www.example.com/ax02nf',
+    priority: 'medium',
+  },
+  {
+    trafficDomain: 200,
+    urlTo: 'https://www.example.com/a01',
+    urlFrom: 'https://www.example.com/a01nf',
     priority: 'low',
   },
 ];
@@ -159,6 +184,13 @@ describe('Broken internal links audit', () => {
     sinon.restore();
   });
 
+  it('normalizeUrlToDomain returns original URL when parsing fails', () => {
+    const invalidUrl = 'not-a-valid-url';
+    const canonicalDomain = 'example.com';
+    const result = normalizeUrlToDomain(invalidUrl, canonicalDomain);
+    expect(result).to.equal(invalidUrl);
+  });
+
   it('broken-internal-links audit runs rum api client 404 query', async () => {
     const result = await internalLinksAuditRunner(
       'www.example.com',
@@ -172,7 +204,7 @@ describe('Broken internal links audit', () => {
     });
     expect(result).to.deep.equal({
       auditResult: {
-        brokenInternalLinks: AUDIT_RESULT_DATA,
+        brokenInternalLinks: NORMALIZED_AUDIT_RESULT_DATA,
         fullAuditRef: auditUrl,
         finalUrl: auditUrl,
         success: true,
@@ -222,7 +254,7 @@ describe('Broken internal links audit', () => {
       type: 'top-pages',
       siteId: site.getId(),
       auditResult: {
-        brokenInternalLinks: AUDIT_RESULT_DATA,
+        brokenInternalLinks: NORMALIZED_AUDIT_RESULT_DATA,
         fullAuditRef: auditUrl,
         success: true,
         finalUrl: 'www.example.com',
@@ -771,6 +803,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     const messageArg = context.sqs.sendMessage.getCall(0).args[1];
     expect(messageArg.data.alternativeUrls).to.have.lengthOf(1);
     expect(messageArg.data.alternativeUrls[0]).to.equal('https://example.com/page1');
+    // Verify siteBaseURL is included for URL normalization
+    expect(messageArg.data.siteBaseURL).to.equal('https://www.example.com');
   }).timeout(5000);
 
   it('Existing opportunity and suggestions are updated if no broken internal links found', async () => {
@@ -995,6 +1029,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     messageArg.data.alternativeUrls.forEach((url) => {
       expect(url).to.include('/uk/');
     });
+    // Verify siteBaseURL is included for URL normalization
+    expect(messageArg.data.siteBaseURL).to.equal('https://www.example.com');
   }).timeout(5000);
 
   it('should use urlFrom prefix when urlTo has no prefix', async () => {
@@ -1057,6 +1093,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     messageArg.data.alternativeUrls.forEach((url) => {
       expect(url).to.include('/uk/');
     });
+    // Verify siteBaseURL is included for URL normalization
+    expect(messageArg.data.siteBaseURL).to.equal('https://www.example.com');
   }).timeout(5000);
 
   it('should skip sending to Mystique when all broken links are filtered out', async () => {
@@ -1201,6 +1239,8 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(messageArg.data.alternativeUrls).to.include('https://bulk.com/uk/home');
     expect(messageArg.data.alternativeUrls).to.include('https://bulk.com/de/home');
     expect(messageArg.data.alternativeUrls).to.include('https://bulk.com/about');
+    // Verify siteBaseURL is included for URL normalization
+    expect(messageArg.data.siteBaseURL).to.equal('https://www.example.com');
   }).timeout(5000);
 
   it('should skip sending to Mystique when alternativeUrls is empty', async () => {
