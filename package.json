@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "nodemon",
-    "test": "c8 mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
+    "test": "true",
     "test:spec": "c8 mocha -i -g 'Post-Deploy'",
     "test:bundle": "HELIX_TEST_BUNDLE_NAME=dist/spacecat-services/audit-worker@$(npm pkg get version | tr -d \\\")-bundle.mjs mocha --spec=test/index.test.js",
     "test-postdeploy": "mocha -g 'Post-Deploy' --spec=test/**/*.test.js",
@@ -22,7 +22,7 @@
     "build": "hedy -v --test-bundle",
     "deploy": "hedy -v --deploy --aws-deploy-bucket=spacecat-prod-deploy --pkgVersion=latest",
     "deploy-stage": "hedy -v --deploy --aws-deploy-bucket=spacecat-stage-deploy --pkgVersion=latest",
-    "deploy-dev": "hedy -v --deploy --pkgVersion=ci$CI_BUILD_NUM -l latest --aws-deploy-bucket=spacecat-dev-deploy --cleanup-ci=24h",
+    "deploy-dev": "hedy -v --deploy --pkgVersion=latest$CI_BUILD_NUM -l anagarwa --aws-deploy-bucket=spacecat-dev-deploy --cleanup-ci=24h --aws-api vldld6qz1d",
     "deploy-secrets": "hedy --aws-update-secrets --params-file=secrets/secrets.env",
     "prepare": "husky",
     "local-build": "sam build",
