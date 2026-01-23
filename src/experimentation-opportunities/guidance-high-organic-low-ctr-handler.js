@@ -79,16 +79,33 @@ export default async function handler(message, context) {
   const { auditId, siteId, data } = message;
   const { url, guidance, suggestions } = data;
   log.info(`Message received in high-organic-low-ctr handler: ${JSON.stringify(message, null, 2)}`);
-
-  const audit = await Audit.findById(auditId);
+  /* c8 ignore start */
+  let audit;
+  try {
+    audit = await Audit.findById(auditId);
+  } catch (error) {
+    log.error(`Error finding audit by ID ${auditId}: ${error.message}`, error);
+    throw error;
+  }
+  /* c8 ignore stop */
   if (!audit) {
     log.warn(`No audit found for auditId: ${auditId}`);
     return notFound();
   }
 
-  const auditOpportunity = audit.getAuditResult()?.experimentationOpportunities
+  let auditResult;
+  try {
+    auditResult = audit.getAuditResult();
+    log.info(`Audit result retrieved for auditId ${auditId}, has experimentationOpportunities: ${!!auditResult?.experimentationOpportunities}`);
+    /* c8 ignore start */
+  } catch (error) {
+    log.error(`Error getting audit result for auditId ${auditId}: ${error.message}`, error);
+    throw error;
+  }
+  /* c8 ignore stop */
+  const auditOpportunity = auditResult?.experimentationOpportunities
     ?.filter((oppty) => oppty.type === HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE)
-    .find((oppty) => oppty.page === url);
+    ?.find((oppty) => oppty.page === url);
 
   if (!auditOpportunity) {
     log.info(
@@ -97,6 +114,8 @@ export default async function handler(message, context) {
     return notFound();
   }
 
+  log.info(`Audit opportunity found for URL: ${url}, pageViews: ${auditOpportunity.pageViews}`);
+
   const entity = convertToOpportunityEntity(siteId, auditId, auditOpportunity, guidance);
 
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
@@ -104,7 +123,10 @@ export default async function handler(message, context) {
     (oppty) => oppty.getData()?.page === url,
   );
 
+  log.info(`Existing opportunity found for URL: ${url}, pageViews: ${opportunity?.getData()?.pageViews}`);
+
   if (!opportunity) {
+    log.info(`No existing opportunity found for URL: ${url}. Creating a new one.`);
     // New opportunity flow - check capacity before creating
     const existingHighOrganicOpportunities = filterHighOrganicLowCtrOpportunities(
       existingOpportunities,
@@ -132,16 +154,17 @@ export default async function handler(message, context) {
       }
     }
 
-    log.debug(`No existing Opportunity found for page: ${url}. Creating a new one.`);
+    log.info(`No existing Opportunity found for page: ${url}. Creating a new one.`);
     opportunity = await Opportunity.create(entity);
   } else {
+    log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
     const existingSuggestions = await opportunity.getSuggestions();
     // Manual protection check: any manual suggestions found, skip all updates
     if (existingSuggestions.length > 0 && hasManuallyModifiedSuggestions(existingSuggestions)) {
-      log.debug(`Existing suggestions for page: ${url} were manually modified. Skipping all updates to preserve data consistency.`);
+      log.info(`Existing suggestions for page: ${url} were manually modified. Skipping all updates to preserve data consistency.`);
       return ok();
     }
-    log.debug(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
+    log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
     opportunity.setAuditId(auditId);
     opportunity.setData({
       ...opportunity.getData(),
