@@ -158,6 +158,13 @@ export default async function handler(message, context) {
     opportunity = await Opportunity.create(entity);
   } else {
     log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
+    // return if the opportunity is not high-organic-low-ctr
+    /* c8 ignore start */
+    if (opportunity.getType() !== HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE) {
+      log.info(`Opportunity for page: ${url} is not of type high-organic-low-ctr. Skipping update.`);
+      return ok();
+    }
+    /* c8 ignore stop */
     const existingSuggestions = await opportunity.getSuggestions();
     // Manual protection check: any manual suggestions found, skip all updates
     if (existingSuggestions.length > 0 && hasManuallyModifiedSuggestions(existingSuggestions)) {

@@ -37,6 +37,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
   const dummyOpportunity = {
     getId: sandbox.stub().returns('existing-oppty-id'),
+    getType: sandbox.stub().returns('high-organic-low-ctr'),
     getSuggestions: sandbox.stub().resolves([]),
     getData: sandbox.stub().returns({
       page: 'https://abc.com/abc-adoption/account',
@@ -269,6 +270,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     const opportunityWithManualSuggestions = {
       getId: sandbox.stub().returns('oppty-with-manual-suggestions'),
+      getType: sandbox.stub().returns('high-organic-low-ctr'),
       getSuggestions: sandbox.stub().resolves([manualSuggestion]),
       getData: sandbox.stub().returns({
         page: 'https://abc.com/abc-adoption/account',
@@ -311,6 +313,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     const systemOpportunity = {
       getId: sandbox.stub().returns('system-oppty-id'),
+      getType: sandbox.stub().returns('high-organic-low-ctr'),
       getSuggestions: sandbox.stub().resolves([systemSuggestion]),
       getData: sandbox.stub().returns({
         page: 'https://abc.com/abc-adoption/account',
@@ -351,6 +354,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     const legacyOpportunity = {
       getId: sandbox.stub().returns('legacy-oppty-id'),
+      getType: sandbox.stub().returns('high-organic-low-ctr'),
       getSuggestions: sandbox.stub().resolves([legacySuggestion]),
       getData: sandbox.stub().returns({
         page: 'https://abc.com/abc-adoption/account',
