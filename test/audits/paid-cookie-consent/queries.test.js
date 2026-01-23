@@ -14,7 +14,11 @@
 
 import { expect } from 'chai';
 import { describe } from 'mocha';
-import { getPaidTrafficAnalysisTemplate, getTop3PagesWithTrafficLostTemplate } from '../../../src/paid-cookie-consent/queries.js';
+import {
+  getPaidTrafficAnalysisTemplate,
+  getTop3PagesWithTrafficLostTemplate,
+  getBounceGapMetricsTemplate,
+} from '../../../src/paid-cookie-consent/queries.js';
 
 describe('Paid Cookie Consent Queries', () => {
   const defaultParams = {
@@ -147,6 +151,73 @@ describe('Paid Cookie Consent Queries', () => {
 
     it('should be properly formatted with trimmed output', () => {
       const query = getTop3PagesWithTrafficLostTemplate(top3Params);
+      expect(query.trim()).to.equal(query);
+    });
+  });
+
+  describe('getBounceGapMetricsTemplate', () => {
+    const bounceGapParams = {
+      siteId: 'test-site',
+      tableName: 'rum_metrics.compact_metrics',
+      temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+    };
+
+    it('should generate valid SQL with required components', () => {
+      const query = getBounceGapMetricsTemplate(bounceGapParams);
+
+      expect(query).to.be.a('string');
+      expect(query.length).to.be.greaterThan(100);
+      expect(query).to.include('WITH raw AS');
+      expect(query).to.include('agg AS');
+    });
+
+    it('should use provided parameters', () => {
+      const params = { ...bounceGapParams, siteId: 'custom-site-id' };
+      const query = getBounceGapMetricsTemplate(params);
+
+      expect(query).to.include('custom-site-id');
+    });
+
+    it('should filter by consent IN (show, hidden)', () => {
+      const query = getBounceGapMetricsTemplate(bounceGapParams);
+      expect(query).to.include("consent IN ('show', 'hidden')");
+    });
+
+    it('should group by trf_type and consent', () => {
+      const query = getBounceGapMetricsTemplate(bounceGapParams);
+      expect(query).to.include('GROUP BY trf_type, consent');
+    });
+
+    it('should select trf_type, consent, pageviews, and bounce_rate', () => {
+      const query = getBounceGapMetricsTemplate(bounceGapParams);
+      expect(query).to.include('trf_type');
+      expect(query).to.include('consent');
+      expect(query).to.include('pageviews');
+      expect(query).to.include('bounce_rate');
+    });
+
+    it('should calculate bounce_rate as 1 - engagements/row_count', () => {
+      const query = getBounceGapMetricsTemplate(bounceGapParams);
+      expect(query).to.include('1 - CAST(engagements AS DOUBLE) / NULLIF(row_count, 0) AS bounce_rate');
+    });
+
+    it('should order by trf_type, consent', () => {
+      const query = getBounceGapMetricsTemplate(bounceGapParams);
+      expect(query).to.include('ORDER BY trf_type, consent');
+    });
+
+    it('should use temporal condition correctly', () => {
+      const params = {
+        ...bounceGapParams,
+        temporalCondition: '(year=2024 AND week=52)',
+      };
+
+      const query = getBounceGapMetricsTemplate(params);
+      expect(query).to.include('(year=2024 AND week=52)');
+    });
+
+    it('should be properly formatted with trimmed output', () => {
+      const query = getBounceGapMetricsTemplate(bounceGapParams);
       expect(query.trim()).to.equal(query);
     });
   });

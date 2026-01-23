@@ -63,6 +63,7 @@ describe('Paid Cookie Consent opportunity mapper', () => {
         totalAverageBounceRate: 0.3,
         projectedTrafficLost: 1500,
         projectedTrafficValue: 1200,
+        sitewideBounceDelta: 0.12,
         top3Pages: [],
         averagePageViewsTop3: null,
         averageTrafficLostTop3: undefined,
@@ -265,6 +266,7 @@ describe('Paid Cookie Consent opportunity mapper', () => {
           totalAverageBounceRate: 0.8,
           projectedTrafficLost: 80000,
           projectedTrafficValue: 64000,
+          sitewideBounceDelta: 0.15,
           top3Pages: [
             { url: 'https://example.com/page1', trafficLoss: 40000, pageViews: 50000, bounceRate: 0.8 },
             { url: 'https://example.com/page2', trafficLoss: 30000, pageViews: 37500, bounceRate: 0.8 },
@@ -291,6 +293,7 @@ describe('Paid Cookie Consent opportunity mapper', () => {
           totalAverageBounceRate: 0.6,
           projectedTrafficLost: 900,
           projectedTrafficValue: 720,
+          sitewideBounceDelta: 0.08,
           top3Pages: [
             { url: 'https://example.com/page1', trafficLoss: 500, pageViews: 833, bounceRate: 0.6 },
           ],
@@ -314,6 +317,7 @@ describe('Paid Cookie Consent opportunity mapper', () => {
           totalAverageBounceRate: 0.3,
           projectedTrafficLost: 1500,
           projectedTrafficValue: 1200,
+          sitewideBounceDelta: 0.12,
           top3Pages: [
             { url, trafficLoss: 1000, pageViews: 3333, bounceRate: 0.3 },
           ],
@@ -340,6 +344,7 @@ describe('Paid Cookie Consent opportunity mapper', () => {
           totalAverageBounceRate: 0.3,
           projectedTrafficLost: 1500,
           projectedTrafficValue: 1200,
+          sitewideBounceDelta: 0.12,
           top3Pages: [],
           averagePageViewsTop3: 3333,
           averageTrafficLostTop3: 1000,
@@ -363,6 +368,7 @@ describe('Paid Cookie Consent opportunity mapper', () => {
           totalAverageBounceRate: 0.3,
           projectedTrafficLost: 1500,
           projectedTrafficValue: 1200,
+          sitewideBounceDelta: 0.12,
           top3Pages: [],
           averagePageViewsTop3: 3333,
           averageTrafficLostTop3: 1000,
@@ -390,6 +396,7 @@ describe('Paid Cookie Consent opportunity mapper', () => {
           totalAverageBounceRate: 0.3,
           projectedTrafficLost: 1500,
           projectedTrafficValue: 1200,
+          sitewideBounceDelta: 0.12,
           top3Pages: [],
           averagePageViewsTop3: 3333,
           averageTrafficLostTop3: 1000,
@@ -401,6 +408,52 @@ describe('Paid Cookie Consent opportunity mapper', () => {
       expect(result.data.dataSources).to.include('Site');
       expect(result.data.dataSources).to.include('RUM');
       expect(result.data.dataSources).to.include('Page');
+    });
+
+    it('includes sitewideBounceDelta in description as percentage points', () => {
+      const audit = {
+        getAuditId: () => 'aid',
+        getAuditResult: () => ({
+          totalPageViews: 5000,
+          totalAverageBounceRate: 0.3,
+          projectedTrafficLost: 1500,
+          projectedTrafficValue: 1200,
+          sitewideBounceDelta: 0.12, // 12 percentage points
+          top3Pages: [
+            { path: '/page1', trafficLoss: 500, pageViews: 1000, bounceRate: 0.5 },
+          ],
+          averagePageViewsTop3: 3333,
+          averageTrafficLostTop3: 1000,
+          averageBounceRateMobileTop3: 0.35,
+          temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+        }),
+      };
+      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
+      // 0.12 * 100 = 12 pp
+      expect(result.description).to.include('Bounce rate was 12 pp higher when consent banner was shown vs hidden');
+    });
+
+    it('handles missing sitewideBounceDelta gracefully', () => {
+      const audit = {
+        getAuditId: () => 'aid',
+        getAuditResult: () => ({
+          totalPageViews: 5000,
+          totalAverageBounceRate: 0.3,
+          projectedTrafficLost: 1500,
+          projectedTrafficValue: 1200,
+          // sitewideBounceDelta is missing
+          top3Pages: [
+            { path: '/page1', trafficLoss: 500, pageViews: 1000, bounceRate: 0.5 },
+          ],
+          averagePageViewsTop3: 3333,
+          averageTrafficLostTop3: 1000,
+          averageBounceRateMobileTop3: 0.35,
+          temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+        }),
+      };
+      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
+      // Should default to 0 pp
+      expect(result.description).to.include('Bounce rate was 0 pp higher when consent banner was shown vs hidden');
     });
   });
 });

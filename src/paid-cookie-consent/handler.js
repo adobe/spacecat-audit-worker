@@ -18,7 +18,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import {
   // getPaidTrafficAnalysisTemplate,
   getTop3PagesWithTrafficLostTemplate,
-  getDifferentialMetricsTemplate,
+  getBounceGapMetricsTemplate,
 } from './queries.js';
 
 // const MAX_PAGES_TO_AUDIT = 3;
@@ -108,10 +108,10 @@ async function executeTop3TrafficLostPagesQuery(
 // const hasValues = (segment) => segment?.value?.length > 0;
 
 /**
- * Executes the differential metrics query to get bounce rates
+ * Executes the bounce gap metrics query to get bounce rates
  * for both consent='show' and consent='hidden' by traffic source.
  */
-async function executeDifferentialMetricsQuery(
+async function executeBounceGapMetricsQuery(
   athenaClient,
   siteId,
   temporalCondition,
@@ -120,15 +120,15 @@ async function executeDifferentialMetricsQuery(
 ) {
   const tableName = `${config.rumMetricsDatabase}.${config.rumMetricsCompactTable}`;
 
-  const query = getDifferentialMetricsTemplate({
+  const query = getBounceGapMetricsTemplate({
     siteId,
     tableName,
     temporalCondition,
   });
 
-  const description = `differential metrics (show vs hidden) for siteId: ${siteId}`;
+  const description = `bounce gap metrics consent(show - hidden) for siteId: ${siteId}`;
 
-  log.debug('[DEBUG] Differential Metrics Query:', query);
+  log.debug('[DEBUG] Bounce Gap Metrics Query:', query);
 
   const result = await athenaClient.query(query, config.rumMetricsDatabase, description);
   return result.map((item) => ({
@@ -140,17 +140,17 @@ async function executeDifferentialMetricsQuery(
 }
 
 /**
- * Calculates projected traffic lost using differential attribution.
+ * Calculates projected traffic lost using bounce gap attribution.
  * Formula: sum of (PV_show × max(0, BR_show - BR_hidden)) per trf_type
  *
- * @param {Array} differentialData - Array of {trfType, consent, pageViews, bounceRate}
+ * @param {Array} bounceGapData - Array of {trfType, consent, pageViews, bounceRate}
  * @param {Object} log - Logger instance
  * @returns {Object} { projectedTrafficLost, hasShowData, hasHiddenData }
  */
-export function calculateDifferentialLoss(differentialData, log) {
+export function calculateBounceGapLoss(bounceGapData, log) {
   // Group by trf_type
   const byTrfType = {};
-  for (const row of differentialData) {
+  for (const row of bounceGapData) {
     if (!byTrfType[row.trfType]) {
       byTrfType[row.trfType] = {};
     }
@@ -165,16 +165,16 @@ export function calculateDifferentialLoss(differentialData, log) {
   const hasHiddenData = Object.values(byTrfType).some((data) => data.hidden);
 
   if (!hasShowData) {
-    log.warn('[paid-audit] No show consent data found; cannot calculate differential');
+    log.warn('[paid-audit] No show consent data found; cannot calculate bounce gap');
     return { projectedTrafficLost: 0, hasShowData: false, hasHiddenData };
   }
 
   if (!hasHiddenData) {
-    log.warn('[paid-audit] No hidden consent data found; cannot calculate differential');
+    log.warn('[paid-audit] No hidden consent data found; cannot calculate bounce gap');
     return { projectedTrafficLost: 0, hasShowData, hasHiddenData: false };
   }
 
-  // Calculate differential loss per trf_type
+  // Calculate bounce gap loss per trf_type
   let totalLoss = 0;
   for (const [trfType, data] of Object.entries(byTrfType)) {
     const showData = data.show;
@@ -201,6 +201,35 @@ export function calculateDifferentialLoss(differentialData, log) {
   }
 
   return { projectedTrafficLost: totalLoss, hasShowData: true, hasHiddenData: true };
+}
+
+/**
+ * Calculates sitewide bounce delta (pp) for description text.
+ * Formula: Sitewide_BR_show - Sitewide_BR_hidden (all traffic sources)
+ *
+ * @param {Array} bounceGapData - Array of {trfType, consent, pageViews, bounceRate}
+ * @returns {number} Bounce rate difference in decimal (0.12 = 12pp), floored at 0
+ */
+export function calculateSitewideBounceDelta(bounceGapData) {
+  let totalPVShow = 0;
+  let totalBouncesShow = 0;
+  let totalPVHidden = 0;
+  let totalBouncesHidden = 0;
+
+  for (const row of bounceGapData) {
+    if (row.consent === 'show') {
+      totalPVShow += row.pageViews;
+      totalBouncesShow += row.pageViews * row.bounceRate;
+    } else if (row.consent === 'hidden') {
+      totalPVHidden += row.pageViews;
+      totalBouncesHidden += row.pageViews * row.bounceRate;
+    }
+  }
+
+  const sitewideShowBR = totalPVShow > 0 ? totalBouncesShow / totalPVShow : 0;
+  const sitewideHiddenBR = totalPVHidden > 0 ? totalBouncesHidden / totalPVHidden : 0;
+
+  return Math.max(0, sitewideShowBR - sitewideHiddenBR);
 }
 
 function buildMystiqueMessage(site, auditId, url) {
@@ -237,8 +266,8 @@ export async function paidAuditRunner(auditUrl, context, site) {
   try {
     log.debug(`[paid-audit] [Site: ${auditUrl}] Executing Athena queries for paid traffic segments`);
 
-    // Execute differential metrics query for main projected traffic lost calculation
-    const differentialData = await executeDifferentialMetricsQuery(
+    // Execute bounce gap metrics query for main projected traffic lost calculation
+    const bounceGapData = await executeBounceGapMetricsQuery(
       athenaClient,
       siteId,
       temporalCondition,
@@ -246,18 +275,21 @@ export async function paidAuditRunner(auditUrl, context, site) {
       log,
     );
 
-    // Calculate projected traffic lost using differential attribution
+    // Calculate projected traffic lost using bounce gap data
     const {
       projectedTrafficLost,
       hasShowData,
       hasHiddenData,
-    } = calculateDifferentialLoss(differentialData, log);
+    } = calculateBounceGapLoss(bounceGapData, log);
 
-    // Abort if no show data - we can't do meaningful differential calculation
+    // Calculate sitewide bounce delta for description text
+    const sitewideBounceDelta = calculateSitewideBounceDelta(bounceGapData);
+
+    // Abort if no show data - we can't do meaningful bounce gap calculation
     if (!hasShowData) {
       log.warn(
         `[paid-audit] [Site: ${auditUrl}] No show consent data available; `
-        + 'cannot calculate differential metrics. Aborting audit.',
+        + 'cannot calculate bounce gap metrics. Aborting audit.',
       );
       return {
         auditResult: null,
@@ -265,11 +297,11 @@ export async function paidAuditRunner(auditUrl, context, site) {
       };
     }
 
-    // Abort if no hidden data - we can't do meaningful differential calculation
+    // Abort if no hidden data - we can't do meaningful bounce gap calculation
     if (!hasHiddenData) {
       log.warn(
         `[paid-audit] [Site: ${auditUrl}] No hidden consent data available; `
-        + 'cannot calculate differential metrics. Aborting audit.',
+        + 'cannot calculate bounce gap metrics. Aborting audit.',
       );
       return {
         auditResult: null,
@@ -310,6 +342,7 @@ export async function paidAuditRunner(auditUrl, context, site) {
       totalAverageBounceRate,
       projectedTrafficLost,
       projectedTrafficValue,
+      sitewideBounceDelta,
       top3Pages,
       averagePageViewsTop3,
       averageTrafficLostTop3,

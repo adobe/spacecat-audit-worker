@@ -198,7 +198,7 @@ ${limit ? `LIMIT ${limit}` : ''}
 }
 
 /**
- * Generates SQL query for differential metrics calculation.
+ * Generates SQL query for bounce gap metrics calculation.
  * Fetches bounce rates for both consent='show' and consent='hidden' by traffic source.
  * Used to calculate: projectedTrafficLost = PV_shown × max(0, BR_shown - BR_hidden)
  *
@@ -208,7 +208,7 @@ ${limit ? `LIMIT ${limit}` : ''}
  * @param {string} params.temporalCondition - Temporal condition
  * @returns {string} The SQL query string
  */
-export function getDifferentialMetricsTemplate({
+export function getBounceGapMetricsTemplate({
   siteId,
   tableName,
   temporalCondition,
