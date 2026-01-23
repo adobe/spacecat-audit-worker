@@ -204,6 +204,60 @@ describe('data-access', () => {
       expect(mockLogger.error).to.not.have.been.called;
     });
 
+    it('should use "unknown" as siteId when getSiteId is undefined', async () => {
+      const newData = [{ key: '1' }];
+      const suggestionsResult = {
+        errorItems: [],
+        createdItems: newData,
+        length: newData.length,
+      };
+
+      // Create opportunity without getSiteId
+      const opportunityWithoutSiteId = {
+        getSuggestions: sandbox.stub().resolves([]),
+        addSuggestions: sandbox.stub().resolves(suggestionsResult),
+      };
+
+      await syncSuggestions({
+        context,
+        opportunity: opportunityWithoutSiteId,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that "unknown" is used as siteId
+      expect(mockLogger.info).to.have.been.calledWith('Adding 1 new suggestions for siteId unknown');
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Successfully created.*suggestions for siteId unknown/),
+      );
+    });
+
+    it('should use suggestions.length when createdItems is undefined', async () => {
+      const newData = [{ key: '1' }, { key: '2' }];
+      // Return suggestions without createdItems property
+      const suggestionsResult = {
+        errorItems: [],
+        length: newData.length,
+      };
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves(suggestionsResult);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that suggestions.length is used when createdItems is undefined
+      expect(mockLogger.debug).to.have.been.calledWith(
+        `Successfully created ${suggestionsResult.length} suggestions for siteId site-id`,
+      );
+    });
+
     it('should not handle outdated suggestions if context is not provided', async () => {
       const suggestionsData = [{ key: '1' }, { key: '2' }];
       const existingSuggestions = [
@@ -346,14 +400,14 @@ describe('data-access', () => {
       // Verify that REJECTED status is NOT changed (setStatus should not be called)
       expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
-      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit with no data changes. Preserving REJECTED status.');
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
       // Verify that save is called
       expect(existingSuggestions[0].save).to.have.been.called;
       // Verify that setData is called to update the data
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
 
-    it('should change REJECTED status to NEW when data changes', async () => {
+    it('should preserve REJECTED status when data changes', async () => {
       const suggestionsData = [
         { key: '1', title: 'old title', description: 'old description' },
       ];
@@ -373,11 +427,6 @@ describe('data-access', () => {
         { key: '1', title: 'new title', description: 'old description' },
       ];
 
-      // Mock site without requiresValidation (should set to NEW)
-      context.site = {
-        requiresValidation: false,
-      };
-
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
 
       await syncSuggestions({
@@ -388,18 +437,17 @@ describe('data-access', () => {
         mapNewSuggestion,
       });
 
-      // Verify that status is changed to NEW
-      expect(existingSuggestions[0].setStatus)
-        .to.have.been.calledWith(SuggestionDataAccess.STATUSES.NEW);
+      // Verify that REJECTED status is NOT changed (setStatus should not be called)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
-      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found with changed data. Updating status to allow reconsideration.');
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
       // Verify that save is called
       expect(existingSuggestions[0].save).to.have.been.called;
       // Verify that setData is called to update the data
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
 
-    it('should change REJECTED status to PENDING_VALIDATION when data changes and site requires validation', async () => {
+    it('should preserve REJECTED status when data changes even if site requires validation', async () => {
       const suggestionsData = [
         { key: '1', title: 'old title', url: 'https://example.com/page1' },
       ];
@@ -419,7 +467,7 @@ describe('data-access', () => {
         { key: '1', title: 'old title', url: 'https://example.com/page2' },
       ];
 
-      // Mock site with requiresValidation (should set to PENDING_VALIDATION)
+      // Mock site with requiresValidation
       context.site = {
         requiresValidation: true,
       };
@@ -434,63 +482,17 @@ describe('data-access', () => {
         mapNewSuggestion,
       });
 
-      // Verify that status is changed to PENDING_VALIDATION
-      expect(existingSuggestions[0].setStatus)
-        .to.have.been.calledWith(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
+      // Verify that REJECTED status is NOT changed (setStatus should not be called)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
       // Verify that debug log is called with the correct message
-      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found with changed data. Updating status to allow reconsideration.');
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
       // Verify that save is called
       expect(existingSuggestions[0].save).to.have.been.called;
       // Verify that setData is called to update the data
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
 
-    it('should cover hasDataChanged early return when existingData is null (lines 211-212)', async () => {
-      // buildKey that makes null existingData match a new data item
-      // This ensures the suggestion passes the filter and hasDataChanged is called
-      const buildKeyNullSafe = (data) => {
-        if (!data) return 'null-match';
-        return `${data.key}`;
-      };
-
-      const existingSuggestions = [{
-        id: '1',
-        data: null,
-        getData: sandbox.stub().returns(null),
-        setData: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-        getStatus: sandbox.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
-        setStatus: sandbox.stub(),
-        setUpdatedBy: sandbox.stub().returnsThis(),
-      }];
-
-      // key 'null-match' matches buildKey(null) which also returns 'null-match'
-      // This ensures the suggestion passes the filter (newDataKeys.has('null-match'))
-      const newData = [
-        { key: 'null-match', title: 'new title', url: 'https://example.com/page1' },
-      ];
-
-      mockOpportunity.getSuggestions.resolves(existingSuggestions);
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey: buildKeyNullSafe,
-        mapNewSuggestion,
-      });
-
-      // existingData is null, so hasDataChanged(null, newDataItem) returns false
-      // This covers lines 211-212: if (!existingData || !newData) return false
-      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
-      // Check if debug was called with the REJECTED message (may be called multiple times)
-      const debugCalls = mockLogger.debug.getCalls();
-      const hasRejectedMessage = debugCalls.some((call) => call.args[0] === 'REJECTED suggestion found in audit with no data changes. Preserving REJECTED status.');
-      expect(hasRejectedMessage).to.be.true;
-      expect(existingSuggestions[0].save).to.have.been.called;
-    });
-
-    it('should detect changes in nested objects and arrays for REJECTED suggestions', async () => {
+    it('should preserve REJECTED status when nested objects and arrays change', async () => {
       const suggestionsData = [
         { key: '1', metrics: [{ value: 100 }], issues: [{ type: 'error1' }] },
       ];
@@ -524,10 +526,9 @@ describe('data-access', () => {
         mapNewSuggestion,
       });
 
-      // Verify that status is changed to NEW (nested changes detected)
-      expect(existingSuggestions[0].setStatus)
-        .to.have.been.calledWith(SuggestionDataAccess.STATUSES.NEW);
-      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found with changed data. Updating status to allow reconsideration.');
+      // Verify that REJECTED status is NOT changed (setStatus should not be called)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
       expect(existingSuggestions[0].save).to.have.been.called;
       expect(existingSuggestions[0].setData).to.have.been.called;
     });
