@@ -30,7 +30,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
   let mockSuggestions;
   let fetchStub;
   let handler;
-  let mockIsPaidCustomer;
+  let mockIsPaidLLMOCustomer;
 
   // Helper to mock successful fetch response
   const mockFetchSuccess = (data) => {
@@ -123,13 +123,13 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
     // Using sinon.stub(global, 'fetch') properly saves and restores the original
     fetchStub = sinon.stub(global, 'fetch');
 
-    // Mock isPaidCustomer utility
-    mockIsPaidCustomer = sinon.stub().resolves(true);
+    // Mock isPaidLLMOCustomer utility
+    mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
 
-    // Import handler with mocked isPaidCustomer
+    // Import handler with mocked isPaidLLMOCustomer
     handler = await esmock('../../../src/prerender/guidance-handler.js', {
       '../../../src/prerender/utils/utils.js': {
-        isPaidCustomer: mockIsPaidCustomer,
+        isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
       },
     });
 
@@ -800,7 +800,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         ],
       });
 
-      mockIsPaidCustomer.resolves(true);
+      mockIsPaidLLMOCustomer.resolves(true);
 
       const message = {
         siteId: 'site-123',
@@ -813,8 +813,8 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
 
       await handler.default(message, context);
 
-      // Verify isPaidCustomer was called
-      expect(mockIsPaidCustomer).to.have.been.calledOnce;
+      // Verify isPaidLLMOCustomer was called
+      expect(mockIsPaidLLMOCustomer).to.have.been.calledOnce;
 
       // Both suggestions should be saved
       expect(Suggestion._saveMany).to.have.been.calledOnce;
@@ -839,7 +839,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
 
       // Verify log includes paid customer flag and correct counts
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/isPaidCustomer=true/)
+        sinon.match(/isPaidLLMOCustomer=true/)
           .and(sinon.match(/totalSuggestions=2/))
           .and(sinon.match(/valuableSuggestions=1/))
           .and(sinon.match(/validAiSummaryCount=2/)),
@@ -855,7 +855,7 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         ],
       });
 
-      mockIsPaidCustomer.resolves(false);
+      mockIsPaidLLMOCustomer.resolves(false);
 
       const message = {
         siteId: 'site-123',
@@ -868,14 +868,14 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
 
       await handler.default(message, context);
 
-      // Verify isPaidCustomer was called
-      expect(mockIsPaidCustomer).to.have.been.calledOnce;
+      // Verify isPaidLLMOCustomer was called
+      expect(mockIsPaidLLMOCustomer).to.have.been.calledOnce;
 
       // Verify log includes paid customer flag and correct counts
       // Only 1 valid AI summary (the other is "Not available")
       // Only 1 valuable suggestion (with valid summary)
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/isPaidCustomer=false/)
+        sinon.match(/isPaidLLMOCustomer=false/)
           .and(sinon.match(/totalSuggestions=2/))
           .and(sinon.match(/valuableSuggestions=1/))
           .and(sinon.match(/validAiSummaryCount=1/)),
@@ -1027,9 +1027,9 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
 
       await handler.default(message, context);
 
-      // Verify comprehensive log with quality metrics and paid customer flag
+      // Verify comprehensive log with quality metrics and paid LLMO customer flag
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/Successfully updated aiSummaries.*isPaidCustomer=true/)
+        sinon.match(/Successfully updated aiSummaries.*isPaidLLMOCustomer=true/)
           .and(sinon.match(/totalSuggestions=/))
           .and(sinon.match(/valuableSuggestions=/))
           .and(sinon.match(/validAiSummaryCount=/)),

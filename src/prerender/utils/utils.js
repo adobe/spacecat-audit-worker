@@ -18,23 +18,27 @@ import { Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 
 /**
- * Checks if the site belongs to a paid customer
+ * Checks if the site belongs to a paid LLMO customer
  * @param {Object} context - Context with site, dataAccess and log
- * @returns {Promise<boolean>} - True if paid customer, false otherwise
+ * @returns {Promise<boolean>} - True if paid LLMO customer, false otherwise
  */
-export async function isPaidCustomer(context) {
+export async function isPaidLLMOCustomer(context) {
   const { site, log } = context;
   try {
-    // Check for ASO product code entitlement
-    const tierClient = await TierClient.createForSite(context, site, Entitlement.PRODUCT_CODES.ASO);
+    // Check for LLMO product code entitlement
+    const tierClient = await TierClient.createForSite(
+      context,
+      site,
+      Entitlement.PRODUCT_CODES.LLMO,
+    );
     const { entitlement } = await tierClient.checkValidEntitlement();
     const tier = entitlement.getTier() ?? null;
     const isPaid = tier === Entitlement.TIERS.PAID;
 
-    log.debug(`Prerender - isPaidCustomer check: siteId=${site.getId()}, tier=${tier}, isPaid=${isPaid}`);
+    log.debug(`Prerender - isPaidLLMOCustomer check: siteId=${site.getId()}, tier=${tier}, isPaid=${isPaid}`);
     return isPaid;
   } catch (e) {
-    log.warn(`Prerender - Failed to check paid customer status for siteId=${site.getId()}: ${e.message}`);
+    log.warn(`Prerender - Failed to check paid LLMO customer status for siteId=${site.getId()}: ${e.message}`);
     return false;
   }
 }

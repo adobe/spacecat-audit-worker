@@ -56,6 +56,7 @@ describe('Prerender Utils', () => {
     EntitlementStub = {
       PRODUCT_CODES: {
         ASO: 'aso-product-code',
+        LLMO: 'llmo-product-code',
       },
       TIERS: {
         PAID: 'paid',
@@ -77,18 +78,18 @@ describe('Prerender Utils', () => {
     sandbox.restore();
   });
 
-  describe('isPaidCustomer', () => {
+  describe('isPaidLLMOCustomer', () => {
     it('should return true for paid tier customers', async () => {
       mockEntitlement.getTier.returns('paid');
 
       const context = { site: mockSite, log };
-      const result = await utils.isPaidCustomer(context);
+      const result = await utils.isPaidLLMOCustomer(context);
 
       expect(result).to.be.true;
-      expect(TierClientStub.createForSite).to.have.been.calledWith(context, mockSite, 'aso-product-code');
+      expect(TierClientStub.createForSite).to.have.been.calledWith(context, mockSite, 'llmo-product-code');
       expect(mockTierClient.checkValidEntitlement).to.have.been.calledOnce;
       expect(log.debug).to.have.been.calledWith(
-        sinon.match(/isPaidCustomer check.*siteId=test-site-id.*tier=paid.*isPaid=true/),
+        sinon.match(/isPaidLLMOCustomer check.*siteId=test-site-id.*tier=paid.*isPaid=true/),
       );
     });
 
@@ -96,13 +97,13 @@ describe('Prerender Utils', () => {
       mockEntitlement.getTier.returns('free');
 
       const context = { site: mockSite, log };
-      const result = await utils.isPaidCustomer(context);
+      const result = await utils.isPaidLLMOCustomer(context);
 
       expect(result).to.be.false;
-      expect(TierClientStub.createForSite).to.have.been.calledWith(context, mockSite, 'aso-product-code');
+      expect(TierClientStub.createForSite).to.have.been.calledWith(context, mockSite, 'llmo-product-code');
       expect(mockTierClient.checkValidEntitlement).to.have.been.calledOnce;
       expect(log.debug).to.have.been.calledWith(
-        sinon.match(/isPaidCustomer check.*siteId=test-site-id.*tier=free.*isPaid=false/),
+        sinon.match(/isPaidLLMOCustomer check.*siteId=test-site-id.*tier=free.*isPaid=false/),
       );
     });
 
@@ -110,7 +111,7 @@ describe('Prerender Utils', () => {
       mockEntitlement.getTier.returns(null);
 
       const context = { site: mockSite, log };
-      const result = await utils.isPaidCustomer(context);
+      const result = await utils.isPaidLLMOCustomer(context);
 
       expect(result).to.be.false;
       expect(log.debug).to.have.been.calledWith(
@@ -122,7 +123,7 @@ describe('Prerender Utils', () => {
       mockEntitlement.getTier.returns(undefined);
 
       const context = { site: mockSite, log };
-      const result = await utils.isPaidCustomer(context);
+      const result = await utils.isPaidLLMOCustomer(context);
 
       expect(result).to.be.false;
       expect(log.debug).to.have.been.calledWith(
@@ -134,11 +135,11 @@ describe('Prerender Utils', () => {
       TierClientStub.createForSite.rejects(new Error('TierClient creation failed'));
 
       const context = { site: mockSite, log };
-      const result = await utils.isPaidCustomer(context);
+      const result = await utils.isPaidLLMOCustomer(context);
 
       expect(result).to.be.false;
       expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to check paid customer status.*siteId=test-site-id.*TierClient creation failed/),
+        sinon.match(/Failed to check paid LLMO customer status.*siteId=test-site-id.*TierClient creation failed/),
       );
     });
 
@@ -146,11 +147,11 @@ describe('Prerender Utils', () => {
       mockTierClient.checkValidEntitlement.rejects(new Error('Entitlement check failed'));
 
       const context = { site: mockSite, log };
-      const result = await utils.isPaidCustomer(context);
+      const result = await utils.isPaidLLMOCustomer(context);
 
       expect(result).to.be.false;
       expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to check paid customer status.*siteId=test-site-id.*Entitlement check failed/),
+        sinon.match(/Failed to check paid LLMO customer status.*siteId=test-site-id.*Entitlement check failed/),
       );
     });
 
@@ -158,11 +159,11 @@ describe('Prerender Utils', () => {
       mockEntitlement.getTier.throws(new Error('getTier failed'));
 
       const context = { site: mockSite, log };
-      const result = await utils.isPaidCustomer(context);
+      const result = await utils.isPaidLLMOCustomer(context);
 
       expect(result).to.be.false;
       expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to check paid customer status.*siteId=test-site-id.*getTier failed/),
+        sinon.match(/Failed to check paid LLMO customer status.*siteId=test-site-id.*getTier failed/),
       );
     });
   });

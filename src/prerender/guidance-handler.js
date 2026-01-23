@@ -11,7 +11,7 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
-import { isPaidCustomer } from './utils/utils.js';
+import { isPaidLLMOCustomer } from './utils/utils.js';
 
 const LOG_PREFIX = 'Prerender -';
 
@@ -202,13 +202,13 @@ export default async function handler(message, context) {
         // eslint-disable-next-line no-underscore-dangle
         await Suggestion._saveMany(suggestionsToSave);
 
-        // Check if this is a paid customer for quality tracking
-        const isPaid = await isPaidCustomer(context);
+        // Check if this is a paid LLMO customer for quality tracking
+        const isPaid = await isPaidLLMOCustomer(context);
 
         // Log comprehensive quality metrics with paid customer flag
         log.info(
           `${LOG_PREFIX} Successfully updated aiSummaries for siteId=${siteId} | `
-          + `baseUrl=${site.getBaseURL()} | opportunityId=${opportunityId} | isPaidCustomer=${isPaid} | `
+          + `baseUrl=${site.getBaseURL()} | opportunityId=${opportunityId} | isPaidLLMOCustomer=${isPaid} | `
           + `totalSuggestions=${suggestionsToSave.length} | valuableSuggestions=${valuableCount} | validAiSummaryCount=${validAiSummaryCount}`,
         );
       } catch (error) {

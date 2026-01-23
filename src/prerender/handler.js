@@ -22,7 +22,7 @@ import {
   loadLatestAgenticSheet,
   buildSheetHitsMap,
 } from './utils/shared.js';
-import { isPaidCustomer } from './utils/utils.js';
+import { isPaidLLMOCustomer } from './utils/utils.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   TOP_AGENTIC_URLS_LIMIT,
@@ -821,11 +821,11 @@ export async function processOpportunityAndSuggestions(
     },
   });
 
-  const isPaid = await isPaidCustomer(context);
+  const isPaid = await isPaidLLMOCustomer(context);
 
   log.info(
     `${LOG_PREFIX} Successfully synced suggestions for siteId=${auditData.siteId} | `
-    + `baseUrl=${auditUrl} | isPaidCustomer=${isPaid} | suggestions=${preRenderSuggestions.length} | totalSuggestions=${allSuggestions.length}`,
+    + `baseUrl=${auditUrl} | isPaidLLMOCustomer=${isPaid} | suggestions=${preRenderSuggestions.length} | totalSuggestions=${allSuggestions.length}`,
   );
 
   return opportunity;
