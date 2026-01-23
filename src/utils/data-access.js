@@ -409,7 +409,7 @@ export async function reconcileDisappearedSuggestions({
     const existingSuggestions = await opportunity.getSuggestions();
     const currentKeys = new Set(currentAuditData?.map(buildKey));
     const newStatus = SuggestionDataAccess?.STATUSES?.NEW;
-
+    log.info(`[${auditType}] Reconciling disappeared suggestions for opportunity ${opportunity.getId?.()}`);
     // Filter to suggestions that:
     // 1. Are in NEW status (only process suggestions that haven't been actioned)
     // 2. Are no longer in the current audit data (potentially fixed)
@@ -544,6 +544,7 @@ export async function publishDeployedFixEntities({
   log,
   isIssueResolvedOnProduction,
 }) {
+  log.info(`Publishing deployed fix entities for opportunity ${opportunityId}`);
   try {
     const { FixEntity } = dataAccess;
     if (!FixEntityDataAccess?.STATUSES?.DEPLOYED || !FixEntityDataAccess?.STATUSES?.PUBLISHED) {
