@@ -175,6 +175,7 @@ export class StepAudit extends BaseAudit {
       log.debug(`Creating new scrapeJob with the ScrapeClient. Payload: ${JSON.stringify(payload)}`);
       const scrapeJob = await scrapeClient.createScrapeJob(payload);
       log.info(`Created scrapeJob with id: ${scrapeJob.id}`);
+      context.scrapeJobId = scrapeJob.id; // Store for bot protection check
       return stepResult;
     } else {
       const queueUrl = destination.getQueueUrl(context);
