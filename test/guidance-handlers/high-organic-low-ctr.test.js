@@ -262,7 +262,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     expect(createdCallArg.data.opportunityImpact).to.equal(0);
   });
 
-  xit('should skip updating suggestions when they were manually modified', async () => {
+  it('should skip updating suggestions when they were manually modified', async () => {
     const manualSuggestion = {
       getUpdatedBy: sandbox.stub().returns('8DD61D5966C7AA650A495F8D@7eeb20f8631c0cb7495c06.e'),
       remove: sandbox.stub().resolves(),
