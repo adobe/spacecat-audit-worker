@@ -103,16 +103,16 @@ describe('data-access', () => {
 
     beforeEach(() => {
       mockOpportunity = {
-        getSuggestions: sinon.stub(),
-        addSuggestions: sinon.stub(),
+        getSuggestions: sandbox.stub(),
+        addSuggestions: sandbox.stub(),
         getSiteId: () => 'site-id',
       };
 
       mockLogger = {
-        debug: sinon.spy(),
-        error: sinon.spy(),
-        info: sinon.spy(),
-        warn: sinon.spy(),
+        debug: sandbox.spy(),
+        error: sandbox.spy(),
+        info: sandbox.spy(),
+        warn: sandbox.spy(),
       };
 
       context = new MockContextBuilder()
@@ -129,6 +129,10 @@ describe('data-access', () => {
           log: mockLogger,
         })
         .build();
+    });
+
+    afterEach(() => {
+      sandbox.restore();
     });
 
     it('should return early if context is null', async () => {
@@ -198,6 +202,60 @@ describe('data-access', () => {
       expect(actualArgs[1].status).to.equal('PENDING_VALIDATION');
       expect(actualArgs[1].data).to.deep.equal({ key: '4' });
       expect(mockLogger.error).to.not.have.been.called;
+    });
+
+    it('should use "unknown" as siteId when getSiteId is undefined', async () => {
+      const newData = [{ key: '1' }];
+      const suggestionsResult = {
+        errorItems: [],
+        createdItems: newData,
+        length: newData.length,
+      };
+
+      // Create opportunity without getSiteId
+      const opportunityWithoutSiteId = {
+        getSuggestions: sandbox.stub().resolves([]),
+        addSuggestions: sandbox.stub().resolves(suggestionsResult),
+      };
+
+      await syncSuggestions({
+        context,
+        opportunity: opportunityWithoutSiteId,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that "unknown" is used as siteId
+      expect(mockLogger.info).to.have.been.calledWith('Adding 1 new suggestions for siteId unknown');
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Successfully created.*suggestions for siteId unknown/),
+      );
+    });
+
+    it('should use suggestions.length when createdItems is undefined', async () => {
+      const newData = [{ key: '1' }, { key: '2' }];
+      // Return suggestions without createdItems property
+      const suggestionsResult = {
+        errorItems: [],
+        length: newData.length,
+      };
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves(suggestionsResult);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that suggestions.length is used when createdItems is undefined
+      expect(mockLogger.debug).to.have.been.calledWith(
+        `Successfully created ${suggestionsResult.length} suggestions for siteId site-id`,
+      );
     });
 
     it('should not handle outdated suggestions if context is not provided', async () => {
@@ -307,6 +365,261 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setStatus).to.have
         .been.calledWith(SuggestionDataAccess.STATUSES.NEW);
       expect(existingSuggestions[0].save).to.have.been.called;
+    });
+
+    it('should preserve REJECTED status when same suggestion appears again with no data changes', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'same title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Exact same data (no changes)
+      const newData = [
+        { key: '1', title: 'same title', url: 'https://example.com/page1' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that REJECTED status is NOT changed (setStatus should not be called)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      // Verify that debug log is called with the correct message
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
+      // Verify that save is called
+      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that setData is called to update the data
+      expect(existingSuggestions[0].setData).to.have.been.called;
+    });
+
+    it('should preserve REJECTED status when data changes', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', description: 'old description' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Data changed (title changed)
+      const newData = [
+        { key: '1', title: 'new title', description: 'old description' },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that REJECTED status is NOT changed (setStatus should not be called)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      // Verify that debug log is called with the correct message
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
+      // Verify that save is called
+      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that setData is called to update the data
+      expect(existingSuggestions[0].setData).to.have.been.called;
+    });
+
+    it('should preserve REJECTED status when data changes even if site requires validation', async () => {
+      const suggestionsData = [
+        { key: '1', title: 'old title', url: 'https://example.com/page1' },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Data changed (url changed)
+      const newData = [
+        { key: '1', title: 'old title', url: 'https://example.com/page2' },
+      ];
+
+      // Mock site with requiresValidation
+      context.site = {
+        requiresValidation: true,
+      };
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that REJECTED status is NOT changed (setStatus should not be called)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      // Verify that debug log is called with the correct message
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
+      // Verify that save is called
+      expect(existingSuggestions[0].save).to.have.been.called;
+      // Verify that setData is called to update the data
+      expect(existingSuggestions[0].setData).to.have.been.called;
+    });
+
+    it('should preserve REJECTED status when nested objects and arrays change', async () => {
+      const suggestionsData = [
+        { key: '1', metrics: [{ value: 100 }], issues: [{ type: 'error1' }] },
+      ];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+
+      // Nested object/array changed in data
+      const newData = [
+        { key: '1', metrics: [{ value: 200 }], issues: [{ type: 'error2' }] },
+      ];
+
+      context.site = {
+        requiresValidation: false,
+      };
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify that REJECTED status is NOT changed (setStatus should not be called)
+      expect(existingSuggestions[0].setStatus).to.not.have.been.called;
+      expect(mockLogger.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
+      expect(existingSuggestions[0].save).to.have.been.called;
+      expect(existingSuggestions[0].setData).to.have.been.called;
+    });
+
+    it('should not mark REJECTED suggestions as OUTDATED when they do not appear in new audit data', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+      // Existing REJECTED suggestion that doesn't appear in new audit
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: { url: 'https://example.com/page1', key: 'page1' },
+          getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1' }),
+          getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        },
+        {
+          id: '2',
+          data: { url: 'https://example.com/page2', key: 'page2' },
+          getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2' }),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+      ];
+
+      // New audit data only has page3 (page1 and page2 are not in new data)
+      const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+      const scrapedUrlsSet = new Set([
+        'https://example.com/page1',
+        'https://example.com/page2',
+        'https://example.com/page3',
+      ]);
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet,
+      });
+
+      // Verify that bulkUpdateStatus was called only with NEW suggestion (not REJECTED)
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [existingSuggestions[1]], // Only the NEW suggestion, not REJECTED
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
+    });
+
+    it('should not mark REJECTED suggestions as OUTDATED even when scrapedUrlsSet is null', async () => {
+      const buildKeyWithUrl = (data) => `${data.url}|${data.key}`;
+
+      // Existing REJECTED and NEW suggestions that don't appear in new audit
+      const existingSuggestions = [
+        {
+          id: '1',
+          data: { url: 'https://example.com/page1', key: 'page1' },
+          getData: sinon.stub().returns({ key: 'page1' }),
+          getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.REJECTED),
+        },
+        {
+          id: '2',
+          data: { url: 'https://example.com/page2', key: 'page2' },
+          getData: sinon.stub().returns({ key: 'page2' }),
+          getStatus: sinon.stub().returns('NEW'),
+        },
+      ];
+
+      // New audit data only has page3 (page1 and page2 are not in new data)
+      const newData = [{ url: 'https://example.com/page3', key: 'page3' }];
+      // scrapedUrlsSet is null (no URL filtering)
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey: buildKeyWithUrl,
+        mapNewSuggestion,
+        scrapedUrlsSet: null, // Explicitly null
+      });
+
+      // Verify that bulkUpdateStatus was called only with NEW suggestion (not REJECTED)
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+        [existingSuggestions[1]], // Only the NEW suggestion, not REJECTED
+        'OUTDATED',
+      );
+      expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
     });
 
     it('should update suggestions when they are detected again', async () => {
