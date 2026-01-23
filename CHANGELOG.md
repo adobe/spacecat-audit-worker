@@ -1,3 +1,29 @@
+# [1.287.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.286.0...v1.287.0) (2026-01-22)
+
+
+### Bug Fixes
+
+* normalize URLs to canonical domain for broken internal links ([#1870](https://github.com/adobe/spacecat-audit-worker/issues/1870)) ([495ae99](https://github.com/adobe/spacecat-audit-worker/commit/495ae99ece84ff3bce445ed93f0e54bee7b70410))
+
+
+### Features
+
+* adjust security-csp audit to store patch data for auto-fix (CQ-4361223) ([#1865](https://github.com/adobe/spacecat-audit-worker/issues/1865)) ([5b7b269](https://github.com/adobe/spacecat-audit-worker/commit/5b7b26938d7a0a78329e0f355fea7930d7c746b2))
+
+# [1.287.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.286.0...v1.287.0) (2026-01-22)
+
+
+### Features
+
+* adjust security-csp audit to store patch data for auto-fix (CQ-4361223) ([#1865](https://github.com/adobe/spacecat-audit-worker/issues/1865)) ([5b7b269](https://github.com/adobe/spacecat-audit-worker/commit/5b7b26938d7a0a78329e0f355fea7930d7c746b2))
+
+# [1.286.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.285.1...v1.286.0) (2026-01-22)
+
+
+### Features
+
+* SITES-39444 Autofix Slack trigger ([#1877](https://github.com/adobe/spacecat-audit-worker/issues/1877)) ([bc1f4ab](https://github.com/adobe/spacecat-audit-worker/commit/bc1f4ab2fc58522b94ec143c00a6033d9259876e))
+
 ## [1.285.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.285.0...v1.285.1) (2026-01-21)
 
 
