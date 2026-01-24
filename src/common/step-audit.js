@@ -208,6 +208,8 @@ export class StepAudit extends BaseAudit {
       // Check for scrapeJobId in auditContext first, fall back to top-level jobId
       const scrapeJobId = auditContext.scrapeJobId || jobId;
       const hasScrapeJobId = hasText(scrapeJobId);
+
+      log.info(`[MESSAGE-RECEIVED] Received message - type: ${type}, hasNext: ${hasNext}, jobId: ${jobId}, auditContext.scrapeJobId: ${auditContext.scrapeJobId}, resolved scrapeJobId: ${scrapeJobId}, hasScrapeJobId: ${hasScrapeJobId}`);
       const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
       const step = this.getStep(stepName);
