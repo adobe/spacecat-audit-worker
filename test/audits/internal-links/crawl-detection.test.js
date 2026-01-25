@@ -693,8 +693,8 @@ describe('Crawl Detection Module', () => {
     });
 
     it('should add delay between link check batches with multiple batches', async () => {
-      // Create page with 35 links to trigger multiple batches (batch size is 30)
-      const linksHtml = Array.from({ length: 35 }, (_, i) => 
+      // Create page with 15 links to trigger multiple batches (batch size is 5)
+      const linksHtml = Array.from({ length: 15 }, (_, i) => 
         `<a href="/link-${i + 1}">Link ${i + 1}</a>`
       ).join('\n');
       
@@ -713,9 +713,9 @@ describe('Crawl Detection Module', () => {
 
       await detectBrokenLinksFromCrawl(scrapeResultPaths, mockContext);
 
-      // With 35 links and batch size 30, should have 2 batches
+      // With 15 links and batch size 5, should have 3 batches
       // Delay should be added between batches (covers lines 169-171)
-      expect(isLinkInaccessibleStub.callCount).to.equal(35);
+      expect(isLinkInaccessibleStub.callCount).to.equal(15);
     });
   });
 
@@ -912,7 +912,7 @@ describe('Crawl Detection Module', () => {
       const result = await detectBrokenLinksFromCrawlBatch({
         scrapeResultPaths,
         batchStartIndex: 0,
-        batchSize: 30,
+        batchSize: 10,
         initialBrokenUrls: [],
         initialWorkingUrls: [],
       }, mockContext);
@@ -1013,7 +1013,7 @@ describe('Crawl Detection Module', () => {
       const result = await detectBrokenLinksFromCrawlBatch({
         scrapeResultPaths,
         batchStartIndex: 100, // Beyond total pages
-        batchSize: 30,
+        batchSize: 10,
         initialBrokenUrls: [],
         initialWorkingUrls: [],
       }, mockContext);
@@ -1063,8 +1063,8 @@ describe('Crawl Detection Module', () => {
         ['https://example.com/page1', 'scrapes/page1.json'],
       ]);
 
-      // Create page with 35 links to trigger delay (batch size is 30)
-      const linksHtml = Array.from({ length: 35 }, (_, i) => 
+      // Create page with 15 links to trigger delay (batch size is 5)
+      const linksHtml = Array.from({ length: 15 }, (_, i) => 
         `<a href="/link-${i}">Link ${i}</a>`
       ).join('\n');
 
@@ -1085,8 +1085,8 @@ describe('Crawl Detection Module', () => {
         initialWorkingUrls: [],
       }, mockContext);
 
-      // Should process all 35 links (verifies batching logic executed)
-      expect(isLinkInaccessibleStub.callCount).to.equal(35);
+      // Should process all 15 links (verifies batching logic executed)
+      expect(isLinkInaccessibleStub.callCount).to.equal(15);
     });
 
     it('should skip out-of-scope links during link checking', async () => {

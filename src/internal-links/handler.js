@@ -41,7 +41,7 @@ import {
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
-const MAX_URLS_TO_PROCESS = 500;
+const MAX_URLS_TO_PROCESS = 1000;
 const MAX_BROKEN_LINKS = 100;
 
 /**
@@ -632,6 +632,12 @@ export async function runCrawlDetectionBatch(context) {
   if (scrapeResultPaths.size === 0) {
     log.info(`[${AUDIT_TYPE}] No scraped content available, proceeding to merge step`);
     return finalizeCrawlDetection(context, { skipCrawlDetection: true });
+  }
+
+  // Check if batchStartIndex is already beyond total pages
+  if (batchStartIndex >= totalPages) {
+    log.info(`[${AUDIT_TYPE}] Batch start index (${batchStartIndex}) >= total pages (${totalPages}), all batches already complete`);
+    return finalizeCrawlDetection(context, { skipCrawlDetection: false });
   }
 
   // Load existing state from S3 (includes accumulated results + caches)
