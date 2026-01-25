@@ -172,11 +172,9 @@ export class StepAudit extends BaseAudit {
     if (step.destination === AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT) {
       const scrapeClient = ScrapeClient.createFrom(context);
       const payload = destination.formatPayload(stepResult, auditContext, context);
-      log.info(`[CREATING-SCRAPE-JOB] Creating scrape job with completionQueueUrl: ${payload.auditData?.completionQueueUrl}, hasAuditContext: ${!!payload.auditData?.auditContext}, auditId: ${payload.auditData?.auditContext?.auditId}`);
       log.debug(`Creating new scrapeJob with the ScrapeClient. Payload: ${JSON.stringify(payload)}`);
       const scrapeJob = await scrapeClient.createScrapeJob(payload);
       log.info(`Created scrapeJob with id: ${scrapeJob.id}`);
-      context.scrapeJobId = scrapeJob.id; // Store for bot protection check
       return stepResult;
     } else {
       const queueUrl = destination.getQueueUrl(context);
@@ -193,7 +191,7 @@ export class StepAudit extends BaseAudit {
     const { stepNames } = this;
     const { log } = context;
     const {
-      type, data, siteId, auditContext = {}, jobId,
+      type, data, siteId, auditContext = {},
     } = message;
 
     try {
@@ -206,11 +204,8 @@ export class StepAudit extends BaseAudit {
 
       // Determine which step to run
       const hasNext = hasText(auditContext.next);
-      // Check for scrapeJobId in auditContext first, fall back to top-level jobId
-      const scrapeJobId = auditContext.scrapeJobId || jobId;
-      const hasScrapeJobId = hasText(scrapeJobId);
+      const hasScrapeJobId = hasText(auditContext.scrapeJobId);
 
-      log.info(`[MESSAGE-RECEIVED] Received message - type: ${type}, hasNext: ${hasNext}, jobId: ${jobId}, auditContext.scrapeJobId: ${auditContext.scrapeJobId}, resolved scrapeJobId: ${scrapeJobId}, hasScrapeJobId: ${hasScrapeJobId}`);
       const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
       const step = this.getStep(stepName);
@@ -229,17 +224,17 @@ export class StepAudit extends BaseAudit {
       }
       // If there are scrape results, load the paths
       if (hasScrapeJobId) {
-        stepContext.scrapeJobId = scrapeJobId;
+        stepContext.scrapeJobId = auditContext.scrapeJobId;
         const scrapeClient = ScrapeClient.createFrom(context);
         stepContext.scrapeResultPaths = await scrapeClient
-          .getScrapeResultPaths(scrapeJobId);
+          .getScrapeResultPaths(auditContext.scrapeJobId);
 
         // Check for bot protection and abort if detected
         const botProtectionResult = await checkBotProtection({
           site,
           siteId,
           auditType: type,
-          auditContext: { ...auditContext, scrapeJobId },
+          auditContext,
           stepContext,
           context,
           scrapeClient,
