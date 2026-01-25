@@ -15,13 +15,13 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import { isLinkInaccessible } from './helpers.js';
 import { isWithinAuditScope } from './subpath-filter.js';
 
-// Aggressive optimizations for maximum speed
+// Optimized settings for speed and reliability while respecting target server
 const SCRAPE_FETCH_DELAY_MS = 50; // No delay between S3 fetches (S3 is fast)
-const LINK_CHECK_BATCH_SIZE = 20; // Check 20 links at a time (4x original)
-const LINK_CHECK_DELAY_MS = 50; // No delay between batches (let system handle throttling)
+const LINK_CHECK_BATCH_SIZE = 10; // Check 10 links at a time
+const LINK_CHECK_DELAY_MS = 300; // 300ms delay between batches to be respectful to target server
 
 // Batching configuration
-export const PAGES_PER_BATCH = 30; // Process 30 pages per Lambda invocation
+export const PAGES_PER_BATCH = 10; // Process 10 pages per Lambda invocation
 
 /**
  * Sleep utility to add delays between operations

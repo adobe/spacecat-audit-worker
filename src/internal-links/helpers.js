@@ -11,10 +11,10 @@
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
-// Reduced timeout to prevent Lambda timeout (2 seconds)
-// AWS Lambda has 15-minute limit; with 189 pages and 50+ links/page, we need fast timeouts
-// Most valid pages respond in <500ms; 2s is enough to catch real issues
-const LINK_TIMEOUT = 2000;
+// Timeout for link validation (5 seconds)
+// Increased to handle slow pages (colour-catalogue) while avoiding false positives
+// With batching, we can afford longer timeouts without Lambda timeout risk
+const LINK_TIMEOUT = 5000;
 export const CPC_DEFAULT_VALUE = 1;
 export const TRAFFIC_MULTIPLIER = 0.01; // 1%
 export const MAX_LINKS_TO_CONSIDER = 10;
@@ -116,24 +116,24 @@ export async function isLinkInaccessible(url, log) {
 
     // If HEAD confirms it's broken (404 or 5xx), no need to verify with GET
     if (status === 404 || status >= 500) {
-      log.debug(`broken-internal-links audit: HEAD request confirmed broken (${status}) for ${url}`);
+      log.info(`[broken-internal-links] ✗ BROKEN LINK FOUND: ${url} (HEAD ${status})`);
       return true;
     }
 
     // For other client errors (401, 403, etc.), verify with GET as they might be false positives
     if (status >= 400 && status < 500) {
-      log.debug(`broken-internal-links audit: HEAD request returned ${status} for ${url}, verifying with GET`);
+      log.debug(`[broken-internal-links] HEAD returned ${status} for ${url}, verifying with GET`);
     }
   } catch (headError) {
     // If HEAD timed out, skip GET - it will likely also timeout
     if (isTimeoutError(headError)) {
-      log.debug(`broken-internal-links audit: HEAD request timed out for ${url}, skipping GET (assuming accessible)`);
+      log.info(`[broken-internal-links] ⏱ TIMEOUT: ${url} (HEAD request timed out after ${LINK_TIMEOUT}ms, assuming accessible)`);
       // Treat timeout as accessible (not broken) - could be rate limiting
       return false;
     }
 
     // For other errors (network errors), try GET
-    log.debug(`broken-internal-links audit: HEAD request failed for ${url}, trying GET: ${headError.message}`);
+    log.debug(`[broken-internal-links] HEAD failed for ${url}, trying GET: ${headError.message}`);
   }
 
   // Fallback to GET request for verification
@@ -149,15 +149,19 @@ export async function isLinkInaccessible(url, log) {
 
     // Log non-404, non-200 status codes
     if (status >= 400 && status < 500 && status !== 404) {
-      log.warn(`broken-internal-links audit: Warning: ${url} returned client error: ${status}`);
+      log.warn(`[broken-internal-links] ⚠ WARNING: ${url} returned client error ${status}`);
     }
 
     // URL is valid if status code is less than 400, otherwise it is invalid
-    return status >= 400;
+    const isBroken = status >= 400;
+    if (isBroken) {
+      log.info(`[broken-internal-links] ✗ BROKEN LINK FOUND: ${url} (GET ${status})`);
+    }
+    return isBroken;
   } catch (getError) {
     // If GET also timed out, treat as accessible (not broken) - could be rate limiting
     if (isTimeoutError(getError)) {
-      log.debug(`broken-internal-links audit: GET request timed out for ${url}, assuming accessible`);
+      log.info(`[broken-internal-links] ⏱ TIMEOUT: ${url} (GET request timed out after ${LINK_TIMEOUT}ms, assuming accessible)`);
       return false;
     }
 
@@ -175,8 +179,8 @@ export async function isLinkInaccessible(url, log) {
       errorMessage = `${errorMessage} (errno: ${getError.errno})`;
     }
 
-    log.error(`broken-internal-links audit: Error checking ${url} with GET request: ${errorMessage}`);
-    // Any error means the URL is inaccessible
+    // Network/DNS/connection errors mean the link is broken
+    log.error(`[broken-internal-links] ✗ BROKEN LINK FOUND: ${url} (ERROR: ${errorMessage})`);
     return true;
   }
 }

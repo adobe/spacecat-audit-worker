@@ -139,7 +139,7 @@ describe('isLinkInaccessible', () => {
     const result = await isLinkInaccessible('https://example.com/forbidden', mockLog);
     expect(result).to.be.true;
     expect(mockLog.warn.calledWith(
-      'broken-internal-links audit: Warning: https://example.com/forbidden returned client error: 403',
+      '[broken-internal-links] ⚠ WARNING: https://example.com/forbidden returned client error 403',
     )).to.be.true;
   });
 
@@ -282,8 +282,8 @@ describe('isLinkInaccessible', () => {
     
     // Should return false (treat as accessible)
     expect(result).to.be.false;
-    expect(mockLog.debug).to.have.been.calledWith(
-      sinon.match(/HEAD request timed out.*skipping GET/),
+    expect(mockLog.info).to.have.been.calledWith(
+      sinon.match(/⏱ TIMEOUT.*HEAD request timed out/),
     );
   });
 
@@ -369,8 +369,8 @@ describe('isLinkInaccessible', () => {
     
     // Should return false (treat as accessible) when GET times out
     expect(result).to.be.false;
-    expect(mockLog.debug).to.have.been.calledWith(
-      sinon.match(/GET request timed out.*assuming accessible/),
+    expect(mockLog.info).to.have.been.calledWith(
+      sinon.match(/⏱ TIMEOUT.*GET request timed out/),
     );
   });
 });

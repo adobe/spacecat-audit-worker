@@ -41,7 +41,7 @@ import {
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
-const MAX_URLS_TO_PROCESS = 500;
+const MAX_URLS_TO_PROCESS = 1000;
 const MAX_BROKEN_LINKS = 100;
 
 /**
@@ -250,7 +250,7 @@ export async function runAuditAndImportTopPagesStep(context) {
  * Submit URLs for scraping (for crawl-based detection).
  * Combines Ahrefs top pages + includedURLs from siteConfig.
  */
-export async function submitForScraping(context) {
+export async function prepareScraping(context) {
   const {
     site, dataAccess, log, audit,
   } = context;
@@ -261,8 +261,8 @@ export async function submitForScraping(context) {
     throw new Error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skip scraping and suggestion generation`);
   }
 
-  log.info(`[${AUDIT_TYPE}] ====== Submit for Scraping Step ======`);
-  log.info(`[${AUDIT_TYPE}] ✓ BATCHED CRAWL DETECTION CODE ACTIVE (Step: submitForScraping with cache enabled)`);
+  log.info(`[${AUDIT_TYPE}] ====== Prepare Scraping Step ======`);
+  log.info(`[${AUDIT_TYPE}] ✓ BATCHED CRAWL DETECTION CODE ACTIVE (Step: prepareScraping with cache enabled)`);
 
   // Fetch Ahrefs top pages with error handling
   let topPagesUrls = [];
@@ -634,6 +634,12 @@ export async function runCrawlDetectionBatch(context) {
     return finalizeCrawlDetection(context, { skipCrawlDetection: true });
   }
 
+  // Check if batchStartIndex is already beyond total pages
+  if (batchStartIndex >= totalPages) {
+    log.info(`[${AUDIT_TYPE}] Batch start index (${batchStartIndex}) >= total pages (${totalPages}), all batches already complete`);
+    return finalizeCrawlDetection(context, { skipCrawlDetection: false });
+  }
+
   // Load existing state from S3 (includes accumulated results + caches)
   const existingState = await loadBatchState(auditId, context);
   const initialBrokenUrls = existingState.brokenUrlsCache;
@@ -759,14 +765,14 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
 }
 
 // Alias for backward compatibility with tests
-export { submitForScraping as prepareScrapingStep };
+export { prepareScraping as prepareScrapingStep, prepareScraping as submitForScraping };
 
 /**
  * Audit builder with batched crawl detection.
  *
  * Flow:
  * 1. runAuditAndImportTopPages - RUM-based detection, triggers import worker
- * 2. submitForScraping - Submit URLs to scrape client for crawling
+ * 2. prepareScraping - Submit URLs to scrape client for crawling
  * 3. runCrawlDetectionBatch - Process pages in batches (terminal step)
  *    - Processes PAGES_PER_BATCH pages per Lambda invocation
  *    - Passes broken/working URL caches via SQS message
@@ -785,8 +791,8 @@ export default new AuditBuilder()
     AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
   )
   .addStep(
-    'submitForScraping',
-    submitForScraping,
+    'prepareScraping',
+    prepareScraping,
     AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT,
   )
   .addStep('runCrawlDetectionBatch', runCrawlDetectionBatch) // Terminal step - manages own batching
