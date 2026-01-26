@@ -90,9 +90,17 @@ export default async function handler(message, context) {
 
   // TODO: does data.config_version exist?
   const configVersion = data.config_version;
+  const llmoDataFolder = site.getConfig()?.getLlmoDataFolder?.();
+
+  // TODO: Remove this safeguard after code review/testing - ensures we only write to dev folder
+  if (!llmoDataFolder || !llmoDataFolder.startsWith('dev/')) {
+    log.error('%s: Safeguard triggered - getLlmoDataFolder() returned "%s" which does not start with "dev/" for siteId: %s', AUDIT_NAME, llmoDataFolder, siteId);
+    return internalServerError(`GEO BRAND PRESENCE safeguard: data folder "${llmoDataFolder}" is not in dev environment`);
+  }
+
   const mainOutputLocation = context.getOutputLocation
     ? context.getOutputLocation(site)
-    : `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
+    : `${llmoDataFolder}/brand-presence`;
   const outputLocations = [mainOutputLocation, `${mainOutputLocation}/config_${configVersion || 'absent'}`];
 
   log.info(

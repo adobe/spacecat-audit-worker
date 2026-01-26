@@ -92,6 +92,11 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
     throw new Error(`${AUDIT_NAME}:No LLMO data folder configured for site can't proceed with audit`);
   }
 
+  // TODO: Remove this safeguard after code review/testing - ensures we only read from dev folder
+  if (!dataFolder.startsWith('dev/')) {
+    throw new Error(`${AUDIT_NAME}: Safeguard triggered - getLlmoDataFolder() returned "${dataFolder}" which does not start with "dev/"`);
+  }
+
   log.info(`%s: Reading query-index from SharePoint for siteId: ${siteId}, path: ${dataFolder}/query-index.xlsx`, AUDIT_NAME);
 
   // Read the query-index.xlsx file from SharePoint
