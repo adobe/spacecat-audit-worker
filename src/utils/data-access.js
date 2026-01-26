@@ -251,12 +251,17 @@ export async function syncSuggestions({
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
-  // Update existing suggestions
+  // Update existing suggestions (skip FIXED and IN_PROGRESS as they're being actively worked on)
+  const skipStatuses = [
+    SuggestionDataAccess.STATUSES.FIXED,
+    SuggestionDataAccess.STATUSES.IN_PROGRESS,
+  ];
   await Promise.all(
     existingSuggestions
       .filter((existing) => {
         const existingKey = buildKey(existing.getData());
-        return newDataKeys.has(existingKey);
+        const status = existing.getStatus();
+        return newDataKeys.has(existingKey) && !skipStatuses.includes(status);
       })
       .map((existing) => {
         const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
@@ -318,20 +323,20 @@ export async function syncSuggestions({
   const newSuggestions = newData
     .filter((data) => {
       const key = buildKey(data);
-      const existingMatch = existingSuggestions.find(
+      const existingMatches = existingSuggestions.filter(
         (existing) => buildKey(existing.getData()) === key,
       );
 
       // No existing suggestion with this key - allow creation
-      if (!existingMatch) return true;
+      if (existingMatches.length === 0) return true;
 
-      // Existing suggestion is FIXED and all fix entities are PUBLISHED - allow regression
-      if (existingMatch.getStatus() === fixedStatus && fullyPublishedFixedKeys.has(key)) {
-        return true;
-      }
+      // Only allow creation if ALL existing matches are FIXED with PUBLISHED fix entities
+      // This prevents creating duplicate NEW suggestions when a regression already exists
+      const allMatchesAreFullyPublishedFixed = existingMatches.every(
+        (match) => match.getStatus() === fixedStatus && fullyPublishedFixedKeys.has(key),
+      );
 
-      // Otherwise, block creation (existing non-FIXED or FIXED but not fully PUBLISHED)
-      return false;
+      return allMatchesAreFullyPublishedFixed;
     })
     .map((data) => {
       const suggestion = mapNewSuggestion(data);

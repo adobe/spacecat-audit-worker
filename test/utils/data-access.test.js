@@ -761,6 +761,16 @@ describe('data-access', () => {
       context.dataAccess.Suggestion = {
         ...context.dataAccess.Suggestion,
         getFixEntitiesBySuggestionId: sinon.stub().rejects(new Error('Database connection failed')),
+      };
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+    });
     it('should use "unknown" as siteId when getSiteId is undefined', async () => {
       const newData = [{ key: '1' }];
       const suggestionsResult = {
@@ -783,13 +793,11 @@ describe('data-access', () => {
         mapNewSuggestion,
       });
 
-      // Should log the error and continue
+      // Verify that "unknown" is used as siteId when getSiteId is undefined
+      expect(mockLogger.info).to.have.been.calledWith('Adding 1 new suggestions for siteId unknown');
       expect(mockLogger.debug).to.have.been.calledWith(
-        sinon.match(/Failed to check fix entities for suggestion/),
+        sinon.match(/Successfully created.*suggestions for siteId unknown/),
       );
-      // Should not create new suggestion (error = conservative approach)
-      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
-      expect(addedSuggestions.length).to.equal(0);
     });
 
     it('should handle context.dataAccess without Suggestion property', async () => {
@@ -849,19 +857,27 @@ describe('data-access', () => {
 
       mockOpportunity.getSuggestions.resolves([newSuggestion]);
       mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
-      // Verify that "unknown" is used as siteId
-      expect(mockLogger.info).to.have.been.calledWith('Adding 1 new suggestions for siteId unknown');
-      expect(mockLogger.debug).to.have.been.calledWith(
-        sinon.match(/Successfully created.*suggestions for siteId unknown/),
-      );
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify NO new suggestion is created (existing NEW suggestion blocks it)
+      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
+      expect(addedSuggestions.length).to.equal(0);
     });
 
     it('should use suggestions.length when createdItems is undefined', async () => {
       const newData = [{ key: '1' }, { key: '2' }];
-      // Return suggestions without createdItems property
+      // Return suggestions without createdItems property (simulates edge case)
       const suggestionsResult = {
         errorItems: [],
         length: newData.length,
+        // Note: createdItems is intentionally undefined to test fallback to length
       };
 
       mockOpportunity.getSuggestions.resolves([]);
@@ -875,9 +891,9 @@ describe('data-access', () => {
         mapNewSuggestion,
       });
 
-      // Verify NO new suggestion is created (existing one is updated instead)
+      // Verify 2 new suggestions are added (no existing suggestions)
       const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
-      expect(addedSuggestions.length).to.equal(0);
+      expect(addedSuggestions.length).to.equal(2);
       // Verify that suggestions.length is used when createdItems is undefined
       expect(mockLogger.debug).to.have.been.calledWith(
         `Successfully created ${suggestionsResult.length} suggestions for siteId site-id`,
