@@ -12,6 +12,7 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { load as cheerioLoad } from 'cheerio';
+import { createPatch } from 'diff';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_CSP;
 
@@ -33,10 +34,12 @@ async function determineSuggestionsForPage(url, page, context, site) {
   }
 
   let suggestedBody = responseBody;
-  const findings = [];
-  const $ = cheerioLoad(responseBody, { sourceCodeLocationInfo: true }, false);
+  const problems = [];
+  let $ = cheerioLoad(responseBody, { sourceCodeLocationInfo: true }, false);
 
+  // check for script tags without nonce
   const scriptTags = $('script');
+  let hasMissingNonce = false;
 
   scriptTags.each((index, element) => {
     const scriptContent = responseBody
@@ -48,32 +51,132 @@ async function determineSuggestionsForPage(url, page, context, site) {
       return;
     }
 
-    // prepare finding
+    hasMissingNonce = true;
+
+    // prepare finding + replace in body
     const suggestedContent = scriptContent.replace(/<script/, '<script nonce="aem"');
-    const lineNumber = element.sourceCodeLocation.startLine;
-
-    findings.push({
-      scriptContent,
-      suggestedContent,
-      lineNumber,
-    });
-
-    // replace in the body
     suggestedBody = suggestedBody.replace(scriptContent, suggestedContent);
   });
 
-  if (findings.length === 0) {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: no script tags without nonce found`);
+  if (hasMissingNonce) {
+    problems.push('csp-nonce-missing');
+  }
+
+  // check for missing metadata header
+  $ = cheerioLoad(suggestedBody, { sourceCodeLocationInfo: true }, false);
+  const metaTags = $('meta[http-equiv="Content-Security-Policy"]');
+
+  const suggestedCsp = 'script-src \'nonce-aem\' \'strict-dynamic\' \'unsafe-inline\' http: https:; base-uri \'self\'; object-src \'none\';';
+  if (metaTags.length === 0) {
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: no CSP meta tag found`);
+    problems.push('csp-meta-tag-missing');
+
+    // insert before first meta tag (if available)
+    const allMetaTags = $('meta');
+    let suggestedContent = `<meta http-equiv="Content-Security-Policy" content="${suggestedCsp}" move-to-http-header="true">`;
+
+    if (allMetaTags.length > 0) {
+      const firstMetaTag = allMetaTags[0];
+
+      const start1stMeta = firstMetaTag.sourceCodeLocation.startOffset;
+      const lastLineBreak = suggestedBody.lastIndexOf('\n', start1stMeta);
+
+      for (let i = lastLineBreak; i < start1stMeta - 1; i += 1) {
+        suggestedContent = ` ${suggestedContent}`;
+      }
+
+      suggestedBody = `${suggestedBody.substring(0, lastLineBreak + 1)}${suggestedContent}\n${suggestedBody.substring(lastLineBreak + 1)}`;
+    } else {
+      // insert before title tag
+      const allTitleTags = $('title');
+      if (allTitleTags.length > 0) {
+        const titleTag = allTitleTags[0];
+
+        const startTitleTag = titleTag.sourceCodeLocation.startOffset;
+        const lastLineBreak = suggestedBody.lastIndexOf('\n', startTitleTag);
+        suggestedContent = `  ${suggestedContent}`;
+        suggestedBody = `${suggestedBody.substring(0, lastLineBreak + 1)}${suggestedContent}\n${suggestedBody.substring(lastLineBreak + 1)}`;
+      } else {
+        log.warn(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: no place found to insert CSP meta tag`);
+      }
+    }
+  } else {
+    const metaTag = metaTags[0];
+
+    if (!metaTag.attribs.content.includes('nonce-aem') || !metaTag.attribs.content.includes('strict-dynamic')) {
+      log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: no enforcing CSP meta tag found`);
+      problems.push('csp-meta-tag-non-enforcing');
+
+      const metaContent = suggestedBody
+        .substring(metaTag.sourceCodeLocation.startOffset, metaTag.sourceCodeLocation.endOffset);
+      const currentCsp = metaTag.attribs.content;
+      const suggestedContent = metaContent.replace(currentCsp, suggestedCsp);
+      suggestedBody = suggestedBody.replace(metaContent, suggestedContent);
+    } else if (!metaTag.attribs['move-to-http-header']) {
+      log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: enforcing CSP meta tag not marked to be moved to header`);
+
+      problems.push('csp-meta-tag-move-to-header');
+
+      const metaContent = suggestedBody
+        .substring(metaTag.sourceCodeLocation.startOffset, metaTag.sourceCodeLocation.endOffset);
+      const suggestedContent = metaContent.replace(/<meta/, '<meta move-to-http-header="true"');
+      suggestedBody = suggestedBody.replace(metaContent, suggestedContent);
+    }
+  }
+
+  if (problems.length === 0) {
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: no CSP findings found`);
     return null;
   }
 
+  // Create partial Git patch
+  const patch = createPatch(page, responseBody, suggestedBody);
+
   return {
-    type: 'static-content',
     url: url.toString(),
     page,
-    findings,
-    suggestedBody,
+    problems,
+    patch,
   };
+}
+
+function createGitPatch(findings) {
+  // create combined git patch
+  let gitPatch = '';
+  findings.forEach((finding) => {
+    if (gitPatch.length > 0) {
+      gitPatch += '\n';
+    }
+    gitPatch += finding.patch;
+
+    // eslint-disable-next-line no-param-reassign
+    delete finding.patch;
+  });
+  return gitPatch;
+}
+
+function createPrDescription(findings) {
+  return '### Enforce Content Security Policy: strict-dynamic + (cached) nonce\n\n'
+    + 'The following changes are suggested to enhance the Content Security Policy (CSP) of your web pages. '
+    + 'Implementing these changes will help improve the security posture of your application by enforcing stricter CSP rules.\n\n'
+    + 'For more information on Content Security Policy and best practices, please refer to the '
+    + '[AEM documentation](https://www.aem.live/docs/csp-strict-dynamic-cached-nonce).\n\n'
+    + `#### Suggested Changes:\n${
+      findings.map((finding) => {
+        const changes = finding.problems.map((f) => {
+          switch (f) {
+            case 'csp-meta-tag-missing':
+              return '  - Add a CSP meta tag to enforce a strict Content Security Policy.';
+            case 'csp-meta-tag-move-to-header':
+              return '  - Update the CSP meta tag to include `move-to-http-header="true"` attribute for better security management.';
+            case 'csp-meta-tag-non-enforcing':
+              return '  - Modify the existing CSP meta tag to enforce a stricter policy with `nonce-aem` and `strict-dynamic`.';
+            default:
+              return '  - Add nonces to all inline `<script>` tags to enhance script security.';
+          }
+        }).join('\n');
+        return `- **Page:** ${finding.page}\n${changes}`;
+      }).join('\n\n')}`;
 }
 
 export async function cspAutoSuggest(auditUrl, csp, context, site) {
@@ -105,7 +208,7 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
   }
 
   // Check head.html and 404.html in parallel
-  const pageUrls = ['/head.html', '/404.html'];
+  const pageUrls = ['head.html', '404.html'];
   let autoSuggestError = false;
   const findings = [];
 
@@ -130,11 +233,18 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
     return csp;
   }
 
-  // Add a finding for the CSP header - auto-suggest is only called if this is not properly set
-  findings.push({
-    type: 'csp-header',
-  });
+  // Create combined git patch + PR description
+  const patchContent = createGitPatch(findings);
+  const patchDescription = createPrDescription(findings);
 
   missingNonce.findings = findings;
+  missingNonce.issues = [];
+  if (patchContent.length > 0) {
+    missingNonce.issues.push({
+      patchContent,
+      value: patchDescription,
+    });
+  }
+
   return result;
 }

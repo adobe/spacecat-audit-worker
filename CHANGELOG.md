@@ -1,3 +1,36 @@
+# [1.288.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.287.1...v1.288.0) (2026-01-26)
+
+
+### Features
+
+* LLMO-2592 track google bot, google-extended, and bingbot user a… ([#1862](https://github.com/adobe/spacecat-audit-worker/issues/1862)) ([4d4ca4c](https://github.com/adobe/spacecat-audit-worker/commit/4d4ca4cd886c7f5bcfdf185bd257ce5513e981c0))
+
+## [1.287.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.287.0...v1.287.1) (2026-01-23)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1802](https://github.com/adobe/spacecat-audit-worker/issues/1802)) ([bf7a792](https://github.com/adobe/spacecat-audit-worker/commit/bf7a7921d85c59771f7e37a79e0b7e12b22f50b6))
+
+# [1.287.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.286.0...v1.287.0) (2026-01-22)
+
+
+### Bug Fixes
+
+* normalize URLs to canonical domain for broken internal links ([#1870](https://github.com/adobe/spacecat-audit-worker/issues/1870)) ([495ae99](https://github.com/adobe/spacecat-audit-worker/commit/495ae99ece84ff3bce445ed93f0e54bee7b70410))
+
+
+### Features
+
+* adjust security-csp audit to store patch data for auto-fix (CQ-4361223) ([#1865](https://github.com/adobe/spacecat-audit-worker/issues/1865)) ([5b7b269](https://github.com/adobe/spacecat-audit-worker/commit/5b7b26938d7a0a78329e0f355fea7930d7c746b2))
+
+# [1.287.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.286.0...v1.287.0) (2026-01-22)
+
+
+### Features
+
+* adjust security-csp audit to store patch data for auto-fix (CQ-4361223) ([#1865](https://github.com/adobe/spacecat-audit-worker/issues/1865)) ([5b7b269](https://github.com/adobe/spacecat-audit-worker/commit/5b7b26938d7a0a78329e0f355fea7930d7c746b2))
+
 # [1.286.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.285.1...v1.286.0) (2026-01-22)
 
 
