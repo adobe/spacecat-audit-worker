@@ -24,7 +24,7 @@ import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from 
 import {
   internalLinksAuditRunner,
   runAuditAndImportTopPagesStep,
-  prepareScrapingStep,
+  submitForScraping,
   runCrawlDetectionAndGenerateSuggestions,
   runCrawlDetectionBatch,
   updateAuditResult,
@@ -253,6 +253,7 @@ describe('Broken internal links audit', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: site.getId(),
+      includedURLs: [], // Now includes includedURLs from Step 1
       auditResult: {
         brokenInternalLinks: NORMALIZED_AUDIT_RESULT_DATA,
         fullAuditRef: auditUrl,
@@ -266,7 +267,39 @@ describe('Broken internal links audit', () => {
     });
   });
 
-  it('prepareScrapingStep should send top pages to scraping service', async () => {
+  it('runAuditAndImportTopPagesStep should handle missing getIncludedURLs method', async () => {
+    // Mock site without getIncludedURLs method
+    const siteWithoutIncludes = {
+      ...site,
+      getConfig: () => ({
+        getFetchConfig: () => ({}),
+        getIncludedURLs: undefined, // No getIncludedURLs method
+      }),
+    };
+    const contextWithoutIncludes = { ...context, site: siteWithoutIncludes };
+    
+    const result = await runAuditAndImportTopPagesStep(contextWithoutIncludes);
+    
+    expect(result.includedURLs).to.deep.equal([]);
+  });
+
+  it('runAuditAndImportTopPagesStep should handle getIncludedURLs returning null', async () => {
+    // Mock site with getIncludedURLs returning null
+    const siteWithNullIncludes = {
+      ...site,
+      getConfig: () => ({
+        getFetchConfig: () => ({}),
+        getIncludedURLs: () => null, // Returns null
+      }),
+    };
+    const contextWithNullIncludes = { ...context, site: siteWithNullIncludes };
+    
+    const result = await runAuditAndImportTopPagesStep(contextWithNullIncludes);
+    
+    expect(result.includedURLs).to.deep.equal([]);
+  });
+
+  it('submitForScraping should send top pages to scraping service', async () => {
     context.dataAccess.SiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
     };
@@ -276,6 +309,8 @@ describe('Broken internal links audit', () => {
         success: true,
       }),
     };
+    // Pass includedURLs via context.data (from Step 1)
+    context.data = { includedURLs: [] };
 
     // Mock redirect resolution requests (HEAD requests for redirect resolution)
     nock('https://example.com')
@@ -285,7 +320,7 @@ describe('Broken internal links audit', () => {
       .head('/page2')
       .reply(200);
 
-    const result = await prepareScrapingStep(context);
+    const result = await submitForScraping(context);
     expect(result).to.deep.equal({
       urls: topPages.map((page) => ({ url: page.getUrl() })),
       siteId: site.getId(),
@@ -293,7 +328,7 @@ describe('Broken internal links audit', () => {
     });
   }).timeout(10000);
 
-  it('prepareScrapingStep should throw error when audit failed', async () => {
+  it('submitForScraping should throw error when audit failed', async () => {
     context.dataAccess.SiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
     };
@@ -304,14 +339,14 @@ describe('Broken internal links audit', () => {
       }),
     };
 
-    await expect(prepareScrapingStep(context))
+    await expect(submitForScraping(context))
       .to.be.rejectedWith('Audit failed, skip scraping and suggestion generation');
 
     // Verify that SiteTopPage.allBySiteIdAndSourceAndGeo was not called since we exit early
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
   }).timeout(5000);
 
-  it('prepareScrapingStep should return empty URLs when no top pages found', async () => {
+  it('submitForScraping should return empty URLs when no top pages found', async () => {
     context.dataAccess.SiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]), // Empty array
     };
@@ -321,30 +356,33 @@ describe('Broken internal links audit', () => {
         success: true,
       }),
     };
+    // Pass empty includedURLs via context.data (from Step 1)
+    context.data = { includedURLs: [] };
 
-    const result = await prepareScrapingStep(context);
+    const result = await submitForScraping(context);
     expect(result.urls).to.have.lengthOf(0);
     expect(context.log.warn).to.have.been.calledWith(
       sinon.match(/No URLs available for scraping/),
     );
   }).timeout(5000);
 
-  it('prepareScrapingStep should handle Ahrefs fetch error', async () => {
+  it('submitForScraping should handle Ahrefs fetch error', async () => {
     const testContext = { ...context };
     testContext.dataAccess = { ...context.dataAccess };
     testContext.dataAccess.SiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().rejects(new Error('Ahrefs API error')),
     };
-    testContext.site = { ...site, getConfig: () => ({ getIncludedURLs: () => ['https://example.com/manual1'] }) };
     testContext.audit = {
       getAuditResult: () => ({
         brokenInternalLinks: AUDIT_RESULT_DATA,
         success: true,
       }),
     };
+    // Pass includedURLs via context.data (from Step 1)
+    testContext.data = { includedURLs: ['https://example.com/manual1'] };
 
     nock('https://example.com').head('/manual1').reply(200);
-    const result = await prepareScrapingStep(testContext);
+    const result = await submitForScraping(testContext);
     
     expect(testContext.log.warn).to.have.been.calledWith(
       sinon.match(/Failed to fetch Ahrefs top pages/),
@@ -353,7 +391,7 @@ describe('Broken internal links audit', () => {
   }).timeout(10000);
 
 
-  it('prepareScrapingStep should log when filtering unscrape-able files', async () => {
+  it('submitForScraping should log when filtering unscrape-able files', async () => {
     context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
     context.dataAccess.SiteTopPage = { 
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
@@ -363,13 +401,15 @@ describe('Broken internal links audit', () => {
       ]) 
     };
     context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    // Pass includedURLs via context.data (from Step 1)
+    context.data = { includedURLs: [] };
     
     nock('https://example.com').head('/page1.html').reply(200);
-    await prepareScrapingStep(context);
+    await submitForScraping(context);
     expect(context.log.info).to.have.been.calledWith(sinon.match(/Filtered out \d+ unscrape-able files/));
   }).timeout(10000);
 
-  it('prepareScrapingStep should cap when total URLs exceed MAX_URLS_TO_PROCESS', async () => {
+  it('submitForScraping should cap when total URLs exceed MAX_URLS_TO_PROCESS', async () => {
     nock.cleanAll();
     context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
     
@@ -380,17 +420,18 @@ describe('Broken internal links audit', () => {
     const testCtx = { ...context };
     testCtx.log = context.log;
     testCtx.dataAccess = { ...context.dataAccess, SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(manyPages) } };
-    testCtx.site = { ...site, getConfig: () => ({ getIncludedURLs: () => manualUrls }) };
     testCtx.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
+    // Pass includedURLs via context.data (from Step 1)
+    testCtx.data = { includedURLs: manualUrls };
     
     nock('https://example.com').persist().head(/\/(ah|man)\d+/).reply(200);
-    await prepareScrapingStep(testCtx);
+    await submitForScraping(testCtx);
     
     expect(context.log.warn).to.have.been.calledWith(sinon.match(/Total URLs \(1200\) exceeds limit\. Capping at 1000/));
     nock.cleanAll();
   }).timeout(120000);
 
-  it('prepareScrapingStep should filter URLs by audit scope', async () => {
+  it('submitForScraping should filter URLs by audit scope', async () => {
     // Mock site with subpath
     const siteWithSubpath = {
       ...site,
@@ -413,10 +454,40 @@ describe('Broken internal links audit', () => {
         success: true,
       }),
     };
+    // Pass includedURLs via context.data (from Step 1)
+    context.data = { includedURLs: [] };
 
-    const result = await prepareScrapingStep(context);
+    const result = await submitForScraping(context);
     expect(result.urls).to.have.lengthOf(0); // All filtered out
   }).timeout(5000);
+
+  it('submitForScraping should handle missing context.data', async () => {
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+    };
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
+    // context.data is undefined (missing includedURLs)
+    delete context.data;
+
+    nock('https://example.com')
+      .head('/page1')
+      .reply(200);
+    nock('https://example.com')
+      .head('/page2')
+      .reply(200);
+
+    const result = await submitForScraping(context);
+    expect(result).to.deep.equal({
+      urls: topPages.map((page) => ({ url: page.getUrl() })),
+      siteId: site.getId(),
+      type: 'broken-internal-links',
+    });
+  }).timeout(10000);
 
 });
 

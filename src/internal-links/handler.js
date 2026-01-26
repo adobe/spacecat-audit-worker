@@ -251,19 +251,25 @@ export async function runAuditAndImportTopPagesStep(context) {
     context,
   );
 
+  // Fetch includedURLs from siteConfig early (Step 1) to avoid waiting in Step 2
+  const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
+  log.info(`Found ${includedURLs.length} includedURLs from siteConfig (will pass to Step 2)`);
+
   return {
     auditResult: internalLinksAuditRunnerResult.auditResult,
     fullAuditRef: finalUrl,
     type: 'top-pages',
     siteId: site.getId(),
+    includedURLs, // Pass to Step 2 via auditContext
   };
 }
 
 /**
  * Submit URLs for scraping (for crawl-based detection).
  * Combines Ahrefs top pages + includedURLs from siteConfig.
+ * Note: includedURLs are now passed from Step 1 via auditContext for efficiency.
  */
-export async function prepareScraping(context) {
+export async function submitForScraping(context) {
   const {
     site, dataAccess, log: baseLog, audit,
   } = context;
@@ -275,8 +281,8 @@ export async function prepareScraping(context) {
     throw new Error('Audit failed, skip scraping and suggestion generation');
   }
 
-  log.info('====== Prepare Scraping Step ======');
-  log.info('✓ BATCHED CRAWL DETECTION CODE ACTIVE (Step: prepareScraping with cache enabled)');
+  log.info('====== Submit For Scraping Step ======');
+  log.info('✓ BATCHED CRAWL DETECTION CODE ACTIVE (Step: submitForScraping with cache enabled)');
 
   // Fetch Ahrefs top pages with error handling
   let topPagesUrls = [];
@@ -289,9 +295,9 @@ export async function prepareScraping(context) {
     topPagesUrls = [];
   }
 
-  // Get includedURLs from siteConfig
-  const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
-  log.info(`Found ${includedURLs.length} includedURLs from siteConfig`);
+  // Get includedURLs from auditContext (passed from Step 1)
+  const includedURLs = context.data?.includedURLs || [];
+  log.info(`Received ${includedURLs.length} includedURLs from Step 1`);
 
   // Merge and deduplicate
   let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
@@ -784,15 +790,12 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
   return opportunityAndSuggestionsStep({ ...context, updatedAuditResult });
 }
 
-// Alias for backward compatibility with tests
-export { prepareScraping as prepareScrapingStep, prepareScraping as submitForScraping };
-
 /**
  * Audit builder with batched crawl detection.
  *
  * Flow:
- * 1. runAuditAndImportTopPages - RUM-based detection, triggers import worker
- * 2. prepareScraping - Submit URLs to scrape client for crawling
+ * 1. runAuditAndImportTopPages - RUM detection, fetches includedURLs, triggers import worker
+ * 2. submitForScraping - Receives includedURLs, fetches Ahrefs, submits to scrape client
  * 3. runCrawlDetectionBatch - Process pages in batches (terminal step)
  *    - Processes PAGES_PER_BATCH pages per Lambda invocation
  *    - Passes broken/working URL caches via SQS message
@@ -811,8 +814,8 @@ export default new AuditBuilder()
     AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
   )
   .addStep(
-    'prepareScraping',
-    prepareScraping,
+    'submitForScraping',
+    submitForScraping,
     AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT,
   )
   .addStep('runCrawlDetectionBatch', runCrawlDetectionBatch) // Terminal step - manages own batching
