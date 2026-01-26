@@ -70,6 +70,12 @@ describe('Frescopa Data Generation Handler', () => {
       json: sandbox.stub().resolves(mockQueryIndexData),
     });
 
+    // Stub fetch for DELETE requests (unpublish)
+    fetchStub.withArgs(sinon.match(/admin\.hlx\.page/), sinon.match({ method: 'DELETE' })).resolves({
+      ok: true,
+      status: 204,
+    });
+
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
@@ -128,7 +134,7 @@ describe('Frescopa Data Generation Handler', () => {
       // Verify operations were performed
       result.results.forEach((report) => {
         expect(report.status).to.equal('success');
-        expect(report.operations).to.have.lengthOf(5); // 1 copy + 4 moves
+        expect(report.operations).to.have.lengthOf(6); // 1 copy + 4 moves + 1 unpublish
         expect(report.published).to.have.lengthOf(5);
       });
     });
@@ -163,6 +169,9 @@ describe('Frescopa Data Generation Handler', () => {
 
       // Verify move was called 12 times (4 moves per report type × 3 types)
       expect(mockDocument.move).to.have.callCount(12);
+
+      // Verify delete was called 3 times (once per report type, only on first iteration)
+      expect(mockDocument.delete).to.have.been.calledThrice;
     });
 
     it('should publish all 5 files for each report type', async () => {
@@ -434,6 +443,11 @@ describe('Frescopa Data Generation Handler', () => {
         expect(op).to.have.property('to');
         expect(op).to.have.property('status', 'success');
       });
+
+      // Check unpublish operation
+      const unpublishOps = agenticResult.operations.filter((op) => op.operation === 'unpublish');
+      expect(unpublishOps).to.have.lengthOf(1);
+      expect(unpublishOps[0]).to.have.property('status', 'success');
     });
   });
 
@@ -480,7 +494,7 @@ describe('Frescopa Data Generation Handler', () => {
       
       const sundayQueryIndex = {
         data: [
-          // Files for the calculated week
+          // Files for the calculated week - w52-2024 will be copied to create w01-2025
           { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w52-2024.json', lastModified: '2024-12-29' },
           { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w51-2024.json', lastModified: '2024-12-22' },
           { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w50-2024.json', lastModified: '2024-12-15' },
@@ -513,11 +527,18 @@ describe('Frescopa Data Generation Handler', () => {
         const result = await response.json();
 
         // Should calculate week identifier using Sunday logic (|| 7 branch)
-        // Current date is 2025-01-05 (Sunday, week 01), previous week would be w52-2024
+        // Current date is 2025-01-05 (Sunday, week 01), current week is w01-2025
+        // The sliding window should succeed: copy w52-2024 to create w01-2025
         expect(response.status).to.equal(200);
-        expect(result.targetWeekIdentifier).to.equal('w52-2024'); // Previous week from Jan 5, 2025
-        expect(result.results).to.have.lengthOf(3);
+        expect(result.targetWeekIdentifier).to.equal('w01-2025'); // Current week from Jan 5, 2025
+        expect(result.results).to.have.lengthOf(3); // Should succeed for all 3 report types
         expect(result.errors).to.have.lengthOf(0);
+        
+        // Verify operations were performed
+        result.results.forEach((report) => {
+          expect(report.status).to.equal('success');
+          expect(report.operations).to.have.lengthOf(6); // 1 copy + 4 moves + 1 unpublish
+        });
       } finally {
         clock.restore();
       }
@@ -691,6 +712,82 @@ describe('Frescopa Data Generation Handler', () => {
       // Should still process successfully with correct ordering
       expect(response.status).to.equal(200);
       expect(result.results).to.have.lengthOf(3);
+    });
+  });
+
+  describe('Unpublish Error Handling', () => {
+    it('should handle unpublish failure gracefully and continue', async () => {
+      // Make DELETE requests fail
+      fetchStub.withArgs(sinon.match(/admin\.hlx\.page.*\/live\//), sinon.match({ method: 'DELETE' })).resolves({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+      });
+
+      fetchStub.withArgs(sinon.match(/admin\.hlx\.page.*\/preview\//), sinon.match({ method: 'DELETE' })).resolves({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+      });
+
+      const message = {
+        auditContext: {
+          weekIdentifier: 'w05-2025',
+        },
+      };
+
+      const response = await handlerModule.default.run(message, context);
+      const result = await response.json();
+
+      // Should still succeed even though unpublish failed
+      expect(response.status).to.equal(200);
+      expect(result.results).to.have.lengthOf(3);
+      
+      // Verify warning was logged
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to unpublish from (live|preview): 404 Not Found/),
+      );
+
+      // Verify operations still show unpublish in results
+      result.results.forEach((report) => {
+        const unpublishOp = report.operations.find((op) => op.operation === 'unpublish');
+        expect(unpublishOp).to.exist;
+        expect(unpublishOp.status).to.equal('success');
+      });
+    });
+
+    it('should handle unpublish exception gracefully and continue', async () => {
+      // Make DELETE requests throw an error
+      fetchStub.withArgs(sinon.match(/admin\.hlx\.page/), sinon.match({ method: 'DELETE' })).rejects(
+        new Error('Network error during unpublish'),
+      );
+
+      const message = {
+        auditContext: {
+          weekIdentifier: 'w05-2025',
+        },
+      };
+
+      const response = await handlerModule.default.run(message, context);
+      const result = await response.json();
+
+      // Should still succeed even though unpublish threw an error
+      expect(response.status).to.equal(200);
+      expect(result.results).to.have.lengthOf(3);
+      
+      // Verify error was logged
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to unpublish.*: Network error during unpublish/),
+        'FRESCOPA_DATA_GENERATION',
+        sinon.match.instanceOf(Error),
+      );
+
+      // Verify operations still show unpublish in results
+      result.results.forEach((report) => {
+        const unpublishOp = report.operations.find((op) => op.operation === 'unpublish');
+        expect(unpublishOp).to.exist;
+        expect(unpublishOp.status).to.equal('success');
+      });
     });
   });
 });
