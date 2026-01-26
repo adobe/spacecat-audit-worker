@@ -14,6 +14,7 @@ import { load as cheerioLoad } from 'cheerio';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { isLinkInaccessible } from './helpers.js';
 import { isWithinAuditScope } from './subpath-filter.js';
+import { createContextLogger } from './logger-helper.js';
 
 // Optimized settings for speed and reliability while respecting target server
 const SCRAPE_FETCH_DELAY_MS = 50; // No delay between S3 fetches (S3 is fast)
@@ -40,8 +41,9 @@ const sleep = (ms) => new Promise((resolve) => {
  */
 export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
   const {
-    s3Client, env, log, site,
+    s3Client, env, log: baseLog, site,
   } = context;
+  const log = createContextLogger(baseLog, site.getId());
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   const baseURL = site.getBaseURL();
   const baseHostname = new URL(baseURL).hostname.replace(/^www\./, '');
@@ -147,7 +149,7 @@ export async function detectBrokenLinksFromCrawl(scrapeResultPaths, context) {
             }
 
             // Not in cache, need to check via API
-            const isBroken = await isLinkInaccessible(link.url, log);
+            const isBroken = await isLinkInaccessible(link.url, baseLog, site.getId());
             if (isBroken) {
               brokenUrlsCache.add(link.url);
               return {
@@ -255,8 +257,9 @@ export async function detectBrokenLinksFromCrawlBatch({
   initialWorkingUrls = [],
 }, context) {
   const {
-    s3Client, env, log, site,
+    s3Client, env, log: baseLog, site,
   } = context;
+  const log = createContextLogger(baseLog, site.getId());
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   const baseURL = site.getBaseURL();
   const baseHostname = new URL(baseURL).hostname.replace(/^www\./, '');
@@ -272,9 +275,9 @@ export async function detectBrokenLinksFromCrawlBatch({
   const batchEndIndex = Math.min(batchStartIndex + batchSize, totalPages);
   const batchPaths = allPaths.slice(batchStartIndex, batchEndIndex);
 
-  log.info(`[broken-internal-links-batch] ${formatElapsed()} ====== BATCH PROCESSING START ======`);
-  log.info(`[broken-internal-links-batch] ${formatElapsed()} Processing pages ${batchStartIndex + 1}-${batchEndIndex} of ${totalPages}`);
-  log.info(`[broken-internal-links-batch] ${formatElapsed()} Initial cache: ${initialBrokenUrls.length} broken, ${initialWorkingUrls.length} working URLs`);
+  log.info(`${formatElapsed()} ====== BATCH PROCESSING START ======`);
+  log.info(`${formatElapsed()} Processing pages ${batchStartIndex + 1}-${batchEndIndex} of ${totalPages}`);
+  log.info(`${formatElapsed()} Initial cache: ${initialBrokenUrls.length} broken, ${initialWorkingUrls.length} working URLs`);
 
   // Initialize caches from previous batches
   const brokenUrlsCache = new Set(initialBrokenUrls);
@@ -291,7 +294,7 @@ export async function detectBrokenLinksFromCrawlBatch({
 
       // Log progress every 5 pages
       if (pagesProcessed % 5 === 1 || pagesProcessed === batchPaths.length) {
-        log.info(`[broken-internal-links-batch] ${formatElapsed()} Progress: ${globalPageNum}/${totalPages} pages (batch ${pagesProcessed}/${batchPaths.length})`);
+        log.info(`${formatElapsed()} Progress: ${globalPageNum}/${totalPages} pages (batch ${pagesProcessed}/${batchPaths.length})`);
       }
 
       // eslint-disable-next-line no-await-in-loop
@@ -335,7 +338,7 @@ export async function detectBrokenLinksFromCrawlBatch({
           }
         } catch (urlError) {
           // Skip invalid URLs
-          log.debug(`[broken-internal-links-batch] Skipping invalid href on ${pageUrl}: ${href}`);
+          log.debug(`Skipping invalid href on ${pageUrl}: ${href}`);
         }
       });
 
@@ -368,7 +371,7 @@ export async function detectBrokenLinksFromCrawlBatch({
             }
 
             // Not in cache, need to check via API
-            const isBroken = await isLinkInaccessible(link.url, log);
+            const isBroken = await isLinkInaccessible(link.url, baseLog, site.getId());
             if (isBroken) {
               brokenUrlsCache.add(link.url);
               return {
@@ -404,7 +407,7 @@ export async function detectBrokenLinksFromCrawlBatch({
         if (!brokenLinksMap.has(key)) brokenLinksMap.set(key, link);
       });
     } catch (error) {
-      log.error(`[broken-internal-links-batch] Error processing ${url}: ${error.message}`);
+      log.error(`Error processing ${url}: ${error.message}`);
       pagesSkipped += 1;
     }
 
@@ -431,14 +434,14 @@ export async function detectBrokenLinksFromCrawlBatch({
   const hasMorePages = batchEndIndex < totalPages;
 
   // Summary logging
-  log.info(`[broken-internal-links-batch] ${formatElapsed()} ====== BATCH SUMMARY ======`);
-  log.info(`[broken-internal-links-batch] ${formatElapsed()} Time: ${totalTime}s for ${pagesProcessed} pages`);
-  log.info(`[broken-internal-links-batch] ${formatElapsed()} Links: ${totalLinksAnalyzed} analyzed, ${linksCheckedViaAPI} API calls`);
-  log.info(`[broken-internal-links-batch] ${formatElapsed()} Cache: ${totalCacheHits} hits (${cacheHitRate}%) - ${cacheHitsBroken} broken, ${cacheHitsWorking} working`);
-  log.info(`[broken-internal-links-batch] ${formatElapsed()} Results: ${results.length} broken links found in this batch`);
-  log.info(`[broken-internal-links-batch] ${formatElapsed()} Updated cache: ${brokenUrlsCache.size} broken, ${workingUrlsCache.size} working URLs`);
-  log.info(`[broken-internal-links-batch] ${formatElapsed()} Progress: ${hasMorePages ? `${totalPages - batchEndIndex} pages remaining` : 'ALL PAGES COMPLETE'}`);
-  log.info(`[broken-internal-links-batch] ${formatElapsed()} ===========================`);
+  log.info(`${formatElapsed()} ====== BATCH SUMMARY ======`);
+  log.info(`${formatElapsed()} Time: ${totalTime}s for ${pagesProcessed} pages`);
+  log.info(`${formatElapsed()} Links: ${totalLinksAnalyzed} analyzed, ${linksCheckedViaAPI} API calls`);
+  log.info(`${formatElapsed()} Cache: ${totalCacheHits} hits (${cacheHitRate}%) - ${cacheHitsBroken} broken, ${cacheHitsWorking} working`);
+  log.info(`${formatElapsed()} Results: ${results.length} broken links found in this batch`);
+  log.info(`${formatElapsed()} Updated cache: ${brokenUrlsCache.size} broken, ${workingUrlsCache.size} working URLs`);
+  log.info(`${formatElapsed()} Progress: ${hasMorePages ? `${totalPages - batchEndIndex} pages remaining` : 'ALL PAGES COMPLETE'}`);
+  log.info(`${formatElapsed()} ===========================`);
 
   return {
     results,
@@ -487,7 +490,7 @@ export function mergeAndDeduplicate(crawlLinks, rumLinks, log) {
   });
 
   const merged = Array.from(linkMap.values());
-  log.info(`[broken-internal-links-merge] Merged: ${rumLinks.length} RUM + ${crawlOnlyCount} crawl-only = ${merged.length} total`);
+  log.info(`Merged: ${rumLinks.length} RUM + ${crawlOnlyCount} crawl-only = ${merged.length} total`);
 
   return merged;
 }

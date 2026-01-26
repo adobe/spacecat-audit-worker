@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { createContextLogger } from './logger-helper.js';
 
 // Timeout for link validation (5 seconds)
 // Increased to handle slow pages (colour-catalogue) while avoiding false positives
@@ -97,7 +98,9 @@ function isTimeoutError(error) {
  * @returns {Promise<boolean>} True if the URL is inaccessible, times out, or errors
  * false if reachable/accessible
  */
-export async function isLinkInaccessible(url, log) {
+export async function isLinkInaccessible(url, baseLog, siteId) {
+  const log = createContextLogger(baseLog, siteId);
+
   // First try HEAD request (faster, lighter)
   try {
     const headResponse = await fetch(url, {
@@ -116,24 +119,24 @@ export async function isLinkInaccessible(url, log) {
 
     // If HEAD confirms it's broken (404 or 5xx), no need to verify with GET
     if (status === 404 || status >= 500) {
-      log.info(`[broken-internal-links] ✗ BROKEN LINK FOUND: ${url} (HEAD ${status})`);
+      log.info(`✗ BROKEN LINK FOUND: ${url} (HEAD ${status})`);
       return true;
     }
 
     // For other client errors (401, 403, etc.), verify with GET as they might be false positives
     if (status >= 400 && status < 500) {
-      log.debug(`[broken-internal-links] HEAD returned ${status} for ${url}, verifying with GET`);
+      log.debug(`HEAD returned ${status} for ${url}, verifying with GET`);
     }
   } catch (headError) {
     // If HEAD timed out, skip GET - it will likely also timeout
     if (isTimeoutError(headError)) {
-      log.info(`[broken-internal-links] ⏱ TIMEOUT: ${url} (HEAD request timed out after ${LINK_TIMEOUT}ms, assuming accessible)`);
+      log.info(`⏱ TIMEOUT: ${url} (HEAD request timed out after ${LINK_TIMEOUT}ms, assuming accessible)`);
       // Treat timeout as accessible (not broken) - could be rate limiting
       return false;
     }
 
     // For other errors (network errors), try GET
-    log.debug(`[broken-internal-links] HEAD failed for ${url}, trying GET: ${headError.message}`);
+    log.debug(`HEAD failed for ${url}, trying GET: ${headError.message}`);
   }
 
   // Fallback to GET request for verification
@@ -149,19 +152,19 @@ export async function isLinkInaccessible(url, log) {
 
     // Log non-404, non-200 status codes
     if (status >= 400 && status < 500 && status !== 404) {
-      log.warn(`[broken-internal-links] ⚠ WARNING: ${url} returned client error ${status}`);
+      log.warn(`⚠ WARNING: ${url} returned client error ${status}`);
     }
 
     // URL is valid if status code is less than 400, otherwise it is invalid
     const isBroken = status >= 400;
     if (isBroken) {
-      log.info(`[broken-internal-links] ✗ BROKEN LINK FOUND: ${url} (GET ${status})`);
+      log.info(`✗ BROKEN LINK FOUND: ${url} (GET ${status})`);
     }
     return isBroken;
   } catch (getError) {
     // If GET also timed out, treat as accessible (not broken) - could be rate limiting
     if (isTimeoutError(getError)) {
-      log.info(`[broken-internal-links] ⏱ TIMEOUT: ${url} (GET request timed out after ${LINK_TIMEOUT}ms, assuming accessible)`);
+      log.info(`⏱ TIMEOUT: ${url} (GET request timed out after ${LINK_TIMEOUT}ms, assuming accessible)`);
       return false;
     }
 
@@ -180,7 +183,7 @@ export async function isLinkInaccessible(url, log) {
     }
 
     // Network/DNS/connection errors mean the link is broken
-    log.error(`[broken-internal-links] ✗ BROKEN LINK FOUND: ${url} (ERROR: ${errorMessage})`);
+    log.error(`✗ BROKEN LINK FOUND: ${url} (ERROR: ${errorMessage})`);
     return true;
   }
 }

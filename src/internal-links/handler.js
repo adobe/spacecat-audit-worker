@@ -37,6 +37,7 @@ import {
   loadFinalResults,
   cleanupBatchState,
 } from './batch-state.js';
+import { createContextLogger, createAuditLogger } from './logger-helper.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
@@ -53,11 +54,21 @@ const MAX_BROKEN_LINKS = 100;
  * @param {Object} dataAccess - Data access object containing models
  * @param {Object} log - Logger instance
  */
-export async function updateAuditResult(audit, auditResult, prioritizedLinks, dataAccess, log) {
+export async function updateAuditResult(
+  audit,
+  auditResult,
+  prioritizedLinks,
+  dataAccess,
+  log,
+  siteId,
+) {
   const updatedAuditResult = {
     ...auditResult,
     brokenInternalLinks: prioritizedLinks,
   };
+
+  // Wrap logger with siteId context
+  const contextLog = createContextLogger(log, siteId);
 
   try {
     const auditId = audit.getId ? audit.getId() : audit.id;
@@ -66,24 +77,24 @@ export async function updateAuditResult(audit, auditResult, prioritizedLinks, da
     if (typeof audit.setAuditResult === 'function') {
       audit.setAuditResult(updatedAuditResult);
       await audit.save();
-      log.info(`[${AUDIT_TYPE}] Updated audit result with ${prioritizedLinks.length} prioritized broken links`);
+      contextLog.info(`Updated audit result with ${prioritizedLinks.length} prioritized broken links`);
     } else {
       // Fallback: Update via database lookup
       const { Audit: AuditModel } = dataAccess;
-      log.info(`[${AUDIT_TYPE}] Falling back to database lookup for auditId: ${auditId}`);
+      contextLog.info(`Falling back to database lookup for auditId: ${auditId}`);
 
       const auditToUpdate = await AuditModel.findById(auditId);
 
       if (auditToUpdate) {
         auditToUpdate.setAuditResult(updatedAuditResult);
         await auditToUpdate.save();
-        log.info(`[${AUDIT_TYPE}] Updated audit result via database lookup with ${prioritizedLinks.length} prioritized broken links`);
+        contextLog.info(`Updated audit result via database lookup with ${prioritizedLinks.length} prioritized broken links`);
       } else {
-        log.error(`[${AUDIT_TYPE}] Could not find audit with ID ${auditId} to update`);
+        contextLog.error(`Could not find audit with ID ${auditId} to update`);
       }
     }
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}] Failed to update audit result: ${error.message}`);
+    contextLog.error(`Failed to update audit result: ${error.message}`);
   }
 
   // Return the updated result so caller can use it directly
@@ -121,12 +132,13 @@ export function normalizeUrlToDomain(url, canonicalDomain) {
  * @returns {Object} - Returns audit result (without priority - calculated after merge)
  */
 export async function internalLinksAuditRunner(auditUrl, context) {
-  const { log, site } = context;
+  const { log: baseLog, site } = context;
+  const log = createContextLogger(baseLog, site.getId());
   const finalUrl = await wwwUrlResolver(site, context);
 
-  log.info(`[${AUDIT_TYPE}] ====== RUM Detection Phase ======`);
-  log.info(`[${AUDIT_TYPE}] ✓ BATCHED CRAWL DETECTION CODE ACTIVE (v2 with S3 state management)`);
-  log.info(`[${AUDIT_TYPE}] Site: ${site.getId()}, Domain: ${finalUrl}`);
+  log.info('====== RUM Detection Phase ======');
+  log.info('✓ BATCHED CRAWL DETECTION CODE ACTIVE (v2 with S3 state management)');
+  log.info(`Site: ${site.getId()}, Domain: ${finalUrl}`);
 
   try {
     // 1. Create RUM API client
@@ -139,15 +151,15 @@ export async function internalLinksAuditRunner(auditUrl, context) {
       granularity: 'hourly',
     };
 
-    log.info(`[${AUDIT_TYPE}] Querying RUM API for 404 internal links (interval: ${INTERVAL} days)`);
+    log.info(`Querying RUM API for 404 internal links (interval: ${INTERVAL} days)`);
 
     // 3. Query for 404 internal links
     const internal404Links = await rumAPIClient.query('404-internal-links', options);
-    log.info(`[${AUDIT_TYPE}] Found ${internal404Links.length} 404 internal links from RUM data`);
+    log.info(`Found ${internal404Links.length} 404 internal links from RUM data`);
 
     if (internal404Links.length === 0) {
-      log.info(`[${AUDIT_TYPE}] No 404 internal links found in RUM data`);
-      log.info(`[${AUDIT_TYPE}] ================================`);
+      log.info('No 404 internal links found in RUM data');
+      log.info('================================');
       return {
         auditResult: {
           brokenInternalLinks: [],
@@ -161,19 +173,19 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     }
 
     // 4. Check accessibility in parallel before transformation
-    log.info(`[${AUDIT_TYPE}] Validating ${internal404Links.length} links to confirm they are still broken...`);
+    log.info(`Validating ${internal404Links.length} links to confirm they are still broken...`);
 
     const accessibilityResults = await Promise.all(
       internal404Links.map(async (link) => ({
         link,
-        inaccessible: await isLinkInaccessible(link.url_to, log),
+        inaccessible: await isLinkInaccessible(link.url_to, baseLog, site.getId()),
       })),
     );
 
     // Count validation results
     const stillBroken = accessibilityResults.filter((r) => r.inaccessible).length;
     const nowFixed = accessibilityResults.filter((r) => !r.inaccessible).length;
-    log.info(`[${AUDIT_TYPE}] Validation results: ${stillBroken} still broken, ${nowFixed} now fixed`);
+    log.info(`Validation results: ${stillBroken} still broken, ${nowFixed} now fixed`);
 
     // 5. Filter only inaccessible links and transform for further processing
     // Also filter by audit scope (subpath/locale) if baseURL has a subpath
@@ -200,8 +212,8 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 
     // Calculate total traffic impact
     const totalTraffic = inaccessibleLinks.reduce((sum, link) => sum + link.trafficDomain, 0);
-    log.info(`[${AUDIT_TYPE}] RUM detection complete: ${inaccessibleLinks.length} broken links (total traffic: ${totalTraffic} views)`);
-    log.info(`[${AUDIT_TYPE}] ================================`);
+    log.info(`RUM detection complete: ${inaccessibleLinks.length} broken links (total traffic: ${totalTraffic} views)`);
+    log.info('================================');
 
     // 6. Prioritize links
     const prioritizedLinks = calculatePriority(inaccessibleLinks);
@@ -218,12 +230,12 @@ export async function internalLinksAuditRunner(auditUrl, context) {
       fullAuditRef: auditUrl,
     };
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit failed with error: ${error.message}`, error);
+    log.error(`audit failed with error: ${error.message}`, error);
     return {
       fullAuditRef: auditUrl,
       auditResult: {
         finalUrl: auditUrl,
-        error: `[${AUDIT_TYPE}] [Site: ${site.getId()}] audit failed with error: ${error.message}`,
+        error: `audit failed with error: ${error.message}`,
         success: false,
       },
     };
@@ -231,8 +243,9 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 }
 
 export async function runAuditAndImportTopPagesStep(context) {
-  const { site, log, finalUrl } = context;
-  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] starting audit`);
+  const { site, log: baseLog, finalUrl } = context;
+  const log = createContextLogger(baseLog, site.getId());
+  log.debug('starting audit');
   const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
     finalUrl,
     context,
@@ -252,45 +265,46 @@ export async function runAuditAndImportTopPagesStep(context) {
  */
 export async function prepareScraping(context) {
   const {
-    site, dataAccess, log, audit,
+    site, dataAccess, log: baseLog, audit,
   } = context;
+  const log = createContextLogger(baseLog, site.getId());
   const { SiteTopPage } = dataAccess;
   const { success } = audit.getAuditResult();
 
   if (!success) {
-    throw new Error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skip scraping and suggestion generation`);
+    throw new Error('Audit failed, skip scraping and suggestion generation');
   }
 
-  log.info(`[${AUDIT_TYPE}] ====== Prepare Scraping Step ======`);
-  log.info(`[${AUDIT_TYPE}] ✓ BATCHED CRAWL DETECTION CODE ACTIVE (Step: prepareScraping with cache enabled)`);
+  log.info('====== Prepare Scraping Step ======');
+  log.info('✓ BATCHED CRAWL DETECTION CODE ACTIVE (Step: prepareScraping with cache enabled)');
 
   // Fetch Ahrefs top pages with error handling
   let topPagesUrls = [];
   try {
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
     topPagesUrls = topPages.map((page) => page.getUrl());
-    log.info(`[${AUDIT_TYPE}] Found ${topPagesUrls.length} Ahrefs top pages`);
+    log.info(`Found ${topPagesUrls.length} Ahrefs top pages`);
   } catch (error) {
-    log.warn(`[${AUDIT_TYPE}] Failed to fetch Ahrefs top pages: ${error.message}`);
+    log.warn(`Failed to fetch Ahrefs top pages: ${error.message}`);
     topPagesUrls = [];
   }
 
   // Get includedURLs from siteConfig
   const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
-  log.info(`[${AUDIT_TYPE}] Found ${includedURLs.length} includedURLs from siteConfig`);
+  log.info(`Found ${includedURLs.length} includedURLs from siteConfig`);
 
   // Merge and deduplicate
   let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-  log.info(`[${AUDIT_TYPE}] Merged URLs: ${topPagesUrls.length} (Ahrefs) + ${includedURLs.length} (manual) = ${finalUrls.length} unique`);
+  log.info(`Merged URLs: ${topPagesUrls.length} (Ahrefs) + ${includedURLs.length} (manual) = ${finalUrls.length} unique`);
 
   // Filter by audit scope BEFORE capping to ensure all URLs are in scope
   const baseURL = site.getBaseURL();
   finalUrls = finalUrls.filter((url) => isWithinAuditScope(url, baseURL));
-  log.info(`[${AUDIT_TYPE}] After audit scope filtering: ${finalUrls.length} URLs`);
+  log.info(`After audit scope filtering: ${finalUrls.length} URLs`);
 
   // Limit to max URLs (after scope filtering)
   if (finalUrls.length > MAX_URLS_TO_PROCESS) {
-    log.warn(`[${AUDIT_TYPE}] Total URLs (${finalUrls.length}) exceeds limit. Capping at ${MAX_URLS_TO_PROCESS}`);
+    log.warn(`Total URLs (${finalUrls.length}) exceeds limit. Capping at ${MAX_URLS_TO_PROCESS}`);
     finalUrls = finalUrls.slice(0, MAX_URLS_TO_PROCESS);
   }
 
@@ -298,12 +312,12 @@ export async function prepareScraping(context) {
   const beforeFilter = finalUrls.length;
   finalUrls = finalUrls.filter((url) => !isUnscrapeable(url));
   if (beforeFilter > finalUrls.length) {
-    log.info(`[${AUDIT_TYPE}] Filtered out ${beforeFilter - finalUrls.length} unscrape-able files`);
+    log.info(`Filtered out ${beforeFilter - finalUrls.length} unscrape-able files`);
   }
 
   if (finalUrls.length === 0) {
-    log.warn(`[${AUDIT_TYPE}] No URLs available for scraping`);
-    log.info(`[${AUDIT_TYPE}] =======================================`);
+    log.warn('No URLs available for scraping');
+    log.info('=======================================');
     return {
       urls: [],
       siteId: site.getId(),
@@ -313,7 +327,7 @@ export async function prepareScraping(context) {
 
   // Skip redirect resolution to avoid delays and timeouts
   // Assume Ahrefs top pages and configured URLs are already valid
-  log.info(`[${AUDIT_TYPE}] Skipping redirect resolution (assuming ${finalUrls.length} URLs are valid)`);
+  log.info(`Skipping redirect resolution (assuming ${finalUrls.length} URLs are valid)`);
   const uniqueResolvedUrls = finalUrls;
 
   const scrapingPayload = {
@@ -322,17 +336,18 @@ export async function prepareScraping(context) {
     type: 'broken-internal-links',
   };
 
-  log.info(`[${AUDIT_TYPE}] Submitting ${uniqueResolvedUrls.length} URLs for scraping (cache enabled)`);
-  log.info(`[${AUDIT_TYPE}] Scraping job details: siteId=${site.getId()}, type=${scrapingPayload.type}, urlCount=${uniqueResolvedUrls.length}`);
-  log.info(`[${AUDIT_TYPE}] =======================================`);
+  log.info(`Submitting ${uniqueResolvedUrls.length} URLs for scraping (cache enabled)`);
+  log.info(`Scraping job details: siteId=${site.getId()}, type=${scrapingPayload.type}, urlCount=${uniqueResolvedUrls.length}`);
+  log.info('=======================================');
 
   return scrapingPayload;
 }
 
 export const opportunityAndSuggestionsStep = async (context) => {
   const {
-    log, site, finalUrl, sqs, env, dataAccess, audit, updatedAuditResult,
+    log: baseLog, site, finalUrl, sqs, env, dataAccess, audit, updatedAuditResult,
   } = context;
+  const log = createContextLogger(baseLog, site.getId());
   const { Suggestion, SiteTopPage } = dataAccess;
 
   // Use updated result if passed (from crawl detection), otherwise read from audit
@@ -340,7 +355,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const { brokenInternalLinks, success } = auditResultToUse;
 
   if (!success) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
+    log.info('Audit failed, skipping suggestions generation');
     return { status: 'complete' };
   }
 
@@ -353,14 +368,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
         .allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW);
       opportunity = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
     } catch (e) {
-      log.error(`Fetching opportunities for siteId ${site.getId()} failed with error: ${e.message}`);
+      log.error(`Fetching opportunities failed with error: ${e.message}`);
       throw new Error(`Failed to fetch opportunities for siteId ${site.getId()}: ${e.message}`);
     }
 
     if (!opportunity) {
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, skipping opportunity creation`);
+      log.info('no broken internal links found, skipping opportunity creation');
     } else {
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no broken internal links found, updating opportunity to RESOLVED`);
+      log.info('no broken internal links found, updating opportunity to RESOLVED');
       await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
       const suggestions = await opportunity.getSuggestions();
       if (isNonEmptyArray(suggestions)) {
@@ -395,14 +410,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
   let ahrefsTopPages = [];
   try {
     ahrefsTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-    log.info(`[${AUDIT_TYPE}] Found ${ahrefsTopPages.length} top pages from Ahrefs`);
+    log.info(`Found ${ahrefsTopPages.length} top pages from Ahrefs`);
   } catch (error) {
-    log.warn(`[${AUDIT_TYPE}] Failed to fetch Ahrefs top pages: ${error.message}`);
+    log.warn(`Failed to fetch Ahrefs top pages: ${error.message}`);
   }
 
   // Get includedURLs from siteConfig
   const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
-  log.info(`[${AUDIT_TYPE}] Found ${includedURLs.length} includedURLs from siteConfig`);
+  log.info(`Found ${includedURLs.length} includedURLs from siteConfig`);
 
   // Merge Ahrefs + includedURLs for alternatives
   const includedTopPages = includedURLs.map((url) => ({ getUrl: () => url }));
@@ -410,14 +425,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   // Limit total pages
   if (topPages.length > MAX_URLS_TO_PROCESS) {
-    log.warn(`[${AUDIT_TYPE}] Capping URLs from ${topPages.length} to ${MAX_URLS_TO_PROCESS}`);
+    log.warn(`Capping URLs from ${topPages.length} to ${MAX_URLS_TO_PROCESS}`);
     topPages = topPages.slice(0, MAX_URLS_TO_PROCESS);
   }
 
   // Filter by audit scope
   const baseURL = site.getBaseURL();
   const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
-  log.info(`[${AUDIT_TYPE}] After audit scope filtering: ${filteredTopPages.length} top pages available`);
+  log.info(`After audit scope filtering: ${filteredTopPages.length} top pages available`);
 
   // Auto-suggest enabled for all sites
   const suggestions = await Suggestion.allByOpportunityIdAndStatus(
@@ -457,7 +472,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const originalCount = alternativeUrls.length;
   alternativeUrls = alternativeUrls.filter((url) => !isUnscrapeable(url));
   if (alternativeUrls.length < originalCount) {
-    log.info(`[${AUDIT_TYPE}] Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs`);
+    log.info(`Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs`);
   }
 
   // Note: alternativeUrls limit removed as it's unreachable
@@ -465,17 +480,17 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   // Validate before sending to Mystique
   if (brokenLinks.length === 0) {
-    log.warn(`[${AUDIT_TYPE}] No valid broken links to send to Mystique. Skipping message.`);
+    log.warn('No valid broken links to send to Mystique. Skipping message.');
     return { status: 'complete' };
   }
 
   if (!opportunity?.getId()) {
-    log.error(`[${AUDIT_TYPE}] Opportunity ID is missing. Cannot send to Mystique.`);
+    log.error('Opportunity ID is missing. Cannot send to Mystique.');
     return { status: 'complete' };
   }
 
   if (alternativeUrls.length === 0) {
-    log.warn(`[${AUDIT_TYPE}] No alternative URLs available. Skipping message to Mystique.`);
+    log.warn('No alternative URLs available. Skipping message to Mystique.');
     return { status: 'complete' };
   }
 
@@ -484,7 +499,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const BATCH_SIZE = MAX_BROKEN_LINKS; // 100 links per batch
   const totalBatches = Math.ceil(brokenLinks.length / BATCH_SIZE);
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Sending ${brokenLinks.length} broken links in ${totalBatches} batch(es) to Mystique`);
+  log.info(`Sending ${brokenLinks.length} broken links in ${totalBatches} batch(es) to Mystique`);
 
   for (let batchIndex = 0; batchIndex < totalBatches; batchIndex += 1) {
     const batchStart = batchIndex * BATCH_SIZE;
@@ -516,10 +531,10 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.debug(`[${AUDIT_TYPE}] Batch ${batchIndex + 1}/${totalBatches} sent to Mystique (${batchLinks.length} links)`);
+    log.debug(`Batch ${batchIndex + 1}/${totalBatches} sent to Mystique (${batchLinks.length} links)`);
   }
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Successfully sent all ${totalBatches} batch(es) to Mystique`);
+  log.info(`Successfully sent all ${totalBatches} batch(es) to Mystique`);
 
   return { status: 'complete' };
 };
@@ -535,19 +550,20 @@ export const opportunityAndSuggestionsStep = async (context) => {
  */
 export async function finalizeCrawlDetection(context, { skipCrawlDetection = false }) {
   const {
-    log, site, audit, dataAccess,
+    log: baseLog, site, audit, dataAccess,
   } = context;
+  const log = createAuditLogger(baseLog, site.getId(), audit.getId());
 
   const auditId = audit.getId();
   const shouldCleanup = !skipCrawlDetection;
 
-  log.info(`[${AUDIT_TYPE}] ====== Finalize: Merge and Generate Suggestions ======`);
-  log.info(`[${AUDIT_TYPE}] Site: ${site.getId()}, auditId: ${auditId}`);
+  log.info('====== Finalize: Merge and Generate Suggestions ======');
+  log.info(`auditId: ${auditId}`);
 
   // Get RUM results from audit
   const auditResult = audit.getAuditResult();
   const rumLinks = auditResult.brokenInternalLinks ?? [];
-  log.info(`[${AUDIT_TYPE}] RUM detection results: ${rumLinks.length} broken links`);
+  log.info(`RUM detection results: ${rumLinks.length} broken links`);
 
   let finalLinks = rumLinks;
 
@@ -555,12 +571,12 @@ export async function finalizeCrawlDetection(context, { skipCrawlDetection = fal
     if (!skipCrawlDetection) {
       // Load final results from S3 (single file contains all accumulated results)
       const crawlLinks = await loadFinalResults(auditId, context);
-      log.info(`[${AUDIT_TYPE}] Crawl detected ${crawlLinks.length} broken links`);
+      log.info(`Crawl detected ${crawlLinks.length} broken links`);
 
       // Merge crawl + RUM results (RUM takes priority for traffic data)
       finalLinks = mergeAndDeduplicate(crawlLinks, rumLinks, log);
     } else {
-      log.info(`[${AUDIT_TYPE}] No crawl results to merge, using RUM-only results`);
+      log.info('No crawl results to merge, using RUM-only results');
     }
 
     // Calculate priority for all links
@@ -570,7 +586,7 @@ export async function finalizeCrawlDetection(context, { skipCrawlDetection = fal
     const highPriority = prioritizedLinks.filter((link) => link.priority === 'high').length;
     const mediumPriority = prioritizedLinks.filter((link) => link.priority === 'medium').length;
     const lowPriority = prioritizedLinks.filter((link) => link.priority === 'low').length;
-    log.info(`[${AUDIT_TYPE}] Priority: ${highPriority} high, ${mediumPriority} medium, ${lowPriority} low`);
+    log.info(`Priority: ${highPriority} high, ${mediumPriority} medium, ${lowPriority} low`);
 
     // Update audit result with prioritized links
     const updatedAuditResult = await updateAuditResult(
@@ -578,17 +594,18 @@ export async function finalizeCrawlDetection(context, { skipCrawlDetection = fal
       auditResult,
       prioritizedLinks,
       dataAccess,
-      log,
+      baseLog,
+      site.getId(),
     );
 
-    log.info(`[${AUDIT_TYPE}] =====================================================`);
+    log.info('=====================================================');
 
     // Generate opportunities and suggestions
     return opportunityAndSuggestionsStep({ ...context, updatedAuditResult });
   } finally {
     // Always cleanup S3 state file, even if an error occurred
     if (shouldCleanup) {
-      await cleanupBatchState(auditId, context).catch((err) => log.warn(`[${AUDIT_TYPE}] Cleanup failed: ${err.message}`));
+      await cleanupBatchState(auditId, context).catch((err) => log.warn(`Cleanup failed: ${err.message}`));
     }
   }
 }
@@ -610,8 +627,9 @@ export async function finalizeCrawlDetection(context, { skipCrawlDetection = fal
  */
 export async function runCrawlDetectionBatch(context) {
   const {
-    log, site, audit, auditContext, sqs, env,
+    log: baseLog, site, audit, auditContext, sqs, env,
   } = context;
+  const log = createAuditLogger(baseLog, site.getId(), audit.getId());
 
   const scrapeResultPaths = context.scrapeResultPaths ?? new Map();
   const scrapeJobId = context.scrapeJobId || 'N/A';
@@ -624,19 +642,19 @@ export async function runCrawlDetectionBatch(context) {
   const estimatedTotalBatches = Math.ceil(totalPages / PAGES_PER_BATCH);
   const currentBatchNum = Math.floor(batchStartIndex / PAGES_PER_BATCH);
 
-  log.info(`[${AUDIT_TYPE}] ====== Crawl Detection Batch ${currentBatchNum + 1}/${estimatedTotalBatches || 1} ======`);
-  log.info(`[${AUDIT_TYPE}] Site: ${site.getId()}, scrapeJobId: ${scrapeJobId}`);
-  log.info(`[${AUDIT_TYPE}] Total pages: ${totalPages}, Batch size: ${PAGES_PER_BATCH}`);
+  log.info(`====== Crawl Detection Batch ${currentBatchNum + 1}/${estimatedTotalBatches || 1} ======`);
+  log.info(`scrapeJobId: ${scrapeJobId}`);
+  log.info(`Total pages: ${totalPages}, Batch size: ${PAGES_PER_BATCH}`);
 
   // Handle case with no scraped content - go directly to merge step
   if (scrapeResultPaths.size === 0) {
-    log.info(`[${AUDIT_TYPE}] No scraped content available, proceeding to merge step`);
+    log.info('No scraped content available, proceeding to merge step');
     return finalizeCrawlDetection(context, { skipCrawlDetection: true });
   }
 
   // Check if batchStartIndex is already beyond total pages
   if (batchStartIndex >= totalPages) {
-    log.info(`[${AUDIT_TYPE}] Batch start index (${batchStartIndex}) >= total pages (${totalPages}), all batches already complete`);
+    log.info(`Batch start index (${batchStartIndex}) >= total pages (${totalPages}), all batches already complete`);
     return finalizeCrawlDetection(context, { skipCrawlDetection: false });
   }
 
@@ -646,7 +664,7 @@ export async function runCrawlDetectionBatch(context) {
   const initialWorkingUrls = existingState.workingUrlsCache;
   const accumulatedResults = existingState.results;
 
-  log.info(`[${AUDIT_TYPE}] Loaded state: ${accumulatedResults.length} existing results, caches: ${initialBrokenUrls.length} broken, ${initialWorkingUrls.length} working`);
+  log.info(`Loaded state: ${accumulatedResults.length} existing results, caches: ${initialBrokenUrls.length} broken, ${initialWorkingUrls.length} working`);
 
   // Process this batch
   const batchResult = await detectBrokenLinksFromCrawlBatch({
@@ -671,11 +689,11 @@ export async function runCrawlDetectionBatch(context) {
     totalPagesProcessed,
   }, context);
 
-  log.info(`[${AUDIT_TYPE}] Batch ${currentBatchNum + 1} complete: ${batchResult.results.length} new broken links, ${allResults.length} total`);
+  log.info(`Batch ${currentBatchNum + 1} complete: ${batchResult.results.length} new broken links, ${allResults.length} total`);
 
   // Check if more pages remain
   if (batchResult.hasMorePages) {
-    log.info(`[${AUDIT_TYPE}] ${batchResult.totalPages - batchResult.nextBatchStartIndex} pages remaining, sending continuation message`);
+    log.info(`${batchResult.totalPages - batchResult.nextBatchStartIndex} pages remaining, sending continuation message`);
 
     // Send continuation message back to AUDIT_JOBS_QUEUE
     // Note: Caches are in S3 now, so SQS message is minimal
@@ -694,15 +712,15 @@ export async function runCrawlDetectionBatch(context) {
     };
 
     // Log the continuation payload for debugging
-    log.info(`[${AUDIT_TYPE}] Continuation payload: ${JSON.stringify(continuationPayload, null, 2)}`);
+    log.info(`Continuation payload: ${JSON.stringify(continuationPayload, null, 2)}`);
 
     await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, continuationPayload);
-    log.info(`[${AUDIT_TYPE}] Continuation message sent to AUDIT_JOBS_QUEUE for batch ${currentBatchNum + 2}`);
+    log.info(`Continuation message sent to AUDIT_JOBS_QUEUE for batch ${currentBatchNum + 2}`);
 
     // Return - this Lambda invocation is complete, next batch will continue
     return { status: 'batch-continuation' };
   }
-  log.info(`[${AUDIT_TYPE}] All ${currentBatchNum + 1} batches complete, proceeding to merge step`);
+  log.info(`All ${currentBatchNum + 1} batches complete, proceeding to merge step`);
   return finalizeCrawlDetection(context, { skipCrawlDetection: false });
 }
 
@@ -712,32 +730,33 @@ export async function runCrawlDetectionBatch(context) {
  */
 export async function runCrawlDetectionAndGenerateSuggestions(context) {
   const {
-    log, site, audit, dataAccess,
+    log: baseLog, site, audit, dataAccess,
   } = context;
+  const log = createAuditLogger(baseLog, site.getId(), audit.getId());
 
   const scrapeResultPaths = context.scrapeResultPaths ?? new Map();
   const scrapeJobId = context.scrapeJobId || 'N/A';
 
-  log.info(`[${AUDIT_TYPE}] ====== Crawl Detection Step (Legacy) ======`);
-  log.info(`[${AUDIT_TYPE}] Site: ${site.getId()}, scrapeJobId: ${scrapeJobId}, scrapeResultPaths: ${scrapeResultPaths.size}`);
+  log.info('====== Crawl Detection Step (Legacy) ======');
+  log.info(`scrapeJobId: ${scrapeJobId}, scrapeResultPaths: ${scrapeResultPaths.size}`);
 
   // Get RUM results from previous audit step
   const auditResult = audit.getAuditResult();
   const rumLinks = auditResult.brokenInternalLinks || [];
 
-  log.info(`[${AUDIT_TYPE}] RUM detection results: ${rumLinks.length} broken links`);
+  log.info(`RUM detection results: ${rumLinks.length} broken links`);
 
   let finalLinks = rumLinks;
 
   if (scrapeResultPaths.size > 0) {
     // Run crawl detection
     const crawlLinks = await detectBrokenLinksFromCrawl(scrapeResultPaths, context);
-    log.info(`[${AUDIT_TYPE}] Crawl detected ${crawlLinks.length} broken links`);
+    log.info(`Crawl detected ${crawlLinks.length} broken links`);
 
     // Merge crawl + RUM results (RUM takes priority for traffic data)
     finalLinks = mergeAndDeduplicate(crawlLinks, rumLinks, log);
   } else {
-    log.info(`[${AUDIT_TYPE}] No scraped content available, using RUM-only results`);
+    log.info('No scraped content available, using RUM-only results');
   }
 
   // Calculate priority for all links
@@ -747,7 +766,7 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
   const highPriority = prioritizedLinks.filter((link) => link.priority === 'high').length;
   const mediumPriority = prioritizedLinks.filter((link) => link.priority === 'medium').length;
   const lowPriority = prioritizedLinks.filter((link) => link.priority === 'low').length;
-  log.info(`[${AUDIT_TYPE}] Priority: ${highPriority} high, ${mediumPriority} medium, ${lowPriority} low`);
+  log.info(`Priority: ${highPriority} high, ${mediumPriority} medium, ${lowPriority} low`);
 
   // Update audit result with prioritized links
   const updatedAuditResult = await updateAuditResult(
@@ -755,10 +774,11 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
     auditResult,
     prioritizedLinks,
     dataAccess,
-    log,
+    baseLog,
+    site.getId(),
   );
 
-  log.info(`[${AUDIT_TYPE}] ===================================`);
+  log.info('===================================');
 
   // Now generate opportunities and suggestions
   return opportunityAndSuggestionsStep({ ...context, updatedAuditResult });

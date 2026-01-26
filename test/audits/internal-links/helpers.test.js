@@ -112,7 +112,7 @@ describe('isLinkInaccessible', () => {
       .head('/')
       .reply(200);
 
-    const result = await isLinkInaccessible('https://example.com', mockLog);
+    const result = await isLinkInaccessible('https://example.com', mockLog, 'test-site-id');
     expect(result).to.be.false;
   });
 
@@ -124,7 +124,7 @@ describe('isLinkInaccessible', () => {
       .get('/notfound')
       .reply(404);
 
-    const result = await isLinkInaccessible('https://example.com/notfound', mockLog);
+    const result = await isLinkInaccessible('https://example.com/notfound', mockLog, 'test-site-id');
     expect(result).to.be.true;
   });
 
@@ -136,10 +136,10 @@ describe('isLinkInaccessible', () => {
       .get('/forbidden')
       .reply(403);
 
-    const result = await isLinkInaccessible('https://example.com/forbidden', mockLog);
+    const result = await isLinkInaccessible('https://example.com/forbidden', mockLog, 'test-site-id');
     expect(result).to.be.true;
     expect(mockLog.warn.calledWith(
-      '[broken-internal-links] ⚠ WARNING: https://example.com/forbidden returned client error 403',
+      '[broken-internal-links] [siteId=test-site-id] ⚠ WARNING: https://example.com/forbidden returned client error 403',
     )).to.be.true;
   });
 
@@ -151,7 +151,7 @@ describe('isLinkInaccessible', () => {
       .get('/network-error')
       .replyWithError(new Error('Network failure'));
 
-    const result = await isLinkInaccessible('https://example.com/network-error', mockLog);
+    const result = await isLinkInaccessible('https://example.com/network-error', mockLog, 'test-site-id');
     expect(result).to.be.true;
     expect(mockLog.error.calledOnce).to.be.true;
   });
@@ -167,7 +167,7 @@ describe('isLinkInaccessible', () => {
       .get('/code-err')
       .replyWithError(codeError);
 
-    const result = await isLinkInaccessible('https://example.com/code-err', mockLog);
+    const result = await isLinkInaccessible('https://example.com/code-err', mockLog, 'test-site-id');
     expect(result).to.be.true;
   });
 
@@ -182,7 +182,7 @@ describe('isLinkInaccessible', () => {
       .get('/type-err')
       .replyWithError(typeError);
 
-    const result = await isLinkInaccessible('https://example.com/type-err', mockLog);
+    const result = await isLinkInaccessible('https://example.com/type-err', mockLog, 'test-site-id');
     expect(result).to.be.true;
   });
 
@@ -197,7 +197,7 @@ describe('isLinkInaccessible', () => {
       .get('/errno-err')
       .replyWithError(errnoError);
 
-    const result = await isLinkInaccessible('https://example.com/errno-err', mockLog);
+    const result = await isLinkInaccessible('https://example.com/errno-err', mockLog, 'test-site-id');
     expect(result).to.be.true;
   });
 
@@ -211,7 +211,7 @@ describe('isLinkInaccessible', () => {
       .get('/empty-msg')
       .replyWithError(emptyMsgError);
 
-    const result = await isLinkInaccessible('https://example.com/empty-msg', mockLog);
+    const result = await isLinkInaccessible('https://example.com/empty-msg', mockLog, 'test-site-id');
     expect(result).to.be.true;
   });
 
@@ -228,7 +228,7 @@ describe('isLinkInaccessible', () => {
       .get('/full-err')
       .replyWithError(fullError);
 
-    const result = await isLinkInaccessible('https://example.com/full-err', mockLog);
+    const result = await isLinkInaccessible('https://example.com/full-err', mockLog, 'test-site-id');
     expect(result).to.be.true;
   });
 
@@ -248,7 +248,7 @@ describe('isLinkInaccessible', () => {
       .get('/simple-err')
       .replyWithError(simpleError);
 
-    const result = await isLinkInaccessible('https://example.com/simple-err', mockLog);
+    const result = await isLinkInaccessible('https://example.com/simple-err', mockLog, 'test-site-id');
     expect(result).to.be.true;
     // This should log just "Just message" without any colons/joining
   });
@@ -264,7 +264,7 @@ describe('isLinkInaccessible', () => {
       .get('/empty-err')
       .replyWithError(emptyError);
 
-    const result = await isLinkInaccessible('https://example.com/empty-err', mockLog);
+    const result = await isLinkInaccessible('https://example.com/empty-err', mockLog, 'test-site-id');
     expect(result).to.be.true;
     // Should use 'Unknown error' as fallback
   });
@@ -278,13 +278,13 @@ describe('isLinkInaccessible', () => {
       .head('/timeout-url')
       .replyWithError(timeoutError);
 
-    const result = await isLinkInaccessible('https://example.com/timeout-url', mockLog);
+    const result = await isLinkInaccessible('https://example.com/timeout-url', mockLog, 'test-site-id');
     
     // Should return false (treat as accessible)
     expect(result).to.be.false;
-    expect(mockLog.info).to.have.been.calledWith(
-      sinon.match(/⏱ TIMEOUT.*HEAD request timed out/),
-    );
+    expect(mockLog.info.calledWith(
+      sinon.match(/\[siteId=test-site-id\].*⏱ TIMEOUT.*HEAD request timed out/),
+    )).to.be.true;
   });
 
   it('should recognize timeout error with lowercase "timeout" in message', async function call() {
@@ -295,7 +295,7 @@ describe('isLinkInaccessible', () => {
       .head('/timeout-msg')
       .replyWithError(timeoutError);
 
-    const result = await isLinkInaccessible('https://example.com/timeout-msg', mockLog);
+    const result = await isLinkInaccessible('https://example.com/timeout-msg', mockLog, 'test-site-id');
     expect(result).to.be.false;
   });
 
@@ -308,7 +308,7 @@ describe('isLinkInaccessible', () => {
       .head('/timeout-code')
       .replyWithError(timeoutError);
 
-    const result = await isLinkInaccessible('https://example.com/timeout-code', mockLog);
+    const result = await isLinkInaccessible('https://example.com/timeout-code', mockLog, 'test-site-id');
     expect(result).to.be.false;
   });
 
@@ -321,7 +321,7 @@ describe('isLinkInaccessible', () => {
       .head('/socket-timeout')
       .replyWithError(timeoutError);
 
-    const result = await isLinkInaccessible('https://example.com/socket-timeout', mockLog);
+    const result = await isLinkInaccessible('https://example.com/socket-timeout', mockLog, 'test-site-id');
     expect(result).to.be.false;
   });
 
@@ -334,7 +334,7 @@ describe('isLinkInaccessible', () => {
       .head('/timeout-in-code')
       .replyWithError(timeoutError);
 
-    const result = await isLinkInaccessible('https://example.com/timeout-in-code', mockLog);
+    const result = await isLinkInaccessible('https://example.com/timeout-in-code', mockLog, 'test-site-id');
     expect(result).to.be.false;
   });
 
@@ -349,7 +349,7 @@ describe('isLinkInaccessible', () => {
       .get('/conn-refused')
       .replyWithError(networkError);
 
-    const result = await isLinkInaccessible('https://example.com/conn-refused', mockLog);
+    const result = await isLinkInaccessible('https://example.com/conn-refused', mockLog, 'test-site-id');
     // Should be true (broken) and should have tried GET
     expect(result).to.be.true;
   });
@@ -365,13 +365,13 @@ describe('isLinkInaccessible', () => {
       .get('/get-timeout')
       .replyWithError(getTimeoutError); // GET times out
 
-    const result = await isLinkInaccessible('https://example.com/get-timeout', mockLog);
+    const result = await isLinkInaccessible('https://example.com/get-timeout', mockLog, 'test-site-id');
     
     // Should return false (treat as accessible) when GET times out
     expect(result).to.be.false;
-    expect(mockLog.info).to.have.been.calledWith(
-      sinon.match(/⏱ TIMEOUT.*GET request timed out/),
-    );
+    expect(mockLog.info.calledWith(
+      sinon.match(/\[siteId=test-site-id\].*⏱ TIMEOUT.*GET request timed out/),
+    )).to.be.true;
   });
 });
 

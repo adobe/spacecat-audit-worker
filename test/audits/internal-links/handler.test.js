@@ -242,7 +242,7 @@ describe('Broken internal links audit', () => {
       fullAuditRef: auditUrl,
       auditResult: {
         finalUrl: auditUrl,
-        error: `[broken-internal-links] [Site: ${site.getId()}] audit failed with error: error`,
+        error: 'audit failed with error: error',
         success: false,
       },
     });
@@ -305,7 +305,7 @@ describe('Broken internal links audit', () => {
     };
 
     await expect(prepareScrapingStep(context))
-      .to.be.rejectedWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skip scraping and suggestion generation`);
+      .to.be.rejectedWith('Audit failed, skip scraping and suggestion generation');
 
     // Verify that SiteTopPage.allBySiteIdAndSourceAndGeo was not called since we exit early
     expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
@@ -592,7 +592,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     ).to.be.rejectedWith('Failed to fetch opportunities for siteId site-id-1: read error happened');
 
     expect(context.log.error).to.have.been.calledWith(
-      'Fetching opportunities for siteId site-id-1 failed with error: read error happened',
+      '[broken-internal-links] [siteId=site-id-1] Fetching opportunities failed with error: read error happened',
     );
   }).timeout(5000);
 
@@ -911,7 +911,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(context.log.error).to.have.been.calledOnceWith(
-      'Fetching opportunities for siteId site-id-1 failed with error: some-error',
+      '[broken-internal-links] [siteId=site-id-1] Fetching opportunities failed with error: some-error',
     );
 
     // make sure that no new suggestions are added
@@ -1661,7 +1661,7 @@ describe('updateAuditResult', () => {
     const prioritizedLinks = [{ urlFrom: 'a', urlTo: 'b', priority: 'high' }];
     const auditResult = { success: true, brokenInternalLinks: [] };
 
-    const result = await updateAuditResult(mockAudit, auditResult, prioritizedLinks, {}, log);
+    const result = await updateAuditResult(mockAudit, auditResult, prioritizedLinks, {}, log, 'test-site-id');
 
     expect(mockAudit.setAuditResult).to.have.been.calledOnce;
     expect(mockAudit.save).to.have.been.calledOnce;
@@ -1693,7 +1693,7 @@ describe('updateAuditResult', () => {
       },
     };
 
-    const result = await updateAuditResult(mockAudit, auditResult, prioritizedLinks, dataAccess, log);
+    const result = await updateAuditResult(mockAudit, auditResult, prioritizedLinks, dataAccess, log, 'test-site-id');
 
     expect(dataAccess.Audit.findById).to.have.been.calledWith('audit-id-1');
     expect(mockAuditFromDb.setAuditResult).to.have.been.calledOnce;
@@ -1726,7 +1726,7 @@ describe('updateAuditResult', () => {
     const prioritizedLinks = [{ urlFrom: 'a', urlTo: 'b', priority: 'high' }];
     const auditResult = { success: true, brokenInternalLinks: [] };
 
-    const result = await updateAuditResult(mockAudit, auditResult, prioritizedLinks, dataAccess, log);
+    const result = await updateAuditResult(mockAudit, auditResult, prioritizedLinks, dataAccess, log, 'test-site-id');
 
     expect(dataAccess.Audit.findById).to.have.been.calledWith('audit-id-1');
     expect(mockAuditFromDb.setAuditResult).to.have.been.calledOnce;
@@ -1753,7 +1753,7 @@ describe('updateAuditResult', () => {
     const prioritizedLinks = [];
     const auditResult = { success: true };
 
-    await updateAuditResult(mockAudit, auditResult, prioritizedLinks, dataAccess, log);
+    await updateAuditResult(mockAudit, auditResult, prioritizedLinks, dataAccess, log, 'test-site-id');
 
     expect(log.error).to.have.been.calledWith(
       sinon.match(/Could not find audit with ID/),
@@ -1775,7 +1775,7 @@ describe('updateAuditResult', () => {
     const prioritizedLinks = [];
     const auditResult = { success: true };
 
-    await updateAuditResult(mockAudit, auditResult, prioritizedLinks, {}, log);
+    await updateAuditResult(mockAudit, auditResult, prioritizedLinks, {}, log, 'test-site-id');
 
     expect(log.error).to.have.been.calledWith(
       sinon.match(/Failed to update audit result/),
