@@ -689,6 +689,56 @@ describe('Paid Cookie Consent Audit', () => {
     expect(itemWithNullPath.url).to.be.undefined;
     expect(itemWithUndefinedPath.url).to.be.undefined;
   });
+
+  it('should return null auditResult and abort when no show consent data is available', async () => {
+    // Create stub that returns only hidden consent data (no show data)
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves([
+      // Only hidden data, no show data
+      { trf_type: 'paid', consent: 'hidden', page_views: 800, bounce_rate: 0.6 },
+      { trf_type: 'earned', consent: 'hidden', page_views: 400, bounce_rate: 0.5 },
+    ]);
+
+    const customContext = {
+      ...context,
+      athenaClient: {
+        query: customQueryStub,
+      },
+    };
+
+    const result = await paidAuditRunner(auditUrl, customContext, site);
+
+    expect(result.auditResult).to.be.null;
+    expect(result.fullAuditRef).to.equal(auditUrl);
+    expect(logStub.warn).to.have.been.calledWithMatch(/No show consent data available/);
+    // Should only call the bounce gap query, not the subsequent queries
+    expect(customQueryStub).to.have.been.calledOnce;
+  });
+
+  it('should return null auditResult and abort when no hidden consent data is available', async () => {
+    // Create stub that returns only show consent data (no hidden data)
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves([
+      // Only show data, no hidden data
+      { trf_type: 'paid', consent: 'show', page_views: 1000, bounce_rate: 0.8 },
+      { trf_type: 'earned', consent: 'show', page_views: 500, bounce_rate: 0.7 },
+    ]);
+
+    const customContext = {
+      ...context,
+      athenaClient: {
+        query: customQueryStub,
+      },
+    };
+
+    const result = await paidAuditRunner(auditUrl, customContext, site);
+
+    expect(result.auditResult).to.be.null;
+    expect(result.fullAuditRef).to.equal(auditUrl);
+    expect(logStub.warn).to.have.been.calledWithMatch(/No hidden consent data available/);
+    // Should only call the bounce gap query, not the subsequent queries
+    expect(customQueryStub).to.have.been.calledOnce;
+  });
 });
 
 describe('calculateBounceGapLoss', () => {
@@ -778,6 +828,25 @@ describe('calculateBounceGapLoss', () => {
 
     // Should only calculate for 'paid': 1000 × (0.8 - 0.6) = 200
     expect(result.projectedTrafficLost).to.be.closeTo(200, 0.01);
+  });
+
+  it('should log and skip traffic source with missing show data when hasShowData is true overall', () => {
+    const data = [
+      // Paid has both show and hidden
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+      // Earned only has hidden (missing show) - should trigger line 184
+      { trfType: 'earned', consent: 'hidden', pageViews: 400, bounceRate: 0.5 },
+    ];
+
+    const result = calculateBounceGapLoss(data, mockLog);
+
+    // Should only calculate for 'paid': 1000 × (0.8 - 0.6) = 200
+    expect(result.projectedTrafficLost).to.be.closeTo(200, 0.01);
+    expect(result.hasShowData).to.be.true;
+    expect(result.hasHiddenData).to.be.true;
+    // Should log debug message for the skipped traffic source
+    expect(mockLog.debug).to.have.been.calledWithMatch(/No show data for trf_type=earned/);
   });
 });
 
