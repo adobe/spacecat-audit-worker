@@ -149,6 +149,7 @@ export const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.FIXED,
       SuggestionDataAccess.STATUSES.ERROR,
       SuggestionDataAccess.STATUSES.SKIPPED,
+      SuggestionDataAccess.STATUSES.REJECTED,
     ].includes(existing.getStatus()))
     .filter((existing) => {
       // mark suggestions as outdated only if their URL was actually scraped
@@ -205,6 +206,7 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * Synchronizes existing suggestions with new data.
  * Handles outdated suggestions by updating their status, either to OUTDATED or the provided one.
  * Updates existing suggestions with new data if they match based on the provided key.
+ * For REJECTED suggestions that appear again, preserves REJECTED status
  *
  * Prepares new suggestions from the new data and adds them to the opportunity.
  * Maps new data to suggestion objects using the provided mapping function.
@@ -259,7 +261,11 @@ export async function syncSuggestions({
       .map((existing) => {
         const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
         existing.setData(mergeDataFunction(existing.getData(), newDataItem));
-        if ([SuggestionDataAccess.STATUSES.OUTDATED].includes(existing.getStatus())) {
+
+        if (existing.getStatus() === SuggestionDataAccess.STATUSES.REJECTED) {
+          // Keep REJECTED status when same suggestion appears again in audit
+          log.debug('REJECTED suggestion found in audit. Preserving REJECTED status.');
+        } else if (SuggestionDataAccess.STATUSES.OUTDATED === existing.getStatus()) {
           log.warn('Resolved suggestion found in audit. Possible regression.');
           const { site } = context;
           const requiresValidation = Boolean(site?.requiresValidation);
