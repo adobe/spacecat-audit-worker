@@ -64,6 +64,7 @@ import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/g
 import detectFormDetails from './forms-opportunities/form-details-handler/detect-form-details.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
 import accessibilityRemediationGuidance from './accessibility/guidance-handlers/guidance-accessibility-remediation.js';
+import triggerA11yCodefix from './accessibility/trigger-codefix-handler.js';
 import accessibilityCodeFix from './common/codefix-response-handler.js';
 import cdnLogsAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
@@ -151,6 +152,7 @@ const HANDLERS = {
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
+  'trigger:a11y-codefix': triggerA11yCodefix,
   'codefix:accessibility': accessibilityCodeFix,
   'guidance:paid-cookie-consent': paidConsentGuidance,
   'guidance:no-cta-above-the-fold': noCTAAboveTheFoldGuidance,
