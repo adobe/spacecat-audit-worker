@@ -12,7 +12,7 @@
 
 import { DEFAULT_COUNTRY_PATTERNS } from '../../common/country-patterns.js';
 import { loadSql, fetchRemotePatterns } from './report-utils.js';
-import { buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL } from '../../common/user-agent-classification.js';
+import { buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL, shouldIncludeSearchBots } from '../../common/user-agent-classification.js';
 import { buildDateFilter, buildUserAgentFilter, buildSiteFilters } from '../../utils/cdn-utils.js';
 
 function buildWhereClause(conditions = [], siteFilters = []) {
@@ -97,9 +97,8 @@ async function createAgenticReportQuery(options) {
 
   const remotePatterns = await fetchRemotePatterns(site);
 
-  // Include search bots only for adobe.com domains
-  const { host } = new URL(site.getBaseURL());
-  const includeSearchBots = host === 'adobe.com' || host === 'www.adobe.com';
+  // Include search bots only for specific organization IDs
+  const includeSearchBots = shouldIncludeSearchBots(site.getOrganizationId());
 
   return loadSql('agentic-traffic-report', {
     agentTypeClassification: buildAgentTypeClassificationSQL(includeSearchBots),

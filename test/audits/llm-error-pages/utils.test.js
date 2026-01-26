@@ -342,10 +342,7 @@ describe('LLM Error Pages Utils', () => {
 
   describe('buildLlmErrorPagesQuery with site patterns', () => {
     it('injects classification SQL when site is provided', async () => {
-      const site = {
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'folder' }),
-      };
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
       mockGetStaticContent = sinon.stub().returns('SELECT ...');
       const fetchStub = sinon.stub().resolves({
         ok: true,
@@ -384,10 +381,7 @@ describe('LLM Error Pages Utils', () => {
 
   describe('classification fallbacks and variants', () => {
     it('uses fallback classification when dataFolder is missing', async () => {
-      const site = {
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => undefined }),
-      };
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => undefined }) };
       mockGetStaticContent = sinon.stub().returns('SELECT ...');
       const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
         '@adobe/spacecat-shared-utils': {
@@ -405,10 +399,7 @@ describe('LLM Error Pages Utils', () => {
     });
 
     it('uses fallback classification when fetch throws', async () => {
-      const site = {
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'folder' }),
-      };
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
       mockGetStaticContent = sinon.stub().returns('SELECT ...');
       const fetchStub = sinon.stub().rejects(new Error('network error'));
       const originalFetch = globalThis.fetch;
@@ -433,10 +424,7 @@ describe('LLM Error Pages Utils', () => {
     });
 
     it('uses fallback classification when fetch fails', async () => {
-      const site = {
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'folder' }),
-      };
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
       mockGetStaticContent = sinon.stub().returns('SELECT ...');
       const fetchStub = sinon.stub().resolves({ ok: false });
       const originalFetch = globalThis.fetch;
@@ -461,10 +449,7 @@ describe('LLM Error Pages Utils', () => {
     });
 
     it('topicExtraction handles named-only patterns', async () => {
-      const site = {
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'folder' }),
-      };
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
       mockGetStaticContent = sinon.stub().returns('SELECT ...');
       const fetchStub = sinon.stub().resolves({
         ok: true,
@@ -495,10 +480,7 @@ describe('LLM Error Pages Utils', () => {
     });
 
     it('topicExtraction handles extract-only patterns', async () => {
-      const site = {
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'folder' }),
-      };
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
       mockGetStaticContent = sinon.stub().returns('SELECT ...');
       const fetchStub = sinon.stub().resolves({
         ok: true,
@@ -529,10 +511,7 @@ describe('LLM Error Pages Utils', () => {
     });
 
     it('topicExtraction handles mixed named and extract patterns', async () => {
-      const site = {
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'folder' }),
-      };
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
       mockGetStaticContent = sinon.stub().returns('SELECT ...');
       const fetchStub = sinon.stub().resolves({
         ok: true,
@@ -566,10 +545,7 @@ describe('LLM Error Pages Utils', () => {
 
   describe('fetchRemotePatterns direct', () => {
     it('returns mapped pagePatterns/topicPatterns from JSON', async () => {
-      const site = {
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'folder' }),
-      };
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
       const fetchStub = sinon.stub().resolves({
         ok: true,
         json: async () => ({
@@ -590,10 +566,7 @@ describe('LLM Error Pages Utils', () => {
     });
 
     it('falls back to [] when JSON omits keys', async () => {
-      const site = {
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'folder' }),
-      };
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
       const fetchStub = sinon.stub().resolves({
         ok: true,
         json: async () => ({}),

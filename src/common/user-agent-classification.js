@@ -10,6 +10,27 @@
  * governing permissions and limitations under the License.
  */
 
+/**
+ * Organization IDs that should include search bots (GoogleBot, BingBot, Google-Extended)
+ * in their CDN logs reports
+ */
+export const SEARCH_BOTS_ENABLED_ORGS = [
+  '5d4e5082-b030-433d-9dbd-7007116f701f', // Adobe Corp
+  // Add more organization IDs here as needed
+];
+
+/**
+ * Checks if search bots should be included for a given organization ID
+ * @param {string|null} organizationId - The organization ID to check
+ * @returns {boolean} True if search bots should be included
+ */
+export function shouldIncludeSearchBots(organizationId) {
+  if (!organizationId) {
+    return false;
+  }
+  return SEARCH_BOTS_ENABLED_ORGS.includes(organizationId);
+}
+
 export const PROVIDER_USER_AGENT_PATTERNS = {
   chatgpt: '(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))',
   perplexity: '(?i)Perplexity',
