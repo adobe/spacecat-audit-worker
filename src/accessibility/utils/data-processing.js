@@ -1093,11 +1093,80 @@ export async function sendRunImportMessage(
  * @returns {Promise<Object|null>} Object containing codeBucket and codePath, or null if should skip
  */
 export async function getCodeInfo(site, opportunityType, context) {
-  const { log, s3Client, env } = context;
+  const {
+    log, s3Client, env, dataAccess,
+  } = context;
   const siteId = site.getId();
   const deliveryType = site.getDeliveryType();
   const codeConfig = site.getCode();
+  const baseUrl = site.getBaseURL();
 
+  // Check if AEMY is enabled for this site (only for accessibility audits)
+  let isAemyEnabled = true; // Default to enabled for backwards compatibility
+
+  if (opportunityType === 'accessibility' && dataAccess?.Configuration) {
+    try {
+      const { Configuration } = dataAccess;
+      const configuration = await Configuration.findLatest();
+      const aemyHandler = configuration.getHandlers()?.['a11y-aemy-code-injection'];
+
+      // If handler is not configured, default to AEMY enabled (backwards compatible)
+      // If handler is configured, check if it's enabled for this site
+      if (!aemyHandler) {
+        isAemyEnabled = true;
+      } else {
+        isAemyEnabled = configuration.isHandlerEnabledForSite('a11y-aemy-code-injection', site);
+      }
+    } catch (error) {
+      // If feature flag check fails, default to enabled (backwards compatible)
+      log.warn(`[${opportunityType}] [Site Id: ${siteId}] Could not check feature flag, defaulting to AEMY enabled: ${error.message}`);
+      isAemyEnabled = true;
+    }
+  }
+
+  // AEMY disabled: Use manual code archive path
+  if (!isAemyEnabled) {
+    if (!baseUrl) {
+      log.warn(`[${opportunityType}] [Site Id: ${siteId}] No base URL for manual code path`);
+      return null;
+    }
+
+    // Generate manual archive path from base URL
+    let hostname;
+    try {
+      let urlToParse = baseUrl;
+      if (!urlToParse.startsWith('http://') && !urlToParse.startsWith('https://')) {
+        urlToParse = `https://${urlToParse}`;
+      }
+      hostname = new URL(urlToParse).hostname;
+    } catch (error) {
+      log.warn(`[${opportunityType}] [Site Id: ${siteId}] Invalid base URL: ${baseUrl}`);
+      return null;
+    }
+
+    // Extract main domain name (e.g., www.sunstargum.com -> sunstargum)
+    // Remove www. prefix if present, then take first part before first dot
+    const withoutWww = hostname.replace(/^www\./, '');
+    const domainName = withoutWww.split('.')[0];
+    const archiveName = `${domainName}.zip`;
+    const codePath = `tmp/codefix/source/${archiveName}`;
+    const codeBucket = env.S3_MYSTIQUE_BUCKET_NAME;
+
+    // Only validate bucket name for accessibility manual flow
+    if (!codeBucket && opportunityType === 'accessibility') {
+      log.error(`[${opportunityType}] [Site Id: ${siteId}] S3_MYSTIQUE_BUCKET_NAME not configured`);
+      throw new Error('S3_MYSTIQUE_BUCKET_NAME not configured');
+    }
+
+    log.info(`[${opportunityType}] [Site Id: ${siteId}] Using manual code archive: ${codePath}`);
+
+    return {
+      codeBucket,
+      codePath,
+    };
+  }
+
+  // AEMY enabled: Use existing AEMY flow
   // For aem_edge delivery type, proceed without codeConfig
   if (!codeConfig) {
     if (deliveryType === 'aem_edge') {
