@@ -221,13 +221,19 @@ export async function buildLlmErrorPagesQuery(options) {
 
   const remotePatterns = site ? await fetchRemotePatterns(site) : null;
 
+  // Include search bots only for adobe.com domains
+  const includeSearchBots = site ? (() => {
+    const { host } = new URL(site.getBaseURL());
+    return host === 'adobe.com' || host === 'www.adobe.com';
+  })() : false;
+
   return getStaticContent({
     databaseName,
     tableName,
     whereClause,
     // user-agent labeling and classification
-    userAgentDisplay: buildUserAgentDisplaySQL(),
-    agentTypeClassification: buildAgentTypeClassificationSQL(),
+    userAgentDisplay: buildUserAgentDisplaySQL(includeSearchBots),
+    agentTypeClassification: buildAgentTypeClassificationSQL(includeSearchBots),
     // product/category classification via patterns
     topicExtraction: buildTopicExtractionSQL(remotePatterns),
     pageCategoryClassification: generatePageTypeClassification(remotePatterns),

@@ -97,9 +97,13 @@ async function createAgenticReportQuery(options) {
 
   const remotePatterns = await fetchRemotePatterns(site);
 
+  // Include search bots only for adobe.com domains
+  const { host } = new URL(site.getBaseURL());
+  const includeSearchBots = host === 'adobe.com' || host === 'www.adobe.com';
+
   return loadSql('agentic-traffic-report', {
-    agentTypeClassification: buildAgentTypeClassificationSQL(),
-    userAgentDisplay: buildUserAgentDisplaySQL(),
+    agentTypeClassification: buildAgentTypeClassificationSQL(includeSearchBots),
+    userAgentDisplay: buildUserAgentDisplaySQL(includeSearchBots),
     countryExtraction: buildCountryExtractionSQL(),
     topicExtraction: buildTopicExtractionSQL(remotePatterns),
     pageCategoryClassification: generatePageTypeClassification(remotePatterns),

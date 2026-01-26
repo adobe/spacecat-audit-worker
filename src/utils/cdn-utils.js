@@ -414,6 +414,8 @@ export function buildDateFilter(startDate, endDate) {
 /**
  * Builds user agent filter for AI agents (ChatGPT, Perplexity, Google, Claude)
  * Reusable across different audit modules for CDN log analysis
+ * Note: Search bots (Googlebot, Google-Extended) are now part of the 'google' pattern,
+ * and BingBot is in the 'bing' pattern. These are always included.
  */
 export function buildUserAgentFilter() {
   const {
