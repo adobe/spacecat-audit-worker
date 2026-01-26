@@ -20,6 +20,7 @@ import { describe } from 'mocha';
 import {
   paidAuditRunner,
   paidConsentBannerCheck,
+  calculateBounceGapLoss,
   calculateSitewideBounceDelta,
 } from '../../../src/paid-cookie-consent/handler.js';
 
@@ -72,28 +73,51 @@ describe('Paid Cookie Consent Audit', () => {
       getAuditId: () => 'test-audit-id',
     };
 
-    // Mock AWSAthenaClient - returns different data based on query type
+    // Mock AWSAthenaClient with different responses for each query
+    const queryStub = sandbox.stub();
+
+    // First call: executeBounceGapMetricsQuery - returns bounce gap data by trf_type and consent
+    queryStub.onCall(0).resolves([
+      {
+        trf_type: 'paid', consent: 'show', page_views: 1000, bounce_rate: 0.8,
+      },
+      {
+        trf_type: 'paid', consent: 'hidden', page_views: 800, bounce_rate: 0.6,
+      },
+    ]);
+
+    // Second call: executeTop3TrafficLostPagesQuery with ['device'] - device summary
+    queryStub.onCall(1).resolves([
+      {
+        device: 'mobile', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800,
+      },
+      {
+        device: 'desktop', pageviews: 500, bounce_rate: 0.7, traffic_loss: 350,
+      },
+    ]);
+
+    // Third call: executeTop3TrafficLostPagesQuery with ['path'] - top 3 pages
+    queryStub.onCall(2).resolves([
+      {
+        path: '/page1', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800, utm_source: 'google', click_rate: 0.1, engagement_rate: 0.2, engaged_scroll_rate: 0.15, referrer: 'google.com',
+      },
+      {
+        path: '/page2', pageviews: 500, bounce_rate: 0.7, traffic_loss: 350, utm_source: 'facebook', click_rate: 0.15, engagement_rate: 0.3, engaged_scroll_rate: 0.25, referrer: 'facebook.com',
+      },
+    ]);
+
+    // Fourth call: executeTop3TrafficLostPagesQuery with ['path', 'device'] - pages by device
+    queryStub.onCall(3).resolves([
+      {
+        path: '/page1', device: 'mobile', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800, utm_source: 'google', click_rate: 0.1, engagement_rate: 0.2, engaged_scroll_rate: 0.15, referrer: 'google.com',
+      },
+      {
+        path: '/page2', device: 'desktop', pageviews: 500, bounce_rate: 0.7, traffic_loss: 350, utm_source: 'facebook', click_rate: 0.15, engagement_rate: 0.3, engaged_scroll_rate: 0.25, referrer: 'facebook.com',
+      },
+    ]);
+
     const mockAthenaClient = {
-      query: sandbox.stub().callsFake((query) => {
-        // Bounce gap metrics query (sitewide, consent show + hidden)
-        if (query.includes("consent IN ('show', 'hidden')")) {
-          return Promise.resolve([
-            { trf_type: 'paid', consent: 'show', pageviews: 5000, bounce_rate: 0.8 },
-            { trf_type: 'paid', consent: 'hidden', pageviews: 4000, bounce_rate: 0.6 },
-            { trf_type: 'earned', consent: 'show', pageviews: 3000, bounce_rate: 0.7 },
-            { trf_type: 'earned', consent: 'hidden', pageviews: 2500, bounce_rate: 0.5 },
-          ]);
-        }
-        // Page-level queries (existing mock data)
-        return Promise.resolve([
-          {
-            path: '/page1', device: 'mobile', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800, utm_source: 'google', click_rate: 0.1, engagement_rate: 0.2, engaged_scroll_rate: 0.15, referrer: 'google.com',
-          },
-          {
-            path: '/page2', device: 'desktop', pageviews: 500, bounce_rate: 0.7, traffic_loss: 350, utm_source: 'facebook', click_rate: 0.15, engagement_rate: 0.3, engaged_scroll_rate: 0.25, referrer: 'facebook.com',
-          },
-        ]);
-      }),
+      query: queryStub,
     };
 
     context = {
@@ -137,15 +161,12 @@ describe('Paid Cookie Consent Audit', () => {
     expect(result.auditResult).to.have.property('totalAverageBounceRate');
     expect(result.auditResult).to.have.property('projectedTrafficLost');
     expect(result.auditResult).to.have.property('projectedTrafficValue');
-    expect(result.auditResult).to.have.property('sitewideBounceDelta');
     expect(result.auditResult).to.have.property('top3Pages');
     expect(result.auditResult).to.have.property('averagePageViewsTop3');
     expect(result.auditResult).to.have.property('averageTrafficLostTop3');
     expect(result.auditResult).to.have.property('averageBounceRateMobileTop3');
     expect(result.auditResult).to.have.property('temporalCondition');
     expect(result.auditResult.top3Pages).to.be.an('array');
-    expect(result.auditResult.sitewideBounceDelta).to.be.a('number');
-    expect(result.auditResult.sitewideBounceDelta).to.be.at.least(0);
   });
 
   it('should submit expected result to mistique with bounce rate >= 0.3 filtering', async () => {
@@ -404,7 +425,7 @@ describe('Paid Cookie Consent Audit', () => {
     expect(result.auditResult).to.be.an('object');
     expect(result.auditResult).to.have.property('top3Pages');
     // Should call athena query 4 times (bounceGapMetrics, lostTrafficSummary, top3PagesTrafficLost, top3PagesTrafficLostByDevice)
-    expect(context.athenaClient.query.callCount).to.equal(4);
+    expect(context.athenaClient.query).to.have.callCount(4);
   });
 
   it('should handle query results with missing fields', async () => {
@@ -423,19 +444,20 @@ describe('Paid Cookie Consent Audit', () => {
       },
     ];
 
+    // Create stub that returns bounce gap data first, then incomplete data for subsequent queries
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show', page_views: 100, bounce_rate: 0.5 },
+      { trf_type: 'paid', consent: 'hidden', page_views: 80, bounce_rate: 0.3 },
+    ]);
+    customQueryStub.onCall(1).resolves(incompleteData);
+    customQueryStub.onCall(2).resolves(incompleteData);
+    customQueryStub.onCall(3).resolves(incompleteData);
+
     const contextWithIncompleteData = {
       ...context,
       athenaClient: {
-        query: sandbox.stub().callsFake((query) => {
-          // Bounce gap metrics query needs consent data
-          if (query.includes("consent IN ('show', 'hidden')")) {
-            return Promise.resolve([
-              { trf_type: 'paid', consent: 'show', pageviews: 1000, bounce_rate: 0.8 },
-              { trf_type: 'paid', consent: 'hidden', pageviews: 800, bounce_rate: 0.6 },
-            ]);
-          }
-          return Promise.resolve(incompleteData);
-        }),
+        query: customQueryStub,
       },
     };
 
@@ -514,19 +536,20 @@ describe('Paid Cookie Consent Audit', () => {
       { path: '/page3', device: 'mobile', pageviews: 3000, bounce_rate: 0.7, traffic_loss: 2100, utm_source: 'twitter', click_rate: 0.2, engagement_rate: 0.3, engaged_scroll_rate: 0.35, referrer: 'twitter.com' },
     ];
 
+    // Create stub that returns bounce gap data first, then mockData for subsequent queries
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show', page_views: 6000, bounce_rate: 0.8 },
+      { trf_type: 'paid', consent: 'hidden', page_views: 4000, bounce_rate: 0.5 },
+    ]);
+    customQueryStub.onCall(1).resolves(mockData);
+    customQueryStub.onCall(2).resolves(mockData);
+    customQueryStub.onCall(3).resolves(mockData);
+
     const customContext = {
       ...context,
       athenaClient: {
-        query: sandbox.stub().callsFake((query) => {
-          // Bounce gap metrics query needs consent data
-          if (query.includes("consent IN ('show', 'hidden')")) {
-            return Promise.resolve([
-              { trf_type: 'paid', consent: 'show', pageviews: 5000, bounce_rate: 0.8 },
-              { trf_type: 'paid', consent: 'hidden', pageviews: 4000, bounce_rate: 0.6 },
-            ]);
-          }
-          return Promise.resolve(mockData);
-        }),
+        query: customQueryStub,
       },
     };
 
@@ -605,19 +628,20 @@ describe('Paid Cookie Consent Audit', () => {
       { path: '/page1', device: 'mobile', pageviews: 0, bounce_rate: 0, traffic_loss: 0, utm_source: 'google', click_rate: 0, engagement_rate: 0, engaged_scroll_rate: 0, referrer: '' },
     ];
 
+    // Create stub that returns bounce gap data with zero values, then mockData for subsequent queries
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show', page_views: 0, bounce_rate: 0 },
+      { trf_type: 'paid', consent: 'hidden', page_views: 0, bounce_rate: 0 },
+    ]);
+    customQueryStub.onCall(1).resolves(mockData);
+    customQueryStub.onCall(2).resolves(mockData);
+    customQueryStub.onCall(3).resolves(mockData);
+
     const customContext = {
       ...context,
       athenaClient: {
-        query: sandbox.stub().callsFake((query) => {
-          // Bounce gap metrics query needs consent data with zero bounce rate delta
-          if (query.includes("consent IN ('show', 'hidden')")) {
-            return Promise.resolve([
-              { trf_type: 'paid', consent: 'show', pageviews: 100, bounce_rate: 0.5 },
-              { trf_type: 'paid', consent: 'hidden', pageviews: 100, bounce_rate: 0.5 },
-            ]);
-          }
-          return Promise.resolve(mockData);
-        }),
+        query: customQueryStub,
       },
     };
 
@@ -635,19 +659,20 @@ describe('Paid Cookie Consent Audit', () => {
       { device: 'desktop', pageviews: 500, bounce_rate: 0.7, traffic_loss: 350, utm_source: 'facebook', click_rate: 0.15, engagement_rate: 0.3, engaged_scroll_rate: 0.25, referrer: 'facebook.com' }, // path is undefined
     ];
 
+    // Create stub that returns bounce gap data first, then mockData for subsequent queries
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show', page_views: 1500, bounce_rate: 0.75 },
+      { trf_type: 'paid', consent: 'hidden', page_views: 1000, bounce_rate: 0.5 },
+    ]);
+    customQueryStub.onCall(1).resolves(mockData);
+    customQueryStub.onCall(2).resolves(mockData);
+    customQueryStub.onCall(3).resolves(mockData);
+
     const customContext = {
       ...context,
       athenaClient: {
-        query: sandbox.stub().callsFake((query) => {
-          // Bounce gap metrics query needs consent data
-          if (query.includes("consent IN ('show', 'hidden')")) {
-            return Promise.resolve([
-              { trf_type: 'paid', consent: 'show', pageviews: 1000, bounce_rate: 0.8 },
-              { trf_type: 'paid', consent: 'hidden', pageviews: 800, bounce_rate: 0.6 },
-            ]);
-          }
-          return Promise.resolve(mockData);
-        }),
+        query: customQueryStub,
       },
     };
 
@@ -664,42 +689,177 @@ describe('Paid Cookie Consent Audit', () => {
     expect(itemWithNullPath.url).to.be.undefined;
     expect(itemWithUndefinedPath.url).to.be.undefined;
   });
+});
 
-  describe('calculateSitewideBounceDelta', () => {
-    it('should calculate weighted bounce rate difference', () => {
-      const data = [
-        { consent: 'show', pageViews: 1000, bounceRate: 0.8 },
-        { consent: 'hidden', pageViews: 1000, bounceRate: 0.6 },
-      ];
-      const delta = calculateSitewideBounceDelta(data);
-      expect(delta).to.be.closeTo(0.2, 0.001);
-    });
+describe('calculateBounceGapLoss', () => {
+  let mockLog;
 
-    it('should floor negative deltas at 0', () => {
-      const data = [
-        { consent: 'show', pageViews: 1000, bounceRate: 0.5 },
-        { consent: 'hidden', pageViews: 1000, bounceRate: 0.7 },
-      ];
-      const delta = calculateSitewideBounceDelta(data);
-      expect(delta).to.equal(0);
-    });
+  beforeEach(() => {
+    mockLog = {
+      warn: sinon.stub(),
+      debug: sinon.stub(),
+    };
+  });
 
-    it('should handle empty data', () => {
-      const delta = calculateSitewideBounceDelta([]);
-      expect(delta).to.equal(0);
-    });
+  it('should calculate loss for single traffic source with positive delta', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+    ];
 
-    it('should weight by pageviews', () => {
-      const data = [
-        { consent: 'show', pageViews: 900, bounceRate: 0.8 },
-        { consent: 'show', pageViews: 100, bounceRate: 0.2 },
-        { consent: 'hidden', pageViews: 1000, bounceRate: 0.5 },
-      ];
-      // Weighted show BR = (900*0.8 + 100*0.2) / 1000 = 0.74
-      // Hidden BR = 0.5
-      // Delta = 0.74 - 0.5 = 0.24
-      const delta = calculateSitewideBounceDelta(data);
-      expect(delta).to.be.closeTo(0.24, 0.001);
-    });
+    const result = calculateBounceGapLoss(data, mockLog);
+
+    // Expected: 1000 × (0.8 - 0.6) = 200
+    expect(result.projectedTrafficLost).to.be.closeTo(200, 0.01);
+    expect(result.hasShowData).to.be.true;
+    expect(result.hasHiddenData).to.be.true;
+  });
+
+  it('should floor negative deltas at 0', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.5 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.7 },
+    ];
+
+    const result = calculateBounceGapLoss(data, mockLog);
+
+    // Delta is negative (0.5 - 0.7 = -0.2), should floor at 0
+    expect(result.projectedTrafficLost).to.equal(0);
+  });
+
+  it('should calculate loss across multiple traffic sources', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+      { trfType: 'earned', consent: 'show', pageViews: 500, bounceRate: 0.7 },
+      { trfType: 'earned', consent: 'hidden', pageViews: 400, bounceRate: 0.5 },
+    ];
+
+    const result = calculateBounceGapLoss(data, mockLog);
+
+    // Expected: Paid: 200 + Earned: 100 = 300
+    expect(result.projectedTrafficLost).to.equal(300);
+  });
+
+  it('should return 0 and flag when no show data exists', () => {
+    const data = [
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+    ];
+
+    const result = calculateBounceGapLoss(data, mockLog);
+
+    expect(result.projectedTrafficLost).to.equal(0);
+    expect(result.hasShowData).to.be.false;
+    expect(result.hasHiddenData).to.be.true;
+  });
+
+  it('should return 0 and flag when no hidden data exists', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+    ];
+
+    const result = calculateBounceGapLoss(data, mockLog);
+
+    expect(result.projectedTrafficLost).to.equal(0);
+    expect(result.hasShowData).to.be.true;
+    expect(result.hasHiddenData).to.be.false;
+  });
+
+  it('should skip traffic sources with incomplete data', () => {
+    const data = [
+      // Paid has both show and hidden
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+      // Earned only has show (missing hidden)
+      { trfType: 'earned', consent: 'show', pageViews: 500, bounceRate: 0.7 },
+    ];
+
+    const result = calculateBounceGapLoss(data, mockLog);
+
+    // Should only calculate for 'paid': 1000 × (0.8 - 0.6) = 200
+    expect(result.projectedTrafficLost).to.be.closeTo(200, 0.01);
+  });
+});
+
+describe('calculateSitewideBounceDelta', () => {
+  it('should calculate weighted sitewide bounce delta correctly', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+    ];
+
+    const result = calculateSitewideBounceDelta(data);
+
+    // HAND CALCULATION (independent of code):
+    // Sitewide show: 1000 * 0.8 / 1000 = 0.8
+    // Sitewide hidden: 800 * 0.6 / 800 = 0.6
+    // Delta: 0.8 - 0.6 = 0.2 (20pp)
+    expect(result).to.be.closeTo(0.2, 0.01);
+  });
+
+  it('should floor negative deltas at 0', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.5 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.7 },
+    ];
+
+    const result = calculateSitewideBounceDelta(data);
+
+    // HAND CALCULATION:
+    // Delta is negative (0.5 - 0.7 = -0.2), should floor at 0
+    expect(result).to.equal(0);
+  });
+
+  it('should calculate across multiple traffic sources', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+      { trfType: 'earned', consent: 'show', pageViews: 500, bounceRate: 0.6 },
+      { trfType: 'earned', consent: 'hidden', pageViews: 400, bounceRate: 0.4 },
+    ];
+
+    const result = calculateSitewideBounceDelta(data);
+
+    // HAND CALCULATION:
+    // Show: (1000*0.8 + 500*0.6) / 1500 = 1100/1500 = 0.7333...
+    // Hidden: (800*0.6 + 400*0.4) / 1200 = 640/1200 = 0.5333...
+    // Delta: 0.7333 - 0.5333 = 0.2
+    expect(result).to.be.closeTo(0.2, 0.01);
+  });
+
+  it('should return delta when only show data exists', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+    ];
+
+    const result = calculateSitewideBounceDelta(data);
+
+    // HAND CALCULATION:
+    // Show BR: 0.8, Hidden BR: 0 (no data)
+    // Delta: 0.8 - 0 = 0.8
+    expect(result).to.be.closeTo(0.8, 0.01);
+  });
+
+  it('should return 0 when only hidden data exists', () => {
+    const data = [
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+    ];
+
+    const result = calculateSitewideBounceDelta(data);
+
+    // HAND CALCULATION:
+    // Show BR: 0 (no data), Hidden BR: 0.6
+    // Delta: 0 - 0.6 = -0.6, floored to 0
+    expect(result).to.equal(0);
+  });
+
+  it('should handle empty data', () => {
+    const data = [];
+
+    const result = calculateSitewideBounceDelta(data);
+
+    // HAND CALCULATION:
+    // No data at all, both BRs = 0, delta = 0
+    expect(result).to.equal(0);
   });
 });

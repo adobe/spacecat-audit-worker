@@ -14,11 +14,7 @@
 
 import { expect } from 'chai';
 import { describe } from 'mocha';
-import {
-  getPaidTrafficAnalysisTemplate,
-  getTop3PagesWithTrafficLostTemplate,
-  getBounceGapMetricsTemplate,
-} from '../../../src/paid-cookie-consent/queries.js';
+import { getPaidTrafficAnalysisTemplate, getTop3PagesWithTrafficLostTemplate, getBounceGapMetricsTemplate } from '../../../src/paid-cookie-consent/queries.js';
 
 describe('Paid Cookie Consent Queries', () => {
   const defaultParams = {
@@ -172,10 +168,12 @@ describe('Paid Cookie Consent Queries', () => {
     });
 
     it('should use provided parameters', () => {
-      const params = { ...bounceGapParams, siteId: 'custom-site-id' };
+      const params = { ...bounceGapParams, siteId: 'custom-site-123' };
       const query = getBounceGapMetricsTemplate(params);
 
-      expect(query).to.include('custom-site-id');
+      expect(query).to.include('custom-site-123');
+      expect(query).to.include('rum_metrics.compact_metrics');
+      expect(query).to.include('(year=2025 AND week IN (1,2,3,4))');
     });
 
     it('should filter by consent IN (show, hidden)', () => {
@@ -188,37 +186,29 @@ describe('Paid Cookie Consent Queries', () => {
       expect(query).to.include('GROUP BY trf_type, consent');
     });
 
-    it('should select trf_type, consent, pageviews, and bounce_rate', () => {
-      const query = getBounceGapMetricsTemplate(bounceGapParams);
-      expect(query).to.include('trf_type');
-      expect(query).to.include('consent');
-      expect(query).to.include('pageviews');
-      expect(query).to.include('bounce_rate');
-    });
-
-    it('should calculate bounce_rate as 1 - engagements/row_count', () => {
+    it('should calculate bounce rate correctly', () => {
       const query = getBounceGapMetricsTemplate(bounceGapParams);
       expect(query).to.include('1 - CAST(engagements AS DOUBLE) / NULLIF(row_count, 0) AS bounce_rate');
     });
 
-    it('should order by trf_type, consent', () => {
+    it('should order by trf_type and consent', () => {
       const query = getBounceGapMetricsTemplate(bounceGapParams);
       expect(query).to.include('ORDER BY trf_type, consent');
     });
 
-    it('should use temporal condition correctly', () => {
-      const params = {
-        ...bounceGapParams,
-        temporalCondition: '(year=2024 AND week=52)',
-      };
-
-      const query = getBounceGapMetricsTemplate(params);
-      expect(query).to.include('(year=2024 AND week=52)');
-    });
-
-    it('should be properly formatted with trimmed output', () => {
+    it('should be properly formatted', () => {
       const query = getBounceGapMetricsTemplate(bounceGapParams);
       expect(query.trim()).to.equal(query);
+      expect(query).to.match(/ORDER BY trf_type, consent$/);
+    });
+
+    it('should handle different temporal conditions', () => {
+      const params = {
+        ...bounceGapParams,
+        temporalCondition: '(year=2024 AND month=12)',
+      };
+      const query = getBounceGapMetricsTemplate(params);
+      expect(query).to.include('(year=2024 AND month=12)');
     });
   });
 });
