@@ -136,7 +136,7 @@ export async function runAuditAndProcessResults(context) {
     for (const [url, s3Path] of scrapeResultPaths) {
       pageCount += 1;
       log.info(`${LOG_PREFIX}   ${pageCount}. URL: ${url}`);
-      log.info(`${LOG_PREFIX}      S3 Path: ${s3Path}`);
+      log.info(`${LOG_PREFIX}     S3 Path: ${s3Path}`);
     }
   } else {
     log.info(`${LOG_PREFIX} No scraped pages found`);
