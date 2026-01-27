@@ -1135,7 +1135,7 @@ export async function getCodeInfo(site, opportunityType, context) {
     }
 
     const domainName = extractMainDomainName(hostname);
-    const archiveName = `${domainName}.zip`;
+    const archiveName = `${domainName}.tar.gz`;
     const codePath = `tmp/codefix/source/${archiveName}`;
     const codeBucket = env.S3_MYSTIQUE_BUCKET_NAME;
 

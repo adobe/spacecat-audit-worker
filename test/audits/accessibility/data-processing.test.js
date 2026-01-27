@@ -7263,10 +7263,10 @@ describe('data-processing utility functions', () => {
         expect(mockContext.dataAccess.Configuration.findLatest).to.have.been.calledOnce;
         expect(result).to.deep.equal({
           codeBucket: 'mystique-bucket',
-          codePath: 'tmp/codefix/source/example.zip',
+          codePath: 'tmp/codefix/source/example.tar.gz',
         });
         expect(mockLog.info).to.have.been.calledWith(
-          sinon.match(/Using manual code archive.*example\.zip/),
+          sinon.match(/Using manual code archive.*example\.tar\.gz/),
         );
       });
 
@@ -7275,7 +7275,7 @@ describe('data-processing utility functions', () => {
 
         const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
 
-        expect(result.codePath).to.equal('tmp/codefix/source/example.zip');
+        expect(result.codePath).to.equal('tmp/codefix/source/example.tar.gz');
       });
 
       it('should extract domain name from www subdomain', async () => {
@@ -7283,7 +7283,7 @@ describe('data-processing utility functions', () => {
 
         const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
 
-        expect(result.codePath).to.equal('tmp/codefix/source/sunstargum.zip');
+        expect(result.codePath).to.equal('tmp/codefix/source/sunstargum.tar.gz');
       });
 
       it('should handle base URL without protocol', async () => {
@@ -7291,7 +7291,7 @@ describe('data-processing utility functions', () => {
 
         const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
 
-        expect(result.codePath).to.equal('tmp/codefix/source/example.zip');
+        expect(result.codePath).to.equal('tmp/codefix/source/example.tar.gz');
       });
 
       it('should return null when base URL is missing', async () => {
