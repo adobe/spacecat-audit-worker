@@ -101,6 +101,7 @@ import pageCitability from './page-citability/handler.js';
 import healthCheck from './health-check/handler.js';
 import wikipediaAnalysis from './wikipedia-analysis/handler.js';
 import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
+import frescopaDataGeneration from './frescopa-data-generation/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -191,6 +192,7 @@ const HANDLERS = {
   'health-check': healthCheck,
   'wikipedia-analysis': wikipediaAnalysis,
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
+  'frescopa-data-generation': frescopaDataGeneration,
   dummy: (message) => ok(message),
 };
 
