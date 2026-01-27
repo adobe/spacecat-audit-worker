@@ -2124,7 +2124,7 @@ describe('Prerender Audit', () => {
         );
       });
 
-      it('should include domain-wide suggestion when existing suggestion has inactive status (OUTDATED)', async () => {
+      it('should skip domain-wide suggestion when existing suggestion has OUTDATED status', async () => {
         // Test that domain-wide suggestion is included when existing suggestion has OUTDATED status
         const auditData = {
           siteId: 'test-site',
@@ -2180,13 +2180,13 @@ describe('Prerender Audit', () => {
         const syncCall = syncSuggestionsStub.getCall(0);
         const { newData } = syncCall.args[0];
 
-        // Domain-wide suggestion SHOULD be included when status is OUTDATED
+        // Domain-wide suggestion should NOT be included when status is OUTDATED
+        // OUTDATED suggestions should not be modified
         const domainWideSuggestion = newData.find((item) => item.key);
-        expect(domainWideSuggestion).to.exist;
-        expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
+        expect(domainWideSuggestion).to.not.exist;
 
         expect(context.log.info).to.have.been.calledWith(
-          sinon.match(/Domain-wide suggestion exists in OUTDATED state, will update it/),
+          sinon.match(/Domain-wide suggestion exists in OUTDATED state, skipping modification/),
         );
       });
 
