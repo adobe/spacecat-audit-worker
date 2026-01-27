@@ -669,7 +669,7 @@ describe('Frescopa Data Generation Handler', () => {
       expect(result.errors).to.have.lengthOf(1);
       expect(result.errors[0].filePrefix).to.equal('agentictraffic');
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/No files found matching prefix "agentictraffic"/),
+        sinon.match(/No files found matching prefix "agentictraffic-w"/),
       );
     });
 

@@ -133,24 +133,14 @@ function getISOWeekYear(date) {
 }
 
 /**
- * Generates the week identifier in the format wXX-YYYY.
- * @param {Date} [date] - The date to generate the identifier for (defaults to current date)
- * @returns {string} The week identifier (e.g., "w03-2026")
- */
-function generateWeekIdentifier(date = new Date()) {
-  const weekNumber = getISOWeekNumber(date);
-  const year = getISOWeekYear(date);
-  return `w${String(weekNumber).padStart(2, '0')}-${year}`;
-}
-
-/**
  * Calculates the target week identifier (current week).
  * @param {Date} [date] - The date to calculate from (defaults to current date)
  * @returns {string} The target week identifier (e.g., "w05-2026")
  */
 function getTargetWeekIdentifier(date = new Date()) {
-  // Return the current week identifier
-  return generateWeekIdentifier(date);
+  const weekNumber = getISOWeekNumber(date);
+  const year = getISOWeekYear(date);
+  return `w${String(weekNumber).padStart(2, '0')}-${year}`;
 }
 
 /**
@@ -162,11 +152,14 @@ function getTargetWeekIdentifier(date = new Date()) {
  * @returns {Array<{ path: string, weekIdentifier: string }>} Array of most recent files
  */
 function getLastNFiles(files, filePrefix, count, log) {
+  // Append '-w' to filePrefix for more exact matching (e.g., 'agentictraffic-w')
+  const matchPrefix = `${filePrefix}-w`;
+
   // Filter files that match the prefix pattern
   const matchingFiles = files
     .filter((file) => {
       const filename = file.path.split('/').pop();
-      return filename.startsWith(filePrefix) && WEEK_PATTERN.test(filename);
+      return filename.startsWith(matchPrefix) && WEEK_PATTERN.test(filename);
     })
     .map((file) => {
       const filename = file.path.split('/').pop();
@@ -179,7 +172,7 @@ function getLastNFiles(files, filePrefix, count, log) {
     .filter((file) => file.weekIdentifier !== null);
 
   if (matchingFiles.length === 0) {
-    log.warn(`%s: No files found matching prefix "${filePrefix}"`, AUDIT_NAME);
+    log.warn(`%s: No files found matching prefix "${matchPrefix}"`, AUDIT_NAME);
     return [];
   }
 
@@ -189,7 +182,7 @@ function getLastNFiles(files, filePrefix, count, log) {
   // Return the last N files
   const result = matchingFiles.slice(0, count);
   log.info(
-    `%s: Found ${result.length} files for "${filePrefix}" (requested ${count})`,
+    `%s: Found ${result.length} files for "${matchPrefix}" (requested ${count})`,
     AUDIT_NAME,
   );
 
