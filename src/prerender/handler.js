@@ -56,6 +56,22 @@ function isDomainWideSuggestionData(data) {
 =======
 >>>>>>> 4f291c74 (Optimization: creating domain wide suggestion only if required)
 
+function isDomainWideSuggestionData(data) {
+  if (!data) {
+    return false;
+  }
+  if (data[IS_DOMAIN_WIDE_FIELD] === true) {
+    return true;
+  }
+  if (data.key === DOMAIN_WIDE_SUGGESTION_KEY) {
+    return true;
+  }
+  if (typeof data.pathPattern === 'string' && data.pathPattern.trim() === '/*') {
+    return true;
+  }
+  return false;
+}
+
 async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIMIT) {
   const { dataAccess, log, site } = context;
   let topPagesUrls = [];
@@ -752,6 +768,36 @@ async function determineDomainWideSuggestionAction(
     (s) => isDomainWideSuggestionData(s.getData()),
   );
 
+  log.info(`Prerender - Domain-wide detection: existingSuggestions=${existingSuggestions.length}, domainWideMatches=${allDomainWideSuggestions.length}. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+
+  if (allDomainWideSuggestions.length === 0 && existingSuggestions.length > 0) {
+    const sample = existingSuggestions.slice(0, 3).map((s) => {
+      const data = s.getData();
+      return {
+        status: s.getStatus?.(),
+        hasIsDomainWide: data?.[IS_DOMAIN_WIDE_FIELD] === true,
+        key: data?.key,
+        url: data?.url,
+        pathPattern: data?.pathPattern,
+        allowedRegexPatterns: data?.allowedRegexPatterns,
+      };
+    });
+    log.info(`Prerender - Domain-wide detection sample: ${JSON.stringify(sample)}`);
+  } else if (allDomainWideSuggestions.length > 0) {
+    const matches = allDomainWideSuggestions.slice(0, 3).map((s) => {
+      const data = s.getData();
+      return {
+        id: s.getId?.(),
+        status: s.getStatus?.(),
+        key: data?.key,
+        isDomainWide: data?.[IS_DOMAIN_WIDE_FIELD] === true,
+        url: data?.url,
+        pathPattern: data?.pathPattern,
+      };
+    });
+    log.info(`Prerender - Domain-wide matches: ${JSON.stringify(matches)}`);
+  }
+
   // Define active statuses that should NOT be replaced
   const ACTIVE_STATUSES = [
     Suggestion.STATUSES.NEW,
@@ -850,10 +896,14 @@ export async function processOpportunityAndSuggestions(
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     if (isDomainWideSuggestionData(data)) {
 =======
     if (data?.[IS_DOMAIN_WIDE_FIELD] === true) {
 >>>>>>> 4f291c74 (Optimization: creating domain wide suggestion only if required)
+=======
+    if (isDomainWideSuggestionData(data)) {
+>>>>>>> 2681b61d (for testing)
       return DOMAIN_WIDE_SUGGESTION_KEY;
     }
     // Individual suggestions use URL-based key
