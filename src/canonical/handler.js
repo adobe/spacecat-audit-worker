@@ -68,7 +68,7 @@ export async function submitForScraping(context) {
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
-  log.info(`Found ${topPagesUrls.length} top pages for scraping`);
+  log.info(`CANONICAL[20012026] - Found ${topPagesUrls.length} top pages for scraping`);
 
   if (topPagesUrls.length === 0) {
     log.info(`No top pages found for site ${siteId}, skipping scraping`);
@@ -118,6 +118,8 @@ export async function submitForScraping(context) {
     return true;
   });
 
+  log.info(`CANONICAL[20012026] - After filtering: ${filteredUrls.length} pages will be scraped`);
+  log.info(`CANONICAL[20012026] - Filtered URLs for scraping: ${JSON.stringify(filteredUrls)}`);
   log.info('CANONICAL[20012026] - finish submitForScraping');
   log.info(`Finish submitForScraping step for: ${siteId}`);
 
