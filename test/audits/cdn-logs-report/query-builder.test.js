@@ -31,6 +31,7 @@ const createMockSiteConfig = (overrides = {}) => ({
 const createMockSite = (overrides = {}) => ({
   getBaseURL: () => 'https://adobe.com',
   getConfig: () => createMockSiteConfig(),
+  getOrganizationId: () => 'test-org-id',
   ...overrides,
 });
 

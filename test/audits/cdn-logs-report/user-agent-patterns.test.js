@@ -36,9 +36,9 @@ describe('User Agent Patterns', () => {
   });
 
   describe('buildAgentTypeClassificationSQL', () => {
-    it('builds SQL for ChatGPT and Perplexity agent types', () => {
+    it('builds SQL for ChatGPT and Perplexity agent types with search bots', () => {
       const { buildAgentTypeClassificationSQL } = userAgentPatterns;
-      const sql = buildAgentTypeClassificationSQL();
+      const sql = buildAgentTypeClassificationSQL(true);
 
       expect(sql).to.include('CASE');
       expect(sql).to.include('Web search crawlers');
@@ -50,12 +50,27 @@ describe('User Agent Patterns', () => {
       expect(sql.toLowerCase()).to.include('bingbot');
       expect(sql.toLowerCase()).to.include('google-extended');
     });
+
+    it('builds SQL without search bots when flag is false', () => {
+      const { buildAgentTypeClassificationSQL } = userAgentPatterns;
+      const sql = buildAgentTypeClassificationSQL(false);
+
+      expect(sql).to.include('CASE');
+      expect(sql).to.include('Web search crawlers');
+      expect(sql).to.include('Chatbots');
+      expect(sql).to.include('gptbot');
+      expect(sql).to.include('perplexity');
+      expect(sql).to.not.include('Search Bots');
+      expect(sql.toLowerCase()).to.not.include('googlebot');
+      expect(sql.toLowerCase()).to.not.include('bingbot');
+      expect(sql.toLowerCase()).to.not.include('google-extended');
+    });
   });
 
   describe('buildUserAgentDisplaySQL', () => {
-    it('builds SQL for user agent display names', () => {
+    it('builds SQL for user agent display names with search bots', () => {
       const { buildUserAgentDisplaySQL } = userAgentPatterns;
-      const sql = buildUserAgentDisplaySQL();
+      const sql = buildUserAgentDisplaySQL(true);
 
       expect(sql).to.include('CASE');
       expect(sql).to.include('ChatGPT-User');
@@ -64,6 +79,19 @@ describe('User Agent Patterns', () => {
       expect(sql).to.include('GoogleBot');
       expect(sql).to.include('BingBot');
       expect(sql).to.include('Google-Extended');
+    });
+
+    it('builds SQL without search bot display names when flag is false', () => {
+      const { buildUserAgentDisplaySQL } = userAgentPatterns;
+      const sql = buildUserAgentDisplaySQL(false);
+
+      expect(sql).to.include('CASE');
+      expect(sql).to.include('ChatGPT-User');
+      expect(sql).to.include('GPTBot');
+      expect(sql).to.include('PerplexityBot');
+      expect(sql).to.not.include('GoogleBot');
+      expect(sql).to.not.include('BingBot');
+      expect(sql).to.not.include('Google-Extended');
     });
   });
 });

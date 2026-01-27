@@ -10,6 +10,27 @@
  * governing permissions and limitations under the License.
  */
 
+/**
+ * Organization IDs that should include search bots (GoogleBot, BingBot, Google-Extended)
+ * in their CDN logs reports
+ */
+export const SEARCH_BOTS_ENABLED_ORGS = [
+  '5d4e5082-b030-433d-9dbd-7007116f701f', // Adobe Corp
+  // Add more organization IDs here as needed
+];
+
+/**
+ * Checks if search bots should be included for a given organization ID
+ * @param {string|null} organizationId - The organization ID to check
+ * @returns {boolean} True if search bots should be included
+ */
+export function shouldIncludeSearchBots(organizationId) {
+  if (!organizationId) {
+    return false;
+  }
+  return SEARCH_BOTS_ENABLED_ORGS.includes(organizationId);
+}
+
 export const PROVIDER_USER_AGENT_PATTERNS = {
   chatgpt: '(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))',
   perplexity: '(?i)Perplexity',
@@ -61,10 +82,18 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
 
 /**
  * Builds SQL CASE statement for user agent display names
+ * @param {boolean} includeSearchBots - Whether to include search bot patterns (default: false)
  * @returns {string} SQL CASE statement
  */
-export function buildUserAgentDisplaySQL() {
-  const cases = USER_AGENT_DISPLAY_PATTERNS
+export function buildUserAgentDisplaySQL(includeSearchBots = false) {
+  let patterns = USER_AGENT_DISPLAY_PATTERNS;
+
+  if (!includeSearchBots) {
+    // Filter out search bot patterns (googlebot, bingbot, google-extended)
+    patterns = patterns.filter((p) => !['%googlebot%', '%bingbot%', '%google-extended%'].includes(p.pattern));
+  }
+
+  const cases = patterns
     .map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.displayName}'`)
     .join('\n    ');
   return `CASE 
@@ -73,7 +102,12 @@ export function buildUserAgentDisplaySQL() {
   END`;
 }
 
-export function buildAgentTypeClassificationSQL() {
+/**
+ * Builds SQL CASE statement for agent type classification
+ * @param {boolean} includeSearchBots - Whether to include search bot patterns (default: false)
+ * @returns {string} SQL CASE statement
+ */
+export function buildAgentTypeClassificationSQL(includeSearchBots = false) {
   const patterns = [
     // ChatGPT/OpenAI
     { pattern: '%gptbot%', result: 'Training bots' },
@@ -86,8 +120,6 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%perplexity-user%', result: 'Chatbots' },
     { pattern: '%perplexity/%', result: 'Media fetchers' },
     // Google
-    { pattern: '%googlebot%', result: 'Search Bots' },
-    { pattern: '%google-extended%', result: 'Search Bots' },
     { pattern: '%gemini-deep-research%', result: 'Research' },
     { pattern: 'google', result: 'Chatbots' },
     { pattern: '%googleagent-urlcontext%', result: 'Chatbots' },
@@ -95,8 +127,6 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%googleagent-shopping%', result: 'Shopping agents' },
     { pattern: '%googleagent-mariner%', result: 'Action agents' },
     { pattern: '%google-notebooklm%', result: 'Research' },
-    // Bing
-    { pattern: '%bingbot%', result: 'Search Bots' },
     // Claude
     { pattern: '%claudebot%', result: 'Training bots' },
     { pattern: '%claude-searchbot%', result: 'Web search crawlers' },
@@ -106,6 +136,15 @@ export function buildAgentTypeClassificationSQL() {
     // Amazon
     { pattern: '%amzn-user%', result: 'Chatbots' },
   ];
+
+  // Add search bot patterns only if requested
+  if (includeSearchBots) {
+    patterns.push(
+      { pattern: '%googlebot%', result: 'Search Bots' },
+      { pattern: '%google-extended%', result: 'Search Bots' },
+      { pattern: '%bingbot%', result: 'Search Bots' },
+    );
+  }
 
   const cases = patterns.map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.result}'`).join('\n          ');
 
