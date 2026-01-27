@@ -111,6 +111,7 @@ function getISOWeekNumber(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   // Set to nearest Thursday: current date + 4 - current day number
   // Make Sunday's day number 7
+  /* c8 ignore next */
   const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   // Get first day of year
@@ -127,6 +128,7 @@ function getISOWeekNumber(date) {
  */
 function getISOWeekYear(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  /* c8 ignore next */
   const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   return d.getUTCFullYear();

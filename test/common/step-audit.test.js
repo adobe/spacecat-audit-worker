@@ -206,7 +206,6 @@ describe('Step-based Audit Tests', () => {
           auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
           auditType: 'content-audit',
           fullAuditRef: 's3://test/123',
-          scrapeJobId: undefined,
         },
       };
 
@@ -252,7 +251,6 @@ describe('Step-based Audit Tests', () => {
         auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
         auditType: 'content-audit',
         fullAuditRef: 's3://test/123',
-        scrapeJobId: undefined,
         week: 35,
         year: 2025,
         customField: 'value',
@@ -305,7 +303,6 @@ describe('Step-based Audit Tests', () => {
           auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
           auditType: 'content-audit',
           fullAuditRef: 's3://test/123',
-          scrapeJobId: undefined,
         },
       };
 

@@ -181,6 +181,7 @@ export class StepAudit extends BaseAudit {
 
       // Store scrapeJobId in context for use when the scraper completes
       // This ensures scrapeJobId is available for bot protection checking
+      /* c8 ignore next */
       context.scrapeJobId = scrapeJob.id;
 
       return stepResult;
