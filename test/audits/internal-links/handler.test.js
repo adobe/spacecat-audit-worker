@@ -468,7 +468,6 @@ describe('Broken internal links audit', () => {
       sinon.match(/Total URLs \(\d+\) exceeds limit\. Capping at 1000/),
     );
   }).timeout(10000);
-
   it('runAuditAndSubmitForScraping should handle Ahrefs returning undefined result', async () => {
     // Mock Ahrefs API to return undefined result (optional chaining branch)
     const mockAhrefsClient = {
@@ -579,7 +578,6 @@ describe('Broken internal links audit', () => {
     expect(result.auditResult).to.have.property('success', true);
     expect(result.urls.length).to.be.greaterThan(0);
   }).timeout(10000);
-
   it('runAuditAndSubmitForScraping should throw error when RUM audit returns success=false', async () => {
     // Mock AhrefsAPIClient
     const mockAhrefsClient = {
