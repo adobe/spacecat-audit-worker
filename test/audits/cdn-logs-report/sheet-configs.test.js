@@ -144,62 +144,6 @@ describe('CDN Logs Sheet Configs', () => {
         ]);
     });
 
-    it('uses most recent citability score when multiple records exist for same URL', async () => {
-      const testData = [
-        {
-          agent_type: 'Chatbots',
-          user_agent_display: 'ChatGPT-User',
-          status: 200,
-          number_of_hits: 100,
-          avg_ttfb_ms: 250.5,
-          country_code: 'US',
-          url: '/test',
-          product: 'firefly',
-          category: 'Products',
-        },
-      ];
-
-      // Setup multiple citability records for the same path with different timestamps
-      mockDataAccess.PageCitability.allBySiteId.resolves([
-        {
-          getUrl: () => 'https://example.com/test',
-          getCitabilityScore: () => 75, // Older score
-          getIsDeployedAtEdge: () => false,
-          getUpdatedAt: () => '2025-01-10T10:00:00Z', // Older date
-        },
-        {
-          getUrl: () => 'https://example.com/test',
-          getCitabilityScore: () => 90, // Newer score
-          getIsDeployedAtEdge: () => true,
-          getUpdatedAt: () => '2025-01-20T10:00:00Z', // Newer date
-        },
-      ]);
-
-      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
-
-      expect(result)
-        .to
-        .have
-        .lengthOf(1);
-      // Should use the newer score (90, true) not the older one (75, false)
-      expect(result[0])
-        .to
-        .deep
-        .equal([
-          'Chatbots',
-          'ChatGPT-User',
-          200,
-          100,
-          250.5,
-          'US',
-          '/test',
-          'Firefly',
-          'Products',
-          90, // Newer score
-          true, // Newer deployment status
-        ]);
-    });
-
     it('handles null data gracefully', async () => {
       const result = await SHEET_CONFIGS.agentic.processData(null);
       expect(result)
@@ -243,6 +187,7 @@ describe('CDN Logs Sheet Configs', () => {
           'Other',
           'Uncategorized',
           'N/A',
+          false,
         ]);
     });
 
@@ -297,11 +242,13 @@ describe('CDN Logs Sheet Configs', () => {
         {
           getUrl: () => 'https://example.com/test',
           getCitabilityScore: () => 75,
+          getIsDeployedAtEdge: () => false,
           getUpdatedAt: () => '2025-01-10T10:00:00Z', // Older
         },
         {
           getUrl: () => 'https://example.com/test',
           getCitabilityScore: () => 90,
+          getIsDeployedAtEdge: () => true,
           getUpdatedAt: () => '2025-01-15T10:00:00Z', // Newer - should be used
         },
       ]);
@@ -315,6 +262,9 @@ describe('CDN Logs Sheet Configs', () => {
       expect(result[0][9]) // Citability Score is at index 9
         .to
         .equal(90); // Should use the newer score
+      expect(result[0][10]) // isDeployedAtEdge is at index 10
+        .to
+        .equal(true); // Should use the newer deployment status
     });
 
     it('has required properties', () => {
