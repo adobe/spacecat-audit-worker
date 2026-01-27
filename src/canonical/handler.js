@@ -24,7 +24,7 @@ import {
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { CANONICAL_CHECKS } from './constants.js';
-import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
+import { getObjectFromKey } from '../utils/s3-utils.js';
 
 /**
  * @import {type RequestOptions} from "@adobe/fetch"
@@ -370,7 +370,7 @@ export function generateCanonicalSuggestion(checkType) {
 export async function processScrapedContent(context) {
   context.log.info('CANONICAL[20012026] - 1processScrapedContent - START');
   const {
-    site, audit, log, s3Client, env,
+    site, audit, log, s3Client, env, scrapeResultPaths,
   } = context;
   log.info('CANONICAL[20012026] - 2processScrapedContent - START');
   const baseURL = site.getBaseURL();
@@ -394,33 +394,9 @@ export async function processScrapedContent(context) {
 
   log.info(`CANONICAL[20012026] - S3 bucket: ${bucketName}`);
 
-  // Get scraped content from S3
-  const prefix = `scrapes/${site.getId()}/`;
-  log.info(`CANONICAL[20012026] - Fetching scraped content from S3 prefix: ${prefix}`);
-  let scrapeKeys;
-  try {
-    scrapeKeys = await getObjectKeysUsingPrefix(
-      s3Client,
-      bucketName,
-      prefix,
-      log,
-      1000,
-      'scrape.json',
-    );
-    log.info(`CANONICAL[20012026] - Found ${scrapeKeys.length} scraped objects in S3 for site ${site.getId()}`);
-  } catch (error) {
-    log.error(`CANONICAL[20012026] - ERROR retrieving S3 keys for site ${site.getId()}: ${error.message}`);
-    return {
-      auditResult: {
-        status: 'PROCESSING_FAILED',
-        error: `Failed to retrieve scraped content: ${error.message}`,
-      },
-      fullAuditRef: baseURL,
-    };
-  }
-
-  if (scrapeKeys.length === 0) {
-    log.info(`CANONICAL[20012026] - No scraped content found for site ${site.getId()}`);
+  // Check if scrapeResultPaths is provided (new SCRAPE_CLIENT flow)
+  if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
+    log.info(`CANONICAL[20012026] - No scrapeResultPaths found for site ${site.getId()}`);
     return {
       auditResult: {
         status: 'NO_OPPORTUNITIES',
@@ -430,6 +406,9 @@ export async function processScrapedContent(context) {
     };
   }
 
+  // Convert Map to array of S3 keys
+  const scrapeKeys = Array.from(scrapeResultPaths.values());
+  log.info(`CANONICAL[20012026] - Found ${scrapeKeys.length} scraped objects from scrapeResultPaths`);
   log.info(`CANONICAL[20012026] - Starting to process ${scrapeKeys.length} pages`);
 
   // Process each scraped page

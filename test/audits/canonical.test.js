@@ -2191,26 +2191,14 @@ describe('Canonical URL Tests', () => {
 
     describe('processScrapedContent', () => {
       it('should return NO_OPPORTUNITIES when no scraped content found', async () => {
-        const mockS3Client = {};
-        const mockGetObjectKeysUsingPrefix = sinon.stub().resolves([]);
-
         const testContext = {
           ...context,
           site,
-          s3Client: mockS3Client,
+          s3Client: {},
+          scrapeResultPaths: new Map(), // Empty Map = no scraped content
         };
 
-        const { processScrapedContent: processScrapedContentMocked } = await esmock(
-          '../../src/canonical/handler.js',
-          {
-            '../../src/utils/s3-utils.js': {
-              getObjectKeysUsingPrefix: mockGetObjectKeysUsingPrefix,
-              getObjectFromKey: sinon.stub(),
-            },
-          },
-        );
-
-        const result = await processScrapedContentMocked(testContext);
+        const result = await processScrapedContent(testContext);
 
         expect(result).to.deep.equal({
           auditResult: {
@@ -2219,11 +2207,10 @@ describe('Canonical URL Tests', () => {
           },
           fullAuditRef: 'https://example.com',
         });
-        expect(context.log.info).to.have.been.calledWith('CANONICAL[20012026] - No scraped content found for site test-site-id');
+        expect(context.log.info).to.have.been.calledWith('CANONICAL[20012026] - No scrapeResultPaths found for site test-site-id');
       });
 
       it('should process scraped content and detect canonical issues', async () => {
-        const mockS3Client = {};
         const scrapedContent = {
           url: 'https://example.com/page1',
           finalUrl: 'https://example.com/page1',
@@ -2239,13 +2226,15 @@ describe('Canonical URL Tests', () => {
           },
         };
 
-        const mockGetObjectKeysUsingPrefix = sinon.stub().resolves(['scrapes/test-site-id/page1.json']);
         const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
 
         const testContext = {
           ...context,
           site,
-          s3Client: mockS3Client,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
           audit: {
             getId: () => 'test-audit-id',
           },
@@ -2272,7 +2261,6 @@ describe('Canonical URL Tests', () => {
           '../../src/canonical/handler.js',
           {
             '../../src/utils/s3-utils.js': {
-              getObjectKeysUsingPrefix: mockGetObjectKeysUsingPrefix,
               getObjectFromKey: mockGetObjectFromKey,
             },
           },
@@ -2289,7 +2277,6 @@ describe('Canonical URL Tests', () => {
       });
 
       it('should return success when no canonical issues detected', async () => {
-        const mockS3Client = {};
         const scrapedContent = {
           url: 'https://example.com/page1',
           finalUrl: 'https://example.com/page1',
@@ -2305,13 +2292,15 @@ describe('Canonical URL Tests', () => {
           },
         };
 
-        const mockGetObjectKeysUsingPrefix = sinon.stub().resolves(['scrapes/test-site-id/page1.json']);
         const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
 
         const testContext = {
           ...context,
           site,
-          s3Client: mockS3Client,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
           audit: {
             getId: () => 'test-audit-id',
           },
@@ -2321,7 +2310,6 @@ describe('Canonical URL Tests', () => {
           '../../src/canonical/handler.js',
           {
             '../../src/utils/s3-utils.js': {
-              getObjectKeysUsingPrefix: mockGetObjectKeysUsingPrefix,
               getObjectFromKey: mockGetObjectFromKey,
             },
           },
