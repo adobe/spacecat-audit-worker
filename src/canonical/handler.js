@@ -102,10 +102,14 @@ export async function submitForScraping(context) {
       const pathname = new URL(u).pathname.toLowerCase();
       return pathname.includes('/login')
         || pathname.includes('/signin')
+        || pathname.includes('/sign-in')
         || pathname.includes('/authenticate')
         || pathname.includes('/oauth')
         || pathname.includes('/sso')
         || pathname.includes('/okta')
+        || pathname.includes('/register')
+        || pathname.includes('/signup')
+        || pathname.includes('/activate/')
         || pathname === '/auth'
         || pathname.startsWith('/auth/');
     } catch {

@@ -2042,10 +2042,14 @@ describe('Canonical URL Tests', () => {
           { getUrl: () => 'https://example.com/page1' },
           { getUrl: () => 'https://example.com/login' },
           { getUrl: () => 'https://example.com/signin' },
+          { getUrl: () => 'https://example.com/sign-in' },
           { getUrl: () => 'https://example.com/authenticate' },
           { getUrl: () => 'https://example.com/oauth/callback' },
           { getUrl: () => 'https://example.com/sso' },
           { getUrl: () => 'https://example.com/okta/loginwidget.html' },
+          { getUrl: () => 'https://example.com/register' },
+          { getUrl: () => 'https://example.com/signup' },
+          { getUrl: () => 'https://example.com/install/activate/home.html' },
           { getUrl: () => 'https://example.com/auth' },
           { getUrl: () => 'https://example.com/auth/provider' },
         ]);
@@ -2062,10 +2066,14 @@ describe('Canonical URL Tests', () => {
         expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });
         expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/login');
         expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/signin');
+        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/sign-in');
         expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/authenticate');
         expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/oauth/callback');
         expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/sso');
         expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/okta/loginwidget.html');
+        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/register');
+        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/signup');
+        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/install/activate/home.html');
         expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/auth');
         expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/auth/provider');
       });
