@@ -162,7 +162,8 @@ export class StepAudit extends BaseAudit {
       auditId: audit.getId(),
       auditType: audit.getAuditType(),
       fullAuditRef: audit.getFullAuditRef(),
-      scrapeJobId: context.scrapeJobId,
+      // Note: scrapeJobId is NOT included here because it doesn't exist yet
+      // It will be added by the content scraper when it returns the completion message
     };
 
     const auditContext = isNonEmptyObject(stepResult.auditContext)
@@ -201,6 +202,10 @@ export class StepAudit extends BaseAudit {
       type, data, siteId, auditContext = {},
     } = message;
 
+    /* c8 ignore start */
+    log.info(`[AUDIT-RUN] Received message: type=${type}, siteId=${siteId}, auditContext.scrapeJobId=${auditContext.scrapeJobId}, auditContext.next=${auditContext.next}, auditContext.auditId=${auditContext.auditId}`);
+    /* c8 ignore stop */
+
     try {
       const site = await this.siteProvider(siteId, context);
 
@@ -212,6 +217,10 @@ export class StepAudit extends BaseAudit {
       // Determine which step to run
       const hasNext = hasText(auditContext.next);
       const hasScrapeJobId = hasText(auditContext.scrapeJobId);
+
+      /* c8 ignore start */
+      log.info(`[AUDIT-RUN] hasNext=${hasNext}, hasScrapeJobId=${hasScrapeJobId}`);
+      /* c8 ignore stop */
 
       const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
@@ -236,6 +245,10 @@ export class StepAudit extends BaseAudit {
         stepContext.scrapeResultPaths = await scrapeClient
           .getScrapeResultPaths(auditContext.scrapeJobId);
 
+        /* c8 ignore start */
+        log.info(`[BOT-CHECK] Checking bot protection for scrapeJobId=${auditContext.scrapeJobId}, auditType=${type}`);
+        /* c8 ignore stop */
+
         // Check for bot protection and abort if detected
         const botProtectionResult = await checkBotProtection({
           site,
@@ -246,6 +259,10 @@ export class StepAudit extends BaseAudit {
           context,
           scrapeClient,
         });
+
+        /* c8 ignore start */
+        log.info(`[BOT-CHECK] Bot protection result: ${botProtectionResult ? 'DETECTED' : 'NOT DETECTED'}`);
+        /* c8 ignore stop */
 
         if (botProtectionResult) {
           return botProtectionResult;
