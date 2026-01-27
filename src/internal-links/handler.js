@@ -138,7 +138,6 @@ export async function internalLinksAuditRunner(auditUrl, context) {
   const finalUrl = await wwwUrlResolver(site, context);
 
   log.info('====== RUM Detection Phase ======');
-  log.info('✓ BATCHED CRAWL DETECTION CODE ACTIVE (v2 with S3 state management)');
   log.info(`Site: ${site.getId()}, Domain: ${finalUrl}`);
 
   try {
@@ -244,13 +243,11 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 }
 
 /**
- * Merged Step 1: RUM Detection + Ahrefs Fetching + Scrape Submission
- * This function combines the old Step 1 (runAuditAndImportTopPages) and Step 2 (submitForScraping)
- * to eliminate the dependency on import-worker and prevent SSL errors from blocking the audit.
+ * Step 1: RUM Detection + Ahrefs Fetching + Scrape Submission
  *
- * Flow:
+ * This function performs the initial audit phase:
  * 1. Run RUM detection to find broken links
- * 2. Fetch Ahrefs top pages DIRECTLY (with fallback on failure)
+ * 2. Fetch Ahrefs top pages directly (with graceful fallback on failure)
  * 3. Get includedURLs from siteConfig
  * 4. Merge, deduplicate, filter, and submit for scraping
  */
@@ -258,9 +255,7 @@ export async function runAuditAndSubmitForScraping(context) {
   const { site, log: baseLog, finalUrl } = context;
   const log = createContextLogger(baseLog, site.getId());
 
-  // PART 1: RUM Detection (from old Step 1)
   log.info('====== RUM Detection + Scrape Submission ======');
-  log.info('✓ BATCHED CRAWL DETECTION CODE ACTIVE (v3 - no import-worker dependency)');
   log.debug('starting audit');
 
   const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
@@ -274,10 +269,10 @@ export async function runAuditAndSubmitForScraping(context) {
     throw new Error('Audit failed, skip scraping and suggestion generation');
   }
 
-  // PART 2: Fetch Ahrefs top pages DIRECTLY (NEW - bypasses import-worker!)
+  // Fetch Ahrefs top pages directly with graceful fallback
   let topPagesUrls = [];
   try {
-    log.info('Fetching Ahrefs top pages directly (bypassing import-worker)');
+    log.info('Fetching Ahrefs top pages directly');
     const ahrefsAPIClient = AhrefsAPIClient.createFrom(context);
     const baseURL = site.getBaseURL();
     const { result } = await ahrefsAPIClient.getTopPages(baseURL);
@@ -288,11 +283,11 @@ export async function runAuditAndSubmitForScraping(context) {
     topPagesUrls = [];
   }
 
-  // PART 3: Get includedURLs from siteConfig (from old Step 2)
+  // Get includedURLs from siteConfig
   const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
   log.info(`Found ${includedURLs.length} includedURLs from siteConfig`);
 
-  // PART 4: Merge, deduplicate, filter, and submit (from old Step 2)
+  // Merge, deduplicate, filter, and submit for scraping
   let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
   log.info(`Merged URLs: ${topPagesUrls.length} (Ahrefs) + ${includedURLs.length} (manual) = ${finalUrls.length} unique`);
 
@@ -340,109 +335,6 @@ export async function runAuditAndSubmitForScraping(context) {
     siteId: site.getId(),
     type: 'broken-internal-links',
   };
-}
-
-// OLD Step 1 - KEPT FOR BACKWARD COMPATIBILITY (will be removed after testing)
-export async function runAuditAndImportTopPagesStep(context) {
-  const { site, log: baseLog, finalUrl } = context;
-  const log = createContextLogger(baseLog, site.getId());
-  log.debug('starting audit');
-  const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
-    finalUrl,
-    context,
-  );
-
-  return {
-    auditResult: internalLinksAuditRunnerResult.auditResult,
-    fullAuditRef: finalUrl,
-    type: 'top-pages',
-    siteId: site.getId(),
-  };
-}
-
-/**
- * OLD Step 2 - KEPT FOR BACKWARD COMPATIBILITY (will be removed after testing)
- * Submit URLs for scraping (for crawl-based detection).
- * Combines Ahrefs top pages + includedURLs from siteConfig.
- */
-export async function submitForScraping(context) {
-  const {
-    site, dataAccess, log: baseLog, audit,
-  } = context;
-  const log = createContextLogger(baseLog, site.getId());
-  const { SiteTopPage } = dataAccess;
-  const { success } = audit.getAuditResult();
-
-  if (!success) {
-    throw new Error('Audit failed, skip scraping and suggestion generation');
-  }
-
-  log.info('====== Submit For Scraping Step ======');
-  log.info('✓ BATCHED CRAWL DETECTION CODE ACTIVE (Step: submitForScraping with cache enabled)');
-
-  // Fetch Ahrefs top pages with error handling
-  let topPagesUrls = [];
-  try {
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-    topPagesUrls = topPages.map((page) => page.getUrl());
-    log.info(`Found ${topPagesUrls.length} Ahrefs top pages`);
-  } catch (error) {
-    log.warn(`Failed to fetch Ahrefs top pages: ${error.message}`);
-    topPagesUrls = [];
-  }
-
-  // Get includedURLs from siteConfig
-  const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
-  log.info(`Found ${includedURLs.length} includedURLs from siteConfig`);
-
-  // Merge and deduplicate
-  let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-  log.info(`Merged URLs: ${topPagesUrls.length} (Ahrefs) + ${includedURLs.length} (manual) = ${finalUrls.length} unique`);
-
-  // Filter by audit scope BEFORE capping to ensure all URLs are in scope
-  const baseURL = site.getBaseURL();
-  finalUrls = finalUrls.filter((url) => isWithinAuditScope(url, baseURL));
-  log.info(`After audit scope filtering: ${finalUrls.length} URLs`);
-
-  // Limit to max URLs (after scope filtering)
-  if (finalUrls.length > MAX_URLS_TO_PROCESS) {
-    log.warn(`Total URLs (${finalUrls.length}) exceeds limit. Capping at ${MAX_URLS_TO_PROCESS}`);
-    finalUrls = finalUrls.slice(0, MAX_URLS_TO_PROCESS);
-  }
-
-  // Filter out unscrape-able files
-  const beforeFilter = finalUrls.length;
-  finalUrls = finalUrls.filter((url) => !isUnscrapeable(url));
-  if (beforeFilter > finalUrls.length) {
-    log.info(`Filtered out ${beforeFilter - finalUrls.length} unscrape-able files`);
-  }
-
-  if (finalUrls.length === 0) {
-    log.warn('No URLs available for scraping');
-    log.info('=======================================');
-    return {
-      urls: [],
-      siteId: site.getId(),
-      type: 'broken-internal-links',
-    };
-  }
-
-  // Skip redirect resolution to avoid delays and timeouts
-  // Assume Ahrefs top pages and configured URLs are already valid
-  log.info(`Skipping redirect resolution (assuming ${finalUrls.length} URLs are valid)`);
-  const uniqueResolvedUrls = finalUrls;
-
-  const scrapingPayload = {
-    urls: uniqueResolvedUrls.map((url) => ({ url })),
-    siteId: site.getId(),
-    type: 'broken-internal-links',
-  };
-
-  log.info(`Submitting ${uniqueResolvedUrls.length} URLs for scraping (cache enabled)`);
-  log.info(`Scraping job details: siteId=${site.getId()}, type=${scrapingPayload.type}, urlCount=${uniqueResolvedUrls.length}`);
-  log.info('=======================================');
-
-  return scrapingPayload;
 }
 
 export const opportunityAndSuggestionsStep = async (context) => {
@@ -813,7 +705,6 @@ export async function runCrawlDetectionBatch(context) {
       },
     };
 
-    // Log the continuation payload for debugging
     log.info(`Continuation payload: ${JSON.stringify(continuationPayload, null, 2)}`);
 
     await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, continuationPayload);
@@ -890,12 +781,11 @@ export async function runCrawlDetectionAndGenerateSuggestions(context) {
  * Audit builder with batched crawl detection.
  *
  * Flow:
- * 1. runAuditAndImportTopPages - RUM detection, fetches includedURLs, triggers import worker
- * 2. submitForScraping - Receives includedURLs, fetches Ahrefs, submits to scrape client
- * 3. runCrawlDetectionBatch - Process pages in batches (terminal step)
+ * 1. runAuditAndSubmitForScraping - RUM detection, fetches Ahrefs top pages directly,
+ *    merges with includedURLs, submits to scrape client
+ * 2. runCrawlDetectionBatch - Process pages in batches (terminal step)
  *    - Processes PAGES_PER_BATCH pages per Lambda invocation
- *    - Passes broken/working URL caches via SQS message
- *    - Stores batch results in S3
+ *    - Stores batch results in S3 with broken/working URL caches
  *    - Loops back to itself via AUDIT_JOBS_QUEUE until all pages processed
  *    - When complete, internally merges results and generates opportunities
  *

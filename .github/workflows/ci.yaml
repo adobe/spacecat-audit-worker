@@ -40,12 +40,11 @@ jobs:
       - name: Setup Node & NPM
         uses: ./.github/actions/setup-node-npm
 
-      # TEMPORARILY DISABLED FOR DEBUGGING - REMOVE THIS COMMENT BEFORE MERGING TO MAIN
-      # - name: Lint, Test, Coverage Upload
-      #   uses: ./.github/actions/lint-test-coverage
-      #   with:
-      #     upload_coverage: "true"
-      #     codecov_token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Lint, Test, Coverage Upload
+        uses: ./.github/actions/lint-test-coverage
+        with:
+          upload_coverage: "true"
+          codecov_token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Semantic Release (Dry Run)
         if: github.event_name == 'push' && github.ref != 'refs/heads/main'
