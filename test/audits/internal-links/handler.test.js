@@ -23,9 +23,7 @@ import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from 
 
 import {
   internalLinksAuditRunner,
-  runAuditAndImportTopPagesStep,
   runAuditAndSubmitForScraping,
-  submitForScraping,
   runCrawlDetectionAndGenerateSuggestions,
   runCrawlDetectionBatch,
   updateAuditResult,
@@ -249,24 +247,6 @@ describe('Broken internal links audit', () => {
     });
   }).timeout(5000);
 
-  it('runAuditAndImportTopPagesStep should run audit and import top pages', async () => {
-    const result = await runAuditAndImportTopPagesStep(context);
-    expect(result).to.deep.equal({
-      type: 'top-pages',
-      siteId: site.getId(),
-      auditResult: {
-        brokenInternalLinks: NORMALIZED_AUDIT_RESULT_DATA,
-        fullAuditRef: auditUrl,
-        success: true,
-        finalUrl: 'www.example.com',
-        auditContext: {
-          interval: 30,
-        },
-      },
-      fullAuditRef: auditUrl,
-    });
-  });
-
   it('runAuditAndSubmitForScraping should merge RUM + Ahrefs + includedURLs and submit', async () => {
     // Mock Ahrefs API response
     const mockAhrefsClient = {
@@ -295,6 +275,7 @@ describe('Broken internal links audit', () => {
       ...site,
       getConfig: () => ({
         getIncludedURLs: (type) => (type === 'broken-internal-links' ? ['https://example.com/included1'] : []),
+        getFetchConfig: () => ({}),
       }),
     };
 
@@ -337,6 +318,7 @@ describe('Broken internal links audit', () => {
       ...site,
       getConfig: () => ({
         getIncludedURLs: (type) => (type === 'broken-internal-links' ? ['https://example.com/included1', 'https://example.com/included2'] : []),
+        getFetchConfig: () => ({}),
       }),
     };
 
@@ -356,14 +338,18 @@ describe('Broken internal links audit', () => {
     expect(result.urls).to.deep.include({ url: 'https://example.com/included2' });
   }).timeout(10000);
 
-  it('runAuditAndSubmitForScraping should throw error when RUM audit fails', async () => {
-    // Mock RUM to fail
-    nock('https://helix-pages.anywhere.run')
-      .get(/.*/)
-      .reply(500, 'Internal Server Error');
 
+  it('runAuditAndSubmitForScraping should filter out unscrape-able files', async () => {
     const mockAhrefsClient = {
-      getTopPages: sandbox.stub().resolves({ result: { pages: [] } }),
+      getTopPages: sandbox.stub().resolves({
+        result: {
+          pages: [
+            { url: 'https://example.com/page1.html' },
+            { url: 'https://example.com/file.pdf' }, // Should be filtered
+            { url: 'https://example.com/page2.html' },
+          ],
+        },
+      }),
     };
 
     const AhrefsAPIClientMock = {
@@ -374,162 +360,258 @@ describe('Broken internal links audit', () => {
       '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
     });
 
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getIncludedURLs: () => [],
+        getFetchConfig: () => ({}),
+      }),
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+    };
+
+    const result = await runAuditAndSubmitForScrapingMocked(testContext);
+
+    // Should filter out the PDF
+    expect(result.urls.length).to.equal(2);
+    expect(result.urls).to.deep.include({ url: 'https://example.com/page1.html' });
+    expect(result.urls).to.deep.include({ url: 'https://example.com/page2.html' });
+    expect(result.urls).to.not.deep.include({ url: 'https://example.com/file.pdf' });
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should return empty when all URLs filtered', async () => {
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({
+        result: {
+          pages: [
+            { url: 'https://example.com/file1.pdf' },
+            { url: 'https://example.com/file2.pdf' },
+          ],
+        },
+      }),
+    };
+
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getIncludedURLs: () => [],
+        getFetchConfig: () => ({}),
+      }),
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+    };
+
+    const result = await runAuditAndSubmitForScrapingMocked(testContext);
+
+    // All URLs should be filtered out (PDFs are unscrape-able)
+    expect(result.urls).to.be.an('array');
+    expect(result.urls.length).to.equal(0);
+    expect(result.auditResult).to.have.property('success', true);
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should cap URLs at MAX_URLS_TO_PROCESS (1000)', async () => {
+    // Create >1000 total URLs to test capping logic
+    const manyAhrefsPages = Array.from({ length: 800 }, (_, i) => ({
+      url: `https://example.com/ahrefs-page-${i}`,
+    }));
+
+    const manyIncludedUrls = Array.from({ length: 400 }, (_, i) => `https://example.com/manual-page-${i}`);
+
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({
+        result: {
+          pages: manyAhrefsPages,
+        },
+      }),
+    };
+
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getIncludedURLs: () => manyIncludedUrls,
+        getFetchConfig: () => ({}),
+      }),
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+    };
+
+    const result = await runAuditAndSubmitForScrapingMocked(testContext);
+
+    // Should be capped at 1000
+    expect(result.urls).to.have.lengthOf(1000);
+    expect(testContext.log.warn).to.have.been.calledWith(
+      sinon.match(/Total URLs \(\d+\) exceeds limit\. Capping at 1000/),
+    );
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should handle Ahrefs returning undefined result', async () => {
+    // Mock Ahrefs API to return undefined result (optional chaining branch)
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({ result: undefined }),
+    };
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    const result = await runAuditAndSubmitForScrapingMocked(context);
+
+    // Should still work with RUM data + includedURLs
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('success', true);
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should handle Ahrefs result without pages property', async () => {
+    // Mock Ahrefs API to return result without pages (optional chaining branch)
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({ result: {} }),
+    };
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    const result = await runAuditAndSubmitForScrapingMocked(context);
+
+    // Should still work with RUM data + includedURLs
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('success', true);
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should handle getConfig returning null', async () => {
+    // Mock Ahrefs API
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({
+        result: { pages: [{ url: 'https://example.com/page1' }] },
+      }),
+    };
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    // Create site with getConfig returning null (optional chaining branch)
+    const mockSite = {
+      ...site,
+      getConfig: () => null,
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+    };
+
+    const result = await runAuditAndSubmitForScrapingMocked(testContext);
+
+    // Should work with Ahrefs + RUM data
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('success', true);
+    expect(result.urls.length).to.be.greaterThan(0);
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should handle config without getIncludedURLs method', async () => {
+    // Mock Ahrefs API
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({
+        result: { pages: [{ url: 'https://example.com/page1' }] },
+      }),
+    };
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    // Create site with config but without getIncludedURLs (optional chaining branch)
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getFetchConfig: () => ({}),
+        // getIncludedURLs is missing
+      }),
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+    };
+
+    const result = await runAuditAndSubmitForScrapingMocked(testContext);
+
+    // Should work with Ahrefs + RUM data
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('success', true);
+    expect(result.urls.length).to.be.greaterThan(0);
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should throw error when RUM audit returns success=false', async () => {
+    // Mock AhrefsAPIClient
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({
+        result: { pages: [] },
+      }),
+    };
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    // Mock RUMAPIClient to throw an error, which causes internalLinksAuditRunner to catch it
+    // and return success: false
+    const mockRumClient = {
+      query: sandbox.stub().rejects(new Error('RUM API connection failed')),
+    };
+    const RUMAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockRumClient),
+    };
+
+    // Use esmock to override imports
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+      '@adobe/spacecat-shared-rum-api-client': { default: RUMAPIClientMock },
+    });
+
+    // Should throw because internalLinksAuditRunner caught an error and returned success: false
     await expect(runAuditAndSubmitForScrapingMocked(context))
       .to.be.rejectedWith('Audit failed, skip scraping and suggestion generation');
+
+    expect(mockRumClient.query).to.have.been.called;
   }).timeout(10000);
-
-
-  it('submitForScraping should send top pages to scraping service', async () => {
-    context.dataAccess.SiteTopPage = {
-      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
-    };
-    context.audit = {
-      getAuditResult: () => ({
-        brokenInternalLinks: AUDIT_RESULT_DATA,
-        success: true,
-      }),
-    };
-
-    // Mock redirect resolution requests (HEAD requests for redirect resolution)
-    nock('https://example.com')
-      .head('/page1')
-      .reply(200);
-    nock('https://example.com')
-      .head('/page2')
-      .reply(200);
-
-    const result = await submitForScraping(context);
-    expect(result).to.deep.equal({
-      urls: topPages.map((page) => ({ url: page.getUrl() })),
-      siteId: site.getId(),
-      type: 'broken-internal-links',
-    });
-  }).timeout(10000);
-
-  it('submitForScraping should throw error when audit failed', async () => {
-    context.dataAccess.SiteTopPage = {
-      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
-    };
-    context.audit = {
-      getAuditResult: () => ({
-        brokenInternalLinks: AUDIT_RESULT_DATA,
-        success: false,
-      }),
-    };
-
-    await expect(submitForScraping(context))
-      .to.be.rejectedWith('Audit failed, skip scraping and suggestion generation');
-
-    // Verify that SiteTopPage.allBySiteIdAndSourceAndGeo was not called since we exit early
-    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
-  }).timeout(5000);
-
-  it('submitForScraping should return empty URLs when no top pages found', async () => {
-    context.dataAccess.SiteTopPage = {
-      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]), // Empty array
-    };
-    context.audit = {
-      getAuditResult: () => ({
-        brokenInternalLinks: AUDIT_RESULT_DATA,
-        success: true,
-      }),
-    };
-
-    const result = await submitForScraping(context);
-    expect(result.urls).to.have.lengthOf(0);
-    expect(context.log.warn).to.have.been.calledWith(
-      sinon.match(/No URLs available for scraping/),
-    );
-  }).timeout(5000);
-
-  it('submitForScraping should handle Ahrefs fetch error', async () => {
-    const testContext = { ...context };
-    testContext.dataAccess = { ...context.dataAccess };
-    testContext.dataAccess.SiteTopPage = {
-      allBySiteIdAndSourceAndGeo: sandbox.stub().rejects(new Error('Ahrefs API error')),
-    };
-    testContext.site = { ...site, getConfig: () => ({ getIncludedURLs: () => ['https://example.com/manual1'] }) };
-    testContext.audit = {
-      getAuditResult: () => ({
-        brokenInternalLinks: AUDIT_RESULT_DATA,
-        success: true,
-      }),
-    };
-
-    nock('https://example.com').head('/manual1').reply(200);
-    const result = await submitForScraping(testContext);
-    
-    expect(testContext.log.warn).to.have.been.calledWith(
-      sinon.match(/Failed to fetch Ahrefs top pages/),
-    );
-    expect(result.urls).to.have.lengthOf(1); // Still has includedURLs
-  }).timeout(10000);
-
-
-  it('submitForScraping should log when filtering unscrape-able files', async () => {
-    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
-    context.dataAccess.SiteTopPage = { 
-      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-        { getUrl: () => 'https://example.com/page1.html' },
-        { getUrl: () => 'https://example.com/doc.pdf' },
-        { getUrl: () => 'https://example.com/sheet.xlsx' },
-      ]) 
-    };
-    context.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
-    
-    nock('https://example.com').head('/page1.html').reply(200);
-    await submitForScraping(context);
-    expect(context.log.info).to.have.been.calledWith(sinon.match(/Filtered out \d+ unscrape-able files/));
-  }).timeout(10000);
-
-  it('submitForScraping should cap when total URLs exceed MAX_URLS_TO_PROCESS', async () => {
-    nock.cleanAll();
-    context.log = { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() };
-    
-    // Create 1200 URLs total (800 Ahrefs + 400 manual = 1200, exceeds 1000)
-    const manyPages = Array.from({ length: 800 }, (_, i) => ({ getUrl: () => `https://example.com/ah${i}` }));
-    const manualUrls = Array.from({ length: 400 }, (_, i) => `https://example.com/man${i}`);
-    
-    const testCtx = { ...context };
-    testCtx.log = context.log;
-    testCtx.dataAccess = { ...context.dataAccess, SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(manyPages) } };
-    testCtx.site = { ...site, getConfig: () => ({ getIncludedURLs: () => manualUrls }) };
-    testCtx.audit = { getAuditResult: () => ({ brokenInternalLinks: AUDIT_RESULT_DATA, success: true }) };
-    
-    nock('https://example.com').persist().head(/\/(ah|man)\d+/).reply(200);
-    await submitForScraping(testCtx);
-    
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Total URLs \(1200\) exceeds limit\. Capping at 1000/));
-    nock.cleanAll();
-  }).timeout(120000);
-
-  it('submitForScraping should filter URLs by audit scope', async () => {
-    // Mock site with subpath
-    const siteWithSubpath = {
-      ...site,
-      getBaseURL: () => 'https://example.com/blog',
-    };
-    context.site = siteWithSubpath;
-
-    // Mock top pages that don't match the subpath
-    const topPagesOutsideScope = [
-      { getUrl: () => 'https://example.com/products' },
-      { getUrl: () => 'https://example.com/about' },
-    ];
-
-    context.dataAccess.SiteTopPage = {
-      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPagesOutsideScope),
-    };
-    context.audit = {
-      getAuditResult: () => ({
-        brokenInternalLinks: AUDIT_RESULT_DATA,
-        success: true,
-      }),
-    };
-
-    const result = await submitForScraping(context);
-    expect(result.urls).to.have.lengthOf(0); // All filtered out
-  }).timeout(5000);
 
 });
 
