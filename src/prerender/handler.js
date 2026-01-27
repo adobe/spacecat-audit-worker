@@ -773,14 +773,14 @@ async function determineDomainWideSuggestionAction(
       const activeStatus = activeDomainWideSuggestion.getStatus();
       log.info(`Prerender - Domain-wide suggestion already exists in ${activeStatus} state, skipping creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}, totalDomainWideSuggestions=${allDomainWideSuggestions.length}`);
     } else {
-      const outdatedDomainWideSuggestion = allDomainWideSuggestions.find(
+      const allOutdated = allDomainWideSuggestions.every(
         (s) => s.getStatus() === Suggestion.STATUSES.OUTDATED,
       );
-      if (outdatedDomainWideSuggestion) {
+      if (allOutdated) {
         // OUTDATED suggestions should not be modified
         shouldCreateNewDomainWideSuggestion = false;
         isOutdated = true;
-        log.info(`Prerender - Domain-wide suggestion exists in OUTDATED state, skipping modification. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+        log.info(`Prerender - All domain-wide suggestions are OUTDATED (${allDomainWideSuggestions.length} total), skipping modification. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
       }
     }
   } else {
@@ -926,6 +926,17 @@ export async function processOpportunityAndSuggestions(
         ...existingData,
         ...mapSuggestionData(newDataItem),
       };
+    },
+
+    shouldUpdateSuggestion: (existing) => {
+      const existingData = existing.getData();
+      const isDomainWide = existingData?.[IS_DOMAIN_WIDE_FIELD] === true;
+      const existingIsOutdated = existing.getStatus() === Suggestion.STATUSES.OUTDATED;
+
+      if (isDomainWide && existingIsOutdated) {
+        return false;
+      }
+      return true;
     },
   });
 
