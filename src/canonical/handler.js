@@ -354,18 +354,18 @@ export function generateCanonicalSuggestion(checkType) {
 /* c8 ignore start */
 export async function processScrapedContent(context) {
   const {
-    site, log, s3Client, env,
+    site, audit, log, s3Client, env,
   } = context;
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
 
-  log.info('CANONICAL[20012026] - processScrapedContent');
-  log.info(`Start processScrapedContent step for: ${siteId}`);
+  log.info('CANONICAL[20012026] - processScrapedContent - START');
+  log.info(`CANONICAL[20012026] - Processing site: ${siteId}, baseURL: ${baseURL}`);
 
   if (!bucketName) {
     const errorMsg = 'Missing S3 bucket configuration for canonical audit';
-    log.error(`${errorMsg}`);
+    log.error(`CANONICAL[20012026] - ERROR: ${errorMsg}`);
     return {
       auditResult: {
         status: 'PROCESSING_FAILED',
@@ -375,8 +375,11 @@ export async function processScrapedContent(context) {
     };
   }
 
+  log.info(`CANONICAL[20012026] - S3 bucket: ${bucketName}`);
+
   // Get scraped content from S3
   const prefix = `scrapes/${siteId}/`;
+  log.info(`CANONICAL[20012026] - Fetching scraped content from S3 prefix: ${prefix}`);
   let scrapeKeys;
   try {
     scrapeKeys = await getObjectKeysUsingPrefix(
@@ -387,9 +390,9 @@ export async function processScrapedContent(context) {
       1000,
       'scrape.json',
     );
-    log.info(`Found ${scrapeKeys.length} scraped objects in S3 for site ${siteId}`);
+    log.info(`CANONICAL[20012026] - Found ${scrapeKeys.length} scraped objects in S3 for site ${siteId}`);
   } catch (error) {
-    log.error(`Error retrieving S3 keys for site ${siteId}: ${error.message}`);
+    log.error(`CANONICAL[20012026] - ERROR retrieving S3 keys for site ${siteId}: ${error.message}`);
     return {
       auditResult: {
         status: 'PROCESSING_FAILED',
@@ -400,7 +403,7 @@ export async function processScrapedContent(context) {
   }
 
   if (scrapeKeys.length === 0) {
-    log.info(`No scraped content found for site ${siteId}`);
+    log.info(`CANONICAL[20012026] - No scraped content found for site ${siteId}`);
     return {
       auditResult: {
         status: 'NO_OPPORTUNITIES',
@@ -410,34 +413,39 @@ export async function processScrapedContent(context) {
     };
   }
 
+  log.info(`CANONICAL[20012026] - Starting to process ${scrapeKeys.length} pages`);
+
   // Process each scraped page
   const auditPromises = scrapeKeys.map(async (key) => {
     try {
+      log.info(`CANONICAL[20012026] - Fetching scraped object from S3: ${key}`);
       const scrapedObject = await getObjectFromKey(s3Client, bucketName, key, log);
 
       if (!scrapedObject?.scrapeResult?.canonical) {
-        log.warn(`No canonical metadata in S3 object: ${key}`);
+        log.warn(`CANONICAL[20012026] - No canonical metadata in S3 object: ${key}`);
         return null;
       }
 
       const url = scrapedObject.url || scrapedObject.finalUrl;
       if (!url) {
-        log.warn(`No URL found in S3 object: ${key}`);
+        log.warn(`CANONICAL[20012026] - No URL found in S3 object: ${key}`);
         return null;
       }
 
       const finalUrl = scrapedObject.finalUrl || url;
       const isPreview = isPreviewPage(baseURL);
 
-      log.info(`Processing scraped content for: ${url}`);
+      log.info(`CANONICAL[20012026] - Processing URL: ${url}`);
 
       // Use canonical metadata already extracted by the scraper (Puppeteer)
       const canonicalMetadata = scrapedObject.scrapeResult.canonical;
       const canonicalUrl = canonicalMetadata.href || null;
+      log.info(`CANONICAL[20012026] - Canonical metadata for ${url}: exists=${canonicalMetadata.exists}, count=${canonicalMetadata.count}, inHead=${canonicalMetadata.inHead}, href=${canonicalUrl || 'null'}`);
       const canonicalTagChecks = [];
 
       // Check if canonical tag exists
       if (!canonicalMetadata.exists || !canonicalUrl) {
+        log.info(`CANONICAL[20012026] - Missing canonical tag for ${url}`);
         canonicalTagChecks.push({
           check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
           success: false,
@@ -445,6 +453,7 @@ export async function processScrapedContent(context) {
         });
       } else {
         // Canonical tag exists
+        log.info(`CANONICAL[20012026] - Canonical tag found for ${url}`);
         canonicalTagChecks.push({
           check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
           success: true,
@@ -452,6 +461,7 @@ export async function processScrapedContent(context) {
 
         // Check if canonical is in <head>
         if (!canonicalMetadata.inHead) {
+          log.info(`CANONICAL[20012026] - Canonical tag outside <head> for ${url}`);
           canonicalTagChecks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
             success: false,
@@ -466,6 +476,7 @@ export async function processScrapedContent(context) {
 
         // Check if there are multiple canonical tags
         if (canonicalMetadata.count > 1) {
+          log.info(`CANONICAL[20012026] - Multiple canonical tags (${canonicalMetadata.count}) for ${url}`);
           canonicalTagChecks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.check,
             success: false,
@@ -524,7 +535,7 @@ export async function processScrapedContent(context) {
       const checks = [...canonicalTagChecks];
 
       if (canonicalUrl) {
-        log.info(`Found Canonical URL: ${canonicalUrl}`);
+        log.info(`CANONICAL[20012026] - Validating canonical URL format: ${canonicalUrl}`);
 
         const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log, isPreview);
         checks.push(...urlFormatChecks);
@@ -534,9 +545,11 @@ export async function processScrapedContent(context) {
           (c) => c.check === CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
         );
         const isSelfReferenced = selfRefCheck?.success === true;
+        log.info(`CANONICAL[20012026] - Self-referenced check for ${url}: ${isSelfReferenced}`);
 
         // if self-referenced - skip accessibility
         if (isSelfReferenced) {
+          log.info(`CANONICAL[20012026] - Canonical is self-referenced, skipping accessibility check for ${url}`);
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
             success: true,
@@ -547,7 +560,7 @@ export async function processScrapedContent(context) {
           });
         } else {
           // if not self-referenced - validate accessibility
-          log.info(`Canonical URL points to different page, validating accessibility: ${canonicalUrl}`);
+          log.info(`CANONICAL[20012026] - Canonical URL points to different page, validating accessibility: ${canonicalUrl}`);
 
           const options = {};
           if (isPreview) {
@@ -575,8 +588,10 @@ export async function processScrapedContent(context) {
   });
 
   const auditResultsArray = await Promise.allSettled(auditPromises);
+  log.info(`CANONICAL[20012026] - Completed processing ${auditResultsArray.length} pages`);
 
   // Aggregate results
+  log.info('CANONICAL[20012026] - Aggregating results');
   const aggregatedResults = auditResultsArray.reduce((acc, result) => {
     if (result.status === 'fulfilled' && result.value) {
       const { url, checks } = result.value;
@@ -604,10 +619,12 @@ export async function processScrapedContent(context) {
     ),
   );
 
-  log.info(`Successfully completed canonical audit for site: ${baseURL}`);
+  log.info(`CANONICAL[20012026] - Found ${Object.keys(filteredAggregatedResults).length} issue types`);
+  log.info(`CANONICAL[20012026] - Successfully completed canonical audit for site: ${baseURL}`);
 
   // all checks are successful, no issues were found
   if (Object.keys(filteredAggregatedResults).length === 0) {
+    log.info(`CANONICAL[20012026] - No canonical issues detected for ${baseURL}`);
     return {
       fullAuditRef: baseURL,
       auditResult: {
@@ -627,44 +644,14 @@ export async function processScrapedContent(context) {
     })),
   }));
 
-  return {
-    fullAuditRef: baseURL,
-    auditResult: results,
-  };
-}
-/* c8 ignore stop */
-
-/**
- * Generates suggestions based on canonical audit results.
- * Transforms the audit result array into a format suitable for the suggestions system.
- *
- * @param {string} auditUrl - The URL that was audited.
- * @param {Object} auditData - The audit data containing results.
- * @param {Object} context - The context object containing log and other utilities.
- * @returns {Object} The audit data with suggestions added.
- */
-export function generateSuggestions(auditUrl, auditData, context) {
-  const { log } = context;
-
-  log.info('CANONICAL[20012026] - generateSuggestions');
-
-  // if audit failed or has no issues, skip suggestions generation
-  if (!Array.isArray(auditData.auditResult)) {
-    log.info(`Canonical audit for ${auditUrl} has no issues or failed, skipping suggestions generation`);
-    return { ...auditData };
-  }
-
-  // Get the order from CANONICAL_CHECKS object
-  const auditTypeOrder = [
-    ...Object.keys(CANONICAL_CHECKS),
-  ];
-
-  // Group suggestions by audit type
+  // Generate suggestions from audit results
+  log.info('CANONICAL[20012026] - Generating canonical suggestions');
+  const auditTypeOrder = [...Object.keys(CANONICAL_CHECKS)];
   const suggestionsByType = {};
   const allSuggestions = [];
 
   // transform audit results into suggestions
-  auditData.auditResult.forEach((issue) => {
+  results.forEach((issue) => {
     const checkType = issue.type;
     if (!suggestionsByType[checkType]) {
       suggestionsByType[checkType] = [];
@@ -674,170 +661,143 @@ export function generateSuggestions(auditUrl, auditData, context) {
       const suggestion = {
         type: 'CODE_CHANGE',
         checkType: issue.type,
-        explanation: issue.explanation,
         url: urlData.url,
         suggestion: urlData.suggestion,
-        recommendedAction: urlData.suggestion,
       };
+
       suggestionsByType[checkType].push(suggestion);
       allSuggestions.push(suggestion);
     });
   });
 
-  // Build markdown table for Elmo
-  let mdTable = '';
-  auditTypeOrder.forEach((currentAuditType) => {
-    const checkType = CANONICAL_CHECKS[currentAuditType].check;
-    if (suggestionsByType[checkType] && suggestionsByType[checkType].length > 0) {
-      mdTable += `## ${CANONICAL_CHECKS[currentAuditType].title}\n\n`;
-      mdTable += '| Page Url | Explanation | Suggestion |\n';
-      mdTable += '|-------|-------|-------|\n';
-      suggestionsByType[checkType].forEach((suggestion) => {
-        mdTable += `| ${suggestion.url} | ${suggestion.explanation} | ${suggestion.recommendedAction} |\n`;
-      });
-      mdTable += '\n';
-    }
+  // Sort suggestions by audit type order
+  const sortedSuggestions = allSuggestions.sort((a, b) => {
+    const indexA = auditTypeOrder.indexOf(a.checkType);
+    const indexB = auditTypeOrder.indexOf(b.checkType);
+    return indexA - indexB;
   });
 
-  const elmoSuggestions = [];
-  elmoSuggestions.push({
-    type: 'CODE_CHANGE',
-    recommendedAction: mdTable,
-  });
+  log.info(`Generated ${sortedSuggestions.length} canonical suggestions for ${baseURL}`);
 
-  const suggestions = [...allSuggestions];
+  // Create opportunities and sync suggestions
+  if (sortedSuggestions.length > 0) {
+    log.info(`CANONICAL[20012026] - Creating canonical opportunity and syncing ${sortedSuggestions.length} suggestions`);
 
-  log.info(`Generated ${suggestions.length} canonical suggestions for ${auditUrl}`);
-  return { ...auditData, suggestions, elmoSuggestions };
-}
-
-/**
- * Creates opportunities and syncs suggestions for canonical issues.
- *
- * @param {string} auditUrl - The URL that was audited.
- * @param {Object} auditData - The audit data containing results and suggestions.
- * @param {Object} context - The context object containing log, dataAccess, etc.
- * @returns {Object} The audit data unchanged (opportunities created as side effect).
- */
-export async function opportunityAndSuggestions(auditUrl, auditData, context) {
-  const { log } = context;
-
-  log.info('CANONICAL[20012026] - opportunityAndSuggestions');
-
-  // if audit failed or has no suggestions, skip opportunity creation
-  if (!Array.isArray(auditData.auditResult) || !auditData.suggestions?.length) {
-    log.info('Canonical audit has no issues, skipping opportunity creation');
-    return { ...auditData };
-  }
-
-  // create opportunity
-  const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
-    context,
-    createOpportunityData,
-    auditType,
-  );
-
-  const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
-
-  // sync suggestions with opportunity
-  await syncSuggestions({
-    opportunity,
-    newData: auditData.suggestions,
-    context,
-    buildKey,
-    mapNewSuggestion: (suggestion) => ({
-      opportunityId: opportunity.getId(),
-      type: suggestion.type,
-      rank: 0, // all suggestions are ranked equally
-      data: {
-        type: 'url',
-        url: suggestion.url,
-        checkType: suggestion.checkType,
-        explanation: suggestion.explanation,
-        suggestion: suggestion.suggestion,
-        recommendedAction: suggestion.recommendedAction,
-      },
-    }),
-  });
-
-  log.info(`Canonical opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
-  return { ...auditData };
-}
-
-/**
- * Creates opportunities and syncs suggestions for canonical issues for Elmo.
- *
- * @param {string} auditUrl - The URL that was audited.
- * @param {Object} auditData - The audit data containing results and suggestions.
- * @param {Object} context - The context object containing log, dataAccess, etc.
- * @returns {Object} The audit data unchanged (opportunities created as side effect).
- */
-export async function opportunityAndSuggestionsForElmo(auditUrl, auditData, context) {
-  const { log } = context;
-
-  log.info('CANONICAL[20012026] - opportunityAndSuggestionsForElmo');
-
-  if (!auditData.elmoSuggestions?.length) {
-    log.info('Canonical audit has no issues, skipping opportunity creation for Elmo');
-    return { ...auditData };
-  }
-
-  const elmoOpportunityType = 'generic-opportunity';
-  const comparisonFn = (oppty) => {
-    const opptyData = oppty.getData();
-    const opptyAdditionalMetrics = opptyData?.additionalMetrics;
-    if (!opptyAdditionalMetrics || !Array.isArray(opptyAdditionalMetrics)) {
-      return false;
-    }
-    return opptyAdditionalMetrics.some(
-      (metric) => metric.key === 'subtype' && metric.value === 'canonical',
+    const opportunity = await convertToOpportunity(
+      baseURL,
+      { auditResult: results, siteId: site.getId(), id: audit.getId() },
+      context,
+      createOpportunityData,
+      auditType,
     );
-  };
 
-  const opportunity = await convertToOpportunity(
-    auditUrl,
-    auditData,
-    context,
-    createOpportunityDataForElmo,
-    elmoOpportunityType,
-    {},
-    comparisonFn,
-  );
+    const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
 
-  log.info(`Canonical opportunity created for Elmo with oppty id ${opportunity.getId()}`);
+    await syncSuggestions({
+      opportunity,
+      newData: sortedSuggestions,
+      context,
+      buildKey,
+      mapNewSuggestion: (suggestion) => ({
+        opportunityId: opportunity.getId(),
+        type: suggestion.type,
+        rank: 0,
+        data: {
+          type: 'url',
+          url: suggestion.url,
+          checkType: suggestion.checkType,
+          suggestion: suggestion.suggestion,
+        },
+      }),
+      keepLatestMergeDataFunction,
+      log,
+    });
 
-  const buildKey = (suggestion) => `${suggestion.type}`;
-  await syncSuggestions({
-    opportunity,
-    newData: auditData.elmoSuggestions,
-    context,
-    buildKey,
-    mapNewSuggestion: (suggestion) => ({
-      opportunityId: opportunity.getId(),
-      type: suggestion.type,
-      rank: 0,
-      data: {
-        suggestionValue: suggestion.recommendedAction,
-      },
-    }),
-    keepLatestMergeDataFunction,
-    log,
+    log.info(`CANONICAL[20012026] - Canonical opportunity created with ID: ${opportunity.getId()}`);
+    log.info(`CANONICAL[20012026] - Successfully synced ${sortedSuggestions.length} suggestions for ${baseURL}`);
+  }
+
+  // Create Elmo suggestions
+  log.info('CANONICAL[20012026] - Generating Elmo suggestions');
+  const elmoSuggestions = [];
+  Object.entries(suggestionsByType).forEach(([checkType, suggestions]) => {
+    if (suggestions.length > 0) {
+      const checkConfig = Object.values(CANONICAL_CHECKS).find((c) => c.check === checkType);
+      if (checkConfig) {
+        elmoSuggestions.push({
+          type: checkType,
+          checkName: checkConfig.name,
+          explanation: checkConfig.explanation,
+          seoImpact: checkConfig.seoImpact,
+          recommendedAction: checkConfig.recommendedAction,
+          affectedCount: suggestions.length,
+        });
+      }
+    }
   });
 
-  log.info(`Canonical opportunity created for Elmo and ${auditData.elmoSuggestions.length} suggestions synced for ${auditUrl}`);
-  return { ...auditData };
+  // Create Elmo opportunity if there are suggestions
+  if (elmoSuggestions.length > 0) {
+    log.info(`CANONICAL[20012026] - Creating canonical opportunity for Elmo with ${elmoSuggestions.length} suggestions`);
+
+    const elmoOpportunityType = 'generic-opportunity';
+    const comparisonFn = (oppty) => {
+      const opptyData = oppty.getData();
+      const opptyAdditionalMetrics = opptyData?.additionalMetrics;
+      if (!opptyAdditionalMetrics || !Array.isArray(opptyAdditionalMetrics)) {
+        return false;
+      }
+      return opptyAdditionalMetrics.some(
+        (metric) => metric.key === 'subtype' && metric.value === 'canonical',
+      );
+    };
+
+    const opportunity = await convertToOpportunity(
+      baseURL,
+      {
+        elmoSuggestions, auditResult: results, siteId: site.getId(), id: audit.getId(),
+      },
+      context,
+      createOpportunityDataForElmo,
+      elmoOpportunityType,
+      {},
+      comparisonFn,
+    );
+
+    log.info(`Canonical opportunity created for Elmo with oppty id ${opportunity.getId()}`);
+
+    const buildKey = (suggestion) => `${suggestion.type}`;
+    await syncSuggestions({
+      opportunity,
+      newData: elmoSuggestions,
+      context,
+      buildKey,
+      mapNewSuggestion: (suggestion) => ({
+        opportunityId: opportunity.getId(),
+        type: suggestion.type,
+        rank: 0,
+        data: {
+          suggestionValue: suggestion.recommendedAction,
+        },
+      }),
+      keepLatestMergeDataFunction,
+      log,
+    });
+
+    log.info(`CANONICAL[20012026] - Canonical opportunity created for Elmo with oppty id ${opportunity.getId()}`);
+    log.info(`CANONICAL[20012026] - Successfully synced ${elmoSuggestions.length} Elmo suggestions for ${baseURL}`);
+  }
+
+  return {
+    fullAuditRef: baseURL,
+    auditResult: results,
+  };
 }
+/* c8 ignore stop */
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .addStep('importTopPages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submitForScraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('processScrapedContent', processScrapedContent)
-  .withPostProcessors([
-    generateSuggestions,
-    opportunityAndSuggestions,
-    opportunityAndSuggestionsForElmo,
-  ])
   .build();

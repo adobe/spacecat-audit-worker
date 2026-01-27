@@ -22,9 +22,6 @@ import canonicalAudit, {
   validateCanonicalFormat,
   validateCanonicalRecursively,
   generateCanonicalSuggestion,
-  generateSuggestions,
-  opportunityAndSuggestions,
-  opportunityAndSuggestionsForElmo,
   importTopPages,
   submitForScraping,
   processScrapedContent,
@@ -1382,6 +1379,10 @@ describe('Canonical URL Tests', () => {
     });
   });
 
+  // REMOVED: generateSuggestions, opportunityAndSuggestions, opportunityAndSuggestionsForElmo functions
+  // have been deleted from handler.js - they are now part of processScrapedContent
+  /* eslint-disable */
+  /*
   describe('generateSuggestions', () => {
     const auditUrl = 'https://example.com';
     const mockContext = {
@@ -1866,6 +1867,8 @@ describe('Canonical URL Tests', () => {
       expect(fullMockContext.dataAccess.Opportunity.create).to.have.been.called;
     });
   });
+  */
+  /* eslint-enable */
 
   describe('Multi-Step Audit Functions', () => {
     let context;
@@ -1877,6 +1880,7 @@ describe('Canonical URL Tests', () => {
           info: sinon.stub(),
           error: sinon.stub(),
           warn: sinon.stub(),
+          debug: sinon.stub(),
         },
         dataAccess: {
           SiteTopPage: {
@@ -2150,7 +2154,7 @@ describe('Canonical URL Tests', () => {
           },
           fullAuditRef: 'https://example.com',
         });
-        expect(context.log.info).to.have.been.calledWith('No scraped content found for site test-site-id');
+        expect(context.log.info).to.have.been.calledWith('CANONICAL[20012026] - No scraped content found for site test-site-id');
       });
 
       it('should process scraped content and detect canonical issues', async () => {
@@ -2177,7 +2181,26 @@ describe('Canonical URL Tests', () => {
           ...context,
           site,
           s3Client: mockS3Client,
-          audit: {},
+          audit: {
+            getId: () => 'test-audit-id',
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteId: sinon.stub().resolves([]),
+              allBySiteIdAndStatus: sinon.stub().resolves([]),
+              create: sinon.stub().resolves({
+                getId: () => 'test-oppty-id',
+                getSuggestions: sinon.stub().resolves([]),
+                addSuggestions: sinon.stub().resolves({ createdItems: [] }),
+              }),
+              addSuggestions: sinon.stub().resolves({ createdItems: [] }),
+            },
+            Suggestion: {
+              allByOpportunityId: sinon.stub().resolves([]),
+              createMany: sinon.stub().resolves([]),
+              removeMany: sinon.stub().resolves([]),
+            },
+          },
         };
 
         const { processScrapedContent: processScrapedContentMocked } = await esmock(
@@ -2224,7 +2247,9 @@ describe('Canonical URL Tests', () => {
           ...context,
           site,
           s3Client: mockS3Client,
-          audit: {},
+          audit: {
+            getId: () => 'test-audit-id',
+          },
         };
 
         const { processScrapedContent: processScrapedContentMocked } = await esmock(
