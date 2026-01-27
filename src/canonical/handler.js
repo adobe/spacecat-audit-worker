@@ -370,13 +370,16 @@ export function generateCanonicalSuggestion(checkType) {
  */
 /* c8 ignore start */
 export async function processScrapedContent(context) {
+  context.log.info('CANONICAL[20012026] - 1processScrapedContent - START');
   const {
     site, audit, log, s3Client, env,
   } = context;
+  log.info('CANONICAL[20012026] - 2processScrapedContent - START');
   const baseURL = site.getBaseURL();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  log.info(`CANONICAL[20012026] - ScrapedContent_bucketName: ${bucketName}`);
 
-  log.info('CANONICAL[20012026] - processScrapedContent - START');
+  log.info('CANONICAL[20012026] - 3processScrapedContent - START');
   log.info(`CANONICAL[20012026] - Processing site: ${site.getId()}, baseURL: ${baseURL}`);
 
   if (!bucketName) {
