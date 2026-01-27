@@ -251,23 +251,17 @@ export async function runAuditAndImportTopPagesStep(context) {
     context,
   );
 
-  // Fetch includedURLs from siteConfig early (Step 1) to avoid waiting in Step 2
-  const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
-  log.info(`Found ${includedURLs.length} includedURLs from siteConfig (will pass to Step 2)`);
-
   return {
     auditResult: internalLinksAuditRunnerResult.auditResult,
     fullAuditRef: finalUrl,
     type: 'top-pages',
     siteId: site.getId(),
-    includedURLs, // Pass to Step 2 via auditContext
   };
 }
 
 /**
  * Submit URLs for scraping (for crawl-based detection).
  * Combines Ahrefs top pages + includedURLs from siteConfig.
- * Note: includedURLs are now passed from Step 1 via auditContext for efficiency.
  */
 export async function submitForScraping(context) {
   const {
@@ -295,9 +289,9 @@ export async function submitForScraping(context) {
     topPagesUrls = [];
   }
 
-  // Get includedURLs from auditContext (passed from Step 1)
-  const includedURLs = context.data?.includedURLs || [];
-  log.info(`Received ${includedURLs.length} includedURLs from Step 1`);
+  // Get includedURLs from siteConfig
+  const includedURLs = site?.getConfig()?.getIncludedURLs?.('broken-internal-links') || [];
+  log.info(`Found ${includedURLs.length} includedURLs from siteConfig`);
 
   // Merge and deduplicate
   let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
