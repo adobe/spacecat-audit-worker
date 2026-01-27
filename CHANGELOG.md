@@ -1,3 +1,10 @@
+## [1.289.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.289.0...v1.289.1) (2026-01-27)
+
+
+### Bug Fixes
+
+* updating preflight docs ([#1873](https://github.com/adobe/spacecat-audit-worker/issues/1873)) ([724a68b](https://github.com/adobe/spacecat-audit-worker/commit/724a68bb30dc8f8c42fa28c63e81213f2c9ea4e1))
+
 # [1.289.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.288.1...v1.289.0) (2026-01-27)
 
 
