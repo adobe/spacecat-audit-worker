@@ -1,3 +1,10 @@
+# [1.289.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.288.1...v1.289.0) (2026-01-27)
+
+
+### Features
+
+* introduce weekly job for generating frescopa demo data ([#1841](https://github.com/adobe/spacecat-audit-worker/issues/1841)) ([e1b19f0](https://github.com/adobe/spacecat-audit-worker/commit/e1b19f0f0eda50109a29082ac0bd9e93b8a52926))
+
 ## [1.288.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.288.0...v1.288.1) (2026-01-26)
 
 
