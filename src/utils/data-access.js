@@ -262,13 +262,18 @@ export async function syncSuggestions({
         if (existing.getStatus() === SuggestionDataAccess.STATUSES.REJECTED) {
           // Keep REJECTED status when same suggestion appears again in audit
           log.debug('REJECTED suggestion found in audit. Preserving REJECTED status.');
-        } else if (SuggestionDataAccess.STATUSES.OUTDATED === existing.getStatus()) {
-          log.warn('Resolved suggestion found in audit. Possible regression.');
+        } else if (
+          SuggestionDataAccess.STATUSES.OUTDATED === existing.getStatus()
+          || SuggestionDataAccess.STATUSES.FIXED === existing.getStatus()
+        ) {
+          log.warn('Resolved or outdated suggestion found in audit. Possible regression.');
           const { site } = context;
           const requiresValidation = Boolean(site?.requiresValidation);
-          existing.setStatus(requiresValidation
-            ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
-            : SuggestionDataAccess.STATUSES.NEW);
+          existing.setStatus(
+            requiresValidation
+              ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+              : SuggestionDataAccess.STATUSES.NEW,
+          );
         }
         existing.setUpdatedBy('system');
         return existing.save();
