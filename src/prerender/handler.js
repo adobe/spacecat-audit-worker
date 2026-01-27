@@ -118,12 +118,12 @@ function sanitizeImportPath(importPath) {
 /**
 * Transforms a URL into an S3 path for a given identifier and file type.
 * The identifier can be either a scrape job id or a site id.
- * @param {string} url - The URL to transform
+* @param {string} url - The URL to transform
 * @param {string} id - The identifier - scrapeJobId
- * @param {string} fileName - The file name (e.g., 'scrape.json', 'server-side.html',
- * 'client-side.html')
- * @returns {string} The S3 path to the file
- */
+* @param {string} fileName - The file name (e.g., 'scrape.json', 'server-side.html',
+* 'client-side.html')
+* @returns {string} The S3 path to the file
+*/
 function getS3Path(url, id, fileName) {
   const rawImportPath = new URL(url).pathname;
   const sanitizedImportPath = sanitizeImportPath(rawImportPath);
