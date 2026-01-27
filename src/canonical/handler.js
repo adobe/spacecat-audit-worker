@@ -408,7 +408,7 @@ export async function processScrapedContent(context) {
 
   // Convert Map to array of S3 keys
   const scrapeKeys = Array.from(scrapeResultPaths.values());
-  log.info(`CANONICAL[20012026] - Found ${scrapeKeys.length} scraped objects from scrapeResultPaths`);
+  log.info(`CANONICAL[20012026] - Found ${scrapeKeys.length} scraped objects from scrapeResultPaths new`);
   log.info(`CANONICAL[20012026] - Starting to process ${scrapeKeys.length} pages`);
 
   // Process each scraped page
