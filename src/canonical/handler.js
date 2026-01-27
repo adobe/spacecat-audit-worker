@@ -55,9 +55,12 @@ export async function importTopPages(context) {
  * Step 2: Submit pages for scraping with JavaScript rendering
  */
 export async function submitForScraping(context) {
+  context.log.info('CANONICAL[20012026] - 1submitForScraping');
   const {
     site, log, finalUrl, dataAccess,
   } = context;
+
+  log.info('CANONICAL[20012026] - 2submitForScraping');
 
   if (!dataAccess?.SiteTopPage) {
     const errorMsg = 'Missing SiteTopPage data access';
@@ -73,7 +76,7 @@ export async function submitForScraping(context) {
 
   const { SiteTopPage } = dataAccess;
 
-  log.info('CANONICAL[20012026] - submitForScraping');
+  log.info('CANONICAL[20012026] - 3submitForScraping');
   log.info(`Start submitForScraping step for: ${site.getId()}`);
 
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
