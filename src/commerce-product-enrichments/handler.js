@@ -101,6 +101,7 @@ export async function submitForScraping(context) {
     urls: filteredUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'commerce-product-enrichments',
+    allowCache: false,
   };
 
   log.info(`${LOG_PREFIX} Step 2: submitForScraping completed, returning ${result.urls.length} URLs for scraping`);
