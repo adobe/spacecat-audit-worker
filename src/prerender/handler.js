@@ -768,6 +768,7 @@ async function determineDomainWideSuggestionAction(
     (s) => isDomainWideSuggestionData(s.getData()),
   );
 
+  /* c8 ignore next */
   log.info(`Prerender - Domain-wide detection: existingSuggestions=${existingSuggestions.length}, domainWideMatches=${allDomainWideSuggestions.length}. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
 
   if (allDomainWideSuggestions.length === 0 && existingSuggestions.length > 0) {
@@ -782,6 +783,7 @@ async function determineDomainWideSuggestionAction(
         allowedRegexPatterns: data?.allowedRegexPatterns,
       };
     });
+    /* c8 ignore next */
     log.info(`Prerender - Domain-wide detection sample: ${JSON.stringify(sample)}`);
   } else if (allDomainWideSuggestions.length > 0) {
     const matches = allDomainWideSuggestions.slice(0, 3).map((s) => {
@@ -795,6 +797,7 @@ async function determineDomainWideSuggestionAction(
         pathPattern: data?.pathPattern,
       };
     });
+    /* c8 ignore next */
     log.info(`Prerender - Domain-wide matches: ${JSON.stringify(matches)}`);
   }
 

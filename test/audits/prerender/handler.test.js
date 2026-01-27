@@ -1948,6 +1948,7 @@ describe('Prerender Audit', () => {
             key: 'domain-wide-aggregate|prerender',
             isDomainWide: true,
           }),
+          getId: () => 'domain-wide-suggestion-id',
         };
 
         const mockOpportunity = {
@@ -1987,6 +1988,9 @@ describe('Prerender Audit', () => {
 
         expect(context.log.info).to.have.been.calledWith(
           sinon.match(/Domain-wide suggestion already exists in FIXED state, skipping creation/),
+        );
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/Domain-wide matches:/),
         );
       });
 
