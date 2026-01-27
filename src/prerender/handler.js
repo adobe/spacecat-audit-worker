@@ -35,6 +35,23 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 const LOG_PREFIX = 'Prerender -';
 
 const IS_DOMAIN_WIDE_FIELD = 'isDomainWide';
+const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
+
+function isDomainWideSuggestionData(data) {
+  if (!data) {
+    return false;
+  }
+  if (data[IS_DOMAIN_WIDE_FIELD] === true) {
+    return true;
+  }
+  if (data.key === DOMAIN_WIDE_SUGGESTION_KEY) {
+    return true;
+  }
+  if (typeof data.pathPattern === 'string' && data.pathPattern.trim() === '/*') {
+    return true;
+  }
+  return false;
+}
 
 async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIMIT) {
   const { dataAccess, log, site } = context;
@@ -701,14 +718,67 @@ async function prepareDomainWideAggregateSuggestion(
     pathPattern: '/*',
   };
 
-  // Use a constant key to ensure only ONE domain-wide suggestion exists per opportunity
-  const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
-
   log.info(`Prerender - Prepared domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s).`);
 
   return {
     key: DOMAIN_WIDE_SUGGESTION_KEY,
     data: domainWideSuggestionData,
+  };
+}
+
+/**
+ * Determines whether to create a new domain-wide suggestion or update an existing one
+ * based on the current status of any existing domain-wide suggestion.
+ * @param {Object} opportunity - The opportunity object
+ * @param {string} auditUrl - Audited URL
+ * @param {Object} auditData - Audit data with results
+ * @param {Object} context - Processing context
+ * @returns {Promise<Object>} Object with shouldCreateNewDomainWideSuggestion boolean
+ *   and existingDomainWideSuggestionData object (or null)
+ */
+async function determineDomainWideSuggestionAction(
+  opportunity,
+  auditUrl,
+  auditData,
+  context,
+) {
+  const { log } = context;
+
+  const existingSuggestions = await opportunity.getSuggestions();
+  const allDomainWideSuggestions = existingSuggestions.filter(
+    (s) => isDomainWideSuggestionData(s.getData()),
+  );
+
+  // Define active statuses that should NOT be replaced
+  const ACTIVE_STATUSES = [
+    Suggestion.STATUSES.NEW,
+    Suggestion.STATUSES.FIXED,
+    Suggestion.STATUSES.PENDING_VALIDATION,
+    Suggestion.STATUSES.SKIPPED,
+  ];
+
+  let shouldCreateNewDomainWideSuggestion = true;
+  let existingDomainWideSuggestionData = null;
+
+  if (allDomainWideSuggestions.length > 0) {
+    // Find the first active domain-wide suggestion (if any)
+    const activeDomainWideSuggestion = allDomainWideSuggestions.find(
+      (s) => ACTIVE_STATUSES.includes(s.getStatus()),
+    );
+
+    if (activeDomainWideSuggestion) {
+      shouldCreateNewDomainWideSuggestion = false;
+      existingDomainWideSuggestionData = activeDomainWideSuggestion.getData();
+      const activeStatus = activeDomainWideSuggestion.getStatus();
+      log.info(`Prerender - Domain-wide suggestion already exists in ${activeStatus} state, skipping creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}, totalDomainWideSuggestions=${allDomainWideSuggestions.length}`);
+    }
+  } else {
+    log.info(`Prerender - No existing domain-wide suggestion found, will create new one. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+  }
+
+  return {
+    shouldCreateNewDomainWideSuggestion,
+    existingDomainWideSuggestionData,
   };
 }
 
@@ -771,45 +841,23 @@ export async function processOpportunityAndSuggestions(
       return data.key;
     }
 
-    if (data?.[IS_DOMAIN_WIDE_FIELD] === true) {
-      return domainWideSuggestion.key;
+    if (isDomainWideSuggestionData(data)) {
+      return DOMAIN_WIDE_SUGGESTION_KEY;
     }
     // Individual suggestions use URL-based key
     return `${data.url}|${AUDIT_TYPE}`;
   };
 
-  // Check if a domain-wide suggestion already exists in an active state
-  const existingSuggestions = await opportunity.getSuggestions();
-  const existingDomainWideSuggestion = existingSuggestions.find(
-    (s) => {
-      const data = s.getData();
-      return data?.[IS_DOMAIN_WIDE_FIELD] === true;
-    },
+  // Determine whether to create a new domain-wide suggestion or update an existing one
+  const {
+    shouldCreateNewDomainWideSuggestion,
+    existingDomainWideSuggestionData,
+  } = await determineDomainWideSuggestionAction(
+    opportunity,
+    auditUrl,
+    auditData,
+    context,
   );
-
-  // Define active statuses that should NOT be replaced
-  const ACTIVE_STATUSES = [
-    Suggestion.STATUSES.NEW,
-    Suggestion.STATUSES.FIXED,
-    Suggestion.STATUSES.PENDING_VALIDATION,
-    Suggestion.STATUSES.SKIPPED,
-  ];
-
-  let shouldCreateNewDomainWideSuggestion = true;
-  let existingDomainWideSuggestionData = null;
-
-  if (existingDomainWideSuggestion) {
-    const existingStatus = existingDomainWideSuggestion.getStatus();
-    if (ACTIVE_STATUSES.includes(existingStatus)) {
-      shouldCreateNewDomainWideSuggestion = false;
-      existingDomainWideSuggestionData = existingDomainWideSuggestion.getData();
-      log.info(`Prerender - Domain-wide suggestion already exists in ${existingStatus} state, skipping creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-    } else {
-      log.info(`Prerender - Domain-wide suggestion exists in ${existingStatus} state, will update it. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-    }
-  } else {
-    log.info(`Prerender - No existing domain-wide suggestion found, will create new one. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-  }
 
   // Helper function to extract only the fields we want in suggestions
   const mapSuggestionData = (suggestion) => ({
