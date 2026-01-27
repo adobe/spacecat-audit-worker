@@ -2050,6 +2050,57 @@ describe('Prerender Audit', () => {
         );
       });
 
+      it('should handle existing suggestions with null data safely', async () => {
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'test-audit-id',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.5,
+                wordCountBefore: 100,
+                wordCountAfter: 250,
+              },
+            ],
+          },
+        };
+
+        const existingSuggestion = {
+          getStatus: () => Suggestion.STATUSES.FIXED,
+          getData: () => null,
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: () => Promise.resolve([existingSuggestion]),
+        };
+
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+        });
+
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+          },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+      });
+
       it('should skip domain-wide suggestion creation when fixed suggestion uses domain-wide url pattern', async () => {
         const auditData = {
           siteId: 'test-site',
