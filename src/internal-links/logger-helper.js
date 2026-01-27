@@ -26,7 +26,7 @@ const AUDIT_TYPE = 'broken-internal-links';
  * // Logs: "[broken-internal-links] [siteId=xxx] Found 200 Ahrefs pages"
  */
 export function createContextLogger(log, siteId) {
-  const prefix = `[${AUDIT_TYPE}] [siteId=${siteId}]`;
+  const prefix = `[${AUDIT_TYPE}] [siteId-abhigarg=${siteId}]`;
 
   return {
     info: (message, ...args) => log.info(`${prefix} ${message}`, ...args),
