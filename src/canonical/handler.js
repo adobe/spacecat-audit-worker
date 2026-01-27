@@ -58,6 +58,19 @@ export async function submitForScraping(context) {
   const {
     site, log, finalUrl, dataAccess,
   } = context;
+
+  if (!dataAccess?.SiteTopPage) {
+    const errorMsg = 'Missing SiteTopPage data access';
+    log.info(`[canonical] ${errorMsg}`);
+    return {
+      auditResult: {
+        status: 'PROCESSING_FAILED',
+        error: errorMsg,
+      },
+      fullAuditRef: finalUrl,
+    };
+  }
+
   const { SiteTopPage } = dataAccess;
 
   log.info('CANONICAL[20012026] - submitForScraping');
@@ -65,10 +78,9 @@ export async function submitForScraping(context) {
 
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
-  const topPagesUrls = topPages.map((page) => page.getUrl());
-  log.info(`CANONICAL[20012026] - Found ${topPagesUrls.length} top pages for scraping`);
+  log.info(`CANONICAL[20012026] - Found ${topPages?.length || 0} top pages for scraping`);
 
-  if (topPagesUrls.length === 0) {
+  if (!topPages || topPages.length === 0) {
     log.info(`No top pages found for site ${site.getId()}, skipping scraping`);
     return {
       auditResult: {
@@ -78,6 +90,8 @@ export async function submitForScraping(context) {
       fullAuditRef: finalUrl,
     };
   }
+
+  const topPagesUrls = topPages.map((page) => page.getUrl());
 
   // Filter out auth pages and PDFs
   const shouldSkipAuthPage = (u) => {
