@@ -596,7 +596,7 @@ describe('Backlinks Tests', function () {
       expect(context.log.warn).to.have.been.calledWith('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
     });
 
-    it('should warn when publishing FIXED suggestions fails', async () => {
+    it('should call syncSuggestions with isIssueFixed and isIssueResolvedOnProduction callbacks', async () => {
       configuration.isHandlerEnabledForSite.returns(true);
       context.audit.getAuditResult.returns({
         success: true,
@@ -614,21 +614,25 @@ describe('Backlinks Tests', function () {
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
         .resolves([{ getUrl: () => 'https://test-example.com/page1' }]);
 
-      // Re-import handler with failing publish helper
+      // Mock syncSuggestions to verify it receives the callbacks
+      const syncSuggestionsStub = sandbox.stub().resolves();
       const handler = await (await import('esmock')).default('../../src/backlinks/handler.js', {
         '../../src/utils/data-access.js': {
-          reconcileDisappearedSuggestions: sandbox.stub().resolves(),
-          publishDeployedFixEntities: sandbox.stub().rejects(new Error('boom')),
-          syncSuggestions: async (...args) => (await import('../../src/utils/data-access.js')).syncSuggestions(...args),
+          syncSuggestions: syncSuggestionsStub,
         },
       });
 
       const result = await handler.generateSuggestionData(context);
 
       expect(result.status).to.deep.equal('complete');
-      expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to publish fix entities: boom/),
-      );
+      // Verify syncSuggestions was called with the expected callbacks
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      const callArgs = syncSuggestionsStub.getCall(0).args[0];
+      expect(callArgs).to.have.property('isIssueFixed').that.is.a('function');
+      expect(callArgs).to.have.property('isIssueResolvedOnProduction').that.is.a('function');
+      expect(callArgs).to.have.property('getPagePath').that.is.a('function');
+      expect(callArgs).to.have.property('getUpdatedValue').that.is.a('function');
+      expect(callArgs).to.have.property('getOldValue').that.is.a('function');
     });
   });
 

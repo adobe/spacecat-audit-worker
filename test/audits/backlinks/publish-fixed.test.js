@@ -10,7 +10,7 @@ import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
 
-describe('backlinks: reconciliation for disappeared suggestions', () => {
+describe('backlinks: syncSuggestions callback tests', () => {
   const sandbox = sinon.createSandbox();
   let context;
   let handler;
@@ -26,25 +26,22 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
     }
   });
 
-  it('reconciliation: marks suggestion FIXED and creates fix entity when url_to redirects to urlsSuggested', async () => {
-    const addFixEntities = sandbox.stub().resolves();
-    const suggestion = {
-      getId: () => 'sug-redirect',
-      getStatus: () => 'NEW',
-      getType: () => 'REDIRECT_UPDATE',
-      getData: () => ({
-        url_from: 'https://from.com/page',
-        url_to: 'https://example.com/old-broken',
-        urlsSuggested: ['https://example.com/new-fixed'],
-      }),
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: sandbox.stub().resolves(),
-    };
+  /**
+   * Helper to set up handler with syncSuggestions stub that captures callbacks
+   */
+  async function setupHandlerWithCallbackCapture(fetchResponse = { url: 'https://example.com/new-fixed', ok: true, status: 200 }) {
+    const capturedCallbacks = {};
+    const syncSuggestionsStub = sandbox.stub().callsFake(async (params) => {
+      capturedCallbacks.isIssueFixed = params.isIssueFixed;
+      capturedCallbacks.isIssueResolvedOnProduction = params.isIssueResolvedOnProduction;
+      capturedCallbacks.getPagePath = params.getPagePath;
+      capturedCallbacks.getUpdatedValue = params.getUpdatedValue;
+      capturedCallbacks.getOldValue = params.getOldValue;
+    });
 
     handler = await esmock('../../../src/backlinks/handler.js', {
       '@adobe/spacecat-shared-utils': {
-        tracingFetch: async () => ({ url: 'https://example.com/new-fixed', ok: true, status: 200 }),
+        tracingFetch: async () => fetchResponse,
       },
       '@adobe/spacecat-shared-data-access': {
         ...await import('@adobe/spacecat-shared-data-access'),
@@ -53,17 +50,14 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       },
       '../../../src/common/opportunity.js': {
         convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-reconcile',
-          addFixEntities,
-          getSuggestions: () => [suggestion],
+          getId: () => 'oppty-test',
         }),
       },
       '../../../src/backlinks/kpi-metrics.js': {
         default: sandbox.stub().resolves({}),
       },
       '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: sandbox.stub().resolves(),
+        syncSuggestions: syncSuggestionsStub,
       },
     });
 
@@ -101,1203 +95,214 @@ describe('backlinks: reconciliation for disappeared suggestions', () => {
       })
       .build();
 
-    const result = await handler.generateSuggestionData(context);
-    expect(result.status).to.equal('complete');
-    expect(suggestion.setStatus).to.have.been.calledWith('FIXED');
-    expect(addFixEntities).to.have.been.called;
-    const callArgs = addFixEntities.firstCall.args[0];
-    expect(callArgs[0].changeDetails.updatedValue).to.equal('https://example.com/new-fixed');
+    return { syncSuggestionsStub, capturedCallbacks };
+  }
 
-    await esmock.purge(handler);
-    handler = undefined;
-  }).timeout(8000);
+  describe('isIssueFixed callback', () => {
+    it('returns true when url_to redirects to urlsSuggested', async () => {
+      const { capturedCallbacks } = await setupHandlerWithCallbackCapture({
+        url: 'https://example.com/new-fixed',
+        ok: true,
+        status: 200,
+      });
 
-  it('reconciliation: handles suggestion with getData returning null (fallback to {})', async () => {
-    const addFixEntities = sandbox.stub().resolves();
-    const suggestion = {
-      getId: () => 'sug-null-data',
-      getStatus: () => 'NEW',
-      getType: () => 'REDIRECT_UPDATE',
-      getData: () => null,
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: sandbox.stub().resolves(),
-    };
+      await handler.generateSuggestionData(context);
 
-    handler = await esmock('../../../src/backlinks/handler.js', {
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: async () => ({ url: 'https://example.com/new', ok: true, status: 200 }),
-      },
-      '@adobe/spacecat-shared-data-access': {
-        ...await import('@adobe/spacecat-shared-data-access'),
-        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
-        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-null-data',
-          addFixEntities,
-          getSuggestions: () => [suggestion],
+      const suggestion = {
+        getData: () => ({
+          url_to: 'https://example.com/old-broken',
+          urlsSuggested: ['https://example.com/new-fixed'],
         }),
-      },
-      '../../../src/backlinks/kpi-metrics.js': {
-        default: sandbox.stub().resolves({}),
-      },
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: sandbox.stub().resolves(),
-      },
-    });
+      };
+      const isFixed = await capturedCallbacks.isIssueFixed(suggestion);
+      expect(isFixed).to.equal(true);
 
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        finalUrl: 'https://example.com',
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getDeliveryType: () => 'aem_edge',
-        },
-        dataAccess: {
-          Configuration: {
-            findLatest: () => ({ isHandlerEnabledForSite: () => true }),
-          },
-          Suggestion: {
-            allByOpportunityIdAndStatus: sandbox.stub().resolves([
-              { getId: () => 'new-1', getData: () => ({ url_from: 'https://from.com/f', url_to: 'https://to.com/t' }) },
-            ]),
-          },
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/page1' }]),
-          },
-        },
-        audit: {
-          getId: () => 'audit-1',
-          getAuditResult: () => ({
-            success: true,
-            brokenBacklinks: [{ url_from: 'https://a.com/f', url_to: 'https://a.com/t', traffic_domain: 1 }],
-          }),
-        },
-        sqs: { sendMessage: sandbox.stub().resolves() },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
-      })
-      .build();
-
-    const result = await handler.generateSuggestionData(context);
-    expect(result.status).to.equal('complete');
-    expect(suggestion.setStatus).to.not.have.been.called;
-    expect(addFixEntities).to.not.have.been.called;
-
-    await esmock.purge(handler);
-    handler = undefined;
-  }).timeout(8000);
-
-  it('reconciliation: uses url_to fallback when resp.url is undefined', async () => {
-    const addFixEntities = sandbox.stub().resolves();
-    const suggestion = {
-      getId: () => 'sug-no-resp-url',
-      getStatus: () => 'NEW',
-      getType: () => 'REDIRECT_UPDATE',
-      getData: () => ({
-        url_from: 'https://from.com/page',
-        url_to: 'https://example.com/old',
-        urlsSuggested: ['https://example.com/old'],
-      }),
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: sandbox.stub().resolves(),
-    };
-
-    handler = await esmock('../../../src/backlinks/handler.js', {
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: async () => ({ ok: true, status: 200 }),
-      },
-      '@adobe/spacecat-shared-data-access': {
-        ...await import('@adobe/spacecat-shared-data-access'),
-        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
-        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-no-resp-url',
-          addFixEntities,
-          getSuggestions: () => [suggestion],
-        }),
-      },
-      '../../../src/backlinks/kpi-metrics.js': {
-        default: sandbox.stub().resolves({}),
-      },
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: sandbox.stub().resolves(),
-      },
-    });
-
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        finalUrl: 'https://example.com',
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getDeliveryType: () => 'aem_edge',
-        },
-        dataAccess: {
-          Configuration: {
-            findLatest: () => ({ isHandlerEnabledForSite: () => true }),
-          },
-          Suggestion: {
-            allByOpportunityIdAndStatus: sandbox.stub().resolves([
-              { getId: () => 'new-1', getData: () => ({ url_from: 'https://from.com/f', url_to: 'https://to.com/t' }) },
-            ]),
-          },
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/page1' }]),
-          },
-        },
-        audit: {
-          getId: () => 'audit-1',
-          getAuditResult: () => ({
-            success: true,
-            brokenBacklinks: [{ url_from: 'https://a.com/f', url_to: 'https://a.com/t', traffic_domain: 1 }],
-          }),
-        },
-        sqs: { sendMessage: sandbox.stub().resolves() },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
-      })
-      .build();
-
-    const result = await handler.generateSuggestionData(context);
-    expect(result.status).to.equal('complete');
-    expect(suggestion.setStatus).to.have.been.calledWith('FIXED');
-    expect(addFixEntities).to.have.been.called;
-
-    await esmock.purge(handler);
-    handler = undefined;
-  }).timeout(8000);
-
-  it('reconciliation: uses urlEdited when present', async () => {
-    const addFixEntities = sandbox.stub().resolves();
-    const suggestion = {
-      getId: () => 'sug-urledited',
-      getStatus: () => 'NEW',
-      getType: () => 'REDIRECT_UPDATE',
-      getData: () => ({
-        url_from: 'https://from.com/page',
-        url_to: 'https://example.com/old',
-        urlsSuggested: ['https://example.com/suggested'],
-        urlEdited: 'https://example.com/custom-edited',
-      }),
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: sandbox.stub().resolves(),
-    };
-
-    handler = await esmock('../../../src/backlinks/handler.js', {
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: async () => ({ url: 'https://example.com/suggested', ok: true, status: 200 }),
-      },
-      '@adobe/spacecat-shared-data-access': {
-        ...await import('@adobe/spacecat-shared-data-access'),
-        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
-        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-urledited',
-          addFixEntities,
-          getSuggestions: () => [suggestion],
-        }),
-      },
-      '../../../src/backlinks/kpi-metrics.js': {
-        default: sandbox.stub().resolves({}),
-      },
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: sandbox.stub().resolves(),
-      },
-    });
-
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        finalUrl: 'https://example.com',
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getDeliveryType: () => 'aem_edge',
-        },
-        dataAccess: {
-          Configuration: {
-            findLatest: () => ({ isHandlerEnabledForSite: () => true }),
-          },
-          Suggestion: {
-            allByOpportunityIdAndStatus: sandbox.stub().resolves([
-              { getId: () => 'new-1', getData: () => ({ url_from: 'https://from.com/f', url_to: 'https://to.com/t' }) },
-            ]),
-          },
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/page1' }]),
-          },
-        },
-        audit: {
-          getId: () => 'audit-1',
-          getAuditResult: () => ({
-            success: true,
-            brokenBacklinks: [{ url_from: 'https://a.com/f', url_to: 'https://a.com/t', traffic_domain: 1 }],
-          }),
-        },
-        sqs: { sendMessage: sandbox.stub().resolves() },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
-      })
-      .build();
-
-    const result = await handler.generateSuggestionData(context);
-    expect(result.status).to.equal('complete');
-    expect(suggestion.setStatus).to.have.been.calledWith('FIXED');
-    expect(addFixEntities).to.have.been.called;
-    const callArgs = addFixEntities.firstCall.args[0];
-    expect(callArgs[0].changeDetails.updatedValue).to.equal('https://example.com/custom-edited');
-
-    await esmock.purge(handler);
-    handler = undefined;
-  }).timeout(8000);
-
-  it('reconciliation: falls back to empty string when first suggested url is empty', async () => {
-    const addFixEntities = sandbox.stub().resolves();
-    const suggestion = {
-      getId: () => 'sug-empty-first',
-      getStatus: () => 'NEW',
-      getType: () => 'REDIRECT_UPDATE',
-      getData: () => ({
-        url_from: 'https://from.com/page',
-        url_to: 'https://example.com/old',
-        urlsSuggested: ['', 'https://example.com/second'],
-      }),
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: sandbox.stub().resolves(),
-    };
-
-    handler = await esmock('../../../src/backlinks/handler.js', {
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: async () => ({ url: 'https://example.com/second', ok: true, status: 200 }),
-      },
-      '@adobe/spacecat-shared-data-access': {
-        ...await import('@adobe/spacecat-shared-data-access'),
-        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
-        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-empty-first',
-          addFixEntities,
-          getSuggestions: () => [suggestion],
-        }),
-      },
-      '../../../src/backlinks/kpi-metrics.js': {
-        default: sandbox.stub().resolves({}),
-      },
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: sandbox.stub().resolves(),
-      },
-    });
-
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        finalUrl: 'https://example.com',
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getDeliveryType: () => 'aem_edge',
-        },
-        dataAccess: {
-          Configuration: {
-            findLatest: () => ({ isHandlerEnabledForSite: () => true }),
-          },
-          Suggestion: {
-            allByOpportunityIdAndStatus: sandbox.stub().resolves([
-              { getId: () => 'new-1', getData: () => ({ url_from: 'https://from.com/f', url_to: 'https://to.com/t' }) },
-            ]),
-          },
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/page1' }]),
-          },
-        },
-        audit: {
-          getId: () => 'audit-1',
-          getAuditResult: () => ({
-            success: true,
-            brokenBacklinks: [{ url_from: 'https://a.com/f', url_to: 'https://a.com/t', traffic_domain: 1 }],
-          }),
-        },
-        sqs: { sendMessage: sandbox.stub().resolves() },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
-      })
-      .build();
-
-    const result = await handler.generateSuggestionData(context);
-    expect(result.status).to.equal('complete');
-    expect(suggestion.setStatus).to.have.been.calledWith('FIXED');
-    expect(addFixEntities).to.have.been.called;
-    const callArgs = addFixEntities.firstCall.args[0];
-    expect(callArgs[0].changeDetails.updatedValue).to.equal('');
-
-    await esmock.purge(handler);
-    handler = undefined;
-  }).timeout(8000);
-
-  it('reconciliation: network error while following url_to does not mark FIXED', async () => {
-    const addFixEntities = sandbox.stub().resolves();
-    const suggestion = {
-      getId: () => 'sug-net-err',
-      getStatus: () => 'NEW',
-      getType: () => 'REDIRECT_UPDATE',
-      getData: () => ({
-        url_from: 'https://from.com/page',
-        url_to: 'https://example.com/old',
-        urlsSuggested: ['https://example.com/new'],
-      }),
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: sandbox.stub().resolves(),
-    };
-
-    handler = await esmock('../../../src/backlinks/handler.js', {
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: async () => { throw new Error('Network error'); },
-      },
-      '@adobe/spacecat-shared-data-access': {
-        ...await import('@adobe/spacecat-shared-data-access'),
-        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
-        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-net-err',
-          addFixEntities,
-          getSuggestions: () => [suggestion],
-        }),
-      },
-      '../../../src/backlinks/kpi-metrics.js': {
-        default: sandbox.stub().resolves({}),
-      },
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: sandbox.stub().resolves(),
-      },
-    });
-
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        finalUrl: 'https://example.com',
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getDeliveryType: () => 'aem_edge',
-        },
-        dataAccess: {
-          Configuration: {
-            findLatest: () => ({ isHandlerEnabledForSite: () => true }),
-          },
-          Suggestion: {
-            allByOpportunityIdAndStatus: sandbox.stub().resolves([
-              { getId: () => 'new-1', getData: () => ({ url_from: 'https://from.com/f', url_to: 'https://to.com/t' }) },
-            ]),
-          },
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/page1' }]),
-          },
-        },
-        audit: {
-          getId: () => 'audit-1',
-          getAuditResult: () => ({
-            success: true,
-            brokenBacklinks: [{ url_from: 'https://a.com/f', url_to: 'https://a.com/t', traffic_domain: 1 }],
-          }),
-        },
-        sqs: { sendMessage: sandbox.stub().resolves() },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
-      })
-      .build();
-
-    const result = await handler.generateSuggestionData(context);
-    expect(result.status).to.equal('complete');
-    expect(suggestion.setStatus).to.not.have.been.called;
-    expect(addFixEntities).to.not.have.been.called;
-
-    await esmock.purge(handler);
-    handler = undefined;
-  }).timeout(8000);
-
-  it('reconciliation: save throws logs warn', async () => {
-    const addFixEntities = sandbox.stub().resolves();
-    const suggestion = {
-      getId: () => 'sug-save-err',
-      getStatus: () => 'NEW',
-      getType: () => 'REDIRECT_UPDATE',
-      getData: () => ({
-        url_from: 'https://from.com/page',
-        url_to: 'https://example.com/old',
-        urlsSuggested: ['https://example.com/new'],
-      }),
-      setStatus: sandbox.stub().throws(new Error('save-err')),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: sandbox.stub().resolves(),
-    };
-
-    handler = await esmock('../../../src/backlinks/handler.js', {
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: async () => ({ url: 'https://example.com/new', ok: true, status: 200 }),
-      },
-      '@adobe/spacecat-shared-data-access': {
-        ...await import('@adobe/spacecat-shared-data-access'),
-        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
-        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-save-err',
-          addFixEntities,
-          getSuggestions: () => [suggestion],
-        }),
-      },
-      '../../../src/backlinks/kpi-metrics.js': {
-        default: sandbox.stub().resolves({}),
-      },
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: sandbox.stub().resolves(),
-      },
-    });
-
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        finalUrl: 'https://example.com',
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getDeliveryType: () => 'aem_edge',
-        },
-        dataAccess: {
-          Configuration: {
-            findLatest: () => ({ isHandlerEnabledForSite: () => true }),
-          },
-          Suggestion: {
-            allByOpportunityIdAndStatus: sandbox.stub().resolves([
-              { getId: () => 'new-1', getData: () => ({ url_from: 'https://from.com/f', url_to: 'https://to.com/t' }) },
-            ]),
-          },
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/page1' }]),
-          },
-        },
-        audit: {
-          getId: () => 'audit-1',
-          getAuditResult: () => ({
-            success: true,
-            brokenBacklinks: [{ url_from: 'https://a.com/f', url_to: 'https://a.com/t', traffic_domain: 1 }],
-          }),
-        },
-        sqs: { sendMessage: sandbox.stub().resolves() },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
-      })
-      .build();
-
-    const result = await handler.generateSuggestionData(context);
-    expect(result.status).to.equal('complete');
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Failed to mark suggestion.*as FIXED/));
-
-    await esmock.purge(handler);
-    handler = undefined;
-  }).timeout(8000);
-
-  it('reconciliation: addFixEntities failure logs warn', async () => {
-    const addFixEntities = sandbox.stub().rejects(new Error('add-fail'));
-    const suggestion = {
-      getId: () => 'sug-add-err',
-      getStatus: () => 'NEW',
-      getType: () => 'REDIRECT_UPDATE',
-      getData: () => ({
-        url_from: 'https://from.com/page',
-        url_to: 'https://example.com/old',
-        urlsSuggested: ['https://example.com/new'],
-      }),
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: sandbox.stub().resolves(),
-    };
-
-    handler = await esmock('../../../src/backlinks/handler.js', {
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: async () => ({ url: 'https://example.com/new', ok: true, status: 200 }),
-      },
-      '@adobe/spacecat-shared-data-access': {
-        ...await import('@adobe/spacecat-shared-data-access'),
-        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
-        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-add-err',
-          addFixEntities,
-          getSuggestions: () => [suggestion],
-        }),
-      },
-      '../../../src/backlinks/kpi-metrics.js': {
-        default: sandbox.stub().resolves({}),
-      },
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: sandbox.stub().resolves(),
-      },
-    });
-
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        finalUrl: 'https://example.com',
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getDeliveryType: () => 'aem_edge',
-        },
-        dataAccess: {
-          Configuration: {
-            findLatest: () => ({ isHandlerEnabledForSite: () => true }),
-          },
-          Suggestion: {
-            allByOpportunityIdAndStatus: sandbox.stub().resolves([
-              { getId: () => 'new-1', getData: () => ({ url_from: 'https://from.com/f', url_to: 'https://to.com/t' }) },
-            ]),
-          },
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/page1' }]),
-          },
-        },
-        audit: {
-          getId: () => 'audit-1',
-          getAuditResult: () => ({
-            success: true,
-            brokenBacklinks: [{ url_from: 'https://a.com/f', url_to: 'https://a.com/t', traffic_domain: 1 }],
-          }),
-        },
-        sqs: { sendMessage: sandbox.stub().resolves() },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
-      })
-      .build();
-
-    const result = await handler.generateSuggestionData(context);
-    expect(result.status).to.equal('complete');
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Failed to add fix entities on opportunity/));
-
-    await esmock.purge(handler);
-    handler = undefined;
-  }).timeout(8000);
-
-  it('reconciliation: skips when no suggested targets', async () => {
-    const addFixEntities = sandbox.stub().resolves();
-    const suggestion = {
-      getId: () => 'sug-no-targets',
-      getStatus: () => 'NEW',
-      getType: () => 'REDIRECT_UPDATE',
-      getData: () => ({
-        url_from: 'https://from.com/page',
-        url_to: 'https://example.com/old',
-        urlsSuggested: [],
-      }),
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: sandbox.stub().resolves(),
-    };
-
-    handler = await esmock('../../../src/backlinks/handler.js', {
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: async () => ({ url: 'https://example.com/new', ok: true, status: 200 }),
-      },
-      '@adobe/spacecat-shared-data-access': {
-        ...await import('@adobe/spacecat-shared-data-access'),
-        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
-        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-no-targets',
-          addFixEntities,
-          getSuggestions: () => [suggestion],
-        }),
-      },
-      '../../../src/backlinks/kpi-metrics.js': {
-        default: sandbox.stub().resolves({}),
-      },
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: sandbox.stub().resolves(),
-      },
-    });
-
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        finalUrl: 'https://example.com',
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getDeliveryType: () => 'aem_edge',
-        },
-        dataAccess: {
-          Configuration: {
-            findLatest: () => ({ isHandlerEnabledForSite: () => true }),
-          },
-          Suggestion: {
-            allByOpportunityIdAndStatus: sandbox.stub().resolves([
-              { getId: () => 'new-1', getData: () => ({ url_from: 'https://from.com/f', url_to: 'https://to.com/t' }) },
-            ]),
-          },
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/page1' }]),
-          },
-        },
-        audit: {
-          getId: () => 'audit-1',
-          getAuditResult: () => ({
-            success: true,
-            brokenBacklinks: [{ url_from: 'https://a.com/f', url_to: 'https://a.com/t', traffic_domain: 1 }],
-          }),
-        },
-        sqs: { sendMessage: sandbox.stub().resolves() },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
-      })
-      .build();
-
-    const result = await handler.generateSuggestionData(context);
-    expect(result.status).to.equal('complete');
-    expect(suggestion.setStatus).to.not.have.been.called;
-    expect(addFixEntities).to.not.have.been.called;
-
-    await esmock.purge(handler);
-    handler = undefined;
-  }).timeout(8000);
-
-  it('reconciliation: handles outer error gracefully', async () => {
-    handler = await esmock('../../../src/backlinks/handler.js', {
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: async () => ({ ok: true, status: 200 }),
-      },
-      '@adobe/spacecat-shared-data-access': {
-        ...await import('@adobe/spacecat-shared-data-access'),
-        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
-        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-outer-err',
-          addFixEntities: sandbox.stub().resolves(),
-          getSuggestions: () => { throw new Error('getSuggestions-fail'); },
-        }),
-      },
-      '../../../src/backlinks/kpi-metrics.js': {
-        default: sandbox.stub().resolves({}),
-      },
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: sandbox.stub().resolves(),
-      },
-    });
-
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        finalUrl: 'https://example.com',
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getDeliveryType: () => 'aem_edge',
-        },
-        dataAccess: {
-          Configuration: {
-            findLatest: () => ({ isHandlerEnabledForSite: () => true }),
-          },
-          Suggestion: {
-            allByOpportunityIdAndStatus: sandbox.stub().resolves([
-              { getId: () => 'new-1', getData: () => ({ url_from: 'https://from.com/f', url_to: 'https://to.com/t' }) },
-            ]),
-          },
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/page1' }]),
-          },
-        },
-        audit: {
-          getId: () => 'audit-1',
-          getAuditResult: () => ({
-            success: true,
-            brokenBacklinks: [{ url_from: 'https://a.com/f', url_to: 'https://a.com/t', traffic_domain: 1 }],
-          }),
-        },
-        sqs: { sendMessage: sandbox.stub().resolves() },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
-      })
-      .build();
-
-    const result = await handler.generateSuggestionData(context);
-    expect(result.status).to.equal('complete');
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Failed reconciliation for disappeared suggestions/));
-
-    await esmock.purge(handler);
-    handler = undefined;
-  }).timeout(8000);
-
-  it('reconciliation: normalize handles non-string targets', async () => {
-    const addFixEntities = sandbox.stub().resolves();
-    const suggestion = {
-      getId: () => 'sug-non-string',
-      getStatus: () => 'NEW',
-      getType: () => 'REDIRECT_UPDATE',
-      getData: () => ({
-        url_from: 'https://from.com/page',
-        url_to: 'https://example.com/old',
-        urlsSuggested: [null, 'https://example.com/valid'],
-      }),
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: sandbox.stub().resolves(),
-    };
-
-    handler = await esmock('../../../src/backlinks/handler.js', {
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: async () => ({ url: 'https://example.com/valid', ok: true, status: 200 }),
-      },
-      '@adobe/spacecat-shared-data-access': {
-        ...await import('@adobe/spacecat-shared-data-access'),
-        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
-        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-non-string',
-          addFixEntities,
-          getSuggestions: () => [suggestion],
-        }),
-      },
-      '../../../src/backlinks/kpi-metrics.js': {
-        default: sandbox.stub().resolves({}),
-      },
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: sandbox.stub().resolves(),
-      },
-    });
-
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        finalUrl: 'https://example.com',
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getDeliveryType: () => 'aem_edge',
-        },
-        dataAccess: {
-          Configuration: {
-            findLatest: () => ({ isHandlerEnabledForSite: () => true }),
-          },
-          Suggestion: {
-            allByOpportunityIdAndStatus: sandbox.stub().resolves([
-              { getId: () => 'new-1', getData: () => ({ url_from: 'https://from.com/f', url_to: 'https://to.com/t' }) },
-            ]),
-          },
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/page1' }]),
-          },
-        },
-        audit: {
-          getId: () => 'audit-1',
-          getAuditResult: () => ({
-            success: true,
-            brokenBacklinks: [{ url_from: 'https://a.com/f', url_to: 'https://a.com/t', traffic_domain: 1 }],
-          }),
-        },
-        sqs: { sendMessage: sandbox.stub().resolves() },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
-      })
-      .build();
-
-    const result = await handler.generateSuggestionData(context);
-    expect(result.status).to.equal('complete');
-    expect(suggestion.setStatus).to.have.been.calledWith('FIXED');
-    expect(addFixEntities).to.have.been.called;
-
-    await esmock.purge(handler);
-    handler = undefined;
-  }).timeout(8000);
-
-  it('reconciliation: skips when url_to missing', async () => {
-    const addFixEntities = sandbox.stub().resolves();
-    const suggestion = {
-      getId: () => 'sug-missing-urlto',
-      getStatus: () => 'NEW',
-      getType: () => 'REDIRECT_UPDATE',
-      getData: () => ({
-        url_from: 'https://from.com/page',
-        urlsSuggested: ['https://example.com/new'],
-      }),
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: sandbox.stub().resolves(),
-    };
-
-    handler = await esmock('../../../src/backlinks/handler.js', {
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: async () => ({ url: 'https://example.com/new', ok: true, status: 200 }),
-      },
-      '@adobe/spacecat-shared-data-access': {
-        ...await import('@adobe/spacecat-shared-data-access'),
-        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
-        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-missing-urlto',
-          addFixEntities,
-          getSuggestions: () => [suggestion],
-        }),
-      },
-      '../../../src/backlinks/kpi-metrics.js': {
-        default: sandbox.stub().resolves({}),
-      },
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: sandbox.stub().resolves(),
-      },
-    });
-
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        finalUrl: 'https://example.com',
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getDeliveryType: () => 'aem_edge',
-        },
-        dataAccess: {
-          Configuration: {
-            findLatest: () => ({ isHandlerEnabledForSite: () => true }),
-          },
-          Suggestion: {
-            allByOpportunityIdAndStatus: sandbox.stub().resolves([
-              { getId: () => 'new-1', getData: () => ({ url_from: 'https://from.com/f', url_to: 'https://to.com/t' }) },
-            ]),
-          },
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/page1' }]),
-          },
-        },
-        audit: {
-          getId: () => 'audit-1',
-          getAuditResult: () => ({
-            success: true,
-            brokenBacklinks: [{ url_from: 'https://a.com/f', url_to: 'https://a.com/t', traffic_domain: 1 }],
-          }),
-        },
-        sqs: { sendMessage: sandbox.stub().resolves() },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
-      })
-      .build();
-
-    const result = await handler.generateSuggestionData(context);
-    expect(result.status).to.equal('complete');
-    expect(suggestion.setStatus).to.not.have.been.called;
-    expect(addFixEntities).to.not.have.been.called;
-
-    await esmock.purge(handler);
-    handler = undefined;
-  }).timeout(8000);
-
-  it('reconciliation: building fix entity payload failure logs warn (lines 262-263)', async () => {
-    const addFixEntities = sandbox.stub().resolves();
-    const suggestion = {
-      getId: () => 'sug-build-fail',
-      getStatus: () => 'NEW',
-      getType: () => { throw new Error('getType-fail'); }, // Throws when building fix entity payload
-      getData: () => ({
-        url_from: 'https://from.com/page',
-        url_to: 'https://example.com/old',
-        urlsSuggested: ['https://example.com/new'],
-      }),
-      setStatus: sandbox.stub(),
-      setUpdatedBy: sandbox.stub().returnsThis(),
-      save: sandbox.stub().resolves(),
-    };
-
-    handler = await esmock('../../../src/backlinks/handler.js', {
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: async () => ({ url: 'https://example.com/new', ok: true, status: 200 }),
-      },
-      '@adobe/spacecat-shared-data-access': {
-        ...await import('@adobe/spacecat-shared-data-access'),
-        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
-        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-build-fail',
-          addFixEntities,
-          getSuggestions: () => [suggestion],
-        }),
-      },
-      '../../../src/backlinks/kpi-metrics.js': {
-        default: sandbox.stub().resolves({}),
-      },
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: sandbox.stub().resolves(),
-      },
-    });
-
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        finalUrl: 'https://example.com',
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getDeliveryType: () => 'aem_edge',
-        },
-        dataAccess: {
-          Configuration: {
-            findLatest: () => ({ isHandlerEnabledForSite: () => true }),
-          },
-          Suggestion: {
-            allByOpportunityIdAndStatus: sandbox.stub().resolves([
-              { getId: () => 'new-1', getData: () => ({ url_from: 'https://from.com/f', url_to: 'https://to.com/t' }) },
-            ]),
-          },
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/page1' }]),
-          },
-        },
-        audit: {
-          getId: () => 'audit-1',
-          getAuditResult: () => ({
-            success: true,
-            brokenBacklinks: [{ url_from: 'https://a.com/f', url_to: 'https://a.com/t', traffic_domain: 1 }],
-          }),
-        },
-        sqs: { sendMessage: sandbox.stub().resolves() },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
-      })
-      .build();
-
-    const result = await handler.generateSuggestionData(context);
-    expect(result.status).to.equal('complete');
-    expect(context.log.warn).to.have.been.calledWith(sinon.match(/Failed building fix entity payload for suggestion/));
-
-    await esmock.purge(handler);
-    handler = undefined;
-  }).timeout(8000);
-});
-
-describe('backlinks: publish FIXED fix entities when url_to no longer broken', () => {
-  const sandbox = sinon.createSandbox();
-  let context;
-  let handler;
-
-  afterEach(() => {
-    sandbox.restore();
-  });
-
-  after(async () => {
-    if (handler) {
       await esmock.purge(handler);
       handler = undefined;
-    }
+    }).timeout(8000);
+
+    it('returns true when url_to redirects to urlEdited', async () => {
+      const { capturedCallbacks } = await setupHandlerWithCallbackCapture({
+        url: 'https://example.com/custom-edited',
+        ok: true,
+        status: 200,
+      });
+
+      await handler.generateSuggestionData(context);
+
+      const suggestion = {
+        getData: () => ({
+          url_to: 'https://example.com/old-broken',
+          urlsSuggested: ['https://example.com/suggested'],
+          urlEdited: 'https://example.com/custom-edited',
+        }),
+      };
+      const isFixed = await capturedCallbacks.isIssueFixed(suggestion);
+      expect(isFixed).to.equal(true);
+
+      await esmock.purge(handler);
+      handler = undefined;
+    }).timeout(8000);
+
+    it('returns false when redirect does not match any target', async () => {
+      const { capturedCallbacks } = await setupHandlerWithCallbackCapture({
+        url: 'https://example.com/wrong-page',
+        ok: true,
+        status: 200,
+      });
+
+      await handler.generateSuggestionData(context);
+
+      const suggestion = {
+        getData: () => ({
+          url_to: 'https://example.com/old-broken',
+          urlsSuggested: ['https://example.com/new-fixed'],
+        }),
+      };
+      const isFixed = await capturedCallbacks.isIssueFixed(suggestion);
+      expect(isFixed).to.equal(false);
+
+      await esmock.purge(handler);
+      handler = undefined;
+    }).timeout(8000);
+
+    it('returns false when no suggested targets', async () => {
+      const { capturedCallbacks } = await setupHandlerWithCallbackCapture();
+
+      await handler.generateSuggestionData(context);
+
+      const suggestion = {
+        getData: () => ({
+          url_to: 'https://example.com/old-broken',
+          urlsSuggested: [],
+        }),
+      };
+      const isFixed = await capturedCallbacks.isIssueFixed(suggestion);
+      expect(isFixed).to.equal(false);
+
+      await esmock.purge(handler);
+      handler = undefined;
+    }).timeout(8000);
+
+    it('returns false when url_to is missing', async () => {
+      const { capturedCallbacks } = await setupHandlerWithCallbackCapture();
+
+      await handler.generateSuggestionData(context);
+
+      const suggestion = {
+        getData: () => ({
+          urlsSuggested: ['https://example.com/new-fixed'],
+        }),
+      };
+      const isFixed = await capturedCallbacks.isIssueFixed(suggestion);
+      expect(isFixed).to.equal(false);
+
+      await esmock.purge(handler);
+      handler = undefined;
+    }).timeout(8000);
+
+    it('handles trailing slash normalization', async () => {
+      const { capturedCallbacks } = await setupHandlerWithCallbackCapture({
+        url: 'https://example.com/new-fixed/',
+        ok: true,
+        status: 200,
+      });
+
+      await handler.generateSuggestionData(context);
+
+      const suggestion = {
+        getData: () => ({
+          url_to: 'https://example.com/old-broken',
+          urlsSuggested: ['https://example.com/new-fixed'], // no trailing slash
+        }),
+      };
+      const isFixed = await capturedCallbacks.isIssueFixed(suggestion);
+      expect(isFixed).to.equal(true);
+
+      await esmock.purge(handler);
+      handler = undefined;
+    }).timeout(8000);
   });
 
-  it('publishes DEPLOYED fix entities to PUBLISHED for non-broken url_to', async () => {
-    let capturedIsIssueResolvedOnProduction;
-    const publishDeployedFixEntitiesStub = sandbox.stub().callsFake(async ({ isIssueResolvedOnProduction }) => {
-      capturedIsIssueResolvedOnProduction = isIssueResolvedOnProduction;
-    });
+  describe('isIssueResolvedOnProduction callback', () => {
+    it('returns true when URL is no longer broken (200 response)', async () => {
+      const { capturedCallbacks } = await setupHandlerWithCallbackCapture({
+        ok: true,
+        status: 200,
+      });
 
-    const shared = await import('@adobe/spacecat-shared-data-access');
+      await handler.generateSuggestionData(context);
 
-    handler = await esmock('../../../src/backlinks/handler.js', {
-      // Make filterOutValidBacklinks think URL is healthy by making fetch ok
-      '@adobe/spacecat-shared-utils': {
-        tracingFetch: async () => ({ ok: true, status: 200, statusText: 'OK', text: async () => '' }),
-      },
-      '@adobe/spacecat-shared-data-access': {
-        ...shared,
-        Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED' } },
-      },
-      '../../../src/backlinks/kpi-metrics.js': {
-        default: sandbox.stub().resolves({}), // calculateKpiMetrics
-      },
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        reconcileDisappearedSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: publishDeployedFixEntitiesStub,
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-1',
-        }),
-      },
-    });
+      const suggestion = {
+        getData: () => ({ url_to: 'https://example.com/now-ok' }),
+      };
+      const isResolved = await capturedCallbacks.isIssueResolvedOnProduction(suggestion);
+      expect(isResolved).to.equal(true);
 
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        finalUrl: 'https://backlinks-example.com',
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://backlinks-example.com',
-          getDeliveryType: () => 'aem_edge',
-        },
-        dataAccess: {
-          Configuration: {
-            findLatest: () => ({
-              isHandlerEnabledForSite: () => true,
-            }),
-          },
-          Suggestion: {
-            // Return NEW suggestions for message build; keep minimal valid entry
-            allByOpportunityIdAndStatus: sandbox.stub().resolves([
-              {
-                getId: () => 'new-1',
-                getData: () => ({ url_from: 'https://backlinks-example.com/from', url_to: 'https://backlinks-example.com/ok' }),
-              },
-            ]),
-          },
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-              // Include URL with '/ok' prefix so alternativeUrls filtering keeps it
-              { getUrl: () => 'https://backlinks-example.com/ok/page1' },
-            ]),
-          },
-        },
-        audit: {
-          getId: () => 'audit-1',
-          getAuditResult: () => ({
-            success: true,
-            brokenBacklinks: [{ url_from: 'https://from', url_to: 'https://to', traffic_domain: 1 }],
-          }),
-        },
-        sqs: { sendMessage: sandbox.stub().resolves() },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
-      })
-      .build();
+      await esmock.purge(handler);
+      handler = undefined;
+    }).timeout(8000);
 
-    const result = await handler.generateSuggestionData(context);
-    expect(result).to.deep.equal({ status: 'complete' });
+    it('returns false when url_to is missing', async () => {
+      const { capturedCallbacks } = await setupHandlerWithCallbackCapture();
 
-    // Verify publishDeployedFixEntities was called
-    expect(publishDeployedFixEntitiesStub).to.have.been.calledOnce;
+      await handler.generateSuggestionData(context);
 
-    // Test the captured callback - when URL is healthy (returns ok), issue is resolved
-    const suggestion = { getData: () => ({ url_to: 'https://backlinks-example.com/ok' }) };
-    const isResolved = await capturedIsIssueResolvedOnProduction(suggestion);
-    // filterOutValidBacklinks returns empty array for healthy URL, so stillBroken.length === 0, so returns true
-    expect(isResolved).to.equal(true);
+      const suggestion = {
+        getData: () => ({}),
+      };
+      const isResolved = await capturedCallbacks.isIssueResolvedOnProduction(suggestion);
+      expect(isResolved).to.equal(false);
 
-    // Verify SQS was sent once with valid structure
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-
-    await esmock.purge(handler);
-    handler = undefined;
+      await esmock.purge(handler);
+      handler = undefined;
+    }).timeout(8000);
   });
 
-  it('skips fixed suggestion when url_to is missing (continue path)', async () => {
-    let capturedIsIssueResolvedOnProduction;
-    const publishDeployedFixEntitiesStub = sandbox.stub().callsFake(async ({ isIssueResolvedOnProduction }) => {
-      capturedIsIssueResolvedOnProduction = isIssueResolvedOnProduction;
-    });
+  describe('helper callbacks', () => {
+    it('getPagePath extracts url_from from data', async () => {
+      const { capturedCallbacks } = await setupHandlerWithCallbackCapture();
 
-    const shared = await import('@adobe/spacecat-shared-data-access');
+      await handler.generateSuggestionData(context);
 
-    handler = await esmock('../../../src/backlinks/handler.js', {
-      '@adobe/spacecat-shared-data-access': {
-        ...shared,
-        Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED' } },
-      },
-      '../../../src/backlinks/kpi-metrics.js': {
-        default: sandbox.stub().resolves({}), // calculateKpiMetrics
-      },
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-        reconcileDisappearedSuggestions: sandbox.stub().resolves(),
-        publishDeployedFixEntities: publishDeployedFixEntitiesStub,
-      },
-      '../../../src/common/opportunity.js': {
-        convertToOpportunity: sandbox.stub().resolves({
-          getId: () => 'oppty-1',
-        }),
-      },
-    });
+      const data = { url_from: 'https://from.com/page', url_to: 'https://to.com/broken' };
+      expect(capturedCallbacks.getPagePath(data)).to.equal('https://from.com/page');
 
-    context = new MockContextBuilder()
-      .withSandbox(sandbox)
-      .withOverrides({
-        finalUrl: 'https://backlinks-example.com',
-        site: {
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://backlinks-example.com',
-          getDeliveryType: () => 'aem_edge',
-        },
-        dataAccess: {
-          Configuration: {
-            findLatest: () => ({
-              isHandlerEnabledForSite: () => true,
-            }),
-          },
-          Suggestion: {
-            // Return NEW suggestions for message build
-            allByOpportunityIdAndStatus: sandbox.stub().resolves([
-              {
-                getId: () => 'new-1',
-                getData: () => ({ url_from: 'https://backlinks-example.com/from', url_to: 'https://backlinks-example.com/' }),
-              },
-            ]),
-          },
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-              { getUrl: () => 'https://backlinks-example.com/page1' },
-            ]),
-          },
-        },
-        audit: {
-          getId: () => 'audit-1',
-          getAuditResult: () => ({
-            success: true,
-            brokenBacklinks: [{ url_from: 'https://from', url_to: 'https://to', traffic_domain: 1 }],
-          }),
-        },
-        sqs: { sendMessage: sandbox.stub().resolves() },
-        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
-      })
-      .build();
+      await esmock.purge(handler);
+      handler = undefined;
+    }).timeout(8000);
 
-    const result = await handler.generateSuggestionData(context);
-    expect(result).to.deep.equal({ status: 'complete' });
+    it('getUpdatedValue returns urlEdited if present, otherwise first urlsSuggested', async () => {
+      const { capturedCallbacks } = await setupHandlerWithCallbackCapture();
 
-    // Verify publishDeployedFixEntities was called
-    expect(publishDeployedFixEntitiesStub).to.have.been.calledOnce;
+      await handler.generateSuggestionData(context);
 
-    // Test the captured callback - when url_to is missing, issue is not resolved
-    const suggestion = { getData: () => ({}) }; // missing url_to
-    const isResolved = await capturedIsIssueResolvedOnProduction(suggestion);
-    // When url_to is missing, handler returns false (not resolved)
-    expect(isResolved).to.equal(false);
+      // With urlEdited
+      const dataWithEdited = { urlEdited: 'https://edited.com', urlsSuggested: ['https://suggested.com'] };
+      expect(capturedCallbacks.getUpdatedValue(dataWithEdited)).to.equal('https://edited.com');
 
-    // But SQS should still be sent for NEW suggestions flow
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      // Without urlEdited
+      const dataWithoutEdited = { urlsSuggested: ['https://suggested.com'] };
+      expect(capturedCallbacks.getUpdatedValue(dataWithoutEdited)).to.equal('https://suggested.com');
 
-    await esmock.purge(handler);
-    handler = undefined;
+      // Empty
+      const emptyData = {};
+      expect(capturedCallbacks.getUpdatedValue(emptyData)).to.equal('');
+
+      await esmock.purge(handler);
+      handler = undefined;
+    }).timeout(8000);
+
+    it('getOldValue returns url_to from data', async () => {
+      const { capturedCallbacks } = await setupHandlerWithCallbackCapture();
+
+      await handler.generateSuggestionData(context);
+
+      const data = { url_to: 'https://broken.com/old' };
+      expect(capturedCallbacks.getOldValue(data)).to.equal('https://broken.com/old');
+
+      await esmock.purge(handler);
+      handler = undefined;
+    }).timeout(8000);
   });
 });

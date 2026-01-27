@@ -17,11 +17,9 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestions, publishDeployedFixEntities, reconcileDisappearedSuggestions } from '../utils/data-access.js';
+import { syncSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
 import { isUnscrapeable } from '../utils/url-utils.js';
-
-const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_BACKLINKS;
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -180,24 +178,38 @@ export const generateSuggestionData = async (context) => {
     kpiDeltas,
   );
 
-  // Define buildKey here so it can be reused for both reconciliation and syncSuggestions
+  // Define buildKey here so it can be reused for reconciliation, publish, and syncSuggestions
   const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
 
   // Helper to normalize URLs for comparison
+  /* c8 ignore next - defensive fallback for non-string values */
   const normalize = (u) => (typeof u === 'string' ? u.replace(/\/+$/, '') : '');
 
-  // Before publishing fix entities, reconcile suggestions that disappeared
-  // from current audit results.
-  // If a previous suggestion's url_to now redirects to one of its urlsSuggested, mark it FIXED
-  // and ensure a PUBLISHED fix entity exists.
-  await reconcileDisappearedSuggestions({
+  // syncSuggestions handles:
+  // 1. Reconcile disappeared suggestions (mark as FIXED if issue is resolved)
+  // 2. Publish DEPLOYED fix entities to PUBLISHED when verified on production
+  // 3. Sync new/existing suggestions with audit data
+  await syncSuggestions({
     opportunity,
-    currentAuditData: auditResult.brokenBacklinks,
+    newData: auditResult?.brokenBacklinks,
     buildKey,
+    context,
+    mapNewSuggestion: (backlink) => ({
+      opportunityId: opportunity.getId(),
+      type: 'REDIRECT_UPDATE',
+      rank: backlink.traffic_domain,
+      data: {
+        title: backlink.title,
+        url_from: backlink.url_from,
+        url_to: backlink.url_to,
+        traffic_domain: backlink.traffic_domain,
+      },
+    }),
+    // Reconciliation: check if disappeared suggestion's url_to now redirects to a suggested target
     getPagePath: (data) => data?.url_from,
-    site,
-    log,
-    auditType: AUDIT_TYPE,
+    getUpdatedValue: (data) => data?.urlEdited || data?.urlsSuggested?.[0] || '',
+    /* c8 ignore next */
+    getOldValue: (data) => data?.url_to || '',
     /* c8 ignore start */
     isIssueFixed: async (suggestion) => {
       const data = suggestion?.getData?.();
@@ -222,46 +234,15 @@ export const generateSuggestionData = async (context) => {
       }
     },
     /* c8 ignore stop */
-    getUpdatedValue: (data) => data?.urlEdited || data?.urlsSuggested?.[0] || '',
-    /* c8 ignore next */
-    getOldValue: (data) => data?.url_to || '',
-  });
-
-  // Publish any DEPLOYED fixes whose associated suggestion targets are no longer broken.
-  try {
-    await publishDeployedFixEntities({
-      opportunityId: opportunity.getId(),
-      dataAccess,
-      log,
-      isIssueResolvedOnProduction: async (suggestion) => {
-        const url = suggestion?.getData?.()?.url_to;
-        if (!url) {
-          return false;
-        }
-        const stillBrokenItems = await filterOutValidBacklinks([{ url_to: url }], log);
-        return stillBrokenItems.length === 0; // resolved if NO items are still broken
-      },
-    });
-  } catch (err) {
-    log.warn(`Failed to publish fix entities: ${err.message}`);
-  }
-
-  await syncSuggestions({
-    opportunity,
-    newData: auditResult?.brokenBacklinks,
-    buildKey,
-    context,
-    mapNewSuggestion: (backlink) => ({
-      opportunityId: opportunity.getId(),
-      type: 'REDIRECT_UPDATE',
-      rank: backlink.traffic_domain,
-      data: {
-        title: backlink.title,
-        url_from: backlink.url_from,
-        url_to: backlink.url_to,
-        traffic_domain: backlink.traffic_domain,
-      },
-    }),
+    // Publish: verify if suggestion's url_to is no longer broken
+    isIssueResolvedOnProduction: async (suggestion) => {
+      const url = suggestion?.getData?.()?.url_to;
+      if (!url) {
+        return false;
+      }
+      const stillBrokenItems = await filterOutValidBacklinks([{ url_to: url }], log);
+      return stillBrokenItems.length === 0; // resolved if NO items are still broken
+    },
   });
   const suggestions = await Suggestion.allByOpportunityIdAndStatus(
     opportunity.getId(),

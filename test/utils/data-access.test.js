@@ -298,6 +298,52 @@ describe('utils/data-access', () => {
     expect(fe.save).to.not.have.been.called;
   });
 
+  it('publishDeployedFixEntities skips prod check when suggestion key exists in current audit data', async () => {
+    const { publishDeployedFixEntities } = await import('../../src/utils/data-access.js');
+    const fe = {
+      getId: () => 'fe1',
+      getStatus: () => 'DEPLOYED',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+    const suggestion = {
+      getId: () => 'sug1',
+      getData: () => ({ url_from: 'https://source.com', url_to: 'https://broken.com' }),
+    };
+    const FixEntity = {
+      STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+      allByOpportunityIdAndStatus: sandbox.stub().resolves([fe]),
+      getSuggestionsByFixEntityId: sandbox.stub().resolves([suggestion]),
+    };
+    const dataAccess = { FixEntity };
+    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
+    const isIssueResolvedOnProduction = sandbox.stub().resolves(true);
+
+    // Current audit data contains the same key as the suggestion
+    const currentAuditData = [
+      { url_from: 'https://source.com', url_to: 'https://broken.com' },
+    ];
+    const buildKey = (data) => `${data.url_from}|${data.url_to}`;
+
+    await publishDeployedFixEntities({
+      opportunityId: 'op1',
+      dataAccess,
+      log,
+      currentAuditData,
+      buildKey,
+      isIssueResolvedOnProduction,
+    });
+
+    // Should NOT call isIssueResolvedOnProduction because fast-path detected issue in audit
+    expect(isIssueResolvedOnProduction).to.not.have.been.called;
+    // Should log the skip message
+    expect(log.debug).to.have.been.calledWith(sinon.match(/still in audit data, skipping prod check/));
+    // Should NOT publish the fix entity
+    expect(fe.setStatus).to.not.have.been.called;
+    expect(fe.save).to.not.have.been.called;
+  });
+
   it('reconcileDisappearedSuggestions only processes suggestions in NEW status', async () => {
     const fixedSuggestion = {
       getId: () => 'fixed-1',
@@ -320,7 +366,6 @@ describe('utils/data-access', () => {
     };
     const opportunity = {
       getId: () => 'oppty-1',
-      getSuggestions: sandbox.stub().resolves([fixedSuggestion, approvedSuggestion, newCandidate]),
       addFixEntities: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
     };
     const site = {
@@ -338,15 +383,13 @@ describe('utils/data-access', () => {
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
     await reconcileDisappearedSuggestions({
       opportunity,
-      currentAuditData: [], // all suggestions are candidates (not in current data)
-      buildKey: (d) => d.urlTo,
+      // Pass all three suggestions as disappeared - function should only process NEW ones
+      disappearedSuggestions: [fixedSuggestion, approvedSuggestion, newCandidate],
       getPagePath: (d) => d?.urlFrom,
       getUpdatedValue: (d) => d?.urlsSuggested?.[0],
       getOldValue: (d) => d?.urlTo,
       site,
       log,
-      auditType: 'test-audit',
-      fetchFn: async () => ({ url: 'https://example.com/new' }), // redirect matches target
       isIssueFixed: async () => true, // mark as fixed
     });
 
@@ -372,7 +415,6 @@ describe('utils/data-access', () => {
     };
     const opportunity = {
       getId: () => 'oppty-2',
-      getSuggestions: sandbox.stub().resolves([candidate]),
       addFixEntities: sandbox.stub().resolves({ createdItems: [{}], errorItems: [] }),
     };
     const site = {
@@ -390,19 +432,118 @@ describe('utils/data-access', () => {
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
     await reconcileDisappearedSuggestions({
       opportunity,
-      currentAuditData: [],
-      buildKey: (d) => d.urlTo,
+      disappearedSuggestions: [candidate],
       getPagePath: (d) => d?.urlFrom,
       // NOT passing getUpdatedValue and getOldValue - uses default fallback
       site,
       log,
-      auditType: 'test-audit',
       isIssueFixed: async () => true,
     });
 
     expect(candidate.setStatus).to.have.been.calledWith('FIXED');
     // Verify addFixEntities was called (uses default getUpdatedValue/getOldValue)
     expect(opportunity.addFixEntities).to.have.been.calledOnce;
+  });
+
+  it('reconcileDisappearedSuggestions skips suggestion when isIssueFixed returns false', async () => {
+    const candidate = {
+      getId: () => 'candidate-3',
+      getStatus: () => 'NEW',
+      getData: () => ({ urlTo: 'https://example.com/still-broken' }),
+      getType: () => 'REDIRECT_UPDATE',
+      setStatus: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+    const opportunity = {
+      getId: () => 'oppty-3',
+      addFixEntities: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
+    };
+    const site = {
+      getDeliveryType: () => 'aem_edge',
+    };
+
+    utils = await esmock('../../src/utils/data-access.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+    });
+    const { reconcileDisappearedSuggestions } = utils;
+
+    const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
+    await reconcileDisappearedSuggestions({
+      opportunity,
+      disappearedSuggestions: [candidate],
+      getPagePath: (d) => d?.urlFrom,
+      site,
+      log,
+      isIssueFixed: async () => false, // Issue is NOT fixed
+    });
+
+    // Suggestion should NOT be marked as fixed since isIssueFixed returned false
+    expect(candidate.setStatus).to.not.have.been.called;
+    expect(candidate.save).to.not.have.been.called;
+    expect(opportunity.addFixEntities).to.not.have.been.called;
+  });
+
+  it('reconcileDisappearedSuggestions handles outer error gracefully', async () => {
+    const candidate = {
+      getId: () => 'candidate-4',
+      getStatus: () => 'NEW',
+      getData: () => { throw new Error('getData failed'); },
+    };
+    const opportunity = {
+      getId: () => 'oppty-4',
+      addFixEntities: sandbox.stub(),
+    };
+    const site = {
+      getDeliveryType: () => 'aem_edge',
+    };
+
+    utils = await esmock('../../src/utils/data-access.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+    });
+    const { reconcileDisappearedSuggestions } = utils;
+
+    const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
+    await reconcileDisappearedSuggestions({
+      opportunity,
+      disappearedSuggestions: [candidate],
+      getPagePath: (d) => d?.urlFrom,
+      site,
+      log,
+      isIssueFixed: async () => true,
+    });
+
+    // Should log warning for the outer catch block
+    expect(log.warn).to.have.been.calledWithMatch(/Failed reconciliation for disappeared suggestions/);
+  });
+
+  it('getDisappearedSuggestions handles suggestion where getData returns undefined', async () => {
+    utils = await esmock('../../src/utils/data-access.js', {
+      '@adobe/spacecat-shared-data-access': {
+        Suggestion: { STATUSES: { FIXED: 'FIXED', NEW: 'NEW' } },
+        FixEntity: { STATUSES: { PUBLISHED: 'PUBLISHED' } },
+      },
+    });
+    const { getDisappearedSuggestions } = utils;
+
+    const existingSuggestions = [
+      { getData: () => undefined }, // getData returns undefined
+      { getData: () => ({ key: 'exists' }) },
+    ];
+    const newDataKeys = new Set(['exists']);
+    const buildKey = (d) => d?.key || 'unknown';
+
+    const disappeared = getDisappearedSuggestions(existingSuggestions, newDataKeys, buildKey);
+
+    // First suggestion (getData returns undefined) should use {} fallback
+    // and buildKey returns 'unknown' which is not in newDataKeys
+    expect(disappeared.length).to.equal(1);
   });
 });
 
@@ -1804,12 +1945,8 @@ describe('data-access', () => {
           mapNewSuggestion,
         });
 
-        // Check that existing count is logged
-        expect(mockLogger.debug).to.have.been.calledWithMatch(/Existing suggestions\s*=\s*8/);
-        // Check that full sample is logged
-        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
-        const sampleLog = debugCalls.find((msg) => /Existing suggestions\s*=\s*8:/.test(msg));
-        expect(sampleLog).to.exist;
+        // Check that existing count is logged (new format includes disappeared count)
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/Existing suggestions\s*=\s*8,\s*Disappeared\s*=\s*0/);
       });
 
       it('should log only first 10 items when there are more than 10 existing suggestions', async () => {
@@ -1834,12 +1971,8 @@ describe('data-access', () => {
           mapNewSuggestion,
         });
 
-        // Check that existing count is logged
-        expect(mockLogger.debug).to.have.been.calledWithMatch(/Existing suggestions\s*=\s*20/);
-        // Check that only first 10 are logged
-        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
-        const sampleLog = debugCalls.find((msg) => /Existing suggestions\s*=\s*20:/.test(msg));
-        expect(sampleLog).to.exist;
+        // Check that existing count is logged (new format includes disappeared count)
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/Existing suggestions\s*=\s*20,\s*Disappeared\s*=\s*0/);
       });
 
       it('should log full data when there are 1-10 updated suggestions', async () => {
