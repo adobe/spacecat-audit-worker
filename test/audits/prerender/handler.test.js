@@ -1834,6 +1834,11 @@ describe('Prerender Audit', () => {
         const plainUrlKey = buildKey(plainUrlData);
         expect(plainUrlKey).to.equal('https://example.com/test-page|prerender');
 
+        // Test case 4: pathPattern indicates domain-wide
+        const pathPatternData = { pathPattern: '/*' };
+        const pathPatternKey = buildKey(pathPatternData);
+        expect(pathPatternKey).to.equal('domain-wide-aggregate|prerender');
+
         // Test with actual individual suggestion data from newData
         const individualSuggestionData = individualSuggestion;
         const individualKey = buildKey(individualSuggestionData);
@@ -1882,11 +1887,11 @@ describe('Prerender Audit', () => {
 
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
@@ -1958,11 +1963,11 @@ describe('Prerender Audit', () => {
 
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
@@ -1989,6 +1994,76 @@ describe('Prerender Audit', () => {
         expect(context.log.info).to.have.been.calledWith(
           sinon.match(/Domain-wide suggestion already exists in FIXED state, skipping creation/),
         );
+      });
+
+      it('should reuse existing domain-wide data and filter outdated updates', async () => {
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'test-audit-id',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.5,
+                wordCountBefore: 100,
+                wordCountAfter: 250,
+              },
+            ],
+          },
+        };
+
+        const existingDomainWideSuggestion = {
+          getStatus: () => Suggestion.STATUSES.FIXED,
+          getData: () => ({
+            isDomainWide: true,
+            url: 'https://example.com/* (All Domain URLs)',
+          }),
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: () => Promise.resolve([existingDomainWideSuggestion]),
+        };
+
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+        });
+
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+          },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const syncCall = syncSuggestionsStub.getCall(0);
+        const { newData, shouldUpdateSuggestion } = syncCall.args[0];
+
+        const domainWideSuggestion = newData.find((item) => item.key);
+        expect(domainWideSuggestion).to.exist;
+        expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
+        expect(domainWideSuggestion.data.url).to.equal('https://example.com/* (All Domain URLs)');
+
+        expect(shouldUpdateSuggestion({
+          getData: () => ({ isDomainWide: true }),
+          getStatus: () => Suggestion.STATUSES.OUTDATED,
+        })).to.be.false;
+        expect(shouldUpdateSuggestion({
+          getData: () => ({ isDomainWide: false }),
+          getStatus: () => Suggestion.STATUSES.OUTDATED,
+        })).to.be.true;
       });
 
       it('should treat fixed suggestion with domain-wide key as domain-wide', async () => {
@@ -2023,11 +2098,11 @@ describe('Prerender Audit', () => {
 
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
@@ -2077,11 +2152,11 @@ describe('Prerender Audit', () => {
 
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
@@ -2132,11 +2207,11 @@ describe('Prerender Audit', () => {
 
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
@@ -2197,11 +2272,11 @@ describe('Prerender Audit', () => {
 
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
@@ -2264,11 +2339,11 @@ describe('Prerender Audit', () => {
 
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
@@ -2331,11 +2406,11 @@ describe('Prerender Audit', () => {
 
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
@@ -2402,11 +2477,11 @@ describe('Prerender Audit', () => {
 
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
@@ -2466,11 +2541,11 @@ describe('Prerender Audit', () => {
 
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
@@ -2530,11 +2605,11 @@ describe('Prerender Audit', () => {
 
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
@@ -2586,11 +2661,11 @@ describe('Prerender Audit', () => {
 
         const syncSuggestionsStub = sinon.stub().resolves();
 
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
-          '../../src/utils/data-access.js': {
+          '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
           },
         });
