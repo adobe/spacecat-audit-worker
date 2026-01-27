@@ -97,6 +97,7 @@ describe('Commerce Product Enrichments Handler', () => {
       ],
       siteId: 'site-1',
       type: 'commerce-product-enrichments',
+      allowCache: false,
     });
   });
 
@@ -119,6 +120,7 @@ describe('Commerce Product Enrichments Handler', () => {
       urls: [{ url: 'https://example.com/page-1' }],
       siteId: 'site-1',
       type: 'commerce-product-enrichments',
+      allowCache: false,
     });
   });
 
