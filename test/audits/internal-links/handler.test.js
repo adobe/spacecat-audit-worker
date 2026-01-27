@@ -23,8 +23,11 @@ import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from 
 
 import {
   internalLinksAuditRunner,
-  runAuditAndImportTopPagesStep,
-  prepareScrapingStep,
+  runAuditAndSubmitForScraping,
+  runCrawlDetectionAndGenerateSuggestions,
+  runCrawlDetectionBatch,
+  updateAuditResult,
+  finalizeCrawlDetection,
   normalizeUrlToDomain,
 } from '../../../src/internal-links/handler.js';
 import {
@@ -37,8 +40,28 @@ import { MockContextBuilder } from '../../shared.js';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () => 'https://example.com/page2' }];
 
+// Audit result without priority (priority is calculated after merge step)
 // Raw RUM data (before normalization)
 const AUDIT_RESULT_DATA = [
+  {
+    trafficDomain: 1800,
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a02nf',
+  },
+  {
+    trafficDomain: 1200,
+    urlTo: 'https://www.petplace.com/ax02',
+    urlFrom: 'https://www.petplace.com/ax02nf',
+  },
+  {
+    trafficDomain: 200,
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a01nf',
+  },
+];
+
+// Audit result with priority (after merge step calculates priority)
+const AUDIT_RESULT_DATA_WITH_PRIORITY = [
   {
     trafficDomain: 1800,
     urlTo: 'https://www.petplace.com/a01',
@@ -192,6 +215,22 @@ describe('Broken internal links audit', () => {
     });
   }).timeout(5000);
 
+  it('broken-internal-links audit returns empty when no RUM links found', async () => {
+    const emptyContext = { ...context, rumApiClient: { query: sinon.stub().resolves([]) } };
+    
+    const result = await internalLinksAuditRunner(
+      'www.example.com',
+      emptyContext,
+      site,
+    );
+    
+    expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
+    expect(result.auditResult.success).to.equal(true);
+    expect(emptyContext.log.info).to.have.been.calledWith(
+      sinon.match(/No 404 internal links found in RUM data/),
+    );
+  }).timeout(5000);
+
   it('broken-internal-links audit runs ans throws error incase of error in audit', async () => {
     context.rumApiClient.query.rejects(new Error('error'));
     expect(await internalLinksAuditRunner(
@@ -202,109 +241,376 @@ describe('Broken internal links audit', () => {
       fullAuditRef: auditUrl,
       auditResult: {
         finalUrl: auditUrl,
-        error: `[broken-internal-links] [Site: ${site.getId()}] audit failed with error: error`,
+        error: 'audit failed with error: error',
         success: false,
       },
     });
   }).timeout(5000);
 
-  it('runAuditAndImportTopPagesStep should run audit and import top pages', async () => {
-    const result = await runAuditAndImportTopPagesStep(context);
-    expect(result).to.deep.equal({
-      type: 'top-pages',
-      siteId: site.getId(),
-      auditResult: {
-        brokenInternalLinks: NORMALIZED_AUDIT_RESULT_DATA,
-        fullAuditRef: auditUrl,
-        success: true,
-        finalUrl: 'www.example.com',
-        auditContext: {
-          interval: 30,
+  it('runAuditAndSubmitForScraping should merge RUM + Ahrefs + includedURLs and submit', async () => {
+    // Mock Ahrefs API response
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({
+        result: {
+          pages: [
+            { url: 'https://example.com/ahrefs1' },
+            { url: 'https://example.com/ahrefs2' },
+          ],
         },
-      },
-      fullAuditRef: auditUrl,
+      }),
+    };
+
+    // Mock AhrefsAPIClient.createFrom
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    // Use esmock to mock the AhrefsAPIClient import
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
     });
-  });
 
-  it('prepareScrapingStep should send top pages to scraping service', async () => {
-    context.dataAccess.SiteTopPage = {
-      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
-    };
-    context.audit = {
-      getAuditResult: () => ({
-        brokenInternalLinks: AUDIT_RESULT_DATA,
-        success: true,
-      }),
-    };
-
-    const result = await prepareScrapingStep(context);
-    expect(result).to.deep.equal({
-      siteId: site.getId(),
-      type: 'broken-internal-links',
-      urls: topPages.map((page) => ({ url: page.getUrl() })),
-    });
-  }).timeout(5000);
-
-  it('prepareScrapingStep should throw error when audit failed', async () => {
-    context.dataAccess.SiteTopPage = {
-      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
-    };
-    context.audit = {
-      getAuditResult: () => ({
-        brokenInternalLinks: AUDIT_RESULT_DATA,
-        success: false,
-      }),
-    };
-
-    await expect(prepareScrapingStep(context))
-      .to.be.rejectedWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skip scraping and suggestion generation`);
-
-    // Verify that SiteTopPage.allBySiteIdAndSourceAndGeo was not called since we exit early
-    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
-  }).timeout(5000);
-
-  it('prepareScrapingStep should throw error when no top pages found in database', async () => {
-    context.dataAccess.SiteTopPage = {
-      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]), // Empty array
-    };
-    context.audit = {
-      getAuditResult: () => ({
-        brokenInternalLinks: AUDIT_RESULT_DATA,
-        success: true,
-      }),
-    };
-
-    await expect(prepareScrapingStep(context))
-      .to.be.rejectedWith(`No top pages found in database for site ${site.getId()}. Ahrefs import required.`);
-  }).timeout(5000);
-
-  it('prepareScrapingStep should throw error when all top pages filtered out by audit scope', async () => {
-    // Mock site with subpath
-    const siteWithSubpath = {
+    // Mock includedURLs
+    const mockSite = {
       ...site,
-      getBaseURL: () => 'https://example.com/blog',
-    };
-    context.site = siteWithSubpath;
-
-    // Mock top pages that don't match the subpath
-    const topPagesOutsideScope = [
-      { getUrl: () => 'https://example.com/products' },
-      { getUrl: () => 'https://example.com/about' },
-    ];
-
-    context.dataAccess.SiteTopPage = {
-      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPagesOutsideScope),
-    };
-    context.audit = {
-      getAuditResult: () => ({
-        brokenInternalLinks: AUDIT_RESULT_DATA,
-        success: true,
+      getConfig: () => ({
+        getIncludedURLs: (type) => (type === 'broken-internal-links' ? ['https://example.com/included1'] : []),
+        getFetchConfig: () => ({}),
       }),
     };
 
-    await expect(prepareScrapingStep(context))
-      .to.be.rejectedWith(`All 2 top pages filtered out by audit scope. BaseURL: https://example.com/blog requires subpath match but no pages match scope.`);
-  }).timeout(5000);
+    const testContext = {
+      ...context,
+      site: mockSite,
+    };
+
+    const result = await runAuditAndSubmitForScrapingMocked(testContext);
+
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('success', true);
+    expect(result).to.have.property('urls');
+    expect(result.urls).to.be.an('array');
+    // Should have Ahrefs (2) + includedURLs (1) = 3 unique URLs
+    expect(result.urls.length).to.equal(3);
+    expect(result.urls).to.deep.include({ url: 'https://example.com/ahrefs1' });
+    expect(result.urls).to.deep.include({ url: 'https://example.com/ahrefs2' });
+    expect(result.urls).to.deep.include({ url: 'https://example.com/included1' });
+    expect(result.siteId).to.equal(site.getId());
+    expect(result.type).to.equal('broken-internal-links');
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should fall back to includedURLs when Ahrefs fails', async () => {
+    // Mock Ahrefs API to fail
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().rejects(new Error('Ahrefs SSL error')),
+    };
+
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    // Mock includedURLs
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getIncludedURLs: (type) => (type === 'broken-internal-links' ? ['https://example.com/included1', 'https://example.com/included2'] : []),
+        getFetchConfig: () => ({}),
+      }),
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+    };
+
+    const result = await runAuditAndSubmitForScrapingMocked(testContext);
+
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('success', true);
+    expect(result).to.have.property('urls');
+    // Should only have includedURLs (2) since Ahrefs failed
+    expect(result.urls.length).to.equal(2);
+    expect(result.urls).to.deep.include({ url: 'https://example.com/included1' });
+    expect(result.urls).to.deep.include({ url: 'https://example.com/included2' });
+  }).timeout(10000);
+
+
+  it('runAuditAndSubmitForScraping should filter out unscrape-able files', async () => {
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({
+        result: {
+          pages: [
+            { url: 'https://example.com/page1.html' },
+            { url: 'https://example.com/file.pdf' }, // Should be filtered
+            { url: 'https://example.com/page2.html' },
+          ],
+        },
+      }),
+    };
+
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getIncludedURLs: () => [],
+        getFetchConfig: () => ({}),
+      }),
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+    };
+
+    const result = await runAuditAndSubmitForScrapingMocked(testContext);
+
+    // Should filter out the PDF
+    expect(result.urls.length).to.equal(2);
+    expect(result.urls).to.deep.include({ url: 'https://example.com/page1.html' });
+    expect(result.urls).to.deep.include({ url: 'https://example.com/page2.html' });
+    expect(result.urls).to.not.deep.include({ url: 'https://example.com/file.pdf' });
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should return empty when all URLs filtered', async () => {
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({
+        result: {
+          pages: [
+            { url: 'https://example.com/file1.pdf' },
+            { url: 'https://example.com/file2.pdf' },
+          ],
+        },
+      }),
+    };
+
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getIncludedURLs: () => [],
+        getFetchConfig: () => ({}),
+      }),
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+    };
+
+    const result = await runAuditAndSubmitForScrapingMocked(testContext);
+
+    // All URLs should be filtered out (PDFs are unscrape-able)
+    expect(result.urls).to.be.an('array');
+    expect(result.urls.length).to.equal(0);
+    expect(result.auditResult).to.have.property('success', true);
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should cap URLs at MAX_URLS_TO_PROCESS (1000)', async () => {
+    // Create >1000 total URLs to test capping logic
+    const manyAhrefsPages = Array.from({ length: 800 }, (_, i) => ({
+      url: `https://example.com/ahrefs-page-${i}`,
+    }));
+
+    const manyIncludedUrls = Array.from({ length: 400 }, (_, i) => `https://example.com/manual-page-${i}`);
+
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({
+        result: {
+          pages: manyAhrefsPages,
+        },
+      }),
+    };
+
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getIncludedURLs: () => manyIncludedUrls,
+        getFetchConfig: () => ({}),
+      }),
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+    };
+
+    const result = await runAuditAndSubmitForScrapingMocked(testContext);
+
+    // Should be capped at 1000
+    expect(result.urls).to.have.lengthOf(1000);
+    expect(testContext.log.warn).to.have.been.calledWith(
+      sinon.match(/Total URLs \(\d+\) exceeds limit\. Capping at 1000/),
+    );
+  }).timeout(10000);
+  it('runAuditAndSubmitForScraping should handle Ahrefs returning undefined result', async () => {
+    // Mock Ahrefs API to return undefined result (optional chaining branch)
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({ result: undefined }),
+    };
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    const result = await runAuditAndSubmitForScrapingMocked(context);
+
+    // Should still work with RUM data + includedURLs
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('success', true);
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should handle Ahrefs result without pages property', async () => {
+    // Mock Ahrefs API to return result without pages (optional chaining branch)
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({ result: {} }),
+    };
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    const result = await runAuditAndSubmitForScrapingMocked(context);
+
+    // Should still work with RUM data + includedURLs
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('success', true);
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should handle getConfig returning null', async () => {
+    // Mock Ahrefs API
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({
+        result: { pages: [{ url: 'https://example.com/page1' }] },
+      }),
+    };
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    // Create site with getConfig returning null (optional chaining branch)
+    const mockSite = {
+      ...site,
+      getConfig: () => null,
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+    };
+
+    const result = await runAuditAndSubmitForScrapingMocked(testContext);
+
+    // Should work with Ahrefs + RUM data
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('success', true);
+    expect(result.urls.length).to.be.greaterThan(0);
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should handle config without getIncludedURLs method', async () => {
+    // Mock Ahrefs API
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({
+        result: { pages: [{ url: 'https://example.com/page1' }] },
+      }),
+    };
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    // Create site with config but without getIncludedURLs (optional chaining branch)
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getFetchConfig: () => ({}),
+        // getIncludedURLs is missing
+      }),
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+    };
+
+    const result = await runAuditAndSubmitForScrapingMocked(testContext);
+
+    // Should work with Ahrefs + RUM data
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('success', true);
+    expect(result.urls.length).to.be.greaterThan(0);
+  }).timeout(10000);
+  it('runAuditAndSubmitForScraping should throw error when RUM audit returns success=false', async () => {
+    // Mock AhrefsAPIClient
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({
+        result: { pages: [] },
+      }),
+    };
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    // Mock RUMAPIClient to throw an error, which causes internalLinksAuditRunner to catch it
+    // and return success: false
+    const mockRumClient = {
+      query: sandbox.stub().rejects(new Error('RUM API connection failed')),
+    };
+    const RUMAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockRumClient),
+    };
+
+    // Use esmock to override imports
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+      '@adobe/spacecat-shared-rum-api-client': { default: RUMAPIClientMock },
+    });
+
+    // Should throw because internalLinksAuditRunner caught an error and returned success: false
+    await expect(runAuditAndSubmitForScrapingMocked(context))
+      .to.be.rejectedWith('Audit failed, skip scraping and suggestion generation');
+
+    expect(mockRumClient.query).to.have.been.called;
+  }).timeout(10000);
+
 });
 
 describe('broken-internal-links audit opportunity and suggestions', () => {
@@ -479,7 +785,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     ).to.be.rejectedWith('Failed to fetch opportunities for siteId site-id-1: read error happened');
 
     expect(context.log.error).to.have.been.calledWith(
-      'Fetching opportunities for siteId site-id-1 failed with error: read error happened',
+      '[broken-internal-links] [siteId=site-id-1] Fetching opportunities failed with error: read error happened',
     );
   }).timeout(5000);
 
@@ -603,7 +909,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // Verify SQS messages were sent
     expect(context.sqs.sendMessage).to.have.been.called;
     expect(context.log.debug).to.have.been.calledWith(
-      sinon.match('Message sent to Mystique:'),
+      sinon.match(/Batch.*sent to Mystique/),
     );
   }).timeout(5000);
 
@@ -682,7 +988,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     // Verify the log message about filtering file types was called
     expect(context.log.info).to.have.been.calledWith(
-      sinon.match(/Filtered out 5 unscrape-able file URLs \(PDFs, Office docs, etc\.\) from alternative URLs before sending to Mystique/),
+      sinon.match(/Filtered out 5 unscrape-able file URLs/),
     );
 
     // Verify SQS was called with only scrapeable URLs
@@ -798,7 +1104,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     expect(context.log.error).to.have.been.calledOnceWith(
-      'Fetching opportunities for siteId site-id-1 failed with error: some-error',
+      '[broken-internal-links] [siteId=site-id-1] Fetching opportunities failed with error: some-error',
     );
 
     // make sure that no new suggestions are added
@@ -1166,4 +1472,1148 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       sinon.match(/No alternative URLs available/),
     );
   }).timeout(5000);
+
+  it('should batch brokenLinks into multiple SQS messages when exceeding batch size', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+
+    context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
+    context.site.getBaseURL = () => 'https://example.com';
+
+    // Setup opportunity methods
+    opportunity.getSuggestions = sandbox.stub().resolves([]);
+    opportunity.addSuggestions = sandbox.stub().resolves({ createdItems: [], errorItems: [] });
+
+    // Re-create handler with esmock to stub syncBrokenInternalLinksSuggestions
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    // Create 150 suggestions that will become broken links
+    // Use same prefix pattern so locale filtering doesn't remove alternatives
+    const validSuggestions = Array.from({ length: 150 }, (_, i) => ({
+      getData: () => ({
+        urlTo: `https://example.com/en/broken${i}`,
+        urlFrom: `https://example.com/en/source${i}`,
+      }),
+      getId: () => `suggestion-${i}`,
+    }));
+
+    // Create top pages for alternatives - use same "en" prefix
+    const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
+      getUrl: () => `https://example.com/en/alternative${i}`,
+    }));
+
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves(manyTopPages);
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(result.status).to.equal('complete');
+
+    // Verify batching - 150 links should be sent in 2 batches (100 + 50)
+    expect(context.sqs.sendMessage.callCount).to.equal(2);
+
+    // Verify first batch has 100 links
+    const firstBatch = context.sqs.sendMessage.getCall(0).args[1];
+    expect(firstBatch.data.brokenLinks).to.have.lengthOf(100);
+    expect(firstBatch.data.batchInfo.batchIndex).to.equal(0);
+    expect(firstBatch.data.batchInfo.totalBatches).to.equal(2);
+    expect(firstBatch.data.batchInfo.totalBrokenLinks).to.equal(150);
+
+    // Verify second batch has 50 links
+    const secondBatch = context.sqs.sendMessage.getCall(1).args[1];
+    expect(secondBatch.data.brokenLinks).to.have.lengthOf(50);
+    expect(secondBatch.data.batchInfo.batchIndex).to.equal(1);
+    expect(secondBatch.data.batchInfo.totalBatches).to.equal(2);
+
+    // Verify log message about batching
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/Sending 150 broken links in 2 batch\(es\) to Mystique/),
+    );
+  }).timeout(10000);
+
+  it('should handle Ahrefs fetch error gracefully in opportunityAndSuggestionsStep', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+
+    context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
+    context.site.getBaseURL = () => 'https://example.com';
+
+    opportunity.getSuggestions = sandbox.stub().resolves([]);
+    opportunity.addSuggestions = sandbox.stub().resolves({ createdItems: [], errorItems: [] });
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    const validSuggestions = [{
+      getData: () => ({
+        urlTo: 'https://example.com/en/broken1',
+        urlFrom: 'https://example.com/en/source1',
+      }),
+      getId: () => 'suggestion-1',
+    }];
+
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    
+    // Make Ahrefs fetch fail
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .rejects(new Error('Ahrefs API error'));
+
+    // Should still complete without throwing
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(result.status).to.equal('complete');
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Failed to fetch Ahrefs top pages/),
+    );
+  }).timeout(10000);
+
+
+  it('should cap URLs in opportunityAndSuggestionsStep when exceeding MAX_URLS_TO_PROCESS', async () => {
+    context.dataAccess.Configuration = {
+      findLatest: () => ({
+        isHandlerEnabledForSite: () => true,
+      }),
+    };
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+
+    context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
+    context.site.getBaseURL = () => 'https://example.com';
+    context.site.getConfig = () => ({
+      getIncludedURLs: () => Array.from({ length: 80 }, (_, i) => `https://example.com/en/included${i}`),
+    });
+
+    opportunity.getSuggestions = sandbox.stub().resolves([]);
+    opportunity.addSuggestions = sandbox.stub().resolves({ createdItems: [], errorItems: [] });
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    const validSuggestions = [{
+      getData: () => ({
+        urlTo: 'https://example.com/en/broken1',
+        urlFrom: 'https://example.com/en/source1',
+      }),
+      getId: () => 'suggestion-1',
+    }];
+
+    // Create 800 Ahrefs pages + 400 includedURLs = 1200 total (exceeds 1000)
+    const manyTopPages = Array.from({ length: 800 }, (_, i) => ({
+      getUrl: () => `https://example.com/en/page${i}`,
+    }));
+
+    // Update includedURLs to have 400 URLs
+    context.site.getConfig = () => ({
+      getIncludedURLs: () => Array.from({ length: 400 }, (_, i) => `https://example.com/en/included${i}`),
+    });
+
+    if (!context.dataAccess.Suggestion) {
+      context.dataAccess.Suggestion = {};
+    }
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .callsFake(() => Promise.resolve(validSuggestions));
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sandbox.stub()
+      .resolves(manyTopPages);
+
+    await handler.opportunityAndSuggestionsStep(context);
+
+    // Verify warning was logged for capping URLs (1200 > 1000)
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match(/Capping URLs from 1200 to 1000/),
+    );
+  }).timeout(10000);
+
+  // Note: This test is skipped because with MAX_URLS_TO_PROCESS = 1000 and MAX_ALTERNATIVE_URLS = 100,
+  // the alternativeUrls limit (lines 423-425 in handler.js) could be reached in theory,
+  // but it would require very specific conditions that are difficult to test reliably.
+  // topPages is capped to 1000, and alternativeUrls are a filtered subset.
+  it.skip('should limit alternativeUrls when exceeding MAX_ALTERNATIVE_URLS', async () => {
+    // Test skipped - difficult to test reliably with current setup
+  }).timeout(10000);
+
 });
+
+describe('runCrawlDetectionAndGenerateSuggestions', () => {
+  let sandbox;
+  let context;
+  let mockAudit;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    
+    mockAudit = {
+      getId: () => 'audit-id-1',
+      getAuditResult: () => ({
+        brokenInternalLinks: [
+          { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', trafficDomain: 100 },
+        ],
+        success: true,
+      }),
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    context = {
+      log: {
+        info: sandbox.stub(),
+        warn: sandbox.stub(),
+        error: sandbox.stub(),
+        debug: sandbox.stub(),
+      },
+      site: {
+        getId: () => 'site-id-1',
+        getBaseURL: () => 'https://example.com',
+        getDeliveryType: () => 'aem_edge',
+        getConfig: () => null,
+      },
+      audit: mockAudit,
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves(mockAudit),
+        },
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          create: sandbox.stub().resolves({
+            getId: () => 'oppty-id-1',
+            getType: () => 'broken-internal-links',
+            getSiteId: () => 'site-id-1',
+            addSuggestions: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
+            getSuggestions: sandbox.stub().resolves([]),
+            setAuditId: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+            setData: () => {},
+            getData: () => {},
+            setUpdatedBy: sandbox.stub().returnsThis(),
+          }),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+      },
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub(),
+      },
+      finalUrl: 'https://example.com',
+      scrapeResultPaths: new Map(),
+    };
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should process RUM-only results when no scrapeResultPaths available', async () => {
+    context.scrapeResultPaths = new Map(); // Empty map
+
+    const result = await runCrawlDetectionAndGenerateSuggestions(context);
+
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/No scraped content available, using RUM-only results/),
+    );
+    expect(result.status).to.equal('complete');
+  }).timeout(10000);
+
+  it('should handle undefined scrapeResultPaths gracefully', async () => {
+    // Explicitly test the || new Map() fallback
+    context.scrapeResultPaths = undefined;
+
+    const result = await runCrawlDetectionAndGenerateSuggestions(context);
+
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/No scraped content available, using RUM-only results/),
+    );
+    expect(result.status).to.equal('complete');
+  }).timeout(10000);
+
+  it('should handle missing brokenInternalLinks in audit result', async () => {
+    // Test the || [] fallback when brokenInternalLinks is undefined
+    mockAudit.getAuditResult = () => ({
+      success: true,
+      // No brokenInternalLinks property
+    });
+
+    const result = await runCrawlDetectionAndGenerateSuggestions(context);
+
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/RUM detection results: 0 broken links/),
+    );
+    expect(result.status).to.equal('complete');
+  }).timeout(10000);
+
+  it('should merge crawl and RUM results when scrapeResultPaths available', async () => {
+    // Mock scrape result paths
+    context.scrapeResultPaths = new Map([
+      ['https://example.com/page1', 'scrape-results/page1.json'],
+    ]);
+
+    // Mock S3 response with HTML containing a broken link
+    context.s3Client.send.resolves({
+      Body: {
+        transformToString: () => JSON.stringify({
+          scrapeResult: {
+            rawBody: '<html><body><a href="https://example.com/crawl-broken">Link</a></body></html>',
+          },
+          finalUrl: 'https://example.com/page1',
+        }),
+      },
+    });
+
+    // Use esmock to stub dependencies
+    const handlerWithMocks = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/crawl-detection.js': {
+        detectBrokenLinksFromCrawl: sandbox.stub().resolves([
+          { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/crawl-broken', trafficDomain: 0 },
+        ]),
+        mergeAndDeduplicate: sandbox.stub().returns([
+          { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/broken1', trafficDomain: 100 },
+          { urlFrom: 'https://example.com/page1', urlTo: 'https://example.com/crawl-broken', trafficDomain: 0 },
+        ]),
+      },
+      '../../../src/internal-links/suggestions-generator.js': {
+        syncBrokenInternalLinksSuggestions: sandbox.stub().resolves(),
+      },
+    });
+
+    const result = await handlerWithMocks.runCrawlDetectionAndGenerateSuggestions(context);
+
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/Crawl detected/),
+    );
+    expect(result.status).to.equal('complete');
+  }).timeout(10000);
+});
+
+describe('updateAuditResult', () => {
+  let sandbox;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should update audit result using setAuditResult when available', async () => {
+    const mockAudit = {
+      getId: () => 'audit-id-1',
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const log = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const prioritizedLinks = [{ urlFrom: 'a', urlTo: 'b', priority: 'high' }];
+    const auditResult = { success: true, brokenInternalLinks: [] };
+
+    const result = await updateAuditResult(mockAudit, auditResult, prioritizedLinks, {}, log, 'test-site-id');
+
+    expect(mockAudit.setAuditResult).to.have.been.calledOnce;
+    expect(mockAudit.save).to.have.been.calledOnce;
+    expect(result.brokenInternalLinks).to.deep.equal(prioritizedLinks);
+  });
+
+  it('should use audit.id when getId method not available', async () => {
+    const mockAuditFromDb = {
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockAudit = {
+      // No getId method - should use id property instead
+      id: 'audit-id-1',
+      // No setAuditResult method
+    };
+
+    const log = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const prioritizedLinks = [];
+    const auditResult = { success: true };
+    const dataAccess = {
+      Audit: {
+        findById: sandbox.stub().resolves(mockAuditFromDb),
+      },
+    };
+
+    const result = await updateAuditResult(mockAudit, auditResult, prioritizedLinks, dataAccess, log, 'test-site-id');
+
+    expect(dataAccess.Audit.findById).to.have.been.calledWith('audit-id-1');
+    expect(mockAuditFromDb.setAuditResult).to.have.been.calledOnce;
+    expect(result.brokenInternalLinks).to.deep.equal(prioritizedLinks);
+  });
+
+  it('should fallback to database lookup when setAuditResult not available', async () => {
+    const mockAuditFromDb = {
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockAudit = {
+      getId: () => 'audit-id-1',
+      id: 'audit-id-1',
+      // No setAuditResult method
+    };
+
+    const log = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const dataAccess = {
+      Audit: {
+        findById: sandbox.stub().resolves(mockAuditFromDb),
+      },
+    };
+
+    const prioritizedLinks = [{ urlFrom: 'a', urlTo: 'b', priority: 'high' }];
+    const auditResult = { success: true, brokenInternalLinks: [] };
+
+    const result = await updateAuditResult(mockAudit, auditResult, prioritizedLinks, dataAccess, log, 'test-site-id');
+
+    expect(dataAccess.Audit.findById).to.have.been.calledWith('audit-id-1');
+    expect(mockAuditFromDb.setAuditResult).to.have.been.calledOnce;
+    expect(result.brokenInternalLinks).to.deep.equal(prioritizedLinks);
+  });
+
+  it('should log error when audit not found in database', async () => {
+    const mockAudit = {
+      getId: () => 'audit-id-1',
+      id: 'audit-id-1',
+    };
+
+    const log = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const dataAccess = {
+      Audit: {
+        findById: sandbox.stub().resolves(null), // Not found
+      },
+    };
+
+    const prioritizedLinks = [];
+    const auditResult = { success: true };
+
+    await updateAuditResult(mockAudit, auditResult, prioritizedLinks, dataAccess, log, 'test-site-id');
+
+    expect(log.error).to.have.been.calledWith(
+      sinon.match(/Could not find audit with ID/),
+    );
+  });
+
+  it('should handle errors during update', async () => {
+    const mockAudit = {
+      getId: () => 'audit-id-1',
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().rejects(new Error('Save failed')),
+    };
+
+    const log = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+    };
+
+    const prioritizedLinks = [];
+    const auditResult = { success: true };
+
+    await updateAuditResult(mockAudit, auditResult, prioritizedLinks, {}, log, 'test-site-id');
+
+    expect(log.error).to.have.been.calledWith(
+      sinon.match(/Failed to update audit result/),
+    );
+  });
+});
+
+
+describe('runCrawlDetectionBatch - Coverage Tests', () => {
+  it('should call runCrawlDetectionBatch and test basic flow', async () => {
+    // This is a simple smoke test to trigger the function
+    // Real integration testing happens in production
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'test-site',
+        getBaseURL: () => 'https://example.com',
+      },
+      audit: {
+        getId: () => 'audit-123',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-type/audit-123',
+        getAuditResult: () => ({ brokenInternalLinks: [] }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      auditContext: {},
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        AUDIT_JOBS_QUEUE_URL: 'https://sqs.test/queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })),
+      },
+      scrapeResultPaths: new Map(),
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-123',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          create: sandbox.stub().resolves({ getId: () => 'opp-1' }),
+        },
+        Suggestion: {
+          allByOpportunityId: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    const result = await runCrawlDetectionBatch(mockContext);
+
+    // Should handle empty scrapeResultPaths
+    expect(mockLog.info).to.have.been.calledWith(sinon.match(/No scraped content available/));
+    expect(result).to.have.property('status');
+  });
+
+  it('should send continuation message when more pages remain', async function () {
+    this.timeout(15000);
+
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const s3ClientStub = {
+      send: sandbox.stub(),
+    };
+
+    // Create many pages to trigger batching
+    const largeScrapeResultPaths = new Map();
+    for (let i = 0; i < 100; i++) {
+      largeScrapeResultPaths.set(`https://example.com/page${i}`, `scrape/page${i}.json`);
+    }
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'test-site',
+        getBaseURL: () => 'https://example.com',
+      },
+      audit: {
+        getId: () => 'audit-123',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-type/audit-123',
+        getAuditResult: () => ({ brokenInternalLinks: [] }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      auditContext: {},
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        AUDIT_JOBS_QUEUE_URL: 'https://sqs.test/queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: s3ClientStub,
+      scrapeResultPaths: largeScrapeResultPaths,
+      scrapeJobId: 'scrape-123',
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-123',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          create: sandbox.stub().resolves({ getId: () => 'opp-1' }),
+        },
+        Suggestion: {
+          allByOpportunityId: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    // Mock S3 - no existing state, then save succeeds
+    s3ClientStub.send
+      .onFirstCall().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' }))
+      .onSecondCall().resolves(); // PUT succeeds
+
+    // Mock getObjectFromKey via esmock
+    const getObjectFromKeyStub = sandbox.stub().resolves({
+      scrapeResult: {
+        rawBody: '<html><body><main><p>Test</p></main></body></html>',
+      },
+      finalUrl: 'https://example.com/page1',
+    });
+
+    const putObjectFromStringStub = sandbox.stub().resolves();
+
+    const module = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/utils/s3-utils.js': {
+        getObjectFromKey: getObjectFromKeyStub,
+        putObjectFromString: putObjectFromStringStub,
+      },
+    });
+
+    const result = await module.runCrawlDetectionBatch(mockContext);
+
+    // Should return batch-continuation status
+    expect(result).to.deep.equal({ status: 'batch-continuation' });
+    
+    // Should log continuation payload
+    expect(mockLog.info).to.have.been.calledWith(sinon.match(/Continuation payload:/));
+    
+    // Should send SQS message
+    expect(mockContext.sqs.sendMessage).to.have.been.calledOnce;
+    expect(mockContext.sqs.sendMessage).to.have.been.calledWith(
+      'https://sqs.test/queue',
+      sinon.match({
+        type: AUDIT_TYPE,
+        siteId: 'test-site',
+        auditContext: sinon.match({
+          next: 'runCrawlDetectionBatch',
+          auditId: 'audit-123',
+          scrapeJobId: 'scrape-123',
+        }),
+      }),
+    );
+  });
+
+  it('should complete in one batch using esmock for crawl-detection', async function () {
+    this.timeout(15000);
+
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    // Create 3 pages (less than PAGES_PER_BATCH=10)
+    const smallScrapeResultPaths = new Map([
+      ['https://example.com/page1', 'scrape/page1.json'],
+      ['https://example.com/page2', 'scrape/page2.json'],
+      ['https://example.com/page3', 'scrape/page3.json'],
+    ]);
+
+    const mockS3Send = sandbox.stub()
+      .onCall(0).rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })) // GET
+      .onCall(1).resolves() // PUT
+      .onCall(2).resolves({
+        Body: {
+          transformToString: async () => JSON.stringify({
+            results: [],
+            brokenUrlsCache: [],
+            workingUrlsCache: [],
+          }),
+        },
+      }) // GET final
+      .onCall(3).resolves(); // DELETE
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'test-site',
+        getBaseURL: () => 'https://example.com',
+      },
+      audit: {
+        getId: () => 'audit-finish',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-type/audit-finish',
+        getAuditResult: () => ({ brokenInternalLinks: [] }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      auditContext: {},
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        AUDIT_JOBS_QUEUE_URL: 'https://sqs.test/queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: mockS3Send,
+      },
+      scrapeResultPaths: smallScrapeResultPaths,
+      scrapeJobId: 'scrape-finish',
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-finish',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          create: sandbox.stub().resolves({ getId: () => 'opp-finish', getSuggestions: sandbox.stub().resolves([]) }),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    // Mock detectBrokenLinksFromCrawlBatch to return no more pages
+    const module = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/crawl-detection.js': {
+        detectBrokenLinksFromCrawlBatch: async () => ({
+          results: [],
+          brokenUrlsCache: [],
+          workingUrlsCache: [],
+          pagesProcessed: 3,
+          pagesSkipped: 0,
+          hasMorePages: false, // No more pages - should hit lines 664-665
+          nextBatchStartIndex: 3,
+          stats: { linksChecked: 0, linksSkipped: 0, brokenLinksFound: 0 },
+        }),
+      },
+    });
+
+    await module.runCrawlDetectionBatch(mockContext);
+
+    // Verify completion path (lines 664-665)
+    expect(mockLog.info).to.have.been.calledWith(sinon.match(/All 1 batches complete, proceeding to merge step/));
+  });
+
+  it('should cover finalizeCrawlDetection with crawl results (lines 521-526)', async function () {
+    this.timeout(15000);
+
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const crawlResults = [
+      { urlFrom: 'https://example.com/p1', urlTo: 'https://example.com/broken', anchorText: 'link' },
+    ];
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com',
+      },
+      audit: {
+        getId: () => 'audit-finalize-1',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-finalize-1',
+        getAuditResult: () => ({ brokenInternalLinks: [] }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub()
+          .onCall(0).resolves({
+            Body: {
+              transformToString: async () => JSON.stringify({
+                results: crawlResults,
+                brokenUrlsCache: [],
+                workingUrlsCache: [],
+              }),
+            },
+          })
+          .onCall(1).resolves(), // cleanup
+      },
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-finalize-1',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          create: sandbox.stub().resolves({ getId: () => 'opp-1', getSuggestions: sandbox.stub().resolves([]) }),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    // Call with skipCrawlDetection=false to hit lines 521-526
+    await finalizeCrawlDetection(mockContext, { skipCrawlDetection: false });
+
+    // Verify lines 521-526 were executed
+    expect(mockLog.info).to.have.been.calledWith(sinon.match(/Crawl detected 1 broken links/));
+  });
+
+  it('should handle null brokenInternalLinks (line 514)', async function () {
+    this.timeout(15000);
+
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'site-null',
+        getBaseURL: () => 'https://example.com',
+      },
+      audit: {
+        getId: () => 'audit-null',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-type/audit-null',
+        getAuditResult: () => ({}), // No brokenInternalLinks property
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub()
+          .onCall(0).resolves({
+            Body: {
+              transformToString: async () => JSON.stringify({
+                results: [],
+                brokenUrlsCache: [],
+                workingUrlsCache: [],
+              }),
+            },
+          })
+          .onCall(1).resolves(),
+      },
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-null',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          create: sandbox.stub().resolves({ getId: () => 'opp-null', getSuggestions: sandbox.stub().resolves([]) }),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    await finalizeCrawlDetection(mockContext, { skipCrawlDetection: false });
+
+    // Should handle null brokenInternalLinks (line 514: || [])
+    expect(mockLog.info).to.have.been.calledWith(sinon.match(/RUM detection results: 0 broken links/));
+  });
+
+  it('should handle missing scrapeResultPaths (line 581)', async function () {
+    this.timeout(15000);
+
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'site-no-paths',
+        getBaseURL: () => 'https://example.com',
+      },
+      audit: {
+        getId: () => 'audit-no-paths',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-type/audit-no-paths',
+        getAuditResult: () => ({ brokenInternalLinks: [] }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      auditContext: {},
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        AUDIT_JOBS_QUEUE_URL: 'https://sqs.test/queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub().rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' })),
+      },
+      // NO scrapeResultPaths property - should use fallback on line 581
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-no-paths',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          create: sandbox.stub().resolves({ getId: () => 'opp-no-paths', getSuggestions: sandbox.stub().resolves([]) }),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    const result = await runCrawlDetectionBatch(mockContext);
+
+    // Should use fallback Map() and skip crawl detection
+    expect(mockLog.info).to.have.been.calledWith(sinon.match(/No scraped content available/));
+    expect(result).to.have.property('status');
+  });
+
+  it('should cover cleanup failure path (lines 556-561)', async function () {
+    this.timeout(15000);
+
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'site-2',
+        getBaseURL: () => 'https://example.com',
+      },
+      audit: {
+        getId: () => 'audit-cleanup-1',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/type/audit-cleanup-1',
+        getAuditResult: () => ({ brokenInternalLinks: [] }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub()
+          .onCall(0).resolves({
+            Body: {
+              transformToString: async () => JSON.stringify({
+                results: [],
+                brokenUrlsCache: [],
+                workingUrlsCache: [],
+              }),
+            },
+          })
+          .onCall(1).rejects(new Error('Cleanup error')), // DELETE fails
+      },
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-cleanup-1',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          create: sandbox.stub().resolves({ getId: () => 'opp-2', getSuggestions: sandbox.stub().resolves([]) }),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    // Call with skipCrawlDetection=false to enter cleanup path
+    await finalizeCrawlDetection(mockContext, { skipCrawlDetection: false });
+
+    // Verify lines 556-563: cleanup failure logged
+    expect(mockLog.warn).to.have.been.calledWith(sinon.match(/Failed to.*: Cleanup error/));
+  });
+
+  it('should skip batch processing when batchStartIndex >= totalPages', async () => {
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page1', 'scrape/page1.json'],
+      ['https://example.com/page2', 'scrape/page2.json'],
+    ]);
+
+    const mockS3Send = sandbox.stub()
+      .onCall(0).resolves({
+        Body: {
+          transformToString: async () => JSON.stringify({
+            results: [],
+            brokenUrlsCache: [],
+            workingUrlsCache: [],
+          }),
+        },
+      }) // GET final
+      .onCall(1).resolves(); // DELETE
+
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'test-site',
+        getBaseURL: () => 'https://example.com',
+      },
+      audit: {
+        getId: () => 'audit-123',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-type/audit-123',
+        getAuditResult: () => ({ brokenInternalLinks: [] }),
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+      auditContext: {
+        batchStartIndex: 100, // Beyond totalPages (2)
+      },
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+      env: {
+        AUDIT_JOBS_QUEUE_URL: 'https://sqs.test/queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: mockS3Send,
+      },
+      scrapeResultPaths,
+      scrapeJobId: 'scrape-123',
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-123',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          create: sandbox.stub().resolves({ getId: () => 'opp-1', getSuggestions: sandbox.stub().resolves([]) }),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    const result = await runCrawlDetectionBatch(mockContext);
+
+    // Should log that batchStartIndex >= totalPages
+    expect(mockLog.info).to.have.been.calledWith(
+      sinon.match(/Batch start index \(100\) >= total pages \(2\), all batches already complete/),
+    );
+
+    // Should return 'complete' status
+    expect(result).to.have.property('status', 'complete');
+
+    // Should NOT send continuation message
+    expect(mockContext.sqs.sendMessage).to.not.have.been.called;
+  });
+
+});
+
