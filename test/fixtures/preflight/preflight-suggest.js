@@ -46,14 +46,9 @@ export const suggestionData = [
       {
         name: 'canonical',
         type: 'seo',
-        opportunities: [
-          {
-            check: 'canonical-self-referenced',
-            issue: 'The canonical URL should point to itself to indicate that it is the preferred version of the content.',
-            seoImpact: 'Moderate',
-            seoRecommendation: 'The canonical URL should point to itself to indicate that it is the preferred version of the content.',
-          },
-        ],
+        // TODO: Re-enable when preflight canonical is updated for
+        // new multi-step architecture
+        opportunities: [],
       },
       {
         name: 'metatags',
