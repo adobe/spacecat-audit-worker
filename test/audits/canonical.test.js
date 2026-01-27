@@ -1977,8 +1977,10 @@ describe('Canonical URL Tests', () => {
 
         const result = await submitForScraping(testContext);
 
-        expect(result).to.have.property('auditResult');
-        expect(result.auditResult).to.deep.equal({ status: 'scraping' });
+        // SCRAPE_CLIENT steps should NOT return auditResult/fullAuditRef
+        // These fields are only for final steps or immediate audit persistence
+        expect(result).to.not.have.property('auditResult');
+        expect(result).to.not.have.property('fullAuditRef');
         expect(result).to.have.property('urls');
         expect(result.urls).to.have.lengthOf(2);
         expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });

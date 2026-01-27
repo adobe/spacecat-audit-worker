@@ -138,12 +138,9 @@ export async function submitForScraping(context) {
   log.info('CANONICAL[20012026] - finish submitForScraping');
   log.info(`Finish submitForScraping step for: ${site.getId()}`);
 
+  // Note: Do NOT return auditResult/fullAuditRef for steps with SCRAPE_CLIENT destination
+  // These are intermediate steps; the scraper will trigger the next step when complete
   return {
-    auditResult: {
-      status: 'scraping',
-    },
-    fullAuditRef: finalUrl,
-    // Data for the SCRAPE_CLIENT
     urls: filteredUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'default',
