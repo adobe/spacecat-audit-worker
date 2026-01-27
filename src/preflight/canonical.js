@@ -44,7 +44,7 @@ export default async function canonical(context, auditContext) {
   // TODO: Preflight canonical check needs to be updated to work with the
   // new multi-step canonical audit. For now, returning empty results as
   // validateCanonicalTag was removed
-  const canonicalResults = previewUrls.map((url) => ({ url, checks: [] }));
+  // const canonicalResults = previewUrls.map((url) => ({ url, checks: [] }));
 
   /* TEMPORARILY DISABLED - validateCanonicalTag function was removed
   const canonicalResults = await Promise.all(
@@ -81,6 +81,9 @@ export default async function canonical(context, auditContext) {
     endTime: canonicalEndTimestamp,
   });
 
+  // TODO: Re-enable when preflight canonical check is restored
+  // Currently canonicalResults always returns empty checks, so this processing is disabled
+  /*
   canonicalResults.forEach(({ url, checks: canonicalChecks }) => {
     const audit = audits.get(url).audits.find((a) => a.name === PREFLIGHT_CANONICAL);
     canonicalChecks.forEach((check) => audit.opportunities.push({
@@ -90,6 +93,7 @@ export default async function canonical(context, auditContext) {
       seoRecommendation: check.explanation,
     }));
   });
+  */
 
   await saveIntermediateResults(context, auditsResult, 'canonical audit');
 }
