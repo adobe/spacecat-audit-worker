@@ -105,6 +105,7 @@ export async function submitForScraping(context) {
         || pathname.includes('/authenticate')
         || pathname.includes('/oauth')
         || pathname.includes('/sso')
+        || pathname.includes('/okta')
         || pathname === '/auth'
         || pathname.startsWith('/auth/');
     } catch {
