@@ -19,6 +19,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
+import { extractMainDomainName } from '../../support/utils.js';
 import {
   createReportOpportunitySuggestionInstance,
   createInDepthReportOpportunity,
@@ -1101,24 +1102,19 @@ export async function getCodeInfo(site, opportunityType, context) {
   const codeConfig = site.getCode();
   const baseUrl = site.getBaseURL();
 
-  // Check if AEMY is enabled for this site (only for accessibility audits)
-  let isAemyEnabled = true; // Default to enabled for backwards compatibility
+  let isAemyEnabled = true;
 
   if (opportunityType === 'accessibility' && dataAccess?.Configuration) {
     try {
       const { Configuration } = dataAccess;
       const configuration = await Configuration.findLatest();
-
-      // Handler should always exist - just check if it's enabled for this site
       isAemyEnabled = configuration.isHandlerEnabledForSite('a11y-aemy-code-injection', site);
     } catch (error) {
-      // If feature flag check fails, default to enabled (backwards compatible)
       log.warn(`[${opportunityType}] [Site Id: ${siteId}] Could not check feature flag, defaulting to AEMY enabled: ${error.message}`);
       isAemyEnabled = true;
     }
   }
 
-  // AEMY disabled: Use manual code archive path
   if (!isAemyEnabled) {
     if (!baseUrl) {
       log.warn(`[${opportunityType}] [Site Id: ${siteId}] No base URL for manual code path`);
@@ -1138,16 +1134,12 @@ export async function getCodeInfo(site, opportunityType, context) {
       return null;
     }
 
-    // Extract main domain name (e.g., www.sunstargum.com -> sunstargum)
-    // Remove www. prefix if present, then take first part before first dot
-    const withoutWww = hostname.replace(/^www\./, '');
-    const domainName = withoutWww.split('.')[0];
+    const domainName = extractMainDomainName(hostname);
     const archiveName = `${domainName}.zip`;
     const codePath = `tmp/codefix/source/${archiveName}`;
     const codeBucket = env.S3_MYSTIQUE_BUCKET_NAME;
 
-    // Only validate bucket name for accessibility manual flow
-    if (!codeBucket && opportunityType === 'accessibility') {
+    if (!codeBucket) {
       log.error(`[${opportunityType}] [Site Id: ${siteId}] S3_MYSTIQUE_BUCKET_NAME not configured`);
       throw new Error('S3_MYSTIQUE_BUCKET_NAME not configured');
     }
@@ -1159,8 +1151,6 @@ export async function getCodeInfo(site, opportunityType, context) {
       codePath,
     };
   }
-
-  // AEMY enabled: Use existing AEMY flow
   // For aem_edge delivery type, proceed without codeConfig
   if (!codeConfig) {
     if (deliveryType === 'aem_edge') {
