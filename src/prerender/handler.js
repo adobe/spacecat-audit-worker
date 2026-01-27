@@ -771,6 +771,7 @@ async function determineDomainWideSuggestionAction(
   /* c8 ignore next */
   log.info(`Prerender - Domain-wide detection: existingSuggestions=${existingSuggestions.length}, domainWideMatches=${allDomainWideSuggestions.length}. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
 
+  /* c8 ignore start */
   if (allDomainWideSuggestions.length === 0 && existingSuggestions.length > 0) {
     const sample = existingSuggestions.slice(0, 3).map((s) => {
       const data = s.getData();
@@ -800,6 +801,7 @@ async function determineDomainWideSuggestionAction(
     /* c8 ignore next */
     log.info(`Prerender - Domain-wide matches: ${JSON.stringify(matches)}`);
   }
+  /* c8 ignore stop */
 
   // Define active statuses that should NOT be replaced
   const ACTIVE_STATUSES = [

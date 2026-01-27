@@ -1994,6 +1994,62 @@ describe('Prerender Audit', () => {
         );
       });
 
+      it('should treat fixed suggestion with domain-wide key as domain-wide', async () => {
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'test-audit-id',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.5,
+                wordCountBefore: 100,
+                wordCountAfter: 250,
+              },
+            ],
+          },
+        };
+
+        const existingDomainWideSuggestion = {
+          getStatus: () => Suggestion.STATUSES.FIXED,
+          getData: () => ({
+            key: 'domain-wide-aggregate|prerender',
+          }),
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: () => Promise.resolve([existingDomainWideSuggestion]),
+        };
+
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+        });
+
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+          },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/Domain-wide suggestion already exists in FIXED state, skipping creation/),
+        );
+      });
+
       it('should skip domain-wide suggestion creation when fixed suggestion uses domain-wide url pattern', async () => {
         const auditData = {
           siteId: 'test-site',
