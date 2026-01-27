@@ -24,6 +24,7 @@ import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from 
 import {
   internalLinksAuditRunner,
   runAuditAndImportTopPagesStep,
+  runAuditAndSubmitForScraping,
   submitForScraping,
   runCrawlDetectionAndGenerateSuggestions,
   runCrawlDetectionBatch,
@@ -265,6 +266,117 @@ describe('Broken internal links audit', () => {
       fullAuditRef: auditUrl,
     });
   });
+
+  it('runAuditAndSubmitForScraping should merge RUM + Ahrefs + includedURLs and submit', async () => {
+    // Mock Ahrefs API response
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({
+        result: {
+          pages: [
+            { url: 'https://example.com/ahrefs1' },
+            { url: 'https://example.com/ahrefs2' },
+          ],
+        },
+      }),
+    };
+
+    // Mock AhrefsAPIClient.createFrom
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    // Use esmock to mock the AhrefsAPIClient import
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    // Mock includedURLs
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getIncludedURLs: (type) => (type === 'broken-internal-links' ? ['https://example.com/included1'] : []),
+      }),
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+    };
+
+    const result = await runAuditAndSubmitForScrapingMocked(testContext);
+
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('success', true);
+    expect(result).to.have.property('urls');
+    expect(result.urls).to.be.an('array');
+    // Should have Ahrefs (2) + includedURLs (1) = 3 unique URLs
+    expect(result.urls.length).to.equal(3);
+    expect(result.urls).to.deep.include({ url: 'https://example.com/ahrefs1' });
+    expect(result.urls).to.deep.include({ url: 'https://example.com/ahrefs2' });
+    expect(result.urls).to.deep.include({ url: 'https://example.com/included1' });
+    expect(result.siteId).to.equal(site.getId());
+    expect(result.type).to.equal('broken-internal-links');
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should fall back to includedURLs when Ahrefs fails', async () => {
+    // Mock Ahrefs API to fail
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().rejects(new Error('Ahrefs SSL error')),
+    };
+
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    // Mock includedURLs
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getIncludedURLs: (type) => (type === 'broken-internal-links' ? ['https://example.com/included1', 'https://example.com/included2'] : []),
+      }),
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+    };
+
+    const result = await runAuditAndSubmitForScrapingMocked(testContext);
+
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('success', true);
+    expect(result).to.have.property('urls');
+    // Should only have includedURLs (2) since Ahrefs failed
+    expect(result.urls.length).to.equal(2);
+    expect(result.urls).to.deep.include({ url: 'https://example.com/included1' });
+    expect(result.urls).to.deep.include({ url: 'https://example.com/included2' });
+  }).timeout(10000);
+
+  it('runAuditAndSubmitForScraping should throw error when RUM audit fails', async () => {
+    // Mock RUM to fail
+    nock('https://helix-pages.anywhere.run')
+      .get(/.*/)
+      .reply(500, 'Internal Server Error');
+
+    const mockAhrefsClient = {
+      getTopPages: sandbox.stub().resolves({ result: { pages: [] } }),
+    };
+
+    const AhrefsAPIClientMock = {
+      createFrom: sandbox.stub().returns(mockAhrefsClient),
+    };
+
+    const { runAuditAndSubmitForScraping: runAuditAndSubmitForScrapingMocked } = await esmock('../../../src/internal-links/handler.js', {
+      '@adobe/spacecat-shared-ahrefs-client': { default: AhrefsAPIClientMock },
+    });
+
+    await expect(runAuditAndSubmitForScrapingMocked(context))
+      .to.be.rejectedWith('Audit failed, skip scraping and suggestion generation');
+  }).timeout(10000);
 
 
   it('submitForScraping should send top pages to scraping service', async () => {
