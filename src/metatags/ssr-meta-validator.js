@@ -12,7 +12,7 @@
 
 import { context as fetchContext } from '@adobe/fetch';
 import * as cheerio from 'cheerio';
-import { hasText } from '@adobe/spacecat-shared-utils';
+import { hasText, analyzeBotProtection } from '@adobe/spacecat-shared-utils';
 
 const { fetch } = fetchContext();
 
@@ -36,7 +36,26 @@ export async function validateMetaTagsViaSSR(url, log) {
     });
 
     if (!response.ok) {
-      log.warn(`SSR validation failed with status ${response.status} for ${url}`);
+      if (response.status === 403) {
+        try {
+          const html = await response.text();
+          const botProtection = analyzeBotProtection({
+            status: response.status,
+            headers: response.headers,
+            html,
+          });
+
+          if (!botProtection.crawlable) {
+            log.error(`SSR validation blocked by ${botProtection.type} for ${url}`);
+          } else {
+            log.warn(`SSR validation failed with status 403 (not bot protection) for ${url}`);
+          }
+        } catch (error) {
+          log.warn(`SSR validation failed with status 403 for ${url} (bot detection failed: ${error.message})`);
+        }
+      } else {
+        log.warn(`SSR validation failed with status ${response.status} for ${url}`);
+      }
       return null;
     }
 
