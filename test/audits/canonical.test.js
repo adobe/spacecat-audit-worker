@@ -1923,6 +1923,46 @@ describe('Canonical URL Tests', () => {
     });
 
     describe('submitForScraping', () => {
+      it('should return error when dataAccess is missing', async () => {
+        const testContext = {
+          site,
+          log,
+          finalUrl: 'https://example.com',
+          dataAccess: undefined,
+        };
+
+        const result = await submitForScraping(testContext);
+
+        expect(result).to.deep.equal({
+          auditResult: {
+            status: 'PROCESSING_FAILED',
+            error: 'Missing SiteTopPage data access',
+          },
+          fullAuditRef: 'https://example.com',
+        });
+        expect(log.info).to.have.been.calledWith('[canonical] Missing SiteTopPage data access');
+      });
+
+      it('should return error when SiteTopPage is missing from dataAccess', async () => {
+        const testContext = {
+          site,
+          log,
+          finalUrl: 'https://example.com',
+          dataAccess: {},
+        };
+
+        const result = await submitForScraping(testContext);
+
+        expect(result).to.deep.equal({
+          auditResult: {
+            status: 'PROCESSING_FAILED',
+            error: 'Missing SiteTopPage data access',
+          },
+          fullAuditRef: 'https://example.com',
+        });
+        expect(log.info).to.have.been.calledWith('[canonical] Missing SiteTopPage data access');
+      });
+
       it('should submit top pages for scraping', async () => {
         context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
           { getUrl: () => 'https://example.com/page1' },
@@ -1955,6 +1995,27 @@ describe('Canonical URL Tests', () => {
 
       it('should handle no top pages found', async () => {
         context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+
+        const testContext = {
+          ...context,
+          site,
+          finalUrl: 'https://example.com',
+        };
+
+        const result = await submitForScraping(testContext);
+
+        expect(result).to.deep.equal({
+          auditResult: {
+            status: 'NO_OPPORTUNITIES',
+            message: 'No top pages found, skipping audit',
+          },
+          fullAuditRef: 'https://example.com',
+        });
+        expect(context.log.info).to.have.been.calledWith('No top pages found for site test-site-id, skipping scraping');
+      });
+
+      it('should handle null top pages result', async () => {
+        context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(null);
 
         const testContext = {
           ...context,
