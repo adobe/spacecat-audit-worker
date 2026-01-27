@@ -36,25 +36,6 @@ const LOG_PREFIX = 'Prerender -';
 
 const IS_DOMAIN_WIDE_FIELD = 'isDomainWide';
 const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
-<<<<<<< HEAD
-
-function isDomainWideSuggestionData(data) {
-  if (!data) {
-    return false;
-  }
-  if (data[IS_DOMAIN_WIDE_FIELD] === true) {
-    return true;
-  }
-  if (data.key === DOMAIN_WIDE_SUGGESTION_KEY) {
-    return true;
-  }
-  if (typeof data.pathPattern === 'string' && data.pathPattern.trim() === '/*') {
-    return true;
-  }
-  return false;
-}
-=======
->>>>>>> 4f291c74 (Optimization: creating domain wide suggestion only if required)
 
 function isDomainWideSuggestionData(data) {
   if (!data) {
@@ -865,15 +846,7 @@ export async function processOpportunityAndSuggestions(
       return data.key;
     }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
     if (isDomainWideSuggestionData(data)) {
-=======
-    if (data?.[IS_DOMAIN_WIDE_FIELD] === true) {
->>>>>>> 4f291c74 (Optimization: creating domain wide suggestion only if required)
-=======
-    if (isDomainWideSuggestionData(data)) {
->>>>>>> 2681b61d (for testing)
       return DOMAIN_WIDE_SUGGESTION_KEY;
     }
     // Individual suggestions use URL-based key
