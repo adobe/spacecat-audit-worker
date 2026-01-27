@@ -1108,15 +1108,9 @@ export async function getCodeInfo(site, opportunityType, context) {
     try {
       const { Configuration } = dataAccess;
       const configuration = await Configuration.findLatest();
-      const aemyHandler = configuration.getHandlers()?.['a11y-aemy-code-injection'];
 
-      // If handler is not configured, default to AEMY enabled (backwards compatible)
-      // If handler is configured, check if it's enabled for this site
-      if (!aemyHandler) {
-        isAemyEnabled = true;
-      } else {
-        isAemyEnabled = configuration.isHandlerEnabledForSite('a11y-aemy-code-injection', site);
-      }
+      // Handler should always exist - just check if it's enabled for this site
+      isAemyEnabled = configuration.isHandlerEnabledForSite('a11y-aemy-code-injection', site);
     } catch (error) {
       // If feature flag check fails, default to enabled (backwards compatible)
       log.warn(`[${opportunityType}] [Site Id: ${siteId}] Could not check feature flag, defaulting to AEMY enabled: ${error.message}`);
