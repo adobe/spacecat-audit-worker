@@ -21,8 +21,12 @@ import esmock from 'esmock';
 import canonicalAudit, {
   validateCanonicalFormat,
   validateCanonicalRecursively,
-  generateCanonicalSuggestion, generateSuggestions, opportunityAndSuggestions,
-  opportunityAndSuggestionsForElmo, importTopPages, submitForScraping,
+  generateCanonicalSuggestion,
+  generateSuggestions,
+  opportunityAndSuggestions,
+  opportunityAndSuggestionsForElmo,
+  importTopPages,
+  submitForScraping,
   processScrapedContent,
 } from '../../src/canonical/handler.js';
 import { getTopPagesForSiteId } from '../../src/utils/data-access.js';
