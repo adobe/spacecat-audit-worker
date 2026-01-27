@@ -182,7 +182,7 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
       return { url, success: false, error: 'Missing bot or human view data' };
     }
 
-    const { rawPage: botHtml } = scrapeData.botView;
+    const { rawPage: botHtml, isDeployedAtEdge } = scrapeData.botView;
     const { rawPage: humanHtml } = scrapeData.humanView;
 
     /* c8 ignore next 3 */
@@ -204,6 +204,7 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
       existingRecord.setWordDifference(scores.wordDifference);
       existingRecord.setBotWords(scores.botWords);
       existingRecord.setNormalWords(scores.normalWords);
+      existingRecord.setIsDeployedAtEdge(isDeployedAtEdge);
       await existingRecord.save();
     } else {
       // Create new record
@@ -215,10 +216,13 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
         wordDifference: scores.wordDifference,
         botWords: scores.botWords,
         normalWords: scores.normalWords,
+        isDeployedAtEdge,
       });
     }
 
-    return { url, success: true, ...scores };
+    return {
+      url, success: true, ...scores, isDeployedAtEdge,
+    };
     /* c8 ignore next 3 */
   } catch (error) {
     return { url, success: false, error: error.message };
@@ -260,10 +264,15 @@ export async function analyzeCitability(context) {
   }
 
   const successful = results.filter((r) => r.success).length;
-  log.info(`${LOG_PREFIX} Completed: ${successful}/${results.length} successful`);
+  const deployedAtEdge = results.filter((r) => r.isDeployedAtEdge).length;
+  log.info(`${LOG_PREFIX} Completed: ${successful}/${results.length} successful (${deployedAtEdge} deployed at edge)`);
 
   return {
-    auditResult: { successfulPages: successful, failedPages: results.length - successful },
+    auditResult: {
+      successfulPages: successful,
+      failedPages: results.length - successful,
+      deployedAtEdge,
+    },
     fullAuditRef: audit.getFullAuditRef(),
   };
 }

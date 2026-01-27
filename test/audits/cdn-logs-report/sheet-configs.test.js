@@ -64,6 +64,7 @@ describe('CDN Logs Sheet Configs', () => {
           'Product',
           'Category',
           'Citability Score',
+          'Deployed at Edge',
         ]);
     });
 
@@ -98,6 +99,7 @@ describe('CDN Logs Sheet Configs', () => {
         {
           getUrl: () => 'https://example.com/test',
           getCitabilityScore: () => 85,
+          getIsDeployedAtEdge: () => true,
           getUpdatedAt: () => '2025-01-15T10:00:00Z',
         },
       ]);
@@ -122,6 +124,7 @@ describe('CDN Logs Sheet Configs', () => {
           'Firefly',
           'Products',
           85,
+          true,
         ]);
       expect(result[1])
         .to
@@ -137,6 +140,63 @@ describe('CDN Logs Sheet Configs', () => {
           'Other',
           'Uncategorized',
           'N/A',
+          false,
+        ]);
+    });
+
+    it('uses most recent citability score when multiple records exist for same URL', async () => {
+      const testData = [
+        {
+          agent_type: 'Chatbots',
+          user_agent_display: 'ChatGPT-User',
+          status: 200,
+          number_of_hits: 100,
+          avg_ttfb_ms: 250.5,
+          country_code: 'US',
+          url: '/test',
+          product: 'firefly',
+          category: 'Products',
+        },
+      ];
+
+      // Setup multiple citability records for the same path with different timestamps
+      mockDataAccess.PageCitability.allBySiteId.resolves([
+        {
+          getUrl: () => 'https://example.com/test',
+          getCitabilityScore: () => 75, // Older score
+          getIsDeployedAtEdge: () => false,
+          getUpdatedAt: () => '2025-01-10T10:00:00Z', // Older date
+        },
+        {
+          getUrl: () => 'https://example.com/test',
+          getCitabilityScore: () => 90, // Newer score
+          getIsDeployedAtEdge: () => true,
+          getUpdatedAt: () => '2025-01-20T10:00:00Z', // Newer date
+        },
+      ]);
+
+      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
+
+      expect(result)
+        .to
+        .have
+        .lengthOf(1);
+      // Should use the newer score (90, true) not the older one (75, false)
+      expect(result[0])
+        .to
+        .deep
+        .equal([
+          'Chatbots',
+          'ChatGPT-User',
+          200,
+          100,
+          250.5,
+          'US',
+          '/test',
+          'Firefly',
+          'Products',
+          90, // Newer score
+          true, // Newer deployment status
         ]);
     });
 
