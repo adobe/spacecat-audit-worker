@@ -185,6 +185,8 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
     const { rawPage: botHtml, isDeployedAtEdge } = scrapeData.botView;
     const { rawPage: humanHtml } = scrapeData.humanView;
 
+    context.log.info(`${LOG_PREFIX} URL ${url}: isDeployedAtEdge=${isDeployedAtEdge}`);
+
     /* c8 ignore next 3 */
     if (!botHtml || !humanHtml) {
       return { url, success: false, error: 'Failed to extract HTML from views' };
@@ -206,6 +208,7 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
       existingRecord.setNormalWords(scores.normalWords);
       existingRecord.setIsDeployedAtEdge(isDeployedAtEdge);
       await existingRecord.save();
+      context.log.info(`${LOG_PREFIX} Updated PageCitability for ${url}: isDeployedAtEdge=${isDeployedAtEdge}`);
     } else {
       // Create new record
       await PageCitability.create({
@@ -218,6 +221,7 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
         normalWords: scores.normalWords,
         isDeployedAtEdge,
       });
+      context.log.info(`${LOG_PREFIX} Created PageCitability for ${url}: isDeployedAtEdge=${isDeployedAtEdge}`);
     }
 
     return {
@@ -266,6 +270,11 @@ export async function analyzeCitability(context) {
   const successful = results.filter((r) => r.success).length;
   const deployedAtEdge = results.filter((r) => r.isDeployedAtEdge).length;
   log.info(`${LOG_PREFIX} Completed: ${successful}/${results.length} successful (${deployedAtEdge} deployed at edge)`);
+
+  if (deployedAtEdge > 0) {
+    const deployedUrls = results.filter((r) => r.isDeployedAtEdge).map((r) => r.url);
+    log.info(`${LOG_PREFIX} Deployed URLs: ${deployedUrls.join(', ')}`);
+  }
 
   return {
     auditResult: {
