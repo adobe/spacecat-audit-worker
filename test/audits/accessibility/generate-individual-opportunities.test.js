@@ -2688,6 +2688,7 @@ describe('createDirectMystiqueMessage', () => {
     const siteId = 'site-789';
     const auditId = 'audit-101';
     const deliveryType = 'aem_edge';
+    const aggregationKey = 'test-agg-key';
     const result = generateIndividualOpportunitiesModule.createDirectMystiqueMessage({
       url: 'https://example.com',
       issuesList,
@@ -2695,17 +2696,20 @@ describe('createDirectMystiqueMessage', () => {
       siteId,
       auditId,
       deliveryType,
+      aggregationKey,
     });
     expect(result).to.include({
       type: 'guidance:accessibility-remediation',
       siteId,
       auditId,
       deliveryType,
+      aggregationKey,
     });
     expect(result.data).to.deep.equal({
       url: 'https://example.com',
       opportunityId: 'oppty-123',
       issuesList,
+      aggregationKey,
     });
     expect(result.time).to.be.a('string');
   });
@@ -3097,6 +3101,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
             url: 'https://example.com',
+            aggregationKey: 'aria-allowed-attr|https://example.com|div[aria-fake]|default',
             issuesList: [{ issueName: 'aria-allowed-attr' }], // This is in issueTypesForCodeFix
           },
         ]),
@@ -3131,6 +3136,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
     expect(message.data).to.have.property('url', 'https://example.com');
     expect(message.data).to.have.property('opportunityId', 'oppty-1');
     expect(message.data).to.have.property('issuesList').that.is.an('array');
+    expect(message.data).to.have.property('aggregationKey', 'aria-allowed-attr|https://example.com|div[aria-fake]|default');
     
     // Verify codeBucket and codePath are included in the message data
     expect(message.data).to.have.property('codeBucket', 'test-importer-bucket');
@@ -3174,6 +3180,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
             url: 'https://example.com',
+            aggregationKey: 'https://example.com', // Legacy flow uses buildKey(url)
             issuesList: [{ issueName: 'color-contrast' }], // This is NOT in issueTypesForCodeFix
           },
         ]),
@@ -3205,6 +3212,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
     expect(message.data).to.have.property('url', 'https://example.com');
     expect(message.data).to.have.property('opportunityId', 'oppty-1');
     expect(message.data).to.have.property('issuesList').that.is.an('array');
+    expect(message.data).to.have.property('aggregationKey', 'https://example.com');
     
     // In legacy flow, there's no forward configuration
     expect(message).to.not.have.property('forward');
