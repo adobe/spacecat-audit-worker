@@ -1989,9 +1989,6 @@ describe('Prerender Audit', () => {
         expect(context.log.info).to.have.been.calledWith(
           sinon.match(/Domain-wide suggestion already exists in FIXED state, skipping creation/),
         );
-        expect(context.log.info).to.have.been.calledWith(
-          sinon.match(/Domain-wide matches:/),
-        );
       });
 
       it('should treat fixed suggestion with domain-wide key as domain-wide', async () => {

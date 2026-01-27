@@ -768,41 +768,6 @@ async function determineDomainWideSuggestionAction(
     (s) => isDomainWideSuggestionData(s.getData()),
   );
 
-  /* c8 ignore next */
-  log.info(`Prerender - Domain-wide detection: existingSuggestions=${existingSuggestions.length}, domainWideMatches=${allDomainWideSuggestions.length}. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-
-  /* c8 ignore start */
-  if (allDomainWideSuggestions.length === 0 && existingSuggestions.length > 0) {
-    const sample = existingSuggestions.slice(0, 3).map((s) => {
-      const data = s.getData();
-      return {
-        status: s.getStatus?.(),
-        hasIsDomainWide: data?.[IS_DOMAIN_WIDE_FIELD] === true,
-        key: data?.key,
-        url: data?.url,
-        pathPattern: data?.pathPattern,
-        allowedRegexPatterns: data?.allowedRegexPatterns,
-      };
-    });
-    /* c8 ignore next */
-    log.info(`Prerender - Domain-wide detection sample: ${JSON.stringify(sample)}`);
-  } else if (allDomainWideSuggestions.length > 0) {
-    const matches = allDomainWideSuggestions.slice(0, 3).map((s) => {
-      const data = s.getData();
-      return {
-        id: s.getId?.(),
-        status: s.getStatus?.(),
-        key: data?.key,
-        isDomainWide: data?.[IS_DOMAIN_WIDE_FIELD] === true,
-        url: data?.url,
-        pathPattern: data?.pathPattern,
-      };
-    });
-    /* c8 ignore next */
-    log.info(`Prerender - Domain-wide matches: ${JSON.stringify(matches)}`);
-  }
-  /* c8 ignore stop */
-
   // Define active statuses that should NOT be replaced
   const ACTIVE_STATUSES = [
     Suggestion.STATUSES.NEW,
