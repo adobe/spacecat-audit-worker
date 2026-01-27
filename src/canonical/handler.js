@@ -38,15 +38,14 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
  */
 export async function importTopPages(context) {
   const { site, finalUrl, log } = context;
-  const siteId = site.getId();
-  const s3BucketPath = `scrapes/${siteId}/`;
+  const s3BucketPath = `scrapes/${site.getId()}/`;
 
   log.info('CANONICAL[20012026] - importTopPages');
-  log.info(`[canonical] importTopPages step requested for ${siteId}, bucket path: ${s3BucketPath}`);
+  log.info(`[canonical] importTopPages step requested for ${site.getId()}, bucket path: ${s3BucketPath}`);
 
   return {
     type: 'top-pages',
-    siteId,
+    siteId: site.getId(),
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
   };
@@ -59,19 +58,18 @@ export async function submitForScraping(context) {
   const {
     site, log, finalUrl, dataAccess,
   } = context;
-  const siteId = site.getId();
   const { SiteTopPage } = dataAccess;
 
   log.info('CANONICAL[20012026] - submitForScraping');
-  log.info(`Start submitForScraping step for: ${siteId}`);
+  log.info(`Start submitForScraping step for: ${site.getId()}`);
 
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
   log.info(`CANONICAL[20012026] - Found ${topPagesUrls.length} top pages for scraping`);
 
   if (topPagesUrls.length === 0) {
-    log.info(`No top pages found for site ${siteId}, skipping scraping`);
+    log.info(`No top pages found for site ${site.getId()}, skipping scraping`);
     return {
       auditResult: {
         status: 'NO_OPPORTUNITIES',
@@ -121,7 +119,7 @@ export async function submitForScraping(context) {
   log.info(`CANONICAL[20012026] - After filtering: ${filteredUrls.length} pages will be scraped`);
   log.info(`CANONICAL[20012026] - Filtered URLs for scraping: ${JSON.stringify(filteredUrls)}`);
   log.info('CANONICAL[20012026] - finish submitForScraping');
-  log.info(`Finish submitForScraping step for: ${siteId}`);
+  log.info(`Finish submitForScraping step for: ${site.getId()}`);
 
   return {
     auditResult: {
@@ -130,7 +128,7 @@ export async function submitForScraping(context) {
     fullAuditRef: finalUrl,
     // Data for the SCRAPE_CLIENT
     urls: filteredUrls.map((url) => ({ url })),
-    siteId,
+    siteId: site.getId(),
     type: 'default',
     allowCache: false,
     maxScrapeAge: 0,
@@ -358,12 +356,11 @@ export async function processScrapedContent(context) {
   const {
     site, audit, log, s3Client, env,
   } = context;
-  const siteId = site.getId();
   const baseURL = site.getBaseURL();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
 
   log.info('CANONICAL[20012026] - processScrapedContent - START');
-  log.info(`CANONICAL[20012026] - Processing site: ${siteId}, baseURL: ${baseURL}`);
+  log.info(`CANONICAL[20012026] - Processing site: ${site.getId()}, baseURL: ${baseURL}`);
 
   if (!bucketName) {
     const errorMsg = 'Missing S3 bucket configuration for canonical audit';
@@ -380,7 +377,7 @@ export async function processScrapedContent(context) {
   log.info(`CANONICAL[20012026] - S3 bucket: ${bucketName}`);
 
   // Get scraped content from S3
-  const prefix = `scrapes/${siteId}/`;
+  const prefix = `scrapes/${site.getId()}/`;
   log.info(`CANONICAL[20012026] - Fetching scraped content from S3 prefix: ${prefix}`);
   let scrapeKeys;
   try {
@@ -392,9 +389,9 @@ export async function processScrapedContent(context) {
       1000,
       'scrape.json',
     );
-    log.info(`CANONICAL[20012026] - Found ${scrapeKeys.length} scraped objects in S3 for site ${siteId}`);
+    log.info(`CANONICAL[20012026] - Found ${scrapeKeys.length} scraped objects in S3 for site ${site.getId()}`);
   } catch (error) {
-    log.error(`CANONICAL[20012026] - ERROR retrieving S3 keys for site ${siteId}: ${error.message}`);
+    log.error(`CANONICAL[20012026] - ERROR retrieving S3 keys for site ${site.getId()}: ${error.message}`);
     return {
       auditResult: {
         status: 'PROCESSING_FAILED',
@@ -405,7 +402,7 @@ export async function processScrapedContent(context) {
   }
 
   if (scrapeKeys.length === 0) {
-    log.info(`CANONICAL[20012026] - No scraped content found for site ${siteId}`);
+    log.info(`CANONICAL[20012026] - No scraped content found for site ${site.getId()}`);
     return {
       auditResult: {
         status: 'NO_OPPORTUNITIES',
