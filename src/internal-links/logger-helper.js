@@ -50,7 +50,7 @@ export function createContextLogger(log, siteId) {
  * // Logs: "[broken-internal-links] [siteId=xxx] [auditId=yyy] Processing batch 1"
  */
 export function createAuditLogger(log, siteId, auditId = null) {
-  let prefix = `[${AUDIT_TYPE}] [siteId=${siteId}]`;
+  let prefix = `[${AUDIT_TYPE}] [siteId-abhigarg=${siteId}]`;
   if (auditId) {
     prefix += ` [auditId=${auditId}]`;
   }
