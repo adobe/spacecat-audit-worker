@@ -1,3 +1,10 @@
+## [1.291.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.291.0...v1.291.1) (2026-01-28)
+
+
+### Bug Fixes
+
+* Add Spacecat to Mystique cwv message ([#1853](https://github.com/adobe/spacecat-audit-worker/issues/1853)) ([eb65b24](https://github.com/adobe/spacecat-audit-worker/commit/eb65b24a9220c0edfb366f17a77d134fafefcb12))
+
 # [1.291.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.290.5...v1.291.0) (2026-01-28)
 
 
