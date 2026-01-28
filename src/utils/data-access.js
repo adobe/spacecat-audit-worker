@@ -652,6 +652,7 @@ export async function publishDeployedFixEntities({
       return;
     }
 
+    log.info(`[publishDeployedFixEntities] Found ${deployedFixEntities.length} deployed fix entities for opportunity ${opportunityId}`);
     // Build a set of keys from current audit data for quick lookup
     // If a suggestion's key exists in current audit data, the issue is still present
     const currentAuditKeys = new Set(
@@ -694,7 +695,7 @@ export async function publishDeployedFixEntities({
             break;
           }
         } catch (e) {
-          log?.debug?.(`Live check failed for suggestion under fixEntity ${fixEntity.getId?.()}: ${e.message}`);
+          log?.error?.(`[publishDeployedFixEntities] Live check failed for suggestion under fixEntity ${fixEntity.getId?.()}: ${e.message}`);
           shouldPublish = false;
           break;
         }
