@@ -283,7 +283,7 @@ export async function syncSuggestions({
     buildKey,
   );
 
-  log.debug(`Existing suggestions = ${existingSuggestions.length}, Disappeared = ${disappearedSuggestions.length}`);
+  log.info(`[syncSuggestions] Existing suggestions = ${existingSuggestions.length}, Disappeared = ${disappearedSuggestions.length}`);
 
   // Step 1: Reconcile disappeared suggestions (if isIssueFixed is provided)
   if (typeof isIssueFixed === 'function') {
