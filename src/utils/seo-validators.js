@@ -263,7 +263,7 @@ export async function validateUrl(url, context) {
 
 /**
  * Validates multiple URLs with concurrency control
- * @param {Array} urls - Array of URL objects with keyword data
+ * @param {Array} urls - Array of URL objects with keyword data (or strings)
  * @param {Object} context - Audit context
  * @returns {Promise<Array>} Array of validation results
  */
@@ -272,29 +272,21 @@ export async function validateUrls(urls, context) {
 
   log.info(`Validating ${urls.length} URLs for indexability`);
 
-  // Use SpaceCat's concurrency limiter (10 concurrent requests)
-  const results = await limitConcurrencyAllSettled(
-    urls,
-    async (urlData) => {
-      // Handle both string URLs and object URLs
-      const url = typeof urlData === 'string' ? urlData : urlData.url;
-      const result = await validateUrl(url, context);
-      return {
-        ...(typeof urlData === 'object' ? urlData : {}), // Preserve keyword data from Mystique
-        ...result,
-      };
-    },
-    10,
-  );
+  const tasks = urls.map((urlData) => async () => {
+    const url = typeof urlData === 'string' ? urlData : urlData.url;
+    const result = await validateUrl(url, context);
+    return {
+      ...(typeof urlData === 'object' ? urlData : {}),
+      ...result,
+    };
+  });
 
-  const successful = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
-  const failed = results.filter((r) => r.status === 'rejected');
+  const results = await limitConcurrencyAllSettled(tasks, 10);
 
-  if (failed.length > 0) {
-    log.error(`${failed.length} URL validations failed`);
-  }
+  const cleanCount = results.filter((r) => r.indexable).length;
+  const blockedCount = results.filter((r) => !r.indexable).length;
 
-  log.info(`Validation complete: ${successful.filter((r) => r.indexable).length} clean, ${successful.filter((r) => !r.indexable).length} blocked`);
+  log.info(`Validation complete: ${cleanCount} clean, ${blockedCount} blocked`);
 
-  return successful;
+  return results;
 }
