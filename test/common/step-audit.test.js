@@ -616,8 +616,8 @@ describe('Step-based Audit Tests', () => {
         confidence: 0.99,
       });
 
-      // Verify bot protection was checked via CloudWatch
-      expect(mockScrapeClient.getScrapeJobUrlResults).to.have.been.calledWith('scrape-job-456');
+      // Note: Bot protection is now checked via CloudWatch logs only,
+      // not via getScrapeJobUrlResults
 
       // Verify warning was logged with audit type and site details
       expect(context.log.warn).to.have.been.calledWithMatch(
