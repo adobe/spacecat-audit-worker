@@ -229,7 +229,8 @@ export const generateSuggestionData = async (context) => {
         });
         const finalResolvedUrl = normalize(resp?.url || urlTo);
         return targets.some((t) => normalize(t) === finalResolvedUrl);
-      } catch {
+      } catch (e) {
+        log.info(`[isIssueFixed] Failed to fetch ${urlTo} with error: ${e.message}`);
         return false;
       }
     },

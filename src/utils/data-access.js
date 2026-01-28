@@ -506,6 +506,9 @@ export async function reconcileDisappearedSuggestions({
       // Use the provided callback to determine if the issue has been fixed
       // eslint-disable-next-line no-await-in-loop
       const isFixed = await isIssueFixed?.(suggestion);
+      if (suggestion?.getData?.()?.url_to === 'https://www.wilson.com/en-us/golf/bags/cart-bags') {
+        log.info(`[reconcileDisappearedSuggestions] isFixed: ${isFixed}`);
+      }
       if (!isFixed) {
         // eslint-disable-next-line no-continue
         continue;
