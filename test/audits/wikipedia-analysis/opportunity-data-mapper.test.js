@@ -51,6 +51,7 @@ describe('Wikipedia Analysis Opportunity Data Mapper', () => {
       expect(result.tags).to.include('llmo');
       expect(result.tags).to.include('wikipedia');
       expect(result.tags).to.include('Off-Site');
+      expect(result.tags).to.include('earned');
     });
 
     it('should include runbook URL', () => {
