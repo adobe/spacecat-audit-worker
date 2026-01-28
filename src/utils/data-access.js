@@ -489,6 +489,7 @@ export async function reconcileDisappearedSuggestions({
   getUpdatedValue,
   getOldValue,
 }) {
+  log.info(`[reconcileDisappearedSuggestions] Reconciling ${disappearedSuggestions.length} disappeared suggestions for opportunity ${opportunity.getId?.()}`);
   try {
     const newStatus = SuggestionDataAccess?.STATUSES?.NEW;
 
@@ -635,7 +636,7 @@ export async function publishDeployedFixEntities({
   currentAuditData,
   buildKey,
 }) {
-  // log.info(`Publishing deployed fix entities for opportunity ${opportunityId}`);
+  log.info(`[publishDeployedFixEntities] Publishing deployed fix entities for opportunity ${opportunityId}`);
   try {
     const { FixEntity } = dataAccess;
     if (!FixEntityDataAccess?.STATUSES?.DEPLOYED || !FixEntityDataAccess?.STATUSES?.PUBLISHED) {
