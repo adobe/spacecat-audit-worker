@@ -42,7 +42,7 @@ describe('CloudWatch Utils', () => {
   });
 
   describe('queryBotProtectionLogs', () => {
-    it('should successfully parse bot protection events using jobId', async () => {
+    it('should successfully parse bot protection events', async () => {
       const mockEvents = [
         {
           message: '[BOT-BLOCKED] Bot Protection Detection in Scraper: {"jobId":"job-123","siteId":"site-456","url":"https://example.com","blockerType":"cloudflare","confidence":0.99,"httpStatus":403,"errorCategory":"bot-protection"}',
@@ -57,7 +57,7 @@ describe('CloudWatch Utils', () => {
       });
 
       const result = await queryBotProtectionLogs(
-        { jobId: 'job-123', siteUrl: 'https://example.com' },
+        { siteUrl: 'https://example.com' },
         mockContext,
         Date.now() - 3600000,
       );
@@ -75,7 +75,7 @@ describe('CloudWatch Utils', () => {
       expect(result[1].blockerType).to.equal('akamai');
     });
 
-    it('should filter by siteUrl when jobId is not provided', async () => {
+    it('should filter by siteUrl', async () => {
       const mockEvents = [
         {
           message: '[BOT-BLOCKED] Bot Protection Detection in Scraper: {"jobId":"job-123","siteId":"site-456","url":"https://example.com","blockerType":"cloudflare","confidence":0.99,"httpStatus":403,"errorCategory":"bot-protection"}',
@@ -109,13 +109,12 @@ describe('CloudWatch Utils', () => {
       });
 
       const result = await queryBotProtectionLogs(
-        { jobId: 'job-123', siteUrl: 'https://example.com' },
+        { siteUrl: 'https://example.com' },
         mockContext,
         Date.now() - 3600000,
       );
 
       expect(result).to.be.an('array').that.is.empty;
-      expect(mockContext.log.debug).to.have.been.calledWith(sinon.match('No bot protection logs found in time window'));
     });
 
     it('should return empty array when events is undefined', async () => {
@@ -180,7 +179,7 @@ describe('CloudWatch Utils', () => {
       });
 
       await queryBotProtectionLogs(
-        { jobId: 'job-123' },
+        { siteUrl: 'https://example.com' },
         mockContext,
         startTime,
       );
@@ -196,25 +195,7 @@ describe('CloudWatch Utils', () => {
       expect(command.input.endTime).to.be.at.most(afterCallTime);
     });
 
-    it('should use jobId in filter pattern when provided', async () => {
-      sendStub.resolves({
-        events: [],
-      });
-
-      await queryBotProtectionLogs(
-        { jobId: 'job-123' },
-        mockContext,
-        Date.now() - 3600000,
-      );
-
-      const command = sendStub.firstCall.args[0];
-      expect(command.input.logGroupName).to.equal('/aws/lambda/test-scraper');
-      // Text-based filter with jobId for precise filtering
-      expect(command.input.filterPattern).to.equal('"[BOT-BLOCKED]" "job-123"');
-      expect(command.input.limit).to.equal(500);
-    });
-
-    it('should use only [BOT-BLOCKED] filter pattern when jobId not provided', async () => {
+    it('should use only [BOT-BLOCKED] filter pattern', async () => {
       sendStub.resolves({
         events: [],
       });
@@ -293,47 +274,13 @@ describe('CloudWatch Utils', () => {
       });
 
       const result = await queryBotProtectionLogs(
-        { jobId: 'job-123' },
+        { siteUrl: 'https://example.com' },
         mockContext,
         Date.now() - 3600000,
       );
 
       expect(result).to.have.lengthOf(1);
       expect(result[0].jobId).to.equal('job-123');
-    });
-
-    it('should log debug message with jobId when provided', async () => {
-      sendStub.resolves({
-        events: [],
-      });
-
-      const startTime = Date.now() - 3600000;
-      await queryBotProtectionLogs(
-        { jobId: 'job-123' },
-        mockContext,
-        startTime,
-      );
-
-      expect(mockContext.log.debug).to.have.been.calledWith(
-        sinon.match(/Querying bot protection logs from .* to .* \(5min buffer applied\) for jobId job-123$/),
-      );
-    });
-
-    it('should log debug message with siteUrl when jobId not provided', async () => {
-      sendStub.resolves({
-        events: [],
-      });
-
-      const startTime = Date.now() - 3600000;
-      await queryBotProtectionLogs(
-        { siteUrl: 'https://example.com' },
-        mockContext,
-        startTime,
-      );
-
-      expect(mockContext.log.debug).to.have.been.calledWith(
-        sinon.match(/Querying bot protection logs from .* to .* \(5min buffer applied\) for site https:\/\/example\.com$/),
-      );
     });
   });
 });

@@ -40,7 +40,6 @@ async function checkBotProtection({
   site,
   siteId,
   auditType,
-  jobId,
   stepContext,
   context,
 }) {
@@ -52,10 +51,9 @@ async function checkBotProtection({
     ? new Date(stepContext.audit.getAuditedAt()).getTime()
     : Date.now() - (30 * 60 * 1000); // Default to 30 mins ago if not available
 
-  // Query bot protection logs using jobId (preferred) or siteUrl + time window
-  // jobId is more precise, siteUrl works as fallback
+  // Query bot protection logs using siteUrl + time window
   const logEvents = await queryBotProtectionLogs(
-    { jobId, siteUrl },
+    { siteUrl },
     context,
     auditCreatedAt,
   );
@@ -200,12 +198,8 @@ export class StepAudit extends BaseAudit {
     const { stepNames } = this;
     const { log } = context;
     const {
-      type, data, siteId, auditContext = {}, jobId,
+      type, data, siteId, auditContext = {},
     } = message;
-
-    /* c8 ignore start */
-    log.info(`[AUDIT-RUN] Received message: type=${type}, siteId=${siteId}, jobId=${jobId}, auditContext.next=${auditContext.next}, auditContext.auditId=${auditContext.auditId}`);
-    /* c8 ignore stop */
 
     try {
       const site = await this.siteProvider(siteId, context);
@@ -219,10 +213,6 @@ export class StepAudit extends BaseAudit {
       const hasNext = hasText(auditContext.next);
       /* c8 ignore next */
       const hasScrapeJobId = hasText(auditContext.scrapeJobId);
-
-      /* c8 ignore start */
-      log.info(`[AUDIT-RUN] hasNext=${hasNext}, hasScrapeJobId=${hasScrapeJobId}, jobId=${jobId || 'N/A'}`);
-      /* c8 ignore stop */
 
       const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
@@ -242,23 +232,14 @@ export class StepAudit extends BaseAudit {
 
         /* c8 ignore start */
         // Check for bot protection when continuing from a scraping step
-        // Use jobId from completion message (preferred) or auditContext.scrapeJobId
-        // or siteUrl + time window (fallback)
-        const siteUrl = site.getBaseURL();
-        const effectiveJobId = jobId || auditContext.scrapeJobId;
-
-        log.info(`[BOT-CHECK] Checking bot protection: jobId=${effectiveJobId || 'N/A'}, siteUrl=${siteUrl}, auditType=${type}`);
-
+        // Uses siteUrl + time window to filter CloudWatch logs
         const botProtectionResult = await checkBotProtection({
           site,
           siteId,
           auditType: type,
-          jobId: effectiveJobId,
           stepContext,
           context,
         });
-
-        log.info(`[BOT-CHECK] Bot protection result: ${botProtectionResult ? 'DETECTED' : 'NOT DETECTED'}`);
 
         if (botProtectionResult) {
           return botProtectionResult;
