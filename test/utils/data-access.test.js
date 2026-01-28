@@ -966,6 +966,69 @@ describe('data-access', () => {
         expect(mockLogger.info).to.have.been.calledWith('[SuggestionSync] Final count of suggestions to mark as OUTDATED: 1');
       });
 
+      it('should respect shouldUpdateSuggestion callback to skip updates', async () => {
+        // Test that shouldUpdateSuggestion callback can prevent certain suggestions
+        // from being updated
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { key: '1', isDomainWide: true },
+            getData: sinon.stub().returns({ key: '1', isDomainWide: true }),
+            getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.OUTDATED),
+            setData: sinon.stub(),
+            setUpdatedBy: sinon.stub().returnsThis(),
+            save: sinon.stub().resolves(),
+          },
+          {
+            id: '2',
+            data: { key: '2' },
+            getData: sinon.stub().returns({ key: '2' }),
+            getStatus: sinon.stub().returns('NEW'),
+            setData: sinon.stub(),
+            setUpdatedBy: sinon.stub().returnsThis(),
+            save: sinon.stub().resolves(),
+          },
+        ];
+
+        // Both keys exist in newData, so they would normally be updated
+        const newData = [{ key: '1', title: 'updated' }, { key: '2', title: 'updated' }];
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
+
+        // shouldUpdateSuggestion: skip OUTDATED domain-wide suggestions
+        const shouldUpdateSuggestion = (existing) => {
+          const existingData = existing.getData();
+          const isDomainWide = existingData?.isDomainWide === true;
+          const existingIsOutdated = existing.getStatus()
+            === SuggestionDataAccess.STATUSES.OUTDATED;
+          // This should return false for the first suggestion (OUTDATED domain-wide)
+          if (isDomainWide && existingIsOutdated) {
+            return false;
+          }
+          return true;
+        };
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+          shouldUpdateSuggestion,
+        });
+
+        // First suggestion (OUTDATED domain-wide) should NOT be updated
+        // because shouldUpdateSuggestion returns false
+        expect(existingSuggestions[0].setData).to.not.have.been.called;
+        expect(existingSuggestions[0].save).to.not.have.been.called;
+
+        // Second suggestion (regular) should be updated
+        // because shouldUpdateSuggestion returns true
+        expect(existingSuggestions[1].setData).to.have.been.called;
+        expect(existingSuggestions[1].save).to.have.been.called;
+      });
+
       it('should work without scrapedUrlsSet (backward compatibility)', async () => {
         // When scrapedUrlsSet is not provided, all non-matching suggestions
         // should be marked outdated

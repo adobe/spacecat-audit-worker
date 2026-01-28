@@ -217,6 +217,10 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * @param {Function} [params.mergeDataFunction] - Function to merge existing and new data.
  *   Defaults to shallow merge.
  * @param {string} [params.statusToSetForOutdated] - Status to set for outdated suggestions.
+ * @param {Set} [params.scrapedUrlsSet] - Optional set of URLs that were scraped in this audit.
+ * @param {Function} [params.shouldUpdateSuggestion] - Optional function to determine if a
+ *   suggestion should be updated. Receives (existing) suggestion object and returns boolean.
+ *   If returns false, the suggestion will be skipped from updates.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
 export async function syncSuggestions({
@@ -228,6 +232,7 @@ export async function syncSuggestions({
   mergeDataFunction = defaultMergeDataFunction,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
+  shouldUpdateSuggestion = null,
 }) {
   if (!context) {
     return;
@@ -253,7 +258,15 @@ export async function syncSuggestions({
     existingSuggestions
       .filter((existing) => {
         const existingKey = buildKey(existing.getData());
-        return newDataKeys.has(existingKey);
+        const hasMatchingKey = newDataKeys.has(existingKey);
+        if (!hasMatchingKey) {
+          return false;
+        }
+        // Allow caller to exclude certain suggestions from updates
+        if (shouldUpdateSuggestion && !shouldUpdateSuggestion(existing)) {
+          return false;
+        }
+        return true;
       })
       .map((existing) => {
         const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
