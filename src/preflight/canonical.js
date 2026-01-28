@@ -20,8 +20,6 @@ export default async function canonical(context, auditContext) {
     site, job, log,
   } = context;
   const {
-    // authHeader,
-    // previewBaseURL,
     previewUrls,
     step,
     audits,
