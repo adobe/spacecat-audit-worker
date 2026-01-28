@@ -298,6 +298,8 @@ export async function syncSuggestions({
       getUpdatedValue,
       getOldValue,
     });
+  } else {
+    log.info('[syncSuggestions] No isIssueFixed provided');
   }
 
   // Step 2: Publish deployed fix entities (if isIssueResolvedOnProduction is provided)
@@ -316,6 +318,8 @@ export async function syncSuggestions({
     } catch (err) {
       log.warn(`Failed to publish fix entities: ${err.message}`);
     }
+  } else {
+    log.info('[syncSuggestions] No isIssueResolvedOnProduction provided');
   }
 
   // Step 3: Handle outdated suggestions (mark as OUTDATED)
