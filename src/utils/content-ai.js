@@ -159,6 +159,35 @@ export class ContentAIClient {
   }
 
   /**
+   * Runs a generative search query against Content AI
+   * @param {string} prompt - The prompt to search
+   * @param {Object} site - The site object
+   * @returns {Promise<Response>} The fetch response object
+   */
+  async runGenerativeSearch(prompt, site) {
+    const configuration = await this.getConfigurationForSite(site);
+    if (!configuration) {
+      throw new Error('ContentAI configuration not found');
+    }
+    const { uid: integratorId } = configuration;
+    const requestBody = {
+      query: prompt,
+      integratorId,
+    };
+
+    const searchResponse = await fetch(`${this.env.CONTENTAI_ENDPOINT}/gensearch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: this.getAuthHeader(),
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    return searchResponse;
+  }
+
+  /**
    * Gets the Content AI configuration for a site
    * @param {Object} site - The site object
    * @returns {Promise<Object|null>} The configuration object or null if not found

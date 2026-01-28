@@ -567,6 +567,166 @@ describe('Content AI Utils', () => {
       });
     });
 
+    describe('runGenerativeSearch', () => {
+      it('should execute generative search with correct request body', async () => {
+        // Mock getConfigurations - return a matching configuration
+        mockFetch.onFirstCall().resolves({
+          ok: true,
+          json: sandbox.stub().resolves({
+            items: [{
+              uid: 'integrator-123',
+              steps: [{
+                baseUrl: 'https://example.com',
+                type: 'generative',
+              }],
+            }],
+          }),
+        });
+
+        // Mock gensearch endpoint
+        mockFetch.onSecondCall().resolves({
+          ok: true,
+          json: sandbox.stub().resolves({
+            answer: 'This is the generated answer',
+            sources: [{ url: 'https://example.com/page1' }],
+          }),
+        });
+
+        const client = new ContentAIClient(context);
+        await client.initialize();
+
+        const response = await client.runGenerativeSearch('What is the product?', site);
+
+        expect(response.ok).to.be.true;
+        expect(mockFetch).to.have.been.calledTwice;
+
+        // Verify gensearch request
+        const [url, fetchOptions] = mockFetch.secondCall.args;
+        expect(url).to.equal('https://contentai.example.com/gensearch');
+        expect(fetchOptions.method).to.equal('POST');
+        expect(fetchOptions.headers.Authorization).to.equal('Bearer test-access-token');
+        expect(fetchOptions.headers['Content-Type']).to.equal('application/json');
+
+        const requestBody = JSON.parse(fetchOptions.body);
+        expect(requestBody.query).to.equal('What is the product?');
+        expect(requestBody.integratorId).to.equal('integrator-123');
+      });
+
+      it('should throw error when configuration is not found', async () => {
+        // Mock getConfigurations - no matching configuration
+        mockFetch.onFirstCall().resolves({
+          ok: true,
+          json: sandbox.stub().resolves({
+            items: [],
+          }),
+        });
+
+        const client = new ContentAIClient(context);
+        await client.initialize();
+
+        await expect(client.runGenerativeSearch('What is the product?', site))
+          .to.be.rejectedWith('ContentAI configuration not found');
+      });
+
+      it('should throw error when configuration has no matching site', async () => {
+        // Mock getConfigurations - configuration exists but for different site
+        mockFetch.onFirstCall().resolves({
+          ok: true,
+          json: sandbox.stub().resolves({
+            items: [{
+              uid: 'integrator-456',
+              steps: [{
+                baseUrl: 'https://other-site.com',
+                type: 'generative',
+              }],
+            }],
+          }),
+        });
+
+        const client = new ContentAIClient(context);
+        await client.initialize();
+
+        await expect(client.runGenerativeSearch('What is the product?', site))
+          .to.be.rejectedWith('ContentAI configuration not found');
+      });
+
+      it('should handle generative search request failure', async () => {
+        // Mock getConfigurations - return a matching configuration
+        mockFetch.onFirstCall().resolves({
+          ok: true,
+          json: sandbox.stub().resolves({
+            items: [{
+              uid: 'integrator-123',
+              steps: [{
+                baseUrl: 'https://example.com',
+                type: 'generative',
+              }],
+            }],
+          }),
+        });
+
+        // Mock gensearch endpoint - failure
+        mockFetch.onSecondCall().resolves({
+          ok: false,
+          status: 500,
+          statusText: 'Internal Server Error',
+        });
+
+        const client = new ContentAIClient(context);
+        await client.initialize();
+
+        const response = await client.runGenerativeSearch('What is the product?', site);
+
+        expect(response.ok).to.be.false;
+        expect(response.status).to.equal(500);
+      });
+
+      it('should use overrideBaseURL to find configuration', async () => {
+        // Mock site with overrideBaseURL
+        const siteWithOverride = {
+          getId: sandbox.stub().returns('site-123'),
+          getBaseURL: sandbox.stub().returns('https://example.com'),
+          getConfig: sandbox.stub().returns({
+            getFetchConfig: sandbox.stub().returns({
+              overrideBaseURL: 'https://override.example.com',
+            }),
+          }),
+        };
+
+        // Mock getConfigurations - configuration exists with override URL
+        mockFetch.onFirstCall().resolves({
+          ok: true,
+          json: sandbox.stub().resolves({
+            items: [{
+              uid: 'integrator-override',
+              steps: [{
+                baseUrl: 'https://override.example.com',
+                type: 'generative',
+              }],
+            }],
+          }),
+        });
+
+        // Mock gensearch endpoint
+        mockFetch.onSecondCall().resolves({
+          ok: true,
+          json: sandbox.stub().resolves({
+            answer: 'Generated answer',
+          }),
+        });
+
+        const client = new ContentAIClient(context);
+        await client.initialize();
+
+        const response = await client.runGenerativeSearch('Test prompt', siteWithOverride);
+
+        expect(response.ok).to.be.true;
+
+        const requestBody = JSON.parse(mockFetch.secondCall.args[1].body);
+        expect(requestBody.integratorId).to.equal('integrator-override');
+      });
+    });
+
     describe('authorization headers', () => {
       it('should use correct authorization header for all requests', async () => {
         mockFetch.resolves({
