@@ -502,6 +502,8 @@ export async function reconcileDisappearedSuggestions({
       return true;
     });
 
+    log.info(`[reconcileDisappearedSuggestions] Candidates: ${candidates.length}`);
+
     const fixEntityObjects = [];
 
     for (const suggestion of candidates) {
