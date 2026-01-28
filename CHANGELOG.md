@@ -1,3 +1,10 @@
+## [1.290.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.290.0...v1.290.1) (2026-01-28)
+
+
+### Bug Fixes
+
+* normalize urls for comparison in broken link audits ([#1886](https://github.com/adobe/spacecat-audit-worker/issues/1886)) ([7547fd6](https://github.com/adobe/spacecat-audit-worker/commit/7547fd6c160f3de967710a6992769701bc7efb11))
+
 # [1.290.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.289.1...v1.290.0) (2026-01-27)
 
 
