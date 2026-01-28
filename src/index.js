@@ -34,6 +34,7 @@ import noCTAAboveTheFold from './no-cta-above-the-fold/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
 import brokenLinksGuidance from './broken-links-guidance/guidance-handler.js';
+import metatagsGuidance from './metatags-guidance/guidance-handler.js';
 import internalLinks from './internal-links/handler.js';
 import essExperimentationDaily from './experimentation-ess/daily.js';
 import essExperimentationAll from './experimentation-ess/all.js';
@@ -63,6 +64,7 @@ import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/g
 import detectFormDetails from './forms-opportunities/form-details-handler/detect-form-details.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
 import accessibilityRemediationGuidance from './accessibility/guidance-handlers/guidance-accessibility-remediation.js';
+import triggerA11yCodefix from './accessibility/trigger-codefix-handler.js';
 import accessibilityCodeFix from './common/codefix-response-handler.js';
 import cdnLogsAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
@@ -85,7 +87,9 @@ import toc from './toc/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
 import vulnerabilitiesCodeFix from './vulnerabilities-code-fix/handler.js';
 import prerender from './prerender/handler.js';
+import prerenderGuidance from './prerender/guidance-handler.js';
 import productMetatags from './product-metatags/handler.js';
+import commerceProductEnrichments from './commerce-product-enrichments/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
@@ -98,6 +102,7 @@ import pageCitability from './page-citability/handler.js';
 import healthCheck from './health-check/handler.js';
 import wikipediaAnalysis from './wikipedia-analysis/handler.js';
 import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
+import frescopaDataGeneration from './frescopa-data-generation/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -129,6 +134,7 @@ const HANDLERS = {
   'site-detection': siteDetection,
   'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
   'guidance:broken-links': brokenLinksGuidance,
+  'guidance:metatags': metatagsGuidance,
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions':
     highFormViewsLowConversionsGuidance,
@@ -147,6 +153,7 @@ const HANDLERS = {
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
+  'trigger:a11y-codefix': triggerA11yCodefix,
   'codefix:accessibility': accessibilityCodeFix,
   'guidance:paid-cookie-consent': paidConsentGuidance,
   'guidance:no-cta-above-the-fold': noCTAAboveTheFoldGuidance,
@@ -173,7 +180,9 @@ const HANDLERS = {
   headings,
   toc,
   prerender,
+  'guidance:prerender': prerenderGuidance,
   'product-metatags': productMetatags,
+  'commerce-product-enrichments': commerceProductEnrichments,
   'security-vulnerabilities': vulnerabilities,
   'codefix:security-vulnerabilities': vulnerabilitiesCodeFix,
   'codefix:form-accessibility': accessibilityCodeFixHandler,
@@ -185,6 +194,7 @@ const HANDLERS = {
   'health-check': healthCheck,
   'wikipedia-analysis': wikipediaAnalysis,
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
+  'frescopa-data-generation': frescopaDataGeneration,
   dummy: (message) => ok(message),
 };
 

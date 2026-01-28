@@ -25,6 +25,7 @@ import {
   SEO_IMPACT,
   HIGH,
   MODERATE,
+  LOW,
   ISSUE,
   SEO_RECOMMENDATION,
   MULTIPLE_H1_ON_PAGE,
@@ -101,15 +102,15 @@ describe('Meta Tags', () => {
         expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(HIGH);
       });
 
-      it('should detect too long tag and add to detectedTags with MODERATE impact', () => {
+      it('should detect Title exceeding maxLength and add to detectedTags with LOW impact', () => {
         const url = 'https://example.com';
-        const longTitle = 'A'.repeat(TAG_LENGTHS[TITLE].maxLength + 1);
+        const longTitle = 'A'.repeat(TAG_LENGTHS[TITLE].maxLength + 1); // 76 chars
         const pageTags = { [TITLE]: longTitle };
 
         seoChecks.checkForTagsLength(url, pageTags);
 
-        expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Title too long');
-        expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(MODERATE);
+        expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Title above ideal length');
+        expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(LOW);
       });
 
       it('should detect too short tag and add to detectedTags with MODERATE impact', () => {
@@ -121,6 +122,34 @@ describe('Meta Tags', () => {
 
         expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Title too short');
         expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(MODERATE);
+      });
+
+      it('should detect title below ideal length and add to detectedTags with MODERATE impact', () => {
+        const url = 'https://example.com';
+        // Title between minLength (3) and idealMinLength (40)
+        const belowIdealTitle = 'A'.repeat(TAG_LENGTHS[TITLE].minLength + 5); // 8 chars
+        const pageTags = { [TITLE]: belowIdealTitle };
+
+        seoChecks.checkForTagsLength(url, pageTags);
+
+        expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Title too short');
+        expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(MODERATE);
+        expect(seoChecks.getDetectedTags()[url][TITLE].issueDetails)
+          .to.equal(`${TAG_LENGTHS[TITLE].idealMinLength - belowIdealTitle.length} chars below limit`);
+      });
+
+      it('should detect title above ideal length and add to detectedTags with LOW impact', () => {
+        const url = 'https://example.com';
+        // Title between idealMaxLength (60) and maxLength (75)
+        const aboveIdealTitle = 'A'.repeat(TAG_LENGTHS[TITLE].idealMaxLength + 5); // 65 chars
+        const pageTags = { [TITLE]: aboveIdealTitle };
+
+        seoChecks.checkForTagsLength(url, pageTags);
+
+        expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Title above ideal length');
+        expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(LOW);
+        expect(seoChecks.getDetectedTags()[url][TITLE].issueDetails)
+          .to.equal(`${aboveIdealTitle.length - TAG_LENGTHS[TITLE].idealMaxLength} chars above ideal maximum`);
       });
     });
 
@@ -292,13 +321,13 @@ describe('Meta Tags', () => {
     it('should handle tagContent with pipe characters', () => {
       const data = {
         url: 'https://example.com/page8',
-        issue: 'Title too long',
+        issue: 'Title above ideal length',
         tagContent: 'Title with | pipe | characters',
       };
 
       const result = buildKey(data);
 
-      expect(result).to.equal('https://example.com/page8|Title too long|Title with | pipe | characters');
+      expect(result).to.equal('https://example.com/page8|Title above ideal length|Title with | pipe | characters');
     });
 
     it('should handle tagContent with special characters', () => {
@@ -341,7 +370,7 @@ describe('Meta Tags', () => {
       };
       const data2 = {
         url: 'https://example.com/page1',
-        issue: 'Title too long',
+        issue: 'Title above ideal length',
         tagContent: 'Example Title',
       };
 
@@ -350,7 +379,7 @@ describe('Meta Tags', () => {
 
       expect(result1).to.not.equal(result2);
       expect(result1).to.equal('https://example.com/page1|Title too short|Example Title');
-      expect(result2).to.equal('https://example.com/page1|Title too long|Example Title');
+      expect(result2).to.equal('https://example.com/page1|Title above ideal length|Example Title');
     });
 
     it('should handle whitespace in tagContent', () => {
@@ -431,6 +460,27 @@ describe('Meta Tags', () => {
           allBySiteIdAndStatus: sinon.stub().resolves([]),
           create: sinon.stub(),
         },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sinon.stub().resolves([
+            {
+              getId: sinon.stub().returns('sugg-001'),
+              getData: sinon.stub().returns({
+                url: 'http://example.com/blog/page1',
+                tagName: 'title',
+              }),
+            },
+            {
+              getId: sinon.stub().returns('sugg-002'),
+              getData: sinon.stub().returns({
+                url: 'http://example.com/blog/page2',
+                tagName: 'title',
+              }),
+            },
+          ]),
+          STATUSES: {
+            NEW: 'NEW',
+          },
+        },
       };
       s3ClientStub = {
         send: sinon.stub(),
@@ -446,6 +496,7 @@ describe('Meta Tags', () => {
         getId: sinon.stub().returns('site-id'),
         getBaseURL: sinon.stub().returns('http://example.com'),
         getIsLive: sinon.stub().returns(true),
+        getDeliveryType: sinon.stub().returns('aem_edge'),
         getConfig: sinon.stub().returns({
           getIncludedURLs: sinon.stub().returns([]),
         }),
@@ -1308,6 +1359,27 @@ describe('Meta Tags', () => {
           Opportunity: {
             allBySiteIdAndStatus: sinon.stub(),
           },
+          Suggestion: {
+            allByOpportunityIdAndStatus: sinon.stub().resolves([
+              {
+                getId: sinon.stub().returns('sugg-001'),
+                getData: sinon.stub().returns({
+                  url: 'http://example.com/blog/page1',
+                  tagName: 'title',
+                }),
+              },
+              {
+                getId: sinon.stub().returns('sugg-002'),
+                getData: sinon.stub().returns({
+                  url: 'http://example.com/blog/page2',
+                  tagName: 'title',
+                }),
+              },
+            ]),
+            STATUSES: {
+              NEW: 'NEW',
+            },
+          },
         };
 
         RUMAPIClientStub = {
@@ -1326,6 +1398,7 @@ describe('Meta Tags', () => {
 
         metatagsOppty = {
           getId: () => 'opportunity-id',
+          getSiteId: () => 'site-id',
           setAuditId: sinon.stub(),
           save: sinon.stub(),
           getSuggestions: sinon.stub().returns([]),
@@ -1340,6 +1413,7 @@ describe('Meta Tags', () => {
           getIsLive: sinon.stub().returns(true),
           getId: sinon.stub().returns('site-id'),
           getBaseURL: sinon.stub().returns('http://example.com'),
+          getDeliveryType: sinon.stub().returns('aem_edge'),
           getConfig: sinon.stub().returns({
             getIncludedURLs: sinon.stub().returns([]),
             getFetchConfig: sinon.stub().returns({
@@ -1471,7 +1545,13 @@ describe('Meta Tags', () => {
           log: logStub,
           s3Client: s3ClientStub,
           dataAccess: dataAccessStub,
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue-url',
+          },
+          sqs: {
+            sendMessage: sinon.stub().resolves(),
+          },
           scrapeResultPaths: new Map([
             ['http://example.com/blog/page1', 'scrapes/site-id/blog/page1/scrape.json'],
             ['http://example.com/blog/page2', 'scrapes/site-id/blog/page2/scrape.json'],
@@ -1492,24 +1572,16 @@ describe('Meta Tags', () => {
           .resolves(5000);
         const mockValidateDetectedIssues = sinon.stub()
           .callsFake(async (detectedTags) => detectedTags);
+        const mockConvertToOpportunity = sinon.stub()
+          .resolves(metatagsOppty);
+        const mockSyncSuggestions = sinon.stub()
+          .resolves();
         const auditStub = await esmock('../../src/metatags/handler.js', {
           '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
-          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({
-            '/blog/page1': {
-              title: {
-                aiSuggestion: 'AI Suggested Title 1',
-                aiRationale: 'AI Rationale 1',
-              },
-            },
-            '/blog/page2': {
-              title: {
-                aiSuggestion: 'AI Suggested Title 2',
-                aiRationale: 'AI Rationale 2',
-              },
-            },
-          }),
+          '../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+          '../../src/utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
           '../../src/metatags/ssr-meta-validator.js': {
             validateDetectedIssues: mockValidateDetectedIssues,
           },
@@ -1518,7 +1590,10 @@ describe('Meta Tags', () => {
 
         expect(result).to.deep.equal({ status: 'complete' });
         expect(s3ClientStub.send).to.have.been.called;
-        expect(metatagsOppty.save).to.have.been.called;
+        expect(mockConvertToOpportunity).to.have.been.called;
+        expect(mockSyncSuggestions).to.have.been.called;
+        // Verify SQS messages were sent
+        expect(context.sqs.sendMessage).to.have.been.called;
       });
 
       it('should handle case when no tags are extracted', async () => {
@@ -1647,6 +1722,135 @@ describe('Meta Tags', () => {
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
         expect(result).to.deep.equal({ status: 'complete' });
+      });
+
+      it('should handle error when Site.findById fails during useHostnameOnly check', async () => {
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(5000);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
+        const mockConvertToOpportunity = sinon.stub()
+          .resolves(metatagsOppty);
+        const mockSyncSuggestions = sinon.stub()
+          .resolves();
+
+        // Make Site.findById throw an error
+        dataAccessStub.Site.findById.rejects(new Error('Database error'));
+
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+          '../../src/utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
+        });
+
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+        expect(logStub.error).to.have.been.calledWith('Error in meta-tags configuration:', sinon.match.instanceOf(Error));
+        expect(context.sqs.sendMessage).to.have.been.called;
+      });
+
+      it('should handle when getDeliveryConfig returns undefined useHostnameOnly', async () => {
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(5000);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
+        const mockConvertToOpportunity = sinon.stub()
+          .resolves(metatagsOppty);
+        const mockSyncSuggestions = sinon.stub()
+          .resolves();
+
+        // Make Site.findById return a site with getDeliveryConfig
+        // that returns undefined useHostnameOnly
+        dataAccessStub.Site.findById.resolves({
+          getDeliveryConfig: sinon.stub().returns({}), // No useHostnameOnly property
+        });
+
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+          '../../src/utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
+        });
+
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+        expect(context.sqs.sendMessage).to.have.been.called;
+      });
+
+      it('should handle when site has no getDeliveryConfig method', async () => {
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(5000);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
+        const mockConvertToOpportunity = sinon.stub()
+          .resolves(metatagsOppty);
+        const mockSyncSuggestions = sinon.stub()
+          .resolves();
+
+        // Make Site.findById return a site without getDeliveryConfig method
+        dataAccessStub.Site.findById.resolves({
+          // No getDeliveryConfig method at all
+        });
+
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+          '../../src/utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
+        });
+
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+        expect(context.sqs.sendMessage).to.have.been.called;
+      });
+
+      it('should return early when meta-tags-auto-suggest is disabled for site', async () => {
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(5000);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
+        const mockConvertToOpportunity = sinon.stub()
+          .resolves(metatagsOppty);
+        const mockSyncSuggestions = sinon.stub()
+          .resolves();
+
+        // Make handler disabled for site
+        dataAccessStub.Configuration.findLatest.resolves({
+          isHandlerEnabledForSite: sinon.stub().returns(false),
+        });
+
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+          '../../src/utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
+        });
+
+        const result = await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+        expect(logStub.info).to.have.been.calledWith('Metatags auto-suggest is disabled for site');
+        expect(context.sqs.sendMessage).to.not.have.been.called;
       });
     });
 
@@ -1911,7 +2115,7 @@ describe('Meta Tags', () => {
             h1: { tagContent: 'Original H1', issue: 'H1 too short' },
           },
           '/page2': {
-            title: { tagContent: 'Page 2 Title', issue: 'Title too long' },
+            title: { tagContent: 'Page 2 Title', issue: 'Title above ideal length' },
             h1: { tagContent: 'Page 2 H1', issue: 'H1 too long' },
           },
         };
@@ -1966,7 +2170,7 @@ describe('Meta Tags', () => {
             description: { tagContent: 'Original Description', issue: 'Description too short' },
           },
           '/page2': {
-            title: { tagContent: 'Page 2 Title', issue: 'Title too long' },
+            title: { tagContent: 'Page 2 Title', issue: 'Title above ideal length' },
           },
         };
 

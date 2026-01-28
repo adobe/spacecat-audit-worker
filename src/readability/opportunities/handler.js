@@ -16,7 +16,7 @@ import { AuditBuilder } from '../../common/audit-builder.js';
 import { convertToOpportunity } from '../../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../../utils/data-access.js';
-import { noopUrlResolver } from '../../common/base-audit.js';
+import { wwwUrlResolver } from '../../common/base-audit.js';
 import { analyzePageReadability, sendReadabilityToMystique } from '../shared/analysis-utils.js';
 import {
   TOP_PAGES_LIMIT,
@@ -236,7 +236,7 @@ export async function processReadabilityOpportunities(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(noopUrlResolver)
+  .withUrlResolver(wwwUrlResolver)
   .addStep(
     'import-top-pages',
     processImportStep,

@@ -1,0 +1,35 @@
+Index: 404.html
+===================================================================
+--- 404.html
++++ 404.html
+@@ -1,15 +1,16 @@
+ <!DOCTYPE html>
+ <html>
+ 
+ <head>
++  <meta http-equiv="Content-Security-Policy" content="script-src 'nonce-aem' 'strict-dynamic' 'unsafe-inline' http: https:; base-uri 'self'; object-src 'none';" move-to-http-header="true">
+     <title>Page not found</title>
+-    <script type="text/javascript">
++    <script nonce="aem" type="text/javascript">
+         window.isErrorPage = true;
+         window.errorCode = '404';
+     </script>
+-    <script src="/scripts/scripts.js" type="module"></script>
+-    <script type="module">
++    <script nonce="aem" src="/scripts/scripts.js" type="module"></script>
++    <script nonce="aem" type="module">
+         window.addEventListener('load', () => {
+             if (document.referrer) {
+                 const { origin, pathname } = new URL(document.referrer);
+                 if (origin === window.location.origin) {
+@@ -23,9 +24,9 @@
+                 }
+             }
+         });
+     </script>
+-    <script type="module">
++    <script nonce="aem" type="module">
+         import { sampleRUM } from '/scripts/aem.js';
+         sampleRUM('404', { source: document.referrer });
+     </script>
+     <link rel="stylesheet" href="/styles/styles.css">
