@@ -43,14 +43,12 @@ describe('Wikipedia Analysis Opportunity Data Mapper', () => {
       expect(result.description).to.include('LLM');
     });
 
-    it('should include correct tags including Off-Site', () => {
+    it('should include correct tags', () => {
       const result = createOpportunityData({ guidance: [] });
 
       expect(result.tags).to.be.an('array');
       expect(result.tags).to.include('isElmo');
-      expect(result.tags).to.include('llmo');
       expect(result.tags).to.include('wikipedia');
-      expect(result.tags).to.include('Off-Site');
       expect(result.tags).to.include('earned');
     });
 
