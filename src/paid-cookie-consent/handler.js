@@ -16,12 +16,10 @@ import { getWeekInfo, getTemporalCondition } from '@adobe/spacecat-shared-utils'
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
-  // getPaidTrafficAnalysisTemplate,
   getTop3PagesWithTrafficLostTemplate,
   getBounceGapMetricsTemplate,
 } from './queries.js';
 
-// const MAX_PAGES_TO_AUDIT = 3;
 const CUT_OFF_BOUNCE_RATE = 0.3;
 const DEFAULT_CPC = 0.8;
 
@@ -315,14 +313,6 @@ export async function paidAuditRunner(auditUrl, context, site) {
     const lostTrafficSummary = await executeTop3TrafficLostPagesQuery(athenaClient, ['device'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition, 0, null, config, log, baseURL);
     const top3PagesTrafficLost = await executeTop3TrafficLostPagesQuery(athenaClient, ['path'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition, 0, 3, config, log, baseURL);
     const top3PagesTrafficLostByDevice = await executeTop3TrafficLostPagesQuery(athenaClient, ['path', 'device'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition, 0, null, config, log, baseURL);
-    // const top3PagesTrafficLostByType =
-    // await executeTop3TrafficLostPagesQuery(athenaClient,
-    // ['path', 'trf_type'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition,
-    // config.pageViewThreshold, null, config, log);
-    // const top3PagesTrafficLostByTypeAndDevice =
-    // await executeTop3TrafficLostPagesQuery(athenaClient,
-    // ['path', 'trf_type', 'device'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition,
-    // config.pageViewThreshold, null, config, log);
     // top 3 pages with highest projectedTrafficLost
     const top3Pages = top3PagesTrafficLost;
     // averagePageViewsTop3  /  averageTrafficLostTop3  / averageBounceRateMobileTop3
