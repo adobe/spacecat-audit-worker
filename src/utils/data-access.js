@@ -511,6 +511,7 @@ export async function reconcileDisappearedSuggestions({
         continue;
       }
 
+      log.info(`[reconcileDisappearedSuggestions] Reconciling suggestion ${suggestion?.getId?.()} as FIXED in ${opportunity.getId?.()}`);
       // Mark suggestion as FIXED and prepare a PUBLISHED fix entity on the opportunity
       let suggestionMarkedFixed = false;
       try {
@@ -705,7 +706,7 @@ export async function publishDeployedFixEntities({
           fixEntity.setStatus?.(publishedStatus);
           fixEntity.setUpdatedBy?.('system');
           await fixEntity.save?.();
-          log.debug(`Published fix entity ${fixEntity.getId?.()} from DEPLOYED to PUBLISHED`);
+          log.info(`[publishDeployedFixEntities] Published fix entity ${fixEntity.getId?.()} from DEPLOYED to PUBLISHED`);
         })());
       }
     }
