@@ -169,6 +169,8 @@ async function fetchScrapedData(s3Path, context) {
 }
 
 async function processUrl(url, scrapeResult, context, existingRecordsMap) {
+  let isDeployedAtEdge = false; // Initialize early so it's available in catch block
+
   try {
     /* c8 ignore next 3 */
     if (!scrapeResult?.location) {
@@ -182,8 +184,10 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
       return { url, success: false, error: 'Missing bot or human view data' };
     }
 
-    const { rawPage: botHtml, isDeployedAtEdge } = scrapeData.botView;
+    const { rawPage: botHtml, isDeployedAtEdge: deployed } = scrapeData.botView;
     const { rawPage: humanHtml } = scrapeData.humanView;
+
+    isDeployedAtEdge = deployed; // Assign to outer scope variable
 
     context.log.info(`${LOG_PREFIX} URL ${url}: isDeployedAtEdge=${isDeployedAtEdge}`);
 
@@ -192,25 +196,37 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
       return { url, success: false, error: 'Failed to extract HTML from views' };
     }
 
+    context.log.info(`${LOG_PREFIX} Calculating citability score for ${url}`);
     const scores = await calculateCitabilityScore(botHtml, humanHtml);
+    context.log.info(`${LOG_PREFIX} Citability score calculated for ${url}: ${scores.citabilityScore}`);
 
     // Store in database - find existing record or create new one
     const { PageCitability } = context.dataAccess;
     const siteId = context.site.getId();
     const existingRecord = existingRecordsMap.get(url);
+    context.log.info(`${LOG_PREFIX} Saving to database for ${url} (existing: ${!!existingRecord})`);
 
     if (existingRecord) {
       // Update existing record
+      context.log.info(`${LOG_PREFIX} Updating existing record for ${url}`);
+
+      // Check if method exists (for debugging schema issues)
+      if (typeof existingRecord.setIsDeployedAtEdge !== 'function') {
+        context.log.warn(`${LOG_PREFIX} setIsDeployedAtEdge method not found - schema may not be deployed`);
+      }
+
       existingRecord.setCitabilityScore(scores.citabilityScore);
       existingRecord.setContentRatio(scores.contentRatio);
       existingRecord.setWordDifference(scores.wordDifference);
       existingRecord.setBotWords(scores.botWords);
       existingRecord.setNormalWords(scores.normalWords);
       existingRecord.setIsDeployedAtEdge(isDeployedAtEdge);
+      context.log.info(`${LOG_PREFIX} About to save existing record for ${url}`);
       await existingRecord.save();
       context.log.info(`${LOG_PREFIX} Updated PageCitability for ${url}: isDeployedAtEdge=${isDeployedAtEdge}`);
     } else {
       // Create new record
+      context.log.info(`${LOG_PREFIX} Creating new record for ${url}`);
       await PageCitability.create({
         siteId,
         url,
@@ -229,7 +245,10 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
     };
     /* c8 ignore next 3 */
   } catch (error) {
-    return { url, success: false, error: error.message };
+    context.log.error(`${LOG_PREFIX} Error processing ${url}: ${error.message}`);
+    return {
+      url, success: false, error: error.message, isDeployedAtEdge,
+    };
   }
 }
 
