@@ -87,6 +87,7 @@ function createDirectMystiqueMessage({
       url,
       opportunityId: opportunity.getId(),
       issuesList,
+      aggregationKey,
     },
   };
 }

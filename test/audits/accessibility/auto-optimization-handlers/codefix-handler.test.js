@@ -543,7 +543,6 @@ describe('AccessibilityCodeFixHandler', () => {
 
     // Note: Lines 270-272 and 312-314 in codefix-handler.js are defensive error checks
     // that cannot be reached with current implementation because defaultBucketName
-    // always has a fallback value ('spacecat-prod-mystique-assets').
     // These lines are kept for defensive programming and future-proofing.
 
     it('should work without source parameter', async () => {
