@@ -40,7 +40,6 @@ export async function importTopPages(context) {
   const { site, finalUrl, log } = context;
   const s3BucketPath = `scrapes/${site.getId()}/`;
 
-  log.info('CANONICAL[20012026] - importTopPages');
   log.info(`[canonical] importTopPages step requested for ${site.getId()}, bucket path: ${s3BucketPath}`);
 
   return {
@@ -55,12 +54,9 @@ export async function importTopPages(context) {
  * Step 2: Submit pages for scraping with JavaScript rendering
  */
 export async function submitForScraping(context) {
-  context.log.info('CANONICAL[20012026] - 1submitForScraping');
   const {
     site, log, finalUrl, dataAccess,
   } = context;
-
-  log.info('CANONICAL[20012026] - 2submitForScraping');
 
   if (!dataAccess?.SiteTopPage) {
     const errorMsg = 'Missing SiteTopPage data access';
@@ -76,15 +72,12 @@ export async function submitForScraping(context) {
 
   const { SiteTopPage } = dataAccess;
 
-  log.info('CANONICAL[20012026] - 3submitForScraping');
-  log.info(`Start submitForScraping step for: ${site.getId()}`);
-
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
-  log.info(`CANONICAL[20012026] - Found ${topPages?.length || 0} top pages for scraping`);
+  log.info(`[canonical] Found ${topPages?.length || 0} top pages for scraping`);
 
   if (!topPages || topPages.length === 0) {
-    log.info(`No top pages found for site ${site.getId()}, skipping scraping`);
+    log.info(`[canonical] No top pages found for site ${site.getId()}, skipping scraping`);
     return {
       auditResult: {
         status: 'NO_OPPORTUNITIES',
@@ -128,20 +121,15 @@ export async function submitForScraping(context) {
 
   const filteredUrls = topPagesUrls.filter((url) => {
     if (shouldSkipAuthPage(url)) {
-      log.info(`Skipping auth/login page: ${url}`);
       return false;
     }
     if (isPdfUrl(url)) {
-      log.info(`Skipping PDF file: ${url}`);
       return false;
     }
     return true;
   });
 
-  log.info(`CANONICAL[20012026] - After filtering: ${filteredUrls.length} pages will be scraped`);
-  log.info(`CANONICAL[20012026] - Filtered URLs for scraping: ${JSON.stringify(filteredUrls)}`);
-  log.info('CANONICAL[20012026] - finish submitForScraping');
-  log.info(`Finish submitForScraping step for: ${site.getId()}`);
+  log.info(`[canonical] After filtering: ${filteredUrls.length} pages will be scraped - ${JSON.stringify(filteredUrls)}`);
 
   // Note: Do NOT return auditResult/fullAuditRef for steps with SCRAPE_CLIENT destination
   // These are intermediate steps; the scraper will trigger the next step when complete
@@ -167,8 +155,6 @@ export async function submitForScraping(context) {
  * @returns {Array<Object>} Array of check results.
  */
 export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = false) {
-  log.info('CANONICAL[20012026] - validateCanonicalFormat');
-
   const checks = [];
   let base;
 
@@ -190,7 +176,6 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
           success: false,
           explanation: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.explanation,
         });
-        log.info(`Canonical URL is fully uppercased: ${canonicalUrl}`);
       } else {
         checks.push({
           check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
@@ -198,7 +183,7 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
         });
       }
     } else {
-      log.error(`Canonical URL is not a string: ${typeof canonicalUrl}`);
+      log.error(`[canonical] Canonical URL is not a string: ${typeof canonicalUrl}`);
       // Skip adding check for invalid type - validation errors should only be logged
       return checks;
     }
@@ -212,7 +197,6 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
       success: false,
       explanation: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.explanation,
     });
-    log.info('Canonical URL is not absolute');
   } else {
     checks.push({
       check: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.check,
@@ -223,7 +207,7 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
     try {
       url = new URL(canonicalUrl);
     } catch {
-      log.error(`Invalid canonical URL: ${canonicalUrl}`);
+      log.error(`[canonical] Invalid canonical URL: ${canonicalUrl}`);
       // Skip adding check for invalid URL - validation errors should only be logged
       return checks;
     }
@@ -235,7 +219,6 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
         success: false,
         explanation: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.explanation,
       });
-      log.info(`Canonical URL  ${canonicalUrl} uses a different protocol than base URL ${baseUrl}`);
     } else {
       checks.push({
         check: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.check,
@@ -251,7 +234,6 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
           success: false,
           explanation: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.explanation,
         });
-        log.info(`Canonical URL ${canonicalUrl} does not have the same domain as base URL ${baseUrl}`);
       } else {
         checks.push({
           check: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
@@ -286,13 +268,12 @@ export async function getPreviewAuthOptions(isPreview, baseURL, site, context, l
   const options = {};
   if (isPreview) {
     try {
-      log.info(`Retrieving page authentication for pageUrl ${baseURL}`);
       const token = await retrievePageAuthentication(site, context);
       options.headers = {
         Authorization: `token ${token}`,
       };
     } catch (error) {
-      log.error(`Error retrieving page authentication for pageUrl ${baseURL}: ${error.message}`);
+      log.error(`[canonical] Error retrieving page authentication for pageUrl ${baseURL}: ${error.message}`);
     }
   }
   return options;
@@ -304,13 +285,10 @@ export async function validateCanonicalRecursively(
   options = {},
   visitedUrls = new Set(),
 ) {
-  log.info('CANONICAL[20012026] - validateCanonicalRecursively');
-
   const checks = [];
 
   // Check for redirect loops
   if (visitedUrls.has(canonicalUrl)) {
-    log.info(`Detected a redirect loop for canonical URL ${canonicalUrl}`);
     checks.push({
       check: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
       success: false,
@@ -396,21 +374,15 @@ export function generateCanonicalSuggestion(checkType) {
  * Step 3: Process scraped content and generate audit results
  */
 export async function processScrapedContent(context) {
-  context.log.info('CANONICAL[20012026] - 1processScrapedContent - START');
   const {
     site, audit, log, s3Client, env, scrapeResultPaths,
   } = context;
-  log.info('CANONICAL[20012026] - 2processScrapedContent - START');
   const baseURL = site.getBaseURL();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-  log.info(`CANONICAL[20012026] - ScrapedContent_bucketName: ${bucketName}`);
-
-  log.info('CANONICAL[20012026] - 3processScrapedContent - START');
-  log.info(`CANONICAL[20012026] - Processing site: ${site.getId()}, baseURL: ${baseURL}`);
 
   if (!bucketName) {
     const errorMsg = 'Missing S3 bucket configuration for canonical audit';
-    log.error(`CANONICAL[20012026] - ERROR: ${errorMsg}`);
+    log.error(`[canonical] ERROR: ${errorMsg}`);
     return {
       auditResult: {
         status: 'PROCESSING_FAILED',
@@ -420,11 +392,9 @@ export async function processScrapedContent(context) {
     };
   }
 
-  log.info(`CANONICAL[20012026] - S3 bucket: ${bucketName}`);
-
   // Check if scrapeResultPaths is provided (new SCRAPE_CLIENT flow)
   if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
-    log.info(`CANONICAL[20012026] - No scrapeResultPaths found for site ${site.getId()}`);
+    log.info(`[canonical] No scrapeResultPaths found for site ${site.getId()}`);
     return {
       auditResult: {
         status: 'NO_OPPORTUNITIES',
@@ -436,40 +406,34 @@ export async function processScrapedContent(context) {
 
   // Convert Map to array of S3 keys
   const scrapeKeys = Array.from(scrapeResultPaths.values());
-  log.info(`CANONICAL[20012026] - Found ${scrapeKeys.length} scraped objects from scrapeResultPaths new`);
-  log.info(`CANONICAL[20012026] - Starting to process ${scrapeKeys.length} pages`);
+  log.info(`[canonical] Found ${scrapeKeys.length} scraped objects from scrapeResultPaths, starting to process ${scrapeKeys.length} pages`);
 
   // Process each scraped page
   const auditPromises = scrapeKeys.map(async (key) => {
     try {
-      log.info(`CANONICAL[20012026] - Fetching scraped object from S3: ${key}`);
       const scrapedObject = await getObjectFromKey(s3Client, bucketName, key, log);
 
       if (!scrapedObject?.scrapeResult?.canonical) {
-        log.warn(`CANONICAL[20012026] - No canonical metadata in S3 object: ${key}`);
+        log.warn(`[canonical] No canonical metadata in S3 object: ${key}`);
         return null;
       }
 
       const url = scrapedObject.url || scrapedObject.finalUrl;
       if (!url) {
-        log.warn(`CANONICAL[20012026] - No URL found in S3 object: ${key}`);
+        log.warn(`[canonical] No URL found in S3 object: ${key}`);
         return null;
       }
 
       const finalUrl = scrapedObject.finalUrl || url;
       const isPreview = isPreviewPage(baseURL);
 
-      log.info(`CANONICAL[20012026] - Processing URL: ${url}`);
-
       // Use canonical metadata already extracted by the scraper (Puppeteer)
       const canonicalMetadata = scrapedObject.scrapeResult.canonical;
       const canonicalUrl = canonicalMetadata.href || null;
-      log.info(`CANONICAL[20012026] - Canonical metadata for ${url}: exists=${canonicalMetadata.exists}, count=${canonicalMetadata.count}, inHead=${canonicalMetadata.inHead}, href=${canonicalUrl || 'null'}`);
       const canonicalTagChecks = [];
 
       // Check if canonical tag exists
       if (!canonicalMetadata.exists || !canonicalUrl) {
-        log.info(`CANONICAL[20012026] - Missing canonical tag for ${url}`);
         canonicalTagChecks.push({
           check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
           success: false,
@@ -477,7 +441,6 @@ export async function processScrapedContent(context) {
         });
       } else {
         // Canonical tag exists
-        log.info(`CANONICAL[20012026] - Canonical tag found for ${url}`);
         canonicalTagChecks.push({
           check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
           success: true,
@@ -485,7 +448,6 @@ export async function processScrapedContent(context) {
 
         // Check if canonical is in <head>
         if (!canonicalMetadata.inHead) {
-          log.info(`CANONICAL[20012026] - Canonical tag outside <head> for ${url}`);
           canonicalTagChecks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
             success: false,
@@ -500,7 +462,6 @@ export async function processScrapedContent(context) {
 
         // Check if there are multiple canonical tags
         if (canonicalMetadata.count > 1) {
-          log.info(`CANONICAL[20012026] - Multiple canonical tags (${canonicalMetadata.count}) for ${url}`);
           canonicalTagChecks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.check,
             success: false,
@@ -559,8 +520,6 @@ export async function processScrapedContent(context) {
       const checks = [...canonicalTagChecks];
 
       if (canonicalUrl) {
-        log.info(`CANONICAL[20012026] - Validating canonical URL format: ${canonicalUrl}`);
-
         const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log, isPreview);
         checks.push(...urlFormatChecks);
 
@@ -569,11 +528,9 @@ export async function processScrapedContent(context) {
           (c) => c.check === CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
         );
         const isSelfReferenced = selfRefCheck?.success === true;
-        log.info(`CANONICAL[20012026] - Self-referenced check for ${url}: ${isSelfReferenced}`);
 
         // if self-referenced - skip accessibility
         if (isSelfReferenced) {
-          log.info(`CANONICAL[20012026] - Canonical is self-referenced, skipping accessibility check for ${url}`);
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
             success: true,
@@ -584,7 +541,6 @@ export async function processScrapedContent(context) {
           });
         } else {
           // if not self-referenced - validate accessibility
-          log.info(`CANONICAL[20012026] - Canonical URL points to different page, validating accessibility: ${canonicalUrl}`);
 
           const options = await getPreviewAuthOptions(isPreview, baseURL, site, context, log);
 
@@ -595,16 +551,15 @@ export async function processScrapedContent(context) {
 
       return { url, checks };
     } catch (error) {
-      log.error(`Error processing scraped content from ${key}: ${error.message}`);
+      log.error(`[canonical] Error processing scraped content from ${key}: ${error.message}`);
       return null;
     }
   });
 
   const auditResultsArray = await Promise.allSettled(auditPromises);
-  log.info(`CANONICAL[20012026] - Completed processing ${auditResultsArray.length} pages`);
+  log.info(`[canonical] Completed processing ${auditResultsArray.length} pages`);
 
   // Aggregate results
-  log.info('CANONICAL[20012026] - Aggregating results');
   const aggregatedResults = auditResultsArray.reduce((acc, result) => {
     if (result.status === 'fulfilled' && result.value) {
       const { url, checks } = result.value;
@@ -632,12 +587,11 @@ export async function processScrapedContent(context) {
     ),
   );
 
-  log.info(`CANONICAL[20012026] - Found ${Object.keys(filteredAggregatedResults).length} issue types`);
-  log.info(`CANONICAL[20012026] - Successfully completed canonical audit for site: ${baseURL}`);
+  log.info(`[canonical] Successfully completed canonical audit for site: ${baseURL}. Found ${Object.keys(filteredAggregatedResults).length} issue types`);
 
   // all checks are successful, no issues were found
   if (Object.keys(filteredAggregatedResults).length === 0) {
-    log.info(`CANONICAL[20012026] - No canonical issues detected for ${baseURL}`);
+    log.info(`[canonical] No canonical issues detected for ${baseURL}`);
     return {
       fullAuditRef: baseURL,
       auditResult: {
@@ -658,7 +612,6 @@ export async function processScrapedContent(context) {
   }));
 
   // Generate suggestions from audit results
-  log.info('CANONICAL[20012026] - Generating canonical suggestions');
   const auditTypeOrder = [...Object.keys(CANONICAL_CHECKS)];
   const suggestionsByType = {};
   const allSuggestions = [];
@@ -690,11 +643,11 @@ export async function processScrapedContent(context) {
     return indexA - indexB;
   });
 
-  log.info(`Generated ${sortedSuggestions.length} canonical suggestions for ${baseURL}`);
+  log.info(`[canonical] Generated ${sortedSuggestions.length} canonical suggestions for ${baseURL}`);
 
   // Create opportunities and sync suggestions
   if (sortedSuggestions.length > 0) {
-    log.info(`CANONICAL[20012026] - Creating canonical opportunity and syncing ${sortedSuggestions.length} suggestions`);
+    log.info(`[canonical] Creating canonical opportunity and syncing ${sortedSuggestions.length} suggestions`);
 
     const opportunity = await convertToOpportunity(
       baseURL,
@@ -726,12 +679,11 @@ export async function processScrapedContent(context) {
       log,
     });
 
-    log.info(`CANONICAL[20012026] - Canonical opportunity created with ID: ${opportunity.getId()}`);
-    log.info(`CANONICAL[20012026] - Successfully synced ${sortedSuggestions.length} suggestions for ${baseURL}`);
+    log.info(`[canonical] Canonical opportunity created with ID: ${opportunity.getId()}`);
+    log.info(`[canonical] Successfully synced ${sortedSuggestions.length} suggestions for ${baseURL}`);
   }
 
   // Create Elmo suggestions
-  log.info('CANONICAL[20012026] - Generating Elmo suggestions');
   const elmoSuggestions = [];
   Object.entries(suggestionsByType).forEach(([checkType, suggestions]) => {
     if (suggestions.length > 0) {
@@ -751,7 +703,7 @@ export async function processScrapedContent(context) {
 
   // Create Elmo opportunity if there are suggestions
   if (elmoSuggestions.length > 0) {
-    log.info(`CANONICAL[20012026] - Creating canonical opportunity for Elmo with ${elmoSuggestions.length} suggestions`);
+    log.info(`[canonical] Creating canonical opportunity for Elmo with ${elmoSuggestions.length} suggestions`);
 
     const elmoOpportunityType = 'generic-opportunity';
     const comparisonFn = (oppty) => {
@@ -777,7 +729,7 @@ export async function processScrapedContent(context) {
       comparisonFn,
     );
 
-    log.info(`Canonical opportunity created for Elmo with oppty id ${opportunity.getId()}`);
+    log.info(`[canonical] Canonical opportunity created for Elmo with oppty id ${opportunity.getId()}`);
 
     const buildKey = (suggestion) => `${suggestion.type}`;
     await syncSuggestions({
@@ -797,8 +749,8 @@ export async function processScrapedContent(context) {
       log,
     });
 
-    log.info(`CANONICAL[20012026] - Canonical opportunity created for Elmo with oppty id ${opportunity.getId()}`);
-    log.info(`CANONICAL[20012026] - Successfully synced ${elmoSuggestions.length} Elmo suggestions for ${baseURL}`);
+    log.info(`[canonical] Canonical opportunity created for Elmo with oppty id ${opportunity.getId()}`);
+    log.info(`[canonical] Successfully synced ${elmoSuggestions.length} Elmo suggestions for ${baseURL}`);
   }
 
   return {

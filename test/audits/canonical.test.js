@@ -88,9 +88,7 @@ describe('Canonical URL Tests', () => {
       expect(options).to.have.property('headers');
       expect(options.headers.Authorization).to.equal('token test-token-123');
       expect(mockRetrievePageAuthentication).to.have.been.calledOnce;
-      expect(testLog.info).to.have.been.calledWith(
-        sinon.match(/Retrieving page authentication/),
-      );
+      // Authentication log was removed
     });
 
     it('should handle authentication errors gracefully', async () => {
@@ -378,7 +376,7 @@ describe('Canonical URL Tests', () => {
       const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
 
       expect(result).to.be.an('array').that.is.empty;
-      expect(log.error).to.have.been.calledWith('Canonical URL is not a string: object');
+      expect(log.error).to.have.been.calledWith('[canonical] Canonical URL is not a string: object');
     });
 
     it('should handle invalid base URL', () => {
@@ -400,7 +398,7 @@ describe('Canonical URL Tests', () => {
         success: false,
         explanation: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.explanation,
       });
-      expect(log.info).to.have.been.calledWith('Canonical URL is fully uppercased: HTTPS://EXAMPLE.COM/UPPERCASE');
+      // Log message for uppercase was removed
     });
 
     it('should pass if canonical URL is in lowercase', () => {
@@ -448,7 +446,7 @@ describe('Canonical URL Tests', () => {
         success: false,
         explanation: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.explanation,
       });
-      expect(log.info).to.have.been.calledWith('Canonical URL https://another.com does not have the same domain as base URL https://example.com');
+      // Log message for different domains was removed
     });
 
     it('should handle different protocols', () => {
@@ -461,7 +459,7 @@ describe('Canonical URL Tests', () => {
         success: false,
         explanation: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.explanation,
       });
-      expect(log.info).to.have.been.calledWith('Canonical URL  https://example.com uses a different protocol than base URL http://example.com');
+      // Log message for different protocols was removed
     });
 
     it('should pass when canonical URL and base URL are identical, regardless of the www prefix', () => {
@@ -525,7 +523,7 @@ describe('Canonical URL Tests', () => {
         success: true,
       }]);
 
-      expect(log.error).to.have.been.calledWith(`Invalid canonical URL: ${invalidCanonicalUrl}`);
+      expect(log.error).to.have.been.calledWith(`[canonical] Invalid canonical URL: ${invalidCanonicalUrl}`);
     });
 
     /* REMOVED: Test references deleted validateCanonicalTag function
@@ -648,7 +646,7 @@ describe('Canonical URL Tests', () => {
         success: false,
         explanation: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.explanation,
       });
-      expect(log.info).to.have.been.calledWith(`Detected a redirect loop for canonical URL ${canonicalUrl}`);
+      // Log message for redirect loop was removed
     });
 
     it('should handle 4xx error response correctly', async () => {
@@ -2069,7 +2067,8 @@ describe('Canonical URL Tests', () => {
         expect(result.options).to.deep.equal({
           waitTimeoutForMetaTags: 5000,
         });
-        expect(context.log.info).to.have.been.calledWith('Start submitForScraping step for: test-site-id');
+        // Start log was removed, check for filtering log instead
+      expect(context.log.info).to.have.been.calledWith('[canonical] After filtering: 2 pages will be scraped - ["https://example.com/page1","https://example.com/page2"]');
       });
 
       it('should handle no top pages found', async () => {
@@ -2090,7 +2089,7 @@ describe('Canonical URL Tests', () => {
           },
           fullAuditRef: 'https://example.com',
         });
-        expect(context.log.info).to.have.been.calledWith('No top pages found for site test-site-id, skipping scraping');
+        expect(context.log.info).to.have.been.calledWith('[canonical] No top pages found for site test-site-id, skipping scraping');
       });
 
       it('should handle null top pages result', async () => {
@@ -2111,7 +2110,7 @@ describe('Canonical URL Tests', () => {
           },
           fullAuditRef: 'https://example.com',
         });
-        expect(context.log.info).to.have.been.calledWith('No top pages found for site test-site-id, skipping scraping');
+        expect(context.log.info).to.have.been.calledWith('[canonical] No top pages found for site test-site-id, skipping scraping');
       });
 
       it('should filter out auth/login pages', async () => {
@@ -2141,18 +2140,7 @@ describe('Canonical URL Tests', () => {
 
         expect(result.urls).to.have.lengthOf(1);
         expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });
-        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/login');
-        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/signin');
-        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/sign-in');
-        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/authenticate');
-        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/oauth/callback');
-        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/sso');
-        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/okta/loginwidget.html');
-        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/register');
-        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/signup');
-        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/install/activate/home.html');
-        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/auth');
-        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/auth/provider');
+        // Auth page filtering logs were removed
       });
 
       it('should filter out PDF files', async () => {
@@ -2172,8 +2160,7 @@ describe('Canonical URL Tests', () => {
 
         expect(result.urls).to.have.lengthOf(1);
         expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });
-        expect(context.log.info).to.have.been.calledWith('Skipping PDF file: https://example.com/document.pdf');
-        expect(context.log.info).to.have.been.calledWith('Skipping PDF file: https://example.com/files/guide.PDF');
+        // PDF filtering logs were removed
       });
 
       it('should filter out both auth pages and PDFs', async () => {
@@ -2195,8 +2182,7 @@ describe('Canonical URL Tests', () => {
         expect(result.urls).to.have.lengthOf(2);
         expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page1' });
         expect(result.urls[1]).to.deep.equal({ url: 'https://example.com/page2' });
-        expect(context.log.info).to.have.been.calledWith('Skipping auth/login page: https://example.com/login');
-        expect(context.log.info).to.have.been.calledWith('Skipping PDF file: https://example.com/document.pdf');
+        // Auth page and PDF filtering logs were removed
       });
 
       it('should handle malformed URLs gracefully in filter functions', async () => {
@@ -2292,7 +2278,7 @@ describe('Canonical URL Tests', () => {
           },
           fullAuditRef: 'https://example.com',
         });
-        expect(context.log.info).to.have.been.calledWith('CANONICAL[20012026] - No scrapeResultPaths found for site test-site-id');
+        expect(context.log.info).to.have.been.calledWith('[canonical] No scrapeResultPaths found for site test-site-id');
       });
 
       it('should process scraped content and detect canonical issues', async () => {
