@@ -31,6 +31,7 @@ describe('User Agent Patterns', () => {
       expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('perplexity');
       expect(PROVIDER_USER_AGENT_PATTERNS.chatgpt).to.include('ChatGPT');
       expect(PROVIDER_USER_AGENT_PATTERNS.perplexity).to.include('Perplexity');
+      expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('bing');
     });
   });
 
@@ -44,6 +45,10 @@ describe('User Agent Patterns', () => {
       expect(sql).to.include('Chatbots');
       expect(sql).to.include('gptbot');
       expect(sql).to.include('perplexity');
+      expect(sql).to.include('Search Bots');
+      expect(sql.toLowerCase()).to.include('googlebot');
+      expect(sql.toLowerCase()).to.include('bingbot');
+      expect(sql.toLowerCase()).to.include('google-extended');
     });
   });
 
@@ -56,6 +61,9 @@ describe('User Agent Patterns', () => {
       expect(sql).to.include('ChatGPT-User');
       expect(sql).to.include('GPTBot');
       expect(sql).to.include('PerplexityBot');
+      expect(sql).to.include('GoogleBot');
+      expect(sql).to.include('BingBot');
+      expect(sql).to.include('Google-Extended');
     });
   });
 });

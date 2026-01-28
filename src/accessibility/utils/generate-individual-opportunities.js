@@ -230,6 +230,154 @@ async function sendMystiqueMessage({
 }
 
 /**
+ * Internal function that sends opportunity suggestions to Mystique.
+ * Used by both the audit flow and the manual codefix trigger flow.
+ *
+ * @param {Object} opportunity - The opportunity object
+ * @param {Array} suggestions - Array of suggestion objects
+ * @param {Object} context - Audit context
+ * @param {string} logTag - Log prefix for this flow
+ * @returns {Promise<Object>} Result object with success status and details
+ */
+async function sendSuggestionsToMystiqueInternal(opportunity, suggestions, context, logTag) {
+  const {
+    log, sqs, env, site,
+  } = context;
+
+  const siteId = opportunity.getSiteId
+    ? opportunity.getSiteId()
+    : (site && site.getId && site.getId());
+  const auditId = opportunity.getAuditId
+    ? opportunity.getAuditId()
+    : (context.auditId || (context.audit && context.audit.getId && context.audit.getId()));
+  const deliveryType = (site && site.getDeliveryType && site.getDeliveryType()) || 'aem_edge';
+
+  log.debug(`${logTag} Debug info - suggestions: ${suggestions.length}, sqs: ${!!sqs}, env: ${!!env}, siteId: ${siteId}, auditId: ${auditId}`);
+
+  // Log details about each suggestion for debugging
+  suggestions.forEach((suggestion, index) => {
+    const suggestionData = suggestion.getData();
+    const issueTypes = suggestionData.issues
+      ? suggestionData.issues.map((issue) => issue.type) : [];
+    const databaseKey = buildSuggestionKey(suggestionData);
+    log.debug(`${logTag} Suggestion ${index}: URL=${suggestionData.url}, DatabaseKey=${databaseKey}, Issues=[${issueTypes.join(', ')}]`);
+  });
+
+  // Determine if code fix flow should be used
+  const autoFixEnabled = await isAuditEnabledForSite('a11y-mystique-auto-fix', site, context);
+  let hasCodeFixEligibleIssues = false;
+  if (autoFixEnabled) {
+    for (const suggestion of suggestions) {
+      const suggestionData = suggestion.getData();
+      if (isNonEmptyArray(suggestionData.issues)) {
+        const eligibleIssues = suggestionData.issues
+          .filter((issue) => issueTypesForCodeFix.includes(issue.type))
+          .filter((issue) => isNonEmptyArray(issue.htmlWithIssues));
+        if (eligibleIssues.length > 0) {
+          hasCodeFixEligibleIssues = true;
+          break;
+        }
+      }
+    }
+  }
+  const useCodeFixFlow = autoFixEnabled && hasCodeFixEligibleIssues;
+  log.debug(`${logTag} Code fix flow enabled: ${autoFixEnabled}, has eligible issues: ${hasCodeFixEligibleIssues}, using code fix flow: ${useCodeFixFlow}`);
+
+  const mystiqueData = processSuggestionsForMystique(suggestions, useCodeFixFlow);
+
+  log.debug(`${logTag} Mystique data processed: ${mystiqueData.length} messages to send`);
+
+  if (mystiqueData.length === 0) {
+    log.info(`${logTag} No messages to send to Mystique - no matching issue types found`);
+    return { success: true, messagesProcessed: 0 };
+  }
+
+  if (!sqs || !env || !env.QUEUE_SPACECAT_TO_MYSTIQUE) {
+    log.error(`${logTag}[A11yProcessingError] Missing required context - sqs: ${!!sqs}, env: ${!!env}, queue: ${env?.QUEUE_SPACECAT_TO_MYSTIQUE || 'undefined'}`);
+    return { success: false, error: 'Missing SQS context or queue configuration' };
+  }
+
+  log.info(`${logTag} Sending ${mystiqueData.length} messages to Mystique (via ${useCodeFixFlow ? 'code fix' : 'legacy'} flow)`);
+
+  const messagePromises = mystiqueData.map(({
+    url, issuesList, aggregationKey,
+  }) => sendMystiqueMessage({
+    url,
+    issuesList,
+    opportunity,
+    siteId,
+    auditId,
+    deliveryType,
+    aggregationKey,
+    sqs,
+    env,
+    log,
+    context,
+    useCodeFixFlow,
+  }));
+
+  const results = await Promise.allSettled(messagePromises);
+
+  const successfulMessages = results.filter((r) => r.status === 'fulfilled' && r.value.success).length;
+  const failedMessages = results.filter((r) => r.status === 'fulfilled' && !r.value.success).length;
+  const rejectedPromises = results.filter((r) => r.status === 'rejected').length;
+
+  log.debug(`${logTag} Message sending completed: ${successfulMessages} successful, ${failedMessages} failed, ${rejectedPromises} rejected`);
+
+  return {
+    success: true,
+    messagesProcessed: mystiqueData.length,
+    successfulMessages,
+    failedMessages,
+    rejectedPromises,
+  };
+}
+
+/**
+ * Sends an existing opportunity's suggestions to Mystique for code fix processing.
+ * This is called from the manual codefix trigger flow for existing opportunities.
+ *
+ * @param {string} opportunityId - The opportunity ID to process
+ * @param {Object} context - Audit context containing site, sqs, env, dataAccess, and log
+ * @param {Object} [options] - Optional configuration
+ * @param {boolean} [options.skipMystiqueEnabledCheck] - Skip the a11y-mystique-auto-suggest check
+ * @returns {Promise<Object>} Result object with success status and details
+ */
+export async function sendOpportunitySuggestionsToMystique(opportunityId, context, options = {}) {
+  const { log, dataAccess, site } = context;
+  const { skipMystiqueEnabledCheck = false } = options;
+  const LOG_TAG = '[A11yCodefix]';
+
+  try {
+    if (!skipMystiqueEnabledCheck) {
+      const isMystiqueEnabled = await isAuditEnabledForSite('a11y-mystique-auto-suggest', site, context);
+      if (!isMystiqueEnabled) {
+        log.info(`${LOG_TAG} Mystique suggestions are disabled for site, skipping message sending`);
+        return { success: true, messagesProcessed: 0 };
+      }
+    }
+
+    const { Opportunity } = dataAccess;
+    const opportunity = await Opportunity.findById(opportunityId);
+    if (!opportunity) {
+      log.error(`${LOG_TAG} Opportunity not found: ${opportunityId}`);
+      return { success: false, error: 'Opportunity not found' };
+    }
+
+    const suggestions = await opportunity.getSuggestions();
+    if (suggestions.length === 0) {
+      log.info(`${LOG_TAG} No suggestions found for opportunity`);
+      return { success: true, messagesProcessed: 0 };
+    }
+
+    return await sendSuggestionsToMystiqueInternal(opportunity, suggestions, context, LOG_TAG);
+  } catch (e) {
+    log.error(`${LOG_TAG}[A11yProcessingError] Failed to send suggestions to Mystique for opportunity ${opportunityId}: ${e.message}`);
+    return { success: false, error: e.message };
+  }
+}
+
+/**
  * Helper function to format WCAG rule from internal format to human-readable format
  *
  * Converts WCAG rules from the internal "wcag412" format to the standard
@@ -554,108 +702,32 @@ export async function sendMessageToMystiqueForRemediation(
   context,
   log,
 ) {
+  const LOG_TAG = '[A11yIndividual]';
+
   try {
     // Check if mystique suggestions are enabled for this site
     const isMystiqueEnabled = await isAuditEnabledForSite('a11y-mystique-auto-suggest', context.site, context);
     if (!isMystiqueEnabled) {
-      log.info('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending');
+      log.info(`${LOG_TAG} Mystique suggestions are disabled for site, skipping message sending`);
       return { success: true };
     }
 
     // Get fresh opportunity data to ensure we have the latest suggestions
     const { Opportunity } = context.dataAccess;
     const refreshedOpportunity = await Opportunity.findById(opportunity.getId());
-    // Get the suggestions that were just created/updated
     const suggestions = await refreshedOpportunity.getSuggestions();
-    log.debug(`[A11yIndividual] Retrieved ${suggestions.length} suggestions from opportunity ${opportunity.getId()}`);
+    log.debug(`${LOG_TAG} Retrieved ${suggestions.length} suggestions from opportunity ${opportunity.getId()}`);
 
-    const { sqs, env } = context;
-    const siteId = refreshedOpportunity.getSiteId
-      ? refreshedOpportunity.getSiteId()
-      : (context.site && context.site.getId && context.site.getId());
-    const auditId = refreshedOpportunity.getAuditId
-      ? refreshedOpportunity.getAuditId()
-      : (context.auditId || (context.audit && context.audit.getId && context.audit.getId()));
-    const deliveryType = (context.site && context.site.getDeliveryType && context.site.getDeliveryType()) || 'aem_edge';
-
-    log.debug(`[A11yIndividual] Debug info - suggestions: ${suggestions.length}, sqs: ${!!sqs}, env: ${!!env}, siteId: ${siteId}, auditId: ${auditId}`);
-
-    // Log details about each suggestion for debugging
-    suggestions.forEach((suggestion, index) => {
-      const suggestionData = suggestion.getData();
-      const issueTypes = suggestionData.issues
-        ? suggestionData.issues.map((issue) => issue.type) : [];
-      // Log the database key (INDIVIDUAL level) for each suggestion
-      const databaseKey = buildSuggestionKey(suggestionData);
-      log.debug(`[A11yIndividual] Suggestion ${index}: URL=${suggestionData.url}, DatabaseKey=${databaseKey}, Issues=[${issueTypes.join(', ')}]`);
-    });
-
-    // Determine if code fix flow should be used
-    const autoFixEnabled = await isAuditEnabledForSite('a11y-mystique-auto-fix', context.site, context);
-    let hasCodeFixEligibleIssues = false;
-    if (autoFixEnabled) {
-      for (const suggestion of suggestions) {
-        const suggestionData = suggestion.getData();
-        if (isNonEmptyArray(suggestionData.issues)) {
-          const eligibleIssues = suggestionData.issues
-            .filter((issue) => issueTypesForCodeFix.includes(issue.type))
-            .filter((issue) => isNonEmptyArray(issue.htmlWithIssues));
-          if (eligibleIssues.length > 0) {
-            hasCodeFixEligibleIssues = true;
-            break;
-          }
-        }
-      }
-    }
-    const useCodeFixFlow = autoFixEnabled && hasCodeFixEligibleIssues;
-    log.debug(`[A11yIndividual] Code fix flow enabled: ${autoFixEnabled}, has eligible issues: ${hasCodeFixEligibleIssues}, using code fix flow: ${useCodeFixFlow}`);
-
-    // Process the suggestions directly to create Mystique messages
-    // Pass useCodeFixFlow to determine aggregation strategy
-    const mystiqueData = processSuggestionsForMystique(suggestions, useCodeFixFlow);
-
-    log.debug(`[A11yIndividual] Mystique data processed: ${mystiqueData.length} messages to send`);
-
-    if (mystiqueData.length === 0) {
-      log.info('[A11yIndividual] No messages to send to Mystique - no matching issue types found');
-      return { success: true };
-    }
-
-    // Validate required context objects before proceeding
-    if (!sqs || !env || !env.QUEUE_SPACECAT_TO_MYSTIQUE) {
-      log.error(`[A11yIndividual][A11yProcessingError] Missing required context - sqs: ${!!sqs}, env: ${!!env}, queue: ${env?.QUEUE_SPACECAT_TO_MYSTIQUE || 'undefined'}`);
-      return { success: false, error: 'Missing SQS context or queue configuration' };
-    }
-
-    log.info(`[A11yIndividual] Sending ${mystiqueData.length} messages to Mystique (via ${useCodeFixFlow ? 'code fix' : 'legacy'} flow)`);
-
-    const messagePromises = mystiqueData.map(({
-      url, issuesList, aggregationKey,
-    }) => sendMystiqueMessage({
-      url,
-      issuesList,
-      opportunity: refreshedOpportunity,
-      siteId,
-      auditId,
-      deliveryType,
-      aggregationKey,
-      sqs,
-      env,
-      log,
+    const result = await sendSuggestionsToMystiqueInternal(
+      refreshedOpportunity,
+      suggestions,
       context,
-      useCodeFixFlow,
-    }));
-    // Wait for all messages to be sent (successfully or with errors)
-    const results = await Promise.allSettled(messagePromises);
-
-    // Log summary of results
-    const successfulMessages = results.filter((result) => result.status === 'fulfilled' && result.value.success).length;
-    const failedMessages = results.filter((result) => result.status === 'fulfilled' && !result.value.success).length;
-    const rejectedPromises = results.filter((result) => result.status === 'rejected').length;
-
-    log.debug(
-      `[A11yIndividual] Message sending completed: ${successfulMessages} successful, ${failedMessages} failed, ${rejectedPromises} rejected`,
+      LOG_TAG,
     );
+
+    if (!result.success) {
+      return result;
+    }
 
     return { success: true };
   } catch (e) {

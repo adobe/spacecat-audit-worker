@@ -102,15 +102,15 @@ describe('Meta Tags', () => {
         expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(HIGH);
       });
 
-      it('should detect too long tag and add to detectedTags with MODERATE impact', () => {
+      it('should detect Title exceeding maxLength and add to detectedTags with LOW impact', () => {
         const url = 'https://example.com';
-        const longTitle = 'A'.repeat(TAG_LENGTHS[TITLE].maxLength + 1);
+        const longTitle = 'A'.repeat(TAG_LENGTHS[TITLE].maxLength + 1); // 76 chars
         const pageTags = { [TITLE]: longTitle };
 
         seoChecks.checkForTagsLength(url, pageTags);
 
-        expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Title too long');
-        expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(MODERATE);
+        expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Title above ideal length');
+        expect(seoChecks.getDetectedTags()[url][TITLE][SEO_IMPACT]).to.equal(LOW);
       });
 
       it('should detect too short tag and add to detectedTags with MODERATE impact', () => {
@@ -321,13 +321,13 @@ describe('Meta Tags', () => {
     it('should handle tagContent with pipe characters', () => {
       const data = {
         url: 'https://example.com/page8',
-        issue: 'Title too long',
+        issue: 'Title above ideal length',
         tagContent: 'Title with | pipe | characters',
       };
 
       const result = buildKey(data);
 
-      expect(result).to.equal('https://example.com/page8|Title too long|Title with | pipe | characters');
+      expect(result).to.equal('https://example.com/page8|Title above ideal length|Title with | pipe | characters');
     });
 
     it('should handle tagContent with special characters', () => {
@@ -370,7 +370,7 @@ describe('Meta Tags', () => {
       };
       const data2 = {
         url: 'https://example.com/page1',
-        issue: 'Title too long',
+        issue: 'Title above ideal length',
         tagContent: 'Example Title',
       };
 
@@ -379,7 +379,7 @@ describe('Meta Tags', () => {
 
       expect(result1).to.not.equal(result2);
       expect(result1).to.equal('https://example.com/page1|Title too short|Example Title');
-      expect(result2).to.equal('https://example.com/page1|Title too long|Example Title');
+      expect(result2).to.equal('https://example.com/page1|Title above ideal length|Example Title');
     });
 
     it('should handle whitespace in tagContent', () => {
@@ -2127,7 +2127,7 @@ describe('Meta Tags', () => {
             h1: { tagContent: 'Original H1', issue: 'H1 too short' },
           },
           '/page2': {
-            title: { tagContent: 'Page 2 Title', issue: 'Title too long' },
+            title: { tagContent: 'Page 2 Title', issue: 'Title above ideal length' },
             h1: { tagContent: 'Page 2 H1', issue: 'H1 too long' },
           },
         };
@@ -2182,7 +2182,7 @@ describe('Meta Tags', () => {
             description: { tagContent: 'Original Description', issue: 'Description too short' },
           },
           '/page2': {
-            title: { tagContent: 'Page 2 Title', issue: 'Title too long' },
+            title: { tagContent: 'Page 2 Title', issue: 'Title above ideal length' },
           },
         };
 
