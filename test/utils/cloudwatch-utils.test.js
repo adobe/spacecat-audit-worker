@@ -103,6 +103,61 @@ describe('CloudWatch Utils', () => {
       expect(result[1].url).to.equal('https://example.com/page');
     });
 
+    it('should match URLs by domain, ignoring www subdomain', async () => {
+      const mockEvents = [
+        {
+          message: '[BOT-BLOCKED] Bot Protection Detection in Scraper: {"jobId":"job-123","url":"https://www.abbvie.com/page1","blockerType":"cloudflare","confidence":0.99,"httpStatus":403,"errorCategory":"bot-protection"}',
+        },
+        {
+          message: '[BOT-BLOCKED] Bot Protection Detection in Scraper: {"jobId":"job-123","url":"https://abbvie.com/page2","blockerType":"akamai","confidence":0.95,"httpStatus":403,"errorCategory":"bot-protection"}',
+        },
+        {
+          message: '[BOT-BLOCKED] Bot Protection Detection in Scraper: {"jobId":"job-456","url":"https://www.other-site.com/page","blockerType":"akamai","confidence":0.95,"httpStatus":403,"errorCategory":"bot-protection"}',
+        },
+      ];
+
+      sendStub.resolves({
+        events: mockEvents,
+      });
+
+      // Query with non-www URL, should match both www and non-www events by domain
+      const result = await queryBotProtectionLogs(
+        { siteUrl: 'https://abbvie.com' },
+        mockContext,
+        Date.now() - 3600000,
+      );
+
+      expect(result).to.have.lengthOf(2);
+      expect(result[0].url).to.equal('https://www.abbvie.com/page1');
+      expect(result[1].url).to.equal('https://abbvie.com/page2');
+    });
+
+    it('should match URLs when querying with www subdomain', async () => {
+      const mockEvents = [
+        {
+          message: '[BOT-BLOCKED] Bot Protection Detection in Scraper: {"jobId":"job-123","url":"https://www.abbvie.com/page1","blockerType":"cloudflare","confidence":0.99,"httpStatus":403,"errorCategory":"bot-protection"}',
+        },
+        {
+          message: '[BOT-BLOCKED] Bot Protection Detection in Scraper: {"jobId":"job-123","url":"https://abbvie.com/page2","blockerType":"akamai","confidence":0.95,"httpStatus":403,"errorCategory":"bot-protection"}',
+        },
+      ];
+
+      sendStub.resolves({
+        events: mockEvents,
+      });
+
+      // Query with www URL, should match both www and non-www events by domain
+      const result = await queryBotProtectionLogs(
+        { siteUrl: 'https://www.abbvie.com' },
+        mockContext,
+        Date.now() - 3600000,
+      );
+
+      expect(result).to.have.lengthOf(2);
+      expect(result[0].url).to.equal('https://www.abbvie.com/page1');
+      expect(result[1].url).to.equal('https://abbvie.com/page2');
+    });
+
     it('should return empty array when no events found', async () => {
       sendStub.resolves({
         events: [],

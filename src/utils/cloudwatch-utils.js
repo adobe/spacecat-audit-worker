@@ -31,11 +31,15 @@ export async function queryBotProtectionLogs({ siteUrl }, context, searchStartTi
   });
 
   const logGroupName = env.CONTENT_SCRAPER_LOG_GROUP || CONTENT_SCRAPER_LOG_GROUP;
+  const region = env.AWS_REGION || 'us-east-1';
 
   // Apply 5-minute buffer to handle clock skew and log delays
   const BUFFER_MS = 5 * 60 * 1000; // 5 minutes
   const startTime = searchStartTime - BUFFER_MS;
   const endTime = Date.now();
+
+  /* c8 ignore next */
+  log.info(`[CLOUDWATCH-QUERY] Querying log group: ${logGroupName}, region: ${region}, timeRange: ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
 
   try {
     // Filter by [BOT-BLOCKED] in CloudWatch, then filter by siteUrl in memory
@@ -50,6 +54,9 @@ export async function queryBotProtectionLogs({ siteUrl }, context, searchStartTi
     });
 
     const response = await cloudwatchClient.send(command);
+
+    /* c8 ignore next */
+    log.info(`[CLOUDWATCH-QUERY] CloudWatch returned ${response.events?.length || 0} raw events`);
 
     if (!response.events || response.events.length === 0) {
       return [];
@@ -72,15 +79,46 @@ export async function queryBotProtectionLogs({ siteUrl }, context, searchStartTi
       })
       .filter((event) => event !== null);
 
-    // Filter by site URL - handle both with and without trailing slashes
+    /* c8 ignore next */
+    log.info(`[CLOUDWATCH-QUERY] Parsed ${botProtectionEvents.length} bot protection events from CloudWatch`);
+
+    // Extract base domain from siteUrl (e.g., "https://www.abbvie.com" -> "abbvie.com")
+    const extractDomain = (url) => {
+      try {
+        const urlObj = new URL(url);
+        // Remove www. prefix if present
+        return urlObj.hostname.replace(/^www\./, '');
+      /* c8 ignore start */
+      } catch {
+        return url;
+      }
+      /* c8 ignore stop */
+    };
+
+    const siteDomain = extractDomain(siteUrl.toLowerCase());
+    /* c8 ignore next */
+    log.info(`[CLOUDWATCH-QUERY] Filtering by domain: ${siteDomain}`);
+
+    // Filter by domain - match if event URL contains the site domain
     const filteredEvents = botProtectionEvents.filter((event) => {
       const eventUrl = event.url?.toLowerCase();
-      const normalizedSiteUrl = siteUrl.toLowerCase().replace(/\/$/, '');
-      return eventUrl && (
-        eventUrl.startsWith(`${normalizedSiteUrl}/`)
-        || eventUrl === normalizedSiteUrl
-      );
+      /* c8 ignore next */
+      if (!eventUrl) return false;
+
+      const eventDomain = extractDomain(eventUrl);
+      const matches = eventDomain === siteDomain;
+
+      /* c8 ignore start */
+      if (!matches) {
+        log.debug(`[CLOUDWATCH-QUERY] Event domain ${eventDomain} does not match site domain ${siteDomain}`);
+      }
+      /* c8 ignore stop */
+
+      return matches;
     });
+
+    /* c8 ignore next */
+    log.info(`[CLOUDWATCH-QUERY] After filtering by siteUrl ${siteUrl}: ${filteredEvents.length} matching events`);
 
     return filteredEvents;
   } catch (error) {

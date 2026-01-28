@@ -51,12 +51,18 @@ async function checkBotProtection({
     ? new Date(stepContext.audit.getAuditedAt()).getTime()
     : Date.now() - (30 * 60 * 1000); // Default to 30 mins ago if not available
 
+  /* c8 ignore next */
+  log.info(`[BOT-PROTECTION-QUERY] Querying CloudWatch for siteUrl=${siteUrl}, auditCreatedAt=${new Date(auditCreatedAt).toISOString()}, timeWindow=${Math.round((Date.now() - auditCreatedAt) / 1000)}s`);
+
   // Query bot protection logs using siteUrl + time window
   const logEvents = await queryBotProtectionLogs(
     { siteUrl },
     context,
     auditCreatedAt,
   );
+
+  /* c8 ignore next */
+  log.info(`[BOT-PROTECTION-QUERY] Found ${logEvents.length} bot protection events for site ${siteUrl}`);
 
   // No bot protection detected
   if (logEvents.length === 0) {
@@ -177,11 +183,6 @@ export class StepAudit extends BaseAudit {
       const scrapeJob = await scrapeClient.createScrapeJob(payload);
       log.info(`Created scrapeJob with id: ${scrapeJob.id}`);
 
-      // Store scrapeJobId in context for use when the scraper completes
-      // This ensures scrapeJobId is available for bot protection checking
-      /* c8 ignore next */
-      context.scrapeJobId = scrapeJob.id;
-
       return stepResult;
     } else {
       const queueUrl = destination.getQueueUrl(context);
@@ -233,6 +234,8 @@ export class StepAudit extends BaseAudit {
         /* c8 ignore start */
         // Check for bot protection when continuing from a scraping step
         // Uses siteUrl + time window to filter CloudWatch logs
+        log.info(`[BOT-PROTECTION-CHECK] Starting check for site ${siteId}, type ${type}, auditId ${auditContext.auditId}`);
+
         const botProtectionResult = await checkBotProtection({
           site,
           siteId,
@@ -242,8 +245,11 @@ export class StepAudit extends BaseAudit {
         });
 
         if (botProtectionResult) {
+          log.info('[BOT-PROTECTION-CHECK] Bot protection detected, aborting audit');
           return botProtectionResult;
         }
+
+        log.info('[BOT-PROTECTION-CHECK] No bot protection detected, continuing audit');
         /* c8 ignore stop */
       }
 
