@@ -416,7 +416,20 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(siteConfig.getGroupedURLs).to.have.been.calledWith(Audit.AUDIT_TYPES.CWV);
 
       expect(GoogleClient.createFrom).to.have.been.calledWith(stepContext, auditUrl);
-      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
+      const createCall = context.dataAccess.Opportunity.create.getCall(0);
+      expect(createCall).to.not.be.undefined;
+      const actualOppty = createCall.args[0];
+      // Check all fields except tags (which are now merged with hardcoded tags)
+      const expectedWithoutTags = { ...expectedOppty };
+      delete expectedWithoutTags.tags;
+      const actualWithoutTags = { ...actualOppty };
+      delete actualWithoutTags.tags;
+      expect(actualWithoutTags).to.deep.equal(expectedWithoutTags);
+      // Verify tags include hardcoded tags
+      expect(actualOppty.tags).to.be.an('array');
+      expect(actualOppty.tags).to.include('Core Web Vitals');
+      expect(actualOppty.tags).to.include('Web Performance');
+      // Note: We don't check the full expectedOppty here because tags are merged with hardcoded tags
 
       // make sure that newly oppty has all 4 new suggestions
       expect(oppty.addSuggestions).to.have.been.calledOnce;
@@ -431,11 +444,24 @@ describe('collectCWVDataAndImportCode Tests', () => {
 
       const stepContext = { ...context, site, audit: mockAudit, finalUrl: auditUrl };
       await expect(syncOpportunityAndSuggestionsStep(stepContext)).to.be.rejectedWith('big error happened');
-      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
+      const createCall = context.dataAccess.Opportunity.create.getCall(0);
+      expect(createCall).to.not.be.undefined;
+      const actualOppty = createCall.args[0];
+      // Check all fields except tags (which are now merged with hardcoded tags)
+      const expectedWithoutTags = { ...expectedOppty };
+      delete expectedWithoutTags.tags;
+      const actualWithoutTags = { ...actualOppty };
+      delete actualWithoutTags.tags;
+      expect(actualWithoutTags).to.deep.equal(expectedWithoutTags);
+      // Verify tags include hardcoded tags
+      expect(actualOppty.tags).to.be.an('array');
+      expect(actualOppty.tags).to.include('Core Web Vitals');
+      expect(actualOppty.tags).to.include('Web Performance');
+      // Note: We don't check the full expectedOppty here because tags are merged with hardcoded tags
       expect(context.log.error).to.have.been.calledOnceWith('Failed to create new opportunity for siteId site-id and auditId audit-id: big error happened');
 
       // make sure that no new suggestions are added
-      expect(oppty.addSuggestions).to.have.been.to.not.have.been.called;
+      expect(oppty.addSuggestions).to.not.have.been.called;
     });
 
     it('updates the existing opportunity object', async () => {
@@ -490,8 +516,20 @@ describe('collectCWVDataAndImportCode Tests', () => {
       await syncOpportunityAndSuggestionsStep(stepContext);
 
       expect(GoogleClient.createFrom).to.have.been.calledWith(stepContext, auditUrl);
-      expect(context.dataAccess.Opportunity.create)
-        .to.have.been.calledOnceWith(expectedOpptyWithoutGSC);
+      const createCall = context.dataAccess.Opportunity.create.getCall(0);
+      expect(createCall).to.not.be.undefined;
+      const actualOppty = createCall.args[0];
+      // Check all fields except tags (which are now merged with hardcoded tags)
+      const expectedWithoutTags = { ...expectedOpptyWithoutGSC };
+      delete expectedWithoutTags.tags;
+      const actualWithoutTags = { ...actualOppty };
+      delete actualWithoutTags.tags;
+      expect(actualWithoutTags).to.deep.equal(expectedWithoutTags);
+      // Verify tags include hardcoded tags
+      expect(actualOppty.tags).to.be.an('array');
+      expect(actualOppty.tags).to.include('Core Web Vitals');
+      expect(actualOppty.tags).to.include('Web Performance');
+      // Note: We don't check the full expectedOpptyWithoutGSC here because tags are merged with hardcoded tags
 
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
@@ -508,8 +546,20 @@ describe('collectCWVDataAndImportCode Tests', () => {
       await syncOpportunityAndSuggestionsStep(stepContext);
 
       expect(GoogleClient.createFrom).to.have.been.calledWith(stepContext, auditUrl);
-      expect(context.dataAccess.Opportunity.create)
-        .to.have.been.calledOnceWith(expectedOpptyWithoutGSC);
+      const createCall = context.dataAccess.Opportunity.create.getCall(0);
+      expect(createCall).to.not.be.undefined;
+      const actualOppty = createCall.args[0];
+      // Check all fields except tags (which are now merged with hardcoded tags)
+      const expectedWithoutTags = { ...expectedOpptyWithoutGSC };
+      delete expectedWithoutTags.tags;
+      const actualWithoutTags = { ...actualOppty };
+      delete actualWithoutTags.tags;
+      expect(actualWithoutTags).to.deep.equal(expectedWithoutTags);
+      // Verify tags include hardcoded tags
+      expect(actualOppty.tags).to.be.an('array');
+      expect(actualOppty.tags).to.include('Core Web Vitals');
+      expect(actualOppty.tags).to.include('Web Performance');
+      // Note: We don't check the full expectedOpptyWithoutGSC here because tags are merged with hardcoded tags
 
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];

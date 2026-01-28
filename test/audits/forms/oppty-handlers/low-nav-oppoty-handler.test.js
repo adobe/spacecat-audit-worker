@@ -164,7 +164,15 @@ describe('createLowNavigationOpportunities handler method', () => {
     await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
     const actualCall = dataAccessStub.Opportunity.create.getCall(0).args[0];
-    expect(actualCall).to.deep.equal(expectedOpportunityData);
+    // Check all fields except tags (which are now merged with hardcoded tags)
+    const expectedWithoutTags = { ...expectedOpportunityData };
+    delete expectedWithoutTags.tags;
+    const actualWithoutTags = { ...actualCall };
+    delete actualWithoutTags.tags;
+    expect(actualWithoutTags).to.deep.equal(expectedWithoutTags);
+    // Verify tags include hardcoded tags
+    expect(actualCall.tags).to.be.an('array');
+    expect(actualCall.tags).to.include('Form Navigation');
     expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] successfully synced opportunity for high page views low form nav audit type.');
   });
 
@@ -260,7 +268,15 @@ describe('createLowNavigationOpportunities handler method', () => {
     );
 
     const actualCall = dataAccessStub.Opportunity.create.getCall(0).args[0];
-    expect(actualCall).to.deep.equal(expectedOpportunityData);
+    // Check all fields except tags (which are now merged with hardcoded tags)
+    const expectedWithoutTags = { ...expectedOpportunityData };
+    delete expectedWithoutTags.tags;
+    const actualWithoutTags = { ...actualCall };
+    delete actualWithoutTags.tags;
+    expect(actualWithoutTags).to.deep.equal(expectedWithoutTags);
+    // Verify tags include hardcoded tags
+    expect(actualCall.tags).to.be.an('array');
+    expect(actualCall.tags).to.include('Form Navigation');
     expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] successfully synced opportunity for high page views low form nav audit type.');
   });
 

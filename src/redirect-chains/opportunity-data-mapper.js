@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 export function createOpportunityData(params = {}) {
@@ -25,7 +26,7 @@ export function createOpportunityData(params = {}) {
         'For each affected entry in the /redirects.json file, check if the redirect is valid. See the suggestion provided for details on how to resolve.',
       ],
     },
-    tags: ['Traffic Acquisition'],
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.REDIRECT_CHAINS, []),
     data: {
       dataSources: [DATA_SOURCES.SITE],
       projectedTrafficLost: projectedTrafficLost || 0,

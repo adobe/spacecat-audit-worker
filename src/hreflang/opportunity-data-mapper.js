@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 const OpptyData = {
@@ -27,7 +28,7 @@ const OpptyData = {
       'Consider adding "x-default" hreflang for pages targeting users who speak languages not specifically targeted.',
     ],
   },
-  tags: ['Traffic Acquisition', 'tech-seo'],
+  tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.HREFLANG, ['tech-seo']),
   data: {
     dataSources: [DATA_SOURCES.SITE],
   },
@@ -50,7 +51,7 @@ export function createOpportunityDataForElmo() {
         },
       ],
     },
-    tags: [...OpptyData.tags, 'llm'],
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.HREFLANG, ['llm']),
     data: {
       ...OpptyData.data,
       dataSources: [DATA_SOURCES.SITE],

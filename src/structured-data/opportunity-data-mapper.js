@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 export function createOpportunityData() {
@@ -21,7 +22,7 @@ export function createOpportunityData() {
     guidance: {
       steps: [],
     },
-    tags: ['Traffic acquisition', 'tech-seo'],
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.STRUCTURED_DATA, ['tech-seo']),
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.GSC, DATA_SOURCES.SITE],
     },

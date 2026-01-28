@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import { OPPORTUNITY_TYPES, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { DATA_SOURCES } from '../common/constants.js';
 
 export function createOpportunityData(props = {}) {
@@ -26,7 +27,7 @@ export function createOpportunityData(props = {}) {
         'Publish the changes to apply the updates to your live site.',
       ],
     },
-    tags: ['Traffic acquisition'],
+    tags: mergeTagsWithHardcodedTags(OPPORTUNITY_TYPES.INVALID_OR_MISSING_METADATA, []),
     data: {
       ...props,
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],

@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import {
   mapToOpportunity,
   mapToSuggestion,
@@ -79,6 +80,9 @@ export default async function handler(message, context) {
   }
 
   const entity = mapToOpportunity(siteId, url, audit, guidanceParsed);
+  if (entity.data?.opportunityType) {
+    entity.tags = mergeTagsWithHardcodedTags(entity.data.opportunityType, entity.tags);
+  }
   log.info(
     `Creating a new no-cta-above-the-fold opportunity for ${siteId} page: ${url}`,
   );

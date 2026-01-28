@@ -508,9 +508,19 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       expect(error.message).to.include('SQS error');
     }
 
-    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
-      expectedOpportunity,
-    );
+    const createCall = context.dataAccess.Opportunity.create.getCall(0);
+    expect(createCall).to.not.be.undefined;
+    const actualOppty = createCall.args[0];
+    // Check all fields except tags (which are now merged with hardcoded tags)
+    const expectedWithoutTags = { ...expectedOpportunity };
+    delete expectedWithoutTags.tags;
+    const actualWithoutTags = { ...actualOppty };
+    delete actualWithoutTags.tags;
+    expect(actualWithoutTags).to.deep.equal(expectedWithoutTags);
+    // Verify tags include hardcoded tags
+    expect(actualOppty.tags).to.be.an('array');
+    expect(actualOppty.tags).to.include('Internal links');
+    expect(actualOppty.tags).to.include('SEO');
   }).timeout(5000);
 
   it('creating a new opportunity object succeeds and sends SQS messages', async () => {
@@ -563,9 +573,19 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     const result = await handler.opportunityAndSuggestionsStep(context);
 
-    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
-      expectedOpportunity,
-    );
+    const createCall = context.dataAccess.Opportunity.create.getCall(0);
+    expect(createCall).to.not.be.undefined;
+    const actualOppty = createCall.args[0];
+    // Check all fields except tags (which are now merged with hardcoded tags)
+    const expectedWithoutTags = { ...expectedOpportunity };
+    delete expectedWithoutTags.tags;
+    const actualWithoutTags = { ...actualOppty };
+    delete actualWithoutTags.tags;
+    expect(actualWithoutTags).to.deep.equal(expectedWithoutTags);
+    // Verify tags include hardcoded tags
+    expect(actualOppty.tags).to.be.an('array');
+    expect(actualOppty.tags).to.include('Internal links');
+    expect(actualOppty.tags).to.include('SEO');
 
     expect(result.status).to.equal('complete');
 

@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendAltTextOpportunityToMystique, chunkArray, cleanupOutdatedSuggestions } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
@@ -77,6 +78,7 @@ export async function processAltTextWithMystique(context) {
       log.debug(`[${AUDIT_TYPE}]: Updated opportunity data for new audit run`);
     } else {
       log.debug(`[${AUDIT_TYPE}]: Creating new opportunity for site ${siteId}`);
+      const mergedTags = mergeTagsWithHardcodedTags(AUDIT_TYPE, ['seo', 'accessibility']);
       const opportunityDTO = {
         siteId,
         auditId: audit.getId(),
@@ -108,7 +110,7 @@ export async function processAltTextWithMystique(context) {
           mystiqueResponsesExpected: urlBatches.length,
           processedSuggestionIds: [],
         },
-        tags: ['seo', 'accessibility'],
+        tags: mergedTags,
       };
 
       altTextOppty = await Opportunity.create(opportunityDTO);

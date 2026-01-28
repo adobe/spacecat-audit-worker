@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, isNonEmptyObject, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import {
   filterForms,
   generateOpptyData,
@@ -141,6 +141,11 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
       // eslint-disable-next-line no-await-in-loop,max-len
       const { projectedConversionValue = null } = (await calculateProjectedConversionValue(context, auditData.siteId, opptyData)) || {};
 
+      const mergedTags = mergeTagsWithHardcodedTags(
+        FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+        [],
+      );
+
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.auditId,
@@ -149,7 +154,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         origin: 'AUTOMATION',
         title: 'Turn more visitors into leads and customers — optimizations for form conversion rate are ready',
         description: 'A smoother, more intuitive form experience boosts conversions and ROI from existing traffic.',
-        tags: ['Form Conversion'],
+        tags: mergedTags,
         data: {
           ...opptyData,
           projectedConversionValue,

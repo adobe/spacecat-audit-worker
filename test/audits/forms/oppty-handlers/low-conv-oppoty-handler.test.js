@@ -86,7 +86,29 @@ describe('createLowConversionOpportunities handler method', () => {
     await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
     // After applyOpportunityFilters, only top 2 opportunities by pageviews are created
     expect(dataAccessStub.Opportunity.create).to.be.callCount(2);
-    expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
+    // Verify tags are merged correctly for all created opportunities
+    for (let i = 0; i < 2; i++) {
+      const createdOpportunity = dataAccessStub.Opportunity.create.getCall(i).args[0];
+      expect(createdOpportunity.tags).to.be.an('array');
+      expect(createdOpportunity.tags).to.include('Conversion');
+      expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags: 'Form CTR', 'Conversion'
+    }
+    // Verify first opportunity matches expected data (excluding tags which are now merged)
+    const createdOpportunity = dataAccessStub.Opportunity.create.getCall(0).args[0];
+    const expectedData = { ...testData.opportunityData };
+    delete expectedData.tags;
+    const actualData = { ...createdOpportunity };
+    delete actualData.tags;
+    // Check if this is the right opportunity by comparing form URL
+    if (actualData.data.form === expectedData.data.form) {
+      expect(actualData).to.deep.equal(expectedData);
+    } else {
+      // If first call doesn't match, check second call
+      const secondOpportunity = dataAccessStub.Opportunity.create.getCall(1).args[0];
+      const secondActualData = { ...secondOpportunity };
+      delete secondActualData.tags;
+      expect(secondActualData).to.deep.equal(expectedData);
+    }
     // with empty guidance due to no scraping
     expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] Successfully synced opportunity for high-form-views-low-conversions audit type.');
     // asserting spacecat to mystique message for the last created opportunity
@@ -111,7 +133,17 @@ describe('createLowConversionOpportunities handler method', () => {
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     const { scrapeData2: scrapeData } = formScrapeData;
     await createLowConversionOpportunities(auditUrl, auditData2, scrapeData, context);
-    expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData2);
+    // Verify tags are merged correctly
+    const createdOpportunity = dataAccessStub.Opportunity.create.getCall(0).args[0];
+    expect(createdOpportunity.tags).to.be.an('array');
+    expect(createdOpportunity.tags).to.include('Conversion');
+    expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags: 'Form CTR', 'Conversion'
+    // Verify other fields match expected data (excluding tags which are now merged)
+    const expectedData = { ...testData.opportunityData2 };
+    delete expectedData.tags;
+    const actualData = { ...createdOpportunity };
+    delete actualData.tags;
+    expect(actualData).to.deep.equal(expectedData);
     // with empty guidance due to scrapedStatus = false
     expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] Successfully synced opportunity for high-form-views-low-conversions audit type.');
   });
@@ -127,10 +159,18 @@ describe('createLowConversionOpportunities handler method', () => {
       scrapeData,
       context,
     );
+    // Verify tags are merged correctly
+    const createdOpportunity = dataAccessStub.Opportunity.create.getCall(0).args[0];
+    expect(createdOpportunity.tags).to.be.an('array');
+    expect(createdOpportunity.tags).to.include('Conversion');
+    expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags: 'Form CTR', 'Conversion'
+    // Verify other fields match expected data (excluding tags which are now merged)
     const expectedOpportunityData = { ...testData.opportunityData3 };
-    // with large form guidance
     expectedOpportunityData.data.scrapedStatus = true;
-    expect(dataAccessStub.Opportunity.create).to.be.calledWith(expectedOpportunityData);
+    delete expectedOpportunityData.tags;
+    const actualData = { ...createdOpportunity };
+    delete actualData.tags;
+    expect(actualData).to.deep.equal(expectedOpportunityData);
     expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] Successfully synced opportunity for high-form-views-low-conversions audit type.');
   });
 
@@ -140,7 +180,17 @@ describe('createLowConversionOpportunities handler method', () => {
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     const { scrapeData4: scrapeData } = formScrapeData;
     await createLowConversionOpportunities(auditUrl, auditData2, scrapeData, context);
-    expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData4);
+    // Verify tags are merged correctly
+    const createdOpportunity = dataAccessStub.Opportunity.create.getCall(0).args[0];
+    expect(createdOpportunity.tags).to.be.an('array');
+    expect(createdOpportunity.tags).to.include('Conversion');
+    expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags: 'Form CTR', 'Conversion'
+    // Verify other fields match expected data (excluding tags which are now merged)
+    const expectedData = { ...testData.opportunityData4 };
+    delete expectedData.tags;
+    const actualData = { ...createdOpportunity };
+    delete actualData.tags;
+    expect(actualData).to.deep.equal(expectedData);
 
     // with Generic guidance
     expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] Successfully synced opportunity for high-form-views-low-conversions audit type.');
@@ -220,7 +270,17 @@ describe('createLowConversionOpportunities handler method', () => {
       context,
     );
     expect(dataAccessStub.Opportunity.create).to.be.callCount(1);
-    expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData5);
+    // Verify tags are merged correctly
+    const createdOpportunity = dataAccessStub.Opportunity.create.getCall(0).args[0];
+    expect(createdOpportunity.tags).to.be.an('array');
+    expect(createdOpportunity.tags).to.include('Conversion');
+    expect(createdOpportunity.tags.length).to.be.above(1); // Should have hardcoded tags: 'Form CTR', 'Conversion'
+    // Verify other fields match expected data (excluding tags which are now merged)
+    const expectedData = { ...testData.opportunityData5 };
+    delete expectedData.tags;
+    const actualData = { ...createdOpportunity };
+    delete actualData.tags;
+    expect(actualData).to.deep.equal(expectedData);
     expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] Successfully synced opportunity for high-form-views-low-conversions audit type.');
   });
 

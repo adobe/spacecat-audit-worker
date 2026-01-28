@@ -1169,28 +1169,29 @@ describe('Sitemap Audit', () => {
         context,
       );
 
-      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
-        {
-          siteId: 'site-id',
-          auditId: 'audit-id',
-          runbook:
-            'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
-          type: 'sitemap',
-          origin: 'AUTOMATION',
-          title: 'Help search engines crawl your site easily — fixes for sitemap issues are queued up',
-          description: 'A clean, error-free sitemap ensures all important pages are indexed efficiently and discovered faster.',
-          guidance: {
-            steps: [
-              'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
-              'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
-            ],
-          },
-          tags: ['Traffic Acquisition'],
-          data: {
-            dataSources: [DATA_SOURCES.SITE],
-          },
-        },
+      const createCall = context.dataAccess.Opportunity.create.getCall(0);
+      expect(createCall).to.not.be.undefined;
+      const actualOppty = createCall.args[0];
+      expect(actualOppty.siteId).to.equal('site-id');
+      expect(actualOppty.auditId).to.equal('audit-id');
+      expect(actualOppty.runbook).to.equal(
+        'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Sitemap_Runbook.docx?d=w6e82533ac43841949e64d73d6809dff3&csf=1&web=1&e=GDaoxS',
       );
+      expect(actualOppty.type).to.equal('sitemap');
+      expect(actualOppty.origin).to.equal('AUTOMATION');
+      expect(actualOppty.title).to.equal('Help search engines crawl your site easily — fixes for sitemap issues are queued up');
+      expect(actualOppty.description).to.equal('A clean, error-free sitemap ensures all important pages are indexed efficiently and discovered faster.');
+      expect(actualOppty.guidance.steps).to.deep.equal([
+        'Verify each URL in the sitemap, identifying any that do not return a 200 (OK) status code.',
+        'Check RUM data to identify any sitemap pages with unresolved 3xx, 4xx or 5xx status codes – it should be none of them.',
+      ]);
+      // Verify tags include hardcoded tags
+      expect(actualOppty.tags).to.be.an('array');
+      expect(actualOppty.tags).to.include('Sitemap');
+      expect(actualOppty.tags).to.include('SEO');
+      expect(actualOppty.data).to.deep.equal({
+        dataSources: [DATA_SOURCES.SITE],
+      });
     });
 
     it('should handle updating when opportunity was already defined', async () => {

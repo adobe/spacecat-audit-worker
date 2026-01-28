@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyObject, mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import {
   FORM_OPPORTUNITY_TYPES, OPPTY_OPTIONS_ALL, OPPORTUNITY_LIMIT, ORIGINS,
 } from '../constants.js';
@@ -71,6 +71,8 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
       // eslint-disable-next-line no-await-in-loop,max-len
       const { projectedConversionValue = null } = (await calculateProjectedConversionValue(context, auditData.siteId, opptyData)) || {};
 
+      const mergedTags = mergeTagsWithHardcodedTags(FORM_OPPORTUNITY_TYPES.LOW_VIEWS, ['Form Placement']);
+
       const opportunityData = {
         siteId: auditData.siteId,
         auditId: auditData.auditId,
@@ -79,7 +81,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         origin: 'AUTOMATION',
         title: 'Your form isn\'t getting enough views — optimizations to drive visibility prepared',
         description: 'Poorly placed or hidden forms reduce leads — increasing visibility improves submission rates.',
-        tags: ['Form Placement'],
+        tags: mergedTags,
         data: {
           ...opptyData,
           projectedConversionValue,

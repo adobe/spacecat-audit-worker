@@ -2644,7 +2644,9 @@ describe('Redirect Chains Audit', () => {
         expect(opportunityData.guidance.steps[0]).to.include('check if the redirect is valid');
 
         expect(opportunityData).to.have.property('tags');
-        expect(opportunityData.tags).to.deep.equal(['Traffic Acquisition']);
+        expect(opportunityData.tags).to.be.an('array');
+        expect(opportunityData.tags).to.include('Redirect Chains');
+        expect(opportunityData.tags).to.include('SEO');
 
         expect(opportunityData).to.have.property('data');
         expect(opportunityData.data).to.have.property('dataSources');

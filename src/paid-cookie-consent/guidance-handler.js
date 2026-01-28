@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { mergeTagsWithHardcodedTags } from '@adobe/spacecat-shared-utils';
 import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
 
 function getGuidanceObj(guidance) {
@@ -44,6 +45,8 @@ export default async function handler(message, context) {
   }
 
   const entity = mapToPaidOpportunity(siteId, url, audit, guidanceParsed);
+  entity.tags = mergeTagsWithHardcodedTags('consent-banner', entity.tags);
+
   // Always create a new opportunity
   log.debug(`Creating new paid-cookie-consent opportunity for ${siteId} page: ${url}`);
 
