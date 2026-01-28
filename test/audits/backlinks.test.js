@@ -16,6 +16,7 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import auditDataMock from '../fixtures/broken-backlinks/audit.json' with { type: 'json' };
 import rumTraffic from '../fixtures/broken-backlinks/all-traffic.json' with { type: 'json' };
 import {
@@ -150,6 +151,38 @@ describe('Backlinks Tests', function () {
     const auditData = await brokenBacklinksAuditRunner(auditUrl, context, siteWithExcludedUrls);
 
     expect(auditData.auditResult.brokenBacklinks).to.deep.equal(withoutExcluded);
+  });
+
+  it('should handle malformed URL in excludedURLs gracefully', async () => {
+    const { brokenBacklinks } = auditDataMock.auditResult;
+    // Create site with invalid URL in excludedURLs (http://% will throw in URL constructor)
+    const siteWithInvalidExcludedUrl = {
+      ...siteWithExcludedUrls,
+      getConfig: () => Config({
+        handlers: {
+          'broken-backlinks': {
+            excludedURLs: ['http://%', excludedUrl], // Malformed URL + valid URL
+          },
+        },
+      }),
+    };
+    const expectedBrokenBacklinks = auditDataMock.auditResult.brokenBacklinks.filter(
+      (a) => a.url_to !== excludedUrl,
+    );
+    context.site = siteWithInvalidExcludedUrl;
+    ahrefsMock(siteWithInvalidExcludedUrl.getBaseURL(), { backlinks: brokenBacklinks });
+
+    const result = await runAuditAndImportTopPages(context);
+    // Should still filter valid excludedURL even with malformed URL present
+    expect(result).to.deep.equal({
+      type: 'top-pages',
+      siteId: siteWithExcludedUrls.getId(),
+      auditResult: {
+        brokenBacklinks: expectedBrokenBacklinks,
+        finalUrl: auditUrl,
+      },
+      fullAuditRef: auditDataMock.fullAuditRef,
+    });
   });
 
   it('should run audit and send urls for scraping step', async () => {
