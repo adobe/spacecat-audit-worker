@@ -273,6 +273,31 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
  * @param {Set<string>} [visitedUrls=new Set()] - A set of visited URLs to detect redirect loops.
  * @returns {Promise<Object>} An object with the check result and any error if the check failed.
  */
+/**
+ * Retrieves authentication options for preview pages
+ * @param {boolean} isPreview - Whether the page is a preview page
+ * @param {string} baseURL - The base URL
+ * @param {object} site - Site object
+ * @param {object} context - Audit context
+ * @param {object} log - Logger
+ * @returns {Promise<object>} Options object with headers if authentication is successful
+ */
+export async function getPreviewAuthOptions(isPreview, baseURL, site, context, log) {
+  const options = {};
+  if (isPreview) {
+    try {
+      log.info(`Retrieving page authentication for pageUrl ${baseURL}`);
+      const token = await retrievePageAuthentication(site, context);
+      options.headers = {
+        Authorization: `token ${token}`,
+      };
+    } catch (error) {
+      log.error(`Error retrieving page authentication for pageUrl ${baseURL}: ${error.message}`);
+    }
+  }
+  return options;
+}
+
 export async function validateCanonicalRecursively(
   canonicalUrl,
   log,
@@ -370,7 +395,6 @@ export function generateCanonicalSuggestion(checkType) {
 /**
  * Step 3: Process scraped content and generate audit results
  */
-/* c8 ignore start */
 export async function processScrapedContent(context) {
   context.log.info('CANONICAL[20012026] - 1processScrapedContent - START');
   const {
@@ -562,18 +586,7 @@ export async function processScrapedContent(context) {
           // if not self-referenced - validate accessibility
           log.info(`CANONICAL[20012026] - Canonical URL points to different page, validating accessibility: ${canonicalUrl}`);
 
-          const options = {};
-          if (isPreview) {
-            try {
-              log.info(`Retrieving page authentication for pageUrl ${baseURL}`);
-              const token = await retrievePageAuthentication(site, context);
-              options.headers = {
-                Authorization: `token ${token}`,
-              };
-            } catch (error) {
-              log.error(`Error retrieving page authentication for pageUrl ${baseURL}: ${error.message}`);
-            }
-          }
+          const options = await getPreviewAuthOptions(isPreview, baseURL, site, context, log);
 
           const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log, options);
           checks.push(...urlContentCheck);
@@ -793,7 +806,6 @@ export async function processScrapedContent(context) {
     auditResult: results,
   };
 }
-/* c8 ignore stop */
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
