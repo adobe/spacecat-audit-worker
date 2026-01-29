@@ -592,7 +592,8 @@ export async function submitForScraping(context) {
   // Merge URLs ensuring uniqueness while handling www vs non-www differences
   const finalUrls = mergeUniqueUrls(topPagesUrls, agenticUrls, includedURLs);
 
-  log.info('prerender_submit_scraping', {
+  log.info({
+    event: 'prerender_submit_scraping',
     submittedUrls: finalUrls.length,
     agenticUrls: agenticUrls.length,
     topPagesUrls: topPagesUrls.length,
@@ -832,7 +833,8 @@ export async function processOpportunityAndSuggestions(
 
   const isPaid = await isPaidLLMOCustomer(context);
 
-  log.info('prerender_suggestions_sync_metrics', {
+  log.info({
+    event: 'prerender_suggestions_sync_metrics',
     siteId: auditData.siteId,
     baseUrl: auditUrl,
     isPaidLLMOCustomer: isPaid,

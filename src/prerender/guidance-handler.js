@@ -206,7 +206,8 @@ export default async function handler(message, context) {
         const isPaid = await isPaidLLMOCustomer(context);
 
         // Log comprehensive quality metrics with paid customer flag
-        log.info('prerender_ai_summary_metrics', {
+        log.info({
+          event: 'prerender_ai_summary_metrics',
           siteId,
           baseUrl: site.getBaseURL(),
           opportunityId,
