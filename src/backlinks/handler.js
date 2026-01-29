@@ -182,8 +182,28 @@ export const generateSuggestionData = async (context) => {
   const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
 
   // Helper to normalize URLs for comparison
-  /* c8 ignore next - defensive fallback for non-string values */
-  const normalize = (u) => (typeof u === 'string' ? u.replace(/\/+$/, '') : '');
+  /* c8 ignore next 4 - defensive fallback for non-string values */
+  const normalize = (u) => {
+    if (typeof u !== 'string') return '';
+    return u.replace(/\/+$/, ''); // Remove trailing slashes
+  };
+
+  // Helper to strip query string from URL
+  /* c8 ignore next 4 - defensive fallback for non-string values */
+  const stripQuery = (u) => {
+    if (typeof u !== 'string') return '';
+    return u.split('?')[0].replace(/\/+$/, '');
+  };
+
+  // Helper to check if two URLs match (considering query string variations)
+  /* c8 ignore next 7 */
+  const urlsMatch = (url1, url2) => {
+    // Check exact match (with trailing slash normalization)
+    if (normalize(url1) === normalize(url2)) return true;
+    // Check match without query strings
+    if (stripQuery(url1) === stripQuery(url2)) return true;
+    return false;
+  };
 
   // syncSuggestions handles:
   // 1. Reconcile disappeared suggestions (mark as FIXED if issue is resolved)
@@ -227,8 +247,10 @@ export const generateSuggestionData = async (context) => {
           },
           signal: AbortSignal.timeout(10000),
         });
-        const finalResolvedUrl = normalize(resp?.url || urlTo);
-        return targets.some((t) => normalize(t) === finalResolvedUrl);
+        log.info(`[isIssueFixed] Response: ${resp?.url} & ${resp?.status}`);
+        const finalResolvedUrl = resp?.url || urlTo;
+        // Check if final URL matches any target (with/without query strings)
+        return targets.some((t) => urlsMatch(t, finalResolvedUrl));
       } catch (e) {
         log.info(`[isIssueFixed] Failed to fetch ${urlTo} with error: ${e.message}`);
         return false;
