@@ -69,48 +69,40 @@ https://example.com/page3,17,2100,Product,business acquisition
 
 ## Output Files
 
-The script generates up to 4 CSV files in the `src/on-page-seo/output/` directory:
+The script generates up to 2 CSV files in the `src/on-page-seo/output/` directory:
 
 ### 1. `{input-name}-filtered-opportunities.csv`
 
-Selected opportunities ranked by opportunity score.
+Selected opportunities ranked by opportunity score, with technical check results.
 
 **Additional columns added:**
-- `opportunity_score` - Calculated traffic gain potential
-- `selected_rank` - Ranking (1, 2, 3, etc.)
+- `opportunity_score` - Calculated traffic gain potential (estimated traffic gain)
+- `selected_rank` - Ranking among selected opportunities (1, 2, 3, etc.)
+- `serp_eligibility` - Reason for inclusion/exclusion (e.g., "ELIGIBLE (4-20)", "TOO_LOW (31+)")
+- `technical_check_passed` - YES, NO, or NOT_CHECKED
+- `technical_issue_details` - Specific blocker details (only if failed)
 
-**Use this for:** Understanding which URLs were selected and why
+**Use this for:** Understanding which URLs were selected, their priority ranking, and any technical blockers
 
-### 2. `{input-name}-technical-checks-all.csv`
+### 2. `{input-name}-all-urls-with-checks.csv`
 
-All URLs with complete technical validation results.
+All URLs with opportunity scores, rankings, and technical validation results.
 
-**Technical check columns:**
-- `indexable` - Overall pass/fail (1 = clean, 0 = blocked)
-- `blockers` - Comma-separated list of blocker types
-- `blocker_details` - Human-readable explanation of issues
-- `http_status` - HTTP response code (200, 404, etc.)
-- `http_passed` - HTTP status check result
-- `redirect_count` - Number of redirects in chain
-- `redirect_passed` - Redirect check result
-- `canonical_url` - Detected canonical URL
-- `canonical_passed` - Canonical check result
-- `noindex_passed` - Noindex check result
-- `robots_txt_passed` - Robots.txt check result
+**Additional columns added:**
+- `serp_position` - Current SERP ranking position
+- `serp_eligibility` - Eligibility status (ELIGIBLE, TOO_HIGH, TOO_LOW)
+- `selected_opportunity` - YES or NO
+- `opportunity_score` - Estimated traffic gain for all URLs
+- `opportunity_rank_all` - Ranking among all URLs by score
+- `opportunity_rank_selected` - Ranking among selected opportunities (if selected)
+- `technical_check_passed` - YES, NO, or NOT_CHECKED
+- `technical_issue_details` - Specific blocker details (only if failed)
 
-**Use this for:** Complete technical audit of all checked URLs
+Plus all original CSV columns (keyword, url, volume_per_month, etc.)
 
-### 3. `{input-name}-technical-checks-clean.csv`
+**Use this for:** Comprehensive view of all URLs - see which are eligible, which were selected, opportunity scores for all, and technical validation status
 
-Only URLs that passed all technical checks (indexable = 1).
-
-**Use this for:** URLs ready for content optimization
-
-### 4. `{input-name}-technical-checks-blocked.csv`
-
-Only URLs with technical issues (indexable = 0).
-
-**Use this for:** URLs requiring technical fixes before content optimization
+**Note:** This file is only generated when using `--check-all` mode.
 
 ## Options
 
@@ -119,7 +111,7 @@ Only URLs with technical issues (indexable = 0).
 Select top N opportunities by opportunity score (default: 3).
 
 ```bash
-node test-on-page-seo.mjs suggestions.csv --top 5
+node src/on-page-seo/test-opportunities.mjs src/on-page-seo/input/suggestions.csv --top 5
 ```
 
 ### `--check-all`
@@ -127,7 +119,7 @@ node test-on-page-seo.mjs suggestions.csv --top 5
 Run technical checks on ALL URLs in the input CSV, not just selected opportunities.
 
 ```bash
-node test-on-page-seo.mjs suggestions.csv --check-all
+node src/on-page-seo/test-opportunities.mjs src/on-page-seo/input/suggestions.csv --check-all
 ```
 
 This is useful for:
@@ -140,7 +132,7 @@ This is useful for:
 Run technical checks only on the selected top N opportunities.
 
 ```bash
-node test-on-page-seo.mjs suggestions.csv --check-selected
+node src/on-page-seo/test-opportunities.mjs src/on-page-seo/input/suggestions.csv --check-selected
 ```
 
 ## Opportunity Selection Logic
@@ -173,7 +165,14 @@ opportunityScore = searchVolume × (targetCTR - currentCTR)
 - Position 5: 10%
 - Position 6-10: 8% → 3%
 
-**Target Position:** Current position - 3 (aim to improve by ~3 positions)
+**Target Position (tier-based approach):**
+- Positions 21-30 → Target: 20 (get onto page 2)
+- Positions 11-20 → Target: 10 (get onto page 1)
+- Positions 6-10 → Target: 5 (get into top 5)
+- Positions 4-5 → Target: 3 (get into top 3)
+- Positions 1-3 → Target: 1 (become #1)
+
+This targets the next major CTR breakpoint for more realistic opportunity estimates.
 
 ### Step 3: Ranking & Selection
 
@@ -266,7 +265,7 @@ grep ",NO," src/on-page-seo/output/suggestions-all-urls-with-checks.csv | wc -l
 Check if the CSV has the expected columns and data:
 
 ```bash
-node test-on-page-seo.mjs suggestions.csv
+node src/on-page-seo/test-opportunities.mjs src/on-page-seo/input/suggestions.csv
 # Watch for warnings about missing columns
 ```
 
