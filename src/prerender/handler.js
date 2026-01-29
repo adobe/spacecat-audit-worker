@@ -625,12 +625,13 @@ export async function submitForScraping(context) {
  * @param {string} auditUrl - Audited URL
  * @param {Object} auditData - Audit data with results
  * @param {Object} context - Processing context
+ * @param {boolean} isPaid - Whether the customer is a paid LLMO customer
  * @returns {Promise<void>}
  */
-export async function createScrapeForbiddenOpportunity(auditUrl, auditData, context) {
+export async function createScrapeForbiddenOpportunity(auditUrl, auditData, context, isPaid) {
   const { log } = context;
 
-  log.info(`Prerender - Creating dummy opportunity for forbidden scraping. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+  log.info(`Prerender - Creating dummy opportunity for forbidden scraping. baseUrl=${auditUrl}, siteId=${auditData.siteId}, isPaidLLMOCustomer=${isPaid}`);
 
   await convertToOpportunity(
     auditUrl,
@@ -727,12 +728,14 @@ async function prepareDomainWideAggregateSuggestion(
  * @param {string} auditUrl - Audited URL
  * @param {Object} auditData - Audit data with results
  * @param {Object} context - Processing context
+ * @param {boolean} isPaid - Whether the customer is a paid LLMO customer
  * @returns {Promise<Object>} The created/updated opportunity entity
  */
 export async function processOpportunityAndSuggestions(
   auditUrl,
   auditData,
   context,
+  isPaid,
 ) {
   const { log } = context;
 
@@ -829,8 +832,6 @@ export async function processOpportunityAndSuggestions(
       };
     },
   });
-
-  const isPaid = await isPaidLLMOCustomer(context);
 
   log.info(`
     ${LOG_PREFIX} prerender_suggestions_sync_metrics:
@@ -932,7 +933,10 @@ export async function processContentAndGenerateOpportunities(context) {
   const siteId = site.getId();
   const startTime = process.hrtime();
 
-  log.info(`Prerender - Generate opportunities for baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+  // Check if this is a paid LLMO customer early so we can use it in all logs
+  const isPaid = await isPaidLLMOCustomer(context);
+
+  log.info(`Prerender - Generate opportunities for baseUrl=${site.getBaseURL()}, siteId=${siteId}, isPaidLLMOCustomer=${isPaid}`);
 
   try {
     let urlsToCheck = [];
@@ -986,7 +990,7 @@ export async function processContentAndGenerateOpportunities(context) {
     const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
     const successfulComparisons = comparisonResults.filter((result) => !result.error);
 
-    log.info(`Prerender - Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${urlsToCheck.length} URLs scraped`);
+    log.info(`Prerender - Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${urlsToCheck.length} URLs scraped. isPaidLLMOCustomer=${isPaid}`);
 
     // Check if all scrape.json files on S3 have statusCode=403
     const urlsWithScrapeJson = comparisonResults.filter((result) => result.hasScrapeMetadata);
@@ -994,7 +998,7 @@ export async function processContentAndGenerateOpportunities(context) {
     const scrapeForbidden = urlsWithScrapeJson.length > 0
       && urlsWithForbiddenScrape.length === urlsWithScrapeJson.length;
 
-    log.info(`Prerender - Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}. scrapeForbidden=${scrapeForbidden}, totalUrlsChecked=${comparisonResults.length}, urlsWithScrapeJson=${urlsWithScrapeJson.length}, urlsWithForbiddenScrape=${urlsWithForbiddenScrape.length}`);
+    log.info(`Prerender - Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}. scrapeForbidden=${scrapeForbidden}, totalUrlsChecked=${comparisonResults.length}, urlsWithScrapeJson=${urlsWithScrapeJson.length}, urlsWithForbiddenScrape=${urlsWithForbiddenScrape.length}, isPaidLLMOCustomer=${isPaid}`);
 
     // Remove internal tracking fields from results before storing
     // eslint-disable-next-line
@@ -1012,7 +1016,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
     let opportunityForGuidance = null;
 
-    /* c8 ignore next 12 - Opportunity processing branch, covered by integration tests */
+    /* c8 ignore next 13 - Opportunity processing branch, covered by integration tests */
     if (urlsNeedingPrerender.length > 0) {
       opportunityForGuidance = await processOpportunityAndSuggestions(
         site.getBaseURL(),
@@ -1023,6 +1027,7 @@ export async function processContentAndGenerateOpportunities(context) {
           scrapeJobId,
         },
         context,
+        isPaid,
       );
       /* c8 ignore next 12 */
     } else if (scrapeForbidden) {
@@ -1033,10 +1038,10 @@ export async function processContentAndGenerateOpportunities(context) {
         auditId: audit.getId(),
         auditResult,
         scrapeJobId,
-      }, context);
+      }, context, isPaid);
     } else {
       // No opportunities found - check if there are existing suggestions to mark as outdated
-      log.info(`Prerender - No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}`);
+      log.info(`Prerender - No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}, isPaidLLMOCustomer=${isPaid}`);
 
       // syncSuggestions with empty array marks all existing suggestions as OUTDATED
       const { Opportunity } = dataAccess;

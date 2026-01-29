@@ -983,12 +983,12 @@ describe('Prerender Audit', () => {
           },
         };
 
-        await mockHandler.createScrapeForbiddenOpportunity('https://example.com', auditData, context);
+        await mockHandler.createScrapeForbiddenOpportunity('https://example.com', auditData, context, true);
 
         expect(convertToOpportunityStub).to.have.been.calledOnce;
         expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com');
         expect(context.log.info).to.have.been.calledWith(
-          'Prerender - Creating dummy opportunity for forbidden scraping. baseUrl=https://example.com, siteId=test-site-id'
+          'Prerender - Creating dummy opportunity for forbidden scraping. baseUrl=https://example.com, siteId=test-site-id, isPaidLLMOCustomer=true'
         );
       });
     });
@@ -1331,7 +1331,7 @@ describe('Prerender Audit', () => {
           log: { info: logStub, debug: logStub },
         };
 
-        await processOpportunityAndSuggestions('https://example.com', auditData, context);
+        await processOpportunityAndSuggestions('https://example.com', auditData, context, false);
 
         expect(logStub).to.have.been.calledWith('Prerender - No prerender opportunities found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
       });
@@ -1351,7 +1351,7 @@ describe('Prerender Audit', () => {
           log: { info: logStub, debug: logStub },
         };
 
-        await processOpportunityAndSuggestions('https://example.com', auditData, context);
+        await processOpportunityAndSuggestions('https://example.com', auditData, context, false);
 
         expect(logStub).to.have.been.calledWith('Prerender - No URLs needing prerender found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
       });
@@ -1379,7 +1379,7 @@ describe('Prerender Audit', () => {
 
         // This will fail due to missing mocks, but we test the early logging
         try {
-          await processOpportunityAndSuggestions('https://example.com', auditData, context);
+          await processOpportunityAndSuggestions('https://example.com', auditData, context, true);
         } catch (error) {
           // Expected to fail due to missing convertToOpportunity and syncSuggestions imports
           // But we can verify the function attempts to process
@@ -1431,7 +1431,7 @@ describe('Prerender Audit', () => {
         };
 
         try {
-          await processOpportunityAndSuggestions('https://example.com', auditData, context);
+          await processOpportunityAndSuggestions('https://example.com', auditData, context, true);
         } catch (error) {
           // May still fail due to complex convertToOpportunity logic, but we should reach the opportunity creation
           // The key is that we test the filtering and logging logic
