@@ -40,6 +40,32 @@ $ npm test
 $ npm run lint
 ```
 
+### Testing Tools
+
+#### Opportunity Selection & Technical Validation
+
+For testing opportunity selection logic and technical SEO checks on CSV files:
+
+```bash
+# Test top N opportunities with technical checks
+node src/on-page-seo/test-opportunities.mjs input.csv --top 5
+
+# Run technical checks on all URLs
+node src/on-page-seo/test-opportunities.mjs input.csv --check-all
+```
+
+See [src/on-page-seo/README.md](src/on-page-seo/README.md) for detailed documentation.
+
+#### URL Validation
+
+For quick technical SEO validation of URLs from any CSV:
+
+```bash
+node validate-csv-urls.mjs urls.csv
+```
+
+This generates `blocked.csv` (URLs with issues) and `success.csv` (URLs passing all checks).
+
 ## Message Body Formats
 
 Audit worker consumes the `AUDIT_JOBS_QUEUE` queue, performs the requested audit, then queues the result to `AUDIT_RESULTS_QUEUE` for the interested parties to consume later on.
