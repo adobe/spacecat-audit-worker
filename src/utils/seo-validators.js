@@ -23,20 +23,151 @@ const ROBOTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Validates HTTP status (reuses sitemap logic)
- * Checks for 4xx and 5xx errors
+ * Checks for 4xx and 5xx errors, and detects cached error responses with 200 status
  * @param {string} url - URL to validate
  * @param {Object} log - Logger instance
  * @returns {Promise<Object>} Validation result
  */
 export async function validateHttpStatus(url, log) {
   try {
-    const response = await fetchWithHeadFallback(url, { redirect: 'follow' });
-    const is4xxOr5xx = response.status >= 400;
+    const headController = new AbortController();
+    const headTimeoutId = setTimeout(() => headController.abort(), 10000);
+
+    const headResponse = await fetch(url, {
+      method: 'HEAD',
+      redirect: 'follow',
+      signal: headController.signal,
+    });
+
+    clearTimeout(headTimeoutId);
+
+    const is4xxOr5xx = headResponse.status >= 400;
+
+    // If not 200, no need to check body
+    if (!headResponse.ok || headResponse.status !== 200) {
+      return {
+        passed: !is4xxOr5xx,
+        statusCode: headResponse.status,
+        blockerType: is4xxOr5xx ? 'http-error' : null,
+      };
+    }
+
+    // Check for "false 200s" - only for 200 responses
+    let isFalse200 = false;
+    let false200Message = null;
+
+    const contentType = headResponse.headers.get('content-type') || '';
+    const contentLength = headResponse.headers.get('content-length');
+
+    // LAYER 1: Check CDN/cache error headers (no body download needed)
+    const xError = headResponse.headers.get('x-error') || headResponse.headers.get('x-amz-error-code') || '';
+    if (xError) {
+      return {
+        passed: false,
+        statusCode: 200,
+        blockerType: 'http-error',
+        false200: true,
+        false200Message: `CDN Error: ${xError}`,
+      };
+    }
+
+    const contentLengthNum = parseInt(contentLength, 10);
+    if (!Number.isNaN(contentLengthNum) && contentLengthNum > 50000) {
+      // Files > 50KB are unlikely to be cached errors
+      return {
+        passed: true,
+        statusCode: 200,
+        blockerType: null,
+      };
+    }
+
+    // Skip body check for images, videos, PDFs, etc.
+    if (!contentType.includes('json') && !contentType.includes('html') && !contentType.includes('text')) {
+      return {
+        passed: true,
+        statusCode: 200,
+        blockerType: null,
+      };
+    }
+
+    // GET request with its own timeout for body content checks
+    try {
+      const getController = new AbortController();
+      const getTimeoutId = setTimeout(() => getController.abort(), 10000);
+
+      const getResponse = await fetch(url, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: getController.signal,
+      });
+
+      clearTimeout(getTimeoutId);
+
+      const text = await getResponse.text();
+      const textLength = text.length;
+
+      // LAYER 2: Check JSON error responses
+      if (contentType.includes('application/json') && textLength > 0 && textLength < 5000) {
+        try {
+          const json = JSON.parse(text);
+          const hasErrorStatus = json.status === 'error' || json.status === 'fail';
+          const hasErrorField = json.error && typeof json.error === 'string' && json.error.length > 0;
+          const hasErrorCode = json.errorCode && typeof json.errorCode === 'string';
+
+          const hasErrorCodePattern = json.code && typeof json.code === 'string' && (
+            json.code.match(/^(General-[0-9]+|Error[-_][0-9]+|ERR[-_][A-Z]+|FAIL[-_]|E[45][0-9]{2})/i)
+            || json.code.match(/^[A-Z]+[-_][45][0-9]{2}$/i)
+            || json.code.match(/^(TIMEOUT|UNAVAILABLE|GATEWAY_ERROR)$/i)
+          );
+
+          const hasErrorMessage = json.userMessage || json.systemMessage || json.message;
+
+          const hasAnyErrorIndicator = hasErrorStatus
+            || hasErrorField
+            || hasErrorCode
+            || hasErrorCodePattern;
+
+          if (hasAnyErrorIndicator && hasErrorMessage) {
+            isFalse200 = true;
+            false200Message = json.userMessage || json.systemMessage || json.message || json.error;
+          }
+        } catch (jsonError) {
+          // Not valid JSON, skip
+        }
+      }
+
+      // LAYER 3: Check HTML error pages
+      if (!isFalse200 && contentType.includes('text/html') && textLength < 10000) {
+        const lowerText = text.toLowerCase();
+
+        const criticalErrorPatterns = [
+          '502 bad gateway',
+          '503 service unavailable',
+          '504 gateway timeout',
+        ];
+        const first1k = lowerText.substring(0, 1000);
+
+        for (const pattern of criticalErrorPatterns) {
+          if (first1k.includes(pattern)) {
+            if (lowerText.includes('<html') && lowerText.includes('error')) {
+              isFalse200 = true;
+              false200Message = `CDN/Gateway error page: ${pattern}`;
+              break;
+            }
+          }
+        }
+      }
+    } catch (parseError) {
+      log.debug(`Could not parse response body for false 200 check: ${parseError.message}`);
+    }
+
+    const hasError = is4xxOr5xx || isFalse200;
 
     return {
-      passed: !is4xxOr5xx,
-      statusCode: response.status,
-      blockerType: is4xxOr5xx ? 'http-error' : null,
+      passed: !hasError,
+      statusCode: 200,
+      blockerType: hasError ? 'http-error' : null,
+      ...(isFalse200 && { false200: true, false200Message }),
     };
   } catch (error) {
     log.error(`HTTP status check failed for ${url}: ${error.message}`);

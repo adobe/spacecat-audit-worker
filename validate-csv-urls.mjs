@@ -31,6 +31,7 @@ const log = {
   info: (msg) => console.log(`ℹ️  ${msg}`),
   error: (msg) => console.error(`❌ ${msg}`),
   warn: (msg) => console.warn(`⚠️  ${msg}`),
+  debug: (msg) => {}, // Silent debug logs
 };
 
 /**
@@ -68,6 +69,9 @@ function processValidationResult(result) {
   // Build blocker details from checks
   if (result.checks?.httpStatus && !result.checks.httpStatus.passed) {
     blockerDetails = `HTTP ${result.checks.httpStatus.statusCode}`;
+    if (result.checks.httpStatus.false200 && result.checks.httpStatus.false200Message) {
+      blockerDetails += ` (False 200: ${result.checks.httpStatus.false200Message})`;
+    }
   }
   
   if (result.checks?.redirects && !result.checks.redirects.passed) {
