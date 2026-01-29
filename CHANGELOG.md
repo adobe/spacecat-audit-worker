@@ -1,3 +1,10 @@
+## [1.293.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.293.0...v1.293.1) (2026-01-29)
+
+
+### Bug Fixes
+
+* page citability track deployed status ([#1891](https://github.com/adobe/spacecat-audit-worker/issues/1891)) ([e7faf2a](https://github.com/adobe/spacecat-audit-worker/commit/e7faf2a16fce7e96d7c71f848a4f6be11800eafd))
+
 # [1.293.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.292.0...v1.293.0) (2026-01-29)
 
 
