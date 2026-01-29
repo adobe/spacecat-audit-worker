@@ -30,6 +30,8 @@ import sitemap from './sitemap/handler.js';
 import sitemapProductCoverage from './sitemap-product-coverage/handler.js';
 import redirectChains from './redirect-chains/handler.js';
 import paid from './paid-cookie-consent/handler.js';
+import paidKeywordOptimizer from './paid-keyword-optimizer/handler.js';
+import paidKeywordOptimizerGuidance from './paid-keyword-optimizer/guidance-handler.js';
 import noCTAAboveTheFold from './no-cta-above-the-fold/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
@@ -156,6 +158,8 @@ const HANDLERS = {
   'trigger:a11y-codefix': triggerA11yCodefix,
   'codefix:accessibility': accessibilityCodeFix,
   'guidance:paid-cookie-consent': paidConsentGuidance,
+  'paid-keyword-optimizer': paidKeywordOptimizer,
+  'guidance:paid-keyword-optimizer': paidKeywordOptimizerGuidance,
   'guidance:no-cta-above-the-fold': noCTAAboveTheFoldGuidance,
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
   'detect:page-types': pageTypeGuidance,
