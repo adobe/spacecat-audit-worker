@@ -170,10 +170,22 @@ export function buildExcludedUrlSuffixesFilter(suffixes = []) {
   if (!Array.isArray(suffixes) || suffixes.length === 0) {
     return '';
   }
-  const suffixConditions = suffixes
-    .map((suffix) => `url LIKE '%${suffix.replace(/'/g, "''")}'`)
-    .join(' OR ');
-  return `AND NOT (${suffixConditions})`;
+
+  const escapedSuffixes = suffixes
+    .filter(Boolean)
+    .map((suffix) => suffix
+      .trim()
+      .toLowerCase()
+      .replace(/'/g, "''") // SQL escape
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+
+  if (escapedSuffixes.length === 0) {
+    return '';
+  }
+
+  const pattern = `(?i)(${escapedSuffixes.join('|')})$`;
+
+  return `AND NOT regexp_like(url, '${pattern}')`;
 }
 
 async function createTopUrlsQueryWithLimit(options) {

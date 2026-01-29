@@ -245,7 +245,7 @@ describe('CDN Logs Query Builder', () => {
       expect(query).to.not.include('AND NOT');
     });
 
-    it('creates query with excluded URL suffixes filter', async () => {
+    it('creates query with excluded URL suffixes filter using regexp_like', async () => {
       const customOptions = createMockOptions({
         limit: 100,
         excludedUrlSuffixes: ['.pdf', '/robots.txt', '.xlsx'],
@@ -255,11 +255,12 @@ describe('CDN Logs Query Builder', () => {
 
       expect(query).to.be.a('string');
       expect(query).to.include('LIMIT 100');
-      expect(query).to.include('AND NOT');
-      expect(query).to.include("url LIKE '%.pdf'");
-      expect(query).to.include("url LIKE '%/robots.txt'");
-      expect(query).to.include("url LIKE '%.xlsx'");
-      expect(query).to.include(' OR ');
+      expect(query).to.include('AND NOT regexp_like(url,');
+      expect(query).to.include('(?i)');
+      expect(query).to.include('\\.pdf');
+      expect(query).to.include('/robots\\.txt');
+      expect(query).to.include('\\.xlsx');
+      expect(query).to.include(')$');
     });
 
     it('creates query with empty excluded URL suffixes array', async () => {
@@ -286,7 +287,8 @@ describe('CDN Logs Query Builder', () => {
 
       expect(query).to.be.a('string');
       // Single quotes should be escaped as double single quotes for SQL
-      expect(query).to.include("url LIKE '%/file''s.txt'");
+      expect(query).to.include("AND NOT regexp_like(url,");
+      expect(query).to.include("/file''s\\.txt");
     });
 
     it('includes date filtering for the specified week', async () => {
@@ -332,31 +334,50 @@ describe('CDN Logs Query Builder', () => {
       expect(result).to.equal('');
     });
 
-    it('builds correct filter for single suffix', () => {
-      const result = buildExcludedUrlSuffixesFilter(['.pdf']);
-      expect(result).to.equal("AND NOT (url LIKE '%.pdf')");
+    it('returns empty string for array with only falsy values', () => {
+      const result = buildExcludedUrlSuffixesFilter(['', null, undefined]);
+      expect(result).to.equal('');
     });
 
-    it('builds correct filter for multiple suffixes', () => {
+    it('builds correct filter for single suffix using regexp_like', () => {
+      const result = buildExcludedUrlSuffixesFilter(['.pdf']);
+      expect(result).to.equal("AND NOT regexp_like(url, '(?i)(\\.pdf)$')");
+    });
+
+    it('builds correct filter for multiple suffixes with alternation', () => {
       const result = buildExcludedUrlSuffixesFilter(['.pdf', '/robots.txt', '.xlsx']);
 
-      expect(result).to.include('AND NOT');
-      expect(result).to.include("url LIKE '%.pdf'");
-      expect(result).to.include("url LIKE '%/robots.txt'");
-      expect(result).to.include("url LIKE '%.xlsx'");
-      expect(result).to.include(' OR ');
+      expect(result).to.include('AND NOT regexp_like(url,');
+      expect(result).to.include('(?i)');
+      expect(result).to.include('\\.pdf');
+      expect(result).to.include('/robots\\.txt');
+      expect(result).to.include('\\.xlsx');
+      expect(result).to.include('|');
+      expect(result).to.include(')$');
     });
 
     it('escapes single quotes in suffixes to prevent SQL injection', () => {
       const result = buildExcludedUrlSuffixesFilter(["/file's.txt"]);
-      expect(result).to.equal("AND NOT (url LIKE '%/file''s.txt')");
+      expect(result).to.include("/file''s\\.txt");
     });
 
-    it('builds filter that matches URLs ending with suffix', () => {
-      const result = buildExcludedUrlSuffixesFilter(['/robots.txt']);
+    it('escapes regex special characters in suffixes', () => {
+      const result = buildExcludedUrlSuffixesFilter(['.pdf', '[test].doc']);
+      expect(result).to.include('\\.pdf');
+      expect(result).to.include('\\[test\\]\\.doc');
+    });
 
-      // The LIKE pattern should use % at the start to match any prefix
-      expect(result).to.equal("AND NOT (url LIKE '%/robots.txt')");
+    it('converts suffixes to lowercase for case-insensitive matching', () => {
+      const result = buildExcludedUrlSuffixesFilter(['.PDF', '/ROBOTS.TXT']);
+      expect(result).to.include('\\.pdf');
+      expect(result).to.include('/robots\\.txt');
+      expect(result).to.include('(?i)');
+    });
+
+    it('builds filter that matches URLs ending with suffix using $ anchor', () => {
+      const result = buildExcludedUrlSuffixesFilter(['/robots.txt']);
+      // The pattern should use $ to anchor match to end of string
+      expect(result).to.equal("AND NOT regexp_like(url, '(?i)(/robots\\.txt)$')");
     });
 
     it('handles all common file type suffixes', () => {
@@ -372,10 +393,21 @@ describe('CDN Logs Query Builder', () => {
 
       const result = buildExcludedUrlSuffixesFilter(suffixes);
 
-      expect(result).to.include('AND NOT');
-      suffixes.forEach((suffix) => {
-        expect(result).to.include(`url LIKE '%${suffix}'`);
-      });
+      expect(result).to.include('AND NOT regexp_like(url,');
+      expect(result).to.include('(?i)');
+      expect(result).to.include(')$');
+      // Check escaped versions of suffixes
+      expect(result).to.include('/sitemap\\.xml');
+      expect(result).to.include('/robots\\.txt');
+      expect(result).to.include('\\.ico');
+      expect(result).to.include('\\.pdf');
+    });
+
+    it('trims whitespace from suffixes', () => {
+      const result = buildExcludedUrlSuffixesFilter(['  .pdf  ', '  /robots.txt  ']);
+      expect(result).to.include('\\.pdf');
+      expect(result).to.include('/robots\\.txt');
+      expect(result).to.not.include('  ');
     });
   });
 });
