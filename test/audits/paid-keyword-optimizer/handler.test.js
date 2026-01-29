@@ -42,6 +42,7 @@ function createMockConfig(sandbox, overrides = {}) {
     getCdnLogsConfig: sandbox.stub(),
     getLlmoConfig: sandbox.stub(),
     getTokowakaConfig: sandbox.stub(),
+    getEdgeOptimizeConfig: sandbox.stub(),
     getBrandProfile: sandbox.stub().returns(null),
     ...overrides,
   };
