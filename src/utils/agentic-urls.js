@@ -17,6 +17,26 @@ import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.j
 
 const DEFAULT_TOP_AGENTIC_URLS_LIMIT = 200;
 
+// URL suffixes to exclude from agentic URL results
+const EXCLUDED_URL_SUFFIXES = [
+  '/sitemap.xml',
+  '/robots.txt',
+  '.ico',
+  '.ps',
+  '.dwf',
+  '.kml',
+  '.kmz',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.doc',
+  '.docx',
+  '.rtf',
+  '.swf',
+  '.pdf',
+];
+
 /**
  * Builds S3 config for Athena queries.
  * @param {Object} site - Site object
@@ -71,6 +91,7 @@ export async function getTopAgenticUrlsFromAthena(
       tableName: s3Config.tableName,
       site,
       limit,
+      excludedUrlSuffixes: EXCLUDED_URL_SUFFIXES,
     });
     log.info(`Agentic URLs - Executing Athena query for top agentic URLs... baseUrl=${baseUrl}`);
     const results = await athenaClient.query(

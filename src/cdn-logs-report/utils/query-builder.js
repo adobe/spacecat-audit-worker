@@ -163,7 +163,7 @@ async function createTopUrlsQuery(options) {
 
 async function createTopUrlsQueryWithLimit(options) {
   const {
-    periods, databaseName, tableName, site, limit,
+    periods, databaseName, tableName, site, limit, excludedUrlSuffixes = [],
   } = options;
 
   const filters = site.getConfig().getLlmoCdnlogsFilter();
@@ -174,11 +174,21 @@ async function createTopUrlsQueryWithLimit(options) {
     siteFilters,
   );
 
+  // Build exclusion filter for URL suffixes
+  let excludedUrlSuffixesFilter = '';
+  if (excludedUrlSuffixes.length > 0) {
+    const suffixConditions = excludedUrlSuffixes
+      .map((suffix) => `url LIKE '%${suffix.replace(/'/g, "''")}'`)
+      .join(' OR ');
+    excludedUrlSuffixesFilter = `AND NOT (${suffixConditions})`;
+  }
+
   return loadSql('top-agentic-urls-by-limit', {
     databaseName,
     tableName,
     whereClause,
     limit,
+    excludedUrlSuffixesFilter,
   });
 }
 

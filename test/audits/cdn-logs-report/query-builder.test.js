@@ -215,4 +215,101 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include('(?i)(ChatGPT|GPTBot|OAI-SearchBot)(?!.*(Tokowaka|Spacecat))');
     expect(query).to.include('(?i)Claude(?!-web)');
   });
+
+  describe('createTopUrlsQueryWithLimit', () => {
+    it('creates query with limit parameter', async () => {
+      const customOptions = createMockOptions({
+        limit: 100,
+      });
+
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(customOptions);
+
+      expect(query).to.be.a('string');
+      expect(query).to.include('LIMIT 100');
+      expect(query).to.include('test_db.test_table');
+    });
+
+    it('creates query without excluded URL suffixes filter when not provided', async () => {
+      const customOptions = createMockOptions({
+        limit: 50,
+      });
+
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(customOptions);
+
+      expect(query).to.be.a('string');
+      expect(query).to.include('LIMIT 50');
+      // Should not have any exclusion filter when excludedUrlSuffixes is not provided
+      expect(query).to.not.include('AND NOT');
+    });
+
+    it('creates query with excluded URL suffixes filter', async () => {
+      const customOptions = createMockOptions({
+        limit: 100,
+        excludedUrlSuffixes: ['.pdf', '/robots.txt', '.xlsx'],
+      });
+
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(customOptions);
+
+      expect(query).to.be.a('string');
+      expect(query).to.include('LIMIT 100');
+      expect(query).to.include('AND NOT');
+      expect(query).to.include("url LIKE '%.pdf'");
+      expect(query).to.include("url LIKE '%/robots.txt'");
+      expect(query).to.include("url LIKE '%.xlsx'");
+      expect(query).to.include(' OR ');
+    });
+
+    it('creates query with empty excluded URL suffixes array', async () => {
+      const customOptions = createMockOptions({
+        limit: 100,
+        excludedUrlSuffixes: [],
+      });
+
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(customOptions);
+
+      expect(query).to.be.a('string');
+      expect(query).to.include('LIMIT 100');
+      // Should not have exclusion filter when array is empty
+      expect(query).to.not.include('AND NOT');
+    });
+
+    it('escapes single quotes in excluded URL suffixes', async () => {
+      const customOptions = createMockOptions({
+        limit: 100,
+        excludedUrlSuffixes: ["/file's.txt"],
+      });
+
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(customOptions);
+
+      expect(query).to.be.a('string');
+      // Single quotes should be escaped as double single quotes for SQL
+      expect(query).to.include("url LIKE '%/file''s.txt'");
+    });
+
+    it('includes date filtering for the specified week', async () => {
+      const customOptions = createMockOptions({
+        limit: 100,
+      });
+
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(customOptions);
+
+      expect(query).to.include("year = '2025'");
+      expect(query).to.include("month = '01'");
+    });
+
+    it('handles site filters correctly', async () => {
+      const customOptions = createMockOptions({
+        limit: 100,
+        site: createMockSite({
+          getConfig: () => createMockSiteConfig({
+            getLlmoCdnlogsFilter: () => [{ value: ['test-path'], key: 'url' }],
+          }),
+        }),
+      });
+
+      const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(customOptions);
+
+      expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test-path)'))");
+    });
+  });
 });

@@ -396,5 +396,80 @@ describe('agentic-urls', () => {
       // Should keep absolute URLs but filter out relative paths
       expect(result).to.deep.equal(['https://example.com/page1']);
     });
+
+    it('should filter out URLs ending with excluded suffixes', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([
+        { url: '/page1' },
+        { url: '/document.pdf' }, // Should be filtered out (.pdf suffix)
+        { url: '/robots.txt' }, // Should be filtered out (/robots.txt suffix)
+        { url: '/page2' },
+      ]);
+
+      const result = await getTopAgenticUrlsFromAthena(site, context);
+
+      expect(result).to.deep.equal([
+        'https://www.example.com/page1',
+        'https://www.example.com/page2',
+      ]);
+    });
+
+    it('should filter out URLs ending with file extension suffixes', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([
+        { url: '/report.pdf' },
+        { url: '/data.xlsx' },
+        { url: '/presentation.pptx' },
+        { url: '/valid-page' },
+      ]);
+
+      const result = await getTopAgenticUrlsFromAthena(site, context);
+
+      expect(result).to.deep.equal([
+        'https://www.example.com/valid-page',
+      ]);
+    });
+
+    it('should filter out URLs ending with /robots.txt and /sitemap.xml', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([
+        { url: '/robots.txt' },
+        { url: '/sitemap.xml' },
+        { url: '/subdirectory/robots.txt' },
+        { url: '/valid-page' },
+      ]);
+
+      const result = await getTopAgenticUrlsFromAthena(site, context);
+
+      // All robots.txt and sitemap.xml URLs are filtered out
+      expect(result).to.deep.equal([
+        'https://www.example.com/valid-page',
+      ]);
+    });
+
+    it('should not filter out URLs that contain but do not end with excluded suffixes', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([
+        { url: '/robots.txt.backup' }, // Contains but doesn't end with /robots.txt
+        { url: '/pdf-viewer' }, // Contains 'pdf' but doesn't end with .pdf
+        { url: '/page1' },
+      ]);
+
+      const result = await getTopAgenticUrlsFromAthena(site, context);
+
+      expect(result).to.deep.equal([
+        'https://www.example.com/robots.txt.backup',
+        'https://www.example.com/pdf-viewer',
+        'https://www.example.com/page1',
+      ]);
+    });
   });
 });
