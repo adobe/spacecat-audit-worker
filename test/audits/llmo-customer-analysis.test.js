@@ -106,6 +106,7 @@ describe('LLMO Customer Analysis Handler', () => {
     let mockLlmoConfig;
     let mockRUMAPIClient;
     let mockGetRUMUrl;
+    let mockPublishToAdminHlx;
 
     beforeEach(async () => {
       sqs.sendMessage.resetHistory();
@@ -130,6 +131,11 @@ describe('LLMO Customer Analysis Handler', () => {
       };
 
       mockGetRUMUrl = sandbox.stub().resolves('example.com');
+
+      mockPublishToAdminHlx = sandbox.stub().resolves();
+
+      // Import real utility functions
+      const realUtils = await import('../../src/llmo-customer-analysis/utils.js');
 
       mockHandler = await esmock('../../src/llmo-customer-analysis/handler.js', {
         '@adobe/spacecat-shared-utils': {
@@ -175,6 +181,12 @@ describe('LLMO Customer Analysis Handler', () => {
               getServiceAccessToken: sandbox.stub().resolves({ access_token: 'mock-token' }),
             }),
           },
+        },
+        '../../src/llmo-customer-analysis/utils.js': {
+          getLastSunday: realUtils.getLastSunday,
+          compareConfigs: realUtils.compareConfigs,
+          areCategoryNamesDifferent: realUtils.areCategoryNamesDifferent,
+          publishToAdminHlx: mockPublishToAdminHlx,
         },
       });
     });
@@ -1440,6 +1452,118 @@ describe('LLMO Customer Analysis Handler', () => {
 
       // Verify configuration.save was called
       expect(configuration.save).to.have.been.called;
+    });
+
+    it('should publish query-index when dataFolder is provided in site config', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      const siteWithDataFolder = {
+        getSiteId: () => 'site-123',
+        getBaseURL: () => 'https://example.com',
+        getOrganizationId: () => 'org-123',
+        getConfig: () => ({
+          enableImport: sandbox.stub().resolves(),
+          isImportEnabled: sandbox.stub().returns(false),
+          llmo: {
+            dataFolder: 'dev/test-site',
+          },
+        }),
+        save: sandbox.stub().resolves(),
+        setConfig: sandbox.stub().resolves(),
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        siteWithDataFolder,
+        auditContext,
+      );
+
+      expect(mockPublishToAdminHlx).to.have.been.calledOnce;
+      expect(mockPublishToAdminHlx).to.have.been.calledWith(
+        'query-index',
+        'dev/test-site',
+        log,
+      );
+      expect(log.debug).to.have.been.calledWith(
+        'Checking that query index is published for site site-123 at data folder dev/test-site',
+      );
+    });
+
+    it('should not publish query-index when dataFolder is not provided in site config', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      const siteWithoutDataFolder = {
+        getSiteId: () => 'site-123',
+        getBaseURL: () => 'https://example.com',
+        getOrganizationId: () => 'org-123',
+        getConfig: () => ({
+          enableImport: sandbox.stub().resolves(),
+          isImportEnabled: sandbox.stub().returns(false),
+          llmo: {},
+        }),
+        save: sandbox.stub().resolves(),
+        setConfig: sandbox.stub().resolves(),
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        siteWithoutDataFolder,
+        auditContext,
+      );
+
+      expect(mockPublishToAdminHlx).to.not.have.been.called;
+    });
+
+    it('should not publish query-index when site config has no llmo section', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      // Using the default site config which has no llmo section
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(mockPublishToAdminHlx).to.not.have.been.called;
     });
 
   });
