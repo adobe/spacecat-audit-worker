@@ -40,6 +40,7 @@ function mapMystiqueSuggestionsToSuggestionDTOs(mystiquesuggestions, opportunity
           isDecorative: suggestion.isDecorative,
           xpath: suggestion.xpath,
           language: suggestion.language,
+          hasAltAttribute: suggestion.hasAltAttribute,
         }],
       },
       rank: 1,
