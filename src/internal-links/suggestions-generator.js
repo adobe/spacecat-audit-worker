@@ -256,25 +256,32 @@ export async function syncBrokenInternalLinksSuggestions({
   context,
   opportunityId,
 }) {
-  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
+  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}-${item.itemType || 'link'}`;
   await syncSuggestions({
     opportunity,
     newData: brokenInternalLinks,
     context,
     buildKey,
     statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
-    mapNewSuggestion: (entry) => ({
-      opportunityId,
-      type: 'CONTENT_UPDATE',
-      rank: entry.trafficDomain,
-      data: {
-        title: entry.title,
-        urlFrom: entry.urlFrom,
-        urlTo: entry.urlTo,
-        urlsSuggested: entry.urlsSuggested || [],
-        aiRationale: entry.aiRationale || '',
-        trafficDomain: entry.trafficDomain,
-      },
-    }),
+    mapNewSuggestion: (entry) => {
+      const itemType = entry.itemType || 'link';
+      const isAsset = itemType !== 'link';
+
+      return {
+        opportunityId,
+        type: isAsset ? 'ASSET_FIX' : 'CONTENT_UPDATE',
+        rank: isAsset ? 0 : entry.trafficDomain, // Assets don't have traffic domain
+        data: {
+          title: entry.title,
+          urlFrom: entry.urlFrom,
+          urlTo: entry.urlTo,
+          itemType,
+          priority: isAsset ? 'medium' : 'high',
+          urlsSuggested: isAsset ? [] : (entry.urlsSuggested || []),
+          aiRationale: entry.aiRationale || '',
+          trafficDomain: entry.trafficDomain,
+        },
+      };
+    },
   });
 }

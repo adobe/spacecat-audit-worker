@@ -139,7 +139,7 @@ describe('isLinkInaccessible', () => {
     const result = await isLinkInaccessible('https://example.com/forbidden', mockLog, 'test-site-id');
     expect(result).to.be.true;
     expect(mockLog.warn.calledWith(
-      '[broken-internal-links] [siteId=test-site-id] ⚠ WARNING: https://example.com/forbidden returned client error 403',
+      '[auditType=broken-internal-links] [siteId=test-site-id] ⚠ WARNING: https://example.com/forbidden returned client error 403',
     )).to.be.true;
   });
 
@@ -283,7 +283,7 @@ describe('isLinkInaccessible', () => {
     // Should return false (treat as accessible)
     expect(result).to.be.false;
     expect(mockLog.info.calledWith(
-      sinon.match(/\[siteId=test-site-id\].*⏱ TIMEOUT.*HEAD request timed out/),
+      sinon.match(/\[auditType=broken-internal-links\].*\[siteId=test-site-id\].*⏱ TIMEOUT.*HEAD request timed out/),
     )).to.be.true;
   });
 
@@ -427,5 +427,115 @@ describe('calculatePriority', () => {
     expect(result[0].trafficDomain).to.equal(1000);
     expect(result[1].trafficDomain).to.equal(500);
     expect(result[2].trafficDomain).to.equal(10);
+  });
+});
+
+describe('isLinkInaccessible - Asset Handling', () => {
+  let mockLog;
+
+  beforeEach(() => {
+    mockLog = {
+      info: sinon.stub(),
+      warn: sinon.stub(),
+      error: sinon.stub(),
+      debug: sinon.stub(),
+    };
+    nock.cleanAll();
+  });
+
+  afterEach(() => {
+    nock.cleanAll();
+  });
+
+  it('should handle static assets (PNG) with Range header', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .get('/image.png')
+      .reply(206, 'partial content');
+
+    const result = await isLinkInaccessible('https://example.com/image.png', mockLog, 'test-site-id');
+    expect(result).to.be.false;
+  });
+
+  it('should handle static assets (SVG) with Range header', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .get('/icon.svg')
+      .reply(200, 'svg content');
+
+    const result = await isLinkInaccessible('https://example.com/icon.svg', mockLog, 'test-site-id');
+    expect(result).to.be.false;
+  });
+
+  it('should handle static assets (CSS) with Range header', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .get('/styles.css')
+      .reply(200, 'css content');
+
+    const result = await isLinkInaccessible('https://example.com/styles.css', mockLog, 'test-site-id');
+    expect(result).to.be.false;
+  });
+
+  it('should handle static assets (JS) with Range header', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .get('/app.js')
+      .reply(200, 'js content');
+
+    const result = await isLinkInaccessible('https://example.com/app.js', mockLog, 'test-site-id');
+    expect(result).to.be.false;
+  });
+
+  it('should detect broken static assets', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .get('/missing.png')
+      .reply(404);
+
+    const result = await isLinkInaccessible('https://example.com/missing.png', mockLog, 'test-site-id');
+    expect(result).to.be.true;
+  });
+
+  it('should handle GET error with type field', async function call() {
+    this.timeout(6000);
+    const error = new Error('Connection refused');
+    error.type = 'system';
+
+    nock('https://example.com')
+      .head('/error-with-type')
+      .replyWithError(new Error('HEAD failed'))
+      .get('/error-with-type')
+      .replyWithError(error);
+
+    const result = await isLinkInaccessible('https://example.com/error-with-type', mockLog, 'test-site-id');
+    expect(result).to.be.true;
+  });
+
+  it('should handle GET error with errno field', async function call() {
+    this.timeout(6000);
+    const error = new Error('DNS lookup failed');
+    error.errno = -3008;
+
+    nock('https://example.com')
+      .head('/error-with-errno')
+      .replyWithError(new Error('HEAD failed'))
+      .get('/error-with-errno')
+      .replyWithError(error);
+
+    const result = await isLinkInaccessible('https://example.com/error-with-errno', mockLog, 'test-site-id');
+    expect(result).to.be.true;
+  });
+
+  it('should handle GET success with 3xx redirect status', async function call() {
+    this.timeout(6000);
+    nock('https://example.com')
+      .head('/redirect')
+      .reply(301)
+      .get('/redirect')
+      .reply(301, '', { Location: 'https://example.com/new-page' });
+
+    const result = await isLinkInaccessible('https://example.com/redirect', mockLog, 'test-site-id');
+    expect(result).to.be.false;
   });
 });
