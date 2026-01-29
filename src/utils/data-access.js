@@ -183,7 +183,6 @@ export const handleOutdatedSuggestions = async ({
     .filter((existing) => {
       const data = existing.getData?.();
       const isDeployed = data?.tokowakaDeployed || data?.edgeDeployed;
-      /* c8 ignore next 3 */
       if (isDeployed) {
         log.info(`[SuggestionSync] Preserving deployed suggestion: id=${existing.getId()}, url=${data?.url}, tokowakaDeployed=${data?.tokowakaDeployed}, edgeDeployed=${data?.edgeDeployed}`);
       }
