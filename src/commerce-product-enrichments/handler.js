@@ -102,6 +102,7 @@ export async function submitForScraping(context) {
     siteId: site.getId(),
     type: 'commerce-product-enrichments',
     allowCache: false,
+    maxScrapeAge: 0,
   };
 
   log.info(`${LOG_PREFIX} Step 2: submitForScraping completed, returning ${result.urls.length} URLs for scraping`);
