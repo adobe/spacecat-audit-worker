@@ -1,3 +1,10 @@
+# [1.294.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.293.2...v1.294.0) (2026-01-29)
+
+
+### Features
+
+* first version of paid keyword optimizer audit ([#1878](https://github.com/adobe/spacecat-audit-worker/issues/1878)) ([175ebd0](https://github.com/adobe/spacecat-audit-worker/commit/175ebd08310390f953c8f974287782aa545b074d))
+
 ## [1.293.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.293.1...v1.293.2) (2026-01-29)
 
 
