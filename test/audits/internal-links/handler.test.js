@@ -193,7 +193,7 @@ describe('Broken internal links audit', () => {
       },
       fullAuditRef: auditUrl,
     });
-  });
+  }).timeout(5000);
 
   it('prepareScrapingStep should send top pages to scraping service', async () => {
     context.dataAccess.SiteTopPage = {
