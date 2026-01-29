@@ -24,9 +24,35 @@ import handler from '../../../src/paid-keyword-optimizer/guidance-handler.js';
 use(sinonChai);
 use(chaiAsPromised);
 
+const TEST_URL = 'https://example-page/page1';
+
+// Helper to create a new message in the expected format
+function createMessage(overrides = {}) {
+  return {
+    auditId: 'auditId',
+    siteId: 'site',
+    insight: 'test insight',
+    rationale: 'test rationale',
+    recommendation: 'test recommendation',
+    body: {
+      issueSeverity: 'medium',
+      data: {
+        url: TEST_URL,
+        suggestions: [
+          { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
+          { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
+        ],
+        cpc: 0.075,
+        sum_traffic: 23423.5,
+      },
+    },
+    ...overrides,
+  };
+}
+
 // Helper to create a fresh stubbed opportunity instance
 function makeOppty({
-  id, type, status = 'NEW', updatedBy = 'system',
+  id, type, status = 'NEW', updatedBy = 'system', url = null,
 }) {
   return {
     getId: () => id,
@@ -39,14 +65,12 @@ function makeOppty({
     setStatus: sinon.stub(),
     save: sinon.stub().resolvesThis(),
     getType: () => type,
-    getData: () => ({}),
+    getData: () => ({ url }),
     getStatus: () => status,
     getUpdatedBy: () => updatedBy,
     getUpdatedAt: () => new Date().toISOString(),
   };
 }
-
-const TEST_URLS = ['https://example-page/page1', 'https://example-page/page2'];
 
 describe('Paid Keyword Optimizer Guidance Handler', () => {
   let sandbox;
@@ -81,7 +105,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
       setDescription: sinon.stub(),
       save: sinon.stub().resolvesThis(),
       getType: () => 'paid-keyword-optimizer',
-      getData: () => ({ urls: TEST_URLS }),
+      getData: () => ({ url: TEST_URL }),
       getStatus: () => 'NEW',
       getUpdatedBy: () => 'system',
       getUpdatedAt: () => new Date().toISOString(),
@@ -100,14 +124,14 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
 
     Audit.findById.resolves({
       getAuditId: () => 'auditId',
+      getAuditType: () => 'paid-keyword-optimizer',
       getAuditResult: () => ({
         totalPageViews: 10000,
         averageBounceRate: 0.45,
         predominantlyPaidPages: [
-          { url: TEST_URLS[0], bounceRate: 0.5, pageViews: 5000, trafficLoss: 2500 },
-          { url: TEST_URLS[1], bounceRate: 0.4, pageViews: 5000, trafficLoss: 2000 },
+          { url: TEST_URL, bounceRate: 0.5, pageViews: 5000, trafficLoss: 2500 },
         ],
-        predominantlyPaidCount: 2,
+        predominantlyPaidCount: 1,
         temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       }),
     });
@@ -121,37 +145,17 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
   it('should return notFound if no audit is found', async () => {
     Audit.findById.resolves(null);
     Opportunity.allBySiteId.resolves([]);
-    const message = {
-      auditId: '123',
-      siteId: 'site',
-      data: { urls: TEST_URLS, guidance: [{}] },
-    };
+    const message = createMessage();
+
     const result = await handler(message, context);
+
     expect(result.status).to.equal(notFound().status);
   });
 
   it('should create a new opportunity and suggestion', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
-    const guidance = [{
-      body: {
-        data: {
-          analysis: 'test analysis',
-          impact: {
-            business: 'business impact',
-            user: 'user impact',
-          },
-        },
-      },
-      insight: 'insight',
-      rationale: 'rationale',
-      recommendation: 'rec',
-    }];
-    const message = {
-      auditId: 'auditId',
-      siteId: 'site',
-      data: { urls: TEST_URLS, guidance },
-    };
+    const message = createMessage();
 
     const result = await handler(message, context);
 
@@ -160,158 +164,120 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     expect(result.status).to.equal(ok().status);
   });
 
-  it('should create new opportunity and mark existing paid-keyword-optimizer NEW system opportunities as IGNORED', async () => {
-    const existingOppty1 = makeOppty({
+  it('should mark existing opportunities for the same URL as IGNORED', async () => {
+    const existingOpptyForSameUrl = makeOppty({
       id: 'opptyId-1',
       type: 'paid-keyword-optimizer',
       status: 'NEW',
       updatedBy: 'system',
+      url: TEST_URL, // Same URL
     });
-    const existingOppty2 = makeOppty({
-      id: 'opptyId-2',
+
+    Opportunity.allBySiteId.resolves([existingOpptyForSameUrl]);
+    Opportunity.create.resolves(opportunityInstance);
+    const message = createMessage();
+
+    const result = await handler(message, context);
+
+    expect(Opportunity.create).to.have.been.called;
+    expect(Suggestion.create).to.have.been.called;
+
+    // The existing opportunity for the same URL should be marked as IGNORED
+    expect(existingOpptyForSameUrl.setStatus).to.have.been.calledWith('IGNORED');
+    expect(existingOpptyForSameUrl.save).to.have.been.called;
+
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should NOT mark existing opportunities for different URLs as IGNORED', async () => {
+    const existingOpptyForDifferentUrl = makeOppty({
+      id: 'opptyId-1',
       type: 'paid-keyword-optimizer',
       status: 'NEW',
       updatedBy: 'system',
+      url: 'https://example-page/different-page', // Different URL
     });
+
+    Opportunity.allBySiteId.resolves([existingOpptyForDifferentUrl]);
+    Opportunity.create.resolves(opportunityInstance);
+    const message = createMessage();
+
+    const result = await handler(message, context);
+
+    expect(Opportunity.create).to.have.been.called;
+    expect(Suggestion.create).to.have.been.called;
+
+    // The existing opportunity for a different URL should NOT be marked as IGNORED
+    expect(existingOpptyForDifferentUrl.setStatus).to.not.have.been.called;
+
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should only mark same-URL system opportunities as IGNORED, not user-modified ones', async () => {
+    const systemOpptyForSameUrl = makeOppty({
+      id: 'opptyId-system',
+      type: 'paid-keyword-optimizer',
+      status: 'NEW',
+      updatedBy: 'system',
+      url: TEST_URL,
+    });
+    const userOpptyForSameUrl = makeOppty({
+      id: 'opptyId-user',
+      type: 'paid-keyword-optimizer',
+      status: 'NEW',
+      updatedBy: 'user',
+      url: TEST_URL,
+    });
+
+    Opportunity.allBySiteId.resolves([systemOpptyForSameUrl, userOpptyForSameUrl]);
+    Opportunity.create.resolves(opportunityInstance);
+    const message = createMessage();
+
+    const result = await handler(message, context);
+
+    // Only the system opportunity should be marked as IGNORED
+    expect(systemOpptyForSameUrl.setStatus).to.have.been.calledWith('IGNORED');
+    expect(systemOpptyForSameUrl.save).to.have.been.called;
+
+    // The user-modified opportunity should not be touched
+    expect(userOpptyForSameUrl.setStatus).to.not.have.been.called;
+    expect(userOpptyForSameUrl.save).to.not.have.been.called;
+
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should not mark opportunities of different types as IGNORED', async () => {
     const wrongTypeOppty = makeOppty({
       id: 'opptyId-3',
       type: 'other-type',
       status: 'NEW',
       updatedBy: 'system',
+      url: TEST_URL,
     });
 
-    Opportunity.allBySiteId.resolves([wrongTypeOppty, existingOppty1, existingOppty2]);
+    Opportunity.allBySiteId.resolves([wrongTypeOppty]);
     Opportunity.create.resolves(opportunityInstance);
-    const guidance = [{
-      body: {
-        data: {
-          analysis: 'test analysis',
-          impact: {
-            business: 'business impact',
-            user: 'user impact',
-          },
-        },
-      },
-      insight: 'insight',
-      rationale: 'rationale',
-      recommendation: 'rec',
-    }];
-    const message = {
-      auditId: 'auditId',
-      siteId: 'site',
-      data: { urls: TEST_URLS, guidance },
-    };
+    const message = createMessage();
 
     const result = await handler(message, context);
 
-    expect(Opportunity.create).to.have.been.called;
-    expect(Suggestion.create).to.have.been.called;
-
-    // The paid-keyword-optimizer opportunities should be marked as IGNORED
-    expect(existingOppty1.setStatus).to.have.been.calledWith('IGNORED');
-    expect(existingOppty1.save).to.have.been.called;
-    expect(existingOppty2.setStatus).to.have.been.calledWith('IGNORED');
-    expect(existingOppty2.save).to.have.been.called;
-
-    // The non-matching type should not be touched
     expect(wrongTypeOppty.setStatus).to.not.have.been.called;
-
-    expect(result.status).to.equal(ok().status);
-  });
-
-  it('should not mark non-system paid-keyword-optimizer opportunities as IGNORED', async () => {
-    const systemOppty = makeOppty({
-      id: 'opptyId-system',
-      type: 'paid-keyword-optimizer',
-      status: 'NEW',
-      updatedBy: 'system',
-    });
-    const userOppty = makeOppty({
-      id: 'opptyId-user',
-      type: 'paid-keyword-optimizer',
-      status: 'NEW',
-      updatedBy: 'user',
-    });
-
-    Opportunity.allBySiteId.resolves([systemOppty, userOppty]);
-    Opportunity.create.resolves(opportunityInstance);
-    const guidance = [{
-      body: {
-        data: {
-          analysis: 'test analysis',
-          impact: { business: 'business', user: 'user' },
-        },
-      },
-      insight: 'insight',
-      rationale: 'rationale',
-      recommendation: 'rec',
-    }];
-    const message = {
-      auditId: 'auditId',
-      siteId: 'site',
-      data: { urls: TEST_URLS, guidance },
-    };
-
-    const result = await handler(message, context);
-
-    expect(Opportunity.create).to.have.been.called;
-    expect(Suggestion.create).to.have.been.called;
-
-    // Only system opportunity should be marked as IGNORED
-    expect(systemOppty.setStatus).to.have.been.calledWith('IGNORED');
-    expect(systemOppty.save).to.have.been.called;
-
-    // The user opportunity should not be touched
-    expect(userOppty.setStatus).to.not.have.been.called;
-    expect(userOppty.save).to.not.have.been.called;
-
-    expect(result.status).to.equal(ok().status);
-  });
-
-  it('should handle guidance body as JSON object with issueSeverity', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    Opportunity.create.resolves(opportunityInstance);
-    const guidance = [{
-      body: {
-        data: {
-          analysis: 'test analysis',
-          impact: { business: 'business', user: 'user' },
-        },
-        issueSeverity: 'high',
-      },
-      insight: 'insight',
-      rationale: 'rationale',
-      recommendation: 'rec',
-    }];
-    const message = {
-      auditId: 'auditId',
-      siteId: 'site',
-      data: { urls: TEST_URLS, guidance },
-    };
-
-    const result = await handler(message, context);
-
-    expect(Opportunity.create).to.have.been.called;
-    expect(Suggestion.create).to.have.been.called;
     expect(result.status).to.equal(ok().status);
   });
 
   it('should skip opportunity creation and log for low severity', async () => {
     Opportunity.allBySiteId.resolves([]);
-    Opportunity.create.resolves(opportunityInstance);
-    const body = {
-      issueSeverity: 'low',
-      data: {
-        analysis: 'test analysis',
-        impact: { business: 'business', user: 'user' },
+    const message = createMessage({
+      body: {
+        issueSeverity: 'low',
+        data: {
+          url: TEST_URL,
+          suggestions: [],
+          cpc: 0.05,
+          sum_traffic: 1000,
+        },
       },
-    };
-    const guidance = [{ body }];
-    const message = {
-      auditId: 'auditId',
-      siteId: 'site',
-      data: { urls: TEST_URLS, guidance },
-    };
+    });
 
     const result = await handler(message, context);
 
@@ -321,39 +287,19 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     expect(result.status).to.equal(ok().status);
   });
 
-  it('should create opportunity if severity is medium', async () => {
-    Opportunity.allBySiteId.resolves([]);
-    Opportunity.create.resolves(opportunityInstance);
-    const body = {
-      issueSeverity: 'Medium',
-      data: {
-        analysis: 'test analysis',
-        impact: { business: 'business', user: 'user' },
-      },
-    };
-    const guidance = [{ body }];
-    const message = {
-      auditId: 'auditId',
-      siteId: 'site',
-      data: { urls: TEST_URLS, guidance },
-    };
-
-    const result = await handler(message, context);
-
-    expect(Opportunity.create).to.have.been.called;
-    expect(Suggestion.create).to.have.been.called;
-    expect(result.status).to.equal(ok().status);
-  });
-
   it('should skip opportunity creation for none severity', async () => {
     Opportunity.allBySiteId.resolves([]);
-    const body = { issueSeverity: 'none', data: {} };
-    const guidance = [{ body }];
-    const message = {
-      auditId: 'auditId',
-      siteId: 'site',
-      data: { urls: TEST_URLS, guidance },
-    };
+    const message = createMessage({
+      body: {
+        issueSeverity: 'none',
+        data: {
+          url: TEST_URL,
+          suggestions: [],
+          cpc: 0.05,
+          sum_traffic: 1000,
+        },
+      },
+    });
 
     const result = await handler(message, context);
 
@@ -361,66 +307,70 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     expect(result.status).to.equal(ok().status);
   });
 
+  it('should create opportunity if severity is medium', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const message = createMessage({
+      body: {
+        issueSeverity: 'Medium',
+        data: {
+          url: TEST_URL,
+          suggestions: [],
+          cpc: 0.05,
+          sum_traffic: 1000,
+        },
+      },
+    });
+
+    const result = await handler(message, context);
+
+    expect(Opportunity.create).to.have.been.called;
+    expect(Suggestion.create).to.have.been.called;
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should create opportunity if severity is high', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const message = createMessage({
+      body: {
+        issueSeverity: 'high',
+        data: {
+          url: TEST_URL,
+          suggestions: [],
+          cpc: 0.05,
+          sum_traffic: 1000,
+        },
+      },
+    });
+
+    const result = await handler(message, context);
+
+    expect(Opportunity.create).to.have.been.called;
+    expect(Suggestion.create).to.have.been.called;
+    expect(result.status).to.equal(ok().status);
+  });
+
   it('should set suggestion status to PENDING_VALIDATION when site requires validation', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
     context.site = { requiresValidation: true };
-
-    const guidance = [{
-      body: {
-        data: {
-          analysis: 'test analysis',
-          impact: { business: 'business', user: 'user' },
-        },
-      },
-      insight: 'insight',
-      rationale: 'rationale',
-      recommendation: 'rec',
-    }];
-    const message = {
-      auditId: 'auditId',
-      siteId: 'site',
-      data: { urls: TEST_URLS, guidance },
-    };
+    const message = createMessage();
 
     await handler(message, context);
 
     expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'PENDING_VALIDATION'));
   });
 
-  it('should not mark opportunities as IGNORED when no existing paid-keyword-optimizer opportunities exist', async () => {
-    const otherOppty = makeOppty({
-      id: 'opptyId-other',
-      type: 'other-type',
-      status: 'NEW',
-      updatedBy: 'system',
-    });
-
-    Opportunity.allBySiteId.resolves([otherOppty]);
+  it('should set suggestion status to NEW when site does not require validation', async () => {
+    Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
-    const guidance = [{
-      body: {
-        data: {
-          analysis: 'test analysis',
-          impact: { business: 'business', user: 'user' },
-        },
-      },
-      insight: 'insight',
-      rationale: 'rationale',
-      recommendation: 'rec',
-    }];
-    const message = {
-      auditId: 'auditId',
-      siteId: 'site',
-      data: { urls: TEST_URLS, guidance },
-    };
+    context.site = { requiresValidation: false };
+    const message = createMessage();
 
-    const result = await handler(message, context);
+    await handler(message, context);
 
-    expect(Opportunity.create).to.have.been.called;
-    expect(Suggestion.create).to.have.been.called;
-    expect(otherOppty.setStatus).to.not.have.been.called;
-    expect(result.status).to.equal(ok().status);
+    expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'NEW'));
   });
 
   it('should not mark the newly created opportunity as IGNORED', async () => {
@@ -429,26 +379,12 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
       type: 'paid-keyword-optimizer',
       status: 'NEW',
       updatedBy: 'system',
+      url: TEST_URL,
     });
 
     Opportunity.allBySiteId.resolves([existingOppty]);
     Opportunity.create.resolves(opportunityInstance);
-    const guidance = [{
-      body: {
-        data: {
-          analysis: 'test analysis',
-          impact: { business: 'business', user: 'user' },
-        },
-      },
-      insight: 'insight',
-      rationale: 'rationale',
-      recommendation: 'rec',
-    }];
-    const message = {
-      auditId: 'auditId',
-      siteId: 'site',
-      data: { urls: TEST_URLS, guidance },
-    };
+    const message = createMessage();
 
     const result = await handler(message, context);
 
@@ -458,40 +394,85 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     expect(result.status).to.equal(ok().status);
   });
 
-  it('should handle empty guidance array', async () => {
+  it('should handle message with missing body gracefully', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
-    const guidance = [];
     const message = {
       auditId: 'auditId',
       siteId: 'site',
-      data: { urls: TEST_URLS, guidance },
+      insight: 'test insight',
+      rationale: 'test rationale',
+      recommendation: 'test recommendation',
+      // body is undefined
     };
 
     const result = await handler(message, context);
 
-    // Should still try to create opportunity with undefined guidance
+    // Should create opportunity (body is undefined, so isLowSeverity returns false)
     expect(Opportunity.create).to.have.been.called;
     expect(result.status).to.equal(ok().status);
   });
 
-  it('should log appropriate debug messages', async () => {
+  it('should store suggestions as variations in the suggestion data', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
-    const guidance = [{
+    const suggestions = [
+      { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
+      { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
+    ];
+    const message = createMessage({
       body: {
-        data: { analysis: 'test' },
+        issueSeverity: 'medium',
+        data: {
+          url: TEST_URL,
+          suggestions,
+          cpc: 0.075,
+          sum_traffic: 23423.5,
+        },
       },
-    }];
-    const message = {
-      auditId: 'auditId',
-      siteId: 'site',
-      data: { urls: TEST_URLS, guidance },
-    };
+    });
 
     await handler(message, context);
 
-    expect(logStub.debug).to.have.been.calledWithMatch(/Message received for guidance:paid-keyword-optimizer handler/);
-    expect(logStub.debug).to.have.been.calledWithMatch(/Creating new paid-keyword-optimizer opportunity/);
+    const suggestionCreateCall = Suggestion.create.getCall(0);
+    expect(suggestionCreateCall.args[0].data.variations).to.deep.equal(suggestions);
+  });
+
+  it('should pass the full message to the opportunity mapper', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const message = createMessage();
+
+    await handler(message, context);
+
+    const opportunityCreateCall = Opportunity.create.getCall(0);
+    const createdOpportunity = opportunityCreateCall.args[0];
+
+    // Check that the opportunity has the correct data from the message
+    expect(createdOpportunity.data).to.have.property('url', TEST_URL);
+    expect(createdOpportunity.data).to.have.property('cpc', 0.075);
+    expect(createdOpportunity.data).to.have.property('sumTraffic', 23423.5);
+  });
+
+  it('should include insight, rationale, and recommendation in opportunity guidance', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const message = createMessage({
+      insight: 'custom insight',
+      rationale: 'custom rationale',
+      recommendation: 'custom recommendation',
+    });
+
+    await handler(message, context);
+
+    const opportunityCreateCall = Opportunity.create.getCall(0);
+    const createdOpportunity = opportunityCreateCall.args[0];
+
+    expect(createdOpportunity.guidance.recommendations[0]).to.deep.include({
+      insight: 'custom insight',
+      rationale: 'custom rationale',
+      recommendation: 'custom recommendation',
+      type: 'guidance',
+    });
   });
 });

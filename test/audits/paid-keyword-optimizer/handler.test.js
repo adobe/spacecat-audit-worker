@@ -17,18 +17,47 @@ import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { describe } from 'mocha';
 
-import { paidKeywordOptimizerRunner, sendToMystique } from '../../../src/paid-keyword-optimizer/handler.js';
+import {
+  paidKeywordOptimizerRunner,
+  sendToMystique,
+  triggerPaidPagesImportStep,
+  runPaidKeywordAnalysisStep,
+} from '../../../src/paid-keyword-optimizer/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
 const auditUrl = 'www.spacecat.com';
 
+function createMockConfig(sandbox, overrides = {}) {
+  return {
+    getImports: () => [],
+    enableImport: sandbox.stub(),
+    disableImport: sandbox.stub(),
+    // Methods required by Config.toDynamoItem
+    getSlackConfig: sandbox.stub(),
+    getHandlers: sandbox.stub(),
+    getContentAiConfig: sandbox.stub(),
+    getFetchConfig: sandbox.stub(),
+    getBrandConfig: sandbox.stub(),
+    getCdnLogsConfig: sandbox.stub(),
+    getLlmoConfig: sandbox.stub(),
+    getTokowakaConfig: sandbox.stub(),
+    getBrandProfile: sandbox.stub().returns(null),
+    ...overrides,
+  };
+}
+
 function getSite(sandbox, overrides = {}) {
+  const mockConfig = createMockConfig(sandbox);
+
   return {
     getId: () => 'test-site-id',
     getSiteId: () => 'test-site-id',
     getDeliveryType: () => 'aem-edge',
     getBaseURL: () => 'https://example.com',
+    getConfig: () => mockConfig,
+    setConfig: sandbox.stub(),
+    save: sandbox.stub().resolves(),
     ...overrides,
   };
 }
@@ -136,6 +165,297 @@ describe('Paid Keyword Optimizer Audit', () => {
   afterEach(() => {
     nock.cleanAll();
     sandbox.restore();
+  });
+
+  describe('triggerPaidPagesImportStep', () => {
+    it('should return correct structure for import worker', async () => {
+      const stepContext = {
+        site,
+        log: logStub,
+        finalUrl: auditUrl,
+      };
+
+      const result = await triggerPaidPagesImportStep(stepContext);
+
+      expect(result).to.have.property('auditResult');
+      expect(result).to.have.property('fullAuditRef', auditUrl);
+      expect(result).to.have.property('type', 'ahref-paid-pages');
+      expect(result).to.have.property('siteId', 'test-site-id');
+    });
+
+    it('should return placeholder audit result with pending status', async () => {
+      const stepContext = {
+        site,
+        log: logStub,
+        finalUrl: auditUrl,
+      };
+
+      const result = await triggerPaidPagesImportStep(stepContext);
+
+      expect(result.auditResult).to.deep.equal({
+        status: 'pending',
+        message: 'Waiting for ahref-paid-pages import to complete',
+      });
+    });
+
+    it('should enable import when not already enabled', async () => {
+      const stepContext = {
+        site,
+        log: logStub,
+        finalUrl: auditUrl,
+      };
+
+      const result = await triggerPaidPagesImportStep(stepContext);
+
+      expect(site.getConfig().enableImport).to.have.been.calledWith('ahref-paid-pages');
+      expect(result.auditContext.importWasEnabled).to.be.true;
+    });
+
+    it('should not enable import when already enabled', async () => {
+      const mockConfigWithImport = createMockConfig(sandbox, {
+        getImports: () => [{ type: 'ahref-paid-pages', enabled: true }],
+      });
+      const siteWithImportEnabled = getSite(sandbox, {
+        getConfig: () => mockConfigWithImport,
+      });
+
+      const stepContext = {
+        site: siteWithImportEnabled,
+        log: logStub,
+        finalUrl: auditUrl,
+      };
+
+      const result = await triggerPaidPagesImportStep(stepContext);
+
+      expect(mockConfigWithImport.enableImport).to.not.have.been.called;
+      expect(result.auditContext.importWasEnabled).to.be.false;
+    });
+
+    it('should throw error when site config is null', async () => {
+      const siteWithNullConfig = getSite(sandbox, {
+        getConfig: () => null,
+      });
+
+      const stepContext = {
+        site: siteWithNullConfig,
+        log: logStub,
+        finalUrl: auditUrl,
+      };
+
+      await expect(triggerPaidPagesImportStep(stepContext))
+        .to.be.rejectedWith(/site config is null/);
+
+      expect(logStub.error).to.have.been.calledWithMatch(/site config is null/);
+    });
+
+    it('should throw error when site.save() fails during import toggle', async () => {
+      const mockConfig = createMockConfig(sandbox);
+      const siteWithSaveError = getSite(sandbox, {
+        getConfig: () => mockConfig,
+        save: sandbox.stub().rejects(new Error('Database connection failed')),
+      });
+
+      const stepContext = {
+        site: siteWithSaveError,
+        log: logStub,
+        finalUrl: auditUrl,
+      };
+
+      await expect(triggerPaidPagesImportStep(stepContext))
+        .to.be.rejectedWith('Database connection failed');
+    });
+  });
+
+  describe('runPaidKeywordAnalysisStep', () => {
+    it('should run analysis and update audit', async () => {
+      const mockAudit = {
+        getId: () => 'test-audit-id',
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      const stepContext = {
+        ...context,
+        site,
+        finalUrl: auditUrl,
+        audit: mockAudit,
+        auditContext: {},
+      };
+
+      const result = await runPaidKeywordAnalysisStep(stepContext);
+
+      expect(result).to.deep.equal({});
+      expect(mockAudit.setAuditResult).to.have.been.called;
+      expect(mockAudit.save).to.have.been.called;
+    });
+
+    it('should disable import if it was enabled in step 1', async () => {
+      const mockAudit = {
+        getId: () => 'test-audit-id',
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      const stepContext = {
+        ...context,
+        site,
+        finalUrl: auditUrl,
+        audit: mockAudit,
+        auditContext: {
+          importWasEnabled: true,
+        },
+      };
+
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      expect(site.getConfig().disableImport).to.have.been.calledWith('ahref-paid-pages');
+    });
+
+    it('should continue audit even if disabling import fails (cleanup)', async () => {
+      const mockConfig = createMockConfig(sandbox);
+      const siteWithSaveError = getSite(sandbox, {
+        getConfig: () => mockConfig,
+        getBaseURL: () => 'https://example.com',
+        save: sandbox.stub().rejects(new Error('Database connection failed')),
+      });
+
+      const mockAudit = {
+        getId: () => 'test-audit-id',
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      const stepContext = {
+        ...context,
+        site: siteWithSaveError,
+        finalUrl: auditUrl,
+        audit: mockAudit,
+        auditContext: {
+          importWasEnabled: true,
+        },
+      };
+
+      // Should not throw - audit should complete even if disable fails
+      const result = await runPaidKeywordAnalysisStep(stepContext);
+
+      expect(result).to.deep.equal({});
+      expect(mockAudit.setAuditResult).to.have.been.called;
+      expect(logStub.error).to.have.been.calledWithMatch(/Failed to disable import \(cleanup\)/);
+    });
+
+    it('should not disable import if it was not enabled in step 1', async () => {
+      const mockAudit = {
+        getId: () => 'test-audit-id',
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      const stepContext = {
+        ...context,
+        site,
+        finalUrl: auditUrl,
+        audit: mockAudit,
+        auditContext: {
+          importWasEnabled: false,
+        },
+      };
+
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      expect(site.getConfig().disableImport).to.not.have.been.called;
+    });
+
+    it('should update audit with analysis results', async () => {
+      const mockAudit = {
+        getId: () => 'test-audit-id',
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      const stepContext = {
+        ...context,
+        site,
+        finalUrl: auditUrl,
+        audit: mockAudit,
+        auditContext: {},
+      };
+
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      const savedResult = mockAudit.setAuditResult.getCall(0).args[0];
+      expect(savedResult).to.have.property('totalPageViews');
+      expect(savedResult).to.have.property('averageBounceRate');
+      expect(savedResult).to.have.property('predominantlyPaidPages');
+      expect(savedResult).to.have.property('predominantlyPaidCount');
+    });
+
+    it('should send one message per qualifying page to mystique', async () => {
+      const mockAudit = {
+        getId: () => 'test-audit-id',
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      const stepContext = {
+        ...context,
+        site,
+        finalUrl: auditUrl,
+        audit: mockAudit,
+        auditContext: {},
+      };
+
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      // Both pages have bounce rate > 0.3 threshold, so 2 messages should be sent
+      expect(context.sqs.sendMessage.callCount).to.equal(2);
+
+      const message1 = context.sqs.sendMessage.getCall(0).args[1];
+      const message2 = context.sqs.sendMessage.getCall(1).args[1];
+
+      expect(message1.type).to.equal('guidance:paid-keyword-optimizer');
+      expect(message2.type).to.equal('guidance:paid-keyword-optimizer');
+
+      // Each message should have a single url and page-specific data
+      expect(message1.url).to.equal('https://example.com/page1');
+      expect(message1.data).to.have.property('bounceRate');
+      expect(message1.data).to.have.property('pageViews');
+
+      expect(message2.url).to.equal('https://example.com/page2');
+      expect(message2.data).to.have.property('bounceRate');
+      expect(message2.data).to.have.property('pageViews');
+    });
+
+    it('should not send to mystique when no qualifying pages', async () => {
+      // Override to return pages with low bounce rate
+      context.athenaClient.query.resolves([
+        {
+          path: '/page1',
+          trf_type: 'paid',
+          trf_channel: 'search',
+          pageviews: '1000',
+          bounce_rate: '0.1', // Below 0.3 threshold
+        },
+      ]);
+
+      const mockAudit = {
+        getId: () => 'test-audit-id',
+        setAuditResult: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      const stepContext = {
+        ...context,
+        site,
+        finalUrl: auditUrl,
+        audit: mockAudit,
+        auditContext: {},
+      };
+
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(logStub.info).to.have.been.calledWithMatch(/No pages with bounce rate/);
+    });
   });
 
   describe('paidKeywordOptimizerRunner', () => {
@@ -411,8 +731,8 @@ describe('Paid Keyword Optimizer Audit', () => {
     });
   });
 
-  describe('sendToMystique', () => {
-    it('should send message with all qualifying pages above bounce rate threshold', async () => {
+  describe('sendToMystique (legacy)', () => {
+    it('should send one message per qualifying page above bounce rate threshold', async () => {
       const auditData = {
         id: 'test-audit-id',
         auditResult: {
@@ -437,12 +757,21 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       await sendToMystique(auditUrl, auditData, context, site);
 
-      expect(context.sqs.sendMessage.called).to.be.true;
-      const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
-      expect(sentMessage.type).to.equal('guidance:paid-keyword-optimizer');
-      expect(sentMessage.data.urls).to.have.lengthOf(2);
-      expect(sentMessage.data.urls).to.include('https://example.com/page1');
-      expect(sentMessage.data.urls).to.include('https://example.com/page2');
+      // Should send 2 separate messages (one per page)
+      expect(context.sqs.sendMessage.callCount).to.equal(2);
+
+      const message1 = context.sqs.sendMessage.getCall(0).args[1];
+      const message2 = context.sqs.sendMessage.getCall(1).args[1];
+
+      expect(message1.type).to.equal('guidance:paid-keyword-optimizer');
+      expect(message1.url).to.equal('https://example.com/page1');
+      expect(message1.data.bounceRate).to.equal(0.5);
+      expect(message1.data.pageViews).to.equal(1000);
+
+      expect(message2.type).to.equal('guidance:paid-keyword-optimizer');
+      expect(message2.url).to.equal('https://example.com/page2');
+      expect(message2.data.bounceRate).to.equal(0.4);
+      expect(message2.data.pageViews).to.equal(800);
     });
 
     it('should filter pages by bounce rate threshold', async () => {
@@ -470,11 +799,12 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       await sendToMystique(auditUrl, auditData, context, site);
 
-      expect(context.sqs.sendMessage.called).to.be.true;
+      // Only 1 message should be sent (for high-bounce page)
+      expect(context.sqs.sendMessage.callCount).to.equal(1);
+
       const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(1);
-      expect(sentMessage.data.urls).to.include('https://example.com/high-bounce');
-      expect(sentMessage.data.urls).to.not.include('https://example.com/low-bounce');
+      expect(sentMessage.url).to.equal('https://example.com/high-bounce');
+      expect(sentMessage.data.bounceRate).to.equal(0.5);
     });
 
     it('should not send message when no pages exceed bounce rate threshold', async () => {
@@ -571,7 +901,9 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(sentMessage.url).to.equal('https://example.com/page1');
       expect(sentMessage.auditId).to.equal('test-audit-id');
       expect(sentMessage.deliveryType).to.equal('aem-edge');
-      expect(sentMessage.data.pages).to.have.lengthOf(1);
+      expect(sentMessage.data).to.have.property('bounceRate', 0.5);
+      expect(sentMessage.data).to.have.property('pageViews', 1000);
+      expect(sentMessage.data).to.have.property('trafficLoss', 500);
     });
 
     it('should log debug message when sending to mystique', async () => {
@@ -592,7 +924,7 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       await sendToMystique(auditUrl, auditData, context, site);
 
-      expect(logStub.debug).to.have.been.calledWithMatch(/Sending 1 pages to mystique/);
+      expect(logStub.debug).to.have.been.calledWithMatch(/Sending message for/);
       expect(logStub.debug).to.have.been.calledWithMatch(/Completed mystique evaluation step/);
     });
 
@@ -614,9 +946,10 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       await sendToMystique(auditUrl, auditData, context, site);
 
-      expect(context.sqs.sendMessage.called).to.be.true;
+      expect(context.sqs.sendMessage.callCount).to.equal(1);
       const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
-      expect(sentMessage.data.urls).to.have.lengthOf(1);
+      expect(sentMessage.url).to.equal('https://example.com/page1');
+      expect(sentMessage.data.bounceRate).to.equal(0.3);
     });
   });
 });

@@ -23,7 +23,38 @@ import {
 } from '../../../src/paid-keyword-optimizer/guidance-opportunity-mapper.js';
 
 const TEST_SITE_ID = 'some-id';
-const TEST_URLS = ['https://sample-page/page1', 'https://sample-page/page2'];
+const TEST_URL = 'https://sample-page/page1';
+
+// Helper to create a message in the new format
+function createMessage(overrides = {}) {
+  return {
+    auditId: 'audit-id-123',
+    siteId: TEST_SITE_ID,
+    insight: 'test insight',
+    rationale: 'test rationale',
+    recommendation: 'test recommendation',
+    body: {
+      issueSeverity: 'medium',
+      data: {
+        url: TEST_URL,
+        suggestions: [
+          { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
+          { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
+        ],
+        cpc: 0.075,
+        sum_traffic: 23423.5,
+      },
+    },
+    ...overrides,
+  };
+}
+
+function createMockAudit(auditResult) {
+  return {
+    getAuditId: () => 'audit-id-123',
+    getAuditResult: () => auditResult,
+  };
+}
 
 describe('Paid Keyword Optimizer opportunity mapper', () => {
   let sandbox;
@@ -80,27 +111,15 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
   });
 
   describe('mapToKeywordOptimizerOpportunity', () => {
-    const guidance = {
-      insight: 'test insight',
-      rationale: 'test rationale',
-      recommendation: 'test recommendation',
-    };
-
-    function createMockAudit(auditResult) {
-      return {
-        getAuditId: () => 'audit-id-123',
-        getAuditResult: () => auditResult,
-      };
-    }
-
     it('creates opportunity with correct structure', () => {
       const audit = createMockAudit({
         totalPageViews: 10000,
         averageBounceRate: 0.45,
         temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       });
+      const message = createMessage();
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, TEST_URLS, audit, guidance);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
       expect(result.siteId).to.equal(TEST_SITE_ID);
       expect(result.id).to.be.a('string');
@@ -116,65 +135,33 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
         averageBounceRate: 0.45,
         temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       });
+      const message = createMessage();
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, TEST_URLS, audit, guidance);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
-      expect(result.title).to.equal('Low-performing paid search pages detected');
-      expect(result.description).to.include('2 pages');
+      expect(result.title).to.equal('Low-performing paid search page detected');
       expect(result.description).to.include('45.0%');
       expect(result.description).to.include('10.0K');
     });
 
-    it('formats description with singular page count', () => {
-      const audit = createMockAudit({
-        totalPageViews: 500,
-        averageBounceRate: 0.35,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, ['https://example.com/single'], audit, guidance);
-
-      expect(result.description).to.include('1 page');
-      expect(result.description).to.not.include('1 pages');
-    });
-
-    it('formats large numbers with K suffix', () => {
-      const audit = createMockAudit({
-        totalPageViews: 50000,
-        averageBounceRate: 0.55,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, TEST_URLS, audit, guidance);
-
-      expect(result.description).to.include('50.0K');
-    });
-
-    it('keeps small numbers unformatted', () => {
-      const audit = createMockAudit({
-        totalPageViews: 500,
-        averageBounceRate: 0.4,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      });
-
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, TEST_URLS, audit, guidance);
-
-      expect(result.description).to.include('500');
-    });
-
-    it('includes guidance recommendations', () => {
+    it('includes guidance recommendations from message', () => {
       const audit = createMockAudit({
         totalPageViews: 10000,
         averageBounceRate: 0.45,
         temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       });
+      const message = createMessage({
+        insight: 'custom insight',
+        rationale: 'custom rationale',
+        recommendation: 'custom recommendation',
+      });
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, TEST_URLS, audit, guidance);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
       expect(result.guidance.recommendations).to.have.lengthOf(1);
-      expect(result.guidance.recommendations[0].insight).to.equal('test insight');
-      expect(result.guidance.recommendations[0].rationale).to.equal('test rationale');
-      expect(result.guidance.recommendations[0].recommendation).to.equal('test recommendation');
+      expect(result.guidance.recommendations[0].insight).to.equal('custom insight');
+      expect(result.guidance.recommendations[0].rationale).to.equal('custom rationale');
+      expect(result.guidance.recommendations[0].recommendation).to.equal('custom recommendation');
       expect(result.guidance.recommendations[0].type).to.equal('guidance');
     });
 
@@ -184,26 +171,41 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
         averageBounceRate: 0.45,
         temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       });
+      const message = createMessage();
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, TEST_URLS, audit, guidance);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
       expect(result.data.dataSources).to.include('Site');
       expect(result.data.dataSources).to.include('RUM');
       expect(result.data.dataSources).to.include('Page');
     });
 
-    it('includes correct data fields', () => {
+    it('includes single URL and metrics from message body', () => {
       const audit = createMockAudit({
         totalPageViews: 10000,
         averageBounceRate: 0.45,
         temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       });
+      const message = createMessage();
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, TEST_URLS, audit, guidance);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
+      expect(result.data.url).to.equal(TEST_URL);
+      expect(result.data.cpc).to.equal(0.075);
+      expect(result.data.sumTraffic).to.equal(23423.5);
       expect(result.data.opportunityType).to.equal('paid-keyword-optimizer');
-      expect(result.data.pages).to.deep.equal(TEST_URLS);
-      expect(result.data.pageCount).to.equal(2);
+    });
+
+    it('includes audit result stats', () => {
+      const audit = createMockAudit({
+        totalPageViews: 10000,
+        averageBounceRate: 0.45,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      });
+      const message = createMessage();
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
       expect(result.data.totalPageViews).to.equal(10000);
       expect(result.data.averageBounceRate).to.equal(0.45);
       expect(result.data.temporalCondition).to.equal('(year=2025 AND week IN (1,2,3,4))');
@@ -215,8 +217,9 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
         averageBounceRate: 0.45,
         temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       });
+      const message = createMessage();
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, TEST_URLS, audit, guidance);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
       expect(result.tags).to.include('Paid');
       expect(result.tags).to.include('SEO');
@@ -228,11 +231,60 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
         averageBounceRate: undefined,
         temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       });
+      const message = createMessage();
 
-      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, TEST_URLS, audit, guidance);
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
       // Should handle null/undefined gracefully
       expect(result.description).to.include('0');
+    });
+
+    it('handles missing body.data fields gracefully', () => {
+      const audit = createMockAudit({
+        totalPageViews: 10000,
+        averageBounceRate: 0.45,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      });
+      const message = {
+        auditId: 'audit-id-123',
+        siteId: TEST_SITE_ID,
+        insight: 'insight',
+        rationale: 'rationale',
+        recommendation: 'recommendation',
+        body: {},
+      };
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.url).to.be.undefined;
+      expect(result.data.cpc).to.be.undefined;
+      expect(result.data.sumTraffic).to.be.undefined;
+    });
+
+    it('formats large numbers with K suffix in description', () => {
+      const audit = createMockAudit({
+        totalPageViews: 50000,
+        averageBounceRate: 0.55,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      });
+      const message = createMessage();
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.description).to.include('50.0K');
+    });
+
+    it('keeps small numbers unformatted in description', () => {
+      const audit = createMockAudit({
+        totalPageViews: 500,
+        averageBounceRate: 0.4,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      });
+      const message = createMessage();
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.description).to.include('500');
     });
   });
 
@@ -241,24 +293,12 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       const context = {
         site: { requiresValidation: false },
       };
-      const pageGuidance = {
-        body: {
-          data: {
-            analysis: 'test analysis',
-            impact: {
-              business: 'business impact',
-              user: 'user impact',
-            },
-          },
-        },
-      };
+      const message = createMessage();
 
       const result = mapToKeywordOptimizerSuggestion(
         context,
-        TEST_SITE_ID,
         'opportunity-id',
-        TEST_URLS,
-        pageGuidance,
+        message,
       );
 
       expect(result.opportunityId).to.equal('opportunity-id');
@@ -271,14 +311,12 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       const context = {
         site: { requiresValidation: true },
       };
-      const pageGuidance = { body: { data: {} } };
+      const message = createMessage();
 
       const result = mapToKeywordOptimizerSuggestion(
         context,
-        TEST_SITE_ID,
         'opportunity-id',
-        TEST_URLS,
-        pageGuidance,
+        message,
       );
 
       expect(result.status).to.equal(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
@@ -288,118 +326,123 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       const context = {
         site: { requiresValidation: false },
       };
-      const pageGuidance = { body: { data: {} } };
+      const message = createMessage();
 
       const result = mapToKeywordOptimizerSuggestion(
         context,
-        TEST_SITE_ID,
         'opportunity-id',
-        TEST_URLS,
-        pageGuidance,
+        message,
       );
 
       expect(result.status).to.equal(SuggestionDataAccess.STATUSES.NEW);
     });
 
-    it('creates recommendations for each URL', () => {
+    it('stores suggestions as variations from message body', () => {
       const context = {
         site: { requiresValidation: false },
       };
-      const pageGuidance = { body: { data: {} } };
-
-      const result = mapToKeywordOptimizerSuggestion(
-        context,
-        TEST_SITE_ID,
-        'opportunity-id',
-        TEST_URLS,
-        pageGuidance,
-      );
-
-      expect(result.data.recommendations).to.have.lengthOf(2);
-      expect(result.data.recommendations[0].pageUrl).to.equal(TEST_URLS[0]);
-      expect(result.data.recommendations[1].pageUrl).to.equal(TEST_URLS[1]);
-      expect(result.data.recommendations[0].id).to.be.a('string');
-      expect(result.data.recommendations[1].id).to.be.a('string');
-    });
-
-    it('includes analysis and impact data', () => {
-      const context = {
-        site: { requiresValidation: false },
-      };
-      const pageGuidance = {
+      const suggestions = [
+        { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
+        { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
+        { id: 'variation-1', name: 'Variation 1', screenshotUrl: 'https://example.com/var1.png' },
+      ];
+      const message = createMessage({
         body: {
+          issueSeverity: 'medium',
           data: {
-            analysis: 'detailed analysis',
-            impact: {
-              business: 'business impact text',
-              user: 'user impact text',
-            },
+            url: TEST_URL,
+            suggestions,
+            cpc: 0.075,
+            sum_traffic: 23423.5,
           },
         },
-      };
+      });
 
       const result = mapToKeywordOptimizerSuggestion(
         context,
-        TEST_SITE_ID,
         'opportunity-id',
-        TEST_URLS,
-        pageGuidance,
+        message,
       );
 
-      expect(result.data.analysis).to.equal('detailed analysis');
-      expect(result.data.impact.business).to.equal('business impact text');
-      expect(result.data.impact.user).to.equal('user impact text');
+      expect(result.data.variations).to.deep.equal(suggestions);
     });
 
     it('handles missing body data gracefully', () => {
       const context = {
         site: { requiresValidation: false },
       };
-      const pageGuidance = {};
+      const message = {};
 
       const result = mapToKeywordOptimizerSuggestion(
         context,
-        TEST_SITE_ID,
         'opportunity-id',
-        TEST_URLS,
-        pageGuidance,
+        message,
       );
 
-      expect(result.data.analysis).to.be.undefined;
-      expect(result.data.impact.business).to.be.undefined;
-      expect(result.data.impact.user).to.be.undefined;
+      expect(result.data.variations).to.deep.equal([]);
     });
 
     it('handles missing site in context', () => {
       const context = {};
-      const pageGuidance = { body: { data: {} } };
+      const message = createMessage();
 
       const result = mapToKeywordOptimizerSuggestion(
         context,
-        TEST_SITE_ID,
         'opportunity-id',
-        TEST_URLS,
-        pageGuidance,
+        message,
       );
 
       expect(result.status).to.equal(SuggestionDataAccess.STATUSES.NEW);
     });
 
-    it('handles empty urls array', () => {
+    it('handles empty suggestions array', () => {
       const context = {
         site: { requiresValidation: false },
       };
-      const pageGuidance = { body: { data: {} } };
+      const message = createMessage({
+        body: {
+          issueSeverity: 'medium',
+          data: {
+            url: TEST_URL,
+            suggestions: [],
+            cpc: 0.075,
+            sum_traffic: 23423.5,
+          },
+        },
+      });
 
       const result = mapToKeywordOptimizerSuggestion(
         context,
-        TEST_SITE_ID,
         'opportunity-id',
-        [],
-        pageGuidance,
+        message,
       );
 
-      expect(result.data.recommendations).to.have.lengthOf(0);
+      expect(result.data.variations).to.deep.equal([]);
+    });
+
+    it('handles undefined suggestions in message body', () => {
+      const context = {
+        site: { requiresValidation: false },
+      };
+      const message = {
+        body: {
+          issueSeverity: 'medium',
+          data: {
+            url: TEST_URL,
+            // suggestions is undefined
+            cpc: 0.075,
+            sum_traffic: 23423.5,
+          },
+        },
+      };
+
+      const result = mapToKeywordOptimizerSuggestion(
+        context,
+        'opportunity-id',
+        message,
+      );
+
+      expect(result.data.variations).to.deep.equal([]);
     });
   });
 });

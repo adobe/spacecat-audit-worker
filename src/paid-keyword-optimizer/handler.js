@@ -12,20 +12,61 @@
 import {
   AWSAthenaClient,
 } from '@adobe/spacecat-shared-athena-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { getWeekInfo, getTemporalCondition } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getLowPerformingPaidPagesTemplate } from './queries.js';
+
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 // Configurable thresholds
 const CUT_OFF_BOUNCE_RATE = 0.3;
 const PREDOMINANT_TRAFFIC_PCT = 80;
 const PAGE_VIEW_THRESHOLD = 1000;
 
+// Import type constant
+const IMPORT_AHREF_PAID_PAGES = 'ahref-paid-pages';
+
 const AUDIT_CONSTANTS = {
   GUIDANCE_TYPE: 'guidance:paid-keyword-optimizer',
   OBSERVATION: 'Low-performing paid search pages detected with high bounce rates',
 };
+
+/**
+ * Checks if a specific import type is enabled for the site
+ * @param {string} importType - Import type to check
+ * @param {Array} imports - Array of import configurations
+ * @returns {boolean} True if import is enabled
+ */
+function isImportEnabled(importType, imports) {
+  return imports?.find((importConfig) => importConfig.type === importType)?.enabled;
+}
+
+/**
+ * Toggles an import type on or off for a site
+ * @param {Object} site - Site object
+ * @param {string} importType - Import type to toggle
+ * @param {boolean} enable - Whether to enable or disable
+ * @param {Object} log - Logger instance
+ * @throws {Error} If site config is null or save fails
+ */
+async function toggleImport(site, importType, enable, log) {
+  const siteConfig = site.getConfig();
+  if (!siteConfig) {
+    const errorMsg = `Cannot toggle import ${importType} for site ${site.getId()}: site config is null`;
+    log.error(errorMsg);
+    throw new Error(errorMsg);
+  }
+  if (enable) {
+    siteConfig.enableImport(importType);
+  } else {
+    siteConfig.disableImport(importType);
+  }
+  site.setConfig(Config.toDynamoItem(siteConfig));
+  await site.save();
+}
 
 /**
  * Gets configuration from environment variables
@@ -186,31 +227,31 @@ function getPaidTrafficRow(pathTrafficMap, path) {
 }
 
 /**
- * Builds the mystique message payload
+ * Builds the mystique message payload for a single page
  * @param {Object} site - Site object
  * @param {string} auditId - Audit ID
- * @param {Array<Object>} qualifyingPages - Pages that qualify for analysis
+ * @param {Object} page - Page data with url, bounceRate, pageViews, etc.
  * @returns {Object} Mystique message
  */
-function buildMystiqueMessage(site, auditId, qualifyingPages) {
-  const urls = qualifyingPages.map((page) => page.url);
-
+function buildMystiqueMessage(site, auditId, page) {
   return {
     type: AUDIT_CONSTANTS.GUIDANCE_TYPE,
     observation: AUDIT_CONSTANTS.OBSERVATION,
     siteId: site.getId(),
-    url: urls[0], // Primary URL for reference
+    url: page.url,
     auditId,
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
     data: {
-      urls,
+      bounceRate: page.bounceRate,
+      pageViews: page.pageViews,
+      trafficLoss: page.trafficLoss,
     },
   };
 }
 
 /**
- * Main audit runner for paid keyword optimizer
+ * Main audit runner for paid keyword optimizer (used by step 2)
  * @param {string} auditUrl - Audit URL
  * @param {Object} context - Execution context
  * @param {Object} site - Site object
@@ -280,7 +321,7 @@ export async function paidKeywordOptimizerRunner(auditUrl, context, site) {
       temporalCondition,
     };
 
-    log.info(`[paid-keyword-optimizer] [Site: ${auditUrl}] Audit initial result:`, JSON.stringify(auditResult, null, 2));
+    log.info(`[paid-keyword-optimizer] [Site: ${auditUrl}] Audit result:`, JSON.stringify(auditResult, null, 2));
 
     return {
       auditResult,
@@ -293,12 +334,117 @@ export async function paidKeywordOptimizerRunner(auditUrl, context, site) {
 }
 
 /**
- * Post-processor to send qualifying pages to mystique
- * @param {string} auditUrl - Audit URL
- * @param {Object} auditData - Audit data
- * @param {Object} context - Execution context
- * @param {Object} site - Site object
+ * Step 1: Trigger the ahref-paid-pages import
+ * Creates the audit and sends a message to the import worker
+ * @param {Object} context - Step context
+ * @returns {Promise<Object>} Step result with audit and import payload
  */
+export async function triggerPaidPagesImportStep(context) {
+  const { site, log, finalUrl } = context;
+  const siteId = site.getId();
+
+  log.info(`[paid-keyword-optimizer] [Site: ${finalUrl}] Step 1: Triggering ${IMPORT_AHREF_PAID_PAGES} import`);
+
+  // Check if import is enabled and toggle if needed
+  let importWasEnabled = false;
+  const siteConfig = site.getConfig();
+  const imports = siteConfig?.getImports() || [];
+
+  if (!isImportEnabled(IMPORT_AHREF_PAID_PAGES, imports)) {
+    log.debug(`[paid-keyword-optimizer] [Site: ${finalUrl}] Enabling ${IMPORT_AHREF_PAID_PAGES} import for site ${siteId}`);
+    await toggleImport(site, IMPORT_AHREF_PAID_PAGES, true, log);
+    importWasEnabled = true;
+  }
+
+  return {
+    // Required for first step - creates the audit
+    auditResult: {
+      status: 'pending',
+      message: 'Waiting for ahref-paid-pages import to complete',
+    },
+    fullAuditRef: finalUrl,
+    // Import worker payload
+    type: IMPORT_AHREF_PAID_PAGES,
+    siteId,
+    allowCache: false,
+    // Pass along whether we enabled the import (for potential cleanup)
+    auditContext: {
+      importWasEnabled,
+    },
+  };
+}
+
+/**
+ * Step 2: Run the paid keyword analysis after import completes and send to Mystique
+ * This is the final step that:
+ * 1. Disables the import if it was enabled in step 1
+ * 2. Runs Athena analysis
+ * 3. Updates the audit with results
+ * 4. Sends qualifying pages to Mystique
+ * @param {Object} context - Step context
+ * @returns {Promise<Object>} Step result
+ */
+export async function runPaidKeywordAnalysisStep(context) {
+  const {
+    site, finalUrl, audit, log, auditContext, sqs, env,
+  } = context;
+  const siteId = site.getId();
+  const auditId = audit.getId();
+
+  log.info(`[paid-keyword-optimizer] [Site: ${finalUrl}] Step 2: Running paid keyword analysis`);
+
+  // Disable import if we enabled it in step 1 (cleanup - don't fail audit if this fails)
+  if (auditContext?.importWasEnabled) {
+    log.debug(`[paid-keyword-optimizer] [Site: ${finalUrl}] Disabling ${IMPORT_AHREF_PAID_PAGES} import for site ${siteId}`);
+    try {
+      await toggleImport(site, IMPORT_AHREF_PAID_PAGES, false, log);
+    } catch (error) {
+      log.error(`[paid-keyword-optimizer] [Site: ${finalUrl}] Failed to disable import (cleanup): ${error.message}`);
+    }
+  }
+
+  // Run the actual analysis
+  const result = await paidKeywordOptimizerRunner(finalUrl, context, site);
+
+  // Update the audit with real results
+  audit.setAuditResult(result.auditResult);
+  await audit.save();
+
+  log.debug(`[paid-keyword-optimizer] [Site: ${finalUrl}] Audit updated with analysis results`);
+
+  // Send qualifying pages to Mystique
+  const { auditResult } = result;
+  /* c8 ignore next 2 - defensive fallback: paidKeywordOptimizerRunner always returns an array */
+  const qualifyingPages = (auditResult.predominantlyPaidPages || [])
+    .filter((page) => page.bounceRate >= CUT_OFF_BOUNCE_RATE);
+
+  if (qualifyingPages.length === 0) {
+    log.info(
+      `[paid-keyword-optimizer] [Site: ${finalUrl}] No pages with bounce rate >= ${CUT_OFF_BOUNCE_RATE} found; skipping mystique`,
+    );
+    return {};
+  }
+
+  log.info(
+    `[paid-keyword-optimizer] [Site: ${finalUrl}] Found ${qualifyingPages.length} pages with high bounce rate`,
+  );
+
+  // Send one message per qualifying page
+  await Promise.all(qualifyingPages.map((page) => {
+    const mystiqueMessage = buildMystiqueMessage(site, auditId, page);
+    log.debug(
+      `[paid-keyword-optimizer] [Site: ${finalUrl}] Sending message for ${page.url} to mystique: `
+      + `${JSON.stringify(mystiqueMessage, null, 2)}`,
+    );
+    return sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+  }));
+
+  log.debug(`[paid-keyword-optimizer] [Site: ${finalUrl}] Step 2 complete - sent ${qualifyingPages.length} messages`);
+
+  return {};
+}
+
+// Legacy function for backward compatibility with tests
 export async function sendToMystique(auditUrl, auditData, context, site) {
   const { log, sqs, env } = context;
   const { auditResult, id } = auditData;
@@ -318,19 +464,21 @@ export async function sendToMystique(auditUrl, auditData, context, site) {
     `[paid-keyword-optimizer] [Site: ${auditUrl}] Found ${qualifyingPages.length} pages with high bounce rate`,
   );
 
-  const mystiqueMessage = buildMystiqueMessage(site, id, qualifyingPages);
+  // Send one message per qualifying page
+  await Promise.all(qualifyingPages.map((page) => {
+    const mystiqueMessage = buildMystiqueMessage(site, id, page);
+    log.debug(
+      `[paid-keyword-optimizer] [Site: ${auditUrl}] Sending message for ${page.url} to mystique: `
+      + `${JSON.stringify(mystiqueMessage, null, 2)}`,
+    );
+    return sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+  }));
 
-  log.debug(
-    `[paid-keyword-optimizer] [Site: ${auditUrl}] Sending ${qualifyingPages.length} pages to mystique: `
-    + `${JSON.stringify(mystiqueMessage, null, 2)}`,
-  );
-
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-  log.debug(`[paid-keyword-optimizer] [Site: ${auditUrl}] Completed mystique evaluation step`);
+  log.debug(`[paid-keyword-optimizer] [Site: ${auditUrl}] Completed mystique evaluation step - sent ${qualifyingPages.length} messages`);
 }
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(paidKeywordOptimizerRunner)
-  .withPostProcessors([sendToMystique])
+  .addStep('triggerPaidPagesImportStep', triggerPaidPagesImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('runPaidKeywordAnalysisStep', runPaidKeywordAnalysisStep)
   .build();

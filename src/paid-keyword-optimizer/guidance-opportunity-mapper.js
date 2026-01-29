@@ -46,14 +46,19 @@ export function isLowSeverityGuidanceBody(body) {
 /**
  * Maps audit data to a paid keyword optimizer opportunity entity
  * @param {string} siteId - The site ID
- * @param {Array<string>} urls - The URLs of low-performing pages
  * @param {Object} audit - The audit object
- * @param {Object} pageGuidance - The parsed guidance object
+ * @param {Object} message - The message from Mystique with insight, rationale,
+ *   recommendation, and body
  * @returns {Object} Opportunity entity
  */
-export function mapToKeywordOptimizerOpportunity(siteId, urls, audit, pageGuidance) {
+export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
   const stats = audit.getAuditResult();
-  const pageCount = urls.length;
+  const {
+    insight, rationale, recommendation, body,
+  } = message;
+  const url = body?.data?.url;
+  const cpc = body?.data?.cpc;
+  const sumTraffic = body?.data?.sum_traffic;
 
   return {
     siteId,
@@ -61,16 +66,16 @@ export function mapToKeywordOptimizerOpportunity(siteId, urls, audit, pageGuidan
     auditId: audit.getAuditId(),
     type: 'paid-keyword-optimizer',
     origin: 'AUTOMATION',
-    title: 'Low-performing paid search pages detected',
-    description: `Found ${pageCount} page${pageCount !== 1 ? 's' : ''} with predominantly paid search traffic and high bounce rates. `
+    title: 'Low-performing paid search page detected',
+    description: 'Page with predominantly paid search traffic and high bounce rate. '
       + `Average bounce rate: ${(stats.averageBounceRate * 100).toFixed(1)}%, `
       + `Total page views: ${formatNumberWithK(stats.totalPageViews)}.`,
     guidance: {
       recommendations: [
         {
-          insight: pageGuidance.insight,
-          rationale: pageGuidance.rationale,
-          recommendation: pageGuidance.recommendation,
+          insight,
+          rationale,
+          recommendation,
           type: 'guidance',
         },
       ],
@@ -82,8 +87,9 @@ export function mapToKeywordOptimizerOpportunity(siteId, urls, audit, pageGuidan
         DATA_SOURCES.PAGE,
       ],
       opportunityType: 'paid-keyword-optimizer',
-      pages: urls,
-      pageCount,
+      url,
+      cpc,
+      sumTraffic,
       totalPageViews: stats.totalPageViews,
       averageBounceRate: stats.averageBounceRate,
       temporalCondition: stats.temporalCondition,
@@ -99,19 +105,17 @@ export function mapToKeywordOptimizerOpportunity(siteId, urls, audit, pageGuidan
 /**
  * Maps guidance data to a paid keyword optimizer suggestion entity
  * @param {Object} context - The execution context
- * @param {string} siteId - The site ID
  * @param {string} opportunityId - The opportunity ID
- * @param {Array<string>} urls - The URLs of low-performing pages
- * @param {Object} pageGuidance - The parsed guidance object
+ * @param {Object} message - The message from Mystique with body.data.suggestions
  * @returns {Object} Suggestion entity
  */
 export function mapToKeywordOptimizerSuggestion(
   context,
-  siteId,
   opportunityId,
-  urls,
-  pageGuidance = {},
+  message = {},
 ) {
+  const variations = message.body?.data?.suggestions || [];
+
   return {
     opportunityId,
     type: 'CONTENT_UPDATE',
@@ -120,15 +124,7 @@ export function mapToKeywordOptimizerSuggestion(
       ? SuggestionModel.STATUSES.PENDING_VALIDATION
       : SuggestionModel.STATUSES.NEW,
     data: {
-      recommendations: urls.map((url) => ({
-        id: randomUUID(),
-        pageUrl: url,
-      })),
-      analysis: pageGuidance.body?.data?.analysis,
-      impact: {
-        business: pageGuidance.body?.data?.impact?.business,
-        user: pageGuidance.body?.data?.impact?.user,
-      },
+      variations,
     },
   };
 }

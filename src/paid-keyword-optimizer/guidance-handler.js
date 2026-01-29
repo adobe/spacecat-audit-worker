@@ -17,21 +17,12 @@ import {
 } from './guidance-opportunity-mapper.js';
 
 /**
- * Extracts and parses guidance object from guidance array
- * @param {Array} guidance - Guidance array from mystique response
- * @returns {Object} Parsed guidance object
- */
-function getGuidanceObj(guidance) {
-  const body = guidance && guidance[0] && guidance[0].body;
-
-  return {
-    ...guidance[0],
-    body,
-  };
-}
-
-/**
  * Handler for paid keyword optimizer guidance responses from mystique
+ * Message format:
+ * {
+ *   auditId, siteId, insight, rationale, recommendation,
+ *   body: { issueSeverity, data: { url, suggestions, cpc, sum_traffic } }
+ * }
  * @param {Object} message - Message from mystique
  * @param {Object} context - Execution context
  * @returns {Promise<Response>} HTTP response
@@ -39,61 +30,61 @@ function getGuidanceObj(guidance) {
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Opportunity, Suggestion } = dataAccess;
-  const { auditId, siteId, data } = message;
-  const { urls, guidance } = data;
+  const { auditId, siteId, body } = message;
+  const url = body?.data?.url;
 
-  log.debug(`Message received for guidance:paid-keyword-optimizer handler site: ${siteId} urls: ${JSON.stringify(urls)} message: ${JSON.stringify(message)}`);
+  log.info(`[paid-keyword-optimizer-guidance] Received message from Mystique for site: ${siteId}, auditId: ${auditId}, url: ${url}`);
+  log.debug(`[paid-keyword-optimizer-guidance] Full message payload: ${JSON.stringify(message, null, 2)}`);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
-    log.warn(`No audit found for auditId: ${auditId}`);
+    log.warn(`[paid-keyword-optimizer-guidance] No audit found for auditId: ${auditId}`);
     return notFound();
   }
-  log.debug(`Fetched Audit ${JSON.stringify(message)}`);
+  log.info(`[paid-keyword-optimizer-guidance] Found audit: ${auditId}, type: ${audit.getAuditType()}`);
 
   // Check for low severity and skip if so
-  const guidanceParsed = getGuidanceObj(guidance);
-  if (isLowSeverityGuidanceBody(guidanceParsed.body)) {
-    log.info(`Skipping opportunity creation for site: ${siteId} urls: ${JSON.stringify(urls)} audit: ${auditId} due to low issue severity`);
+  if (isLowSeverityGuidanceBody(body)) {
+    log.info(`[paid-keyword-optimizer-guidance] Skipping opportunity creation - low issue severity. Site: ${siteId}, auditId: ${auditId}, url: ${url}`);
     return ok();
   }
 
-  const entity = mapToKeywordOptimizerOpportunity(siteId, urls, audit, guidanceParsed);
-  // Always create a new opportunity
-  log.debug(`Creating new paid-keyword-optimizer opportunity for ${siteId} urls: ${JSON.stringify(urls)}`);
+  const entity = mapToKeywordOptimizerOpportunity(siteId, audit, message);
+  log.debug(`[paid-keyword-optimizer-guidance] Creating opportunity entity: ${JSON.stringify(entity, null, 2)}`);
 
   const opportunity = await Opportunity.create(entity);
+  log.info(`[paid-keyword-optimizer-guidance] Created opportunity: ${opportunity.getId()} for url: ${url}`);
 
-  // Create suggestion for the new opportunity first
+  // Create suggestion for the new opportunity
   const suggestionData = mapToKeywordOptimizerSuggestion(
     context,
-    siteId,
     opportunity.getId(),
-    urls,
-    guidanceParsed,
+    message,
   );
+  log.debug(`[paid-keyword-optimizer-guidance] Creating suggestion: ${JSON.stringify(suggestionData, null, 2)}`);
   await Suggestion.create(suggestionData);
-  log.info(`Created suggestion for opportunity ${opportunity.getId()}: ${JSON.stringify(suggestionData, null, 2)}`);
-  log.debug(`Created suggestion for opportunity ${opportunity.getId()}`);
+  log.info(`[paid-keyword-optimizer-guidance] Created suggestion for opportunity ${opportunity.getId()}`);
 
   // Only after suggestion is successfully created,
-  // find and mark existing NEW system opportunities as IGNORED
+  // find and mark existing NEW system opportunities for the SAME URL as IGNORED
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   const existingMatches = existingOpportunities
     .filter((oppty) => oppty.getType() === 'paid-keyword-optimizer')
     .filter((oppty) => oppty.getStatus() === 'NEW' && oppty.getUpdatedBy() === 'system')
+    .filter((oppty) => oppty.getData()?.url === url) // Only match same URL
     .filter((oppty) => oppty.getId() !== opportunity.getId()); // Exclude the newly created one
 
+  log.info(`[paid-keyword-optimizer-guidance] Found ${existingMatches.length} existing NEW system opportunities for url ${url} to mark as IGNORED`);
+
   if (existingMatches.length > 0) {
-    log.debug(`Found ${existingMatches.length} existing NEW system opportunities. Marking them as IGNORED.`);
     await Promise.all(existingMatches.map(async (oldOppty) => {
       oldOppty.setStatus('IGNORED');
       await oldOppty.save();
-      log.info(`Marked opportunity ${oldOppty.getId()} as IGNORED`);
+      log.info(`[paid-keyword-optimizer-guidance] Marked opportunity ${oldOppty.getId()} as IGNORED`);
     }));
   }
 
-  log.debug(`paid-keyword-optimizer opportunity successfully added for site: ${siteId} urls: ${JSON.stringify(urls)} audit: ${auditId} opportunity: ${JSON.stringify(opportunity, null, 2)}`);
+  log.info(`[paid-keyword-optimizer-guidance] Handler completed successfully for site: ${siteId}, auditId: ${auditId}, opportunityId: ${opportunity.getId()}, url: ${url}`);
 
   return ok();
 }
