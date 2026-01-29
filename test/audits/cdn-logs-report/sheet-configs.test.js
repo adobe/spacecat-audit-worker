@@ -32,7 +32,7 @@ describe('CDN Logs Sheet Configs', () => {
 
   describe('agentic sheet config', () => {
     let mockSite;
-    let mockContext;
+    let mockDataAccess;
 
     beforeEach(() => {
       mockSite = {
@@ -41,16 +41,9 @@ describe('CDN Logs Sheet Configs', () => {
         getConfig: () => ({ getFetchConfig: () => null }),
       };
 
-      mockContext = {
-        log: {
-          info: sandbox.stub(),
-          warn: sandbox.stub(),
-          error: sandbox.stub(),
-        },
-        dataAccess: {
-          PageCitability: {
-            allBySiteId: sandbox.stub().resolves([]),
-          },
+      mockDataAccess = {
+        PageCitability: {
+          allBySiteId: sandbox.stub().resolves([]),
         },
       };
     });
@@ -102,7 +95,7 @@ describe('CDN Logs Sheet Configs', () => {
       ];
 
       // Setup specific citability data for this test
-      mockContext.dataAccess.PageCitability.allBySiteId.resolves([
+      mockDataAccess.PageCitability.allBySiteId.resolves([
         {
           getUrl: () => 'https://example.com/test',
           getCitabilityScore: () => 85,
@@ -111,7 +104,7 @@ describe('CDN Logs Sheet Configs', () => {
         },
       ]);
 
-      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockContext);
+      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
 
       expect(result)
         .to
@@ -174,7 +167,7 @@ describe('CDN Logs Sheet Configs', () => {
         },
       ];
 
-      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockContext);
+      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
 
       expect(result)
         .to
@@ -213,7 +206,7 @@ describe('CDN Logs Sheet Configs', () => {
         },
       ];
 
-      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockContext);
+      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
 
       expect(result)
         .to
@@ -245,7 +238,7 @@ describe('CDN Logs Sheet Configs', () => {
       ];
 
       // Setup multiple citability scores for the same pathname with different update times
-      mockContext.dataAccess.PageCitability.allBySiteId.resolves([
+      mockDataAccess.PageCitability.allBySiteId.resolves([
         {
           getUrl: () => 'https://example.com/test',
           getCitabilityScore: () => 75,
@@ -260,7 +253,7 @@ describe('CDN Logs Sheet Configs', () => {
         },
       ]);
 
-      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockContext);
+      const result = await SHEET_CONFIGS.agentic.processData(testData, mockSite, mockDataAccess);
 
       expect(result)
         .to

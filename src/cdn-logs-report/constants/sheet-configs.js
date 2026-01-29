@@ -39,17 +39,12 @@ export const SHEET_CONFIGS = {
     ],
     headerColor: HEADER_COLOR,
     numberColumns: [2, 3, 4],
-    processData: async (data, site, context) => {
-      if (!data || !site || !context) return [];
-
-      const { log, dataAccess } = context;
+    processData: async (data, site, dataAccess) => {
+      if (!data || !site || !dataAccess) return [];
 
       // Fetch citability scores and deployment status from database
       const { PageCitability } = dataAccess;
       const citabilityScores = await PageCitability.allBySiteId(site.getId());
-
-      log.info(`[CDN Logs Report] Fetched ${citabilityScores.length} citability records for site ${site.getId()}`);
-
       const citabilityMap = citabilityScores.reduce((acc, score) => {
         const { pathname } = new URL(score.getUrl());
         const existingScore = acc[pathname];
@@ -64,22 +59,10 @@ export const SHEET_CONFIGS = {
         return acc;
       }, {});
 
-      // Count and log deployed URLs
-      const deployedUrls = Object.entries(citabilityMap)
-        .filter(([, value]) => value.isDeployedAtEdge)
-        .map(([path]) => path);
-
-      log.info(`[CDN Logs Report] Found ${deployedUrls.length} URLs deployed at edge`);
-
-      if (deployedUrls.length > 0) {
-        const sampleUrls = deployedUrls.slice(0, 5);
-        log.info(`[CDN Logs Report] Sample deployed URLs: ${sampleUrls.join(', ')}`);
-      }
-
       /* c8 ignore next */
       const baseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL || site.getBaseURL();
 
-      const processedRows = data
+      return data
         .filter((row) => row.agent_type && row.agent_type !== 'Other')
         .map((row) => {
           const urlPath = row.url === '-' ? '/' : (row.url || '');
@@ -101,10 +84,6 @@ export const SHEET_CONFIGS = {
             isDeployedAtEdge,
           ];
         });
-
-      log.info(`[CDN Logs Report] Adding ${processedRows.length} rows to agentic sheet with deployment status`);
-
-      return processedRows;
     },
   },
   referral: {
