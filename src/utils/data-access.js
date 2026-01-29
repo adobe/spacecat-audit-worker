@@ -10,7 +10,10 @@
  * governing permissions and limitations under the License.
  */
 import { isNonEmptyArray, isObject } from '@adobe/spacecat-shared-utils';
-import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import {
+  Suggestion as SuggestionDataAccess,
+  FixEntity as FixEntityDataAccess,
+} from '@adobe/spacecat-shared-data-access';
 
 /**
  * Safely stringify an object for logging, truncating large arrays to prevent
@@ -147,29 +150,47 @@ export async function getImsOrgId(site, dataAccess, log) {
 }
 
 /**
+ * Computes suggestions that have "disappeared" from the current audit data.
+ * These are existing suggestions whose key is no longer present in the new data.
+ *
+ * @param {Suggestion[]} existingSuggestions - The existing suggestions.
+ * @param {Set} newDataKeys - The set of new data keys.
+ * @param {Function} buildKey - Function to build a unique key from suggestion data.
+ * @returns {Suggestion[]} - Array of disappeared suggestions.
+ */
+export const getDisappearedSuggestions = (
+  existingSuggestions,
+  newDataKeys,
+  buildKey,
+) => existingSuggestions.filter((existing) => {
+  const data = existing.getData?.() || {};
+  const key = buildKey(data);
+  return !newDataKeys.has(key);
+});
+
+/**
  * Handles outdated suggestions by updating their status to OUTDATED by default,
  * or the status given as input.
  *
  * @param {Object} params - The parameters for the handleOutdatedSuggestions operation.
- * @param {Suggestion[]} params.existingSuggestions - The existing suggestions.
- * @param {Set} params.newDataKeys - The set of new data keys to check for outdated suggestions.
- * @param {Function} params.buildKey - The function to build a unique key for each suggestion.
+ * @param {Suggestion[]} params.disappearedSuggestions - Suggestions no longer in audit data.
  * @param {Object} params.context - The context object containing the data access object.
  * @param {Set} [params.scrapedUrlsSet] - Optional set of URLs that were scraped in this audit
  * @returns {Promise<void>} - Resolves when the outdated suggestions are updated.
  */
 export const handleOutdatedSuggestions = async ({
   context,
-  existingSuggestions,
-  newDataKeys,
-  buildKey,
+  disappearedSuggestions,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
 }) => {
   const { Suggestion } = context.dataAccess;
   const { log } = context;
-  const existingOutdatedSuggestions = existingSuggestions
-    .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
+
+  // From disappeared suggestions, filter to those that should be marked outdated:
+  // - Exclude already terminal statuses (OUTDATED, FIXED, ERROR, SKIPPED, REJECTED)
+  // - Optionally filter by scraped URLs
+  const existingOutdatedSuggestions = disappearedSuggestions
     .filter((existing) => ![
       SuggestionDataAccess.STATUSES.OUTDATED,
       SuggestionDataAccess.STATUSES.FIXED,
@@ -237,6 +258,10 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * Prepares new suggestions from the new data and adds them to the opportunity.
  * Maps new data to suggestion objects using the provided mapping function.
  *
+ * Optionally handles reconciliation and fix entity publishing:
+ * - If `isIssueFixed` is provided, calls `reconcileDisappearedSuggestions` before syncing.
+ * - If `isIssueResolvedOnProduction` is provided, calls `publishDeployedFixEntities` after.
+ *
  * @param {Object} params - The parameters for the sync operation.
  * @param {Object} params.context - The context object containing the data access object and logger.
  * @param {Object} params.opportunity - The opportunity object to synchronize suggestions for.
@@ -246,6 +271,14 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * @param {Function} [params.mergeDataFunction] - Function to merge existing and new data.
  *   Defaults to shallow merge.
  * @param {string} [params.statusToSetForOutdated] - Status to set for outdated suggestions.
+ * @param {Set} [params.scrapedUrlsSet] - Optional set of scraped URLs for filtering.
+ * @param {Function} [params.isIssueFixed] - Async callback for reconcileDisappearedSuggestions.
+ *   If provided, reconciliation is performed before syncing.
+ * @param {Function} [params.getPagePath] - Function to get page path for fix entity.
+ * @param {Function} [params.getUpdatedValue] - Function to get updated value for fix entity.
+ * @param {Function} [params.getOldValue] - Function to get old value for fix entity.
+ * @param {Function} [params.isIssueResolvedOnProduction] - Async callback for publishing.
+ *   If provided, fix entity publishing is performed after reconciliation.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
 export async function syncSuggestions({
@@ -257,32 +290,88 @@ export async function syncSuggestions({
   mergeDataFunction = defaultMergeDataFunction,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
+  // Optional: reconcileDisappearedSuggestions params
+  isIssueFixed,
+  getPagePath,
+  getUpdatedValue,
+  getOldValue,
+  // Optional: publishDeployedFixEntities params
+  isIssueResolvedOnProduction,
 }) {
   if (!context) {
     return;
   }
-  const { log } = context;
-  const newDataKeys = new Set(newData.map(buildKey));
-  const existingSuggestions = await opportunity.getSuggestions();
+  const { log, site, dataAccess } = context;
 
-  // Update outdated suggestions
-  await handleOutdatedSuggestions({
+  // Fetch existing suggestions and compute disappeared suggestions once
+  const newDataKeys = new Set(newData.map(buildKey));
+  log.info(`[syncSuggestions] New data keys: ${newDataKeys.size}`);
+  log.info(`[syncSuggestions] New data: ${JSON.stringify(newData, null, 2)}`);
+  const existingSuggestions = await opportunity.getSuggestions();
+  const disappearedSuggestions = getDisappearedSuggestions(
     existingSuggestions,
     newDataKeys,
     buildKey,
+  );
+
+  log.info(`[syncSuggestions] Existing suggestions = ${existingSuggestions.length}, Disappeared = ${disappearedSuggestions.length}`);
+
+  // Step 1: Reconcile disappeared suggestions (if isIssueFixed is provided)
+  if (typeof isIssueFixed === 'function') {
+    // eslint-disable-next-line no-use-before-define
+    await reconcileDisappearedSuggestions({
+      opportunity,
+      disappearedSuggestions,
+      getPagePath,
+      site,
+      log,
+      isIssueFixed,
+      getUpdatedValue,
+      getOldValue,
+    });
+  } else {
+    log.info('[syncSuggestions] No isIssueFixed provided');
+  }
+
+  // Step 2: Publish deployed fix entities (if isIssueResolvedOnProduction is provided)
+  if (typeof isIssueResolvedOnProduction === 'function') {
+    try {
+      // eslint-disable-next-line no-use-before-define
+      await publishDeployedFixEntities({
+        opportunityId: opportunity.getId(),
+        dataAccess,
+        log,
+        currentAuditData: newData,
+        buildKey,
+        isIssueResolvedOnProduction,
+      });
+    /* c8 ignore next 3 - defensive: publishDeployedFixEntities has internal try-catch */
+    } catch (err) {
+      log.warn(`Failed to publish fix entities: ${err.message}`);
+    }
+  } else {
+    log.info('[syncSuggestions] No isIssueResolvedOnProduction provided');
+  }
+
+  // Step 3: Handle outdated suggestions (mark as OUTDATED)
+  await handleOutdatedSuggestions({
+    disappearedSuggestions,
     context,
     statusToSetForOutdated,
     scrapedUrlsSet,
   });
 
-  log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
-
-  // Update existing suggestions
+  // Update existing suggestions (skip FIXED and IN_PROGRESS as they're being actively worked on)
+  const skipStatuses = [
+    SuggestionDataAccess.STATUSES.FIXED,
+    SuggestionDataAccess.STATUSES.IN_PROGRESS,
+  ];
   await Promise.all(
     existingSuggestions
       .filter((existing) => {
         const existingKey = buildKey(existing.getData());
-        return newDataKeys.has(existingKey);
+        const status = existing.getStatus();
+        return newDataKeys.has(existingKey) && !skipStatuses.includes(status);
       })
       .map((existing) => {
         const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
@@ -293,9 +382,8 @@ export async function syncSuggestions({
           log.debug('REJECTED suggestion found in audit. Preserving REJECTED status.');
         } else if (SuggestionDataAccess.STATUSES.OUTDATED === existing.getStatus()) {
           log.warn('Resolved suggestion found in audit. Possible regression.');
-          const { site } = context;
-          const requiresValidation = Boolean(site?.requiresValidation);
-          existing.setStatus(requiresValidation
+          const requiresValidationForOutdated = Boolean(site?.requiresValidation);
+          existing.setStatus(requiresValidationForOutdated
             ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
             : SuggestionDataAccess.STATUSES.NEW);
         }
@@ -306,12 +394,58 @@ export async function syncSuggestions({
   log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
   // Prepare new suggestions
-  const { site } = context;
+  // For FIXED suggestions with ALL fix entities in PUBLISHED state, allow creating
+  // a new suggestion (regression scenario). Otherwise, block duplicate creation.
+  const fixedStatus = SuggestionDataAccess.STATUSES.FIXED;
+  const publishedStatus = FixEntityDataAccess?.STATUSES?.PUBLISHED;
+  /* c8 ignore next */
+  const { Suggestion } = context.dataAccess || {};
+
+  // Build a set of keys for FIXED suggestions where ALL fix entities are PUBLISHED
+  // These should be excluded from the "existing" check to allow regression detection
+  const fullyPublishedFixedKeys = new Set();
+  const fixedSuggestions = existingSuggestions.filter((s) => s.getStatus() === fixedStatus);
+
+  if (fixedSuggestions.length > 0 && publishedStatus && Suggestion?.getFixEntitiesBySuggestionId) {
+    await Promise.all(fixedSuggestions.map(async (suggestion) => {
+      try {
+        const suggestionId = suggestion.getId?.();
+        if (!suggestionId) return;
+
+        const { data: fixEntities = [] } = await Suggestion.getFixEntitiesBySuggestionId(
+          suggestionId,
+        );
+
+        // Only consider it a completed fix if there are fix entities AND all are PUBLISHED
+        if (fixEntities.length > 0
+          && fixEntities.every((fe) => fe.getStatus?.() === publishedStatus)) {
+          fullyPublishedFixedKeys.add(buildKey(suggestion.getData()));
+        }
+      } catch (e) {
+        log.debug(`Failed to check fix entities for suggestion: ${e.message}`);
+      }
+    }));
+  }
+
   const requiresValidation = Boolean(site?.requiresValidation);
   const newSuggestions = newData
-    .filter((data) => !existingSuggestions.some(
-      (existing) => buildKey(existing.getData()) === buildKey(data),
-    ))
+    .filter((data) => {
+      const key = buildKey(data);
+      const existingMatches = existingSuggestions.filter(
+        (existing) => buildKey(existing.getData()) === key,
+      );
+
+      // No existing suggestion with this key - allow creation
+      if (existingMatches.length === 0) return true;
+
+      // Only allow creation if ALL existing matches are FIXED with PUBLISHED fix entities
+      // This prevents creating duplicate NEW suggestions when a regression already exists
+      const allMatchesAreFullyPublishedFixed = existingMatches.every(
+        (match) => match.getStatus() === fixedStatus && fullyPublishedFixedKeys.has(key),
+      );
+
+      return allMatchesAreFullyPublishedFixed;
+    })
     .map((data) => {
       const suggestion = mapNewSuggestion(data);
       return {
@@ -353,5 +487,274 @@ export async function syncSuggestions({
     } else {
       log.debug(`Successfully created ${suggestions.createdItems?.length || suggestions.length} suggestions for siteId ${siteId}`);
     }
+  }
+}
+
+/**
+ * Reconciles suggestions that disappeared from current audit results.
+ * If a previous suggestion is verified as fixed (via the provided callback),
+ * marks it as FIXED and creates a PUBLISHED fix entity.
+ *
+ * @param {Object} params - The parameters for the reconciliation.
+ * @param {Object} params.opportunity - The opportunity object.
+ * @param {Suggestion[]} params.disappearedSuggestions - Suggestions no longer in audit data.
+ * @param {Function} params.getPagePath - Function to get the page path from suggestion data.
+ * @param {Object} params.site - The site object.
+ * @param {Object} params.log - Logger object.
+ * @param {Function} params.isIssueFixed - Async callback to determine if a suggestion's issue
+ *   has been fixed. Receives the suggestion object and returns true if fixed, false otherwise.
+ * @param {Function} [params.getUpdatedValue] - Optional function to extract the updated value
+ *   for fix entity changeDetails. Receives suggestion data, defaults to urlEdited or first
+ *   urlsSuggested.
+ * @param {Function} [params.getOldValue] - Optional function to extract the old value
+ *   for fix entity changeDetails. Receives suggestion data.
+ * @returns {Promise<void>}
+ */
+export async function reconcileDisappearedSuggestions({
+  opportunity,
+  disappearedSuggestions,
+  getPagePath,
+  site,
+  log,
+  isIssueFixed,
+  getUpdatedValue,
+  getOldValue,
+}) {
+  log.info(`[reconcileDisappearedSuggestions] Reconciling ${disappearedSuggestions.length} disappeared suggestions for opportunity ${opportunity.getId?.()}`);
+  try {
+    const newStatus = SuggestionDataAccess?.STATUSES?.NEW;
+
+    // From disappeared suggestions, only process those in NEW status
+    // (suggestions that haven't been actioned yet)
+    const candidates = disappearedSuggestions.filter((s) => {
+      if (!newStatus || s?.getStatus?.() !== newStatus) {
+        return false;
+      }
+      return true;
+    });
+
+    log.info(`[reconcileDisappearedSuggestions] Candidates: ${candidates.length}`);
+
+    const fixEntityObjects = [];
+
+    for (const suggestion of candidates) {
+      // eslint-disable-next-line no-await-in-loop
+      const data = suggestion?.getData?.();
+
+      // Use the provided callback to determine if the issue has been fixed
+      // eslint-disable-next-line no-await-in-loop
+      const isFixed = await isIssueFixed?.(suggestion);
+      if (suggestion?.getData?.()?.url_to === 'https://www.wilson.com/en-us/golf/bags/cart-bags') {
+        log.info(`[reconcileDisappearedSuggestions] isFixed: ${isFixed}`);
+      }
+      if (!isFixed) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      log.info(`[reconcileDisappearedSuggestions] Reconciling suggestion ${suggestion?.getId?.()} as FIXED in ${opportunity.getId?.()}`);
+      // Mark suggestion as FIXED and prepare a PUBLISHED fix entity on the opportunity
+      let suggestionMarkedFixed = false;
+      try {
+        suggestion.setStatus?.(SuggestionDataAccess.STATUSES.FIXED);
+        suggestion.setUpdatedBy?.('system');
+        // eslint-disable-next-line no-await-in-loop
+        await suggestion.save?.();
+        suggestionMarkedFixed = true;
+      /* c8 ignore next 3 */
+      } catch (e) {
+        log.warn(`Failed to mark suggestion ${suggestion?.getId?.()} as FIXED: ${e.message}`);
+      }
+
+      // Only create fix entity if we successfully marked and saved the suggestion as FIXED
+      if (suggestionMarkedFixed) {
+        try {
+          const published = FixEntityDataAccess?.STATUSES?.PUBLISHED;
+          if (published && typeof opportunity.addFixEntities === 'function') {
+            // Use custom getUpdatedValue/getOldValue if provided, otherwise default logic
+            /* c8 ignore next 3 */
+            const updatedValue = typeof getUpdatedValue === 'function'
+              ? getUpdatedValue(data)
+              : (data?.urlEdited || data?.urlsSuggested?.[0] || '');
+            /* c8 ignore next 3 */
+            const oldValue = typeof getOldValue === 'function'
+              ? getOldValue(data)
+              : '';
+            fixEntityObjects.push({
+              opportunityId: opportunity.getId(),
+              status: published,
+              type: suggestion?.getType?.(),
+              executedAt: new Date().toISOString(),
+              changeDetails: {
+                system: site.getDeliveryType(),
+                pagePath: getPagePath(data),
+                oldValue,
+                updatedValue,
+              },
+              suggestions: [suggestion?.getId?.()],
+            });
+          }
+        /* c8 ignore next 3 */
+        } catch (e) {
+          log.warn(`Failed building fix entity payload for suggestion ${suggestion?.getId?.()}: ${e.message}`);
+        }
+      }
+    }
+
+    if (fixEntityObjects.length > 0 && typeof opportunity.addFixEntities === 'function') {
+      try {
+        await opportunity.addFixEntities(fixEntityObjects);
+        log.info(`Added ${fixEntityObjects.length} fix entities for opportunity ${opportunity.getId?.()}`);
+      /* c8 ignore next 3 */
+      } catch (e) {
+        log.warn(`Failed to add fix entities on opportunity ${opportunity.getId?.()}: ${e.message}`);
+      }
+    }
+  } catch (e) {
+    log.warn(`Failed reconciliation for disappeared suggestions: ${e.message}`);
+  }
+}
+
+/**
+ * Publishes DEPLOYED fix entities to PUBLISHED when their associated suggestions
+ * are verified as resolved/fixed on production. This utility enables audits to automatically
+ * transition fix entities from DEPLOYED to PUBLISHED status based on live verification.
+ *
+ * The function follows a FixEntity-first flow:
+ * 1) Fetches all FixEntities for the opportunity with DEPLOYED status
+ * 2) For each FixEntity, retrieves its associated suggestions
+ * 3) Fast-path: If a suggestion's key exists in currentAuditData, issue is still present (skip)
+ * 4) Verifies remaining suggestions using the provided predicate function
+ * 5) If ALL suggestions pass verification (predicate returns true), publishes the FixEntity
+ *
+ * This is useful for audits that track fixes which can be verified programmatically,
+ * such as broken links (check if URL returns 200), redirects (check if redirect works),
+ * or any other issue that can be confirmed as resolved via an async check.
+ *
+ * @param {Object} params - The parameters object
+ * @param {string} params.opportunityId - The opportunity ID to process fix entities for
+ * @param {Object} params.dataAccess - Data access object containing FixEntity
+ * @param {Object} params.log - Logger object for debug/warn messages
+ * @param {function(Object): Promise<boolean>} params.isIssueResolvedOnProduction - Async predicate
+ *   that receives a suggestion object and returns:
+ *   - `true` if the issue is resolved on production (OK to publish)
+ *   - `false` if the issue still exists (do NOT publish)
+ *   - throwing an error is treated as "not resolved" for safety
+ * @param {Array} [params.currentAuditData] - Current audit data array. If a suggestion's key
+ *   exists in this data, the issue is still present and production check is skipped.
+ * @param {function(Object): string} [params.buildKey] - Function to build a unique key from
+ *   suggestion data. Used with currentAuditData to check if issue still exists.
+ * @returns {Promise<void>}
+ *
+ * @example
+ * await publishDeployedFixEntities({
+ *   opportunityId: opportunity.getId(),
+ *   dataAccess,
+ *   log,
+ *   currentAuditData: auditResult.brokenBacklinks,
+ *   buildKey: (data) => `${data.url_from}|${data.url_to}`,
+ *   isIssueResolvedOnProduction: async (suggestion) => {
+ *     const url = suggestion?.getData?.()?.targetUrl;
+ *     if (!url) return false; // No URL = can't verify = not resolved
+ *     const response = await fetch(url);
+ *     return response.ok; // true if resolved (200), false if still broken
+ *   },
+ * });
+ */
+export async function publishDeployedFixEntities({
+  opportunityId,
+  dataAccess,
+  log,
+  isIssueResolvedOnProduction,
+  currentAuditData,
+  buildKey,
+}) {
+  log.info(`[publishDeployedFixEntities] Publishing deployed fix entities for opportunity ${opportunityId}`);
+  try {
+    const { FixEntity } = dataAccess;
+    if (!FixEntityDataAccess?.STATUSES?.DEPLOYED || !FixEntityDataAccess?.STATUSES?.PUBLISHED) {
+      log.debug('FixEntity status constants not available; skipping publish.');
+      return;
+    }
+    if (typeof FixEntity?.allByOpportunityIdAndStatus !== 'function'
+      || typeof FixEntity?.getSuggestionsByFixEntityId !== 'function') {
+      log.debug('FixEntity APIs not available; skipping publish.');
+      return;
+    }
+
+    const deployedStatus = FixEntityDataAccess.STATUSES.DEPLOYED;
+    const publishedStatus = FixEntityDataAccess.STATUSES.PUBLISHED;
+
+    const deployedFixEntities = await FixEntity.allByOpportunityIdAndStatus(
+      opportunityId,
+      deployedStatus,
+    );
+    if (!Array.isArray(deployedFixEntities) || deployedFixEntities.length === 0) {
+      return;
+    }
+
+    log.info(`[publishDeployedFixEntities] Found ${deployedFixEntities.length} deployed fix entities for opportunity ${opportunityId}`);
+    // Build a set of keys from current audit data for quick lookup
+    // If a suggestion's key exists in current audit data, the issue is still present
+    const currentAuditKeys = new Set(
+      Array.isArray(currentAuditData) && typeof buildKey === 'function'
+        ? currentAuditData.map(buildKey)
+        : [],
+    );
+
+    const publishTasks = [];
+    for (const fixEntity of deployedFixEntities) {
+      const fixEntityId = fixEntity.getId?.();
+      // eslint-disable-next-line no-await-in-loop
+      const suggestions = await FixEntity.getSuggestionsByFixEntityId(fixEntityId);
+      if (!suggestions || suggestions.length === 0) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      // Determine if all suggestions are resolved on production.
+      // If we cannot verify for any suggestion (errors or unavailable predicate),
+      // we consider it NOT resolved to avoid accidental publish.
+      let shouldPublish = true;
+      for (const suggestion of suggestions) {
+        // Fast path: if suggestion key exists in current audit data, issue is still present
+        if (typeof buildKey === 'function') {
+          /* c8 ignore next */
+          const suggestionKey = buildKey(suggestion.getData?.() || {});
+          if (currentAuditKeys.has(suggestionKey)) {
+            log.debug(`Suggestion ${suggestion.getId?.()} still in audit data, skipping prod check`);
+            shouldPublish = false;
+            break;
+          }
+        }
+
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const isResolved = await isIssueResolvedOnProduction?.(suggestion);
+          if (isResolved !== true) {
+            shouldPublish = false;
+            break;
+          }
+        } catch (e) {
+          log?.error?.(`[publishDeployedFixEntities] Live check failed for suggestion under fixEntity ${fixEntity.getId?.()}: ${e.message}`);
+          shouldPublish = false;
+          break;
+        }
+      }
+
+      if (shouldPublish && typeof fixEntity.getStatus === 'function'
+        && fixEntity.getStatus() === deployedStatus) {
+        publishTasks.push((async () => {
+          fixEntity.setStatus?.(publishedStatus);
+          fixEntity.setUpdatedBy?.('system');
+          await fixEntity.save?.();
+          log.info(`[publishDeployedFixEntities] Published fix entity ${fixEntity.getId?.()} from DEPLOYED to PUBLISHED`);
+        })());
+      }
+    }
+
+    await Promise.all(publishTasks);
+  } catch (err) {
+    log?.warn?.(`Failed to publish DEPLOYED fix entities for opportunity ${opportunityId}: ${err.message}`);
   }
 }
