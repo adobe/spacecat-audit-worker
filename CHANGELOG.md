@@ -1,3 +1,39 @@
+# [1.293.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.292.0...v1.293.0) (2026-01-29)
+
+
+### Features
+
+* **cwv-auto-suggest:** add CS/AMS/EDS support with source code (SITES-34514) ([#1897](https://github.com/adobe/spacecat-audit-worker/issues/1897)) ([38da8ab](https://github.com/adobe/spacecat-audit-worker/commit/38da8ab07fcdae5cd2f9fab71ae034af93a5708c))
+
+# [1.292.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.291.1...v1.292.0) (2026-01-28)
+
+
+### Features
+
+* SITES-39133 - Detect canonical tag added via JS ([#1867](https://github.com/adobe/spacecat-audit-worker/issues/1867)) ([6259ef4](https://github.com/adobe/spacecat-audit-worker/commit/6259ef43ba341b261886d49db76546cdadc9c132))
+
+## [1.291.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.291.0...v1.291.1) (2026-01-28)
+
+
+### Bug Fixes
+
+* Add Spacecat to Mystique cwv message ([#1853](https://github.com/adobe/spacecat-audit-worker/issues/1853)) ([eb65b24](https://github.com/adobe/spacecat-audit-worker/commit/eb65b24a9220c0edfb366f17a77d134fafefcb12))
+
+# [1.291.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.290.5...v1.291.0) (2026-01-28)
+
+
+### Features
+
+* **cwv-auto-suggest:** add CS/AMS/EDS support with source code (SITES-34514) ([#1896](https://github.com/adobe/spacecat-audit-worker/issues/1896)) ([a9132a6](https://github.com/adobe/spacecat-audit-worker/commit/a9132a65246d14b178d6f385709b7b109ced1ca8))
+
+## [1.290.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.290.4...v1.290.5) (2026-01-28)
+
+
+### Bug Fixes
+
+* Add 'earned' tag when creating opportunity data for wikipedia analysis ([#1894](https://github.com/adobe/spacecat-audit-worker/issues/1894)) ([25fd87e](https://github.com/adobe/spacecat-audit-worker/commit/25fd87efb6131d7d8daf86bc03fb2f4f23f97006))
+* SITES-39008 paid cookie consent recalculate Proj. Traffic Lost & Value Lost ([#1889](https://github.com/adobe/spacecat-audit-worker/issues/1889)) ([45c6b85](https://github.com/adobe/spacecat-audit-worker/commit/45c6b856fb55e38701df12d2360a2f4863b47c5e))
+
 ## [1.290.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.290.3...v1.290.4) (2026-01-28)
 
 
