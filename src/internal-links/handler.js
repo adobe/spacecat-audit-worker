@@ -500,9 +500,6 @@ export const opportunityAndSuggestionsStep = async (context) => {
     log.info(`Filtered out ${originalCount - alternativeUrls.length} unscrape-able file URLs`);
   }
 
-  // Note: alternativeUrls limit removed as it's unreachable
-  // topPages is capped to MAX_URLS_TO_PROCESS, so alternativeUrls can't exceed it
-
   // Validate before sending to Mystique
   if (brokenLinks.length === 0) {
     log.warn('No valid broken links to send to Mystique. Skipping message.');
@@ -521,14 +518,13 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   // Batch broken links to stay within SQS message size limit (256KB)
   // Each batch gets its own message with batch metadata for Mystique to reassemble
-  const BATCH_SIZE = MAX_BROKEN_LINKS; // 100 links per batch
-  const totalBatches = Math.ceil(brokenLinks.length / BATCH_SIZE);
+  const totalBatches = Math.ceil(brokenLinks.length / MAX_BROKEN_LINKS);
 
   log.info(`Sending ${brokenLinks.length} broken links in ${totalBatches} batch(es) to Mystique`);
 
   for (let batchIndex = 0; batchIndex < totalBatches; batchIndex += 1) {
-    const batchStart = batchIndex * BATCH_SIZE;
-    const batchEnd = Math.min(batchStart + BATCH_SIZE, brokenLinks.length);
+    const batchStart = batchIndex * MAX_BROKEN_LINKS;
+    const batchEnd = Math.min(batchStart + MAX_BROKEN_LINKS, brokenLinks.length);
     const batchLinks = brokenLinks.slice(batchStart, batchEnd);
 
     const message = {
@@ -701,7 +697,7 @@ export async function runCrawlDetectionBatch(context) {
   }, context);
 
   // Accumulate results (append new results to existing)
-  const allResults = [...accumulatedResults, ...batchResult.results];
+  const allResults = accumulatedResults.concat(batchResult.results);
   const totalPagesProcessed = (existingState.totalPagesProcessed || 0) + batchResult.pagesProcessed;
 
   // Save accumulated state to S3 (single file)
@@ -746,57 +742,6 @@ export async function runCrawlDetectionBatch(context) {
   }
   log.info(`All ${currentBatchNum + 1} batches complete, proceeding to merge step`);
   return finalizeCrawlDetection(context, { skipCrawlDetection: false });
-}
-
-/**
- * Run crawl-based detection, merge with RUM results, and generate opportunities/suggestions.
- * @deprecated Use runCrawlDetectionBatch for batched processing
- */
-export async function runCrawlDetectionAndGenerateSuggestions(context) {
-  const {
-    log: baseLog, site, audit, dataAccess,
-  } = context;
-  const log = createAuditLogger(baseLog, site.getId(), audit.getId());
-
-  const scrapeResultPaths = context.scrapeResultPaths ?? new Map();
-  const scrapeJobId = context.scrapeJobId || 'N/A';
-
-  log.info('====== Crawl Detection Step (Legacy) ======');
-  log.info(`scrapeJobId: ${scrapeJobId}, scrapeResultPaths: ${scrapeResultPaths.size}`);
-
-  // Get RUM results from previous audit step
-  const auditResult = audit.getAuditResult();
-  const rumLinks = auditResult.brokenInternalLinks || [];
-
-  log.info(`RUM detection results: ${rumLinks.length} broken links`);
-
-  // NOTE: This legacy function is deprecated - use runCrawlDetectionBatch instead
-  log.warn('Legacy non-batched crawl detection is deprecated, using RUM-only results');
-  const finalLinks = rumLinks;
-
-  // Calculate priority for all links
-  const prioritizedLinks = calculatePriority(finalLinks);
-
-  // Count by priority
-  const highPriority = prioritizedLinks.filter((link) => link.priority === 'high').length;
-  const mediumPriority = prioritizedLinks.filter((link) => link.priority === 'medium').length;
-  const lowPriority = prioritizedLinks.filter((link) => link.priority === 'low').length;
-  log.info(`Priority: ${highPriority} high, ${mediumPriority} medium, ${lowPriority} low`);
-
-  // Update audit result with prioritized links
-  const updatedAuditResult = await updateAuditResult(
-    audit,
-    auditResult,
-    prioritizedLinks,
-    dataAccess,
-    baseLog,
-    site.getId(),
-  );
-
-  log.info('===================================');
-
-  // Now generate opportunities and suggestions
-  return opportunityAndSuggestionsStep({ ...context, updatedAuditResult });
 }
 
 /**
