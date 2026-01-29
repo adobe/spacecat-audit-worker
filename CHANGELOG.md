@@ -1,3 +1,10 @@
+# [1.293.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.292.0...v1.293.0) (2026-01-29)
+
+
+### Features
+
+* **cwv-auto-suggest:** add CS/AMS/EDS support with source code (SITES-34514) ([#1897](https://github.com/adobe/spacecat-audit-worker/issues/1897)) ([38da8ab](https://github.com/adobe/spacecat-audit-worker/commit/38da8ab07fcdae5cd2f9fab71ae034af93a5708c))
+
 # [1.292.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.291.1...v1.292.0) (2026-01-28)
 
 
