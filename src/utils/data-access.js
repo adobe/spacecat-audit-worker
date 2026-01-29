@@ -89,6 +89,35 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 }
 
 /**
+ * Retrieves the top pages for a given site.
+ *
+ * @param {Object} dataAccess - The data access object for database operations.
+ * @param {string} siteId - The site ID to retrieve the top pages for.
+ * @param {Object} context - The context object containing necessary information.
+ * @param {Object} log - The logging object.
+ * @returns {Promise<Array<Object>>} - A promise that resolves to an array of top pages.
+ */
+export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
+  try {
+    const { SiteTopPage } = dataAccess;
+    const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    log.info('Received top pages response:', JSON.stringify(result, null, 2));
+
+    const topPages = result || [];
+    if (topPages.length > 0) {
+      const topPagesUrls = topPages.map((page) => ({ url: page.getUrl() }));
+      log.info(`Found ${topPagesUrls.length} top pages`);
+      return topPagesUrls;
+    }
+    log.info('No top pages found');
+    return [];
+  } catch (error) {
+    log.error(`Error retrieving top pages for site ${siteId}: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
  * Retrieves the IMS org ID for a given site.
  *
  * @param {Object} site - The site object.

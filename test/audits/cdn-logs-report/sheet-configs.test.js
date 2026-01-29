@@ -64,6 +64,7 @@ describe('CDN Logs Sheet Configs', () => {
           'Product',
           'Category',
           'Citability Score',
+          'Deployed at Edge',
         ]);
     });
 
@@ -98,6 +99,7 @@ describe('CDN Logs Sheet Configs', () => {
         {
           getUrl: () => 'https://example.com/test',
           getCitabilityScore: () => 85,
+          getIsDeployedAtEdge: () => true,
           getUpdatedAt: () => '2025-01-15T10:00:00Z',
         },
       ]);
@@ -122,6 +124,7 @@ describe('CDN Logs Sheet Configs', () => {
           'Firefly',
           'Products',
           85,
+          true,
         ]);
       expect(result[1])
         .to
@@ -137,6 +140,7 @@ describe('CDN Logs Sheet Configs', () => {
           'Other',
           'Uncategorized',
           'N/A',
+          false,
         ]);
     });
 
@@ -183,6 +187,7 @@ describe('CDN Logs Sheet Configs', () => {
           'Other',
           'Uncategorized',
           'N/A',
+          false,
         ]);
     });
 
@@ -237,11 +242,13 @@ describe('CDN Logs Sheet Configs', () => {
         {
           getUrl: () => 'https://example.com/test',
           getCitabilityScore: () => 75,
+          getIsDeployedAtEdge: () => false,
           getUpdatedAt: () => '2025-01-10T10:00:00Z', // Older
         },
         {
           getUrl: () => 'https://example.com/test',
           getCitabilityScore: () => 90,
+          getIsDeployedAtEdge: () => true,
           getUpdatedAt: () => '2025-01-15T10:00:00Z', // Newer - should be used
         },
       ]);
@@ -255,6 +262,9 @@ describe('CDN Logs Sheet Configs', () => {
       expect(result[0][9]) // Citability Score is at index 9
         .to
         .equal(90); // Should use the newer score
+      expect(result[0][10]) // isDeployedAtEdge is at index 10
+        .to
+        .equal(true); // Should use the newer deployment status
     });
 
     it('has required properties', () => {
