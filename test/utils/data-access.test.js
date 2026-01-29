@@ -680,18 +680,21 @@ describe('data-access', () => {
         {
           id: '1',
           data: { url: 'https://example.com/page1', key: 'page1', tokowakaDeployed: 1769607504287 },
+          getId: sinon.stub().returns('1'),
           getData: sinon.stub().returns({ url: 'https://example.com/page1', key: 'page1', tokowakaDeployed: 1769607504287 }),
           getStatus: sinon.stub().returns('NEW'),
         },
         {
           id: '2',
           data: { url: 'https://example.com/page2', key: 'page2', edgeDeployed: 1769607504287 },
+          getId: sinon.stub().returns('2'),
           getData: sinon.stub().returns({ url: 'https://example.com/page2', key: 'page2', edgeDeployed: 1769607504287 }),
           getStatus: sinon.stub().returns('NEW'),
         },
         {
           id: '3',
           data: { url: 'https://example.com/page3', key: 'page3' },
+          getId: sinon.stub().returns('3'),
           getData: sinon.stub().returns({ url: 'https://example.com/page3', key: 'page3' }),
           getStatus: sinon.stub().returns('NEW'),
         },
