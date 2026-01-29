@@ -40,7 +40,11 @@ async function addSuggestions(
   suggestions,
   context,
 ) {
+  const { log } = context;
   const suggestionValues = getJsonSummarySuggestion(suggestions);
+
+  // TEMP: Confirm syncSuggestions is being called with tokowakaDeployed fix
+  log.info(`[SUMMARIZATION] Calling syncSuggestions with ${suggestionValues.length} new suggestions - tokowakaDeployed fix active`);
 
   await syncSuggestions({
     context,
