@@ -28,7 +28,8 @@
     "local-build": "sam build",
     "local-run": "sam local invoke -l output.txt",
     "local-build-run": "sam build && sam local invoke -l output.txt",
-    "local-watch": "node scripts/watch-and-copy.js"
+    "local-watch": "node scripts/watch-and-copy.js",
+    "oppty:check": "node oppty-scripts/opportunities/index.js"
   },
   "hlx": {
     "target": "aws",
@@ -104,6 +105,7 @@
     "@aws-sdk/credential-provider-node": "3.940.0",
     "@aws-sdk/s3-request-presigner": "3.940.0",
     "aws-xray-sdk": "3.12.0",
+    "axios": "^1.13.4",
     "cheerio": "1.1.2",
     "date-fns": "4.1.0",
     "diff": "8.0.3",
@@ -115,12 +117,15 @@
     "hyphen": "1.10.6",
     "is-language-code": "5.1.0",
     "js-beautify": "1.15.4",
+    "puppeteer": "^24.36.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "robots-parser": "3.0.1",
     "syllable": "5.0.1",
     "text-readability": "1.1.1",
     "urijs": "1.19.11",
-    "zod": "4.1.13",
-    "uuid": "13.0.0"
+    "uuid": "13.0.0",
+    "zod": "4.1.13"
   },
   "devDependencies": {
     "@adobe/eslint-config-helix": "3.0.15",

@@ -1,0 +1,15 @@
+# Output data files
+data/
+
+# Node modules
+node_modules/
+
+# Environment files
+.env
+.env.local
+
+# Log files
+*.log
+
+# OS files
+.DS_Store
