@@ -17,8 +17,10 @@ import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const SCRAPE_AVAILABILITY_THRESHOLD = 0.5; // 50%
-const MAX_TOP_PAGES = 200;
-const MAX_PAGES_TO_MYSTIQUE = 100;
+// TEMP: hard-limit URLs for PR validation only; remove before prod merge.
+const MAX_TOP_PAGES = 3;
+// TEMP: hard-limit URLs for PR validation only; remove before prod merge.
+const MAX_PAGES_TO_MYSTIQUE = 3;
 
 /**
  * Step 1: Import top pages (Athena first, then Ahrefs fallback)

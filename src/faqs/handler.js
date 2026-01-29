@@ -19,6 +19,8 @@ import { SPREADSHEET_COLUMNS, validateContentAI } from './utils.js';
 
 const MAX_ROWS_TO_READ = 200;
 const WEEKS_TO_LOOK_BACK = 4;
+// TEMP: hard-limit URLs for PR validation only; remove before prod merge.
+const MAX_AUDIT_URLS = 3;
 
 /**
  * Groups prompts by URL and topic
@@ -235,7 +237,7 @@ async function runFaqsAudit(url, context, site) {
     log.info(`[FAQ] Deduplicated ${topPrompts.length} prompts to ${uniquePrompts.length} unique prompts`);
 
     // Group prompts by URL and topic (already limited to MAX_ROWS_TO_READ)
-    const promptsByUrl = groupPromptsByUrlAndTopic(uniquePrompts);
+    const promptsByUrl = groupPromptsByUrlAndTopic(uniquePrompts).slice(0, MAX_AUDIT_URLS);
 
     log.info(`[FAQ] Grouped ${uniquePrompts.length} prompts into ${promptsByUrl.length} topics`);
 
