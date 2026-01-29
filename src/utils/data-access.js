@@ -86,6 +86,35 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 }
 
 /**
+ * Retrieves the top pages for a given site.
+ *
+ * @param {Object} dataAccess - The data access object for database operations.
+ * @param {string} siteId - The site ID to retrieve the top pages for.
+ * @param {Object} context - The context object containing necessary information.
+ * @param {Object} log - The logging object.
+ * @returns {Promise<Array<Object>>} - A promise that resolves to an array of top pages.
+ */
+export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
+  try {
+    const { SiteTopPage } = dataAccess;
+    const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    log.info('Received top pages response:', JSON.stringify(result, null, 2));
+
+    const topPages = result || [];
+    if (topPages.length > 0) {
+      const topPagesUrls = topPages.map((page) => ({ url: page.getUrl() }));
+      log.info(`Found ${topPagesUrls.length} top pages`);
+      return topPagesUrls;
+    }
+    log.info('No top pages found');
+    return [];
+  } catch (error) {
+    log.error(`Error retrieving top pages for site ${siteId}: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
  * Retrieves the IMS org ID for a given site.
  *
  * @param {Object} site - The site object.
@@ -146,6 +175,7 @@ export const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.FIXED,
       SuggestionDataAccess.STATUSES.ERROR,
       SuggestionDataAccess.STATUSES.SKIPPED,
+      SuggestionDataAccess.STATUSES.REJECTED,
     ].includes(existing.getStatus()))
     .filter((existing) => {
       // mark suggestions as outdated only if their URL was actually scraped
@@ -202,6 +232,7 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * Synchronizes existing suggestions with new data.
  * Handles outdated suggestions by updating their status, either to OUTDATED or the provided one.
  * Updates existing suggestions with new data if they match based on the provided key.
+ * For REJECTED suggestions that appear again, preserves REJECTED status
  *
  * Prepares new suggestions from the new data and adds them to the opportunity.
  * Maps new data to suggestion objects using the provided mapping function.
@@ -256,7 +287,11 @@ export async function syncSuggestions({
       .map((existing) => {
         const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
         existing.setData(mergeDataFunction(existing.getData(), newDataItem));
-        if ([SuggestionDataAccess.STATUSES.OUTDATED].includes(existing.getStatus())) {
+
+        if (existing.getStatus() === SuggestionDataAccess.STATUSES.REJECTED) {
+          // Keep REJECTED status when same suggestion appears again in audit
+          log.debug('REJECTED suggestion found in audit. Preserving REJECTED status.');
+        } else if (SuggestionDataAccess.STATUSES.OUTDATED === existing.getStatus()) {
           log.warn('Resolved suggestion found in audit. Possible regression.');
           const { site } = context;
           const requiresValidation = Boolean(site?.requiresValidation);
