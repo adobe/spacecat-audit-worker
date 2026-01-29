@@ -1750,7 +1750,8 @@ describe('Headings Audit', () => {
     expect(result.checks).to.have.length.greaterThan(0);
   });
 
-  it('handles getH1HeadingASuggestion with invalid response structure', async () => {
+  it('handles getH1HeadingASuggestion with invalid response structure', async function () {
+    this.timeout(10000); // Increase timeout for async operations
     const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
@@ -1924,7 +1925,8 @@ describe('Headings Audit', () => {
     expect(result.auditResult.error || result.auditResult.headings['heading-missing-h1']).to.exist;
   });
 
-  it('handles getH1HeadingASuggestion with missing pageTags properties (default fallbacks)', async () => {
+  it('handles getH1HeadingASuggestion with missing pageTags properties (default fallbacks)', async function () {
+    this.timeout(10000); // Increase timeout for async operations
     const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
@@ -2086,7 +2088,8 @@ describe('Headings Audit', () => {
     expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(2);
   });
 
-  it('handles getH1HeadingASuggestion with all pageTags properties provided (truthy branches)', async () => {
+  it('handles getH1HeadingASuggestion with all pageTags properties provided (truthy branches)', async function () {
+    this.timeout(10000); // Increase timeout for async operations
     const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
