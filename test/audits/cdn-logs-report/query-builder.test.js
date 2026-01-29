@@ -13,7 +13,10 @@
 /* eslint-env mocha */
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
-import { weeklyBreakdownQueries } from '../../../src/cdn-logs-report/utils/query-builder.js';
+import {
+  weeklyBreakdownQueries,
+  buildExcludedUrlSuffixesFilter,
+} from '../../../src/cdn-logs-report/utils/query-builder.js';
 
 use(sinonChai);
 
@@ -310,6 +313,69 @@ describe('CDN Logs Query Builder', () => {
       const query = await weeklyBreakdownQueries.createTopUrlsQueryWithLimit(customOptions);
 
       expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test-path)'))");
+    });
+  });
+
+  describe('buildExcludedUrlSuffixesFilter', () => {
+    it('returns empty string for empty array', () => {
+      const result = buildExcludedUrlSuffixesFilter([]);
+      expect(result).to.equal('');
+    });
+
+    it('returns empty string for undefined input', () => {
+      const result = buildExcludedUrlSuffixesFilter(undefined);
+      expect(result).to.equal('');
+    });
+
+    it('returns empty string for null input', () => {
+      const result = buildExcludedUrlSuffixesFilter(null);
+      expect(result).to.equal('');
+    });
+
+    it('builds correct filter for single suffix', () => {
+      const result = buildExcludedUrlSuffixesFilter(['.pdf']);
+      expect(result).to.equal("AND NOT (url LIKE '%.pdf')");
+    });
+
+    it('builds correct filter for multiple suffixes', () => {
+      const result = buildExcludedUrlSuffixesFilter(['.pdf', '/robots.txt', '.xlsx']);
+
+      expect(result).to.include('AND NOT');
+      expect(result).to.include("url LIKE '%.pdf'");
+      expect(result).to.include("url LIKE '%/robots.txt'");
+      expect(result).to.include("url LIKE '%.xlsx'");
+      expect(result).to.include(' OR ');
+    });
+
+    it('escapes single quotes in suffixes to prevent SQL injection', () => {
+      const result = buildExcludedUrlSuffixesFilter(["/file's.txt"]);
+      expect(result).to.equal("AND NOT (url LIKE '%/file''s.txt')");
+    });
+
+    it('builds filter that matches URLs ending with suffix', () => {
+      const result = buildExcludedUrlSuffixesFilter(['/robots.txt']);
+
+      // The LIKE pattern should use % at the start to match any prefix
+      expect(result).to.equal("AND NOT (url LIKE '%/robots.txt')");
+    });
+
+    it('handles all common file type suffixes', () => {
+      const suffixes = [
+        '/sitemap.xml',
+        '/robots.txt',
+        '.ico',
+        '.pdf',
+        '.xlsx',
+        '.docx',
+        '.pptx',
+      ];
+
+      const result = buildExcludedUrlSuffixesFilter(suffixes);
+
+      expect(result).to.include('AND NOT');
+      suffixes.forEach((suffix) => {
+        expect(result).to.include(`url LIKE '%${suffix}'`);
+      });
     });
   });
 });

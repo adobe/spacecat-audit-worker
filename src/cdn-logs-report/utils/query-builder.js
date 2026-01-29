@@ -161,6 +161,21 @@ async function createTopUrlsQuery(options) {
   });
 }
 
+/**
+ * Builds a SQL exclusion filter for URL suffixes.
+ * @param {Array<string>} suffixes - Array of URL suffixes to exclude
+ * @returns {string} SQL filter clause (e.g., "AND NOT (url LIKE '%.pdf' OR url LIKE '%.docx')")
+ */
+export function buildExcludedUrlSuffixesFilter(suffixes = []) {
+  if (!Array.isArray(suffixes) || suffixes.length === 0) {
+    return '';
+  }
+  const suffixConditions = suffixes
+    .map((suffix) => `url LIKE '%${suffix.replace(/'/g, "''")}'`)
+    .join(' OR ');
+  return `AND NOT (${suffixConditions})`;
+}
+
 async function createTopUrlsQueryWithLimit(options) {
   const {
     periods, databaseName, tableName, site, limit, excludedUrlSuffixes = [],
@@ -174,14 +189,7 @@ async function createTopUrlsQueryWithLimit(options) {
     siteFilters,
   );
 
-  // Build exclusion filter for URL suffixes
-  let excludedUrlSuffixesFilter = '';
-  if (excludedUrlSuffixes.length > 0) {
-    const suffixConditions = excludedUrlSuffixes
-      .map((suffix) => `url LIKE '%${suffix.replace(/'/g, "''")}'`)
-      .join(' OR ');
-    excludedUrlSuffixesFilter = `AND NOT (${suffixConditions})`;
-  }
+  const excludedUrlSuffixesFilter = buildExcludedUrlSuffixesFilter(excludedUrlSuffixes);
 
   return loadSql('top-agentic-urls-by-limit', {
     databaseName,
