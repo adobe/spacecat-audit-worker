@@ -1,0 +1,7 @@
+# Ignore all CSV input files from upstream
+*.csv
+
+# But track this .gitignore and README
+!.gitignore
+!README.md
+
