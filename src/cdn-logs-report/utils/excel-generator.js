@@ -74,7 +74,7 @@ export async function createSheet(workbook, name, data, type, site, context) {
   worksheet.addRow(config.headers);
   styleHeaders(worksheet);
 
-  const processedData = await config.processData(data, site, context.dataAccess);
+  const processedData = await config.processData(data, site, context);
   processedData.forEach((row) => worksheet.addRow(row));
 
   formatColumns(worksheet, config);
