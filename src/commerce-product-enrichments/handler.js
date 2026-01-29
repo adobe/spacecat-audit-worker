@@ -101,9 +101,8 @@ export async function submitForScraping(context) {
   const result = {
     urls: filteredUrls.map((url) => ({ url })),
     siteId: site.getId(),
-    type: 'default',
+    processingType: 'default',
     allowCache: false,
-    maxScrapeAge: 0,
   };
 
   log.info(`${LOG_PREFIX} Step 2: submitForScraping completed, returning ${result.urls.length} URLs for scraping`);
@@ -170,6 +169,6 @@ export async function runAuditAndProcessResults(context) {
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('run-audit-and-process-results', runAuditAndProcessResults)
   .build();

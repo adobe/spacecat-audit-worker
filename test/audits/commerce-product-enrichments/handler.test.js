@@ -97,9 +97,8 @@ describe('Commerce Product Enrichments Handler', () => {
         { url: 'https://example.com/page-2' },
       ],
       siteId: 'site-1',
-      type: 'default',
+      processingType: 'default',
       allowCache: false,
-      maxScrapeAge: 0,
     });
   });
 
@@ -121,9 +120,8 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       urls: [{ url: 'https://example.com/page-1' }],
       siteId: 'site-1',
-      type: 'default',
+      processingType: 'default',
       allowCache: false,
-      maxScrapeAge: 0,
     });
   });
 
