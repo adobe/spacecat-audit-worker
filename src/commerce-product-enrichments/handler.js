@@ -100,7 +100,7 @@ export async function submitForScraping(context) {
   const result = {
     urls: filteredUrls.map((url) => ({ url })),
     siteId: site.getId(),
-    type: 'commerce-product-enrichments',
+    type: 'default',
     allowCache: false,
     maxScrapeAge: 0,
   };
