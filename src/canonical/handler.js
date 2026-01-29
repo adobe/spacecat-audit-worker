@@ -500,9 +500,9 @@ export async function processScrapedContent(context) {
         };
         const normalizedCanonical = normalizeUrl(canonicalUrl);
         const normalizedFinal = normalizeUrl(finalUrl);
-        const normalizedOriginal = normalizeUrl(url);
-        const isSelfReferenced = normalizedCanonical === normalizedFinal
-          || normalizedCanonical === normalizedOriginal;
+
+        // Canonical should match the final URL (what was actually served)
+        const isSelfReferenced = normalizedCanonical === normalizedFinal;
         if (isSelfReferenced) {
           canonicalTagChecks.push({
             check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
