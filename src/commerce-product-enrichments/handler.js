@@ -33,6 +33,7 @@ export async function importTopPages(context) {
   const result = {
     type: 'top-pages',
     siteId: site.getId(),
+    limit: 10,
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
   };
