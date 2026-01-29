@@ -238,12 +238,11 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
   const patchDescription = createPrDescription(findings);
 
   missingNonce.findings = findings;
-  missingNonce.issues = [];
   if (patchContent.length > 0) {
-    missingNonce.issues.push({
+    missingNonce.issue = {
       patchContent,
       value: patchDescription,
-    });
+    };
   }
 
   return result;
