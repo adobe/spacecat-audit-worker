@@ -276,8 +276,6 @@ export async function syncSuggestions({
 
   // Fetch existing suggestions and compute disappeared suggestions once
   const newDataKeys = new Set(newData.map(buildKey));
-  log.info(`[syncSuggestions] New data keys: ${newDataKeys.size}`);
-  log.info(`[syncSuggestions] New data: ${JSON.stringify(newData, null, 2)}`);
   const existingSuggestions = await opportunity.getSuggestions();
   const disappearedSuggestions = getDisappearedSuggestions(
     existingSuggestions,
@@ -285,7 +283,7 @@ export async function syncSuggestions({
     buildKey,
   );
 
-  log.info(`[syncSuggestions] Existing suggestions = ${existingSuggestions.length}, Disappeared = ${disappearedSuggestions.length}`);
+  log.debug(`[syncSuggestions] Existing suggestions = ${existingSuggestions.length}, Disappeared = ${disappearedSuggestions.length}`);
 
   // Step 1: Reconcile disappeared suggestions (if isIssueFixed is provided)
   if (typeof isIssueFixed === 'function') {
@@ -301,7 +299,7 @@ export async function syncSuggestions({
       getOldValue,
     });
   } else {
-    log.info('[syncSuggestions] No isIssueFixed provided');
+    log.debug('[syncSuggestions] No isIssueFixed provided');
   }
 
   // Step 2: Publish deployed fix entities (if isIssueResolvedOnProduction is provided)
@@ -318,10 +316,10 @@ export async function syncSuggestions({
       });
     /* c8 ignore next 3 - defensive: publishDeployedFixEntities has internal try-catch */
     } catch (err) {
-      log.warn(`Failed to publish fix entities: ${err.message}`);
+      log.error(`Failed to publish fix entities: ${err.message}`);
     }
   } else {
-    log.info('[syncSuggestions] No isIssueResolvedOnProduction provided');
+    log.debug('[syncSuggestions] No isIssueResolvedOnProduction provided');
   }
 
   // Step 3: Handle outdated suggestions (mark as OUTDATED)
@@ -491,7 +489,6 @@ export async function reconcileDisappearedSuggestions({
   getUpdatedValue,
   getOldValue,
 }) {
-  log.info(`[reconcileDisappearedSuggestions] Reconciling ${disappearedSuggestions.length} disappeared suggestions for opportunity ${opportunity.getId?.()}`);
   try {
     const newStatus = SuggestionDataAccess?.STATUSES?.NEW;
 
@@ -504,8 +501,6 @@ export async function reconcileDisappearedSuggestions({
       return true;
     });
 
-    log.info(`[reconcileDisappearedSuggestions] Candidates: ${candidates.length}`);
-
     const fixEntityObjects = [];
 
     for (const suggestion of candidates) {
@@ -515,15 +510,12 @@ export async function reconcileDisappearedSuggestions({
       // Use the provided callback to determine if the issue has been fixed
       // eslint-disable-next-line no-await-in-loop
       const isFixed = await isIssueFixed?.(suggestion);
-      if (suggestion?.getData?.()?.url_to === 'https://www.wilson.com/en-us/golf/bags/cart-bags') {
-        log.info(`[reconcileDisappearedSuggestions] isFixed: ${isFixed}`);
-      }
       if (!isFixed) {
         // eslint-disable-next-line no-continue
         continue;
       }
 
-      log.info(`[reconcileDisappearedSuggestions] Reconciling suggestion ${suggestion?.getId?.()} as FIXED in ${opportunity.getId?.()}`);
+      log.debug(`[reconcileDisappearedSuggestions] Reconciling suggestion ${suggestion?.getId?.()} as FIXED in ${opportunity.getId?.()}`);
       // Mark suggestion as FIXED and prepare a PUBLISHED fix entity on the opportunity
       let suggestionMarkedFixed = false;
       try {
@@ -640,7 +632,6 @@ export async function publishDeployedFixEntities({
   currentAuditData,
   buildKey,
 }) {
-  log.info(`[publishDeployedFixEntities] Publishing deployed fix entities for opportunity ${opportunityId}`);
   try {
     const { FixEntity } = dataAccess;
     if (!FixEntityDataAccess?.STATUSES?.DEPLOYED || !FixEntityDataAccess?.STATUSES?.PUBLISHED) {
@@ -664,7 +655,6 @@ export async function publishDeployedFixEntities({
       return;
     }
 
-    log.info(`[publishDeployedFixEntities] Found ${deployedFixEntities.length} deployed fix entities for opportunity ${opportunityId}`);
     // Build a set of keys from current audit data for quick lookup
     // If a suggestion's key exists in current audit data, the issue is still present
     const currentAuditKeys = new Set(
@@ -719,7 +709,7 @@ export async function publishDeployedFixEntities({
           fixEntity.setStatus?.(publishedStatus);
           fixEntity.setUpdatedBy?.('system');
           await fixEntity.save?.();
-          log.info(`[publishDeployedFixEntities] Published fix entity ${fixEntity.getId?.()} from DEPLOYED to PUBLISHED`);
+          log.debug(`[publishDeployedFixEntities] Published fix entity ${fixEntity.getId?.()} from DEPLOYED to PUBLISHED`);
         })());
       }
     }

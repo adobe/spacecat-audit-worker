@@ -236,7 +236,7 @@ describe('utils/data-access', () => {
       getSuggestionsByFixEntityId: sandbox.stub().resolves([{}, {}]),
     };
     const dataAccess = { FixEntity };
-    const log = { debug: sandbox.stub(), warn: sandbox.stub() };
+    const log = { debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() };
     let first = true;
     await publishDeployedFixEntities({
       opportunityId: 'op1',
@@ -251,7 +251,7 @@ describe('utils/data-access', () => {
       },
     });
     expect(fe.save).to.not.have.been.called;
-    expect(log.debug).to.have.been.calledWith(sinon.match(/Live check failed/));
+    expect(log.error).to.have.been.calledWith(sinon.match(/Live check failed/));
   });
 
   it('publishDeployedFixEntities warns when outer flow throws', async () => {

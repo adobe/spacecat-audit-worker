@@ -247,12 +247,11 @@ export const generateSuggestionData = async (context) => {
           },
           signal: AbortSignal.timeout(10000),
         });
-        log.info(`[isIssueFixed] Response: ${resp?.url} & ${resp?.status}`);
         const finalResolvedUrl = resp?.url || urlTo;
         // Check if final URL matches any target (with/without query strings)
         return targets.some((t) => urlsMatch(t, finalResolvedUrl));
       } catch (e) {
-        log.info(`[isIssueFixed] Failed to fetch ${urlTo} with error: ${e.message}`);
+        log.debug(`[isIssueFixed] Failed to fetch ${urlTo} with error: ${e.message}`);
         return false;
       }
     },
