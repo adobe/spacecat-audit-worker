@@ -262,6 +262,218 @@ export async function initializeAuditContext(context, site) {
   return { allKeys, seoChecks };
 }
 
+/* ------------------------------------------------------- */
+/* Heading Context Analysis (for grouping related headings) */
+/* ------------------------------------------------------- */
+
+/**
+ * Check if an element contains the boundary element
+ * @param {Element} element - Element to check
+ * @param {Element} boundary - Boundary element (previous heading)
+ * @param {CheerioAPI} $ - Cheerio instance
+ * @returns {boolean} True if element contains the boundary
+ */
+function containsBoundary(element, boundary, $) {
+  if (!boundary) return false;
+  return $(element).find('*').toArray().includes(boundary) || element === boundary;
+}
+
+/**
+ * Find accordion container by walking up the DOM tree
+ * Only searches between the current heading and the boundary (previous heading)
+ * @param {Element} heading - Cheerio element
+ * @param {CheerioAPI} $ - Cheerio instance
+ * @param {Element|null} boundary - Previous heading element (stop searching if we reach this)
+ * @returns {Object|null} Container info with element and pattern type
+ */
+function findAccordionContainer(heading, $, boundary = null) {
+  let el = $(heading).parent();
+
+  while (el.length && el[0].name !== 'body' && el[0].name !== 'html') {
+    // Stop if this element contains the boundary (previous heading)
+    // This means the accordion is above the boundary, so it's not relevant
+    if (boundary && containsBoundary(el[0], boundary, $)) {
+      return null;
+    }
+
+    // Strong ARIA signal
+    if (el.attr('role') === 'tablist') {
+      return { element: el[0], patternType: 'accordion' };
+    }
+
+    // Native accordion
+    if (el[0].name === 'details') {
+      return { element: el[0], patternType: 'accordion' };
+    }
+
+    // aria-expanded pattern
+    if (el.attr('aria-expanded') || el.find('[aria-expanded]').length > 0) {
+      return { element: el[0], patternType: 'accordion' };
+    }
+
+    // data-content-type pattern (common in CMS)
+    const dataContentType = el.attr('data-content-type');
+    if (dataContentType && /(accordion|collapsible|collapse|panel|faq)/i.test(dataContentType)) {
+      return { element: el[0], patternType: 'accordion' };
+    }
+
+    // Class-based heuristic
+    const className = el.attr('class');
+    if (className && /(accordion|collapsible|collapse|panel|faq)/i.test(className)) {
+      return { element: el[0], patternType: 'accordion' };
+    }
+
+    el = el.parent();
+  }
+
+  return null;
+}
+
+/**
+ * Find list container for a heading
+ * Only searches between the current heading and the boundary (previous heading)
+ * @param {Element} heading - Cheerio element
+ * @param {CheerioAPI} $ - Cheerio instance
+ * @param {Element|null} boundary - Previous heading element (stop searching if we reach this)
+ * @returns {Object|null} Container info with element and pattern type
+ */
+function findListContainer(heading, $, boundary = null) {
+  const item = $(heading).closest('li, dt');
+  if (!item.length) return null;
+
+  const list = item.closest('ul, ol, dl');
+  if (!list.length) return null;
+
+  // Check if the list contains the boundary (previous heading)
+  // If so, the list is above the boundary, so it's not relevant
+  if (boundary && containsBoundary(list[0], boundary, $)) {
+    return null;
+  }
+
+  return { element: list[0], patternType: 'list' };
+}
+
+/**
+ * Find repeated section container by detecting structural repetition
+ * Only searches between the current heading and the boundary (previous heading)
+ * @param {Element} heading - Cheerio element
+ * @param {CheerioAPI} $ - Cheerio instance
+ * @param {Element|null} boundary - Previous heading element (stop searching if we reach this)
+ * @returns {Object|null} Container info with element and pattern type
+ */
+function findRepeatedSectionContainer(heading, $, boundary = null) {
+  const headingEl = $(heading);
+  const tag = heading.name.toUpperCase();
+
+  // Walk up to find a container with repeated structure
+  let current = headingEl.parent();
+  let levels = 0;
+
+  while (current.length && current[0].name !== 'body' && levels < 5) {
+    // Stop if this element contains the boundary (previous heading)
+    if (boundary && containsBoundary(current[0], boundary, $)) {
+      return null;
+    }
+
+    const parent = current.parent();
+    if (!parent.length) break;
+
+    // Also check parent before processing
+    if (boundary && containsBoundary(parent[0], boundary, $)) {
+      return null;
+    }
+
+    const siblings = parent.children();
+
+    if (siblings.length > 1) {
+      // Count siblings that have headings of the same level
+      let siblingsWithSameHeading = 0;
+
+      siblings.each((i, sibling) => {
+        const siblingHeadings = $(sibling).find(tag);
+        if (siblingHeadings.length > 0) {
+          siblingsWithSameHeading += 1;
+        }
+      });
+
+      // If multiple siblings have same heading level, this is likely a repeating component
+      if (siblingsWithSameHeading >= 2) {
+        return { element: parent[0], patternType: 'section-group' };
+      }
+    }
+
+    current = parent;
+    levels += 1;
+  }
+
+  return null;
+}
+
+/**
+ * Find all peer headings of the same level within a container
+ * @param {Element} container - Container element
+ * @param {Element} currentHeading - The current heading element
+ * @param {CheerioAPI} $ - Cheerio instance
+ * @returns {Array} Array of peer heading elements
+ */
+function findPeerHeadings(container, currentHeading, $) {
+  const tag = currentHeading.name.toUpperCase();
+
+  return $(container)
+    .find(tag)
+    .toArray()
+    .filter((h) => h !== currentHeading);
+}
+
+/**
+ * Analyze whether a heading belongs to an accordion, list,
+ * or repeated section pattern and return its peer headings.
+ * Only searches between the current heading and the boundary (previous heading).
+ *
+ * @param {Element} heading - Cheerio h1..h6 element (current heading with invalid order)
+ * @param {CheerioAPI} $ - Cheerio instance
+ * @param {Element|null} boundary - Previous heading element to limit search scope
+ *                                  (e.g., for h2→h5 jump, pass h2 as boundary)
+ * @returns {{
+ *   isGrouped: boolean,
+ *   type: 'accordion' | 'list' | 'section-group' | 'standalone',
+ *   container: Element | null,
+ *   peers: Element[]
+ * }}
+ */
+export function analyzeHeadingContext(heading, $, boundary = null) {
+  if (!heading || !heading.name || !/^h[1-6]$/i.test(heading.name)) {
+    return {
+      isGrouped: false,
+      type: 'standalone',
+      container: null,
+      peers: [],
+    };
+  }
+
+  const containerInfo = findAccordionContainer(heading, $, boundary)
+    || findListContainer(heading, $, boundary)
+    || findRepeatedSectionContainer(heading, $, boundary);
+
+  if (!containerInfo) {
+    return {
+      isGrouped: false,
+      type: 'standalone',
+      container: null,
+      peers: [],
+    };
+  }
+
+  const peers = findPeerHeadings(containerInfo.element, heading, $);
+
+  return {
+    isGrouped: peers.length > 0,
+    type: containerInfo.patternType,
+    container: containerInfo.element,
+    peers,
+  };
+}
+
 export {
   getHeadingLevel,
   getHeadingContext,

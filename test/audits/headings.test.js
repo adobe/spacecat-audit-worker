@@ -5032,4 +5032,772 @@ describe('Headings Audit', () => {
       });
     });
   });
+
+  describe('Heading Context Analysis and Invalid Order Grouping', () => {
+    let analyzeHeadingContext;
+    let cheerioLoad;
+
+    before(async () => {
+      const sharedUtils = await import('../../src/headings/shared-utils.js');
+      analyzeHeadingContext = sharedUtils.analyzeHeadingContext;
+      cheerioLoad = sharedUtils.cheerioLoad;
+    });
+
+    describe('analyzeHeadingContext function', () => {
+      it('returns standalone for null heading', () => {
+        const $ = cheerioLoad('<div></div>');
+        const result = analyzeHeadingContext(null, $);
+
+        expect(result.isGrouped).to.be.false;
+        expect(result.type).to.equal('standalone');
+        expect(result.container).to.be.null;
+        expect(result.peers).to.deep.equal([]);
+      });
+
+      it('returns standalone for non-heading element', () => {
+        const $ = cheerioLoad('<div><p>Not a heading</p></div>');
+        const p = $('p')[0];
+        const result = analyzeHeadingContext(p, $);
+
+        expect(result.isGrouped).to.be.false;
+        expect(result.type).to.equal('standalone');
+      });
+
+      it('detects accordion by role="tablist"', () => {
+        const html = `
+          <div role="tablist">
+            <div><h3>Item 1</h3></div>
+            <div><h3>Item 2</h3></div>
+          </div>
+        `;
+        const $ = cheerioLoad(html);
+        const heading = $('h3')[0];
+        const result = analyzeHeadingContext(heading, $);
+
+        expect(result.isGrouped).to.be.true;
+        expect(result.type).to.equal('accordion');
+        expect(result.peers).to.have.lengthOf(1);
+      });
+
+      it('detects accordion by aria-expanded attribute', () => {
+        const html = `
+          <div aria-expanded="true">
+            <div><h4>FAQ 1</h4></div>
+            <div><h4>FAQ 2</h4></div>
+            <div><h4>FAQ 3</h4></div>
+          </div>
+        `;
+        const $ = cheerioLoad(html);
+        const heading = $('h4')[0];
+        const result = analyzeHeadingContext(heading, $);
+
+        expect(result.isGrouped).to.be.true;
+        expect(result.type).to.equal('accordion');
+        expect(result.peers).to.have.lengthOf(2);
+      });
+
+      it('detects accordion by class name containing "accordion"', () => {
+        const html = `
+          <div class="faq-accordion">
+            <div><h5>Question 1</h5></div>
+            <div><h5>Question 2</h5></div>
+          </div>
+        `;
+        const $ = cheerioLoad(html);
+        const heading = $('h5')[0];
+        const result = analyzeHeadingContext(heading, $);
+
+        expect(result.isGrouped).to.be.true;
+        expect(result.type).to.equal('accordion');
+        expect(result.peers).to.have.lengthOf(1);
+      });
+
+      it('detects accordion by class name containing "collapsible"', () => {
+        const html = `
+          <div class="collapsible-section">
+            <div><h4>Section 1</h4></div>
+            <div><h4>Section 2</h4></div>
+          </div>
+        `;
+        const $ = cheerioLoad(html);
+        const heading = $('h4')[0];
+        const result = analyzeHeadingContext(heading, $);
+
+        expect(result.isGrouped).to.be.true;
+        expect(result.type).to.equal('accordion');
+      });
+
+      it('detects accordion by data-content-type attribute', () => {
+        const html = `
+          <div data-content-type="collapsible">
+            <div class="item"><h4>Item 1</h4></div>
+            <div class="item"><h4>Item 2</h4></div>
+          </div>
+        `;
+        const $ = cheerioLoad(html);
+        const heading = $('h4')[0];
+        const result = analyzeHeadingContext(heading, $);
+
+        expect(result.isGrouped).to.be.true;
+        expect(result.type).to.equal('accordion');
+      });
+
+      it('detects native HTML accordion with <details> element', () => {
+        const html = `
+          <details>
+            <summary><h4>Expandable</h4></summary>
+            <p>Content</p>
+          </details>
+        `;
+        const $ = cheerioLoad(html);
+        const heading = $('h4')[0];
+        const result = analyzeHeadingContext(heading, $);
+
+        expect(result.type).to.equal('accordion');
+      });
+
+      it('detects list container for heading inside <li>', () => {
+        const html = `
+          <ul>
+            <li><h4>List Item 1</h4></li>
+            <li><h4>List Item 2</h4></li>
+            <li><h4>List Item 3</h4></li>
+          </ul>
+        `;
+        const $ = cheerioLoad(html);
+        const heading = $('h4')[0];
+        const result = analyzeHeadingContext(heading, $);
+
+        expect(result.isGrouped).to.be.true;
+        expect(result.type).to.equal('list');
+        expect(result.peers).to.have.lengthOf(2);
+      });
+
+      it('detects list container for heading inside <dt>', () => {
+        const html = `
+          <dl>
+            <dt><h5>Term 1</h5></dt>
+            <dd>Definition 1</dd>
+            <dt><h5>Term 2</h5></dt>
+            <dd>Definition 2</dd>
+          </dl>
+        `;
+        const $ = cheerioLoad(html);
+        const heading = $('h5')[0];
+        const result = analyzeHeadingContext(heading, $);
+
+        expect(result.isGrouped).to.be.true;
+        expect(result.type).to.equal('list');
+        expect(result.peers).to.have.lengthOf(1);
+      });
+
+      it('detects section-group by structural repetition', () => {
+        const html = `
+          <div class="cards">
+            <div class="card"><h4>Card 1</h4><p>Content</p></div>
+            <div class="card"><h4>Card 2</h4><p>Content</p></div>
+            <div class="card"><h4>Card 3</h4><p>Content</p></div>
+          </div>
+        `;
+        const $ = cheerioLoad(html);
+        const heading = $('h4')[0];
+        const result = analyzeHeadingContext(heading, $);
+
+        expect(result.isGrouped).to.be.true;
+        expect(result.type).to.equal('section-group');
+        expect(result.peers).to.have.lengthOf(2);
+      });
+
+      it('returns standalone when no grouping pattern is found', () => {
+        const html = `
+          <div>
+            <h2>Standalone Heading</h2>
+            <p>Some content</p>
+          </div>
+        `;
+        const $ = cheerioLoad(html);
+        const heading = $('h2')[0];
+        const result = analyzeHeadingContext(heading, $);
+
+        expect(result.isGrouped).to.be.false;
+        expect(result.type).to.equal('standalone');
+        expect(result.peers).to.deep.equal([]);
+      });
+
+      it('respects boundary and does not detect accordion above boundary', () => {
+        const html = `
+          <div class="accordion">
+            <h2>Section Title</h2>
+            <div><h4>FAQ 1</h4></div>
+            <div><h4>FAQ 2</h4></div>
+          </div>
+        `;
+        const $ = cheerioLoad(html);
+        const h2 = $('h2')[0];
+        const h4 = $('h4')[0];
+
+        // When we pass h2 as boundary, the accordion should not be detected
+        // because it contains the h2
+        const result = analyzeHeadingContext(h4, $, h2);
+
+        expect(result.isGrouped).to.be.false;
+        expect(result.type).to.equal('standalone');
+      });
+
+      it('detects accordion when it is between boundary and current heading', () => {
+        const html = `
+          <h2>Section Title</h2>
+          <div class="accordion">
+            <div><h4>FAQ 1</h4></div>
+            <div><h4>FAQ 2</h4></div>
+          </div>
+        `;
+        const $ = cheerioLoad(html);
+        const h2 = $('h2')[0];
+        const h4 = $('h4')[0];
+
+        // When accordion is BELOW h2, it should be detected
+        const result = analyzeHeadingContext(h4, $, h2);
+
+        expect(result.isGrouped).to.be.true;
+        expect(result.type).to.equal('accordion');
+      });
+    });
+
+    describe('Invalid Order Heading Grouping in Audit', () => {
+      it('creates grouped suggestions for accordion headings with invalid order', async () => {
+        const baseURL = 'https://example.com';
+        const url = 'https://example.com/page';
+
+        context.dataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => url },
+            ]),
+          },
+        };
+
+        const accordionHtml = `
+          <h1>Main Title</h1>
+          <h2>Section</h2>
+          <div class="accordion">
+            <div class="item"><h5>FAQ 1</h5><p>Answer 1</p></div>
+            <div class="item"><h5>FAQ 2</h5><p>Answer 2</p></div>
+            <div class="item"><h5>FAQ 3</h5><p>Answer 3</p></div>
+          </div>
+        `;
+
+        const allKeys = ['scrapes/site-1/page/scrape.json'];
+        s3Client.send.callsFake((command) => {
+          if (command instanceof ListObjectsV2Command) {
+            return Promise.resolve({
+              Contents: allKeys.map((key) => ({ Key: key })),
+              NextContinuationToken: undefined,
+            });
+          }
+          if (command instanceof GetObjectCommand) {
+            return Promise.resolve({
+              Body: {
+                transformToString: () => JSON.stringify({
+                  finalUrl: url,
+                  scrapedAt: Date.now(),
+                  scrapeResult: {
+                    rawBody: accordionHtml,
+                    tags: { title: 'Test', description: 'Test', h1: ['Main Title'] },
+                  },
+                }),
+              },
+              ContentType: 'application/json',
+            });
+          }
+          throw new Error('Unexpected command');
+        });
+        context.s3Client = s3Client;
+
+        const completedAudit = await headingsAuditRunner(baseURL, context, site);
+        const result = completedAudit.auditResult;
+
+        // Should have invalid order checks
+        expect(result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check]).to.exist;
+
+        // Should have 3 URL entries (one for each h5 in accordion)
+        const invalidOrderUrls = result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].urls;
+        expect(invalidOrderUrls).to.be.an('array');
+
+        // All should mention "part of accordion"
+        const accordionEntries = invalidOrderUrls.filter(u => u.explanation.includes('part of accordion'));
+        expect(accordionEntries.length).to.be.at.least(1);
+      });
+
+      it('creates grouped suggestions for list headings with invalid order', async () => {
+        const baseURL = 'https://example.com';
+        const url = 'https://example.com/page';
+
+        context.dataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => url },
+            ]),
+          },
+        };
+
+        const listHtml = `
+          <h1>Main Title</h1>
+          <h2>Features</h2>
+          <ul>
+            <li><h5>Feature 1</h5><p>Description 1</p></li>
+            <li><h5>Feature 2</h5><p>Description 2</p></li>
+          </ul>
+        `;
+
+        const allKeys = ['scrapes/site-1/page/scrape.json'];
+        s3Client.send.callsFake((command) => {
+          if (command instanceof ListObjectsV2Command) {
+            return Promise.resolve({
+              Contents: allKeys.map((key) => ({ Key: key })),
+              NextContinuationToken: undefined,
+            });
+          }
+          if (command instanceof GetObjectCommand) {
+            return Promise.resolve({
+              Body: {
+                transformToString: () => JSON.stringify({
+                  finalUrl: url,
+                  scrapedAt: Date.now(),
+                  scrapeResult: {
+                    rawBody: listHtml,
+                    tags: { title: 'Test', description: 'Test', h1: ['Main Title'] },
+                  },
+                }),
+              },
+              ContentType: 'application/json',
+            });
+          }
+          throw new Error('Unexpected command');
+        });
+        context.s3Client = s3Client;
+
+        const completedAudit = await headingsAuditRunner(baseURL, context, site);
+        const result = completedAudit.auditResult;
+
+        expect(result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check]).to.exist;
+
+        const invalidOrderUrls = result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].urls;
+        const listEntries = invalidOrderUrls.filter(u => u.explanation.includes('part of list'));
+        expect(listEntries.length).to.be.at.least(1);
+      });
+
+      it('creates grouped suggestions for section-group headings', async () => {
+        const baseURL = 'https://example.com';
+        const url = 'https://example.com/page';
+
+        context.dataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => url },
+            ]),
+          },
+        };
+
+        const cardsHtml = `
+          <h1>Main Title</h1>
+          <h2>Our Services</h2>
+          <div class="services">
+            <div class="service"><h5>Service 1</h5><p>Desc</p></div>
+            <div class="service"><h5>Service 2</h5><p>Desc</p></div>
+            <div class="service"><h5>Service 3</h5><p>Desc</p></div>
+          </div>
+        `;
+
+        const allKeys = ['scrapes/site-1/page/scrape.json'];
+        s3Client.send.callsFake((command) => {
+          if (command instanceof ListObjectsV2Command) {
+            return Promise.resolve({
+              Contents: allKeys.map((key) => ({ Key: key })),
+              NextContinuationToken: undefined,
+            });
+          }
+          if (command instanceof GetObjectCommand) {
+            return Promise.resolve({
+              Body: {
+                transformToString: () => JSON.stringify({
+                  finalUrl: url,
+                  scrapedAt: Date.now(),
+                  scrapeResult: {
+                    rawBody: cardsHtml,
+                    tags: { title: 'Test', description: 'Test', h1: ['Main Title'] },
+                  },
+                }),
+              },
+              ContentType: 'application/json',
+            });
+          }
+          throw new Error('Unexpected command');
+        });
+        context.s3Client = s3Client;
+
+        const completedAudit = await headingsAuditRunner(baseURL, context, site);
+        const result = completedAudit.auditResult;
+
+        expect(result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check]).to.exist;
+
+        const invalidOrderUrls = result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].urls;
+        const sectionGroupEntries = invalidOrderUrls.filter(u => u.explanation.includes('part of section-group'));
+        expect(sectionGroupEntries.length).to.be.at.least(1);
+      });
+
+      it('does not duplicate suggestions for already processed headings', async () => {
+        const baseURL = 'https://example.com';
+        const url = 'https://example.com/page';
+
+        context.dataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => url },
+            ]),
+          },
+        };
+
+        // HTML with accordion where all h4s would trigger invalid order
+        const html = `
+          <h1>Title</h1>
+          <h2>FAQ Section</h2>
+          <div class="accordion">
+            <div><h4>Q1</h4></div>
+            <div><h4>Q2</h4></div>
+            <div><h4>Q3</h4></div>
+          </div>
+        `;
+
+        const allKeys = ['scrapes/site-1/page/scrape.json'];
+        s3Client.send.callsFake((command) => {
+          if (command instanceof ListObjectsV2Command) {
+            return Promise.resolve({
+              Contents: allKeys.map((key) => ({ Key: key })),
+              NextContinuationToken: undefined,
+            });
+          }
+          if (command instanceof GetObjectCommand) {
+            return Promise.resolve({
+              Body: {
+                transformToString: () => JSON.stringify({
+                  finalUrl: url,
+                  scrapedAt: Date.now(),
+                  scrapeResult: {
+                    rawBody: html,
+                    tags: { title: 'Test', description: 'Test', h1: ['Title'] },
+                  },
+                }),
+              },
+              ContentType: 'application/json',
+            });
+          }
+          throw new Error('Unexpected command');
+        });
+        context.s3Client = s3Client;
+
+        const completedAudit = await headingsAuditRunner(baseURL, context, site);
+        const result = completedAudit.auditResult;
+
+        expect(result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check]).to.exist;
+
+        const invalidOrderUrls = result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].urls;
+
+        // Check that each selector appears only once (no duplicates)
+        const selectors = invalidOrderUrls.map(u => u.transformRules?.selector).filter(Boolean);
+        const uniqueSelectors = new Set(selectors);
+        expect(selectors.length).to.equal(uniqueSelectors.size);
+      });
+
+      it('handles standalone invalid order headings without grouping', async () => {
+        const baseURL = 'https://example.com';
+        const url = 'https://example.com/page';
+
+        context.dataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => url },
+            ]),
+          },
+        };
+
+        // Simple HTML without accordion/list patterns
+        const html = `
+          <h1>Title</h1>
+          <h4>Standalone Jump</h4>
+          <p>Content</p>
+        `;
+
+        const allKeys = ['scrapes/site-1/page/scrape.json'];
+        s3Client.send.callsFake((command) => {
+          if (command instanceof ListObjectsV2Command) {
+            return Promise.resolve({
+              Contents: allKeys.map((key) => ({ Key: key })),
+              NextContinuationToken: undefined,
+            });
+          }
+          if (command instanceof GetObjectCommand) {
+            return Promise.resolve({
+              Body: {
+                transformToString: () => JSON.stringify({
+                  finalUrl: url,
+                  scrapedAt: Date.now(),
+                  scrapeResult: {
+                    rawBody: html,
+                    tags: { title: 'Test', description: 'Test', h1: ['Title'] },
+                  },
+                }),
+              },
+              ContentType: 'application/json',
+            });
+          }
+          throw new Error('Unexpected command');
+        });
+        context.s3Client = s3Client;
+
+        const completedAudit = await headingsAuditRunner(baseURL, context, site);
+        const result = completedAudit.auditResult;
+
+        expect(result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check]).to.exist;
+
+        const invalidOrderUrls = result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].urls;
+        expect(invalidOrderUrls).to.have.lengthOf(1);
+
+        // Should NOT mention any group type
+        expect(invalidOrderUrls[0].explanation).to.not.include('part of');
+      });
+
+      it('respects boundary when detecting accordion (accordion above boundary is ignored)', async () => {
+        const baseURL = 'https://example.com';
+        const url = 'https://example.com/page';
+
+        context.dataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => url },
+            ]),
+          },
+        };
+
+        // HTML where accordion contains the previous heading (h2)
+        // The accordion should NOT be detected because it's above the boundary
+        const html = `
+          <h1>Title</h1>
+          <div class="accordion">
+            <h2>Section in Accordion</h2>
+            <div><h5>Item 1</h5></div>
+          </div>
+        `;
+
+        const allKeys = ['scrapes/site-1/page/scrape.json'];
+        s3Client.send.callsFake((command) => {
+          if (command instanceof ListObjectsV2Command) {
+            return Promise.resolve({
+              Contents: allKeys.map((key) => ({ Key: key })),
+              NextContinuationToken: undefined,
+            });
+          }
+          if (command instanceof GetObjectCommand) {
+            return Promise.resolve({
+              Body: {
+                transformToString: () => JSON.stringify({
+                  finalUrl: url,
+                  scrapedAt: Date.now(),
+                  scrapeResult: {
+                    rawBody: html,
+                    tags: { title: 'Test', description: 'Test', h1: ['Title'] },
+                  },
+                }),
+              },
+              ContentType: 'application/json',
+            });
+          }
+          throw new Error('Unexpected command');
+        });
+        context.s3Client = s3Client;
+
+        const completedAudit = await headingsAuditRunner(baseURL, context, site);
+        const result = completedAudit.auditResult;
+
+        expect(result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check]).to.exist;
+
+        const invalidOrderUrls = result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].urls;
+
+        // The h5 should be treated as standalone because the accordion is above the boundary (h2)
+        const h5Entry = invalidOrderUrls.find(u => u.explanation.includes('h2 → h5'));
+        expect(h5Entry).to.exist;
+        expect(h5Entry.explanation).to.not.include('part of accordion');
+      });
+
+      it('includes transformRules with correct suggested heading level for grouped items', async () => {
+        const baseURL = 'https://example.com';
+        const url = 'https://example.com/page';
+
+        context.dataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => url },
+            ]),
+          },
+        };
+
+        const html = `
+          <h1>Title</h1>
+          <h2>FAQ</h2>
+          <div class="faq-section">
+            <div><h5>Question 1</h5></div>
+            <div><h5>Question 2</h5></div>
+          </div>
+        `;
+
+        const allKeys = ['scrapes/site-1/page/scrape.json'];
+        s3Client.send.callsFake((command) => {
+          if (command instanceof ListObjectsV2Command) {
+            return Promise.resolve({
+              Contents: allKeys.map((key) => ({ Key: key })),
+              NextContinuationToken: undefined,
+            });
+          }
+          if (command instanceof GetObjectCommand) {
+            return Promise.resolve({
+              Body: {
+                transformToString: () => JSON.stringify({
+                  finalUrl: url,
+                  scrapedAt: Date.now(),
+                  scrapeResult: {
+                    rawBody: html,
+                    tags: { title: 'Test', description: 'Test', h1: ['Title'] },
+                  },
+                }),
+              },
+              ContentType: 'application/json',
+            });
+          }
+          throw new Error('Unexpected command');
+        });
+        context.s3Client = s3Client;
+
+        const completedAudit = await headingsAuditRunner(baseURL, context, site);
+        const result = completedAudit.auditResult;
+
+        const invalidOrderUrls = result.headings[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].urls;
+
+        // All h5s should have transformRules suggesting h3 (h2 + 1)
+        invalidOrderUrls.forEach(entry => {
+          if (entry.explanation.includes('h2 → h5')) {
+            expect(entry.transformRules).to.exist;
+            expect(entry.transformRules.action).to.equal('replaceWith');
+            expect(entry.transformRules.value.children[0].tagName).to.equal('h3');
+          }
+        });
+      });
+    });
+
+    describe('buildKey with selector for sync suggestions', () => {
+      it('includes selector in buildKey when transformRules has selector', async () => {
+        const convertToOpportunityStub = sinon.stub().resolves({
+          getId: () => 'test-opportunity-id'
+        });
+
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockedHandler = await esmock('../../src/headings/handler.js', {
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: convertToOpportunityStub,
+          },
+          '../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+        });
+
+        const auditUrl = 'https://example.com';
+        const auditData = {
+          suggestions: {
+            headings: [
+              {
+                type: 'CODE_CHANGE',
+                checkType: 'heading-order-invalid',
+                url: 'https://example.com/page1',
+                recommendedAction: 'Fix order',
+                transformRules: {
+                  selector: 'div.accordion > h5:nth-of-type(1)',
+                  action: 'replaceWith',
+                }
+              },
+              {
+                type: 'CODE_CHANGE',
+                checkType: 'heading-order-invalid',
+                url: 'https://example.com/page1',
+                recommendedAction: 'Fix order',
+                transformRules: {
+                  selector: 'div.accordion > h5:nth-of-type(2)',
+                  action: 'replaceWith',
+                }
+              }
+            ],
+            toc: []
+          }
+        };
+
+        await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+
+        const syncCall = syncSuggestionsStub.getCall(0);
+        const buildKeyFn = syncCall.args[0].buildKey;
+
+        // Test that buildKey includes selector
+        const key1 = buildKeyFn(auditData.suggestions.headings[0]);
+        const key2 = buildKeyFn(auditData.suggestions.headings[1]);
+
+        expect(key1).to.equal('heading-order-invalid|https://example.com/page1|div.accordion > h5:nth-of-type(1)');
+        expect(key2).to.equal('heading-order-invalid|https://example.com/page1|div.accordion > h5:nth-of-type(2)');
+        expect(key1).to.not.equal(key2);
+      });
+
+      it('buildKey works without selector (no trailing pipe)', async () => {
+        const convertToOpportunityStub = sinon.stub().resolves({
+          getId: () => 'test-opportunity-id'
+        });
+
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockedHandler = await esmock('../../src/headings/handler.js', {
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: convertToOpportunityStub,
+          },
+          '../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+        });
+
+        const auditUrl = 'https://example.com';
+        const auditData = {
+          suggestions: {
+            headings: [
+              {
+                type: 'CODE_CHANGE',
+                checkType: 'heading-multiple-h1',
+                url: 'https://example.com/page1',
+                recommendedAction: 'Fix multiple H1',
+                // No transformRules
+              }
+            ],
+            toc: []
+          }
+        };
+
+        await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+        const syncCall = syncSuggestionsStub.getCall(0);
+        const buildKeyFn = syncCall.args[0].buildKey;
+
+        const key = buildKeyFn(auditData.suggestions.headings[0]);
+
+        // Should NOT have trailing pipe
+        expect(key).to.equal('heading-multiple-h1|https://example.com/page1');
+        expect(key).to.not.match(/\|$/);
+      });
+    });
+  });
 });
