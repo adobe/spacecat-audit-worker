@@ -62,6 +62,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
+      limit: 10,
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
@@ -96,7 +97,7 @@ describe('Commerce Product Enrichments Handler', () => {
         { url: 'https://example.com/page-2' },
       ],
       siteId: 'site-1',
-      type: 'commerce-product-enrichments',
+      type: 'default',
       allowCache: false,
       maxScrapeAge: 0,
     });
@@ -120,7 +121,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       urls: [{ url: 'https://example.com/page-1' }],
       siteId: 'site-1',
-      type: 'commerce-product-enrichments',
+      type: 'default',
       allowCache: false,
       maxScrapeAge: 0,
     });
