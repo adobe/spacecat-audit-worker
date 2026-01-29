@@ -215,7 +215,7 @@ describe('CDN Logs Sheet Configs', () => {
     });
 
     it('handles empty array data', async () => {
-      const result = await SHEET_CONFIGS.agentic.processData([], mockSite, mockContext);
+      const result = await SHEET_CONFIGS.agentic.processData([], mockSite, mockDataAccess);
       expect(result)
         .to
         .deep
