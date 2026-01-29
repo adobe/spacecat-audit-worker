@@ -176,7 +176,14 @@ export const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.ERROR,
       SuggestionDataAccess.STATUSES.SKIPPED,
       SuggestionDataAccess.STATUSES.REJECTED,
+      SuggestionDataAccess.STATUSES.APPROVED,
+      SuggestionDataAccess.STATUSES.IN_PROGRESS,
+      SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
     ].includes(existing.getStatus()))
+    .filter((existing) => {
+      const data = existing.getData?.();
+      return !(data?.tokowakaDeployed || data?.edgeDeployed);
+    })
     .filter((existing) => {
       // mark suggestions as outdated only if their URL was actually scraped
       if (scrapedUrlsSet) {
