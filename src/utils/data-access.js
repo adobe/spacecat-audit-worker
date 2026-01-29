@@ -276,6 +276,8 @@ export async function syncSuggestions({
 
   // Fetch existing suggestions and compute disappeared suggestions once
   const newDataKeys = new Set(newData.map(buildKey));
+  log.info(`[syncSuggestions] New data keys: ${newDataKeys.size}`);
+  log.info(`[syncSuggestions] New data: ${JSON.stringify(newData, null, 2)}`);
   const existingSuggestions = await opportunity.getSuggestions();
   const disappearedSuggestions = getDisappearedSuggestions(
     existingSuggestions,
