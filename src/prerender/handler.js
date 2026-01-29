@@ -592,15 +592,14 @@ export async function submitForScraping(context) {
   // Merge URLs ensuring uniqueness while handling www vs non-www differences
   const finalUrls = mergeUniqueUrls(topPagesUrls, agenticUrls, includedURLs);
 
-  log.info({
-    event: 'prerender_submit_scraping',
-    submittedUrls: finalUrls.length,
-    agenticUrls: agenticUrls.length,
-    topPagesUrls: topPagesUrls.length,
-    includedURLs: includedURLs.length,
-    baseUrl: site.getBaseURL(),
-    siteId,
-  });
+  log.info(`
+    ${LOG_PREFIX} prerender_submit_scraping_metrics:
+    submittedUrls=${finalUrls.length},
+    agenticUrls=${agenticUrls.length},
+    topPagesUrls=${topPagesUrls.length},
+    includedURLs=${includedURLs.length},
+    baseUrl=${site.getBaseURL()},
+    siteId=${siteId},`);
 
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
@@ -833,14 +832,13 @@ export async function processOpportunityAndSuggestions(
 
   const isPaid = await isPaidLLMOCustomer(context);
 
-  log.info({
-    event: 'prerender_suggestions_sync_metrics',
-    siteId: auditData.siteId,
-    baseUrl: auditUrl,
-    isPaidLLMOCustomer: isPaid,
-    suggestions: preRenderSuggestions.length,
-    totalSuggestions: allSuggestions.length,
-  });
+  log.info(`
+    ${LOG_PREFIX} prerender_suggestions_sync_metrics:
+    siteId=${auditData.siteId},
+    baseUrl=${auditUrl},
+    isPaidLLMOCustomer=${isPaid},
+    suggestions=${preRenderSuggestions.length},
+    totalSuggestions=${allSuggestions.length},`);
 
   return opportunity;
 }

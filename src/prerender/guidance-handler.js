@@ -206,16 +206,16 @@ export default async function handler(message, context) {
         const isPaid = await isPaidLLMOCustomer(context);
 
         // Log comprehensive quality metrics with paid customer flag
-        log.info({
-          event: 'prerender_ai_summary_metrics',
-          siteId,
-          baseUrl: site.getBaseURL(),
-          opportunityId,
-          isPaidLLMOCustomer: isPaid,
-          totalSuggestions: suggestionsToSave.length,
-          valuableSuggestions: valuableCount,
-          validAiSummaryCount,
-        });
+        log.info(
+          `${LOG_PREFIX} prerender_ai_summary_metrics:
+          siteId=${siteId},
+          baseUrl=${site.getBaseURL()},
+          opportunityId=${opportunityId},
+          isPaidLLMOCustomer=${isPaid},
+          totalSuggestions=${suggestionsToSave.length},
+          valuableSuggestions=${valuableCount},
+          validAiSummaryCount=${validAiSummaryCount},`,
+        );
       } catch (error) {
         log.error(
           `${LOG_PREFIX} Error batch saving suggestions: ${error.message}`,

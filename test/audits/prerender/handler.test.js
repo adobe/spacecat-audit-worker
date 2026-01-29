@@ -861,8 +861,8 @@ describe('Prerender Audit', () => {
         expect(result.status).to.equal('complete');
         expect(result.auditResult.urlsNeedingPrerender).to.be.greaterThan(0);
         expect(context.log.info).to.have.been.called;
-        // Verify that the opportunity processing was logged (structured logging with event property)
-        expect(context.log.info.args.some((call) => call[0]?.event === 'prerender_suggestions_sync_metrics')).to.be.true;
+        // Verify that the opportunity processing was logged
+        expect(context.log.info.args.some((call) => typeof call[0] === 'string' && call[0].includes('prerender_suggestions_sync_metrics'))).to.be.true;
       });
 
       it('should create dummy opportunity when scraping is forbidden', async () => {
@@ -4019,8 +4019,8 @@ describe('Prerender Audit', () => {
         expect(context.log.info).to.have.been.called;
         // Verify that syncSuggestions was called once with combined data
         expect(syncSuggestionsStub).to.have.been.calledOnce;
-        // Verify that suggestion syncing was logged (structured logging with event property)
-        expect(context.log.info.args.some((call) => call[0]?.event === 'prerender_suggestions_sync_metrics')).to.be.true;
+        // Verify that suggestion syncing was logged
+        expect(context.log.info.args.some((call) => typeof call[0] === 'string' && call[0].includes('prerender_suggestions_sync_metrics'))).to.be.true;
 
         // Get the single call with combined data
         const individualSyncCall = syncSuggestionsStub.getCall(0);
