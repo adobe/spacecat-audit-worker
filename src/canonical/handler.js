@@ -34,6 +34,45 @@ const auditType = Audit.AUDIT_TYPES.CANONICAL;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 /**
+ * Checks if a URL should be skipped because it's an authentication/login page.
+ * @param {string} url - The URL to check
+ * @returns {boolean} True if the URL should be skipped
+ */
+function shouldSkipAuthPage(url) {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    return pathname.includes('/login')
+      || pathname.includes('/signin')
+      || pathname.includes('/sign-in')
+      || pathname.includes('/authenticate')
+      || pathname.includes('/oauth')
+      || pathname.includes('/sso')
+      || pathname.includes('/okta')
+      || pathname.includes('/register')
+      || pathname.includes('/signup')
+      || pathname.includes('/activate/')
+      || pathname === '/auth'
+      || pathname.startsWith('/auth/');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Checks if a URL points to a PDF file.
+ * @param {string} url - The URL to check
+ * @returns {boolean} True if the URL is a PDF
+ */
+function isPdfUrl(url) {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    return pathname.endsWith('.pdf');
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Step 1: Import top pages (used in multi-step audit)
  */
 export async function importTopPages(context) {
@@ -89,36 +128,7 @@ export async function submitForScraping(context) {
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
 
-  // Filter out auth pages and PDFs
-  const shouldSkipAuthPage = (u) => {
-    try {
-      const pathname = new URL(u).pathname.toLowerCase();
-      return pathname.includes('/login')
-        || pathname.includes('/signin')
-        || pathname.includes('/sign-in')
-        || pathname.includes('/authenticate')
-        || pathname.includes('/oauth')
-        || pathname.includes('/sso')
-        || pathname.includes('/okta')
-        || pathname.includes('/register')
-        || pathname.includes('/signup')
-        || pathname.includes('/activate/')
-        || pathname === '/auth'
-        || pathname.startsWith('/auth/');
-    } catch {
-      return false;
-    }
-  };
-
-  const isPdfUrl = (u) => {
-    try {
-      const pathname = new URL(u).pathname.toLowerCase();
-      return pathname.endsWith('.pdf');
-    } catch {
-      return false;
-    }
-  };
-
+  // Filter out auth pages and PDFs before scraping
   const filteredUrls = topPagesUrls.filter((url) => {
     if (shouldSkipAuthPage(url)) {
       return false;
@@ -425,6 +435,18 @@ export async function processScrapedContent(context) {
       }
 
       const finalUrl = scrapedObject.finalUrl || url;
+
+      // Filter out scraped pages that redirected to auth/login pages or PDFs
+      // This prevents false positives when a legitimate page redirects to login
+      if (shouldSkipAuthPage(finalUrl)) {
+        log.info(`[canonical] Skipping ${url} - redirected to auth page: ${finalUrl}`);
+        return null;
+      }
+      if (isPdfUrl(finalUrl)) {
+        log.info(`[canonical] Skipping ${url} - redirected to PDF: ${finalUrl}`);
+        return null;
+      }
+
       const isPreview = isPreviewPage(baseURL);
 
       // Use canonical metadata already extracted by the scraper (Puppeteer)
