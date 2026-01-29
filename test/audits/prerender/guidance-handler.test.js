@@ -837,12 +837,15 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
         }),
       );
 
-      // Verify log includes paid customer flag and correct counts
+      // Verify log includes paid customer flag and correct counts (structured logging)
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/isPaidLLMOCustomer=true/)
-          .and(sinon.match(/totalSuggestions=2/))
-          .and(sinon.match(/valuableSuggestions=1/))
-          .and(sinon.match(/validAiSummaryCount=2/)),
+        'prerender_ai_summary_metrics',
+        sinon.match({
+          isPaidLLMOCustomer: true,
+          totalSuggestions: 2,
+          valuableSuggestions: 1,
+          validAiSummaryCount: 2,
+        }),
       );
     });
 
@@ -875,10 +878,13 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
       // Only 1 valid AI summary (the other is "Not available")
       // Only 1 valuable suggestion (with valid summary)
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/isPaidLLMOCustomer=false/)
-          .and(sinon.match(/totalSuggestions=2/))
-          .and(sinon.match(/valuableSuggestions=1/))
-          .and(sinon.match(/validAiSummaryCount=1/)),
+        'prerender_ai_summary_metrics',
+        sinon.match({
+          isPaidLLMOCustomer: false,
+          totalSuggestions: 2,
+          valuableSuggestions: 1,
+          validAiSummaryCount: 1,
+        }),
       );
     });
 
@@ -1029,10 +1035,11 @@ describe('Prerender Guidance Handler (Presigned URL)', () => {
 
       // Verify comprehensive log with quality metrics and paid LLMO customer flag
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/Successfully updated aiSummaries.*isPaidLLMOCustomer=true/)
-          .and(sinon.match(/totalSuggestions=/))
-          .and(sinon.match(/valuableSuggestions=/))
-          .and(sinon.match(/validAiSummaryCount=/)),
+        'prerender_ai_summary_metrics',
+        sinon.match.has('isPaidLLMOCustomer', true)
+          .and(sinon.match.has('totalSuggestions'))
+          .and(sinon.match.has('valuableSuggestions'))
+          .and(sinon.match.has('validAiSummaryCount')),
       );
     });
   });

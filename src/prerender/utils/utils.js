@@ -18,6 +18,40 @@ import { Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 
 /**
+ * Merges multiple URL arrays and ensures uniqueness by path
+ * (handles www vs non-www differences by checking path only)
+ * @param {...Array<string>} urlArrays - Variable number of URL arrays to merge
+ * @returns {Array<string>} - Array of unique URLs (by path), preserving original URLs
+ */
+export function mergeUniqueUrls(...urlArrays) {
+  const seenPaths = new Set();
+  const uniqueUrls = [];
+
+  // Flatten all arrays and process each URL
+  urlArrays.flat().forEach((url) => {
+    try {
+      const urlObj = new URL(url);
+      // Normalize path by removing all trailing slashes (except for root path)
+      let path = urlObj.pathname;
+      if (path.length > 1) {
+        path = path.replace(/\/+$/, ''); // Remove all trailing slashes
+      }
+
+      // Only add URL if we haven't seen this path before
+      if (!seenPaths.has(path)) {
+        seenPaths.add(path);
+        uniqueUrls.push(url); // Keep original URL unchanged
+      }
+    } catch (error) {
+      // If URL parsing fails, add it anyway (edge case handling)
+      uniqueUrls.push(url);
+    }
+  });
+
+  return uniqueUrls;
+}
+
+/**
  * Checks if the site belongs to a paid LLMO customer
  * @param {Object} context - Context with site, dataAccess and log
  * @returns {Promise<boolean>} - True if paid LLMO customer, false otherwise
