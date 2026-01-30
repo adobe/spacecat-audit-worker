@@ -24,19 +24,28 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
  * @returns {object} - Result object with audit metadata
  */
 export async function importTopPages(context) {
-  const { site, finalUrl, log } = context;
+  const {
+    site, finalUrl, log, data = {},
+  } = context;
 
-  log.info(`${LOG_PREFIX} Step 1: importTopPages started for site: ${site.getId()}`);
+  const { limit } = data;
+  const limitInfo = limit ? ` with limit: ${limit}` : '';
+
+  log.info(`${LOG_PREFIX} Step 1: importTopPages started for site: ${site.getId()}${limitInfo}`);
   log.info(`${LOG_PREFIX} Final URL: ${finalUrl}`);
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
   const result = {
     type: 'top-pages',
     siteId: site.getId(),
-    limit: 10,
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
   };
+
+  // Only include limit if explicitly provided
+  if (limit) {
+    result.limit = limit;
+  }
 
   log.info(`${LOG_PREFIX} Step 1: importTopPages completed, returning:`, result);
   return result;
@@ -54,13 +63,23 @@ export async function submitForScraping(context) {
     site,
     dataAccess,
     log,
+    data = {},
   } = context;
 
-  log.info(`${LOG_PREFIX} Step 2: submitForScraping started for site: ${site.getId()}`);
+  const { limit } = data;
+  const limitInfo = limit ? ` with limit: ${limit}` : '';
+
+  log.info(`${LOG_PREFIX} Step 2: submitForScraping started for site: ${site.getId()}${limitInfo}`);
 
   const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  log.info(`${LOG_PREFIX} Retrieved ${topPages.length} top pages from database`);
+  const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  log.info(`${LOG_PREFIX} Retrieved ${allTopPages.length} top pages from database`);
+
+  // Limit top pages for scraping if limit is provided
+  const topPages = limit ? allTopPages.slice(0, limit) : allTopPages;
+  if (limit) {
+    log.info(`${LOG_PREFIX} Limited to ${topPages.length} top pages for scraping`);
+  }
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
   log.info(`${LOG_PREFIX} Reading site config: ${JSON.stringify(site?.getConfig())}`);
