@@ -81,28 +81,6 @@ const AUDIT_RESULT_DATA_WITH_PRIORITY = [
     priority: 'low',
   },
 ];
-
-// Normalized data (after normalizeUrlToDomain with canonical domain www.example.com)
-const NORMALIZED_AUDIT_RESULT_DATA = [
-  {
-    trafficDomain: 1800,
-    urlTo: 'https://www.example.com/a01',
-    urlFrom: 'https://www.example.com/a02nf',
-    priority: 'high',
-  },
-  {
-    trafficDomain: 1200,
-    urlTo: 'https://www.example.com/ax02',
-    urlFrom: 'https://www.example.com/ax02nf',
-    priority: 'medium',
-  },
-  {
-    trafficDomain: 200,
-    urlTo: 'https://www.example.com/a01',
-    urlFrom: 'https://www.example.com/a01nf',
-    priority: 'low',
-  },
-];
 const AUDIT_RESULT_DATA_WITH_SUGGESTIONS = [
   {
     trafficDomain: 1800,
@@ -183,13 +161,6 @@ describe('Broken internal links audit', () => {
     sinon.restore();
   });
 
-  it('normalizeUrlToDomain returns original URL when parsing fails', () => {
-    const invalidUrl = 'not-a-valid-url';
-    const canonicalDomain = 'example.com';
-    const result = normalizeUrlToDomain(invalidUrl, canonicalDomain);
-    expect(result).to.equal(invalidUrl);
-  });
-
   it('broken-internal-links audit runs rum api client 404 query', async () => {
     const result = await internalLinksAuditRunner(
       'www.example.com',
@@ -203,7 +174,7 @@ describe('Broken internal links audit', () => {
     });
     expect(result).to.deep.equal({
       auditResult: {
-        brokenInternalLinks: NORMALIZED_AUDIT_RESULT_DATA,
+        brokenInternalLinks: AUDIT_RESULT_DATA,
         fullAuditRef: auditUrl,
         finalUrl: auditUrl,
         success: true,

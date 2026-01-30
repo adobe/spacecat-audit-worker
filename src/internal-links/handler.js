@@ -101,27 +101,6 @@ export async function updateAuditResult(
 }
 
 /**
- * Normalize URL to match site's canonical baseURL (handles www/non-www variations).
- * @param {string} url - The URL to normalize
- * @param {string} canonicalDomain - The site's canonical domain (e.g., 'hdfc.bank.in')
- * @returns {string} Normalized URL
- */
-export function normalizeUrlToDomain(url, canonicalDomain) {
-  try {
-    const urlObj = new URL(url);
-    const canonicalHostname = new URL(`https://${canonicalDomain}`).hostname;
-
-    // Replace hostname with canonical hostname (handles www/non-www)
-    urlObj.hostname = canonicalHostname;
-
-    return urlObj.toString();
-  } catch (e) {
-    // If URL parsing fails, return original
-    return url;
-  }
-}
-
-/**
  * Perform an audit to check which internal links for domain are broken.
  * This is the RUM-based detection phase.
  *
@@ -199,9 +178,6 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     // 5. Filter only inaccessible links and transform for further processing
     // Also filter by audit scope (subpath/locale) if baseURL has a subpath
     const baseURL = site.getBaseURL();
-    // Use finalUrl as canonical domain - it respects overrideBaseURL from wwwUrlResolver
-    // finalUrl is just hostname, so add protocol for URL parsing
-    const canonicalDomain = finalUrl;
 
     const inaccessibleLinks = accessibilityResults
       .filter((result) => result.inaccessible)
@@ -211,11 +187,9 @@ export async function internalLinksAuditRunner(auditUrl, context) {
         && isWithinAuditScope(result.link.url_to, baseURL)
       ))
       .map((result) => ({
-        // Normalize URLs to match site's canonical domain (respects overrideBaseURL)
-        // This ensures consistency: RUM may have www.example.com but site is example.com
-        // All stored URLs will match the resolved canonical domain
-        urlFrom: normalizeUrlToDomain(result.link.url_from, canonicalDomain),
-        urlTo: normalizeUrlToDomain(result.link.url_to, canonicalDomain),
+        // Preserve original URLs from RUM data
+        urlFrom: result.link.url_from,
+        urlTo: result.link.url_to,
         trafficDomain: result.link.traffic_domain,
       }));
 
