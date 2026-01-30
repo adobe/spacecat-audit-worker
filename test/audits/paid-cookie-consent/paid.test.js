@@ -60,6 +60,7 @@ function getSite(sandbox, overrides = {}) {
     getSiteId: () => 'test-site-id',
     getDeliveryType: () => 'aem-edge',
     getBaseURL: () => 'https://example.com',
+    getIsLive: () => true,
     getConfig: () => mockConfig,
     setConfig: sandbox.stub(),
     save: sandbox.stub().resolves(),
@@ -1316,5 +1317,57 @@ describe('runPaidConsentAnalysisStep', () => {
 
     expect(result).to.deep.equal({});
     expect(logStub.error).to.have.been.calledWithMatch(/Post-processor paidConsentBannerCheck failed/);
+  });
+
+  it('should return {} and log error when Audit.create throws', async () => {
+    const failingDataAccess = {
+      Audit: {
+        create: sandbox.stub().rejects(new Error('Database connection failed')),
+      },
+    };
+
+    const mockAudit = {
+      getId: () => 'test-audit-id',
+    };
+
+    const stepContext = {
+      ...context,
+      dataAccess: failingDataAccess,
+      finalUrl: auditUrl,
+      audit: mockAudit,
+      auditContext: { auditId: 'test-audit-id' },
+    };
+
+    const result = await runPaidConsentAnalysisStep(stepContext);
+
+    expect(result).to.deep.equal({});
+    expect(logStub.error).to.have.been.calledWithMatch(/Failed to create audit/);
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+  });
+
+  it('should return {} and log error when Audit.create returns invalid result', async () => {
+    const invalidDataAccess = {
+      Audit: {
+        create: sandbox.stub().resolves(null),
+      },
+    };
+
+    const mockAudit = {
+      getId: () => 'test-audit-id',
+    };
+
+    const stepContext = {
+      ...context,
+      dataAccess: invalidDataAccess,
+      finalUrl: auditUrl,
+      audit: mockAudit,
+      auditContext: { auditId: 'test-audit-id' },
+    };
+
+    const result = await runPaidConsentAnalysisStep(stepContext);
+
+    expect(result).to.deep.equal({});
+    expect(logStub.error).to.have.been.calledWithMatch(/Audit creation returned invalid result/);
+    expect(context.sqs.sendMessage).to.not.have.been.called;
   });
 });

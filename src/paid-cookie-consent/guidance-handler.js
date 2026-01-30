@@ -34,6 +34,13 @@ export default async function handler(message, context) {
     log.warn(`No audit found for auditId: ${auditId}`);
     return notFound();
   }
+
+  // Validate audit has required data for opportunity creation
+  const auditResult = audit.getAuditResult();
+  if (!auditResult?.top3Pages) {
+    log.error(`Audit ${auditId} missing required data (top3Pages). This may indicate the audit was not saved correctly.`);
+    return notFound();
+  }
   log.debug(`Fetched Audit ${JSON.stringify(message)}`);
 
   // Check for low severity and skip if so

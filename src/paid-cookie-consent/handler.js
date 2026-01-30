@@ -510,17 +510,28 @@ export async function runPaidConsentAnalysisStep(context) {
   // We create a new audit here so the guidance handler can read the full auditResult.
   // The placeholder audit from step 1 is referenced via previousAuditId for cleanup.
   const { Audit: AuditDao } = dataAccess;
-  const newAudit = await AuditDao.create({
-    siteId: site.getId(),
-    isLive: site.getIsLive(),
-    auditedAt: new Date().toISOString(),
-    auditType: 'paid',
-    auditResult: {
-      ...result.auditResult,
-      previousAuditId: placeholderAuditId, // Reference to placeholder audit for cleanup
-    },
-    fullAuditRef: finalUrl,
-  });
+  let newAudit;
+  try {
+    newAudit = await AuditDao.create({
+      siteId: site.getId(),
+      isLive: site.getIsLive(),
+      auditedAt: new Date().toISOString(),
+      auditType: 'paid',
+      auditResult: {
+        ...result.auditResult,
+        previousAuditId: placeholderAuditId,
+      },
+      fullAuditRef: finalUrl,
+    });
+  } catch (error) {
+    log.error(`[paid-audit] [Site: ${finalUrl}] Failed to create audit: ${error.message}`);
+    return {};
+  }
+
+  if (!newAudit?.getId()) {
+    log.error(`[paid-audit] [Site: ${finalUrl}] Audit creation returned invalid result`);
+    return {};
+  }
 
   log.info(`[paid-audit] [Site: ${finalUrl}] Created audit ${newAudit.getId()} with full results (placeholder: ${placeholderAuditId})`);
 

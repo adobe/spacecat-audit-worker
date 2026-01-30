@@ -150,6 +150,33 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     expect(result.status).to.equal(notFound().status);
   });
 
+  it('should return notFound and log error if audit is missing top3Pages', async () => {
+    Audit.findById.resolves({
+      getAuditId: () => 'auditId',
+      getAuditResult: () => ({
+        totalPageViews: 10000,
+        // top3Pages is missing - simulates incomplete audit data
+      }),
+    });
+    Opportunity.allBySiteId.resolves([]);
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance: [{}] } };
+    const result = await handler(message, context);
+    expect(result.status).to.equal(notFound().status);
+    expect(logStub.error).to.have.been.calledWithMatch(/missing required data.*top3Pages/);
+  });
+
+  it('should return notFound and log error if auditResult is empty', async () => {
+    Audit.findById.resolves({
+      getAuditId: () => 'auditId',
+      getAuditResult: () => ({}),
+    });
+    Opportunity.allBySiteId.resolves([]);
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance: [{}] } };
+    const result = await handler(message, context);
+    expect(result.status).to.equal(notFound().status);
+    expect(logStub.error).to.have.been.calledWithMatch(/missing required data.*top3Pages/);
+  });
+
   it('should create a new opportunity and suggestion with plain markdown', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
