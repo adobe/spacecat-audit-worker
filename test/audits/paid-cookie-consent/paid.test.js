@@ -198,6 +198,33 @@ describe('Paid Cookie Consent Audit', () => {
     expect(result.auditResult.top3Pages).to.be.an('array');
   });
 
+  it('should include Ahrefs CPC data when available from S3', async () => {
+    const ahrefsData = {
+      organicTraffic: 10000,
+      organicCost: 1910,
+      paidTraffic: 5000,
+      paidCost: 1560,
+    };
+    const contextWithAhrefs = {
+      ...context,
+      s3: {
+        s3Client: {
+          send: sandbox.stub().resolves({
+            Body: {
+              transformToString: () => JSON.stringify(ahrefsData),
+            },
+          }),
+        },
+      },
+    };
+    const result = await paidAuditRunner(auditUrl, contextWithAhrefs, site);
+    expect(result.auditResult).to.have.property('cpcSource', 'ahrefs');
+    expect(result.auditResult).to.have.property('ahrefsOrganicCPC', 0.191);
+    expect(result.auditResult).to.have.property('ahrefsPaidCPC', 0.312);
+    expect(result.auditResult).to.have.property('appliedCPC', 0.312);
+    expect(result.auditResult).to.have.property('defaultCPC', 0.80);
+  });
+
   it('should submit expected result to mistique with bounce rate >= 0.3 filtering', async () => {
     const auditData = {
       fullAuditRef: 'https://example.com',
@@ -864,7 +891,7 @@ describe('calculateBounceGapLoss', () => {
       // Paid has both show and hidden
       { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
       { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
-      // Earned only has hidden (missing show) - should trigger line 184
+      // Earned only has hidden (missing show) - should trigger skip
       { trfType: 'earned', consent: 'hidden', pageViews: 400, bounceRate: 0.5 },
     ];
 
@@ -874,8 +901,8 @@ describe('calculateBounceGapLoss', () => {
     expect(result.projectedTrafficLost).to.be.closeTo(200, 0.01);
     expect(result.hasShowData).to.be.true;
     expect(result.hasHiddenData).to.be.true;
-    // Should log debug message for the skipped traffic source
-    expect(mockLog.debug).to.have.been.calledWithMatch(/No show data for trf_type=earned/);
+    // Should log summary with skipped count
+    expect(mockLog.debug).to.have.been.calledWithMatch(/skipped=1/);
   });
 });
 
