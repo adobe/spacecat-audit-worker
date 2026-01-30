@@ -33,6 +33,7 @@ describe('Commerce Product Enrichments Handler', () => {
   beforeEach(() => {
     log = {
       info: sinon.spy(),
+      warn: sinon.spy(),
       error: sinon.spy(),
     };
 
