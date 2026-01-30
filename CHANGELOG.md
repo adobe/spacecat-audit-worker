@@ -1,3 +1,10 @@
+## [1.294.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.294.4...v1.294.5) (2026-01-30)
+
+
+### Bug Fixes
+
+* changed fixed status with outdated for sync a11y suggestions ([#1905](https://github.com/adobe/spacecat-audit-worker/issues/1905)) ([39cb946](https://github.com/adobe/spacecat-audit-worker/commit/39cb9464ced930ae1f3b3c8e1bf548dd2acfb860))
+
 ## [1.294.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.294.3...v1.294.4) (2026-01-30)
 
 
