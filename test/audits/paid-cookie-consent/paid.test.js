@@ -1188,8 +1188,8 @@ describe('runPaidConsentAnalysisStep', () => {
     const stepContext = {
       ...context,
       finalUrl: auditUrl,
-      audit: mockAudit,
-      auditContext: {},
+      dataAccess: { Audit: { findById: sandbox.stub().resolves(mockAudit) } },
+      auditContext: { auditId: 'test-audit-id' },
     };
 
     const result = await runPaidConsentAnalysisStep(stepContext);
@@ -1214,13 +1214,27 @@ describe('runPaidConsentAnalysisStep', () => {
     const stepContext = {
       ...context,
       finalUrl: auditUrl,
-      audit: mockAudit,
-      auditContext: {},
+      dataAccess: { Audit: { findById: sandbox.stub().resolves(mockAudit) } },
+      auditContext: { auditId: 'test-audit-id' },
     };
 
     await runPaidConsentAnalysisStep(stepContext);
 
     expect(context.sqs.sendMessage).to.have.been.called;
+  });
+
+  it('should return {} when audit is not found', async () => {
+    const stepContext = {
+      ...context,
+      finalUrl: auditUrl,
+      dataAccess: { Audit: { findById: sandbox.stub().resolves(null) } },
+      auditContext: { auditId: 'missing-audit-id' },
+    };
+
+    const result = await runPaidConsentAnalysisStep(stepContext);
+
+    expect(result).to.deep.equal({});
+    expect(logStub.error).to.have.been.calledWithMatch(/not found/);
   });
 
   it('should return {} without calling setAuditResult when paidAuditRunner returns null auditResult', async () => {
@@ -1240,8 +1254,8 @@ describe('runPaidConsentAnalysisStep', () => {
       ...context,
       athenaClient: { query: customQueryStub },
       finalUrl: auditUrl,
-      audit: mockAudit,
-      auditContext: {},
+      dataAccess: { Audit: { findById: sandbox.stub().resolves(mockAudit) } },
+      auditContext: { auditId: 'test-audit-id' },
     };
 
     const result = await runPaidConsentAnalysisStep(stepContext);
@@ -1267,8 +1281,8 @@ describe('runPaidConsentAnalysisStep', () => {
       ...context,
       sqs: failingSqs,
       finalUrl: auditUrl,
-      audit: mockAudit,
-      auditContext: {},
+      dataAccess: { Audit: { findById: sandbox.stub().resolves(mockAudit) } },
+      auditContext: { auditId: 'test-audit-id' },
     };
 
     const result = await runPaidConsentAnalysisStep(stepContext);

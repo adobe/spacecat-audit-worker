@@ -17,6 +17,7 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 import { getWeekInfo, getTemporalCondition, getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { retrieveAuditById } from '../utils/data-access.js';
 import {
   getTop3PagesWithTrafficLostTemplate,
   getBounceGapMetricsTemplate,
@@ -452,10 +453,18 @@ export const importWeekStep3 = createImportStep(3);
 
 export async function runPaidConsentAnalysisStep(context) {
   const {
-    site, finalUrl, audit, log,
+    site, finalUrl, log, dataAccess, auditContext,
   } = context;
 
   log.info(`[paid-audit] [Site: ${finalUrl}] Step 5: Running consent banner analysis`);
+
+  // The StepAudit framework only loads the audit for steps that have a next step.
+  // Since this is the final step, we need to fetch the audit ourselves.
+  const audit = await retrieveAuditById(dataAccess, auditContext.auditId, log);
+  if (!audit) {
+    log.error(`[paid-audit] [Site: ${finalUrl}] Audit ${auditContext.auditId} not found; cannot update results`);
+    return {};
+  }
 
   // Run existing analysis logic (reuses paidAuditRunner)
   const result = await paidAuditRunner(finalUrl, context, site);
