@@ -1215,7 +1215,7 @@ describe('runPaidConsentAnalysisStep', () => {
     const stepContext = {
       ...context,
       finalUrl: auditUrl,
-      dataAccess: { Audit: { findById: sandbox.stub().resolves(mockAudit) } },
+      audit: mockAudit,
       auditContext: { auditId: 'test-audit-id' },
     };
 
@@ -1241,7 +1241,7 @@ describe('runPaidConsentAnalysisStep', () => {
     const stepContext = {
       ...context,
       finalUrl: auditUrl,
-      dataAccess: { Audit: { findById: sandbox.stub().resolves(mockAudit) } },
+      audit: mockAudit,
       auditContext: { auditId: 'test-audit-id' },
     };
 
@@ -1250,11 +1250,11 @@ describe('runPaidConsentAnalysisStep', () => {
     expect(context.sqs.sendMessage).to.have.been.called;
   });
 
-  it('should return {} when audit is not found', async () => {
+  it('should return {} when audit is not found in context', async () => {
     const stepContext = {
       ...context,
       finalUrl: auditUrl,
-      dataAccess: { Audit: { findById: sandbox.stub().resolves(null) } },
+      audit: null,
       auditContext: { auditId: 'missing-audit-id' },
     };
 
@@ -1281,7 +1281,7 @@ describe('runPaidConsentAnalysisStep', () => {
       ...context,
       athenaClient: { query: customQueryStub },
       finalUrl: auditUrl,
-      dataAccess: { Audit: { findById: sandbox.stub().resolves(mockAudit) } },
+      audit: mockAudit,
       auditContext: { auditId: 'test-audit-id' },
     };
 
@@ -1308,7 +1308,7 @@ describe('runPaidConsentAnalysisStep', () => {
       ...context,
       sqs: failingSqs,
       finalUrl: auditUrl,
-      dataAccess: { Audit: { findById: sandbox.stub().resolves(mockAudit) } },
+      audit: mockAudit,
       auditContext: { auditId: 'test-audit-id' },
     };
 

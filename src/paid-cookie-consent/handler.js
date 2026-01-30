@@ -19,7 +19,6 @@ import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { fetchCPCData, getCPCForTrafficType, DEFAULT_CPC } from './ahrefs-cpc.js';
 import { calculateBounceGapLoss as calculateGenericBounceGapLoss } from './bounce-gap-calculator.js';
-import { retrieveAuditById } from '../utils/data-access.js';
 import {
   getTop3PagesWithTrafficLostTemplate,
   getBounceGapMetricsTemplate,
@@ -489,16 +488,15 @@ export const importWeekStep3 = createImportStep(3);
 
 export async function runPaidConsentAnalysisStep(context) {
   const {
-    site, finalUrl, log, dataAccess, auditContext,
+    site, finalUrl, log, audit,
   } = context;
 
   log.info(`[paid-audit] [Site: ${finalUrl}] Step 5: Running consent banner analysis`);
 
-  // The StepAudit framework only loads the audit for steps that have a next step.
-  // Since this is the final step, we need to fetch the audit ourselves.
-  const audit = await retrieveAuditById(dataAccess, auditContext.auditId, log);
+  // The StepAudit framework loads the audit into context.audit for subsequent steps
+  // (when auditContext.next is set, hasNext is true, so loadExistingAudit is called)
   if (!audit) {
-    log.error(`[paid-audit] [Site: ${finalUrl}] Audit ${auditContext.auditId} not found; cannot update results`);
+    log.error(`[paid-audit] [Site: ${finalUrl}] Audit not found in context; cannot update results`);
     return {};
   }
 
