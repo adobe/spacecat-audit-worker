@@ -54,9 +54,9 @@ export async function importTopPages(context) {
     fullAuditRef: s3BucketPath,
   };
 
-  // Only include limit if explicitly provided
+  // Add limit to auditContext so it's preserved between steps
   if (limit) {
-    result.limit = limit;
+    result.auditContext = { limit };
   }
 
   log.info(`${LOG_PREFIX} Step 1: importTopPages completed, returning:`, result);
@@ -76,6 +76,7 @@ export async function submitForScraping(context) {
     dataAccess,
     log,
     data,
+    auditContext,
   } = context;
 
   // Parse data if it's a string (from Slack bot), or use as-is if it's an object
@@ -90,7 +91,8 @@ export async function submitForScraping(context) {
     parsedData = data;
   }
 
-  const { limit } = parsedData;
+  // Read limit from auditContext (for step chaining) or data (for initial call)
+  const limit = auditContext?.limit || parsedData.limit;
   const limitInfo = limit ? ` with limit: ${limit}` : '';
 
   log.info(`${LOG_PREFIX} Step 2: submitForScraping started for site: ${site.getId()}${limitInfo}`);
