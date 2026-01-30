@@ -350,28 +350,57 @@ describe('Commerce Product Enrichments Handler', () => {
     );
   });
 
-  it('runAuditAndProcessResults returns initial-implementation result with scraped pages', async () => {
+  it('runAuditAndProcessResults processes scrape results from data', async () => {
+    const s3Client = {
+      send: sinon.stub().resolves({
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: 'https://example.com/page-1',
+            finalUrl: 'https://example.com/page-1',
+            scrapeResult: {},
+          })),
+        },
+      }),
+    };
+
     const context = {
       site,
       audit: { getId: () => 'audit-1' },
       finalUrl: 'https://example.com',
-      log,
-      scrapeResultPaths: new Map([
-        ['https://example.com/a', 'scrapes/site-1/a/scrape.json'],
-        ['https://example.com/b', 'scrapes/site-1/b/scrape.json'],
-      ]),
+      log: {
+        ...log,
+        debug: sinon.spy(),
+      },
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      data: {
+        scrapeResults: [
+          {
+            location: 'scrapes/site-1/page-1/scrape.json',
+            metadata: {
+              url: 'https://example.com/page-1',
+              status: 'COMPLETE',
+            },
+          },
+          {
+            location: 'scrapes/site-1/page-2/scrape.json',
+            metadata: {
+              url: 'https://example.com/page-2',
+              status: 'COMPLETE',
+            },
+          },
+        ],
+      },
     };
 
     const result = await runAuditAndProcessResults(context);
 
-    expect(result).to.deep.equal({
-      status: 'complete',
-      auditResult: {
-        status: 'initial-implementation',
-        message: 'Commerce page enrichment audit - initial implementation stop point',
-        pagesScraped: 2,
-      },
-    });
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.auditResult.totalScraped).to.equal(2);
+    expect(result.auditResult.processedPages).to.equal(2);
+    expect(result.auditResult.productPages).to.equal(0);
   });
 
   it('runAuditAndProcessResults handles missing scrape results', async () => {
@@ -380,10 +409,217 @@ describe('Commerce Product Enrichments Handler', () => {
       audit: { getId: () => 'audit-2' },
       finalUrl: 'https://example.com',
       log,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      data: {},
     };
 
     const result = await runAuditAndProcessResults(context);
 
-    expect(result.auditResult.pagesScraped).to.equal(0);
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.auditResult.message).to.equal('No scraped content found');
+  });
+
+  it('runAuditAndProcessResults handles missing S3 bucket configuration', async () => {
+    const context = {
+      site,
+      audit: { getId: () => 'audit-3' },
+      finalUrl: 'https://example.com',
+      log,
+      env: {},
+      data: {
+        scrapeResults: [
+          {
+            location: 'scrapes/site-1/page-1/scrape.json',
+            metadata: {
+              url: 'https://example.com/page-1',
+              status: 'COMPLETE',
+            },
+          },
+        ],
+      },
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('PROCESSING_FAILED');
+    expect(result.auditResult.error).to.equal('Missing S3 bucket configuration for commerce audit');
+  });
+
+  it('runAuditAndProcessResults skips failed scrapes', async () => {
+    const context = {
+      site,
+      audit: { getId: () => 'audit-4' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client: {},
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      data: {
+        scrapeResults: [
+          {
+            location: 'scrapes/site-1/page-1/scrape.json',
+            metadata: {
+              url: 'https://example.com/page-1',
+              status: 'FAILED',
+              reason: 'Timeout',
+            },
+          },
+          {
+            location: 'scrapes/site-1/page-2/scrape.json',
+            metadata: {
+              url: 'https://example.com/page-2',
+              status: 'REDIRECT',
+            },
+          },
+        ],
+      },
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.auditResult.totalScraped).to.equal(2);
+    expect(result.auditResult.processedPages).to.equal(0);
+    expect(result.auditResult.failedPages).to.equal(2);
+  });
+
+  it('runAuditAndProcessResults handles empty scrape data from S3', async () => {
+    const s3Client = {
+      send: sinon.stub().resolves({
+        Body: {
+          transformToString: sinon.stub().resolves(''),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-5' },
+      finalUrl: 'https://example.com',
+      log: {
+        ...log,
+        debug: sinon.spy(),
+      },
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      data: {
+        scrapeResults: [
+          {
+            location: 'scrapes/site-1/page-1/scrape.json',
+            metadata: {
+              url: 'https://example.com/page-1',
+              status: 'COMPLETE',
+            },
+          },
+        ],
+      },
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.auditResult.processedPages).to.equal(0);
+    expect(result.auditResult.failedPages).to.equal(1);
+    expect(log.warn).to.have.been.calledWith(sinon.match(/No scrape data found/));
+  });
+
+  it('runAuditAndProcessResults handles S3 read errors', async () => {
+    const s3Client = {
+      send: sinon.stub().rejects(new Error('S3 access denied')),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-6' },
+      finalUrl: 'https://example.com',
+      log: {
+        ...log,
+        debug: sinon.spy(),
+      },
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      data: {
+        scrapeResults: [
+          {
+            location: 'scrapes/site-1/page-1/scrape.json',
+            metadata: {
+              url: 'https://example.com/page-1',
+              status: 'COMPLETE',
+            },
+          },
+        ],
+      },
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.auditResult.processedPages).to.equal(0);
+    expect(result.auditResult.failedPages).to.equal(1);
+    expect(log.error).to.have.been.calledWith(
+      sinon.match(/Error processing scrape result/),
+      sinon.match.instanceOf(Error),
+    );
+  });
+
+  it('runAuditAndProcessResults handles unexpected errors during processing', async () => {
+    const s3Client = {
+      send: sinon.stub().resolves({
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: 'https://example.com/page-1',
+            finalUrl: 'https://example.com/page-1',
+            scrapeResult: {},
+          })),
+        },
+      }),
+    };
+
+    // Create a log mock where debug throws an error
+    const logWithError = {
+      info: sinon.spy(),
+      warn: sinon.spy(),
+      error: sinon.spy(),
+      debug: sinon.stub().throws(new Error('Unexpected logging error')),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-7' },
+      finalUrl: 'https://example.com',
+      log: logWithError,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      data: {
+        scrapeResults: [
+          {
+            location: 'scrapes/site-1/page-1/scrape.json',
+            metadata: {
+              url: 'https://example.com/page-1',
+              status: 'COMPLETE',
+            },
+          },
+        ],
+      },
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.auditResult.processedPages).to.equal(0);
+    expect(result.auditResult.failedPages).to.equal(1);
+    expect(logWithError.error).to.have.been.calledWith(
+      sinon.match(/Error processing scrape result/),
+      sinon.match.instanceOf(Error),
+    );
   });
 });
