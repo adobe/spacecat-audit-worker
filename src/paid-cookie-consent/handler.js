@@ -32,7 +32,7 @@ const AUDIT_CONSTANTS = {
   OBSERVATION: 'High bounce rate detected on paid traffic page',
 };
 
-const IMPORT_TRAFFIC_ANALYSIS = 'traffic-analysis';
+const IMPORT_TYPE_TRAFFIC_ANALYSIS = 'traffic-analysis';
 
 function isImportEnabled(importType, imports) {
   return imports?.find((importConfig) => importConfig.type === importType)?.enabled;
@@ -421,9 +421,9 @@ function createImportStep(weekIndex) {
       const siteConfig = site.getConfig();
       const imports = siteConfig?.getImports() || [];
 
-      if (!isImportEnabled(IMPORT_TRAFFIC_ANALYSIS, imports)) {
-        log.debug(`[paid-audit] [Site: ${finalUrl}] Enabling ${IMPORT_TRAFFIC_ANALYSIS} import for site ${siteId}`);
-        await enableImport(site, IMPORT_TRAFFIC_ANALYSIS, log);
+      if (!isImportEnabled(IMPORT_TYPE_TRAFFIC_ANALYSIS, imports)) {
+        log.debug(`[paid-audit] [Site: ${finalUrl}] Enabling ${IMPORT_TYPE_TRAFFIC_ANALYSIS} import for site ${siteId}`);
+        await enableImport(site, IMPORT_TYPE_TRAFFIC_ANALYSIS, log);
       }
     }
 
@@ -433,7 +433,7 @@ function createImportStep(weekIndex) {
         message: `Importing traffic-analysis data for week ${week}/${year}`,
       },
       fullAuditRef: finalUrl,
-      type: IMPORT_TRAFFIC_ANALYSIS,
+      type: IMPORT_TYPE_TRAFFIC_ANALYSIS,
       siteId,
       allowCache: true,
       auditContext: {
