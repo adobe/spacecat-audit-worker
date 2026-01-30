@@ -77,16 +77,19 @@ function determineReportDecision(totalPageViewSum) {
   return REPORT_DECISION.WEEKLY;
 }
 
-async function enableAuditForSite(auditType, site, dataAccess, log) {
-  const { Configuration } = dataAccess;
-  const configuration = await Configuration.findLatest();
-
+async function enableAuditForSite(auditType, site, configuration, log) {
   if (!configuration.isHandlerEnabledForSite(auditType, site)) {
     configuration.enableHandlerForSite(auditType, site);
-    await configuration.save();
     log.info(`[ptr-selector] Enabled ${auditType} for site ${site.getId()}`);
   } else {
     log.info(`[ptr-selector] ${auditType} already enabled for site ${site.getId()}`);
+  }
+}
+
+async function disableAuditForSite(auditType, site, configuration, log) {
+  if (configuration.isHandlerEnabledForSite(auditType, site)) {
+    configuration.disableHandlerForSite(auditType, site);
+    log.info(`[ptr-selector] Disabled ${auditType} for site ${site.getId()}`);
   }
 }
 
@@ -167,15 +170,24 @@ export async function runPtrSelectorAnalysisStep(context) {
 
     const auditResult = { totalPageViewSum, reportDecision };
 
+    const { Configuration } = dataAccess;
+    const configuration = await Configuration.findLatest();
+
     if (reportDecision === REPORT_DECISION.WEEKLY) {
-      await enableAuditForSite('paid-traffic-analysis-weekly', site, dataAccess, log);
+      await enableAuditForSite('paid-traffic-analysis-weekly', site, configuration, log);
+      await disableAuditForSite('paid-traffic-analysis-monthly', site, configuration, log);
       log.info(`[ptr-selector] totalPageViewSum=${totalPageViewSum}. Enabled paid-traffic-analysis-weekly for site ${siteId}.`);
     } else if (reportDecision === REPORT_DECISION.MONTHLY) {
-      await enableAuditForSite('paid-traffic-analysis-monthly', site, dataAccess, log);
+      await enableAuditForSite('paid-traffic-analysis-monthly', site, configuration, log);
+      await disableAuditForSite('paid-traffic-analysis-weekly', site, configuration, log);
       log.info(`[ptr-selector] totalPageViewSum=${totalPageViewSum}. Enabled paid-traffic-analysis-monthly for site ${siteId}.`);
     } else {
+      await disableAuditForSite('paid-traffic-analysis-weekly', site, configuration, log);
+      await disableAuditForSite('paid-traffic-analysis-monthly', site, configuration, log);
       log.info(`[ptr-selector] totalPageViewSum=${totalPageViewSum} is below 50K threshold. No audit enabled.`);
     }
+
+    await configuration.save();
 
     return {
       auditResult,
