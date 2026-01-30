@@ -12,6 +12,7 @@
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { getObjectFromKey } from '../utils/s3-utils.js';
 import { LOG_PREFIX } from './constants.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -157,57 +158,146 @@ export async function submitForScraping(context) {
 /**
  * Step 3: Run Audit and Process Results
  * This step is called after scraping is complete.
- * Currently stops with a console.log as per initial implementation requirements.
+ * Reads scrape results from S3 and processes them to identify product pages.
  *
  * @param {object} context - The audit context
  * @returns {object} - Result object with audit status
  */
 export async function runAuditAndProcessResults(context) {
   const {
-    site, audit, finalUrl, log, scrapeResultPaths,
+    site, audit, finalUrl, log, data, s3Client, env,
   } = context;
 
   log.info(`${LOG_PREFIX} Step 3: runAuditAndProcessResults started`);
+
+  // Get scrape results from the completion message sent by content-scraper
+  const scrapeResults = data?.scrapeResults || [];
+
   log.info(`${LOG_PREFIX} Context:`, {
     siteId: site.getId(),
     auditId: audit.getId(),
     finalUrl,
-    hasScrapeResultPaths: !!scrapeResultPaths,
-    scrapeResultPathsSize: scrapeResultPaths?.size || 0,
+    jobId: data?.jobId,
+    scrapeResultsCount: scrapeResults.length,
+    hasData: !!data,
   });
 
-  // Log all scraped page URLs
-  if (scrapeResultPaths && scrapeResultPaths.size > 0) {
-    log.info(`${LOG_PREFIX} Successfully retrieved ${scrapeResultPaths.size} scraped pages:`);
-    let pageCount = 0;
-    for (const [url, s3Path] of scrapeResultPaths) {
-      pageCount += 1;
-      log.info(`${LOG_PREFIX}   ${pageCount}. URL: ${url}`);
-      log.info(`${LOG_PREFIX}     S3 Path: ${s3Path}`);
-    }
-  } else {
+  if (scrapeResults.length === 0) {
     log.info(`${LOG_PREFIX} No scraped pages found`);
+    return {
+      auditResult: {
+        status: 'NO_OPPORTUNITIES',
+        message: 'No scraped content found',
+      },
+      fullAuditRef: finalUrl,
+    };
   }
 
-  // STOP HERE - Initial implementation placeholder
-  // TODO: Implement the actual audit logic for commerce page enrichment
+  // Get S3 bucket configuration
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  if (!bucketName) {
+    const errorMsg = 'Missing S3 bucket configuration for commerce audit';
+    log.error(`${LOG_PREFIX} ERROR: ${errorMsg}`);
+    return {
+      auditResult: {
+        status: 'PROCESSING_FAILED',
+        error: errorMsg,
+      },
+      fullAuditRef: finalUrl,
+    };
+  }
+
+  log.info(`${LOG_PREFIX} Processing ${scrapeResults.length} scrape results from S3 bucket: ${bucketName}`);
+
+  // Process each scraped result in parallel
+  const processResults = await Promise.all(
+    scrapeResults.map(async (result) => {
+      const { location, metadata } = result;
+      const pageUrl = metadata?.url || 'unknown';
+
+      // Skip failed scrapes
+      if (metadata?.status !== 'COMPLETE') {
+        log.warn(`${LOG_PREFIX} Skipping failed scrape: ${pageUrl} (status: ${metadata?.status})`);
+        return {
+          success: false,
+          url: pageUrl,
+          status: metadata?.status,
+          reason: metadata?.reason || 'Unknown',
+        };
+      }
+
+      try {
+        // Read the scrape.json file from S3
+        log.debug(`${LOG_PREFIX} Reading scrape data from S3: ${location}`);
+        const scrapeData = await getObjectFromKey(s3Client, bucketName, location, log);
+
+        if (!scrapeData) {
+          log.warn(`${LOG_PREFIX} No scrape data found for: ${pageUrl}`);
+          return {
+            success: false,
+            url: pageUrl,
+            status: 'NO_DATA',
+            reason: 'Empty scrape data',
+          };
+        }
+
+        // TODO: Implement product page detection logic
+        // Check for:
+        // 1. JSON-LD Product structure
+        // 2. SKU attribute in Product
+        // 3. Number of SKUs present (to filter out category pages)
+        const isProductPage = false; // Placeholder
+        const skuCount = 0; // Placeholder
+
+        log.debug(`${LOG_PREFIX} Processed page: ${pageUrl} (isProductPage: ${isProductPage})`);
+
+        return {
+          success: true,
+          url: pageUrl,
+          location,
+          isProductPage,
+          skuCount,
+        };
+      } catch (error) {
+        log.error(`${LOG_PREFIX} Error processing scrape result for ${pageUrl}: ${error.message}`, error);
+        return {
+          success: false,
+          url: pageUrl,
+          status: 'PROCESSING_ERROR',
+          reason: error.message,
+        };
+      }
+    }),
+  );
+
+  // Separate successful and failed results
+  const processedPages = processResults.filter((r) => r.success);
+  const failedPages = processResults.filter((r) => !r.success);
+
+  // Filter for product pages only
+  const productPages = processedPages.filter((page) => page.isProductPage);
+
   log.info(`${LOG_PREFIX} ============================================`);
-  log.info(`${LOG_PREFIX} AUDIT STOP POINT - Initial Implementation`);
-  log.info(`${LOG_PREFIX} Top pages retrieved and submitted for scraping successfully.`);
-  log.info(`${LOG_PREFIX} Total pages scraped: ${scrapeResultPaths?.size || 0}`);
+  log.info(`${LOG_PREFIX} Audit Processing Complete`);
+  log.info(`${LOG_PREFIX} Total scraped pages: ${scrapeResults.length}`);
+  log.info(`${LOG_PREFIX} Successfully processed: ${processedPages.length}`);
+  log.info(`${LOG_PREFIX} Failed/Skipped: ${failedPages.length}`);
+  log.info(`${LOG_PREFIX} Product pages found: ${productPages.length}`);
   log.info(`${LOG_PREFIX} Site ID: ${site.getId()}`);
   log.info(`${LOG_PREFIX} Audit ID: ${audit.getId()}`);
-  log.info(`${LOG_PREFIX} Final URL: ${finalUrl}`);
   log.info(`${LOG_PREFIX} ============================================`);
 
-  // Return a minimal result indicating the audit completed (for now)
+  // Return audit results
   return {
-    status: 'complete',
     auditResult: {
-      status: 'initial-implementation',
-      message: 'Commerce page enrichment audit - initial implementation stop point',
-      pagesScraped: scrapeResultPaths?.size || 0,
+      status: productPages.length > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
+      message: `Found ${productPages.length} product pages out of ${processedPages.length} processed pages`,
+      totalScraped: scrapeResults.length,
+      processedPages: processedPages.length,
+      failedPages: failedPages.length,
+      productPages: productPages.length,
     },
+    fullAuditRef: finalUrl,
   };
 }
 
