@@ -282,6 +282,7 @@ export async function submitForScraping(context) {
   const { success } = audit.getAuditResult();
 
   if (!success) {
+    log.error('Audit failed, skip scraping and suggestion generation');
     throw new Error('Audit failed, skip scraping and suggestion generation');
   }
 
@@ -339,6 +340,15 @@ export async function submitForScraping(context) {
     urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'broken-internal-links',
+    processingType: 'default',
+    options: {
+      pageLoadTimeout: 30000, // Increase from default 15s to 30s for slow sites
+      waitForSelector: 'body',
+      // Adds 5s wait for meta tags - triggers additional delay for dynamic content
+      waitTimeoutForMetaTags: 5000,
+      // Note: This waits for networkidle2 + body + meta tags
+      // Helps capture late-loading content like "Explore related blogs" sections
+    },
   };
 }
 

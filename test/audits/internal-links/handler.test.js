@@ -352,6 +352,13 @@ describe('Broken internal links audit', () => {
     expect(result.urls).to.deep.include({ url: 'https://example.com/included1' });
     expect(result.siteId).to.equal(site.getId());
     expect(result.type).to.equal('broken-internal-links');
+    
+    // CRITICAL: Verify scraper configuration for dynamic content
+    expect(result.processingType).to.equal('default');
+    expect(result.options).to.be.an('object');
+    expect(result.options.pageLoadTimeout).to.equal(30000);
+    expect(result.options.waitForSelector).to.equal('body');
+    expect(result.options.waitTimeoutForMetaTags).to.equal(5000);
   }).timeout(10000);
 
   it('submitForScraping should fall back to includedURLs when database fetch fails', async () => {
