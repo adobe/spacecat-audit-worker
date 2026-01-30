@@ -203,13 +203,16 @@ async function createTopUrlsQueryWithLimit(options) {
 
   const excludedUrlSuffixesFilter = buildExcludedUrlSuffixesFilter(excludedUrlSuffixes);
 
-  return loadSql('top-agentic-urls-by-limit', {
+  const sqlQuery = loadSql('top-agentic-urls-by-limit', {
     databaseName,
     tableName,
     whereClause,
     limit,
     excludedUrlSuffixesFilter,
   });
+  // eslint-disable-next-line no-console
+  console.log('[Athena query]', sqlQuery);
+  return sqlQuery;
 }
 
 export const weeklyBreakdownQueries = {
