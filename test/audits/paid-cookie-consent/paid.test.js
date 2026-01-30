@@ -1205,11 +1205,9 @@ describe('runPaidConsentAnalysisStep', () => {
     sandbox.restore();
   });
 
-  it('should run analysis and update audit with results', async () => {
+  it('should run analysis and send results to mystique', async () => {
     const mockAudit = {
       getId: () => 'test-audit-id',
-      setAuditResult: sandbox.stub(),
-      save: sandbox.stub().resolves(),
     };
 
     const stepContext = {
@@ -1222,20 +1220,13 @@ describe('runPaidConsentAnalysisStep', () => {
     const result = await runPaidConsentAnalysisStep(stepContext);
 
     expect(result).to.deep.equal({});
-    expect(mockAudit.setAuditResult).to.have.been.called;
-    expect(mockAudit.save).to.have.been.called;
-
-    const savedResult = mockAudit.setAuditResult.getCall(0).args[0];
-    expect(savedResult).to.have.property('totalPageViews');
-    expect(savedResult).to.have.property('projectedTrafficLost');
-    expect(savedResult).to.have.property('top3Pages');
+    // Results are sent to Mystique, not stored in audit
+    expect(context.sqs.sendMessage).to.have.been.called;
   });
 
   it('should send to mystique when page has bounce rate >= 0.3', async () => {
     const mockAudit = {
       getId: () => 'test-audit-id',
-      setAuditResult: sandbox.stub(),
-      save: sandbox.stub().resolves(),
     };
 
     const stepContext = {
@@ -1250,21 +1241,22 @@ describe('runPaidConsentAnalysisStep', () => {
     expect(context.sqs.sendMessage).to.have.been.called;
   });
 
-  it('should return {} when audit is not found in context', async () => {
+  it('should use auditContext.auditId when audit is not in context', async () => {
     const stepContext = {
       ...context,
       finalUrl: auditUrl,
       audit: null,
-      auditContext: { auditId: 'missing-audit-id' },
+      auditContext: { auditId: 'fallback-audit-id' },
     };
 
     const result = await runPaidConsentAnalysisStep(stepContext);
 
     expect(result).to.deep.equal({});
-    expect(logStub.error).to.have.been.calledWithMatch(/not found/);
+    // Should still send to mystique using auditContext.auditId
+    expect(context.sqs.sendMessage).to.have.been.called;
   });
 
-  it('should return {} without calling setAuditResult when paidAuditRunner returns null auditResult', async () => {
+  it('should return {} and not send to mystique when paidAuditRunner returns null auditResult', async () => {
     // Override to return no show data (causes null auditResult)
     const customQueryStub = sandbox.stub();
     customQueryStub.onCall(0).resolves([
@@ -1273,8 +1265,6 @@ describe('runPaidConsentAnalysisStep', () => {
 
     const mockAudit = {
       getId: () => 'test-audit-id',
-      setAuditResult: sandbox.stub(),
-      save: sandbox.stub().resolves(),
     };
 
     const stepContext = {
@@ -1288,7 +1278,7 @@ describe('runPaidConsentAnalysisStep', () => {
     const result = await runPaidConsentAnalysisStep(stepContext);
 
     expect(result).to.deep.equal({});
-    expect(mockAudit.setAuditResult).to.not.have.been.called;
+    expect(context.sqs.sendMessage).to.not.have.been.called;
     expect(logStub.warn).to.have.been.calledWithMatch(/No consent data available/);
   });
 
@@ -1300,8 +1290,6 @@ describe('runPaidConsentAnalysisStep', () => {
 
     const mockAudit = {
       getId: () => 'test-audit-id',
-      setAuditResult: sandbox.stub(),
-      save: sandbox.stub().resolves(),
     };
 
     const stepContext = {
@@ -1315,8 +1303,6 @@ describe('runPaidConsentAnalysisStep', () => {
     const result = await runPaidConsentAnalysisStep(stepContext);
 
     expect(result).to.deep.equal({});
-    expect(mockAudit.setAuditResult).to.have.been.called;
-    expect(mockAudit.save).to.have.been.called;
     expect(logStub.error).to.have.been.calledWithMatch(/Post-processor paidConsentBannerCheck failed/);
   });
 });

@@ -488,17 +488,10 @@ export const importWeekStep3 = createImportStep(3);
 
 export async function runPaidConsentAnalysisStep(context) {
   const {
-    site, finalUrl, log, audit,
+    site, finalUrl, log, auditContext, audit,
   } = context;
 
   log.info(`[paid-audit] [Site: ${finalUrl}] Step 5: Running consent banner analysis`);
-
-  // The StepAudit framework loads the audit into context.audit for subsequent steps
-  // (when auditContext.next is set, hasNext is true, so loadExistingAudit is called)
-  if (!audit) {
-    log.error(`[paid-audit] [Site: ${finalUrl}] Audit not found in context; cannot update results`);
-    return {};
-  }
 
   // Run existing analysis logic (reuses paidAuditRunner)
   const result = await paidAuditRunner(finalUrl, context, site);
@@ -510,15 +503,12 @@ export async function runPaidConsentAnalysisStep(context) {
     return {};
   }
 
-  // Update audit with real results (replaces the "pending" placeholder from step 1)
-  audit.setAuditResult(result.auditResult);
-  await audit.save();
-
-  // Run existing post-processor logic (moved from .withPostProcessors)
-  // Wrapped in try-catch to match post-processor error semantics:
-  // audit is already saved, so a failure here should log but not fail the step.
+  // Send results to Mystique via post-processor
+  // Note: Audit record contains metadata only (week/year info from step 1).
+  // Real analysis results are sent to Mystique, not stored in the audit.
   try {
-    const auditData = { auditResult: result.auditResult, id: audit.getId() };
+    const auditId = audit?.getId() || auditContext.auditId;
+    const auditData = { auditResult: result.auditResult, id: auditId };
     await paidConsentBannerCheck(finalUrl, auditData, context, site);
   } catch (error) {
     log.error(`[paid-audit] [Site: ${finalUrl}] Post-processor paidConsentBannerCheck failed: ${error.message}`);
