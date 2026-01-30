@@ -1,3 +1,10 @@
+# [1.296.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.295.2...v1.296.0) (2026-01-30)
+
+
+### Features
+
+* exclude paths in Athena query builder ([#1904](https://github.com/adobe/spacecat-audit-worker/issues/1904)) ([d82489c](https://github.com/adobe/spacecat-audit-worker/commit/d82489c79a09994d9d57d1f88008ed3ae321499b))
+
 ## [1.295.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.295.1...v1.295.2) (2026-01-30)
 
 
