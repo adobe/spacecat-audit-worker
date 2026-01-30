@@ -241,13 +241,17 @@ export async function runAuditAndProcessResults(context) {
           };
         }
 
-        // TODO: Implement product page detection logic
-        // Check for:
-        // 1. JSON-LD Product structure
-        // 2. SKU attribute in Product
-        // 3. Number of SKUs present (to filter out category pages)
-        const isProductPage = false; // Placeholder
-        const skuCount = 0; // Placeholder
+        // Product page detection logic
+        // Check for JSON-LD Product structure with SKU (follows product-metatags pattern)
+        let isProductPage = false;
+        let skuCount = 0;
+
+        const Product = scrapeData?.scrapeResult?.structuredData?.jsonld?.Product;
+        if (Array.isArray(Product) && Product.length > 0) {
+          // Count products with SKU
+          skuCount = Product.filter((product) => product.sku).length;
+          isProductPage = skuCount === 1;
+        }
 
         log.debug(`${LOG_PREFIX} Processed page: ${pageUrl} (isProductPage: ${isProductPage})`);
 

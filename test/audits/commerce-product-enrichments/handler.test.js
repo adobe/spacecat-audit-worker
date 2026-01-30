@@ -353,6 +353,7 @@ describe('Commerce Product Enrichments Handler', () => {
   it('runAuditAndProcessResults processes scrape results from data', async () => {
     const s3Client = {
       send: sinon.stub().resolves({
+        ContentType: 'application/json',
         Body: {
           transformToString: sinon.stub().resolves(JSON.stringify({
             url: 'https://example.com/page-1',
@@ -489,6 +490,7 @@ describe('Commerce Product Enrichments Handler', () => {
   it('runAuditAndProcessResults handles empty scrape data from S3', async () => {
     const s3Client = {
       send: sinon.stub().resolves({
+        ContentType: 'application/json',
         Body: {
           transformToString: sinon.stub().resolves(''),
         },
@@ -563,15 +565,14 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
     expect(result.auditResult.processedPages).to.equal(0);
     expect(result.auditResult.failedPages).to.equal(1);
-    expect(log.error).to.have.been.calledWith(
-      sinon.match(/Error processing scrape result/),
-      sinon.match.instanceOf(Error),
-    );
+    // getObjectFromKey logs S3 errors, so check that log.error was called
+    expect(log.error).to.have.been.called;
   });
 
   it('runAuditAndProcessResults handles unexpected errors during processing', async () => {
     const s3Client = {
       send: sinon.stub().resolves({
+        ContentType: 'application/json',
         Body: {
           transformToString: sinon.stub().resolves(JSON.stringify({
             url: 'https://example.com/page-1',
@@ -621,5 +622,172 @@ describe('Commerce Product Enrichments Handler', () => {
       sinon.match(/Error processing scrape result/),
       sinon.match.instanceOf(Error),
     );
+  });
+
+  it('runAuditAndProcessResults handles missing metadata.url', async () => {
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            finalUrl: 'https://example.com/page-1',
+            scrapeResult: {},
+          })),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-8' },
+      finalUrl: 'https://example.com',
+      log: {
+        ...log,
+        debug: sinon.spy(),
+      },
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      data: {
+        scrapeResults: [
+          {
+            location: 'scrapes/site-1/page-1/scrape.json',
+            metadata: {
+              // url is missing
+              status: 'COMPLETE',
+            },
+          },
+        ],
+      },
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.auditResult.processedPages).to.equal(1);
+  });
+
+  it('runAuditAndProcessResults returns OPPORTUNITIES_FOUND when product pages are detected', async () => {
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: 'https://example.com/product-1',
+            finalUrl: 'https://example.com/product-1',
+            scrapeResult: {
+              structuredData: {
+                jsonld: {
+                  Product: [
+                    {
+                      name: 'Test Product',
+                      sku: 'TEST-SKU-123',
+                    },
+                  ],
+                },
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-9' },
+      finalUrl: 'https://example.com',
+      log: {
+        ...log,
+        debug: sinon.spy(),
+      },
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      data: {
+        scrapeResults: [
+          {
+            location: 'scrapes/site-1/product-1/scrape.json',
+            metadata: {
+              url: 'https://example.com/product-1',
+              status: 'COMPLETE',
+            },
+          },
+        ],
+      },
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('OPPORTUNITIES_FOUND');
+    expect(result.auditResult.processedPages).to.equal(1);
+    expect(result.auditResult.productPages).to.equal(1);
+    expect(result.auditResult.message).to.include('Found 1 product pages');
+  });
+
+  it('runAuditAndProcessResults filters out category pages with multiple products', async () => {
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: 'https://example.com/category',
+            finalUrl: 'https://example.com/category',
+            scrapeResult: {
+              structuredData: {
+                jsonld: {
+                  Product: [
+                    {
+                      name: 'Product 1',
+                      sku: 'SKU-1',
+                    },
+                    {
+                      name: 'Product 2',
+                      sku: 'SKU-2',
+                    },
+                    {
+                      name: 'Product 3',
+                      sku: 'SKU-3',
+                    },
+                  ],
+                },
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-10' },
+      finalUrl: 'https://example.com',
+      log: {
+        ...log,
+        debug: sinon.spy(),
+      },
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      data: {
+        scrapeResults: [
+          {
+            location: 'scrapes/site-1/category/scrape.json',
+            metadata: {
+              url: 'https://example.com/category',
+              status: 'COMPLETE',
+            },
+          },
+        ],
+      },
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.auditResult.processedPages).to.equal(1);
+    expect(result.auditResult.productPages).to.equal(0);
   });
 });
