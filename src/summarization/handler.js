@@ -29,9 +29,6 @@ export async function importTopPages(context) {
   const { site, dataAccess, log } = context;
   const { SiteTopPage } = dataAccess;
 
-  // TEMP: Confirm branch fix/llmo-2797-preserve-fixed-suggestions is deployed
-  log.info('[SUMMARIZATION] Branch fix/llmo-2797-preserve-fixed-suggestions - tokowakaDeployed fix active');
-
   try {
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 

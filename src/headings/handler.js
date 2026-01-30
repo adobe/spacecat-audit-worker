@@ -36,8 +36,6 @@ import {
 const auditType = Audit.AUDIT_TYPES.HEADINGS;
 
 const H1_LENGTH_CHARS = 70;
-// TEMP: hard-limit URLs for PR validation only; remove before prod merge.
-const MAX_AUDIT_URLS = 3;
 
 export const HEADINGS_CHECKS = Object.freeze({
   HEADING_EMPTY: {
@@ -396,7 +394,6 @@ export async function headingsAuditRunner(baseURL, context, site) {
       topPages = await getTopPages(dataAccess, siteId, context, log, 200);
     }
 
-    topPages = topPages.slice(0, MAX_AUDIT_URLS);
     log.debug(`[Headings Audit] Processing ${topPages.length} top pages for headings audit (limited to 200)`);
     log.debug(`[Headings Audit] Top pages sample: ${topPages.slice(0, 3).map((p) => p.url).join(', ')}`);
     if (topPages.length === 0) {

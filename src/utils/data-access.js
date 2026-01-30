@@ -169,21 +169,6 @@ export const handleOutdatedSuggestions = async ({
   const { Suggestion } = context.dataAccess;
   const { log } = context;
 
-  /* c8 ignore start */
-  // Debug: Log deployed suggestions before filtering
-  const deployedSuggestions = existingSuggestions.filter((s) => {
-    const d = s.getData?.();
-    return d?.tokowakaDeployed || d?.edgeDeployed;
-  });
-  if (deployedSuggestions.length > 0) {
-    log.info(`[SuggestionSync] Found ${deployedSuggestions.length} deployed suggestions before filtering`);
-    deployedSuggestions.forEach((s) => {
-      const d = s.getData?.();
-      log.info(`[SuggestionSync] Deployed suggestion detail: id=${s.getId?.()}, status=${s.getStatus?.()}, url=${d?.url}, tokowakaDeployed=${d?.tokowakaDeployed}, edgeDeployed=${d?.edgeDeployed}`);
-    });
-  }
-  /* c8 ignore stop */
-
   const existingOutdatedSuggestions = existingSuggestions
     .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
     .filter((existing) => ![
@@ -197,12 +182,9 @@ export const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
     ].includes(existing.getStatus()))
     .filter((existing) => {
+      // Preserve suggestions that have been deployed (tokowakaDeployed or edgeDeployed)
       const data = existing.getData?.();
-      const isDeployed = data?.tokowakaDeployed || data?.edgeDeployed;
-      if (isDeployed) {
-        log.info(`[SuggestionSync] Preserving deployed suggestion: id=${existing.getId()}, url=${data?.url}, tokowakaDeployed=${data?.tokowakaDeployed}, edgeDeployed=${data?.edgeDeployed}`);
-      }
-      return !isDeployed;
+      return !(data?.tokowakaDeployed || data?.edgeDeployed);
     })
     .filter((existing) => {
       // mark suggestions as outdated only if their URL was actually scraped
@@ -292,22 +274,6 @@ export async function syncSuggestions({
   const newDataKeys = new Set(newData.map(buildKey));
   const existingSuggestions = await opportunity.getSuggestions();
 
-  /* c8 ignore start */
-  log.info(`[SuggestionSync] Starting sync: ${existingSuggestions.length} existing suggestions, ${newData.length} new data items`);
-  // Log summary of existing suggestions by status and deployed flags
-  const statusCounts = {};
-  let deployedCount = 0;
-  existingSuggestions.forEach((s) => {
-    const status = s.getStatus?.() || 'unknown';
-    statusCounts[status] = (statusCounts[status] || 0) + 1;
-    const d = s.getData?.();
-    if (d?.tokowakaDeployed || d?.edgeDeployed) {
-      deployedCount += 1;
-    }
-  });
-  log.info(`[SuggestionSync] Existing suggestions by status: ${JSON.stringify(statusCounts)}, deployed: ${deployedCount}`);
-  /* c8 ignore stop */
-
   // Update outdated suggestions
   await handleOutdatedSuggestions({
     existingSuggestions,
@@ -330,11 +296,6 @@ export async function syncSuggestions({
       .map((existing) => {
         const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
         const existingData = existing.getData();
-        /* c8 ignore start */
-        if (existingData?.tokowakaDeployed || existingData?.edgeDeployed) {
-          log.info(`[SuggestionSync] Updating deployed suggestion: id=${existing.getId?.()}, status=${existing.getStatus?.()}, url=${existingData?.url}, tokowakaDeployed=${existingData?.tokowakaDeployed}, edgeDeployed=${existingData?.edgeDeployed}`);
-        }
-        /* c8 ignore stop */
         existing.setData(mergeDataFunction(existingData, newDataItem));
 
         if (existing.getStatus() === SuggestionDataAccess.STATUSES.REJECTED) {
