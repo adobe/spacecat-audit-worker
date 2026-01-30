@@ -415,7 +415,7 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
 
   const { auditResult, id } = auditData;
 
-  // // take first page which has highest projectedTrafficLost
+  // take first page which has highest projectedTrafficLost
   const selected = auditResult.top3Pages?.length > 0 ? auditResult.top3Pages[0] : null;
   const selectedPageUrl = selected?.url;
   if (!selectedPageUrl) {
@@ -428,16 +428,15 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
   const mystiqueMessage = buildMystiqueMessage(site, id, selectedPageUrl);
 
   const projected = selected?.trafficLoss;
-  log.debug(
-    `[paid-audit] [Site: ${auditUrl}] Sending consent-seen page ${selectedPageUrl} with message `
-    + `(projectedTrafficLoss: ${projected}) ${JSON.stringify(mystiqueMessage, 2)} `
-    + 'evaluation to mystique',
+  log.info(
+    `[paid-audit] [Site: ${auditUrl}] Sending consent-seen page ${selectedPageUrl} `
+    + `(projectedTrafficLoss: ${projected}, bounceRate: ${selected?.bounceRate}) to mystique: ${JSON.stringify(mystiqueMessage)}`,
   );
   if (selected?.bounceRate >= CUT_OFF_BOUNCE_RATE) {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-    log.debug(`[paid-audit] [Site: ${auditUrl}] Completed mystique evaluation step`);
+    log.info(`[paid-audit] [Site: ${auditUrl}] Completed mystique evaluation step`);
   } else {
-    log.debug(`[paid-audit] [Site: ${auditUrl}] Skipping mystique evaluation step for page ${selectedPageUrl} with bounce rate ${selected?.bounceRate}`);
+    log.info(`[paid-audit] [Site: ${auditUrl}] Skipping mystique evaluation step for page ${selectedPageUrl} with bounce rate ${selected?.bounceRate} (< ${CUT_OFF_BOUNCE_RATE})`);
   }
 }
 
@@ -464,10 +463,9 @@ function createImportStep(weekIndex) {
     }
 
     return {
-      auditResult: {
-        status: 'pending',
-        message: `Importing traffic-analysis data for week ${week}/${year}`,
-      },
+      // Empty auditResult - real results will be stored in a new audit created in step 5.
+      // This audit is just a placeholder for the framework's continuation mechanism.
+      auditResult: {},
       fullAuditRef: finalUrl,
       type: IMPORT_TYPE_TRAFFIC_ANALYSIS,
       siteId,
@@ -488,7 +486,7 @@ export const importWeekStep3 = createImportStep(3);
 
 export async function runPaidConsentAnalysisStep(context) {
   const {
-    site, finalUrl, log, auditContext, audit,
+    site, finalUrl, log, dataAccess, auditContext, audit,
   } = context;
 
   log.info(`[paid-audit] [Site: ${finalUrl}] Step 5: Running consent banner analysis`);
@@ -503,12 +501,32 @@ export async function runPaidConsentAnalysisStep(context) {
     return {};
   }
 
-  // Send results to Mystique via post-processor
-  // Note: Audit record contains metadata only (week/year info from step 1).
-  // Real analysis results are sent to Mystique, not stored in the audit.
+  // Get the placeholder audit ID from step 1 (for cleanup reference)
+  const placeholderAuditId = audit?.getId() || auditContext?.auditId;
+
+  // Create a NEW audit with the real results.
+  // The stepped audit framework only saves auditResult on step 1 (when !hasNext),
+  // so continuation steps like this one don't persist results automatically.
+  // We create a new audit here so the guidance handler can read the full auditResult.
+  // The placeholder audit from step 1 is referenced via previousAuditId for cleanup.
+  const { Audit: AuditDao } = dataAccess;
+  const newAudit = await AuditDao.create({
+    siteId: site.getId(),
+    isLive: site.getIsLive(),
+    auditedAt: new Date().toISOString(),
+    auditType: 'paid',
+    auditResult: {
+      ...result.auditResult,
+      previousAuditId: placeholderAuditId, // Reference to placeholder audit for cleanup
+    },
+    fullAuditRef: finalUrl,
+  });
+
+  log.info(`[paid-audit] [Site: ${finalUrl}] Created audit ${newAudit.getId()} with full results (placeholder: ${placeholderAuditId})`);
+
+  // Send results to Mystique with the NEW auditId
   try {
-    const auditId = audit?.getId() || auditContext.auditId;
-    const auditData = { auditResult: result.auditResult, id: auditId };
+    const auditData = { auditResult: result.auditResult, id: newAudit.getId() };
     await paidConsentBannerCheck(finalUrl, auditData, context, site);
   } catch (error) {
     log.error(`[paid-audit] [Site: ${finalUrl}] Post-processor paidConsentBannerCheck failed: ${error.message}`);

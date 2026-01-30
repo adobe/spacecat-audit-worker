@@ -333,7 +333,7 @@ describe('Paid Cookie Consent Audit', () => {
     await paidConsentBannerCheck(auditUrl, auditData, context, site);
 
     expect(context.sqs.sendMessage.called).to.be.false;
-    expect(context.log.debug).to.have.been.calledWithMatch(/Skipping mystique evaluation step for page/);
+    expect(context.log.info).to.have.been.calledWithMatch(/Skipping mystique evaluation step for page/);
   });
 
   it('should select first page from top3Pages (highest traffic loss)', async () => {
@@ -675,8 +675,8 @@ describe('Paid Cookie Consent Audit', () => {
 
     await paidConsentBannerCheck(auditUrl, auditData, context, site);
 
-    expect(context.log.debug).to.have.been.calledWithMatch(/projectedTrafficLoss: 4500/);
-    expect(context.log.debug).to.have.been.calledWithMatch(/Completed mystique evaluation step/);
+    expect(context.log.info).to.have.been.calledWithMatch(/projectedTrafficLoss.*4500/);
+    expect(context.log.info).to.have.been.calledWithMatch(/Completed mystique evaluation step/);
   });
 
   it('should handle zero totalPageViews and calculate totalAverageBounceRate as 0', async () => {
@@ -1019,7 +1019,8 @@ describe('importWeekStep0 (first import step)', () => {
     const result = await importWeekStep0(stepContext);
 
     expect(result).to.have.property('auditResult');
-    expect(result.auditResult).to.have.property('status', 'pending');
+    // auditResult is now empty (no pending state) - real results stored in new audit in step 5
+    expect(result.auditResult).to.deep.equal({});
     expect(result).to.have.property('fullAuditRef', auditUrl);
     expect(result).to.have.property('type', 'traffic-analysis');
     expect(result).to.have.property('siteId', 'test-site-id');
@@ -1198,6 +1199,13 @@ describe('runPaidConsentAnalysisStep', () => {
       sqs: {
         sendMessage: sandbox.stub().resolves(),
       },
+      dataAccess: {
+        Audit: {
+          create: sandbox.stub().resolves({
+            getId: () => 'new-audit-id',
+          }),
+        },
+      },
     };
   });
 
@@ -1241,7 +1249,7 @@ describe('runPaidConsentAnalysisStep', () => {
     expect(context.sqs.sendMessage).to.have.been.called;
   });
 
-  it('should use auditContext.auditId when audit is not in context', async () => {
+  it('should use auditContext.auditId as previousAuditId when audit is not in context', async () => {
     const stepContext = {
       ...context,
       finalUrl: auditUrl,
@@ -1252,8 +1260,12 @@ describe('runPaidConsentAnalysisStep', () => {
     const result = await runPaidConsentAnalysisStep(stepContext);
 
     expect(result).to.deep.equal({});
-    // Should still send to mystique using auditContext.auditId
+    // Should still send to mystique using new audit ID
     expect(context.sqs.sendMessage).to.have.been.called;
+    // Should create audit with previousAuditId reference
+    expect(context.dataAccess.Audit.create).to.have.been.called;
+    const createCall = context.dataAccess.Audit.create.getCall(0);
+    expect(createCall.args[0].auditResult.previousAuditId).to.equal('fallback-audit-id');
   });
 
   it('should return {} and not send to mystique when paidAuditRunner returns null auditResult', async () => {
