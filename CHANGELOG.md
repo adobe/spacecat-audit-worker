@@ -1,3 +1,45 @@
+## [1.294.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.294.4...v1.294.5) (2026-01-30)
+
+
+### Bug Fixes
+
+* changed fixed status with outdated for sync a11y suggestions ([#1905](https://github.com/adobe/spacecat-audit-worker/issues/1905)) ([39cb946](https://github.com/adobe/spacecat-audit-worker/commit/39cb9464ced930ae1f3b3c8e1bf548dd2acfb860))
+
+## [1.294.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.294.3...v1.294.4) (2026-01-30)
+
+
+### Bug Fixes
+
+* improved logging to track valuable suggestions & paid customers anomaly ([#1879](https://github.com/adobe/spacecat-audit-worker/issues/1879)) ([d3b84e5](https://github.com/adobe/spacecat-audit-worker/commit/d3b84e52aefdaac7ec5148b916d20b9c636058e9))
+
+## [1.294.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.294.2...v1.294.3) (2026-01-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.98.0 ([#1910](https://github.com/adobe/spacecat-audit-worker/issues/1910)) ([d841260](https://github.com/adobe/spacecat-audit-worker/commit/d8412606a1998e7a632660d81f926611306f96c7))
+
+## [1.294.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.294.1...v1.294.2) (2026-01-29)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1906](https://github.com/adobe/spacecat-audit-worker/issues/1906)) ([70e3054](https://github.com/adobe/spacecat-audit-worker/commit/70e30544c2ced138b6aa7ea9f64cc837e0ad2ad1))
+
+## [1.294.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.294.0...v1.294.1) (2026-01-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.90.1 ([#1903](https://github.com/adobe/spacecat-audit-worker/issues/1903)) ([4e93337](https://github.com/adobe/spacecat-audit-worker/commit/4e93337a4cd0d855d35a943c63d733f249bdd3eb))
+
+# [1.294.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.293.2...v1.294.0) (2026-01-29)
+
+
+### Features
+
+* first version of paid keyword optimizer audit ([#1878](https://github.com/adobe/spacecat-audit-worker/issues/1878)) ([175ebd0](https://github.com/adobe/spacecat-audit-worker/commit/175ebd08310390f953c8f974287782aa545b074d))
+
 ## [1.293.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.293.1...v1.293.2) (2026-01-29)
 
 
