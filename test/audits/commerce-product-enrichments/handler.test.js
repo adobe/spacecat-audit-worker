@@ -68,7 +68,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.not.have.property('limit');
   });
 
-  it('importTopPages includes limit from context.data when provided', async () => {
+  it('importTopPages includes limit from context.data when provided as object', async () => {
     const context = {
       site,
       finalUrl: 'https://example.com',
@@ -85,6 +85,45 @@ describe('Commerce Product Enrichments Handler', () => {
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
+  });
+
+  it('importTopPages includes limit from context.data when provided as JSON string', async () => {
+    const context = {
+      site,
+      finalUrl: 'https://example.com',
+      log,
+      data: '{"limit":25}',
+    };
+
+    const result = await importTopPages(context);
+
+    expect(result).to.deep.equal({
+      type: 'top-pages',
+      siteId: 'site-1',
+      limit: 25,
+      auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+      fullAuditRef: 'scrapes/site-1/',
+    });
+  });
+
+  it('importTopPages handles invalid JSON gracefully', async () => {
+    const context = {
+      site,
+      finalUrl: 'https://example.com',
+      log,
+      data: 'invalid-json{',
+    };
+
+    const result = await importTopPages(context);
+
+    expect(result).to.deep.equal({
+      type: 'top-pages',
+      siteId: 'site-1',
+      auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+      fullAuditRef: 'scrapes/site-1/',
+    });
+    expect(result).to.not.have.property('limit');
+    expect(log.warn).to.have.been.calledWith(sinon.match(/Could not parse data as JSON/));
   });
 
   it('submitForScraping combines top pages and included URLs, filters PDFs', async () => {
@@ -170,6 +209,56 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.urls).to.have.lengthOf(50);
     expect(result.urls[0].url).to.equal('https://example.com/page-1');
     expect(result.urls[49].url).to.equal('https://example.com/page-50');
+  });
+
+  it('submitForScraping respects limit from context.data when provided as JSON string', async () => {
+    // Create an array of 50 top pages
+    const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
+      getUrl: () => `https://example.com/page-${i + 1}`,
+    }));
+
+    dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyTopPages);
+
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([]),
+    });
+
+    const context = {
+      site,
+      dataAccess,
+      log,
+      data: '{"limit":10}',
+    };
+
+    const result = await submitForScraping(context);
+
+    expect(result.urls).to.have.lengthOf(10);
+    expect(result.urls[0].url).to.equal('https://example.com/page-1');
+    expect(result.urls[9].url).to.equal('https://example.com/page-10');
+  });
+
+  it('submitForScraping handles invalid JSON gracefully', async () => {
+    const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
+      getUrl: () => `https://example.com/page-${i + 1}`,
+    }));
+
+    dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyTopPages);
+
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([]),
+    });
+
+    const context = {
+      site,
+      dataAccess,
+      log,
+      data: 'invalid-json{',
+    };
+
+    const result = await submitForScraping(context);
+
+    expect(result.urls).to.have.lengthOf(50);
+    expect(log.warn).to.have.been.calledWith(sinon.match(/Could not parse data as JSON/));
   });
 
   it('submitForScraping handles missing site config and defaults to top pages only', async () => {
