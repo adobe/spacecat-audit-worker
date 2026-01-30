@@ -1,3 +1,10 @@
+# [1.295.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.294.5...v1.295.0) (2026-01-30)
+
+
+### Features
+
+* convert paid-cookie-consent to stepped audit with traffic-analysis imports ([#1912](https://github.com/adobe/spacecat-audit-worker/issues/1912)) ([7c26828](https://github.com/adobe/spacecat-audit-worker/commit/7c268281f6aabd9da1fc7a701a0dc1e1d05d86c2))
+
 ## [1.294.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.294.4...v1.294.5) (2026-01-30)
 
 
