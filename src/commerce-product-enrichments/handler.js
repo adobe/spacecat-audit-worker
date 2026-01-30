@@ -25,10 +25,22 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
  */
 export async function importTopPages(context) {
   const {
-    site, finalUrl, log, data = {},
+    site, finalUrl, log, data,
   } = context;
 
-  const { limit } = data;
+  // Parse data if it's a string (from Slack bot), or use as-is if it's an object
+  let parsedData = {};
+  if (typeof data === 'string' && data.length > 0) {
+    try {
+      parsedData = JSON.parse(data);
+    } catch (e) {
+      log.warn(`${LOG_PREFIX} Could not parse data as JSON: ${data}`);
+    }
+  } else if (data && typeof data === 'object') {
+    parsedData = data;
+  }
+
+  const { limit } = parsedData;
   const limitInfo = limit ? ` with limit: ${limit}` : '';
 
   log.info(`${LOG_PREFIX} Step 1: importTopPages started for site: ${site.getId()}${limitInfo}`);
@@ -63,10 +75,22 @@ export async function submitForScraping(context) {
     site,
     dataAccess,
     log,
-    data = {},
+    data,
   } = context;
 
-  const { limit } = data;
+  // Parse data if it's a string (from Slack bot), or use as-is if it's an object
+  let parsedData = {};
+  if (typeof data === 'string' && data.length > 0) {
+    try {
+      parsedData = JSON.parse(data);
+    } catch (e) {
+      log.warn(`${LOG_PREFIX} Could not parse data as JSON: ${data}`);
+    }
+  } else if (data && typeof data === 'object') {
+    parsedData = data;
+  }
+
+  const { limit } = parsedData;
   const limitInfo = limit ? ` with limit: ${limit}` : '';
 
   log.info(`${LOG_PREFIX} Step 2: submitForScraping started for site: ${site.getId()}${limitInfo}`);
