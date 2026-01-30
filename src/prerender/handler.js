@@ -842,13 +842,9 @@ export async function processOpportunityAndSuggestions(
 
   const existingPreservable = await findPreservableDomainWideSuggestion(opportunity, log);
 
-  let domainWideSuggestion;
+  let domainWideSuggestion = null;
   if (existingPreservable) {
-    log.info(`${LOG_PREFIX} Reusing existing domain-wide suggestion instead of creating new. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
-    domainWideSuggestion = {
-      key: DOMAIN_WIDE_SUGGESTION_KEY,
-      data: existingPreservable.getData(),
-    };
+    log.info(`${LOG_PREFIX} Skipping domain-wide suggestion creation - existing one will be preserved. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
   } else {
     domainWideSuggestion = await prepareDomainWideAggregateSuggestion(
       preRenderSuggestions,
@@ -887,7 +883,9 @@ export async function processOpportunityAndSuggestions(
     ),
   });
 
-  const allSuggestions = [...preRenderSuggestions, domainWideSuggestion];
+  const allSuggestions = domainWideSuggestion
+    ? [...preRenderSuggestions, domainWideSuggestion]
+    : [...preRenderSuggestions];
 
   await syncSuggestions({
     opportunity,

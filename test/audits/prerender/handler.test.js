@@ -1801,20 +1801,23 @@ describe('Prerender Audit', () => {
           context,
         );
 
-        // Verify that the existing domain-wide suggestion data is reused
+        // Verify that no domain-wide suggestion is included in newData
+        // The existing one will be preserved by the OUTDATED filter in data-access.js
         expect(syncSuggestionsStub).to.have.been.calledOnce;
         const syncArgs = syncSuggestionsStub.firstCall.args[0];
 
-        // Find the domain-wide suggestion in newData
+        // No domain-wide suggestion should be in newData
         const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
-        expect(domainWideSuggestion).to.exist;
-        expect(domainWideSuggestion.data.tokowakaDeployed).to.equal(1769607504287);
-        expect(domainWideSuggestion.data.allowedRegexPatterns).to.deep.equal(['/existing-pattern/']);
+        expect(domainWideSuggestion).to.be.undefined;
 
-        // Verify log message about preserving
+        // Only individual suggestions should be in newData
+        expect(syncArgs.newData.length).to.equal(1);
+        expect(syncArgs.newData[0].url).to.equal('https://example.com/page1');
+
+        // Verify log message about skipping creation
         const logCalls = logStub.info.getCalls().map((c) => c.args[0]);
-        const preserveLog = logCalls.find((msg) => msg && msg.includes('Reusing existing domain-wide suggestion'));
-        expect(preserveLog).to.exist;
+        const skipLog = logCalls.find((msg) => msg && msg.includes('Skipping domain-wide suggestion creation'));
+        expect(skipLog).to.exist;
       });
 
       it('should properly execute syncSuggestions with domain-wide aggregate suggestion mapper and merge functions', async () => {
