@@ -421,7 +421,6 @@ function createImportStep(weekIndex) {
     log.info(`[paid-audit] [Site: ${finalUrl}] Import step ${weekIndex + 1}/4: Triggering traffic-analysis import for week ${week}/${year}`);
 
     // Only enable import on the first step
-    let importWasEnabled = false;
     if (weekIndex === 0) {
       const siteConfig = site.getConfig();
       const imports = siteConfig?.getImports() || [];
@@ -429,7 +428,6 @@ function createImportStep(weekIndex) {
       if (!isImportEnabled(IMPORT_TRAFFIC_ANALYSIS, imports)) {
         log.debug(`[paid-audit] [Site: ${finalUrl}] Enabling ${IMPORT_TRAFFIC_ANALYSIS} import for site ${siteId}`);
         await toggleImport(site, IMPORT_TRAFFIC_ANALYSIS, true, log);
-        importWasEnabled = true;
       }
     }
 
@@ -445,10 +443,6 @@ function createImportStep(weekIndex) {
       auditContext: {
         week,
         year,
-        // Preserve importWasEnabled from step 1 across the chain
-        importWasEnabled: weekIndex === 0
-          ? importWasEnabled
-          : (context.auditContext?.importWasEnabled || false),
       },
     };
   };
@@ -462,21 +456,10 @@ export const importWeekStep3 = createImportStep(3);
 
 export async function runPaidConsentAnalysisStep(context) {
   const {
-    site, finalUrl, audit, log, auditContext,
+    site, finalUrl, audit, log,
   } = context;
-  const siteId = site.getId();
 
   log.info(`[paid-audit] [Site: ${finalUrl}] Step 5: Running consent banner analysis`);
-
-  // Disable import if we enabled it in step 1 (cleanup — don't fail audit if this fails)
-  if (auditContext?.importWasEnabled) {
-    log.debug(`[paid-audit] [Site: ${finalUrl}] Disabling ${IMPORT_TRAFFIC_ANALYSIS} import for site ${siteId}`);
-    try {
-      await toggleImport(site, IMPORT_TRAFFIC_ANALYSIS, false, log);
-    } catch (error) {
-      log.error(`[paid-audit] [Site: ${finalUrl}] Failed to disable import (cleanup): ${error.message}`);
-    }
-  }
 
   // Run existing analysis logic (reuses paidAuditRunner)
   const result = await paidAuditRunner(finalUrl, context, site);

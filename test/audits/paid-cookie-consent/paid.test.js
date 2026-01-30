@@ -1000,7 +1000,6 @@ describe('importWeekStep0 (first import step)', () => {
     expect(result).to.have.property('auditContext');
     expect(result.auditContext).to.have.property('week');
     expect(result.auditContext).to.have.property('year');
-    expect(result.auditContext).to.have.property('importWasEnabled');
   });
 
   it('should enable import when not already enabled', async () => {
@@ -1010,10 +1009,9 @@ describe('importWeekStep0 (first import step)', () => {
       finalUrl: auditUrl,
     };
 
-    const result = await importWeekStep0(stepContext);
+    await importWeekStep0(stepContext);
 
     expect(site.getConfig().enableImport).to.have.been.calledWith('traffic-analysis');
-    expect(result.auditContext.importWasEnabled).to.be.true;
   });
 
   it('should not enable import when already enabled', async () => {
@@ -1030,10 +1028,9 @@ describe('importWeekStep0 (first import step)', () => {
       finalUrl: auditUrl,
     };
 
-    const result = await importWeekStep0(stepContext);
+    await importWeekStep0(stepContext);
 
     expect(mockConfigWithImport.enableImport).to.not.have.been.called;
-    expect(result.auditContext.importWasEnabled).to.be.false;
   });
 
   it('should throw error when site config is null', async () => {
@@ -1072,38 +1069,12 @@ describe('importWeekStep1/2/3 (subsequent import steps)', () => {
     sandbox.restore();
   });
 
-  it('should pass through importWasEnabled from auditContext', async () => {
-    const stepContext = {
-      site,
-      log: logStub,
-      finalUrl: auditUrl,
-      auditContext: { importWasEnabled: true },
-    };
-
-    const result = await importWeekStep1(stepContext);
-
-    expect(result.auditContext.importWasEnabled).to.be.true;
-  });
-
-  it('should default importWasEnabled to false when not in auditContext', async () => {
-    const stepContext = {
-      site,
-      log: logStub,
-      finalUrl: auditUrl,
-      auditContext: {},
-    };
-
-    const result = await importWeekStep2(stepContext);
-
-    expect(result.auditContext.importWasEnabled).to.be.false;
-  });
-
   it('should not call enableImport (only step 0 does that)', async () => {
     const stepContext = {
       site,
       log: logStub,
       finalUrl: auditUrl,
-      auditContext: { importWasEnabled: true },
+      auditContext: {},
     };
 
     await importWeekStep1(stepContext);
@@ -1118,7 +1089,7 @@ describe('importWeekStep1/2/3 (subsequent import steps)', () => {
       site,
       log: logStub,
       finalUrl: auditUrl,
-      auditContext: { importWasEnabled: false },
+      auditContext: {},
     };
 
     const result = await importWeekStep3(stepContext);
@@ -1250,73 +1221,6 @@ describe('runPaidConsentAnalysisStep', () => {
     await runPaidConsentAnalysisStep(stepContext);
 
     expect(context.sqs.sendMessage).to.have.been.called;
-  });
-
-  it('should disable import when importWasEnabled is true', async () => {
-    const mockAudit = {
-      getId: () => 'test-audit-id',
-      setAuditResult: sandbox.stub(),
-      save: sandbox.stub().resolves(),
-    };
-
-    const stepContext = {
-      ...context,
-      finalUrl: auditUrl,
-      audit: mockAudit,
-      auditContext: { importWasEnabled: true },
-    };
-
-    await runPaidConsentAnalysisStep(stepContext);
-
-    expect(site.getConfig().disableImport).to.have.been.calledWith('traffic-analysis');
-  });
-
-  it('should not disable import when importWasEnabled is false', async () => {
-    const mockAudit = {
-      getId: () => 'test-audit-id',
-      setAuditResult: sandbox.stub(),
-      save: sandbox.stub().resolves(),
-    };
-
-    const stepContext = {
-      ...context,
-      finalUrl: auditUrl,
-      audit: mockAudit,
-      auditContext: { importWasEnabled: false },
-    };
-
-    await runPaidConsentAnalysisStep(stepContext);
-
-    expect(site.getConfig().disableImport).to.not.have.been.called;
-  });
-
-  it('should continue even if toggleImport throws during cleanup', async () => {
-    const mockConfig = createMockConfig(sandbox);
-    const siteWithSaveError = getSite(sandbox, {
-      getConfig: () => mockConfig,
-      getBaseURL: () => 'https://example.com',
-      save: sandbox.stub().rejects(new Error('Database connection failed')),
-    });
-
-    const mockAudit = {
-      getId: () => 'test-audit-id',
-      setAuditResult: sandbox.stub(),
-      save: sandbox.stub().resolves(),
-    };
-
-    const stepContext = {
-      ...context,
-      site: siteWithSaveError,
-      finalUrl: auditUrl,
-      audit: mockAudit,
-      auditContext: { importWasEnabled: true },
-    };
-
-    const result = await runPaidConsentAnalysisStep(stepContext);
-
-    expect(result).to.deep.equal({});
-    expect(mockAudit.setAuditResult).to.have.been.called;
-    expect(logStub.error).to.have.been.calledWithMatch(/Failed to disable import \(cleanup\)/);
   });
 
   it('should return {} without calling setAuditResult when paidAuditRunner returns null auditResult', async () => {
