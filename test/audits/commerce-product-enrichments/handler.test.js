@@ -69,7 +69,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.not.have.property('limit');
   });
 
-  it('importTopPages includes limit from context.data when provided as object', async () => {
+  it('importTopPages includes limit in auditContext when provided as object', async () => {
     const context = {
       site,
       finalUrl: 'https://example.com',
@@ -82,13 +82,13 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
-      limit: 25,
+      auditContext: { limit: 25 },
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
   });
 
-  it('importTopPages includes limit from context.data when provided as JSON string', async () => {
+  it('importTopPages includes limit in auditContext when provided as JSON string', async () => {
     const context = {
       site,
       finalUrl: 'https://example.com',
@@ -101,7 +101,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
-      limit: 25,
+      auditContext: { limit: 25 },
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
@@ -260,6 +260,59 @@ describe('Commerce Product Enrichments Handler', () => {
 
     expect(result.urls).to.have.lengthOf(50);
     expect(log.warn).to.have.been.calledWith(sinon.match(/Could not parse data as JSON/));
+  });
+
+  it('submitForScraping respects limit from auditContext (step chaining)', async () => {
+    // Create an array of 50 top pages
+    const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
+      getUrl: () => `https://example.com/page-${i + 1}`,
+    }));
+
+    dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyTopPages);
+
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([]),
+    });
+
+    const context = {
+      site,
+      dataAccess,
+      log,
+      auditContext: { limit: 7 },
+    };
+
+    const result = await submitForScraping(context);
+
+    expect(result.urls).to.have.lengthOf(7);
+    expect(result.urls[0].url).to.equal('https://example.com/page-1');
+    expect(result.urls[6].url).to.equal('https://example.com/page-7');
+  });
+
+  it('submitForScraping prefers auditContext limit over data limit', async () => {
+    // Create an array of 50 top pages
+    const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
+      getUrl: () => `https://example.com/page-${i + 1}`,
+    }));
+
+    dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyTopPages);
+
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([]),
+    });
+
+    const context = {
+      site,
+      dataAccess,
+      log,
+      data: { limit: 20 },
+      auditContext: { limit: 3 },
+    };
+
+    const result = await submitForScraping(context);
+
+    expect(result.urls).to.have.lengthOf(3);
+    expect(result.urls[0].url).to.equal('https://example.com/page-1');
+    expect(result.urls[2].url).to.equal('https://example.com/page-3');
   });
 
   it('submitForScraping handles missing site config and defaults to top pages only', async () => {
