@@ -20,6 +20,8 @@ const DEFAULT_TOP_AGENTIC_URLS_LIMIT = 200;
 // URL suffixes to exclude from agentic URL results
 const EXCLUDED_URL_SUFFIXES = [
   '/sitemap.xml',
+  '/sitemap_index.xml',
+  '/sitemap-index.xml',
   '/robots.txt',
   '.ico',
   '.ps',
