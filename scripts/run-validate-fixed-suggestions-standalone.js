@@ -75,7 +75,7 @@ Usage: node scripts/run-validate-fixed-suggestions-standalone.js [options]
 Options:
   --siteId <id>        Validate specific site by ID
   --siteIds <ids>      Validate multiple sites (comma-separated)
-  --output <file>      Output results to JSON file
+  --output <file>      Output results to file (JSON or CSV based on extension)
   --verbose, -v        Enable verbose logging
   --help, -h           Show this help message
 
@@ -86,6 +86,7 @@ Environment Variables:
 Examples:
   node scripts/run-validate-fixed-suggestions-standalone.js --siteId abc-123
   node scripts/run-validate-fixed-suggestions-standalone.js --siteId abc-123 --output results.json
+  node scripts/run-validate-fixed-suggestions-standalone.js --siteId abc-123 --output results.csv
   node scripts/run-validate-fixed-suggestions-standalone.js --siteIds "site1,site2,site3" --verbose
       `);
       process.exit(0);
@@ -175,8 +176,64 @@ async function main() {
   // Output to file if requested
   if (globalOptions.output) {
     const fs = await import('fs');
-    fs.writeFileSync(globalOptions.output, JSON.stringify(globalResult, null, 2));
-    globalLog.info(`Results written to: ${globalOptions.output}`);
+    const path = await import('path');
+    const ext = path.extname(globalOptions.output).toLowerCase();
+    
+    if (ext === '.csv') {
+      // Generate CSV output with ALL suggestions
+      const csvLines = [
+        'Suggestion ID,Site ID,Opportunity ID,URL To,URL From,Title,Has Fix Entity,Fix Count,Validation Status,Reason,Is Still Broken',
+      ];
+      
+      // Use allSuggestionsWithStatus if available (includes ALL suggestions)
+      const suggestionsToExport = globalResult.allSuggestionsWithStatus || globalResult.stillBrokenSuggestions;
+      
+      for (const suggestion of suggestionsToExport) {
+        // Map validation status to human-readable reason
+        let reason = '';
+        switch (suggestion.validationStatus) {
+          case 'link-removed':
+            reason = 'Link removed from page (genuinely fixed)';
+            break;
+          case 'now-working':
+            reason = 'Link present but now working (genuinely fixed)';
+            break;
+          case 'still-broken':
+            reason = 'Link still present and broken (NOT fixed)';
+            break;
+          case 'scrape-error':
+            reason = `Could not validate: ${suggestion.error || 'Unknown error'}`;
+            break;
+          case 'missing-data':
+            reason = `Missing data: ${suggestion.error || 'urlFrom or urlTo missing'}`;
+            break;
+          default:
+            reason = suggestion.reason || suggestion.validationStatus || 'Unknown';
+        }
+        
+        const csvRow = [
+          suggestion.suggestionId || '',
+          suggestion.siteId || '',
+          suggestion.opportunityId || '',
+          suggestion.urlTo || '',
+          suggestion.urlFrom || '',
+          (suggestion.title || '').replace(/"/g, '""'), // Escape quotes
+          suggestion.hasFixEntity ? 'Yes' : 'No',
+          suggestion.fixCount || '0',
+          suggestion.validationStatus || '',
+          reason,
+          suggestion.isStillBroken ? 'Yes' : 'No',
+        ].map((field) => `"${field}"`).join(',');
+        csvLines.push(csvRow);
+      }
+      
+      fs.writeFileSync(globalOptions.output, csvLines.join('\n'));
+      globalLog.info(`CSV results written to: ${globalOptions.output} (${suggestionsToExport.length} suggestions)`);
+    } else {
+      // Default to JSON
+      fs.writeFileSync(globalOptions.output, JSON.stringify(globalResult, null, 2));
+      globalLog.info(`JSON results written to: ${globalOptions.output}`);
+    }
   }
 
   // Exit with appropriate code

@@ -189,7 +189,7 @@ async function checkLinkExistsOnPage(urlFrom, urlTo, log) {
  * Validates a single suggestion by checking if the link still exists and is broken.
  */
 async function validateSuggestion({
-  suggestion, opportunityId, siteId, log,
+  suggestion, opportunityId, siteId, log, hasFixEntity, fixCount,
 }) {
   const suggestionData = suggestion.getData();
   const urlFrom = suggestionData?.urlFrom;
@@ -201,6 +201,8 @@ async function validateSuggestion({
       suggestionId: suggestion.getId(),
       opportunityId,
       siteId,
+      hasFixEntity,
+      fixCount,
       error: 'Missing urlFrom or urlTo',
     };
   }
@@ -208,7 +210,7 @@ async function validateSuggestion({
   // Step 1: Check if the link still exists on the page
   const { linkExists, error: scrapeError } = await checkLinkExistsOnPage(urlFrom, urlTo, log);
 
-  log.debug(`[validate] Checked ${urlTo} on ${urlFrom}: linkExists=${linkExists}, error=${scrapeError}`);
+  log.debug(`[validate] Checked ${urlTo} on ${urlFrom}: linkExists=${linkExists}, error=${scrapeError}, hasFixEntity=${hasFixEntity}`);
 
   if (scrapeError) {
     return {
@@ -218,6 +220,8 @@ async function validateSuggestion({
       siteId,
       urlFrom,
       urlTo,
+      hasFixEntity,
+      fixCount,
       error: scrapeError,
     };
   }
@@ -231,6 +235,8 @@ async function validateSuggestion({
       siteId,
       urlFrom,
       urlTo,
+      hasFixEntity,
+      fixCount,
       isStillBroken: false,
     };
   }
@@ -252,6 +258,8 @@ async function validateSuggestion({
     urlFrom,
     urlTo,
     title: suggestionData?.title,
+    hasFixEntity,
+    fixCount,
     isStillBroken: isBroken,
   };
 }
@@ -284,7 +292,7 @@ async function processWithConcurrency(items, processor, concurrency) {
 /**
  * Validates suggestions marked as FIXED for broken internal links.
  */
-export async function validateFixedSuggestions({ dataAccess, log, siteId }) {
+export async function validateFixedSuggestions({ dataAccess, log, siteId, csvStream = null }) {
   const { Suggestion, Opportunity } = dataAccess;
 
   if (!siteId) {
@@ -330,14 +338,23 @@ export async function validateFixedSuggestions({ dataAccess, log, siteId }) {
 
     log.debug(`[validate-fixed-suggestions] Opportunity ${opportunityId} (Site: ${siteIdForOppty}): ${fixedSuggestions.length} FIXED suggestions`);
 
-    // Enrich suggestions with opportunity context
-    const enrichedSuggestions = fixedSuggestions.map((suggestion) => ({
-      suggestion,
-      opportunityId,
-      siteId: siteIdForOppty,
-    }));
-
-    allFixedSuggestions.push(...enrichedSuggestions);
+    // Enrich suggestions with opportunity context and check for fix entities
+    for (const suggestion of fixedSuggestions) {
+      const suggestionId = suggestion.getId();
+      
+      // Check if fix entity exists for this suggestion
+      // eslint-disable-next-line no-await-in-loop
+      const fixes = await Suggestion.getFixEntitiesBySuggestionId(suggestionId);
+      const hasFixEntity = fixes && fixes.length > 0;
+      
+      allFixedSuggestions.push({
+        suggestion,
+        opportunityId,
+        siteId: siteIdForOppty,
+        hasFixEntity,
+        fixCount: fixes ? fixes.length : 0,
+      });
+    }
   }
 
   log.info(`[validate-fixed-suggestions] Total FIXED suggestions to validate: ${allFixedSuggestions.length}`);
@@ -365,6 +382,8 @@ export async function validateFixedSuggestions({ dataAccess, log, siteId }) {
       suggestion: item.suggestion,
       opportunityId: item.opportunityId,
       siteId: item.siteId,
+      hasFixEntity: item.hasFixEntity,
+      fixCount: item.fixCount,
       log,
     }),
     MAX_CONCURRENT_CHECKS,
@@ -372,12 +391,70 @@ export async function validateFixedSuggestions({ dataAccess, log, siteId }) {
 
   // Analyze results
   const stillBrokenSuggestions = [];
+  const allSuggestionsWithStatus = []; // NEW: Track all suggestions with their status
   let linkRemovedCount = 0;
   let nowWorkingCount = 0;
   let stillBrokenCount = 0;
   let scrapeErrorCount = 0;
 
   for (const result of validationResults) {
+    // Add all suggestions to the complete list with their status
+    const suggestionWithStatus = {
+      suggestionId: result.suggestionId,
+      opportunityId: result.opportunityId,
+      siteId: result.siteId,
+      urlTo: result.urlTo,
+      urlFrom: result.urlFrom,
+      title: result.title,
+      hasFixEntity: result.hasFixEntity,
+      fixCount: result.fixCount,
+      validationStatus: result.type,
+      error: result.error || null,
+      isStillBroken: result.isStillBroken,
+    };
+    
+    allSuggestionsWithStatus.push(suggestionWithStatus);
+
+    // Write to CSV stream if provided (line by line)
+    if (csvStream) {
+      let reason = '';
+      switch (result.type) {
+        case 'link-removed':
+          reason = 'Link removed from page (genuinely fixed)';
+          break;
+        case 'now-working':
+          reason = 'Link present but now working (genuinely fixed)';
+          break;
+        case 'still-broken':
+          reason = 'Link still present and broken (NOT fixed)';
+          break;
+        case 'scrape-error':
+          reason = `Could not validate: ${result.error || 'Unknown error'}`;
+          break;
+        case 'missing-data':
+          reason = `Missing data: ${result.error || 'urlFrom or urlTo missing'}`;
+          break;
+        default:
+          reason = result.type || 'Unknown';
+      }
+      
+      const csvRow = [
+        suggestionWithStatus.suggestionId || '',
+        suggestionWithStatus.siteId || '',
+        suggestionWithStatus.opportunityId || '',
+        suggestionWithStatus.urlTo || '',
+        suggestionWithStatus.urlFrom || '',
+        (suggestionWithStatus.title || '').replace(/"/g, '""'),
+        suggestionWithStatus.hasFixEntity ? 'Yes' : 'No',
+        suggestionWithStatus.fixCount || '0',
+        suggestionWithStatus.validationStatus || '',
+        reason,
+        suggestionWithStatus.isStillBroken ? 'Yes' : 'No',
+      ].map((field) => `"${field}"`).join(',');
+      
+      csvStream.write(csvRow + '\n');
+    }
+
     switch (result.type) {
       case 'link-removed':
         linkRemovedCount += 1;
@@ -398,12 +475,14 @@ export async function validateFixedSuggestions({ dataAccess, log, siteId }) {
           urlTo: result.urlTo,
           urlFrom: result.urlFrom,
           title: result.title,
+          hasFixEntity: result.hasFixEntity,
+          fixCount: result.fixCount,
           reason: 'Link still present and broken',
         });
         log.warn(
           `[validate-fixed-suggestions] STILL BROKEN: ${result.urlTo} `
           + `still present on ${result.urlFrom} and is broken `
-          + `[Site: ${result.siteId}, Suggestion: ${result.suggestionId}]`,
+          + `[Site: ${result.siteId}, Suggestion: ${result.suggestionId}, Has Fix: ${result.hasFixEntity}]`,
         );
         break;
 
@@ -442,6 +521,7 @@ export async function validateFixedSuggestions({ dataAccess, log, siteId }) {
     stillBrokenCount,
     scrapeErrorCount,
     stillBrokenSuggestions,
+    allSuggestionsWithStatus, // NEW: Include all suggestions with their status
   };
 }
 
@@ -490,6 +570,7 @@ export function generateReport(validationResult) {
         lines.push(`  Broken URL: ${suggestion.urlTo}`);
         lines.push(`  Still Linked From: ${suggestion.urlFrom || 'N/A'}`);
         lines.push(`  Reason: ${suggestion.reason}`);
+        lines.push(`  Has Fix Entity: ${suggestion.hasFixEntity ? 'Yes' : 'No'} (${suggestion.fixCount || 0} fix(es))`);
         if (suggestion.title) {
           lines.push(`  Title: ${suggestion.title}`);
         }
@@ -506,7 +587,7 @@ export function generateReport(validationResult) {
 /**
  * Validates FIXED suggestions for multiple sites.
  */
-export async function validateFixedSuggestionsForSites({ dataAccess, log, siteIds }) {
+export async function validateFixedSuggestionsForSites({ dataAccess, log, siteIds, csvStream = null }) {
   log.info(`[validate-fixed-suggestions] Validating ${siteIds.length} sites`);
 
   const aggregatedResults = {
@@ -520,13 +601,14 @@ export async function validateFixedSuggestionsForSites({ dataAccess, log, siteId
     stillBrokenCount: 0,
     scrapeErrorCount: 0,
     stillBrokenSuggestions: [],
+    allSuggestionsWithStatus: [], // NEW: Aggregate all suggestions
     siteResults: {},
   };
 
   for (const siteId of siteIds) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      const result = await validateFixedSuggestions({ dataAccess, log, siteId });
+      const result = await validateFixedSuggestions({ dataAccess, log, siteId, csvStream });
 
       aggregatedResults.siteResults[siteId] = result;
       aggregatedResults.totalOpportunities += result.totalOpportunities;
@@ -537,6 +619,7 @@ export async function validateFixedSuggestionsForSites({ dataAccess, log, siteId
       aggregatedResults.stillBrokenCount += result.stillBrokenCount;
       aggregatedResults.scrapeErrorCount += result.scrapeErrorCount || 0;
       aggregatedResults.stillBrokenSuggestions.push(...result.stillBrokenSuggestions);
+      aggregatedResults.allSuggestionsWithStatus.push(...(result.allSuggestionsWithStatus || [])); // NEW
     } catch (error) {
       log.error(`[validate-fixed-suggestions] Failed to validate site ${siteId}: ${error.message}`);
       aggregatedResults.siteResults[siteId] = { error: error.message };
