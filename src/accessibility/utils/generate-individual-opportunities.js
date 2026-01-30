@@ -664,7 +664,7 @@ export async function createIndividualOpportunitySuggestions(
         },
       }),
       mergeDataFunction: keepSameDataFunction,
-      statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
+      statusToSetForOutdated: SuggestionDataAccess.STATUSES.OUTDATED,
       scrapedUrlsSet,
     });
 
