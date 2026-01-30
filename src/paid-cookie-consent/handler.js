@@ -38,18 +38,14 @@ function isImportEnabled(importType, imports) {
   return imports?.find((importConfig) => importConfig.type === importType)?.enabled;
 }
 
-async function toggleImport(site, importType, enable, log) {
+async function enableImport(site, importType, log) {
   const siteConfig = site.getConfig();
   if (!siteConfig) {
-    const errorMsg = `Cannot toggle import ${importType} for site ${site.getId()}: site config is null`;
+    const errorMsg = `Cannot enable import ${importType} for site ${site.getId()}: site config is null`;
     log.error(errorMsg);
     throw new Error(errorMsg);
   }
-  if (enable) {
-    siteConfig.enableImport(importType);
-  } else {
-    siteConfig.disableImport(importType);
-  }
+  siteConfig.enableImport(importType);
   site.setConfig(Config.toDynamoItem(siteConfig));
   await site.save();
 }
@@ -427,7 +423,7 @@ function createImportStep(weekIndex) {
 
       if (!isImportEnabled(IMPORT_TRAFFIC_ANALYSIS, imports)) {
         log.debug(`[paid-audit] [Site: ${finalUrl}] Enabling ${IMPORT_TRAFFIC_ANALYSIS} import for site ${siteId}`);
-        await toggleImport(site, IMPORT_TRAFFIC_ANALYSIS, true, log);
+        await enableImport(site, IMPORT_TRAFFIC_ANALYSIS, log);
       }
     }
 
