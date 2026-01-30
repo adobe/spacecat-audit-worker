@@ -668,6 +668,11 @@ describe('TOC (Table of Contents) Audit', () => {
       // Value should be transformed to HAST
       expect(mappedSuggestion.data.transformRules.value).to.have.property('type', 'root');
       expect(mappedSuggestion.data.transformRules.value).to.have.property('children');
+
+      const buildKeyFn = syncCall.args[0].buildKey;
+      expect(buildKeyFn).to.be.a('function');
+      expect(buildKeyFn(auditData.suggestions.toc[0]))
+        .to.equal('toc|https://example.com/page1');
     });
 
     it('skips TOC opportunity creation when no TOC issues', async () => {

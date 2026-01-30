@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { tracingFetch as fetch, prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
 import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -72,9 +72,28 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
     } = await ahrefsAPIClient.getBrokenBacklinks(auditUrl);
     log.debug(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditUrl}`);
     const excludedURLs = site.getConfig().getExcludedURLs('broken-backlinks');
-    const filteredBacklinks = result?.backlinks?.filter(
-      (backlink) => !excludedURLs?.includes(backlink.url_to),
-    );
+
+    // Filter out excluded URLs with www-agnostic comparison
+    // Normalize both URLs to compare (strip www, lowercase, add schema)
+    const normalizeUrl = (url) => {
+      try {
+        const parsed = new URL(prependSchema(url));
+        const normalizedHost = stripWWW(parsed.hostname).toLowerCase();
+        return `${parsed.protocol}//${normalizedHost}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      } catch {
+        return url; // If parsing fails, return original
+      }
+    };
+
+    const filteredBacklinks = result?.backlinks?.filter((backlink) => {
+      if (!excludedURLs || excludedURLs.length === 0) return true;
+
+      const normalizedBacklink = normalizeUrl(backlink.url_to);
+      return !excludedURLs.some((excludedUrl) => {
+        const normalizedExcluded = normalizeUrl(excludedUrl);
+        return normalizedBacklink === normalizedExcluded;
+      });
+    });
 
     return {
       fullAuditRef,

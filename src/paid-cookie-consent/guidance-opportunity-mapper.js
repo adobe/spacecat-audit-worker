@@ -148,7 +148,7 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
     type: 'consent-banner',
     origin: 'AUTOMATION',
     title: 'Consent Banner covers essential page content',
-    description: `The consent banner hides essential page content, resulting in a critical mobile bounce rate. Pages like the following recorded in average ${formatNumberWithK(stats.averagePageViewsTop3)} visits but lost ${formatNumberWithK(stats.averageTrafficLostTop3)} potential customers immediately: ${stats.top3Pages.map((page) => `${page.path}`).join(', ')}`,
+    description: `Bounce rate was ${Math.round((stats.sitewideBounceDelta || 0) * 100)} pp higher when consent banner was shown vs hidden. Pages like the following recorded in average ${formatNumberWithK(stats.averagePageViewsTop3)} visits but lost ${formatNumberWithK(stats.averageTrafficLostTop3)} potential customers immediately: ${stats.top3Pages.map((page) => `${page.path}`).join(', ')}`,
     guidance: {
       recommendations: [
         {
@@ -165,8 +165,8 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
         DATA_SOURCES.RUM,
         DATA_SOURCES.PAGE,
       ],
-      projectedTrafficLost: stats.projectedTrafficLost,
-      projectedTrafficValue: stats.projectedTrafficValue,
+      projectedTrafficLost: Math.round(stats.projectedTrafficLost || 0),
+      projectedTrafficValue: Math.round(stats.projectedTrafficValue || 0),
       opportunityType: 'paid-cookie-consent',
       page: url,
       pageViews: stats.totalPageViews,
@@ -174,6 +174,12 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
       bounceRate: stats.totalAverageBounceRate,
       pageType: 'unknown',
       temporalCondition: stats.temporalCondition,
+      // CPC information from audit result
+      appliedCPC: stats.appliedCPC,
+      cpcSource: stats.cpcSource,
+      defaultCPC: stats.defaultCPC,
+      ahrefsOrganicCPC: stats.ahrefsOrganicCPC,
+      ahrefsPaidCPC: stats.ahrefsPaidCPC,
     },
     status: 'NEW',
     tags: [
