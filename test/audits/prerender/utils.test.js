@@ -168,30 +168,32 @@ describe('Prerender Utils', () => {
     });
   });
 
-  describe('mergeUniqueUrls', () => {
+  describe('mergeAndGetUniqueHtmlUrls', () => {
     it('should merge multiple URL arrays and remove duplicates by path', () => {
       const urls1 = ['https://www.example.com/page1', 'https://www.example.com/page2'];
       const urls2 = ['https://example.com/page1', 'https://www.example.com/page3'];
       const urls3 = ['https://example.com/page2/', 'https://www.example.com/page4'];
 
-      const result = utils.mergeUniqueUrls(urls1, urls2, urls3);
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls1, urls2, urls3);
 
       // Should have 4 unique paths: /page1, /page2, /page3, /page4
-      expect(result).to.have.lengthOf(4);
-      expect(result).to.include('https://www.example.com/page1'); // First occurrence
-      expect(result).to.include('https://www.example.com/page2'); // First occurrence
-      expect(result).to.include('https://www.example.com/page3');
-      expect(result).to.include('https://www.example.com/page4');
+      expect(result.urls).to.have.lengthOf(4);
+      expect(result.urls).to.include('https://www.example.com/page1'); // First occurrence
+      expect(result.urls).to.include('https://www.example.com/page2'); // First occurrence
+      expect(result.urls).to.include('https://www.example.com/page3');
+      expect(result.urls).to.include('https://www.example.com/page4');
+      expect(result.filteredCount).to.equal(0);
     });
 
     it('should preserve the first URL when duplicates have www differences', () => {
       const urls1 = ['https://www.example.com/page'];
       const urls2 = ['https://example.com/page'];
 
-      const result = utils.mergeUniqueUrls(urls1, urls2);
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls1, urls2);
 
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.equal('https://www.example.com/page'); // First one wins
+      expect(result.urls).to.have.lengthOf(1);
+      expect(result.urls[0]).to.equal('https://www.example.com/page'); // First one wins
+      expect(result.filteredCount).to.equal(0);
     });
 
     it('should normalize trailing slashes in paths', () => {
@@ -199,37 +201,41 @@ describe('Prerender Utils', () => {
       const urls2 = ['https://example.com/page'];
       const urls3 = ['https://example.com/page//'];
 
-      const result = utils.mergeUniqueUrls(urls1, urls2, urls3);
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls1, urls2, urls3);
 
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.equal('https://example.com/page/'); // First one wins
+      expect(result.urls).to.have.lengthOf(1);
+      expect(result.urls[0]).to.equal('https://example.com/page/'); // First one wins
+      expect(result.filteredCount).to.equal(0);
     });
 
     it('should treat root paths as identical', () => {
       const urls1 = ['https://example.com/'];
       const urls2 = ['https://example.com'];
 
-      const result = utils.mergeUniqueUrls(urls1, urls2);
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls1, urls2);
 
       // Root paths with and without trailing slash are the same (both normalize to '/')
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.equal('https://example.com/'); // First one wins
+      expect(result.urls).to.have.lengthOf(1);
+      expect(result.urls[0]).to.equal('https://example.com/'); // First one wins
+      expect(result.filteredCount).to.equal(0);
     });
 
     it('should handle empty arrays', () => {
-      const result = utils.mergeUniqueUrls([], [], []);
+      const result = utils.mergeAndGetUniqueHtmlUrls([], [], []);
 
-      expect(result).to.be.an('array');
-      expect(result).to.have.lengthOf(0);
+      expect(result.urls).to.be.an('array');
+      expect(result.urls).to.have.lengthOf(0);
+      expect(result.filteredCount).to.equal(0);
     });
 
     it('should handle single array input', () => {
       const urls = ['https://example.com/page1', 'https://example.com/page2'];
 
-      const result = utils.mergeUniqueUrls(urls);
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls);
 
-      expect(result).to.have.lengthOf(2);
-      expect(result).to.deep.equal(urls);
+      expect(result.urls).to.have.lengthOf(2);
+      expect(result.urls).to.deep.equal(urls);
+      expect(result.filteredCount).to.equal(0);
     });
 
     it('should handle invalid URLs gracefully', () => {
@@ -237,35 +243,38 @@ describe('Prerender Utils', () => {
       const urls2 = ['not-a-valid-url'];
       const urls3 = ['https://example.com/another'];
 
-      const result = utils.mergeUniqueUrls(urls1, urls2, urls3);
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls1, urls2, urls3);
 
       // Should include all URLs, even invalid ones
-      expect(result).to.have.lengthOf(3);
-      expect(result).to.include('https://example.com/valid');
-      expect(result).to.include('not-a-valid-url');
-      expect(result).to.include('https://example.com/another');
+      expect(result.urls).to.have.lengthOf(3);
+      expect(result.urls).to.include('https://example.com/valid');
+      expect(result.urls).to.include('not-a-valid-url');
+      expect(result.urls).to.include('https://example.com/another');
+      expect(result.filteredCount).to.equal(0);
     });
 
     it('should handle URLs with query parameters', () => {
       const urls1 = ['https://example.com/page?foo=bar'];
       const urls2 = ['https://example.com/page?baz=qux'];
 
-      const result = utils.mergeUniqueUrls(urls1, urls2);
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls1, urls2);
 
       // Same path but different query params - should keep only first one
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.equal('https://example.com/page?foo=bar');
+      expect(result.urls).to.have.lengthOf(1);
+      expect(result.urls[0]).to.equal('https://example.com/page?foo=bar');
+      expect(result.filteredCount).to.equal(0);
     });
 
     it('should handle URLs with hash fragments', () => {
       const urls1 = ['https://example.com/page#section1'];
       const urls2 = ['https://example.com/page#section2'];
 
-      const result = utils.mergeUniqueUrls(urls1, urls2);
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls1, urls2);
 
       // Same path but different hash - should keep only first one
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.equal('https://example.com/page#section1');
+      expect(result.urls).to.have.lengthOf(1);
+      expect(result.urls[0]).to.equal('https://example.com/page#section1');
+      expect(result.filteredCount).to.equal(0);
     });
 
     it('should handle mixed URL arrays with duplicates across multiple sources', () => {
@@ -282,20 +291,108 @@ describe('Prerender Utils', () => {
         'https://example.com/included1',
       ];
 
-      const result = utils.mergeUniqueUrls(agenticUrls, topPagesUrls, includedUrls);
+      const result = utils.mergeAndGetUniqueHtmlUrls(agenticUrls, topPagesUrls, includedUrls);
 
       // Should have 4 unique paths: /agentic1, /agentic2, /top1, /included1
-      expect(result).to.have.lengthOf(4);
+      expect(result.urls).to.have.lengthOf(4);
+      expect(result.filteredCount).to.equal(0);
     });
 
     it('should preserve original URL format (not normalize domain)', () => {
       const urls = ['https://www.example.com/page', 'https://www.example.com/other'];
 
-      const result = utils.mergeUniqueUrls(urls);
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls);
 
       // Should keep www in the result
-      expect(result[0]).to.equal('https://www.example.com/page');
-      expect(result[1]).to.equal('https://www.example.com/other');
+      expect(result.urls[0]).to.equal('https://www.example.com/page');
+      expect(result.urls[1]).to.equal('https://www.example.com/other');
+      expect(result.filteredCount).to.equal(0);
+    });
+
+    it('should filter out PDF URLs', () => {
+      const urls = [
+        'https://example.com/page1',
+        'https://example.com/document.pdf',
+        'https://example.com/page2',
+      ];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls);
+
+      expect(result.urls).to.have.lengthOf(2);
+      expect(result.urls).to.include('https://example.com/page1');
+      expect(result.urls).to.include('https://example.com/page2');
+      expect(result.urls).to.not.include('https://example.com/document.pdf');
+      expect(result.filteredCount).to.equal(1);
+    });
+
+    it('should filter out image URLs', () => {
+      const urls = [
+        'https://example.com/page',
+        'https://example.com/logo.png',
+        'https://example.com/photo.jpg',
+        'https://example.com/icon.svg',
+      ];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls);
+
+      expect(result.urls).to.have.lengthOf(1);
+      expect(result.urls[0]).to.equal('https://example.com/page');
+      expect(result.filteredCount).to.equal(3);
+    });
+
+    it('should filter out various non-HTML file types', () => {
+      const urls = [
+        'https://example.com/page',
+        'https://example.com/file.pdf',
+        'https://example.com/image.jpg',
+        'https://example.com/video.mp4',
+        'https://example.com/archive.zip',
+        'https://example.com/data.json',
+        'https://example.com/style.css',
+        'https://example.com/script.js',
+      ];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls);
+
+      expect(result.urls).to.have.lengthOf(1);
+      expect(result.urls[0]).to.equal('https://example.com/page');
+      expect(result.filteredCount).to.equal(7);
+    });
+
+    it('should handle mixed HTML and non-HTML URLs with duplicates', () => {
+      const urls1 = [
+        'https://www.example.com/page1',
+        'https://example.com/doc.pdf',
+        'https://example.com/page2',
+      ];
+      const urls2 = [
+        'https://example.com/page1', // duplicate
+        'https://example.com/image.png',
+        'https://example.com/page3',
+      ];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls1, urls2);
+
+      expect(result.urls).to.have.lengthOf(3);
+      expect(result.urls).to.include('https://www.example.com/page1');
+      expect(result.urls).to.include('https://example.com/page2');
+      expect(result.urls).to.include('https://example.com/page3');
+      expect(result.filteredCount).to.equal(2); // pdf and png
+    });
+
+    it('should be case-insensitive when checking file extensions', () => {
+      const urls = [
+        'https://example.com/page',
+        'https://example.com/document.PDF',
+        'https://example.com/image.JPG',
+        'https://example.com/photo.Png',
+      ];
+
+      const result = utils.mergeAndGetUniqueHtmlUrls(urls);
+
+      expect(result.urls).to.have.lengthOf(1);
+      expect(result.urls[0]).to.equal('https://example.com/page');
+      expect(result.filteredCount).to.equal(3);
     });
   });
 });

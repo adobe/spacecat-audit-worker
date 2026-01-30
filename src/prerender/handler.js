@@ -22,7 +22,7 @@ import {
   loadLatestAgenticSheet,
   buildSheetHitsMap,
 } from './utils/shared.js';
-import { isPaidLLMOCustomer, mergeUniqueUrls } from './utils/utils.js';
+import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   TOP_AGENTIC_URLS_LIMIT,
@@ -590,7 +590,12 @@ export async function submitForScraping(context) {
   const agenticUrls = await getTopAgenticUrls(site, context);
 
   // Merge URLs ensuring uniqueness while handling www vs non-www differences
-  const finalUrls = mergeUniqueUrls(topPagesUrls, agenticUrls, includedURLs);
+  // Also filters out non-HTML URLs (PDFs, images, etc.) in a single pass
+  const { urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
+    topPagesUrls,
+    agenticUrls,
+    includedURLs,
+  );
 
   log.info(`
     ${LOG_PREFIX} prerender_submit_scraping_metrics:
@@ -598,6 +603,7 @@ export async function submitForScraping(context) {
     agenticUrls=${agenticUrls.length},
     topPagesUrls=${topPagesUrls.length},
     includedURLs=${includedURLs.length},
+    filteredOutUrls=${filteredCount},
     baseUrl=${site.getBaseURL()},
     siteId=${siteId},`);
 
@@ -960,13 +966,20 @@ export async function processContentAndGenerateOpportunities(context) {
       const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
 
       const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
-      // Use the same normalization logic for consistency
-      urlsToCheck = mergeUniqueUrls(topPagesUrls, agenticUrls, includedURLs);
+      // Use the same normalization and filtering logic for consistency
+      const { urls: filteredUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
+        topPagesUrls,
+        agenticUrls,
+        includedURLs,
+      );
+      urlsToCheck = filteredUrls;
+
       /* c8 ignore stop */
       const msg = `Prerender - Fallback for baseUrl=${site.getBaseURL()}, siteId=${siteId}. `
         + `Using agenticURLs=${agenticUrls.length}, `
         + `topPages=${topPagesUrls.length}, `
         + `includedURLs=${includedURLs.length}, `
+        + `filteredOutUrls=${filteredCount}, `
         + `total=${urlsToCheck.length}`;
       log.info(msg);
     }

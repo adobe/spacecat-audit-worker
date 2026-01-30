@@ -18,28 +18,67 @@ import { Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 
 /**
- * Merges multiple URL arrays and ensures uniqueness by path
+ * Common non-HTML file extensions that should be filtered out
+ */
+const NON_HTML_EXTENSIONS = new Set([
+  // Documents
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.csv',
+  // Images
+  '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.bmp', '.ico',
+  // Media
+  '.mp4', '.avi', '.mov', '.wmv', '.mp3', '.wav', '.ogg',
+  // Archives
+  '.zip', '.rar', '.tar', '.gz', '.7z',
+  // Code/Data
+  '.json', '.xml', '.css', '.js', '.ts', '.map',
+  // Other
+  '.woff', '.woff2', '.ttf', '.eot', '.otf',
+]);
+
+/**
+ * Checks if a URL points to a non-HTML resource based on file extension
+ * @param {string} pathname - The pathname from a URL object
+ * @returns {boolean} - True if the URL has a non-HTML extension
+ */
+function hasNonHtmlExtension(pathname) {
+  const lowerPath = pathname.toLowerCase();
+  return Array.from(NON_HTML_EXTENSIONS).some((ext) => lowerPath.endsWith(ext));
+}
+
+/**
+ * Merges multiple URL arrays, ensures uniqueness by path, and filters out non-HTML URLs
  * (handles www vs non-www differences by checking path only)
  * @param {...Array<string>} urlArrays - Variable number of URL arrays to merge
- * @returns {Array<string>} - Array of unique URLs (by path), preserving original URLs
+ * @returns {Object} - Object with unique HTML URLs and filtered count
+ *   - urls: Array of unique HTML URLs (by path), preserving original URLs
+ *   - filteredCount: Number of non-HTML URLs that were filtered out
  */
-export function mergeUniqueUrls(...urlArrays) {
+export function mergeAndGetUniqueHtmlUrls(...urlArrays) {
   const seenPaths = new Set();
   const uniqueUrls = [];
+  let filteredCount = 0;
 
   // Flatten all arrays and process each URL
   urlArrays.flat().forEach((url) => {
     try {
       const urlObj = new URL(url);
+      const { pathname } = urlObj;
+
+      // Skip non-HTML URLs
+      if (hasNonHtmlExtension(pathname)) {
+        filteredCount += 1;
+        return;
+      }
+
       // Normalize path by removing all trailing slashes (except for root path)
-      let path = urlObj.pathname;
-      if (path.length > 1) {
-        path = path.replace(/\/+$/, ''); // Remove all trailing slashes
+      let normalizedPath = pathname;
+      if (normalizedPath.length > 1) {
+        normalizedPath = normalizedPath.replace(/\/+$/, ''); // Remove all trailing slashes
       }
 
       // Only add URL if we haven't seen this path before
-      if (!seenPaths.has(path)) {
-        seenPaths.add(path);
+      if (!seenPaths.has(normalizedPath)) {
+        seenPaths.add(normalizedPath);
         uniqueUrls.push(url); // Keep original URL unchanged
       }
     } catch (error) {
@@ -48,7 +87,10 @@ export function mergeUniqueUrls(...urlArrays) {
     }
   });
 
-  return uniqueUrls;
+  return {
+    urls: uniqueUrls,
+    filteredCount,
+  };
 }
 
 /**
