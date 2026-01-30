@@ -16,7 +16,7 @@ import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import { isPreviewPage } from '../utils/url-utils.js';
+import { isPreviewPage, isPdfUrl } from '../utils/url-utils.js';
 import {
   syncSuggestions,
   keepLatestMergeDataFunction,
@@ -25,6 +25,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { CANONICAL_CHECKS } from './constants.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
+import { isAuthUrl } from '../support/utils.js';
 
 /**
  * @import {type RequestOptions} from "@adobe/fetch"
@@ -32,45 +33,6 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 
 const auditType = Audit.AUDIT_TYPES.CANONICAL;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-
-/**
- * Checks if a URL should be skipped because it's an authentication/login page.
- * @param {string} url - The URL to check
- * @returns {boolean} True if the URL should be skipped
- */
-function shouldSkipAuthPage(url) {
-  try {
-    const pathname = new URL(url).pathname.toLowerCase();
-    return pathname.includes('/login')
-      || pathname.includes('/signin')
-      || pathname.includes('/sign-in')
-      || pathname.includes('/authenticate')
-      || pathname.includes('/oauth')
-      || pathname.includes('/sso')
-      || pathname.includes('/okta')
-      || pathname.includes('/register')
-      || pathname.includes('/signup')
-      || pathname.includes('/activate/')
-      || pathname === '/auth'
-      || pathname.startsWith('/auth/');
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Checks if a URL points to a PDF file.
- * @param {string} url - The URL to check
- * @returns {boolean} True if the URL is a PDF
- */
-function isPdfUrl(url) {
-  try {
-    const pathname = new URL(url).pathname.toLowerCase();
-    return pathname.endsWith('.pdf');
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Step 1: Import top pages (used in multi-step audit)
@@ -130,7 +92,7 @@ export async function submitForScraping(context) {
 
   // Filter out auth pages and PDFs before scraping
   const filteredUrls = topPagesUrls.filter((url) => {
-    if (shouldSkipAuthPage(url)) {
+    if (isAuthUrl(url)) {
       return false;
     }
     if (isPdfUrl(url)) {
@@ -438,7 +400,7 @@ export async function processScrapedContent(context) {
 
       // Filter out scraped pages that redirected to auth/login pages or PDFs
       // This prevents false positives when a legitimate page redirects to login
-      if (shouldSkipAuthPage(finalUrl)) {
+      if (isAuthUrl(finalUrl)) {
         log.info(`[canonical] Skipping ${url} - redirected to auth page: ${finalUrl}`);
         return null;
       }
