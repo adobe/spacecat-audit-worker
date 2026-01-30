@@ -19,6 +19,8 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
+import BrightDataClient from '../support/bright-data-client.js';
+import { filterBrokenSuggestedUrls } from '../utils/url-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -242,13 +244,151 @@ export const generateSuggestionData = async (context) => {
     alternativeUrls = allTopPageUrls;
   }
 
-  // Validate before sending to Mystique
+  // Validate
   if (brokenLinks.length === 0) {
-    log.warn('No valid broken links to send to Mystique. Skipping message.');
+    log.warn('No valid broken links to process. Skipping.');
     return {
       status: 'complete',
     };
   }
+
+  // Check if Bright Data is configured (Phase 1: Primary Logic - First Organic Result)
+  const useBrightData = env.BRIGHT_DATA_API_KEY && env.BRIGHT_DATA_ZONE;
+  const useLLMValidation = env.BRIGHT_DATA_USE_LLM_VALIDATION === 'true';
+  const siteDomain = new URL(baseURL).hostname;
+
+  if (useBrightData) {
+    // PHASE 1: Take FIRST organic result from Bright Data
+    log.info(`Using Bright Data Primary Logic (First Result) for ${brokenLinks.length} broken links`);
+    log.info(`Site domain: ${siteDomain}, LLM validation: ${useLLMValidation ? 'ENABLED' : 'DISABLED'}`);
+
+    try {
+      const brightDataClient = BrightDataClient.createFrom(context);
+
+      // Process each broken link
+      const processedResults = await Promise.all(
+        brokenLinks.map(async (brokenLink) => {
+          try {
+            // Get FIRST Google search result from Bright Data
+            const searchResults = await brightDataClient.googleSearch(
+              baseURL,
+              brokenLink.urlTo,
+              1, // Get only FIRST result (Primary Logic)
+            );
+
+            const keywords = brightDataClient.extractKeywords(brokenLink.urlTo);
+            const searchQuery = brightDataClient.buildSearchQuery(siteDomain, keywords);
+
+            // Take FIRST organic result
+            const firstResult = searchResults.length > 0 ? searchResults[0] : null;
+
+            if (!firstResult) {
+              log.warn(`No Google results for ${brokenLink.urlTo}, using base URL fallback`);
+              return {
+                suggestionId: brokenLink.suggestionId,
+                urlTo: brokenLink.urlTo,
+                suggestedUrl: baseURL, // Fallback to homepage
+                searchQuery,
+                keywords,
+                source: 'fallback',
+              };
+            }
+
+            log.debug(`First result for "${searchQuery}": ${firstResult.link}`);
+
+            return {
+              suggestionId: brokenLink.suggestionId,
+              urlTo: brokenLink.urlTo,
+              suggestedUrl: firstResult.link, // FIRST organic result
+              searchQuery,
+              keywords,
+              resultTitle: firstResult.title,
+              resultDescription: firstResult.description,
+              source: 'bright_data_first_result',
+            };
+          } catch (error) {
+            log.error(`Failed to process ${brokenLink.urlTo}:`, error);
+            return {
+              suggestionId: brokenLink.suggestionId,
+              urlTo: brokenLink.urlTo,
+              suggestedUrl: baseURL,
+              source: 'error_fallback',
+            };
+          }
+        }),
+      );
+
+      log.info(`Processed ${processedResults.length} broken links with Bright Data`);
+
+      // Optional: LLM Validation Step
+      if (useLLMValidation) {
+        log.info('Optional LLM validation enabled - sending to Mystique for quality check');
+
+        // Send to Mystique for optional validation
+        const message = {
+          type: 'guidance:broken-links:validation',
+          siteId: site.getId(),
+          auditId: audit.getId(),
+          deliveryType: site.getDeliveryType(),
+          time: new Date().toISOString(),
+          data: {
+            opportunityId: opportunity?.getId(),
+            siteDomain,
+            brokenLinksWithSuggestions: processedResults,
+          },
+        };
+
+        await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+        log.info('Sent to Mystique for optional LLM validation');
+      } else {
+        // Direct update (no LLM validation)
+        log.info('LLM validation disabled - updating suggestions directly');
+
+        await Promise.all(
+          processedResults.map(async (result) => {
+            const suggestion = await Suggestion.findById(result.suggestionId);
+
+            if (!suggestion) {
+              log.error(`Suggestion not found: ${result.suggestionId}`);
+              return;
+            }
+
+            // Validate suggested URL (HTTP 200 check)
+            const validatedUrls = await filterBrokenSuggestedUrls(
+              [result.suggestedUrl],
+              baseURL,
+            );
+
+            suggestion.setData({
+              ...suggestion.getData(),
+              urlsSuggested: validatedUrls.length > 0 ? validatedUrls : [baseURL],
+              source: result.source,
+              searchQuery: result.searchQuery,
+              keywords: result.keywords,
+              brightDataResult: {
+                title: result.resultTitle,
+                description: result.resultDescription,
+              },
+            });
+
+            await suggestion.save();
+          }),
+        );
+
+        log.info(`Completed: ${processedResults.length} suggestions updated directly (no LLM)`);
+      }
+
+      return {
+        status: 'complete',
+      };
+    } catch (error) {
+      log.error('Bright Data integration failed, falling back to traditional approach:', error);
+      // Will fallback to old approach below
+    }
+  }
+
+  // OLD: Traditional approach with alternativeUrls (used if Bright Data not configured or failed)
+  log.info(`Using traditional approach with ${alternativeUrls.length} alternative URLs`);
 
   if (alternativeUrls.length === 0) {
     log.warn('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
@@ -269,8 +409,10 @@ export const generateSuggestionData = async (context) => {
       brokenLinks,
     },
   };
+
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
   log.debug(`Message sent to Mystique: ${JSON.stringify(message)}`);
+
   return {
     status: 'complete',
   };
