@@ -155,30 +155,6 @@ function createGitPatch(findings) {
   return gitPatch;
 }
 
-function createPrDescription(findings) {
-  return '### Enforce Content Security Policy: strict-dynamic + (cached) nonce\n\n'
-    + 'The following changes are suggested to enhance the Content Security Policy (CSP) of your web pages. '
-    + 'Implementing these changes will help improve the security posture of your application by enforcing stricter CSP rules.\n\n'
-    + 'For more information on Content Security Policy and best practices, please refer to the '
-    + '[AEM documentation](https://www.aem.live/docs/csp-strict-dynamic-cached-nonce).\n\n'
-    + `#### Suggested Changes:\n${
-      findings.map((finding) => {
-        const changes = finding.problems.map((f) => {
-          switch (f) {
-            case 'csp-meta-tag-missing':
-              return '  - Add a CSP meta tag to enforce a strict Content Security Policy.';
-            case 'csp-meta-tag-move-to-header':
-              return '  - Update the CSP meta tag to include `move-to-http-header="true"` attribute for better security management.';
-            case 'csp-meta-tag-non-enforcing':
-              return '  - Modify the existing CSP meta tag to enforce a stricter policy with `nonce-aem` and `strict-dynamic`.';
-            default:
-              return '  - Add nonces to all inline `<script>` tags to enhance script security.';
-          }
-        }).join('\n');
-        return `- **Page:** ${finding.page}\n${changes}`;
-      }).join('\n\n')}`;
-}
-
 export async function cspAutoSuggest(auditUrl, csp, context, site) {
   const { dataAccess, log } = context;
   const { Configuration } = dataAccess;
@@ -235,14 +211,11 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
 
   // Create combined git patch + PR description
   const patchContent = createGitPatch(findings);
-  const patchDescription = createPrDescription(findings);
 
   missingNonce.findings = findings;
   if (patchContent.length > 0) {
-    missingNonce.issue = {
-      patchContent,
-      value: patchDescription,
-    };
+    missingNonce.patchContent = patchContent;
+    missingNonce.isCodeChangeAvailable = true;
   }
 
   return result;
