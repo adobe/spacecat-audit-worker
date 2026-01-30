@@ -22,18 +22,47 @@ import {
   paidConsentBannerCheck,
   calculateBounceGapLoss,
   calculateSitewideBounceDelta,
+  importWeekStep0,
+  importWeekStep1,
+  importWeekStep2,
+  importWeekStep3,
+  runPaidConsentAnalysisStep,
 } from '../../../src/paid-cookie-consent/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
 const auditUrl = 'www.spacecat.com';
 
+function createMockConfig(sandbox, overrides = {}) {
+  return {
+    getImports: () => [],
+    enableImport: sandbox.stub(),
+    disableImport: sandbox.stub(),
+    getSlackConfig: sandbox.stub(),
+    getHandlers: sandbox.stub(),
+    getContentAiConfig: sandbox.stub(),
+    getFetchConfig: sandbox.stub(),
+    getBrandConfig: sandbox.stub(),
+    getCdnLogsConfig: sandbox.stub(),
+    getLlmoConfig: sandbox.stub(),
+    getTokowakaConfig: sandbox.stub(),
+    getEdgeOptimizeConfig: sandbox.stub(),
+    getBrandProfile: sandbox.stub().returns(null),
+    ...overrides,
+  };
+}
+
 function getSite(sandbox, overrides = {}) {
+  const mockConfig = createMockConfig(sandbox);
+
   return {
     getId: () => 'test-site-id',
     getSiteId: () => 'test-site-id',
     getDeliveryType: () => 'aem-edge',
     getBaseURL: () => 'https://example.com',
+    getConfig: () => mockConfig,
+    setConfig: sandbox.stub(),
+    save: sandbox.stub().resolves(),
     ...overrides,
   };
 }
@@ -930,5 +959,337 @@ describe('calculateSitewideBounceDelta', () => {
     // HAND CALCULATION:
     // No data at all, both BRs = 0, delta = 0
     expect(result).to.equal(0);
+  });
+});
+
+describe('importWeekStep0 (first import step)', () => {
+  let sandbox;
+  let logStub;
+  let site;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    logStub = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    site = getSite(sandbox);
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should return correct structure for import worker', async () => {
+    const stepContext = {
+      site,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    const result = await importWeekStep0(stepContext);
+
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('status', 'pending');
+    expect(result).to.have.property('fullAuditRef', auditUrl);
+    expect(result).to.have.property('type', 'traffic-analysis');
+    expect(result).to.have.property('siteId', 'test-site-id');
+    expect(result).to.have.property('allowCache', true);
+    expect(result).to.have.property('auditContext');
+    expect(result.auditContext).to.have.property('week');
+    expect(result.auditContext).to.have.property('year');
+  });
+
+  it('should enable import when not already enabled', async () => {
+    const stepContext = {
+      site,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    await importWeekStep0(stepContext);
+
+    expect(site.getConfig().enableImport).to.have.been.calledWith('traffic-analysis');
+  });
+
+  it('should not enable import when already enabled', async () => {
+    const mockConfigWithImport = createMockConfig(sandbox, {
+      getImports: () => [{ type: 'traffic-analysis', enabled: true }],
+    });
+    const siteWithImport = getSite(sandbox, {
+      getConfig: () => mockConfigWithImport,
+    });
+
+    const stepContext = {
+      site: siteWithImport,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    await importWeekStep0(stepContext);
+
+    expect(mockConfigWithImport.enableImport).to.not.have.been.called;
+  });
+
+  it('should throw error when site config is null', async () => {
+    const siteWithNullConfig = getSite(sandbox, {
+      getConfig: () => null,
+    });
+
+    const stepContext = {
+      site: siteWithNullConfig,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    await expect(importWeekStep0(stepContext))
+      .to.be.rejectedWith(/site config is null/);
+  });
+});
+
+describe('importWeekStep1/2/3 (subsequent import steps)', () => {
+  let sandbox;
+  let logStub;
+  let site;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    logStub = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    site = getSite(sandbox);
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should not call enableImport (only step 0 does that)', async () => {
+    const stepContext = {
+      site,
+      log: logStub,
+      finalUrl: auditUrl,
+      auditContext: {},
+    };
+
+    await importWeekStep1(stepContext);
+    await importWeekStep2({ ...stepContext });
+    await importWeekStep3({ ...stepContext });
+
+    expect(site.getConfig().enableImport).to.not.have.been.called;
+  });
+
+  it('should return correct structure with week/year', async () => {
+    const stepContext = {
+      site,
+      log: logStub,
+      finalUrl: auditUrl,
+      auditContext: {},
+    };
+
+    const result = await importWeekStep3(stepContext);
+
+    expect(result).to.have.property('type', 'traffic-analysis');
+    expect(result).to.have.property('siteId', 'test-site-id');
+    expect(result).to.have.property('allowCache', true);
+    expect(result.auditContext).to.have.property('week');
+    expect(result.auditContext).to.have.property('year');
+  });
+});
+
+describe('runPaidConsentAnalysisStep', () => {
+  let sandbox;
+  let logStub;
+  let site;
+  let context;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    logStub = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    site = getSite(sandbox, {
+      getBaseURL: () => 'https://example.com',
+    });
+
+    // Mock AWSAthenaClient with different responses for each query
+    const queryStub = sandbox.stub();
+
+    // First call: executeBounceGapMetricsQuery
+    queryStub.onCall(0).resolves([
+      {
+        trf_type: 'paid', consent: 'show', page_views: 1000, bounce_rate: 0.8,
+      },
+      {
+        trf_type: 'paid', consent: 'hidden', page_views: 800, bounce_rate: 0.6,
+      },
+    ]);
+
+    // Second call: lostTrafficSummary
+    queryStub.onCall(1).resolves([
+      {
+        device: 'mobile', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800,
+      },
+    ]);
+
+    // Third call: top3PagesTrafficLost
+    queryStub.onCall(2).resolves([
+      {
+        path: '/page1', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800, utm_source: 'google', click_rate: 0.1, engagement_rate: 0.2, engaged_scroll_rate: 0.15, referrer: 'google.com',
+      },
+    ]);
+
+    // Fourth call: top3PagesTrafficLostByDevice
+    queryStub.onCall(3).resolves([
+      {
+        path: '/page1', device: 'mobile', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800, utm_source: 'google', click_rate: 0.1, engagement_rate: 0.2, engaged_scroll_rate: 0.15, referrer: 'google.com',
+      },
+    ]);
+
+    context = {
+      runtime: { name: 'aws-lambda', region: 'us-east-1' },
+      func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+      athenaClient: { query: queryStub },
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+        S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        ATHENA_S3_BUCKET: 'test-athena-bucket',
+        RUM_METRICS_DATABASE: 'rum_metrics',
+        RUM_METRICS_COMPACT_TABLE: 'compact_metrics',
+      },
+      site,
+      log: logStub,
+      s3Client: {},
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+    };
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should run analysis and update audit with results', async () => {
+    const mockAudit = {
+      getId: () => 'test-audit-id',
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const stepContext = {
+      ...context,
+      finalUrl: auditUrl,
+      dataAccess: { Audit: { findById: sandbox.stub().resolves(mockAudit) } },
+      auditContext: { auditId: 'test-audit-id' },
+    };
+
+    const result = await runPaidConsentAnalysisStep(stepContext);
+
+    expect(result).to.deep.equal({});
+    expect(mockAudit.setAuditResult).to.have.been.called;
+    expect(mockAudit.save).to.have.been.called;
+
+    const savedResult = mockAudit.setAuditResult.getCall(0).args[0];
+    expect(savedResult).to.have.property('totalPageViews');
+    expect(savedResult).to.have.property('projectedTrafficLost');
+    expect(savedResult).to.have.property('top3Pages');
+  });
+
+  it('should send to mystique when page has bounce rate >= 0.3', async () => {
+    const mockAudit = {
+      getId: () => 'test-audit-id',
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const stepContext = {
+      ...context,
+      finalUrl: auditUrl,
+      dataAccess: { Audit: { findById: sandbox.stub().resolves(mockAudit) } },
+      auditContext: { auditId: 'test-audit-id' },
+    };
+
+    await runPaidConsentAnalysisStep(stepContext);
+
+    expect(context.sqs.sendMessage).to.have.been.called;
+  });
+
+  it('should return {} when audit is not found', async () => {
+    const stepContext = {
+      ...context,
+      finalUrl: auditUrl,
+      dataAccess: { Audit: { findById: sandbox.stub().resolves(null) } },
+      auditContext: { auditId: 'missing-audit-id' },
+    };
+
+    const result = await runPaidConsentAnalysisStep(stepContext);
+
+    expect(result).to.deep.equal({});
+    expect(logStub.error).to.have.been.calledWithMatch(/not found/);
+  });
+
+  it('should return {} without calling setAuditResult when paidAuditRunner returns null auditResult', async () => {
+    // Override to return no show data (causes null auditResult)
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'hidden', page_views: 800, bounce_rate: 0.6 },
+    ]);
+
+    const mockAudit = {
+      getId: () => 'test-audit-id',
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const stepContext = {
+      ...context,
+      athenaClient: { query: customQueryStub },
+      finalUrl: auditUrl,
+      dataAccess: { Audit: { findById: sandbox.stub().resolves(mockAudit) } },
+      auditContext: { auditId: 'test-audit-id' },
+    };
+
+    const result = await runPaidConsentAnalysisStep(stepContext);
+
+    expect(result).to.deep.equal({});
+    expect(mockAudit.setAuditResult).to.not.have.been.called;
+    expect(logStub.warn).to.have.been.calledWithMatch(/No consent data available/);
+  });
+
+  it('should succeed and log error when paidConsentBannerCheck throws', async () => {
+    // Override sqs to throw when sending to mystique
+    const failingSqs = {
+      sendMessage: sandbox.stub().rejects(new Error('SQS send failed')),
+    };
+
+    const mockAudit = {
+      getId: () => 'test-audit-id',
+      setAuditResult: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const stepContext = {
+      ...context,
+      sqs: failingSqs,
+      finalUrl: auditUrl,
+      dataAccess: { Audit: { findById: sandbox.stub().resolves(mockAudit) } },
+      auditContext: { auditId: 'test-audit-id' },
+    };
+
+    const result = await runPaidConsentAnalysisStep(stepContext);
+
+    expect(result).to.deep.equal({});
+    expect(mockAudit.setAuditResult).to.have.been.called;
+    expect(mockAudit.save).to.have.been.called;
+    expect(logStub.error).to.have.been.calledWithMatch(/Post-processor paidConsentBannerCheck failed/);
   });
 });
