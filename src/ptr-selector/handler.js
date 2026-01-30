@@ -17,7 +17,6 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 import { getWeekInfo, getTemporalCondition, getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { retrieveAuditById } from '../utils/data-access.js';
 import { getTotalPageViewsTemplate } from './queries.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -135,17 +134,11 @@ export const importWeekStep3 = createImportStep(3);
 
 export async function runPtrSelectorAnalysisStep(context) {
   const {
-    site, finalUrl, log, dataAccess, auditContext, env,
+    site, finalUrl, log, dataAccess, env,
   } = context;
 
   const siteId = site.getId();
   log.info(`[ptr-selector] [Site: ${finalUrl}] Step 5: Running ptr-selector analysis`);
-
-  const audit = await retrieveAuditById(dataAccess, auditContext.auditId, log);
-  if (!audit) {
-    log.error(`[ptr-selector] [Site: ${finalUrl}] Audit ${auditContext.auditId} not found; cannot update results`);
-    return {};
-  }
 
   const config = getConfig(env);
   const { week, year } = getWeekInfo();
@@ -184,10 +177,10 @@ export async function runPtrSelectorAnalysisStep(context) {
       log.info(`[ptr-selector] totalPageViewSum=${totalPageViewSum} is below 50K threshold. No audit enabled.`);
     }
 
-    audit.setAuditResult(auditResult);
-    await audit.save();
-
-    return {};
+    return {
+      auditResult,
+      fullAuditRef: finalUrl,
+    };
   } catch (error) {
     log.error(`[ptr-selector] [Site: ${finalUrl}] Athena query failed: ${error.message}`);
     throw error;

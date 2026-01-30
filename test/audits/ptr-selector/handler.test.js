@@ -237,12 +237,6 @@ describe('PTR Selector Audit', () => {
       const mockAthenaClientInstance = { query: queryStub };
       sandbox.stub(AWSAthenaClient, 'fromContext').returns(mockAthenaClientInstance);
 
-      const mockAudit = {
-        getId: () => 'test-audit-id',
-        setAuditResult: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-      };
-
       return {
         runtime: { name: 'aws-lambda', region: 'us-east-1' },
         func: { package: 'spacecat-services', version: 'ci', name: 'test' },
@@ -255,34 +249,21 @@ describe('PTR Selector Audit', () => {
         log: logStub,
         finalUrl: auditUrl,
         dataAccess: {
-          Audit: { findById: sandbox.stub().resolves(mockAudit) },
           Configuration: { findLatest: sandbox.stub().resolves(mockConfiguration) },
         },
-        auditContext: { auditId: 'test-audit-id' },
-        mockAudit,
         queryStub,
         ...overrides,
       };
     }
 
-    it('should return {} when audit is not found', async () => {
-      const ctx = createContext([{ total_pageview_sum: '100000' }]);
-      ctx.dataAccess.Audit.findById.resolves(null);
-
-      const result = await runPtrSelectorAnalysisStep(ctx);
-
-      expect(result).to.deep.equal({});
-      expect(logStub.error).to.have.been.calledWithMatch(/not found/);
-    });
-
     it('should set reportDecision to "not enough data" when totalPageViewSum < 50K', async () => {
       const ctx = createContext([{ total_pageview_sum: '30000' }]);
 
-      await runPtrSelectorAnalysisStep(ctx);
+      const result = await runPtrSelectorAnalysisStep(ctx);
 
-      const savedResult = ctx.mockAudit.setAuditResult.getCall(0).args[0];
-      expect(savedResult.totalPageViewSum).to.equal(30000);
-      expect(savedResult.reportDecision).to.equal('not enough data');
+      expect(result.auditResult.totalPageViewSum).to.equal(30000);
+      expect(result.auditResult.reportDecision).to.equal('not enough data');
+      expect(result.fullAuditRef).to.equal(auditUrl);
       expect(mockConfiguration.enableHandlerForSite).to.not.have.been.called;
       expect(logStub.info).to.have.been.calledWithMatch(/below 50K threshold/);
     });
@@ -290,11 +271,11 @@ describe('PTR Selector Audit', () => {
     it('should set reportDecision to "monthly report" when totalPageViewSum >= 50K and < 200K', async () => {
       const ctx = createContext([{ total_pageview_sum: '100000' }]);
 
-      await runPtrSelectorAnalysisStep(ctx);
+      const result = await runPtrSelectorAnalysisStep(ctx);
 
-      const savedResult = ctx.mockAudit.setAuditResult.getCall(0).args[0];
-      expect(savedResult.totalPageViewSum).to.equal(100000);
-      expect(savedResult.reportDecision).to.equal('monthly report');
+      expect(result.auditResult.totalPageViewSum).to.equal(100000);
+      expect(result.auditResult.reportDecision).to.equal('monthly report');
+      expect(result.fullAuditRef).to.equal(auditUrl);
       expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('paid-traffic-analysis-monthly', site);
       expect(mockConfiguration.save).to.have.been.called;
       expect(logStub.info).to.have.been.calledWithMatch(/Enabled paid-traffic-analysis-monthly/);
@@ -303,11 +284,11 @@ describe('PTR Selector Audit', () => {
     it('should set reportDecision to "weekly report" when totalPageViewSum >= 200K', async () => {
       const ctx = createContext([{ total_pageview_sum: '500000' }]);
 
-      await runPtrSelectorAnalysisStep(ctx);
+      const result = await runPtrSelectorAnalysisStep(ctx);
 
-      const savedResult = ctx.mockAudit.setAuditResult.getCall(0).args[0];
-      expect(savedResult.totalPageViewSum).to.equal(500000);
-      expect(savedResult.reportDecision).to.equal('weekly report');
+      expect(result.auditResult.totalPageViewSum).to.equal(500000);
+      expect(result.auditResult.reportDecision).to.equal('weekly report');
+      expect(result.fullAuditRef).to.equal(auditUrl);
       expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('paid-traffic-analysis-weekly', site);
       expect(mockConfiguration.save).to.have.been.called;
       expect(logStub.info).to.have.been.calledWithMatch(/Enabled paid-traffic-analysis-weekly/);
@@ -316,29 +297,26 @@ describe('PTR Selector Audit', () => {
     it('should handle boundary value of exactly 50K as monthly report', async () => {
       const ctx = createContext([{ total_pageview_sum: '50000' }]);
 
-      await runPtrSelectorAnalysisStep(ctx);
+      const result = await runPtrSelectorAnalysisStep(ctx);
 
-      const savedResult = ctx.mockAudit.setAuditResult.getCall(0).args[0];
-      expect(savedResult.reportDecision).to.equal('monthly report');
+      expect(result.auditResult.reportDecision).to.equal('monthly report');
     });
 
     it('should handle boundary value of exactly 200K as weekly report', async () => {
       const ctx = createContext([{ total_pageview_sum: '200000' }]);
 
-      await runPtrSelectorAnalysisStep(ctx);
+      const result = await runPtrSelectorAnalysisStep(ctx);
 
-      const savedResult = ctx.mockAudit.setAuditResult.getCall(0).args[0];
-      expect(savedResult.reportDecision).to.equal('weekly report');
+      expect(result.auditResult.reportDecision).to.equal('weekly report');
     });
 
     it('should handle null/empty query result as 0 pageviews', async () => {
       const ctx = createContext([]);
 
-      await runPtrSelectorAnalysisStep(ctx);
+      const result = await runPtrSelectorAnalysisStep(ctx);
 
-      const savedResult = ctx.mockAudit.setAuditResult.getCall(0).args[0];
-      expect(savedResult.totalPageViewSum).to.equal(0);
-      expect(savedResult.reportDecision).to.equal('not enough data');
+      expect(result.auditResult.totalPageViewSum).to.equal(0);
+      expect(result.auditResult.reportDecision).to.equal('not enough data');
     });
 
     it('should not enable audit when already enabled', async () => {
@@ -369,13 +347,15 @@ describe('PTR Selector Audit', () => {
       expect(logStub.error).to.have.been.calledWithMatch(/Athena query failed/);
     });
 
-    it('should save audit result', async () => {
+    it('should return auditResult and fullAuditRef', async () => {
       const ctx = createContext([{ total_pageview_sum: '100000' }]);
 
-      await runPtrSelectorAnalysisStep(ctx);
+      const result = await runPtrSelectorAnalysisStep(ctx);
 
-      expect(ctx.mockAudit.setAuditResult).to.have.been.called;
-      expect(ctx.mockAudit.save).to.have.been.called;
+      expect(result).to.have.property('auditResult');
+      expect(result).to.have.property('fullAuditRef', auditUrl);
+      expect(result.auditResult.totalPageViewSum).to.equal(100000);
+      expect(result.auditResult.reportDecision).to.equal('monthly report');
     });
 
     it('should use default values for missing database and table env vars', async () => {
@@ -384,11 +364,10 @@ describe('PTR Selector Audit', () => {
         S3_IMPORTER_BUCKET_NAME: 'test-bucket',
       };
 
-      await runPtrSelectorAnalysisStep(ctx);
+      const result = await runPtrSelectorAnalysisStep(ctx);
 
-      const savedResult = ctx.mockAudit.setAuditResult.getCall(0).args[0];
-      expect(savedResult.totalPageViewSum).to.equal(30000);
-      expect(savedResult.reportDecision).to.equal('not enough data');
+      expect(result.auditResult.totalPageViewSum).to.equal(30000);
+      expect(result.auditResult.reportDecision).to.equal('not enough data');
     });
   });
 });
