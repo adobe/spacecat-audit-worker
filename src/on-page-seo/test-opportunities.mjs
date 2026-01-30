@@ -254,7 +254,11 @@ function processValidationResult(result) {
   
   // Build blocker details from checks
   if (result.checks?.httpStatus && !result.checks.httpStatus.passed) {
-    blockerDetails = `HTTP ${result.checks.httpStatus.statusCode}`;
+    if (result.checks.httpStatus.blockerType === 'googlebot-blocked') {
+      blockerDetails = `Googlebot Blocked: ${result.checks.httpStatus.warning || 'Critical SEO issue - Googlebot cannot access page'}`;
+    } else {
+      blockerDetails = `HTTP ${result.checks.httpStatus.statusCode}`;
+    }
   }
   
   if (result.checks?.redirects && !result.checks.redirects.passed) {
@@ -378,9 +382,13 @@ function generateOutputs(inputFile, selectedOpportunities, technicalResults, all
     const allUrlsWithScores = technicalResults.map(r => {
       const { checks, indexable, blockers, isBlocked, ...rest } = r;
       
+      // IMPORTANT: Merge with original CSV record to get all data
+      const originalRecord = allRecords.find(rec => rec.url === r.url) || {};
+      const mergedData = { ...originalRecord, ...rest };
+      
       // Calculate score and eligibility for this URL
-      const serpPosition = parseFloat(rest.serp_position || rest.serpPosition || rest.ranking || 99);
-      const searchVolume = parseSearchVolume(rest.volume_per_month || rest.searchVolume || 0);
+      const serpPosition = parseFloat(mergedData.serp_position || mergedData.serpPosition || mergedData.ranking || 99);
+      const searchVolume = parseSearchVolume(mergedData.volume_per_month || mergedData.searchVolume || 0);
       const score = calculateOpportunityScore(searchVolume, serpPosition);
       
       // Check SERP position eligibility
@@ -413,9 +421,9 @@ function generateOutputs(inputFile, selectedOpportunities, technicalResults, all
         opportunity_rank_selected: selectedOpp?.selected_rank || '',
         technical_check_passed: r.indexable ? 'YES' : 'NO',
         technical_issue_details: r.indexable ? '' : r.blockerDetails, // Only show details if failed
-        // Include original CSV data
+        // Include original CSV data (using mergedData to preserve all columns)
         ...Object.fromEntries(
-          Object.entries(rest).filter(([key]) => !['blockersString', 'blockerDetails', 'serp_position', 'serpPosition', 'ranking'].includes(key))
+          Object.entries(mergedData).filter(([key]) => !['blockersString', 'blockerDetails', 'serp_position', 'serpPosition', 'ranking', 'url'].includes(key))
         ),
       };
     });

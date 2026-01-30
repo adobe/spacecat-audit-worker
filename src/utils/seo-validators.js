@@ -32,16 +32,39 @@ export async function validateHttpStatus(url, log) {
   try {
     const headController = new AbortController();
     const headTimeoutId = setTimeout(() => headController.abort(), 10000);
-
     const headResponse = await fetch(url, {
       method: 'HEAD',
       redirect: 'follow',
       signal: headController.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+      },
     });
 
     clearTimeout(headTimeoutId);
 
     const is4xxOr5xx = headResponse.status >= 400;
+
+    if (headResponse.status === 404 || headResponse.status === 403) {
+      const serverHeader = headResponse.headers.get('server') || '';
+      const cfRay = headResponse.headers.get('cf-ray'); // Cloudflare
+      const akamaiHeaders = headResponse.headers.get('x-akamai-transformed')
+        || headResponse.headers.get('x-akamai-session-info')
+        || serverHeader.includes('AkamaiGHost');
+      const impervaHeaders = headResponse.headers.get('x-iinfo') || headResponse.headers.get('x-cdn');
+
+      const hasBotProtection = !!(cfRay || akamaiHeaders || impervaHeaders);
+
+      if (hasBotProtection) {
+        log.warn(`Bot protection detected on ${url}, Googlebot returned ${headResponse.status}. This is a critical SEO issue - Googlebot must be whitelisted.`);
+        return {
+          passed: false,
+          statusCode: headResponse.status,
+          blockerType: 'googlebot-blocked',
+          warning: `Googlebot is blocked by bot protection (${headResponse.status}). Page must whitelist Googlebot for indexing.`,
+        };
+      }
+    }
 
     // If not 200, no need to check body
     if (!headResponse.ok || headResponse.status !== 200) {
@@ -99,6 +122,9 @@ export async function validateHttpStatus(url, log) {
         method: 'GET',
         redirect: 'follow',
         signal: getController.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        },
       });
 
       clearTimeout(getTimeoutId);
