@@ -1505,7 +1505,7 @@ describe('Permissions Handler Tests', () => {
       const result = mergeSuggestionStatus(mockExistingSuggestion, {}, mockContext);
 
       expect(result).to.equal(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
-      expect(mockContext.log.warn).to.have.been.calledWith('Resolved or outdated suggestion found in audit. Possible regression.');
+      expect(mockContext.log.warn).to.have.been.calledWith('Resolved suggestion found in audit. Possible regression.');
     });
 
     it('should return NEW when existing suggestion is FIXED and site does not require validation', () => {
@@ -1515,7 +1515,7 @@ describe('Permissions Handler Tests', () => {
       const result = mergeSuggestionStatus(mockExistingSuggestion, {}, mockContext);
 
       expect(result).to.equal(SuggestionDataAccess.STATUSES.NEW);
-      expect(mockContext.log.warn).to.have.been.calledWith('Resolved or outdated suggestion found in audit. Possible regression.');
+      expect(mockContext.log.warn).to.have.been.calledWith('Resolved suggestion found in audit. Possible regression.');
     });
 
     it('should return null when existing suggestion is not FIXED (fallback to defaultMergeStatusFunction)', () => {
@@ -1672,7 +1672,7 @@ describe('Permissions Handler Tests', () => {
       expect(result).to.deep.equal({ status: 'complete' });
       expect(mockFixedSuggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
       expect(mockFixedSuggestion.save).to.have.been.called;
-      expect(context.log.warn).to.have.been.calledWith('Resolved or outdated suggestion found in audit. Possible regression.');
+      expect(context.log.warn).to.have.been.calledWith('Resolved suggestion found in audit. Possible regression.');
     });
 
     it('should reopen FIXED suggestions to NEW status when site does not require validation', async () => {
@@ -1710,7 +1710,7 @@ describe('Permissions Handler Tests', () => {
       expect(result).to.deep.equal({ status: 'complete' });
       expect(mockFixedSuggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.NEW);
       expect(mockFixedSuggestion.save).to.have.been.called;
-      expect(context.log.warn).to.have.been.calledWith('Resolved or outdated suggestion found in audit. Possible regression.');
+      expect(context.log.warn).to.have.been.calledWith('Resolved suggestion found in audit. Possible regression.');
     });
 
     it('should preserve REJECTED status for suggestions that appear again', async () => {

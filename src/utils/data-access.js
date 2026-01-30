@@ -222,7 +222,7 @@ export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
   }
 
   if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
-    log.warn('Resolved or outdated suggestion found in audit. Possible regression.');
+    log.warn('Outdated suggestion found in audit. Possible regression.');
     const requiresValidation = Boolean(site?.requiresValidation);
     return requiresValidation
       ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION

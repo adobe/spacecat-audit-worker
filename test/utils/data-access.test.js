@@ -694,7 +694,7 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
       expect(existingSuggestions[0].setStatus).to.have.been
         .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
-      expect(mockLogger.warn).to.have.been.calledOnceWith('Resolved or outdated suggestion found in audit. Possible regression.');
+      expect(mockLogger.warn).to.have.been.calledOnceWith('Outdated suggestion found in audit. Possible regression.');
       expect(existingSuggestions[0].save).to.have.been.calledOnce;
     });
 

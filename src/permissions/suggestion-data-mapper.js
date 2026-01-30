@@ -73,9 +73,8 @@ export function mapAdminSuggestion(opportunity, adminPermission) {
 }
 
 /**
- * Custom merge function for suggestion status when the existing suggestion is in FIXED status moved
- * to PENDING_VALIDATION or NEW
- * depending on site configuration.
+ * When the existing suggestion is in FIXED status, it will be
+ * transitioned to PENDING_VALIDATION or NEW depending on site configuration.
  * @param existing Suggestion previously stored in DB
  * @param newDataItem New suggestion data item
  * @param ctx Context object
@@ -86,7 +85,7 @@ export function mergeSuggestionStatus(existing, newDataItem, ctx) {
   const currentStatus = existing.getStatus();
 
   if (currentStatus === SuggestionDataAccess.STATUSES.FIXED) {
-    log.warn('Resolved or outdated suggestion found in audit. Possible regression.');
+    log.warn('Resolved suggestion found in audit. Possible regression.');
     const requiresValidation = Boolean(site?.requiresValidation);
     return requiresValidation
       ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
