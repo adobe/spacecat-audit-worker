@@ -1,3 +1,17 @@
+## [1.294.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.294.4...v1.294.5) (2026-01-30)
+
+
+### Bug Fixes
+
+* changed fixed status with outdated for sync a11y suggestions ([#1905](https://github.com/adobe/spacecat-audit-worker/issues/1905)) ([39cb946](https://github.com/adobe/spacecat-audit-worker/commit/39cb9464ced930ae1f3b3c8e1bf548dd2acfb860))
+
+## [1.294.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.294.3...v1.294.4) (2026-01-30)
+
+
+### Bug Fixes
+
+* improved logging to track valuable suggestions & paid customers anomaly ([#1879](https://github.com/adobe/spacecat-audit-worker/issues/1879)) ([d3b84e5](https://github.com/adobe/spacecat-audit-worker/commit/d3b84e52aefdaac7ec5148b916d20b9c636058e9))
+
 ## [1.294.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.294.2...v1.294.3) (2026-01-30)
 
 
