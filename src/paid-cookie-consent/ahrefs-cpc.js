@@ -12,7 +12,7 @@
 
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 
-const DEFAULT_CPC = 0.80;
+export const DEFAULT_CPC = 0.80;
 
 /**
  * Fetches Ahrefs aggregated metrics from S3 and calculates CPC values.

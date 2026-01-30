@@ -17,7 +17,7 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 import { getWeekInfo, getTemporalCondition, getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { fetchCPCData, getCPCForTrafficType } from './ahrefs-cpc.js';
+import { fetchCPCData, getCPCForTrafficType, DEFAULT_CPC } from './ahrefs-cpc.js';
 import { calculateBounceGapLoss as calculateGenericBounceGapLoss } from './bounce-gap-calculator.js';
 import { retrieveAuditById } from '../utils/data-access.js';
 import {
@@ -391,6 +391,12 @@ export async function paidAuditRunner(auditUrl, context, site) {
       // CPC information for transparency
       appliedCPC,
       cpcSource,
+      defaultCPC: DEFAULT_CPC,
+      // Only include Ahrefs CPC values if available
+      ...(cpcSource === 'ahrefs' && {
+        ahrefsOrganicCPC: cpcData.organicCPC,
+        ahrefsPaidCPC: cpcData.paidCPC,
+      }),
     };
     log.info(`[paid-audit] [Site: ${auditUrl}] Summary: pv=${totalPageViews}, lost=${projectedTrafficLost.toFixed(0)}, value=$${projectedTrafficValue.toFixed(2)}, top3=${top3Pages.length}`);
     return {

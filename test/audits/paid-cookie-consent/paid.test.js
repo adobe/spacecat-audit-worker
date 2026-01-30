@@ -198,6 +198,33 @@ describe('Paid Cookie Consent Audit', () => {
     expect(result.auditResult.top3Pages).to.be.an('array');
   });
 
+  it('should include Ahrefs CPC data when available from S3', async () => {
+    const ahrefsData = {
+      organicTraffic: 10000,
+      organicCost: 1910,
+      paidTraffic: 5000,
+      paidCost: 1560,
+    };
+    const contextWithAhrefs = {
+      ...context,
+      s3: {
+        s3Client: {
+          send: sandbox.stub().resolves({
+            Body: {
+              transformToString: () => JSON.stringify(ahrefsData),
+            },
+          }),
+        },
+      },
+    };
+    const result = await paidAuditRunner(auditUrl, contextWithAhrefs, site);
+    expect(result.auditResult).to.have.property('cpcSource', 'ahrefs');
+    expect(result.auditResult).to.have.property('ahrefsOrganicCPC', 0.191);
+    expect(result.auditResult).to.have.property('ahrefsPaidCPC', 0.312);
+    expect(result.auditResult).to.have.property('appliedCPC', 0.312);
+    expect(result.auditResult).to.have.property('defaultCPC', 0.80);
+  });
+
   it('should submit expected result to mistique with bounce rate >= 0.3 filtering', async () => {
     const auditData = {
       fullAuditRef: 'https://example.com',
