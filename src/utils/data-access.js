@@ -295,8 +295,7 @@ export async function syncSuggestions({
       })
       .map((existing) => {
         const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
-        const existingData = existing.getData();
-        existing.setData(mergeDataFunction(existingData, newDataItem));
+        existing.setData(mergeDataFunction(existing.getData(), newDataItem));
 
         if (existing.getStatus() === SuggestionDataAccess.STATUSES.REJECTED) {
           // Keep REJECTED status when same suggestion appears again in audit
