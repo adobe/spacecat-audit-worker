@@ -801,7 +801,7 @@ describe('Prerender Audit', () => {
 
       it('should trigger opportunity processing path when prerender is detected', async () => {
         // This test covers line 341 by ensuring the full opportunity processing flow executes
-        const mockOpportunity = { getId: () => 'test-opportunity-id' };
+        const mockOpportunity = { getId: () => 'test-opportunity-id', getSuggestions: sinon.stub().resolves([]) };
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': {
@@ -867,7 +867,7 @@ describe('Prerender Audit', () => {
 
       it('should create dummy opportunity when scraping is forbidden', async () => {
         // Test that a dummy opportunity is created when all scrapes return 403
-        const mockOpportunity = { getId: () => 'test-opportunity-id' };
+        const mockOpportunity = { getId: () => 'test-opportunity-id', getSuggestions: sinon.stub().resolves([]) };
         const convertToOpportunityStub = sinon.stub().resolves(mockOpportunity);
         const createScrapeForbiddenOpportunityStub = sinon.stub().resolves();
 
@@ -954,7 +954,7 @@ describe('Prerender Audit', () => {
 
     describe('createScrapeForbiddenOpportunity', () => {
       it('should create opportunity without suggestions when scraping is forbidden', async () => {
-        const mockOpportunity = { getId: () => 'test-opportunity-id' };
+        const mockOpportunity = { getId: () => 'test-opportunity-id', getSuggestions: sinon.stub().resolves([]) };
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
@@ -1087,6 +1087,7 @@ describe('Prerender Audit', () => {
         const mockOpportunity = {
           getId: () => 'existing-opportunity-id',
           getType: () => 'cwv', // Different type, not prerender
+          getSuggestions: sandbox.stub().resolves([]),
         };
 
         const allBySiteIdAndStatusStub = sandbox.stub().resolves([mockOpportunity]);
@@ -1412,6 +1413,7 @@ describe('Prerender Audit', () => {
 
         const mockOpportunity = {
           getId: () => 'test-opportunity-id',
+          getSuggestions: sandbox.stub().resolves([]),
         };
 
         const logStub = sandbox.stub();
@@ -1445,6 +1447,7 @@ describe('Prerender Audit', () => {
         // This test targets lines 248-265 (syncSuggestions execution)
         const mockOpportunity = {
           getId: () => 'test-opportunity-id',
+          getSuggestions: sandbox.stub().resolves([]),
         };
 
         // Mock all required dependencies for the full opportunity creation flow
@@ -1490,6 +1493,7 @@ describe('Prerender Audit', () => {
       it('should create domain-wide aggregate suggestion with correct aggregate metrics', async () => {
         const mockOpportunity = {
           getId: () => 'test-opportunity-id',
+          getSuggestions: sandbox.stub().resolves([]),
         };
 
         const auditData = {
@@ -1607,6 +1611,7 @@ describe('Prerender Audit', () => {
       it('should create domain-wide aggregate suggestion even with single URL', async () => {
         const mockOpportunity = {
           getId: () => 'test-opportunity-id',
+          getSuggestions: sandbox.stub().resolves([]),
         };
 
         const auditData = {
@@ -1672,6 +1677,7 @@ describe('Prerender Audit', () => {
       it('should use constant key for domain-wide aggregate suggestion to ensure uniqueness', async () => {
         const mockOpportunity = {
           getId: () => 'test-opportunity-id',
+          getSuggestions: sandbox.stub().resolves([]),
         };
 
         const auditData = {
@@ -1727,9 +1733,93 @@ describe('Prerender Audit', () => {
         }
       });
 
+      it('should preserve existing domain-wide suggestion when it has tokowakaDeployed flag', async () => {
+        // Test that domain-wide suggestions with tokowakaDeployed are preserved
+        const existingDomainWideSuggestion = {
+          getId: () => 'existing-domain-wide-id',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            isDomainWide: true,
+            pathPattern: '/*',
+            tokowakaDeployed: 1769607504287,
+            allowedRegexPatterns: ['/existing-pattern/'],
+          }),
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([existingDomainWideSuggestion]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+        const mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                contentGainRatio: 2.0,
+                wordCountBefore: 100,
+                wordCountAfter: 200,
+              },
+            ],
+          },
+        };
+
+        const logStub = {
+          info: sinon.stub(),
+          debug: sinon.stub(),
+          warn: sinon.stub(),
+        };
+
+        const context = {
+          log: logStub,
+          dataAccess: { Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED' } } },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions(
+          'https://example.com',
+          auditData,
+          context,
+        );
+
+        // Verify that the existing domain-wide suggestion data is reused
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const syncArgs = syncSuggestionsStub.firstCall.args[0];
+
+        // Find the domain-wide suggestion in newData
+        const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
+        expect(domainWideSuggestion).to.exist;
+        expect(domainWideSuggestion.data.tokowakaDeployed).to.equal(1769607504287);
+        expect(domainWideSuggestion.data.allowedRegexPatterns).to.deep.equal(['/existing-pattern/']);
+
+        // Verify log message about preserving
+        const logCalls = logStub.info.getCalls().map((c) => c.args[0]);
+        const preserveLog = logCalls.find((msg) => msg && msg.includes('Reusing existing domain-wide suggestion'));
+        expect(preserveLog).to.exist;
+      });
+
       it('should properly execute syncSuggestions with domain-wide aggregate suggestion mapper and merge functions', async () => {
         // This test specifically ensures lines 460-466 are covered (mapNewSuggestion and mergeDataFunction)
-        const mockOpportunity = { getId: () => 'test-opp-id' };
+        const mockOpportunity = { getId: () => 'test-opp-id', getSuggestions: sinon.stub().resolves([]) };
         const syncSuggestionsStub = sinon.stub().resolves();
         const mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
 
@@ -3972,7 +4062,7 @@ describe('Prerender Audit', () => {
 
       it('should trigger opportunity and suggestion creation flow', async () => {
         // Test the full opportunity creation and suggestion sync flow including S3 key generation
-        const mockOpportunity = { getId: () => 'test-opportunity-id' };
+        const mockOpportunity = { getId: () => 'test-opportunity-id', getSuggestions: sinon.stub().resolves([]) };
         const syncSuggestionsStub = sinon.stub().resolves();
         const mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
 
@@ -4059,7 +4149,7 @@ describe('Prerender Audit', () => {
       });
 
       it('should prefer scrapeJobId over siteId when building S3 HTML keys', async () => {
-        const mockOpportunity = { getId: () => 'test-opportunity-id' };
+        const mockOpportunity = { getId: () => 'test-opportunity-id', getSuggestions: sinon.stub().resolves([]) };
         const syncSuggestionsStub = sinon.stub().resolves();
         const mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
 
