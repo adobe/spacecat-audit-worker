@@ -17,10 +17,9 @@ import { isLangCode } from 'is-language-code';
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
+import { syncSuggestions, keepLatestMergeDataFunction, getTopPagesForSiteId } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
-import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { limitConcurrencyAllSettled } from '../support/utils.js';
 
 const auditType = Audit.AUDIT_TYPES.HREFLANG;
