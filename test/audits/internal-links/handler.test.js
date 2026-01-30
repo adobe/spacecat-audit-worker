@@ -28,7 +28,6 @@ import {
   runCrawlDetectionBatch,
   updateAuditResult,
   finalizeCrawlDetection,
-  normalizeUrlToDomain,
 } from '../../../src/internal-links/handler.js';
 import {
   internalLinksData,
@@ -174,7 +173,7 @@ describe('Broken internal links audit', () => {
     });
     expect(result).to.deep.equal({
       auditResult: {
-        brokenInternalLinks: AUDIT_RESULT_DATA,
+        brokenInternalLinks: AUDIT_RESULT_DATA_WITH_PRIORITY,
         fullAuditRef: auditUrl,
         finalUrl: auditUrl,
         success: true,
@@ -221,13 +220,13 @@ describe('Broken internal links audit', () => {
   it('broken-internal-links audit should handle promise rejection during validation', async () => {
     const linksWithError = [
       {
-        url_to: 'https://example.com/valid',
-        url_from: 'https://example.com/page1',
+        url_to: 'https://www.example.com/valid',
+        url_from: 'https://www.example.com/page1',
         traffic_domain: 100,
       },
       {
-        url_to: 'https://example.com/catastrophic-error',
-        url_from: 'https://example.com/page2',
+        url_to: 'https://www.example.com/catastrophic-error',
+        url_from: 'https://www.example.com/page2',
         traffic_domain: 50,
       },
     ];
@@ -236,7 +235,7 @@ describe('Broken internal links audit', () => {
     const { internalLinksAuditRunner: internalLinksAuditRunnerMocked } = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/helpers.js': {
         isLinkInaccessible: async (url) => {
-          if (url === 'https://example.com/catastrophic-error') {
+          if (url === 'https://www.example.com/catastrophic-error') {
             throw new Error('Database connection failed');
           }
           return true;
