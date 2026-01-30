@@ -12,13 +12,17 @@
 import {
   AWSAthenaClient,
 } from '@adobe/spacecat-shared-athena-client';
-import { getWeekInfo, getTemporalCondition } from '@adobe/spacecat-shared-utils';
+import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
+import { getWeekInfo, getTemporalCondition, getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   getTop3PagesWithTrafficLostTemplate,
   getBounceGapMetricsTemplate,
 } from './queries.js';
+
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 const CUT_OFF_BOUNCE_RATE = 0.3;
 const DEFAULT_CPC = 0.8;
@@ -27,6 +31,28 @@ const AUDIT_CONSTANTS = {
   GUIDANCE_TYPE: 'guidance:paid-cookie-consent',
   OBSERVATION: 'High bounce rate detected on paid traffic page',
 };
+
+const IMPORT_TRAFFIC_ANALYSIS = 'traffic-analysis';
+
+function isImportEnabled(importType, imports) {
+  return imports?.find((importConfig) => importConfig.type === importType)?.enabled;
+}
+
+async function toggleImport(site, importType, enable, log) {
+  const siteConfig = site.getConfig();
+  if (!siteConfig) {
+    const errorMsg = `Cannot toggle import ${importType} for site ${site.getId()}: site config is null`;
+    log.error(errorMsg);
+    throw new Error(errorMsg);
+  }
+  if (enable) {
+    siteConfig.enableImport(importType);
+  } else {
+    siteConfig.disableImport(importType);
+  }
+  site.setConfig(Config.toDynamoItem(siteConfig));
+  await site.save();
+}
 
 function getConfig(env) {
   const {
@@ -383,8 +409,107 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
   }
 }
 
+function createImportStep(weekIndex) {
+  return async function triggerTrafficAnalysisImportStep(context) {
+    const { site, finalUrl, log } = context;
+    const siteId = site.getId();
+
+    // Get the last 4 completed weeks (oldest first)
+    const weeks = getLastNumberOfWeeks(4);
+    const { week, year } = weeks[weekIndex];
+
+    log.info(`[paid-audit] [Site: ${finalUrl}] Import step ${weekIndex + 1}/4: Triggering traffic-analysis import for week ${week}/${year}`);
+
+    // Only enable import on the first step
+    let importWasEnabled = false;
+    if (weekIndex === 0) {
+      const siteConfig = site.getConfig();
+      const imports = siteConfig?.getImports() || [];
+
+      if (!isImportEnabled(IMPORT_TRAFFIC_ANALYSIS, imports)) {
+        log.debug(`[paid-audit] [Site: ${finalUrl}] Enabling ${IMPORT_TRAFFIC_ANALYSIS} import for site ${siteId}`);
+        await toggleImport(site, IMPORT_TRAFFIC_ANALYSIS, true, log);
+        importWasEnabled = true;
+      }
+    }
+
+    return {
+      auditResult: {
+        status: 'pending',
+        message: `Importing traffic-analysis data for week ${week}/${year}`,
+      },
+      fullAuditRef: finalUrl,
+      type: IMPORT_TRAFFIC_ANALYSIS,
+      siteId,
+      allowCache: true,
+      auditContext: {
+        week,
+        year,
+        // Preserve importWasEnabled from step 1 across the chain
+        importWasEnabled: weekIndex === 0
+          ? importWasEnabled
+          : (context.auditContext?.importWasEnabled || false),
+      },
+    };
+  };
+}
+
+// Create the 4 import steps
+export const importWeekStep0 = createImportStep(0);
+export const importWeekStep1 = createImportStep(1);
+export const importWeekStep2 = createImportStep(2);
+export const importWeekStep3 = createImportStep(3);
+
+export async function runPaidConsentAnalysisStep(context) {
+  const {
+    site, finalUrl, audit, log, auditContext,
+  } = context;
+  const siteId = site.getId();
+
+  log.info(`[paid-audit] [Site: ${finalUrl}] Step 5: Running consent banner analysis`);
+
+  // Disable import if we enabled it in step 1 (cleanup — don't fail audit if this fails)
+  if (auditContext?.importWasEnabled) {
+    log.debug(`[paid-audit] [Site: ${finalUrl}] Disabling ${IMPORT_TRAFFIC_ANALYSIS} import for site ${siteId}`);
+    try {
+      await toggleImport(site, IMPORT_TRAFFIC_ANALYSIS, false, log);
+    } catch (error) {
+      log.error(`[paid-audit] [Site: ${finalUrl}] Failed to disable import (cleanup): ${error.message}`);
+    }
+  }
+
+  // Run existing analysis logic (reuses paidAuditRunner)
+  const result = await paidAuditRunner(finalUrl, context, site);
+
+  // IMPORTANT: paidAuditRunner returns { auditResult: null } when no
+  // show/hidden consent data exists. Must handle this early-exit case.
+  if (!result.auditResult) {
+    log.warn(`[paid-audit] [Site: ${finalUrl}] No consent data available; skipping analysis step`);
+    return {};
+  }
+
+  // Update audit with real results (replaces the "pending" placeholder from step 1)
+  audit.setAuditResult(result.auditResult);
+  await audit.save();
+
+  // Run existing post-processor logic (moved from .withPostProcessors)
+  // Wrapped in try-catch to match post-processor error semantics:
+  // audit is already saved, so a failure here should log but not fail the step.
+  try {
+    const auditData = { auditResult: result.auditResult, id: audit.getId() };
+    await paidConsentBannerCheck(finalUrl, auditData, context, site);
+  } catch (error) {
+    log.error(`[paid-audit] [Site: ${finalUrl}] Post-processor paidConsentBannerCheck failed: ${error.message}`);
+  }
+
+  return {};
+}
+
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(paidAuditRunner)
-  .withPostProcessors([paidConsentBannerCheck])
+  .addStep('import-week-0', importWeekStep0, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('import-week-1', importWeekStep1, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('import-week-2', importWeekStep2, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('import-week-3', importWeekStep3, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('run-consent-analysis', runPaidConsentAnalysisStep)
   .build();
