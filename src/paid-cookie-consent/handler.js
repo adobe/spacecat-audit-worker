@@ -15,13 +15,46 @@ import {
 import { getWeekInfo, getTemporalCondition } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { fetchCPCData, getCPCForTrafficType } from './ahrefs-cpc.js';
+import { calculateBounceGapLoss as calculateGenericBounceGapLoss } from './bounce-gap-calculator.js';
 import {
   getTop3PagesWithTrafficLostTemplate,
   getBounceGapMetricsTemplate,
 } from './queries.js';
 
 const CUT_OFF_BOUNCE_RATE = 0.3;
-const DEFAULT_CPC = 0.8;
+
+async function getCPCData(context, siteId) {
+  const { log, env } = context;
+  const bucketName = env.S3_IMPORTER_BUCKET_NAME;
+
+  const cpcData = await fetchCPCData(context, bucketName, siteId, log);
+
+  log.info(`[paid-audit] [Site: ${siteId}] CPC loaded (${cpcData.source}): organic=$${cpcData.organicCPC.toFixed(4)}, paid=$${cpcData.paidCPC.toFixed(4)}`);
+
+  return cpcData;
+}
+
+/**
+ * Calculates projected traffic value by applying the appropriate CPC per traffic type.
+ * - paid traffic uses paidCPC
+ * - earned/owned traffic uses organicCPC
+ *
+ * @param {Object} byTrafficType - Loss breakdown by traffic type
+ *   Example: { paid: { loss }, earned: { loss }, owned: { loss } }
+ * @param {Object} cpcData - CPC data from fetchCPCData { organicCPC, paidCPC, source }
+ * @returns {number} Total projected traffic value in dollars
+ */
+function calculateProjectedTrafficValue(byTrafficType, cpcData) {
+  let totalValue = 0;
+
+  for (const [trfType, data] of Object.entries(byTrafficType)) {
+    const cpc = getCPCForTrafficType(trfType, cpcData);
+    totalValue += data.loss * cpc;
+  }
+
+  return totalValue;
+}
 
 const AUDIT_CONSTANTS = {
   GUIDANCE_TYPE: 'guidance:paid-cookie-consent',
@@ -141,64 +174,49 @@ async function executeBounceGapMetricsQuery(
  * Calculates projected traffic lost using bounce gap attribution.
  * Formula: sum of (PV_show × max(0, BR_show - BR_hidden)) per trf_type
  *
+ * Data transformation:
+ * - Input: flat array of rows with {trfType, consent, pageViews, bounceRate}
+ * - Groups by: trfType (paid, earned, owned)
+ * - Treatment: 'show' (consent banner visible)
+ * - Control: 'hidden' (consent banner not visible)
+ *
  * @param {Array} bounceGapData - Array of {trfType, consent, pageViews, bounceRate}
  * @param {Object} log - Logger instance
- * @returns {Object} { projectedTrafficLost, hasShowData, hasHiddenData }
+ * @returns {Object} { projectedTrafficLost, hasShowData, hasHiddenData, byTrafficType }
  */
 export function calculateBounceGapLoss(bounceGapData, log) {
-  // Group by trf_type
-  const byTrfType = {};
+  const TREATMENT = 'show'; // consent banner visible - causes higher bounce rate
+  const CONTROL = 'hidden'; // consent banner not visible - baseline bounce rate
+
+  // Group flat data by traffic type, then by consent state
+  // Result: { paid: { show: {...}, hidden: {...} }, earned: {...}, owned: {...} }
+  const groupedByTrafficType = {};
   for (const row of bounceGapData) {
-    if (!byTrfType[row.trfType]) {
-      byTrfType[row.trfType] = {};
-    }
-    byTrfType[row.trfType][row.consent] = {
+    if (!groupedByTrafficType[row.trfType]) groupedByTrafficType[row.trfType] = {};
+    groupedByTrafficType[row.trfType][row.consent] = {
       pageViews: row.pageViews,
       bounceRate: row.bounceRate,
     };
   }
 
-  // Check if we have any show or hidden data at all
-  const hasShowData = Object.values(byTrfType).some((data) => data.show);
-  const hasHiddenData = Object.values(byTrfType).some((data) => data.hidden);
+  // Validate we have both treatment and control data
+  const hasShowData = Object.values(groupedByTrafficType).some((g) => g[TREATMENT]);
+  const hasHiddenData = Object.values(groupedByTrafficType).some((g) => g[CONTROL]);
 
-  if (!hasShowData) {
-    log.warn('[paid-audit] No show consent data found; cannot calculate bounce gap');
-    return { projectedTrafficLost: 0, hasShowData: false, hasHiddenData };
+  if (!hasShowData || !hasHiddenData) {
+    log.warn(`[paid-audit] Missing consent data - show:${hasShowData} hidden:${hasHiddenData}`);
+    return { projectedTrafficLost: 0, hasShowData, hasHiddenData };
   }
 
-  if (!hasHiddenData) {
-    log.warn('[paid-audit] No hidden consent data found; cannot calculate bounce gap');
-    return { projectedTrafficLost: 0, hasShowData, hasHiddenData: false };
-  }
+  // Calculate bounce gap loss per traffic type
+  const result = calculateGenericBounceGapLoss(groupedByTrafficType, log, TREATMENT, CONTROL);
 
-  // Calculate bounce gap loss per trf_type
-  let totalLoss = 0;
-  for (const [trfType, data] of Object.entries(byTrfType)) {
-    const showData = data.show;
-    const hiddenData = data.hidden;
-
-    if (!showData) {
-      log.debug(`[paid-audit] No show data for trf_type=${trfType}; skipping`);
-    } else if (!hiddenData) {
-      log.debug(`[paid-audit] No hidden data for trf_type=${trfType}; skipping`);
-    } else {
-      // delta = max(0, BR_show - BR_hidden)
-      const delta = Math.max(0, showData.bounceRate - hiddenData.bounceRate);
-      // loss = PV_show × delta
-      const loss = showData.pageViews * delta;
-
-      log.debug(
-        `[paid-audit] trf_type=${trfType}: BR_show=${showData.bounceRate.toFixed(3)}, `
-        + `BR_hidden=${hiddenData.bounceRate.toFixed(3)}, delta=${delta.toFixed(3)}, `
-        + `PV_show=${showData.pageViews}, loss=${loss.toFixed(0)}`,
-      );
-
-      totalLoss += loss;
-    }
-  }
-
-  return { projectedTrafficLost: totalLoss, hasShowData: true, hasHiddenData: true };
+  return {
+    projectedTrafficLost: result.totalLoss,
+    hasShowData,
+    hasHiddenData,
+    byTrafficType: result.byGroup,
+  };
 }
 
 /**
@@ -278,6 +296,7 @@ export async function paidAuditRunner(auditUrl, context, site) {
       projectedTrafficLost,
       hasShowData,
       hasHiddenData,
+      byTrafficType,
     } = calculateBounceGapLoss(bounceGapData, log);
 
     // Calculate sitewide bounce delta for description text
@@ -307,7 +326,15 @@ export async function paidAuditRunner(auditUrl, context, site) {
       };
     }
 
-    const projectedTrafficValue = projectedTrafficLost * DEFAULT_CPC;
+    // Get CPC data and calculate projected traffic value per traffic type
+    const cpcData = await getCPCData(context, site.getId());
+    const projectedTrafficValue = calculateProjectedTrafficValue(byTrafficType, cpcData);
+
+    // For output, use paid CPC as the applied CPC (this is a paid cookie consent audit)
+    const appliedCPC = cpcData.paidCPC;
+    const cpcSource = cpcData.source;
+
+    log.info(`[paid-audit] [Site: ${siteId}] Traffic: lost=${projectedTrafficLost.toFixed(0)}, value=$${projectedTrafficValue.toFixed(2)}, cpc=$${appliedCPC.toFixed(4)} (${cpcSource})`);
 
     // Continue with existing queries for top3 pages and device breakdown
     const lostTrafficSummary = await executeTop3TrafficLostPagesQuery(athenaClient, ['device'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition, 0, null, config, log, baseURL);
@@ -338,8 +365,11 @@ export async function paidAuditRunner(auditUrl, context, site) {
       averageTrafficLostTop3,
       averageBounceRateMobileTop3,
       temporalCondition,
+      // CPC information for transparency
+      appliedCPC,
+      cpcSource,
     };
-    log.info(`[paid-audit] [Site: ${auditUrl}] Audit initial result:`, JSON.stringify(auditResult, null, 2));
+    log.info(`[paid-audit] [Site: ${auditUrl}] Summary: pv=${totalPageViews}, lost=${projectedTrafficLost.toFixed(0)}, value=$${projectedTrafficValue.toFixed(2)}, top3=${top3Pages.length}`);
     return {
       auditResult,
       fullAuditRef: auditUrl,

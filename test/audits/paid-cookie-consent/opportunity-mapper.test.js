@@ -398,6 +398,9 @@ describe('Paid Cookie Consent opportunity mapper', () => {
           averageTrafficLostTop3: 1000,
           averageBounceRateMobileTop3: 0.35,
           temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+          // CPC information
+          appliedCPC: 0.312,
+          cpcSource: 'ahrefs',
         }),
       };
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
@@ -407,6 +410,9 @@ describe('Paid Cookie Consent opportunity mapper', () => {
       expect(result.data.projectedTrafficLost).to.equal(1501); // rounded from 1500.7534
       expect(result.data.projectedTrafficValue).to.equal(1201); // rounded from 1200.9876
       expect(result.data.temporalCondition).to.equal('(year=2025 AND week IN (1,2,3,4))');
+      // CPC information should be included
+      expect(result.data.appliedCPC).to.equal(0.312);
+      expect(result.data.cpcSource).to.equal('ahrefs');
     });
 
     it('sets correct opportunity type and title', () => {

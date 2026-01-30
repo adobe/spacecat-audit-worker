@@ -835,7 +835,7 @@ describe('calculateBounceGapLoss', () => {
       // Paid has both show and hidden
       { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
       { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
-      // Earned only has hidden (missing show) - should trigger line 184
+      // Earned only has hidden (missing show) - should trigger skip
       { trfType: 'earned', consent: 'hidden', pageViews: 400, bounceRate: 0.5 },
     ];
 
@@ -845,8 +845,8 @@ describe('calculateBounceGapLoss', () => {
     expect(result.projectedTrafficLost).to.be.closeTo(200, 0.01);
     expect(result.hasShowData).to.be.true;
     expect(result.hasHiddenData).to.be.true;
-    // Should log debug message for the skipped traffic source
-    expect(mockLog.debug).to.have.been.calledWithMatch(/No show data for trf_type=earned/);
+    // Should log summary with skipped count
+    expect(mockLog.debug).to.have.been.calledWithMatch(/skipped=1/);
   });
 });
 

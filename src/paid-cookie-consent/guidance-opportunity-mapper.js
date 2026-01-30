@@ -174,6 +174,9 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
       bounceRate: stats.totalAverageBounceRate,
       pageType: 'unknown',
       temporalCondition: stats.temporalCondition,
+      // CPC information from audit result
+      appliedCPC: stats.appliedCPC,
+      cpcSource: stats.cpcSource,
     },
     status: 'NEW',
     tags: [
