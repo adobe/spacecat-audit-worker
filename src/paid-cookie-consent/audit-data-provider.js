@@ -20,12 +20,12 @@ function getConfig(env) {
   const {
     RUM_METRICS_DATABASE: rumMetricsDatabase,
     RUM_METRICS_COMPACT_TABLE: rumMetricsCompactTable,
-    S3_BUCKET_NAME: bucketName,
+    S3_IMPORTER_BUCKET_NAME: bucketName,
     PAID_DATA_THRESHOLD: paidDataThreshold,
   } = env;
 
   return {
-    rumMetricsDatabase: rumMetricsDatabase ?? 'spacecat',
+    rumMetricsDatabase: rumMetricsDatabase ?? 'rum_metrics',
     rumMetricsCompactTable: rumMetricsCompactTable ?? 'compact_metrics',
     bucketName,
     pageViewThreshold: paidDataThreshold ?? 1000,
