@@ -97,3 +97,42 @@ export function getCPCForTrafficType(trfType, cpcData) {
 export function calculateEstimatedCost(bounceGapLoss, cpc) {
   return bounceGapLoss * cpc;
 }
+
+/**
+ * Wrapper function to fetch CPC data using context environment.
+ *
+ * @param {Object} context - Request context with S3 client, env, and log
+ * @param {string} siteId - Site ID
+ * @returns {Promise<Object>} CPC data: { organicCPC, paidCPC, source }
+ */
+export async function getCPCData(context, siteId) {
+  const { log, env } = context;
+  const bucketName = env.S3_IMPORTER_BUCKET_NAME;
+
+  const cpcData = await fetchCPCData(context, bucketName, siteId, log);
+
+  log.info(`[paid-audit] [Site: ${siteId}] CPC loaded (${cpcData.source}): organic=$${cpcData.organicCPC.toFixed(4)}, paid=$${cpcData.paidCPC.toFixed(4)}`);
+
+  return cpcData;
+}
+
+/**
+ * Calculates projected traffic value by applying the appropriate CPC per traffic type.
+ * - paid traffic uses paidCPC
+ * - earned/owned traffic uses organicCPC
+ *
+ * @param {Object} byTrafficType - Loss breakdown by traffic type
+ *   Example: { paid: { loss }, earned: { loss }, owned: { loss } }
+ * @param {Object} cpcData - CPC data from fetchCPCData { organicCPC, paidCPC, source }
+ * @returns {number} Total projected traffic value in dollars
+ */
+export function calculateProjectedTrafficValue(byTrafficType, cpcData) {
+  let totalValue = 0;
+
+  for (const [trfType, data] of Object.entries(byTrafficType)) {
+    const cpc = getCPCForTrafficType(trfType, cpcData);
+    totalValue += data.loss * cpc;
+  }
+
+  return totalValue;
+}

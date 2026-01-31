@@ -21,32 +21,13 @@ import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { CopyObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import handler from '../../../src/paid-cookie-consent/guidance-handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
 
-// Helper to create a fresh stubbed opportunity instance
-function makeOppty({
-  page, opportunityType, status = 'NEW', updatedBy = 'system', updatedAt = new Date().toISOString(),
-}) {
-  return {
-    getId: () => `opptyId-${page}-${opportunityType}`,
-    getSuggestions: async () => [],
-    setAuditId: sinon.stub(),
-    setData: sinon.stub(),
-    setGuidance: sinon.stub(),
-    setTitle: sinon.stub(),
-    setDescription: sinon.stub(),
-    setStatus: sinon.stub(),
-    save: sinon.stub().resolvesThis(),
-    getType: () => 'generic-opportunity',
-    getData: () => ({ page, opportunityType }),
-    getStatus: () => status,
-    getUpdatedBy: () => updatedBy,
-    getUpdatedAt: () => updatedAt,
-  };
-}
+
 
 const TEST_PAGE = 'https://example-page/to-check';
 
@@ -56,9 +37,11 @@ describe('Paid Cookie Consent Guidance Handler', () => {
   let context;
   let Suggestion;
   let Opportunity;
-  let Audit;
+  let Site;
   let opportunityInstance;
   let s3ClientMock;
+  let mockScrapeClient;
+  let mockAthenaClient;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -83,7 +66,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       setStatus: sinon.stub(),
       setDescription: sinon.stub(),
       save: sinon.stub().resolvesThis(),
-      getType: () => 'generic-opportunity',
+      getType: () => 'consent-banner',
       getData: () => ({ page: TEST_PAGE, opportunityType: 'paid-cookie-consent' }),
       getStatus: () => 'NEW',
       getUpdatedBy: () => 'system',
@@ -93,43 +76,66 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       allBySiteId: sandbox.stub(),
       create: sandbox.stub(),
     };
-    Audit = { findById: sandbox.stub() };
+    Site = {
+      findById: sandbox.stub(),
+    };
 
     // Mock S3 client
     s3ClientMock = {
       send: sandbox.stub(),
     };
 
+    // Mock Athena client that returns data for bounce gap and top3 pages queries
+    mockAthenaClient = {
+      query: sandbox.stub(),
+    };
+
+    // Default Athena query responses for the audit-data-provider queries:
+    // 1. Bounce gap metrics query
+    mockAthenaClient.query.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show', pageviews: '5000', bounce_rate: '0.8' },
+      { trf_type: 'paid', consent: 'hidden', pageviews: '5000', bounce_rate: '0.65' },
+    ]);
+    // 2. Top3 pages by path query
+    mockAthenaClient.query.onCall(1).resolves([
+      {
+        path: '/to-check', pageviews: '5000', traffic_loss: '4000', bounce_rate: '0.8',
+      },
+    ]);
+    // 3. Lost traffic summary by device query
+    mockAthenaClient.query.onCall(2).resolves([
+      { device: 'mobile', pageviews: '5000', traffic_loss: '4000', bounce_rate: '0.8' },
+    ]);
+    // 4. Top3 by device query
+    mockAthenaClient.query.onCall(3).resolves([
+      {
+        path: '/to-check', device: 'mobile', pageviews: '5000', traffic_loss: '4000', bounce_rate: '0.85',
+      },
+    ]);
+
+    // Stub AWSAthenaClient.fromContext to return our mock
+    sandbox.stub(AWSAthenaClient, 'fromContext').returns(mockAthenaClient);
+
     context = {
       log: logStub,
-      dataAccess: { Audit, Opportunity, Suggestion },
+      dataAccess: { Site, Opportunity, Suggestion },
       env: {
         SPACECAT_API_URI: 'https://example-space-cat-api',
         S3_MYSTIQUE_BUCKET_NAME: 'test-mystique-bucket',
         S3_SCRAPER_BUCKET_NAME: 'test-scraper-bucket',
+        S3_IMPORTER_BUCKET_NAME: 'test-importer-bucket',
       },
       s3Client: s3ClientMock,
     };
 
-    Audit.findById.resolves({
-      getAuditId: () => 'auditId',
-      getAuditResult: () => ({
-        totalPageViews: 10000,
-        totalAverageBounceRate: 0.8,
-        projectedTrafficLost: 8000,
-        projectedTrafficValue: 6400,
-        top3Pages: [
-          { url: 'https://example-page/to-check', trafficLoss: 4000, pageViews: 5000, bounceRate: 0.8 },
-        ],
-        averagePageViewsTop3: 5000,
-        averageTrafficLostTop3: 4000,
-        averageBounceRateMobileTop3: 0.85,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      }),
+    // Mock Site.findById to return a site with baseURL
+    Site.findById.resolves({
+      getId: () => 'site',
+      getBaseURL: () => 'https://example-page',
     });
 
     // Mock ScrapeClient
-    const mockScrapeClient = {
+    mockScrapeClient = {
       getScrapeJobUrlResults: sandbox.stub().resolves([{
         path: 'path/to/scrape.json',
       }]),
@@ -142,39 +148,45 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     nock.cleanAll();
   });
 
-  it('should return notFound if no audit is found', async () => {
-    Audit.findById.resolves(null);
+  it('should return notFound if no site is found', async () => {
+    Site.findById.resolves(null);
     Opportunity.allBySiteId.resolves([]);
     const message = { auditId: '123', siteId: 'site', data: { url: 'url', guidance: [{}] } };
     const result = await handler(message, context);
     expect(result.status).to.equal(notFound().status);
+    expect(logStub.warn).to.have.been.calledWithMatch(/No site found/);
   });
 
-  it('should return notFound and log error if audit is missing top3Pages', async () => {
-    Audit.findById.resolves({
-      getAuditId: () => 'auditId',
-      getAuditResult: () => ({
-        totalPageViews: 10000,
-        // top3Pages is missing - simulates incomplete audit data
-      }),
-    });
+  it('should return notFound and log error if audit data has empty top3Pages', async () => {
+    // Reconfigure Athena to return empty top3Pages
+    // The handler checks if (!auditData?.top3Pages) - empty array is truthy, but length 0 means no data
+    // Actually we need to check the handler logic - it just checks for existence of top3Pages property
+    // Since empty array has length 0, we need another approach: return null from bounce gap check
+    mockAthenaClient.query.reset();
+    // Return empty bounce gap data - this causes hasShowData = false
+    mockAthenaClient.query.onCall(0).resolves([]);
+
     Opportunity.allBySiteId.resolves([]);
     const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance: [{}] } };
     const result = await handler(message, context);
     expect(result.status).to.equal(notFound().status);
-    expect(logStub.error).to.have.been.calledWithMatch(/missing required data.*top3Pages/);
+    expect(logStub.error).to.have.been.calledWithMatch(/No consent data available/);
   });
 
-  it('should return notFound and log error if auditResult is empty', async () => {
-    Audit.findById.resolves({
-      getAuditId: () => 'auditId',
-      getAuditResult: () => ({}),
-    });
+  it('should return notFound and log error if auditData is null', async () => {
+    // Reconfigure Athena to return data that will cause getAuditData to return null
+    // This happens when bounce gap data is missing show or hidden consent data
+    mockAthenaClient.query.reset();
+    // Return only show data (no hidden) - this causes getAuditData to return null
+    mockAthenaClient.query.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show', pageviews: '5000', bounce_rate: '0.8' },
+    ]);
+
     Opportunity.allBySiteId.resolves([]);
     const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance: [{}] } };
     const result = await handler(message, context);
     expect(result.status).to.equal(notFound().status);
-    expect(logStub.error).to.have.been.calledWithMatch(/missing required data.*top3Pages/);
+    expect(logStub.error).to.have.been.calledWithMatch(/No consent data available/);
   });
 
   it('should create a new opportunity and suggestion with plain markdown', async () => {
@@ -208,10 +220,68 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     expect(result.status).to.equal(ok().status);
   });
 
+  it('should include auditId and all auditData fields in the opportunity', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const guidance = [{
+      body: {
+        data: {
+          mobile: 'mobile markdown',
+          desktop: 'desktop markdown',
+          impact: {
+            business: 'business markdown',
+            user: 'user markdown',
+          },
+        },
+      },
+      insight: 'insight',
+      rationale: 'rationale',
+      recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
+    }];
+    const message = { auditId: 'test-audit-id-123', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    await handler(message, context);
+
+    expect(Opportunity.create).to.have.been.called;
+    const opportunityData = Opportunity.create.getCall(0).args[0];
+
+    // Verify auditId is at opportunity root level (not in data)
+    expect(opportunityData.auditId).to.equal('test-audit-id-123');
+
+    // Verify all auditData fields are preserved in opportunity.data
+    // These fields come from getAuditData() in audit-data-provider.js
+    const { data } = opportunityData;
+
+    // temporalCondition - dynamic based on current date
+    expect(data.temporalCondition).to.be.a('string');
+    expect(data.temporalCondition).to.include('year=');
+    expect(data.temporalCondition).to.include('week');
+
+    // CPC fields - DEFAULT_CPC is 0.80 in ahrefs-cpc.js
+    expect(data.appliedCPC).to.equal(0.8);
+    expect(data.cpcSource).to.equal('default');
+    expect(data.defaultCPC).to.equal(0.8);
+
+    // Traffic metrics
+    expect(data.projectedTrafficLost).to.be.a('number');
+    expect(data.projectedTrafficValue).to.be.a('number');
+    expect(data.totalPageViews).to.be.a('number');
+    expect(data.totalAverageBounceRate).to.be.a('number');
+    expect(data.sitewideBounceDelta).to.be.a('number');
+
+    // Top3 page averages
+    expect(data.averagePageViewsTop3).to.be.a('number');
+    expect(data.averageTrafficLostTop3).to.be.a('number');
+    expect(data.averageBounceRateMobileTop3).to.be.a('number');
+
+    // top3Pages array should be preserved
+    expect(data.top3Pages).to.be.an('array');
+    expect(data.top3Pages.length).to.be.greaterThan(0);
+  });
+
   it('should create a new opportunity and suggestion from serialized JSON with markdown', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
-    const markdown = 'json\nmarkdown';
     const guidance = [{
       body: {
         data: {

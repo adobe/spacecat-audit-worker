@@ -11,6 +11,7 @@
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
+import { getAuditData } from './audit-data-provider.js';
 
 function getGuidanceObj(guidance) {
   const body = guidance && guidance[0] && guidance[0].body;
@@ -23,34 +24,35 @@ function getGuidanceObj(guidance) {
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Audit, Opportunity, Suggestion } = dataAccess;
-  const { auditId, siteId, data } = message;
+  const { Site, Opportunity, Suggestion } = dataAccess;
+  const { siteId, auditId, data } = message;
   const { url, guidance } = data;
 
   log.debug(`Message received for guidance:paid-cookie-consent handler site: ${siteId} url: ${url} message: ${JSON.stringify(message)}`);
 
-  const audit = await Audit.findById(auditId);
-  if (!audit) {
-    log.warn(`No audit found for auditId: ${auditId}`);
+  // Get site to retrieve baseURL for Athena queries
+  const site = await Site.findById(siteId);
+  if (!site) {
+    log.warn(`No site found for siteId: ${siteId}`);
     return notFound();
   }
 
-  // Validate audit has required data for opportunity creation
-  const auditResult = audit.getAuditResult();
-  if (!auditResult?.top3Pages) {
-    log.error(`Audit ${auditId} missing required data (top3Pages). This may indicate the audit was not saved correctly.`);
+  // Query Athena directly for audit data (no dependency on stored audit)
+  const auditData = await getAuditData(context, siteId, site.getBaseURL());
+  if (!auditData?.top3Pages) {
+    log.error(`Failed to get audit data for site ${siteId}. No consent data available.`);
     return notFound();
   }
-  log.debug(`Fetched Audit ${JSON.stringify(message)}`);
+  log.debug(`Fetched audit data from Athena for site: ${siteId}`);
 
   // Check for low severity and skip if so
   const guidanceParsed = getGuidanceObj(guidance);
   if (isLowSeverityGuidanceBody(guidanceParsed.body)) {
-    log.info(`Skipping opportunity creation for site: ${siteId} page: ${url} audit: ${auditId} due to low issue severity: ${guidanceParsed}`);
+    log.info(`Skipping opportunity creation for site: ${siteId} page: ${url} due to low issue severity`);
     return ok();
   }
 
-  const entity = mapToPaidOpportunity(siteId, url, audit, guidanceParsed);
+  const entity = mapToPaidOpportunity(siteId, url, auditData, guidanceParsed, auditId);
   // Always create a new opportunity
   log.debug(`Creating new paid-cookie-consent opportunity for ${siteId} page: ${url}`);
 
@@ -84,7 +86,7 @@ export default async function handler(message, context) {
     }));
   }
 
-  log.debug(`paid-cookie-consent  opportunity succesfully added for site: ${siteId} page: ${url} audit: ${auditId}  opportunity: ${JSON.stringify(opportunity, null, 2)}`);
+  log.debug(`paid-cookie-consent opportunity successfully added for site: ${siteId} page: ${url} opportunity: ${JSON.stringify(opportunity, null, 2)}`);
 
   return ok();
 }

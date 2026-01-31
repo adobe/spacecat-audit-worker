@@ -17,7 +17,7 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 import { getWeekInfo, getTemporalCondition, getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { fetchCPCData, getCPCForTrafficType, DEFAULT_CPC } from './ahrefs-cpc.js';
+import { getCPCData, calculateProjectedTrafficValue, DEFAULT_CPC } from './ahrefs-cpc.js';
 import { calculateBounceGapLoss as calculateGenericBounceGapLoss } from './bounce-gap-calculator.js';
 import {
   getTop3PagesWithTrafficLostTemplate,
@@ -27,38 +27,6 @@ import {
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 const CUT_OFF_BOUNCE_RATE = 0.3;
-
-async function getCPCData(context, siteId) {
-  const { log, env } = context;
-  const bucketName = env.S3_IMPORTER_BUCKET_NAME;
-
-  const cpcData = await fetchCPCData(context, bucketName, siteId, log);
-
-  log.info(`[paid-audit] [Site: ${siteId}] CPC loaded (${cpcData.source}): organic=$${cpcData.organicCPC.toFixed(4)}, paid=$${cpcData.paidCPC.toFixed(4)}`);
-
-  return cpcData;
-}
-
-/**
- * Calculates projected traffic value by applying the appropriate CPC per traffic type.
- * - paid traffic uses paidCPC
- * - earned/owned traffic uses organicCPC
- *
- * @param {Object} byTrafficType - Loss breakdown by traffic type
- *   Example: { paid: { loss }, earned: { loss }, owned: { loss } }
- * @param {Object} cpcData - CPC data from fetchCPCData { organicCPC, paidCPC, source }
- * @returns {number} Total projected traffic value in dollars
- */
-function calculateProjectedTrafficValue(byTrafficType, cpcData) {
-  let totalValue = 0;
-
-  for (const [trfType, data] of Object.entries(byTrafficType)) {
-    const cpc = getCPCForTrafficType(trfType, cpcData);
-    totalValue += data.loss * cpc;
-  }
-
-  return totalValue;
-}
 
 const AUDIT_CONSTANTS = {
   GUIDANCE_TYPE: 'guidance:paid-cookie-consent',
@@ -270,7 +238,7 @@ export function calculateSitewideBounceDelta(bounceGapData) {
   return Math.max(0, sitewideShowBR - sitewideHiddenBR);
 }
 
-function buildMystiqueMessage(site, auditId, url) {
+function buildMystiqueMessage(site, auditId, url, top3PageUrls) {
   return {
     type: AUDIT_CONSTANTS.GUIDANCE_TYPE,
     observation: AUDIT_CONSTANTS.OBSERVATION,
@@ -281,6 +249,7 @@ function buildMystiqueMessage(site, auditId, url) {
     time: new Date().toISOString(),
     data: {
       url,
+      top3PageUrls,
     },
   };
 }
@@ -413,10 +382,10 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
     log, sqs, env,
   } = context;
 
-  const { auditResult, id } = auditData;
+  const { top3Pages, id } = auditData;
 
   // take first page which has highest projectedTrafficLost
-  const selected = auditResult.top3Pages?.length > 0 ? auditResult.top3Pages[0] : null;
+  const selected = top3Pages?.length > 0 ? top3Pages[0] : null;
   const selectedPageUrl = selected?.url;
   if (!selectedPageUrl) {
     log.warn(
@@ -425,7 +394,9 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
     return;
   }
 
-  const mystiqueMessage = buildMystiqueMessage(site, id, selectedPageUrl);
+  // Extract all top3 page URLs for Mystique
+  const top3PageUrls = top3Pages.map((page) => page.url);
+  const mystiqueMessage = buildMystiqueMessage(site, id, selectedPageUrl, top3PageUrls);
 
   const projected = selected?.trafficLoss;
   log.info(
@@ -463,9 +434,12 @@ function createImportStep(weekIndex) {
     }
 
     return {
-      // Empty auditResult - real results will be stored in a new audit created in step 5.
+      // Placeholder auditResult - real results will be stored in a new audit created in step 5.
       // This audit is just a placeholder for the framework's continuation mechanism.
-      auditResult: {},
+      auditResult: {
+        status: 'processing',
+        message: `Importing traffic-analysis data for week ${week}/${year}`,
+      },
       fullAuditRef: finalUrl,
       type: IMPORT_TYPE_TRAFFIC_ANALYSIS,
       siteId,
@@ -486,61 +460,49 @@ export const importWeekStep3 = createImportStep(3);
 
 export async function runPaidConsentAnalysisStep(context) {
   const {
-    site, finalUrl, log, dataAccess, auditContext, audit,
+    site, finalUrl, log, auditContext, audit, env,
   } = context;
 
   log.info(`[paid-audit] [Site: ${finalUrl}] Step 5: Running consent banner analysis`);
 
-  // Run existing analysis logic (reuses paidAuditRunner)
-  const result = await paidAuditRunner(finalUrl, context, site);
+  const config = getConfig(env);
+  const siteId = site.getId();
+  const baseURL = site.getBaseURL();
 
-  // IMPORTANT: paidAuditRunner returns { auditResult: null } when no
-  // show/hidden consent data exists. Must handle this early-exit case.
-  if (!result.auditResult) {
-    log.warn(`[paid-audit] [Site: ${finalUrl}] No consent data available; skipping analysis step`);
-    return {};
-  }
+  // Get temporal parameters (7 days back from current week)
+  const { week, year } = getWeekInfo();
+  const temporalCondition = getTemporalCondition({ week, year, numSeries: 4 });
 
-  // Get the placeholder audit ID from step 1 (for cleanup reference)
-  const placeholderAuditId = audit?.getId() || auditContext?.auditId;
+  const athenaClient = AWSAthenaClient.fromContext(context, `${config.athenaTemp}/paid-audit-cookie-consent/${siteId}-${Date.now()}`);
 
-  // Create a NEW audit with the real results.
-  // The stepped audit framework only saves auditResult on step 1 (when !hasNext),
-  // so continuation steps like this one don't persist results automatically.
-  // We create a new audit here so the guidance handler can read the full auditResult.
-  // The placeholder audit from step 1 is referenced via previousAuditId for cleanup.
-  const { Audit: AuditDao } = dataAccess;
-  let newAudit;
   try {
-    newAudit = await AuditDao.create({
-      siteId: site.getId(),
-      isLive: site.getIsLive(),
-      auditedAt: new Date().toISOString(),
-      auditType: 'paid',
-      auditResult: {
-        ...result.auditResult,
-        previousAuditId: placeholderAuditId,
-      },
-      fullAuditRef: finalUrl,
-    });
-  } catch (error) {
-    log.error(`[paid-audit] [Site: ${finalUrl}] Failed to create audit: ${error.message}`);
-    return {};
-  }
+    // Only query top3Pages - this is all we need to send to Mystique
+    const top3Pages = await executeTop3TrafficLostPagesQuery(
+      athenaClient,
+      ['path'],
+      'Top 3 Pages with Traffic Lost',
+      siteId,
+      temporalCondition,
+      0,
+      3,
+      config,
+      log,
+      baseURL,
+    );
 
-  if (!newAudit?.getId()) {
-    log.error(`[paid-audit] [Site: ${finalUrl}] Audit creation returned invalid result`);
-    return {};
-  }
+    if (!top3Pages || top3Pages.length === 0) {
+      log.warn(`[paid-audit] [Site: ${finalUrl}] No top3Pages data available; skipping Mystique step`);
+      return {};
+    }
 
-  log.info(`[paid-audit] [Site: ${finalUrl}] Created audit ${newAudit.getId()} with full results (placeholder: ${placeholderAuditId})`);
+    // Get the placeholder audit ID from step 1
+    const auditId = audit?.getId() || auditContext?.auditId;
 
-  // Send results to Mystique with the NEW auditId
-  try {
-    const auditData = { auditResult: result.auditResult, id: newAudit.getId() };
+    // Send top3Pages to Mystique (guidance handler will query full data)
+    const auditData = { top3Pages, id: auditId };
     await paidConsentBannerCheck(finalUrl, auditData, context, site);
   } catch (error) {
-    log.error(`[paid-audit] [Site: ${finalUrl}] Post-processor paidConsentBannerCheck failed: ${error.message}`);
+    log.error(`[paid-audit] [Site: ${finalUrl}] Step 5 failed: ${error.message}`);
   }
 
   return {};

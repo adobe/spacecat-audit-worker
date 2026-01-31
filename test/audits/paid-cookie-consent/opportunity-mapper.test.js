@@ -56,95 +56,83 @@ describe('Paid Cookie Consent opportunity mapper', () => {
   });
 
   it('handles null and undefined values in description formatting', () => {
-    const audit = {
-      getAuditId: () => 'aid',
-      getAuditResult: () => ({
-        totalPageViews: 5000,
-        totalAverageBounceRate: 0.3,
-        projectedTrafficLost: 1500,
-        projectedTrafficValue: 1200,
-        sitewideBounceDelta: 0.15,
-        top3Pages: [],
-        averagePageViewsTop3: null,
-        averageTrafficLostTop3: undefined,
-        averageBounceRateMobileTop3: 0.35,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      }),
+    const auditData = {
+      totalPageViews: 5000,
+      totalAverageBounceRate: 0.3,
+      projectedTrafficLost: 1500,
+      projectedTrafficValue: 1200,
+      sitewideBounceDelta: 0.15,
+      top3Pages: [],
+      averagePageViewsTop3: null,
+      averageTrafficLostTop3: undefined,
+      averageBounceRateMobileTop3: 0.35,
+      temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
     };
     const guidance = { insight: 'insight', rationale: 'rationale', recommendation: 'rec' };
-    const result = mapToPaidOpportunity('site', 'https://example.com/page', audit, guidance);
+    const result = mapToPaidOpportunity('site', 'https://example.com/page', auditData, guidance, 'aid');
     // Should handle null/undefined gracefully and show '0'
     expect(result.description).to.include('0');
   });
 
   it('handles null/undefined projectedTrafficLost and projectedTrafficValue with fallback to 0', () => {
-    const audit = {
-      getAuditId: () => 'aid',
-      getAuditResult: () => ({
-        totalPageViews: 5000,
-        totalAverageBounceRate: 0.3,
-        projectedTrafficLost: null,
-        projectedTrafficValue: undefined,
-        sitewideBounceDelta: 0.15,
-        top3Pages: [],
-        averagePageViewsTop3: 1000,
-        averageTrafficLostTop3: 500,
-        averageBounceRateMobileTop3: 0.35,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      }),
+    const auditData = {
+      totalPageViews: 5000,
+      totalAverageBounceRate: 0.3,
+      projectedTrafficLost: null,
+      projectedTrafficValue: undefined,
+      sitewideBounceDelta: 0.15,
+      top3Pages: [],
+      averagePageViewsTop3: 1000,
+      averageTrafficLostTop3: 500,
+      averageBounceRateMobileTop3: 0.35,
+      temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
     };
     const guidance = { insight: 'insight', rationale: 'rationale', recommendation: 'rec' };
-    const result = mapToPaidOpportunity('site', 'https://example.com/page', audit, guidance);
+    const result = mapToPaidOpportunity('site', 'https://example.com/page', auditData, guidance, 'aid');
     // Should fallback to 0 when values are null/undefined
     expect(result.data.projectedTrafficLost).to.equal(0);
     expect(result.data.projectedTrafficValue).to.equal(0);
   });
 
   it('includes sitewideBounceDelta in description', () => {
-    const audit = {
-      getAuditId: () => 'aid',
-      getAuditResult: () => ({
-        totalPageViews: 5000,
-        totalAverageBounceRate: 0.3,
-        projectedTrafficLost: 1500,
-        projectedTrafficValue: 1200,
-        sitewideBounceDelta: 0.15,
-        top3Pages: [
-          { path: '/page1', trafficLoss: 500, pageViews: 1667, bounceRate: 0.3 },
-        ],
-        averagePageViewsTop3: 1667,
-        averageTrafficLostTop3: 500,
-        averageBounceRateMobileTop3: 0.35,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      }),
+    const auditData = {
+      totalPageViews: 5000,
+      totalAverageBounceRate: 0.3,
+      projectedTrafficLost: 1500,
+      projectedTrafficValue: 1200,
+      sitewideBounceDelta: 0.15,
+      top3Pages: [
+        { path: '/page1', trafficLoss: 500, pageViews: 1667, bounceRate: 0.3 },
+      ],
+      averagePageViewsTop3: 1667,
+      averageTrafficLostTop3: 500,
+      averageBounceRateMobileTop3: 0.35,
+      temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
     };
     const guidance = { insight: 'insight', rationale: 'rationale', recommendation: 'rec' };
-    const result = mapToPaidOpportunity('site', 'https://example.com/page', audit, guidance);
+    const result = mapToPaidOpportunity('site', 'https://example.com/page', auditData, guidance, 'aid');
     // sitewideBounceDelta of 0.15 should be shown as 15 pp
     expect(result.description).to.include('Bounce rate was 15 pp higher');
     expect(result.description).to.include('when consent banner was shown vs hidden');
   });
 
   it('handles missing sitewideBounceDelta gracefully', () => {
-    const audit = {
-      getAuditId: () => 'aid',
-      getAuditResult: () => ({
-        totalPageViews: 5000,
-        totalAverageBounceRate: 0.3,
-        projectedTrafficLost: 1500,
-        projectedTrafficValue: 1200,
-        // sitewideBounceDelta is missing
-        top3Pages: [
-          { path: '/page1', trafficLoss: 500, pageViews: 1667, bounceRate: 0.3 },
-        ],
-        averagePageViewsTop3: 1667,
-        averageTrafficLostTop3: 500,
-        averageBounceRateMobileTop3: 0.35,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      }),
+    const auditData = {
+      totalPageViews: 5000,
+      totalAverageBounceRate: 0.3,
+      projectedTrafficLost: 1500,
+      projectedTrafficValue: 1200,
+      // sitewideBounceDelta is missing
+      top3Pages: [
+        { path: '/page1', trafficLoss: 500, pageViews: 1667, bounceRate: 0.3 },
+      ],
+      averagePageViewsTop3: 1667,
+      averageTrafficLostTop3: 500,
+      averageBounceRateMobileTop3: 0.35,
+      temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
     };
     const guidance = { insight: 'insight', rationale: 'rationale', recommendation: 'rec' };
-    const result = mapToPaidOpportunity('site', 'https://example.com/page', audit, guidance);
+    const result = mapToPaidOpportunity('site', 'https://example.com/page', auditData, guidance, 'aid');
     // Missing sitewideBounceDelta should default to 0
     expect(result.description).to.include('Bounce rate was 0 pp higher');
   });
@@ -332,26 +320,23 @@ describe('Paid Cookie Consent opportunity mapper', () => {
     const guidance = { insight: 'insight', rationale: 'rationale', recommendation: 'rec' };
 
     it('formats large numbers with K suffix in description', () => {
-      const audit = {
-        getAuditId: () => 'aid',
-        getAuditResult: () => ({
-          totalPageViews: 100000,
-          totalAverageBounceRate: 0.8,
-          projectedTrafficLost: 80000,
-          projectedTrafficValue: 64000,
-          sitewideBounceDelta: 0.25,
-          top3Pages: [
-            { url: 'https://example.com/page1', trafficLoss: 40000, pageViews: 50000, bounceRate: 0.8 },
-            { url: 'https://example.com/page2', trafficLoss: 30000, pageViews: 37500, bounceRate: 0.8 },
-            { url: 'https://example.com/page3', trafficLoss: 10000, pageViews: 12500, bounceRate: 0.8 },
-          ],
-          averagePageViewsTop3: 33333.33,
-          averageTrafficLostTop3: 26666.67,
-          averageBounceRateMobileTop3: 0.85,
-          temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-        }),
+      const auditData = {
+        totalPageViews: 100000,
+        totalAverageBounceRate: 0.8,
+        projectedTrafficLost: 80000,
+        projectedTrafficValue: 64000,
+        sitewideBounceDelta: 0.25,
+        top3Pages: [
+          { url: 'https://example.com/page1', trafficLoss: 40000, pageViews: 50000, bounceRate: 0.8 },
+          { url: 'https://example.com/page2', trafficLoss: 30000, pageViews: 37500, bounceRate: 0.8 },
+          { url: 'https://example.com/page3', trafficLoss: 10000, pageViews: 12500, bounceRate: 0.8 },
+        ],
+        averagePageViewsTop3: 33333.33,
+        averageTrafficLostTop3: 26666.67,
+        averageBounceRateMobileTop3: 0.85,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       };
-      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
+      const result = mapToPaidOpportunity(siteId, url, auditData, guidance, 'aid');
       // Aggregate averagePageViewsTop3 should be formatted as 33.3K
       expect(result.description).to.include('33.3K');
       // Aggregate averageTrafficLostTop3 should be formatted as 26.7K
@@ -359,54 +344,48 @@ describe('Paid Cookie Consent opportunity mapper', () => {
     });
 
     it('keeps small numbers unformatted in description', () => {
-      const audit = {
-        getAuditId: () => 'aid',
-        getAuditResult: () => ({
-          totalPageViews: 1500,
-          totalAverageBounceRate: 0.6,
-          projectedTrafficLost: 900,
-          projectedTrafficValue: 720,
-          sitewideBounceDelta: 0.12,
-          top3Pages: [
-            { url: 'https://example.com/page1', trafficLoss: 500, pageViews: 833, bounceRate: 0.6 },
-          ],
-          averagePageViewsTop3: 500,
-          averageTrafficLostTop3: 300,
-          averageBounceRateMobileTop3: 0.65,
-          temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-        }),
+      const auditData = {
+        totalPageViews: 1500,
+        totalAverageBounceRate: 0.6,
+        projectedTrafficLost: 900,
+        projectedTrafficValue: 720,
+        sitewideBounceDelta: 0.12,
+        top3Pages: [
+          { url: 'https://example.com/page1', trafficLoss: 500, pageViews: 833, bounceRate: 0.6 },
+        ],
+        averagePageViewsTop3: 500,
+        averageTrafficLostTop3: 300,
+        averageBounceRateMobileTop3: 0.65,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       };
-      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
+      const result = mapToPaidOpportunity(siteId, url, auditData, guidance, 'aid');
       // Small numbers should stay unformatted
       expect(result.description).to.include('500');
       expect(result.description).to.include('300');
     });
 
     it('uses data from audit result correctly and rounds decimal values', () => {
-      const audit = {
-        getAuditId: () => 'aid',
-        getAuditResult: () => ({
-          totalPageViews: 5000,
-          totalAverageBounceRate: 0.3,
-          projectedTrafficLost: 1500.7534,
-          projectedTrafficValue: 1200.9876,
-          sitewideBounceDelta: 0.18,
-          top3Pages: [
-            { url, trafficLoss: 1000, pageViews: 3333, bounceRate: 0.3 },
-          ],
-          averagePageViewsTop3: 3333,
-          averageTrafficLostTop3: 1000,
-          averageBounceRateMobileTop3: 0.35,
-          temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-          // CPC information with Ahrefs data
-          appliedCPC: 0.312,
-          cpcSource: 'ahrefs',
-          defaultCPC: 0.80,
-          ahrefsOrganicCPC: 0.191,
-          ahrefsPaidCPC: 0.312,
-        }),
+      const auditData = {
+        totalPageViews: 5000,
+        totalAverageBounceRate: 0.3,
+        projectedTrafficLost: 1500.7534,
+        projectedTrafficValue: 1200.9876,
+        sitewideBounceDelta: 0.18,
+        top3Pages: [
+          { url, trafficLoss: 1000, pageViews: 3333, bounceRate: 0.3 },
+        ],
+        averagePageViewsTop3: 3333,
+        averageTrafficLostTop3: 1000,
+        averageBounceRateMobileTop3: 0.35,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+        // CPC information with Ahrefs data
+        appliedCPC: 0.312,
+        cpcSource: 'ahrefs',
+        defaultCPC: 0.80,
+        ahrefsOrganicCPC: 0.191,
+        ahrefsPaidCPC: 0.312,
       };
-      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
+      const result = mapToPaidOpportunity(siteId, url, auditData, guidance, 'aid');
       expect(result.data.pageViews).to.equal(5000);
       expect(result.data.ctr).to.equal(0);
       expect(result.data.bounceRate).to.equal(0.3);
@@ -422,22 +401,19 @@ describe('Paid Cookie Consent opportunity mapper', () => {
     });
 
     it('sets correct opportunity type and title', () => {
-      const audit = {
-        getAuditId: () => 'aid',
-        getAuditResult: () => ({
-          totalPageViews: 5000,
-          totalAverageBounceRate: 0.3,
-          projectedTrafficLost: 1500,
-          projectedTrafficValue: 1200,
-          sitewideBounceDelta: 0.15,
-          top3Pages: [],
-          averagePageViewsTop3: 3333,
-          averageTrafficLostTop3: 1000,
-          averageBounceRateMobileTop3: 0.35,
-          temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-        }),
+      const auditData = {
+        totalPageViews: 5000,
+        totalAverageBounceRate: 0.3,
+        projectedTrafficLost: 1500,
+        projectedTrafficValue: 1200,
+        sitewideBounceDelta: 0.15,
+        top3Pages: [],
+        averagePageViewsTop3: 3333,
+        averageTrafficLostTop3: 1000,
+        averageBounceRateMobileTop3: 0.35,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       };
-      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
+      const result = mapToPaidOpportunity(siteId, url, auditData, guidance, 'aid');
       expect(result.type).to.equal('consent-banner');
       expect(result.data.opportunityType).to.equal('paid-cookie-consent');
       expect(result.title).to.equal('Consent Banner covers essential page content');
@@ -446,27 +422,24 @@ describe('Paid Cookie Consent opportunity mapper', () => {
     });
 
     it('includes guidance recommendations in the opportunity', () => {
-      const audit = {
-        getAuditId: () => 'aid',
-        getAuditResult: () => ({
-          totalPageViews: 5000,
-          totalAverageBounceRate: 0.3,
-          projectedTrafficLost: 1500,
-          projectedTrafficValue: 1200,
-          sitewideBounceDelta: 0.15,
-          top3Pages: [],
-          averagePageViewsTop3: 3333,
-          averageTrafficLostTop3: 1000,
-          averageBounceRateMobileTop3: 0.35,
-          temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-        }),
+      const auditData = {
+        totalPageViews: 5000,
+        totalAverageBounceRate: 0.3,
+        projectedTrafficLost: 1500,
+        projectedTrafficValue: 1200,
+        sitewideBounceDelta: 0.15,
+        top3Pages: [],
+        averagePageViewsTop3: 3333,
+        averageTrafficLostTop3: 1000,
+        averageBounceRateMobileTop3: 0.35,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       };
       const testGuidance = {
         insight: 'test insight',
         rationale: 'test rationale',
         recommendation: 'test recommendation',
       };
-      const result = mapToPaidOpportunity(siteId, url, audit, testGuidance);
+      const result = mapToPaidOpportunity(siteId, url, auditData, testGuidance, 'aid');
       expect(result.guidance.recommendations[0].insight).to.equal('test insight');
       expect(result.guidance.recommendations[0].rationale).to.equal('test rationale');
       expect(result.guidance.recommendations[0].recommendation).to.equal('test recommendation');
@@ -474,48 +447,59 @@ describe('Paid Cookie Consent opportunity mapper', () => {
     });
 
     it('includes correct data sources in opportunity', () => {
-      const audit = {
-        getAuditId: () => 'aid',
-        getAuditResult: () => ({
-          totalPageViews: 5000,
-          totalAverageBounceRate: 0.3,
-          projectedTrafficLost: 1500,
-          projectedTrafficValue: 1200,
-          sitewideBounceDelta: 0.15,
-          top3Pages: [],
-          averagePageViewsTop3: 3333,
-          averageTrafficLostTop3: 1000,
-          averageBounceRateMobileTop3: 0.35,
-          temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-        }),
+      const auditData = {
+        totalPageViews: 5000,
+        totalAverageBounceRate: 0.3,
+        projectedTrafficLost: 1500,
+        projectedTrafficValue: 1200,
+        sitewideBounceDelta: 0.15,
+        top3Pages: [],
+        averagePageViewsTop3: 3333,
+        averageTrafficLostTop3: 1000,
+        averageBounceRateMobileTop3: 0.35,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       };
-      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
+      const result = mapToPaidOpportunity(siteId, url, auditData, guidance, 'aid');
       expect(result.data.dataSources).to.include('Site');
       expect(result.data.dataSources).to.include('RUM');
       expect(result.data.dataSources).to.include('Page');
     });
 
     it('rounds projectedTrafficLost and projectedTrafficValue to whole numbers', () => {
-      const audit = {
-        getAuditId: () => 'aid',
-        getAuditResult: () => ({
-          totalPageViews: 5000,
-          totalAverageBounceRate: 0.3,
-          projectedTrafficLost: 343557.0753175561,
-          projectedTrafficValue: 274845.66025404487,
-          sitewideBounceDelta: 0.18,
-          top3Pages: [
-            { url, trafficLoss: 1000, pageViews: 3333, bounceRate: 0.3 },
-          ],
-          averagePageViewsTop3: 3333,
-          averageTrafficLostTop3: 1000,
-          averageBounceRateMobileTop3: 0.35,
-          temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-        }),
+      const auditData = {
+        totalPageViews: 5000,
+        totalAverageBounceRate: 0.3,
+        projectedTrafficLost: 343557.0753175561,
+        projectedTrafficValue: 274845.66025404487,
+        sitewideBounceDelta: 0.18,
+        top3Pages: [
+          { url, trafficLoss: 1000, pageViews: 3333, bounceRate: 0.3 },
+        ],
+        averagePageViewsTop3: 3333,
+        averageTrafficLostTop3: 1000,
+        averageBounceRateMobileTop3: 0.35,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       };
-      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
+      const result = mapToPaidOpportunity(siteId, url, auditData, guidance, 'aid');
       expect(result.data.projectedTrafficLost).to.equal(343557);
       expect(result.data.projectedTrafficValue).to.equal(274846);
+    });
+
+    it('includes auditId in opportunity when provided', () => {
+      const auditData = {
+        totalPageViews: 5000,
+        totalAverageBounceRate: 0.3,
+        projectedTrafficLost: 1500,
+        projectedTrafficValue: 1200,
+        sitewideBounceDelta: 0.15,
+        top3Pages: [],
+        averagePageViewsTop3: 3333,
+        averageTrafficLostTop3: 1000,
+        averageBounceRateMobileTop3: 0.35,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      };
+      const result = mapToPaidOpportunity(siteId, url, auditData, guidance, 'test-audit-id');
+      expect(result.auditId).to.equal('test-audit-id');
     });
   });
 });
