@@ -20,102 +20,9 @@ import {
   loadExistingAudit,
   sendContinuationMessage,
 } from './audit-utils.js';
-import { queryBotProtectionLogs } from '../utils/cloudwatch-utils.js';
 
 const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
-
-/**
- * Checks for bot protection by querying CloudWatch logs and aborts audit if detected
- * @param {Object} params - Parameters object
- * @param {Object} params.site - Site object
- * @param {string} params.siteId - Site ID
- * @param {string} params.auditType - Audit type
- * @param {string} [params.jobId] - Scrape job ID (if available from completion message)
- * @param {Object} params.stepContext - Step context with audit
- * @param {Object} params.context - Lambda context with log
- * @returns {Promise<Object|null>} Returns ok response if bot protection detected, null otherwise
- */
-async function checkBotProtection({
-  site,
-  siteId,
-  auditType,
-  stepContext,
-  context,
-}) {
-  const { log } = context;
-  const siteUrl = site.getBaseURL();
-
-  // Get audit created timestamp, with fallback for test environments
-  const auditCreatedAt = stepContext.audit?.getAuditedAt
-    ? new Date(stepContext.audit.getAuditedAt()).getTime()
-    : Date.now() - (30 * 60 * 1000); // Default to 30 mins ago if not available
-
-  /* c8 ignore next */
-  log.info(`[BOT-PROTECTION-QUERY] Querying CloudWatch for siteUrl=${siteUrl}, auditCreatedAt=${new Date(auditCreatedAt).toISOString()}, timeWindow=${Math.round((Date.now() - auditCreatedAt) / 1000)}s`);
-
-  // Query bot protection logs using siteUrl + time window
-  const logEvents = await queryBotProtectionLogs(
-    { siteUrl },
-    context,
-    auditCreatedAt,
-  );
-
-  /* c8 ignore next */
-  log.info(`[BOT-PROTECTION-QUERY] Found ${logEvents.length} bot protection events for site ${siteUrl}`);
-
-  // No bot protection detected
-  if (logEvents.length === 0) {
-    return null;
-  }
-
-  // Bot protection detected - use log events to determine count
-  const totalUrlsCount = logEvents.length;
-  const botProtectedUrls = logEvents.map((event) => ({
-    url: event.url,
-    blockerType: event.blockerType,
-    httpStatus: event.httpStatus,
-    confidence: event.confidence,
-  }));
-
-  // Aggregate statistics
-  const stats = {
-    totalCount: logEvents.length,
-    byHttpStatus: {},
-    byBlockerType: {},
-  };
-
-  for (const event of logEvents) {
-    const status = event.httpStatus || 'unknown';
-    const blockerType = event.blockerType || 'unknown';
-    stats.byHttpStatus[status] = (stats.byHttpStatus[status] || 0) + 1;
-    stats.byBlockerType[blockerType] = (stats.byBlockerType[blockerType] || 0) + 1;
-  }
-
-  // Format detailed log message
-  const statusDetails = Object.entries(stats.byHttpStatus)
-    .map(([status, count]) => `${status}: ${count}`)
-    .join(', ');
-  const blockerDetails = Object.entries(stats.byBlockerType)
-    .map(([blockerType, count]) => `${blockerType}: ${count}`)
-    .join(', ');
-
-  log.warn(
-    `[BOT-BLOCKED] Audit aborted for type ${auditType} for site ${siteUrl} (${siteId}) with bot protection details: `
-    + `HTTP Status Counts: [${statusDetails}], `
-    + `Blocker Types: [${blockerDetails}], `
-    + `Bot Protected URLs: [${botProtectedUrls.map((url) => url.url).join(', ')}]`,
-  );
-
-  return ok({
-    skipped: true,
-    reason: 'bot-protection-detected',
-    botProtectedUrlsCount: botProtectedUrls.length,
-    totalUrlsCount,
-    botProtectedUrls,
-    stats,
-  });
-}
 
 export class StepAudit extends BaseAudit {
   constructor(
@@ -230,29 +137,48 @@ export class StepAudit extends BaseAudit {
       // For subsequent steps, load existing audit
       if (hasNext) {
         stepContext.audit = await loadExistingAudit(auditContext.auditId, context);
-
-        /* c8 ignore start */
-        // Check for bot protection when continuing from a scraping step
-        // Uses siteUrl + time window to filter CloudWatch logs
-        log.info(`[BOT-PROTECTION-CHECK] Starting check for site ${siteId}, type ${type}, auditId ${auditContext.auditId}`);
-
-        const botProtectionResult = await checkBotProtection({
-          site,
-          siteId,
-          auditType: type,
-          stepContext,
-          context,
-        });
-
-        if (botProtectionResult) {
-          log.info('[BOT-PROTECTION-CHECK] Bot protection detected, aborting audit');
-          return botProtectionResult;
-        }
-
-        log.info('[BOT-PROTECTION-CHECK] No bot protection detected, continuing audit');
-        /* c8 ignore stop */
       }
 
+      /* c8 ignore start */
+      // Check if scrape job was aborted (from SQS message)
+      if (hasScrapeJobId && data && data.abort) {
+        const { reason, details } = data.abort;
+
+        log.warn(
+          `[AUDIT-ABORTED] ${type} audit aborted for site ${siteId} due to: ${reason}`,
+          details,
+        );
+
+        // Handle bot-protection abort specifically for logging
+        if (reason === 'bot-protection') {
+          const {
+            blockedUrlsCount, totalUrlsCount, byBlockerType, byHttpStatus,
+          } = details;
+
+          const statusDetails = Object.entries(byHttpStatus || {})
+            .map(([status, count]) => `${status}: ${count}`)
+            .join(', ');
+          const blockerDetails = Object.entries(byBlockerType || {})
+            .map(([blockerType, count]) => `${blockerType}: ${count}`)
+            .join(', ');
+
+          log.warn(
+            `[BOT-BLOCKED] Audit aborted for type ${type} for site ${site.getBaseURL()} (${siteId}): `
+            + `HTTP Status: [${statusDetails}], Blocker Types: [${blockerDetails}], `
+            + `${blockedUrlsCount}/${totalUrlsCount} URLs blocked`,
+          );
+        }
+
+        // Return generic abort response
+        return ok({
+          skipped: true,
+          reason,
+          ...details,
+        });
+      }
+      /* c8 ignore stop */
+
+      /* c8 ignore start */
       // If there are scrape results, load the paths (ORIGINAL LOGIC - keep as is)
       if (hasScrapeJobId) {
         stepContext.scrapeJobId = auditContext.scrapeJobId;
@@ -260,6 +186,7 @@ export class StepAudit extends BaseAudit {
         stepContext.scrapeResultPaths = await scrapeClient
           .getScrapeResultPaths(auditContext.scrapeJobId);
       }
+      /* c8 ignore stop */
 
       // Run the step
       const stepResult = await step.handler(stepContext);
