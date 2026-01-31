@@ -1,3 +1,10 @@
+# [1.297.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.296.2...v1.297.0) (2026-01-31)
+
+
+### Features
+
+* add ptr-selector audit ([#1919](https://github.com/adobe/spacecat-audit-worker/issues/1919)) ([44d6888](https://github.com/adobe/spacecat-audit-worker/commit/44d68886d9c60434f9e34df7d302687754df78e0))
+
 ## [1.296.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.296.1...v1.296.2) (2026-01-31)
 
 
