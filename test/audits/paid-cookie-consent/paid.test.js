@@ -208,14 +208,12 @@ describe('Paid Cookie Consent Audit', () => {
     };
     const contextWithAhrefs = {
       ...context,
-      s3: {
-        s3Client: {
-          send: sandbox.stub().resolves({
-            Body: {
-              transformToString: () => JSON.stringify(ahrefsData),
-            },
-          }),
-        },
+      s3Client: {
+        send: sandbox.stub().resolves({
+          Body: {
+            transformToString: () => JSON.stringify(ahrefsData),
+          },
+        }),
       },
     };
     const result = await paidAuditRunner(auditUrl, contextWithAhrefs, site);
@@ -1133,7 +1131,7 @@ describe('runPaidConsentAnalysisStep', () => {
     const result = await runPaidConsentAnalysisStep(stepContext);
 
     expect(result).to.deep.equal({});
-    // Results are sent to Mystique (no Audit.create in new flow)
+    // Results are sent to Mystique, not stored in audit
     expect(context.sqs.sendMessage).to.have.been.called;
   });
 

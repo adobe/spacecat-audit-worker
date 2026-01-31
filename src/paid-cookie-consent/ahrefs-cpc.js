@@ -41,7 +41,7 @@ export async function fetchCPCData(context, bucketName, siteId, log) {
       Key: key,
     });
 
-    const response = await context.s3.s3Client.send(command);
+    const response = await context.s3Client.send(command);
     const bodyString = await response.Body.transformToString();
     const data = JSON.parse(bodyString);
 

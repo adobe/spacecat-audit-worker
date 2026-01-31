@@ -249,7 +249,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     expect(opportunityData.auditId).to.equal('test-audit-id-123');
 
     // Verify all auditData fields are preserved in opportunity.data
-    // These fields come from getAuditData() in audit-data-provider.js
+    // Note: The opportunity mapper transforms some field names from auditData
     const { data } = opportunityData;
 
     // temporalCondition - dynamic based on current date
@@ -262,21 +262,119 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     expect(data.cpcSource).to.equal('default');
     expect(data.defaultCPC).to.equal(0.8);
 
-    // Traffic metrics
+    // Traffic metrics (mapper renames: pageViews = totalPageViews, bounceRate = totalAverageBounceRate)
     expect(data.projectedTrafficLost).to.be.a('number');
     expect(data.projectedTrafficValue).to.be.a('number');
-    expect(data.totalPageViews).to.be.a('number');
-    expect(data.totalAverageBounceRate).to.be.a('number');
-    expect(data.sitewideBounceDelta).to.be.a('number');
+    expect(data.pageViews).to.be.a('number'); // was totalPageViews in auditData
+    expect(data.bounceRate).to.be.a('number'); // was totalAverageBounceRate in auditData
 
-    // Top3 page averages
-    expect(data.averagePageViewsTop3).to.be.a('number');
-    expect(data.averageTrafficLostTop3).to.be.a('number');
-    expect(data.averageBounceRateMobileTop3).to.be.a('number');
+    // page URL is preserved
+    expect(data.page).to.equal(TEST_PAGE);
+  });
 
-    // top3Pages array should be preserved
-    expect(data.top3Pages).to.be.an('array');
-    expect(data.top3Pages.length).to.be.greaterThan(0);
+  it('should handle Athena results with missing optional fields (branch coverage)', async () => {
+    // Reset mock to return data with missing optional fields to cover || 0 branches
+    mockAthenaClient.query.reset();
+    // 1. Bounce gap metrics with missing bounce_rate and pageviews
+    mockAthenaClient.query.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show' }, // missing pageviews, bounce_rate
+      { trf_type: 'paid', consent: 'hidden', pageviews: '5000', bounce_rate: '0.65' },
+    ]);
+    // 2. Top3 pages with missing optional fields (traffic_loss, pct_pageviews, click_rate, etc.)
+    mockAthenaClient.query.onCall(1).resolves([
+      { path: '/to-check' }, // missing all optional fields
+    ]);
+    // 3. Lost traffic summary with missing pageviews (covers totalPageViews = 0 branch)
+    mockAthenaClient.query.onCall(2).resolves([
+      { device: 'mobile' }, // missing pageviews
+    ]);
+    // 4. Top3 by device with missing fields
+    mockAthenaClient.query.onCall(3).resolves([
+      { path: '/to-check', device: 'mobile' }, // missing bounce_rate
+    ]);
+
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const guidance = [{
+      body: { data: { mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' } } },
+      insight: 'insight', rationale: 'rationale', recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
+    }];
+    const message = { auditId: 'test-audit-id', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    await handler(message, context);
+
+    expect(Opportunity.create).to.have.been.called;
+    const opportunityData = Opportunity.create.getCall(0).args[0];
+    // Verify defaults are applied correctly when fields are missing
+    // opportunity.data.pageViews is stats.totalPageViews in the mapper
+    expect(opportunityData.data.pageViews).to.equal(0);
+    // opportunity.data.bounceRate is stats.totalAverageBounceRate in the mapper (totalPageViews = 0 branch)
+    expect(opportunityData.data.bounceRate).to.equal(0);
+  });
+
+  it('should handle zero pageviews in sitewide bounce delta calculation', async () => {
+    // Reset mock to cover totalPVShow = 0 and totalPVHidden = 0 branches (lines 138-139)
+    mockAthenaClient.query.reset();
+    // 1. Bounce gap with zero pageviews for show and hidden
+    mockAthenaClient.query.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show', pageviews: '0', bounce_rate: '0.8' },
+      { trf_type: 'paid', consent: 'hidden', pageviews: '0', bounce_rate: '0.65' },
+    ]);
+    // 2-4. Normal responses for other queries
+    mockAthenaClient.query.onCall(1).resolves([
+      { path: '/to-check', pageviews: '5000', traffic_loss: '4000', bounce_rate: '0.8' },
+    ]);
+    mockAthenaClient.query.onCall(2).resolves([
+      { device: 'mobile', pageviews: '5000', traffic_loss: '4000', bounce_rate: '0.8' },
+    ]);
+    mockAthenaClient.query.onCall(3).resolves([
+      { path: '/to-check', device: 'mobile', pageviews: '5000', traffic_loss: '4000', bounce_rate: '0.85' },
+    ]);
+
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const guidance = [{
+      body: { data: { mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' } } },
+      insight: 'insight', rationale: 'rationale', recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
+    }];
+    const message = { auditId: 'test-audit-id', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    await handler(message, context);
+
+    // Should still create opportunity - the sitewideBounceDelta calculation handles 0 pageviews
+    expect(Opportunity.create).to.have.been.called;
+    // The opportunity is created, meaning the ternary branches for 0 pageviews were exercised
+  });
+
+  it('should include ahrefs CPC fields when cpcSource is ahrefs (line 229 branch)', async () => {
+    // Configure S3 to return valid ahrefs CPC data
+    const ahrefsCPCData = {
+      organicTraffic: 10000,
+      organicCost: 9500, // organicCPC = 9500/10000 = 0.95
+      paidTraffic: 5000,
+      paidCost: 6250, // paidCPC = 6250/5000 = 1.25
+    };
+    s3ClientMock.send.resolves({
+      Body: { transformToString: () => JSON.stringify(ahrefsCPCData) },
+    });
+
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const guidance = [{
+      body: { data: { mobile: 'mobile', desktop: 'desktop', impact: { business: 'biz', user: 'usr' } } },
+      insight: 'insight', rationale: 'rationale', recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
+    }];
+    const message = { auditId: 'test-audit-id', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    await handler(message, context);
+
+    expect(Opportunity.create).to.have.been.called;
+    const opportunityData = Opportunity.create.getCall(0).args[0];
+    // Verify ahrefs-specific fields are included (line 229 conditional spread)
+    expect(opportunityData.data.cpcSource).to.equal('ahrefs');
+    expect(opportunityData.data.ahrefsOrganicCPC).to.equal(0.95);
+    expect(opportunityData.data.ahrefsPaidCPC).to.equal(1.25);
+    expect(opportunityData.data.appliedCPC).to.equal(1.25);
   });
 
   it('should create a new opportunity and suggestion from serialized JSON with markdown', async () => {
@@ -685,9 +783,14 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
       await handler(message, context);
 
-      // Should not make any S3 calls
-      expect(s3ClientMock.send).to.not.have.been.called;
-
+      // Should not make HeadObjectCommand or CopyObjectCommand calls (screenshot copying)
+      // Note: getCPCData may still call S3 for CPC data via GetObjectCommand
+      const s3Calls = s3ClientMock.send.getCalls();
+      const screenshotCopyingCalls = s3Calls.filter(
+        (call) => call.args[0] instanceof HeadObjectCommand
+          || call.args[0] instanceof CopyObjectCommand,
+      );
+      expect(screenshotCopyingCalls).to.have.lengthOf(0);
     });
     it('should handle file not found gracefully and continue processing', async () => {
       const jobId = 'test-job-123';

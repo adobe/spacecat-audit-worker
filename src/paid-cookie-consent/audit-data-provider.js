@@ -22,7 +22,7 @@ function getConfig(env) {
     RUM_METRICS_COMPACT_TABLE: rumMetricsCompactTable,
     S3_BUCKET_NAME: bucketName,
     PAID_DATA_THRESHOLD: paidDataThreshold,
-  } = env || {};
+  } = env;
 
   return {
     rumMetricsDatabase: rumMetricsDatabase ?? 'spacecat',

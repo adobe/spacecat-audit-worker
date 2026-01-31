@@ -35,10 +35,8 @@ describe('Ahrefs CPC', () => {
     };
 
     context = {
-      s3: {
-        s3Client: {
-          send: sinon.stub(),
-        },
+      s3Client: {
+        send: sinon.stub(),
       },
     };
   });
@@ -56,7 +54,7 @@ describe('Ahrefs CPC', () => {
         paidCost: 289.55,
       };
 
-      context.s3.s3Client.send.resolves({
+      context.s3Client.send.resolves({
         Body: { transformToString: () => Promise.resolve(JSON.stringify(mockData)) },
       });
 
@@ -75,7 +73,7 @@ describe('Ahrefs CPC', () => {
         paidCost: 0,
       };
 
-      context.s3.s3Client.send.resolves({
+      context.s3Client.send.resolves({
         Body: { transformToString: () => Promise.resolve(JSON.stringify(mockData)) },
       });
 
@@ -87,7 +85,7 @@ describe('Ahrefs CPC', () => {
     });
 
     it('should return default CPC when S3 fetch fails', async () => {
-      context.s3.s3Client.send.rejects(new Error('File not found'));
+      context.s3Client.send.rejects(new Error('File not found'));
 
       const result = await fetchCPCData(context, 'test-bucket', 'site123', log);
 
@@ -138,7 +136,7 @@ describe('Ahrefs CPC', () => {
         paidCost: 100,
       };
 
-      context.s3.s3Client.send.resolves({
+      context.s3Client.send.resolves({
         Body: { transformToString: () => Promise.resolve(JSON.stringify(mockData)) },
       });
 
