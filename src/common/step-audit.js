@@ -189,46 +189,6 @@ export class StepAudit extends BaseAudit {
       }
 
       /* c8 ignore start */
-      // Check if scrape job was aborted (from SQS message)
-      // The abort field is at the same level as scrapeResults
-      if (hasScrapeJobId && data && data.abort) {
-        const { reason, details } = data.abort;
-
-        log.warn(
-          `[AUDIT-ABORTED] ${type} audit aborted for site ${siteId} due to: ${reason}`,
-          details,
-        );
-
-        // Handle bot-protection abort specifically for logging
-        if (reason === 'bot-protection') {
-          const {
-            blockedUrlsCount, totalUrlsCount, byBlockerType, byHttpStatus,
-          } = details;
-
-          const statusDetails = Object.entries(byHttpStatus || {})
-            .map(([status, count]) => `${status}: ${count}`)
-            .join(', ');
-          const blockerDetails = Object.entries(byBlockerType || {})
-            .map(([blockerType, count]) => `${blockerType}: ${count}`)
-            .join(', ');
-
-          log.warn(
-            `[BOT-BLOCKED] Audit aborted for type ${type} for site ${site.getBaseURL()} (${siteId}): `
-            + `HTTP Status: [${statusDetails}], Blocker Types: [${blockerDetails}], `
-            + `${blockedUrlsCount}/${totalUrlsCount} URLs blocked`,
-          );
-        }
-
-        // Return generic abort response
-        return ok({
-          skipped: true,
-          reason,
-          ...details,
-        });
-      }
-      /* c8 ignore stop */
-
-      /* c8 ignore start */
       // If there are scrape results, load the paths (ORIGINAL LOGIC - keep as is)
       if (hasScrapeJobId) {
         stepContext.scrapeJobId = auditContext.scrapeJobId;
