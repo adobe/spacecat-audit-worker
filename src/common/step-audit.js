@@ -106,7 +106,7 @@ export class StepAudit extends BaseAudit {
     const { stepNames } = this;
     const { log } = context;
     const {
-      type, data, siteId, auditContext = {},
+      type, data, siteId, auditContext = {}, abort, jobId,
     } = message;
 
     try {
@@ -117,32 +117,59 @@ export class StepAudit extends BaseAudit {
         return ok();
       }
 
+      /* c8 ignore start */
+      // DEBUG: Log received message structure to trace SQS flow
+      log.info(`[SQS-RECEIVE-DEBUG] Message received: type=${type}, siteId=${siteId}, `
+        + `jobId=${jobId || 'none'}, hasAbort=${!!abort}, abortReason=${abort?.reason || 'none'}`);
+
+      if (abort) {
+        log.info(`[SQS-RECEIVE-DEBUG] Abort field found: ${JSON.stringify(abort)}`);
+      }
+      /* c8 ignore stop */
+
+      /* c8 ignore start */
+      // Check if scrape job was aborted (e.g., due to bot protection)
+      if (abort) {
+        const { reason, details } = abort;
+
+        log.warn(
+          `[AUDIT-ABORTED] ${type} audit aborted for site ${siteId} due to: ${reason}`,
+          details,
+        );
+
+        // Handle bot-protection abort specifically for detailed logging
+        if (reason === 'bot-protection') {
+          const {
+            blockedUrlsCount, totalUrlsCount, byBlockerType, byHttpStatus,
+          } = details;
+
+          const statusDetails = Object.entries(byHttpStatus || {})
+            .map(([status, count]) => `${status}: ${count}`)
+            .join(', ');
+          const blockerDetails = Object.entries(byBlockerType || {})
+            .map(([blockerType, count]) => `${blockerType}: ${count}`)
+            .join(', ');
+
+          log.warn(
+            `[BOT-BLOCKED] Audit aborted for type ${type} for site ${site.getBaseURL()} (${siteId}): `
+            + `HTTP Status: [${statusDetails}], Blocker Types: [${blockerDetails}], `
+            + `${blockedUrlsCount}/${totalUrlsCount} URLs blocked`,
+          );
+        }
+
+        // Return generic abort response
+        return ok({
+          skipped: true,
+          reason,
+          ...details,
+        });
+      }
+      /* c8 ignore stop */
+
       // Determine which step to run
       const hasNext = hasText(auditContext.next);
       /* c8 ignore next */
       const hasScrapeJobId = hasText(auditContext.scrapeJobId);
-
-      /* c8 ignore start */
-      // DEBUG: Log received message structure to trace SQS flow
-      log.info(`[SQS-RECEIVE-DEBUG] Message received: type=${type}, siteId=${siteId}, `
-        + `hasNext=${hasNext}, hasScrapeJobId=${hasScrapeJobId}, `
-        + `hasData=${!!data}, dataKeys=${data ? Object.keys(data).join(',') : 'none'}`);
-
-      if (hasScrapeJobId && data) {
-        log.info('[SQS-RECEIVE-DEBUG] Data structure: '
-          + `jobId=${data.jobId || 'missing'}, `
-          + `processingType=${data.processingType || 'missing'}, `
-          + `scrapeResultsCount=${data.scrapeResults?.length || 0}, `
-          + `hasAbort=${!!data.abort}, `
-          + `abortReason=${data.abort?.reason || 'none'}`);
-
-        if (data.abort) {
-          log.info(`[SQS-RECEIVE-DEBUG] Abort field found: ${JSON.stringify(data.abort)}`);
-        } else {
-          log.warn('[SQS-RECEIVE-DEBUG] NO ABORT FIELD in data! This is the issue.');
-        }
-      }
-      /* c8 ignore stop */
 
       const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
