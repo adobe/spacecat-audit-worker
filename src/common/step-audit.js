@@ -119,8 +119,13 @@ export class StepAudit extends BaseAudit {
 
       /* c8 ignore start */
       // DEBUG: Log received message structure to trace SQS flow
+      const actualJobId = jobId || auditContext?.scrapeJobId || 'none';
       log.info(`[SQS-RECEIVE-DEBUG] Message received: type=${type}, siteId=${siteId}, `
-        + `jobId=${jobId || 'none'}, hasAbort=${!!abort}, abortReason=${abort?.reason || 'none'}`);
+        + `jobId=${actualJobId}, hasAbort=${!!abort}, abortReason=${abort?.reason || 'none'}`);
+
+      if (auditContext?.scrapeJobId) {
+        log.info(`[SQS-RECEIVE-DEBUG] JobId found in auditContext.scrapeJobId: ${auditContext.scrapeJobId}`);
+      }
 
       if (abort) {
         log.info(`[SQS-RECEIVE-DEBUG] Abort field found: ${JSON.stringify(abort)}`);
