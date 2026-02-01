@@ -122,6 +122,28 @@ export class StepAudit extends BaseAudit {
       /* c8 ignore next */
       const hasScrapeJobId = hasText(auditContext.scrapeJobId);
 
+      /* c8 ignore start */
+      // DEBUG: Log received message structure to trace SQS flow
+      log.info(`[SQS-RECEIVE-DEBUG] Message received: type=${type}, siteId=${siteId}, `
+        + `hasNext=${hasNext}, hasScrapeJobId=${hasScrapeJobId}, `
+        + `hasData=${!!data}, dataKeys=${data ? Object.keys(data).join(',') : 'none'}`);
+
+      if (hasScrapeJobId && data) {
+        log.info('[SQS-RECEIVE-DEBUG] Data structure: '
+          + `jobId=${data.jobId || 'missing'}, `
+          + `processingType=${data.processingType || 'missing'}, `
+          + `scrapeResultsCount=${data.scrapeResults?.length || 0}, `
+          + `hasAbort=${!!data.abort}, `
+          + `abortReason=${data.abort?.reason || 'none'}`);
+
+        if (data.abort) {
+          log.info(`[SQS-RECEIVE-DEBUG] Abort field found: ${JSON.stringify(data.abort)}`);
+        } else {
+          log.warn('[SQS-RECEIVE-DEBUG] NO ABORT FIELD in data! This is the issue.');
+        }
+      }
+      /* c8 ignore stop */
+
       const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
       const step = this.getStep(stepName);
@@ -141,6 +163,7 @@ export class StepAudit extends BaseAudit {
 
       /* c8 ignore start */
       // Check if scrape job was aborted (from SQS message)
+      // The abort field is at the same level as scrapeResults
       if (hasScrapeJobId && data && data.abort) {
         const { reason, details } = data.abort;
 
