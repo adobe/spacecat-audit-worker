@@ -2074,6 +2074,61 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
       });
 
+      it('should create new domain-wide suggestion when only non-domain-wide suggestions exist', async () => {
+        // This test covers the case where isDomainWideSuggestionData returns false
+        const regularSuggestion = {
+          getId: () => 'regular-suggestion-id',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            url: 'https://example.com/some-page',
+            contentGainRatio: 1.5,
+          }),
+        };
+
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([regularSuggestion]),
+        };
+        const syncSuggestionsStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../../src/prerender/handler.js', {
+          '../../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: sinon.stub().resolves(true),
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site',
+          auditId: 'audit-123',
+          scrapeJobId: 'job-123',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [{ url: 'https://example.com/page1', needsPrerender: true, contentGainRatio: 2.0, wordCountBefore: 100, wordCountAfter: 200 }],
+          },
+        };
+
+        const context = {
+          log: { info: sinon.stub(), debug: sinon.stub(), warn: sinon.stub() },
+          dataAccess: { Suggestion: { STATUSES: { NEW: 'NEW', FIXED: 'FIXED', PENDING_VALIDATION: 'PENDING_VALIDATION', SKIPPED: 'SKIPPED' } } },
+          site: { getId: () => 'test-site-id' },
+        };
+
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        const syncArgs = syncSuggestionsStub.firstCall.args[0];
+        // Should create new domain-wide since existing suggestion is not domain-wide
+        const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
+        expect(domainWideSuggestion).to.exist;
+        expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
+      });
+
       it('should properly execute syncSuggestions with domain-wide aggregate suggestion mapper and merge functions', async () => {
         // This test specifically ensures lines 460-466 are covered (mapNewSuggestion and mergeDataFunction)
         const mockOpportunity = { getId: () => 'test-opp-id', getSuggestions: sinon.stub().resolves([]) };
