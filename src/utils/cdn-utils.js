@@ -412,8 +412,9 @@ export function buildDateFilter(startDate, endDate) {
 }
 
 /**
- * Builds user agent filter for AI agents (ChatGPT, Perplexity, Google, Claude)
- * Reusable across different audit modules for CDN log analysis
+ * Builds user agent filter for reports
+ * It excludes searchbots for now (Googlebot, Bingbot, Google-Extended)
+ * Used by cdn-logs-report and page-citability audits
  */
 export function buildUserAgentFilter() {
   const {
@@ -423,17 +424,18 @@ export function buildUserAgentFilter() {
     claude,
     mistralai,
     amazon,
-    bing,
   } = PROVIDER_USER_AGENT_PATTERNS;
+
+  // Remove searchbot patterns from google pattern (Google-Extended and Googlebot)
+  const googleWithoutSearchbots = google.replace(/\|Google-Extended\|Googlebot/g, '');
 
   return `(
     REGEXP_LIKE(user_agent, '${chatgpt}') OR 
     REGEXP_LIKE(user_agent, '${perplexity}') OR 
-    REGEXP_LIKE(user_agent, '${google}') OR
+    REGEXP_LIKE(user_agent, '${googleWithoutSearchbots}') OR
     REGEXP_LIKE(user_agent, '${claude}') OR
     REGEXP_LIKE(user_agent, '${mistralai}') OR
-    REGEXP_LIKE(user_agent, '${amazon}') OR
-    REGEXP_LIKE(user_agent, '${bing}')
+    REGEXP_LIKE(user_agent, '${amazon}')
   )`;
 }
 /* c8 ignore end */
