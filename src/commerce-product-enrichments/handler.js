@@ -150,13 +150,11 @@ export async function submitForScraping(context) {
 
   const result = {
     urls: filteredUrls.map((url) => ({ url })),
+    siteId: site.getId(),
     options: {
       waitTimeoutForMetaTags: 5000,
     },
     maxScrapeAge: 0,
-    auditData: {
-      siteId: site.getId(),
-    },
   };
 
   log.info(`${LOG_PREFIX} Step 2: submitForScraping completed, returning ${result.urls.length} URLs for scraping`);
