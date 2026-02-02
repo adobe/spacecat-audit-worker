@@ -149,6 +149,9 @@ export async function submitForScraping(context) {
     siteId: site.getId(),
     jobId: site.getId(), // Use siteId as jobId so scraper stores results in correct path
     processingType: 'default',
+    auditContext: {
+      scrapeJobId: site.getId(), // Pass scrapeJobId to Step 3 for retrieving results
+    },
     options: {
       waitTimeoutForMetaTags: 5000,
     },
