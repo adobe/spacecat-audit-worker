@@ -106,6 +106,7 @@ import healthCheck from './health-check/handler.js';
 import wikipediaAnalysis from './wikipedia-analysis/handler.js';
 import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
 import frescopaDataGeneration from './frescopa-data-generation/handler.js';
+import ptrSelector from './ptr-selector/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -201,6 +202,7 @@ const HANDLERS = {
   'wikipedia-analysis': wikipediaAnalysis,
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
   'frescopa-data-generation': frescopaDataGeneration,
+  'ptr-selector': ptrSelector,
   dummy: (message) => ok(message),
 };
 
