@@ -420,19 +420,16 @@ export function buildUserAgentFilter() {
   const {
     chatgpt,
     perplexity,
-    google,
+    googleai,
     claude,
     mistralai,
     amazon,
   } = PROVIDER_USER_AGENT_PATTERNS;
 
-  // Remove searchbot patterns from google pattern (Google-Extended and Googlebot)
-  const googleWithoutSearchbots = google.replace(/\|Google-Extended\|Googlebot/g, '');
-
   return `(
     REGEXP_LIKE(user_agent, '${chatgpt}') OR 
     REGEXP_LIKE(user_agent, '${perplexity}') OR 
-    REGEXP_LIKE(user_agent, '${googleWithoutSearchbots}') OR
+    REGEXP_LIKE(user_agent, '${googleai}') OR
     REGEXP_LIKE(user_agent, '${claude}') OR
     REGEXP_LIKE(user_agent, '${mistralai}') OR
     REGEXP_LIKE(user_agent, '${amazon}')
