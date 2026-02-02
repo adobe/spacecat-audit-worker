@@ -1,3 +1,10 @@
+## [1.297.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.297.0...v1.297.1) (2026-02-02)
+
+
+### Bug Fixes
+
+* exclude searchbots from cdn log reports ([#1922](https://github.com/adobe/spacecat-audit-worker/issues/1922)) ([7a41032](https://github.com/adobe/spacecat-audit-worker/commit/7a41032108b23a44886cb77df4cf3bae01006098))
+
 # [1.297.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.296.2...v1.297.0) (2026-01-31)
 
 
