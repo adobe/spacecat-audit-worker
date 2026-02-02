@@ -198,11 +198,33 @@ export const generateSuggestionData = async (context) => {
   );
 
   const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
+
+  // Custom merge function to preserve user-edited fields
+  const mergeDataFunction = (existingData, newData) => {
+    const merged = {
+      ...existingData,
+      ...newData,
+    };
+
+    // Preserve urlEdited and isEdited flag if user has made a selection (AI or custom)
+    // eslint-disable-next-line max-len
+    if (existingData.urlEdited !== undefined && existingData.urlEdited !== null && existingData.isEdited !== null) {
+      merged.urlEdited = existingData.urlEdited;
+      merged.isEdited = existingData.isEdited;
+    } else {
+      // Explicitly remove urlEdited if not present or flag is null
+      delete merged.urlEdited;
+    }
+
+    return merged;
+  };
+
   await syncSuggestions({
     opportunity,
     newData: auditResult?.brokenBacklinks,
     buildKey,
     context,
+    mergeDataFunction,
     mapNewSuggestion: (backlink) => ({
       opportunityId: opportunity.getId(),
       type: 'REDIRECT_UPDATE',
