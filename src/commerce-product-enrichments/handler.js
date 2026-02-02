@@ -116,6 +116,10 @@ export async function submitForScraping(context) {
   const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
   log.info(`${LOG_PREFIX} Retrieved ${includedURLs.length} included URLs from site config`);
 
+  for (const url of includedURLs) {
+    log.info(`${LOG_PREFIX} Included URL: ${url}`);
+  }
+
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
   log.info(`${LOG_PREFIX} Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
 
@@ -146,17 +150,13 @@ export async function submitForScraping(context) {
 
   const result = {
     urls: filteredUrls.map((url) => ({ url })),
-    siteId: site.getId(),
-    jobId: site.getId(), // Use siteId as jobId so scraper stores results in correct path
-    processingType: 'default',
-    auditContext: {
-      scrapeJobId: site.getId(), // Pass scrapeJobId to Step 3 for retrieving results
-    },
     options: {
       waitTimeoutForMetaTags: 5000,
     },
-    allowCache: false,
     maxScrapeAge: 0,
+    auditData: {
+      siteId: site.getId(),
+    },
   };
 
   log.info(`${LOG_PREFIX} Step 2: submitForScraping completed, returning ${result.urls.length} URLs for scraping`);
@@ -238,11 +238,11 @@ export async function runAuditAndProcessResults(context) {
     [...scrapeResultPaths].map(async ([url, s3Path]) => {
       try {
         // Read the scrape.json file from S3
-        log.debug(`${LOG_PREFIX} Reading scrape data from S3: ${s3Path}`);
+        log.info(`${LOG_PREFIX} Reading scrape data from S3: ${s3Path}`);
         const scrapeData = await getObjectFromKey(s3Client, bucketName, s3Path, log);
 
         if (!scrapeData) {
-          log.warn(`${LOG_PREFIX} No scrape data found for: ${url}`);
+          log.error(`${LOG_PREFIX} No scrape data found for: ${url}`);
           return {
             success: false,
             url,
@@ -260,10 +260,11 @@ export async function runAuditAndProcessResults(context) {
         if (Array.isArray(Product) && Product.length > 0) {
           // Count products with SKU
           skuCount = Product.filter((product) => product.sku).length;
+          log.info(`${LOG_PREFIX} SKU count: ${skuCount}`);
           isProductPage = skuCount === 1;
         }
 
-        log.debug(`${LOG_PREFIX} Processed page: ${url} (isProductPage: ${isProductPage})`);
+        log.info(`${LOG_PREFIX} Processed page: ${url} (isProductPage: ${isProductPage})`);
 
         return {
           success: true,

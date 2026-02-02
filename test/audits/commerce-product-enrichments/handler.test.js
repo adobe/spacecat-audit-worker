@@ -155,17 +155,13 @@ describe('Commerce Product Enrichments Handler', () => {
         { url: 'ht!tp://bad-url' },
         { url: 'https://example.com/page-2' },
       ],
-      siteId: 'site-1',
-      jobId: 'site-1',
-      processingType: 'default',
-      auditContext: {
-        scrapeJobId: 'site-1',
-      },
       options: {
         waitTimeoutForMetaTags: 5000,
       },
-      allowCache: false,
       maxScrapeAge: 0,
+      auditData: {
+        siteId: 'site-1',
+      },
     });
   });
 
@@ -340,17 +336,13 @@ describe('Commerce Product Enrichments Handler', () => {
 
     expect(result).to.deep.equal({
       urls: [{ url: 'https://example.com/page-1' }],
-      siteId: 'site-1',
-      jobId: 'site-1',
-      processingType: 'default',
-      auditContext: {
-        scrapeJobId: 'site-1',
-      },
       options: {
         waitTimeoutForMetaTags: 5000,
       },
-      allowCache: false,
       maxScrapeAge: 0,
+      auditData: {
+        siteId: 'site-1',
+      },
     });
   });
 
@@ -513,34 +505,43 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
     expect(result.auditResult.processedPages).to.equal(0);
     expect(result.auditResult.failedPages).to.equal(1);
-    expect(log.warn).to.have.been.calledWith(sinon.match(/No scrape data found/));
+    expect(log.error).to.have.been.calledWith(sinon.match(/No scrape data found/));
   });
 
   it('runAuditAndProcessResults handles unexpected errors during processing', async () => {
+    const scrapeData = {
+      url: 'https://example.com/page-1',
+      finalUrl: 'https://example.com/page-1',
+      scrapeResult: {
+        structuredData: {
+          jsonld: {
+            Product: [{ sku: 'TEST-SKU' }],
+          },
+        },
+      },
+    };
+
     const s3Client = {
       send: sinon.stub().resolves({
         ContentType: 'application/json',
         Body: {
-          transformToString: sinon.stub().resolves(JSON.stringify({
-            url: 'https://example.com/page-1',
-            finalUrl: 'https://example.com/page-1',
-            scrapeResult: {},
-          })),
+          transformToString: sinon.stub().resolves(JSON.stringify(scrapeData)),
         },
       }),
-    };
-
-    // Create a log mock where debug throws an error
-    const logWithError = {
-      info: sinon.spy(),
-      warn: sinon.spy(),
-      error: sinon.spy(),
-      debug: sinon.stub().throws(new Error('Unexpected logging error')),
     };
 
     const scrapeResultPaths = new Map([
       ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
     ]);
+
+    // Create a log mock where info throws an error when called with SKU count message
+    const logWithError = {
+      info: sinon.stub(),
+      warn: sinon.spy(),
+      error: sinon.spy(),
+    };
+    // Make log.info throw on the SKU count log message
+    logWithError.info.withArgs(sinon.match(/SKU count/)).throws(new Error('Unexpected logging error'));
 
     const context = {
       site,
@@ -559,8 +560,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
     expect(result.auditResult.processedPages).to.equal(0);
     expect(result.auditResult.failedPages).to.equal(1);
-    // getObjectFromKey logs S3 errors, so check that log.error was called
-    expect(logWithError.error).to.have.been.called;
+    expect(logWithError.error).to.have.been.calledWith(sinon.match(/Error processing scrape result/));
   });
 
   it('runAuditAndProcessResults handles missing metadata.url', async () => {
