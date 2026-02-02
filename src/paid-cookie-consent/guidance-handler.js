@@ -70,7 +70,7 @@ export default async function handler(message, context) {
   log.debug(`Created suggestion for opportunity ${opportunity.getId()}`);
 
   // Only after suggestion is successfully created,
-  // find and mark existing NEW system opportunities as IGNORED
+  // find and remove existing NEW system opportunities
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   const existingMatches = existingOpportunities
     .filter((oppty) => oppty.getType() === 'consent-banner')
@@ -78,11 +78,10 @@ export default async function handler(message, context) {
     .filter((oppty) => oppty.getId() !== opportunity.getId()); // Exclude the newly created one
 
   if (existingMatches.length > 0) {
-    log.debug(`Found ${existingMatches.length} existing NEW system opportunities for page ${url}. Marking them as IGNORED.`);
+    log.debug(`Found ${existingMatches.length} existing NEW system opportunities for page ${url}. Removing them.`);
     await Promise.all(existingMatches.map(async (oldOppty) => {
-      oldOppty.setStatus('IGNORED');
-      await oldOppty.save();
-      log.info(`Marked opportunity ${oldOppty.getId()} as IGNORED`);
+      await oldOppty.remove();
+      log.info(`Removed opportunity ${oldOppty.getId()}`);
     }));
   }
 

@@ -408,30 +408,27 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     expect(result.status).to.equal(ok().status);
   });
 
-  it('should create new opportunity and mark existing consent-banner NEW system opportunities as IGNORED', async () => {
+  it('should create new opportunity and remove existing consent-banner NEW system opportunities', async () => {
     const consentBannerOppty1 = {
       getId: () => 'opptyId-1',
       getType: () => 'consent-banner',
       getStatus: () => 'NEW',
       getUpdatedBy: () => 'system',
-      setStatus: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
+      remove: sinon.stub().resolves(),
     };
     const consentBannerOppty2 = {
       getId: () => 'opptyId-2',
       getType: () => 'consent-banner',
       getStatus: () => 'NEW',
       getUpdatedBy: () => 'system',
-      setStatus: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
+      remove: sinon.stub().resolves(),
     };
     const wrongTypeOppty = {
       getId: () => 'opptyId-3',
       getType: () => 'other-type',
       getStatus: () => 'NEW',
       getUpdatedBy: () => 'system',
-      setStatus: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
+      remove: sinon.stub().resolves(),
     };
 
     Opportunity.allBySiteId.resolves([wrongTypeOppty, consentBannerOppty1, consentBannerOppty2]);
@@ -461,34 +458,30 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     expect(Opportunity.create).to.have.been.called;
     expect(Suggestion.create).to.have.been.called;
 
-    // The consent-banner opportunities should be marked as IGNORED
-    expect(consentBannerOppty1.setStatus).to.have.been.calledWith('IGNORED');
-    expect(consentBannerOppty1.save).to.have.been.called;
-    expect(consentBannerOppty2.setStatus).to.have.been.calledWith('IGNORED');
-    expect(consentBannerOppty2.save).to.have.been.called;
+    // The consent-banner opportunities should be removed
+    expect(consentBannerOppty1.remove).to.have.been.called;
+    expect(consentBannerOppty2.remove).to.have.been.called;
 
     // The non-matching type should not be touched
-    expect(wrongTypeOppty.setStatus).to.not.have.been.called;
+    expect(wrongTypeOppty.remove).to.not.have.been.called;
 
     expect(result.status).to.equal(ok().status);
   });
 
-  it('should not mark non-system consent-banner opportunities as IGNORED', async () => {
+  it('should not remove non-system consent-banner opportunities', async () => {
     const systemOppty = {
       getId: () => 'opptyId-system',
       getType: () => 'consent-banner',
       getStatus: () => 'NEW',
       getUpdatedBy: () => 'system',
-      setStatus: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
+      remove: sinon.stub().resolves(),
     };
     const userOppty = {
       getId: () => 'opptyId-user',
       getType: () => 'consent-banner',
       getStatus: () => 'NEW',
       getUpdatedBy: () => 'user',
-      setStatus: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
+      remove: sinon.stub().resolves(),
     };
 
     Opportunity.allBySiteId.resolves([systemOppty, userOppty]);
@@ -517,13 +510,11 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     expect(Opportunity.create).to.have.been.called;
     expect(Suggestion.create).to.have.been.called;
 
-    // Only system opportunity should be marked as IGNORED
-    expect(systemOppty.setStatus).to.have.been.calledWith('IGNORED');
-    expect(systemOppty.save).to.have.been.called;
+    // Only system opportunity should be removed
+    expect(systemOppty.remove).to.have.been.called;
 
     // The user opportunity should not be touched
-    expect(userOppty.setStatus).to.not.have.been.called;
-    expect(userOppty.save).to.not.have.been.called;
+    expect(userOppty.remove).to.not.have.been.called;
 
     expect(result.status).to.equal(ok().status);
   });
@@ -625,14 +616,13 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'PENDING_VALIDATION'));
   });
 
-  it('should not mark opportunities as IGNORED when no existing consent-banner opportunities exist', async () => {
+  it('should not remove opportunities when no existing consent-banner opportunities exist', async () => {
     const otherOppty = {
       getId: () => 'opptyId-other',
       getType: () => 'other-type',
       getStatus: () => 'NEW',
       getUpdatedBy: () => 'system',
-      setStatus: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
+      remove: sinon.stub().resolves(),
     };
 
     Opportunity.allBySiteId.resolves([otherOppty]);
@@ -656,18 +646,17 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
     expect(Opportunity.create).to.have.been.called;
     expect(Suggestion.create).to.have.been.called;
-    expect(otherOppty.setStatus).to.not.have.been.called;
+    expect(otherOppty.remove).to.not.have.been.called;
     expect(result.status).to.equal(ok().status);
   });
 
-  it('should not mark the newly created opportunity as IGNORED', async () => {
+  it('should not remove the newly created opportunity', async () => {
     const existingConsentBannerOppty = {
       getId: () => 'existing-oppty-id',
       getType: () => 'consent-banner',
       getStatus: () => 'NEW',
       getUpdatedBy: () => 'system',
-      setStatus: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
+      remove: sinon.stub().resolves(),
     };
 
     Opportunity.allBySiteId.resolves([existingConsentBannerOppty]);
@@ -689,9 +678,8 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
     const result = await handler(message, context);
 
-    // Only the existing opportunity should be marked as IGNORED, not the newly created one
-    expect(existingConsentBannerOppty.setStatus).to.have.been.calledWith('IGNORED');
-    expect(existingConsentBannerOppty.save).to.have.been.called;
+    // Only the existing opportunity should be removed, not the newly created one
+    expect(existingConsentBannerOppty.remove).to.have.been.called;
     expect(result.status).to.equal(ok().status);
   });
 
