@@ -29,6 +29,7 @@ export function getTotalPageViewsTemplate({
 SELECT CAST(SUM(pageviews) AS BIGINT) AS total_pageview_sum
 FROM ${tableName}
 WHERE siteid = '${siteId}'
+AND trf_type = 'paid'
 AND (${temporalCondition})
 `.trim();
 }

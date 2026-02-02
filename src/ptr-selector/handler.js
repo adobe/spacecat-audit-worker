@@ -23,7 +23,7 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 const IMPORT_TYPE_TRAFFIC_ANALYSIS = 'traffic-analysis';
 
-const THRESHOLD_LOW = 50000;
+const THRESHOLD_LOW = 30000;
 const THRESHOLD_HIGH = 200000;
 
 const REPORT_DECISION = {
@@ -184,7 +184,7 @@ export async function runPtrSelectorAnalysisStep(context) {
     } else {
       await disableAuditForSite('paid-traffic-analysis-weekly', site, configuration, log);
       await disableAuditForSite('paid-traffic-analysis-monthly', site, configuration, log);
-      log.info(`[ptr-selector] totalPageViewSum=${totalPageViewSum} is below 50K threshold. No audit enabled.`);
+      log.info(`[ptr-selector] totalPageViewSum=${totalPageViewSum} is below 30K threshold. No audit enabled.`);
     }
 
     await configuration.save();
