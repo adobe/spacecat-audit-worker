@@ -24,7 +24,6 @@ describe('SSR Meta Validator', () => {
   let validateMetaTagsViaSSR;
   let validateDetectedIssues;
   let fetchStub;
-  let analyzeBotProtectionStub;
   let log;
 
   beforeEach(async () => {
@@ -36,7 +35,6 @@ describe('SSR Meta Validator', () => {
     };
 
     fetchStub = sinon.stub();
-    analyzeBotProtectionStub = sinon.stub();
 
     const ssrValidator = await esmock('../../src/metatags/ssr-meta-validator.js', {
       '@adobe/fetch': {
@@ -44,7 +42,6 @@ describe('SSR Meta Validator', () => {
       },
       '@adobe/spacecat-shared-utils': {
         hasText: (text) => text && text.length > 0,
-        analyzeBotProtection: analyzeBotProtectionStub,
       },
     });
 
@@ -167,65 +164,16 @@ describe('SSR Meta Validator', () => {
       expect(result.h1).to.deep.equal(['Valid Heading', 'Another Valid Heading']);
     });
 
-    it('should handle 403 error with bot protection detected', async () => {
-      const html = '<html><head><title>Access Denied</title></head></html>';
-
+    it('should handle 403 error', async () => {
       fetchStub.resolves({
         ok: false,
         status: 403,
-        text: async () => html,
-        headers: new Headers({ 'cf-ray': '12345-SJC' }),
-      });
-
-      analyzeBotProtectionStub.returns({
-        crawlable: false,
-        type: 'cloudflare',
-        confidence: 0.9,
       });
 
       const result = await validateMetaTagsViaSSR('https://example.com', log);
 
       expect(result).to.be.null;
-      expect(log.error).to.have.been.calledWith('SSR validation blocked by cloudflare for https://example.com');
-      expect(analyzeBotProtectionStub).to.have.been.calledOnce;
-    });
-
-    it('should handle 403 error without bot protection', async () => {
-      const html = '<html><body>Forbidden</body></html>';
-
-      fetchStub.resolves({
-        ok: false,
-        status: 403,
-        text: async () => html,
-        headers: new Headers(),
-      });
-
-      analyzeBotProtectionStub.returns({
-        crawlable: true,
-        type: 'none',
-        confidence: 1.0,
-      });
-
-      const result = await validateMetaTagsViaSSR('https://example.com', log);
-
-      expect(result).to.be.null;
-      expect(log.warn).to.have.been.calledWith('SSR validation failed with status 403 (not bot protection) for https://example.com');
-    });
-
-    it('should handle 403 error when bot protection analysis fails', async () => {
-      fetchStub.resolves({
-        ok: false,
-        status: 403,
-        text: async () => {
-          throw new Error('Text parsing failed');
-        },
-        headers: new Headers(),
-      });
-
-      const result = await validateMetaTagsViaSSR('https://example.com', log);
-
-      expect(result).to.be.null;
-      expect(log.warn).to.have.been.calledWith(sinon.match(/SSR validation failed with status 403 for https:\/\/example\.com \(bot detection failed:/));
+      expect(log.warn).to.have.been.calledWith('SSR validation failed with status 403 for https://example.com');
     });
 
     it('should handle non-403 HTTP errors', async () => {

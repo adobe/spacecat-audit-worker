@@ -655,9 +655,6 @@ describe('Step-based Audit Tests', () => {
       // Should return ok status (audit aborted early)
       expect(result.status).to.equal(200);
 
-      // Verify [AUDIT-ABORTED] log
-      expect(context.log.warn).to.have.been.calledWithMatch(/\[AUDIT-ABORTED\] cwv audit aborted for site/);
-
       // Verify [BOT-BLOCKED] log with detailed info including jobId
       expect(context.log.warn).to.have.been.calledWithMatch(/\[BOT-BLOCKED\] Audit aborted for jobId=abort-job-123/);
       const botBlockedCall = context.log.warn.args.find((call) => call[0].includes('[BOT-BLOCKED]'));
@@ -743,8 +740,7 @@ describe('Step-based Audit Tests', () => {
       // Audit should abort early and return ok status
       expect(result.status).to.equal(200);
 
-      // Verify [AUDIT-ABORTED] log but NOT [BOT-BLOCKED]
-      expect(context.log.warn).to.have.been.calledWithMatch(/\[AUDIT-ABORTED\] meta-tags audit aborted for site/);
+      // Verify no bot-protection specific logs for generic abort
       expect(context.log.warn).to.not.have.been.calledWithMatch(/\[BOT-BLOCKED\]/);
     });
 
@@ -793,8 +789,7 @@ describe('Step-based Audit Tests', () => {
       // Should abort and return ok status
       expect(result.status).to.equal(200);
 
-      // Verify [AUDIT-ABORTED] and [BOT-BLOCKED] logs were called
-      expect(context.log.warn).to.have.been.calledWithMatch(/\[AUDIT-ABORTED\]/);
+      // Verify [BOT-BLOCKED] log was called
       expect(context.log.warn).to.have.been.calledWithMatch(/\[BOT-BLOCKED\] Audit aborted for jobId=many-urls-job/);
       expect(context.log.warn).to.have.been.calledWithMatch(/50\/100 URLs blocked/);
 
@@ -854,8 +849,7 @@ describe('Step-based Audit Tests', () => {
       // Should abort and return ok status
       expect(result.status).to.equal(200);
 
-      // Verify [AUDIT-ABORTED] and [BOT-BLOCKED] logs were called
-      expect(context.log.warn).to.have.been.calledWithMatch(/\[AUDIT-ABORTED\]/);
+      // Verify [BOT-BLOCKED] log was called
       expect(context.log.warn).to.have.been.calledWithMatch(/\[BOT-BLOCKED\] Audit aborted for jobId=mixed-blockers-job/);
       expect(context.log.warn).to.have.been.calledWithMatch(/403: 3/);
       expect(context.log.warn).to.have.been.calledWithMatch(/cloudflare: 2/);
