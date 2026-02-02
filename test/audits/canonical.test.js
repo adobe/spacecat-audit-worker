@@ -3135,6 +3135,106 @@ describe('Canonical URL Tests', () => {
           message: 'No canonical issues detected',
         });
       });
+
+      it('should skip pages that redirected to auth/login pages', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/secure-page',
+          finalUrl: 'https://example.com/login', // Redirected to login
+          scrapeResult: {
+            canonical: {
+              exists: false,
+              count: 0,
+              href: null,
+              inHead: false,
+            },
+            rawBody: '<html><head><title>Login</title></head></html>',
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/secure-page', 'scrapes/job-id/secure-page/scrape.json'],
+          ]),
+          audit: {
+            getId: () => 'test-audit-id',
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result).to.have.property('auditResult');
+        expect(result.auditResult).to.deep.equal({
+          status: 'success',
+          message: 'No canonical issues detected',
+        });
+        expect(context.log.info).to.have.been.calledWith(
+          '[canonical] Skipping https://example.com/secure-page - redirected to auth page: https://example.com/login',
+        );
+      });
+
+      it('should skip pages that redirected to PDF files', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/document',
+          finalUrl: 'https://example.com/files/document.pdf', // Redirected to PDF
+          scrapeResult: {
+            canonical: {
+              exists: false,
+              count: 0,
+              href: null,
+              inHead: false,
+            },
+            rawBody: '',
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/document', 'scrapes/job-id/document/scrape.json'],
+          ]),
+          audit: {
+            getId: () => 'test-audit-id',
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result).to.have.property('auditResult');
+        expect(result.auditResult).to.deep.equal({
+          status: 'success',
+          message: 'No canonical issues detected',
+        });
+        expect(context.log.info).to.have.been.calledWith(
+          '[canonical] Skipping https://example.com/document - redirected to PDF: https://example.com/files/document.pdf',
+        );
+      });
     });
   });
 

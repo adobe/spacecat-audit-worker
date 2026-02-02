@@ -28,13 +28,30 @@ const DEFAULT_CPC_VALUE = 2.69; // $2.69
 // weekly pageview threshold to eliminate urls with lack of samples
 
 /**
- * Checks if a URL appears to be a login or authentication page.
+ * Checks if a URL is an authentication/login page.
+ * More comprehensive check that looks at URL pathname for various auth patterns.
  *
  * @param {string} url - URL to check
- * @returns {boolean} - True if it looks like a login or authentication page
+ * @returns {boolean} - True if the URL is an auth page
  */
-export function isLoginPage(url) {
-  return /login|log-in|signin|sign-in|auth|authentication/i.test(url);
+export function isAuthUrl(url) {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    return pathname.includes('/login')
+      || pathname.includes('/signin')
+      || pathname.includes('/sign-in')
+      || pathname.includes('/authenticate')
+      || pathname.includes('/oauth')
+      || pathname.includes('/sso')
+      || pathname.includes('/okta')
+      || pathname.includes('/register')
+      || pathname.includes('/signup')
+      || pathname.includes('/activate/')
+      || pathname === '/auth'
+      || pathname.startsWith('/auth/');
+  } catch {
+    return false;
+  }
 }
 
 export async function getRUMUrl(url) {
