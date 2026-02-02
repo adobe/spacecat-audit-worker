@@ -127,6 +127,22 @@ export function toggleWWWHostname(hostname) {
 }
 
 /**
+ * Extracts the main domain name from a hostname.
+ * Removes the www. prefix if present, then takes the first part before the first dot.
+ * Examples:
+ *   - www.sunstargum.com -> sunstargum
+ *   - example.co.uk -> example
+ *   - subdomain.example.com -> subdomain
+ *
+ * @param {string} hostname - The hostname to extract the main domain name from.
+ * @returns {string} - The main domain name.
+ */
+export function extractMainDomainName(hostname) {
+  const withoutWww = hostname.replace(/^www\./, '');
+  return withoutWww.split('.')[0];
+}
+
+/**
  * Extracts the domain and protocol from a given URL.
  *
  * @param {string} inputUrl - The URL to extract domain and protocol from.

@@ -64,5 +64,11 @@ describe('PTR Selector Queries', () => {
 
       expect(query).to.include('CAST(SUM(pageviews) AS BIGINT)');
     });
+
+    it('should filter by paid traffic type', () => {
+      const query = getTotalPageViewsTemplate(defaultParams);
+
+      expect(query).to.include("trf_type = 'paid'");
+    });
   });
 });

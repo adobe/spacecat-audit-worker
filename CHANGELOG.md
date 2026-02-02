@@ -1,3 +1,24 @@
+# [1.298.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.297.2...v1.298.0) (2026-02-02)
+
+
+### Features
+
+* added feature flag for manual a11y code injection flow ([#1880](https://github.com/adobe/spacecat-audit-worker/issues/1880)) ([b4c45ee](https://github.com/adobe/spacecat-audit-worker/commit/b4c45eef0f0484f6bdc06ece94d07de277c7281f))
+
+## [1.297.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.297.1...v1.297.2) (2026-02-02)
+
+
+### Bug Fixes
+
+* filter ptr-selector by paid traffic and lower threshold to 30K ([#1923](https://github.com/adobe/spacecat-audit-worker/issues/1923)) ([19d165d](https://github.com/adobe/spacecat-audit-worker/commit/19d165dd6db40e5bc31f89c1e31b83692bb1f152))
+
+## [1.297.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.297.0...v1.297.1) (2026-02-02)
+
+
+### Bug Fixes
+
+* exclude searchbots from cdn log reports ([#1922](https://github.com/adobe/spacecat-audit-worker/issues/1922)) ([7a41032](https://github.com/adobe/spacecat-audit-worker/commit/7a41032108b23a44886cb77df4cf3bae01006098))
+
 # [1.297.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.296.2...v1.297.0) (2026-01-31)
 
 

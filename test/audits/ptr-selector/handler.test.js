@@ -257,24 +257,24 @@ describe('PTR Selector Audit', () => {
       };
     }
 
-    it('should set reportDecision to "not enough data" and disable both audits when totalPageViewSum < 50K', async () => {
+    it('should set reportDecision to "not enough data" and disable both audits when totalPageViewSum < 30K', async () => {
       mockConfiguration.isHandlerEnabledForSite.withArgs('paid-traffic-analysis-weekly', site).returns(true);
       mockConfiguration.isHandlerEnabledForSite.withArgs('paid-traffic-analysis-monthly', site).returns(true);
-      const ctx = createContext([{ total_pageview_sum: '30000' }]);
+      const ctx = createContext([{ total_pageview_sum: '20000' }]);
 
       const result = await runPtrSelectorAnalysisStep(ctx);
 
-      expect(result.auditResult.totalPageViewSum).to.equal(30000);
+      expect(result.auditResult.totalPageViewSum).to.equal(20000);
       expect(result.auditResult.reportDecision).to.equal('not enough data');
       expect(result.fullAuditRef).to.equal(auditUrl);
       expect(mockConfiguration.enableHandlerForSite).to.not.have.been.called;
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('paid-traffic-analysis-weekly', site);
       expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('paid-traffic-analysis-monthly', site);
       expect(mockConfiguration.save).to.have.been.called;
-      expect(logStub.info).to.have.been.calledWithMatch(/below 50K threshold/);
+      expect(logStub.info).to.have.been.calledWithMatch(/below 30K threshold/);
     });
 
-    it('should set reportDecision to "monthly report" and disable weekly when totalPageViewSum >= 50K and < 200K', async () => {
+    it('should set reportDecision to "monthly report" and disable weekly when totalPageViewSum >= 30K and < 120K', async () => {
       mockConfiguration.isHandlerEnabledForSite.withArgs('paid-traffic-analysis-weekly', site).returns(true);
       const ctx = createContext([{ total_pageview_sum: '100000' }]);
 
@@ -289,8 +289,7 @@ describe('PTR Selector Audit', () => {
       expect(logStub.info).to.have.been.calledWithMatch(/Enabled paid-traffic-analysis-monthly/);
     });
 
-    it('should set reportDecision to "weekly report" and disable monthly when totalPageViewSum >= 200K', async () => {
-      mockConfiguration.isHandlerEnabledForSite.withArgs('paid-traffic-analysis-monthly', site).returns(true);
+    it('should set reportDecision to "weekly report" and enable both weekly and monthly when totalPageViewSum >= 120K', async () => {
       const ctx = createContext([{ total_pageview_sum: '500000' }]);
 
       const result = await runPtrSelectorAnalysisStep(ctx);
@@ -299,21 +298,22 @@ describe('PTR Selector Audit', () => {
       expect(result.auditResult.reportDecision).to.equal('weekly report');
       expect(result.fullAuditRef).to.equal(auditUrl);
       expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('paid-traffic-analysis-weekly', site);
-      expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('paid-traffic-analysis-monthly', site);
+      expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('paid-traffic-analysis-monthly', site);
+      expect(mockConfiguration.disableHandlerForSite).to.not.have.been.called;
       expect(mockConfiguration.save).to.have.been.called;
-      expect(logStub.info).to.have.been.calledWithMatch(/Enabled paid-traffic-analysis-weekly/);
+      expect(logStub.info).to.have.been.calledWithMatch(/Enabled paid-traffic-analysis-weekly and paid-traffic-analysis-monthly/);
     });
 
-    it('should handle boundary value of exactly 50K as monthly report', async () => {
-      const ctx = createContext([{ total_pageview_sum: '50000' }]);
+    it('should handle boundary value of exactly 30K as monthly report', async () => {
+      const ctx = createContext([{ total_pageview_sum: '30000' }]);
 
       const result = await runPtrSelectorAnalysisStep(ctx);
 
       expect(result.auditResult.reportDecision).to.equal('monthly report');
     });
 
-    it('should handle boundary value of exactly 200K as weekly report', async () => {
-      const ctx = createContext([{ total_pageview_sum: '200000' }]);
+    it('should handle boundary value of exactly 120K as weekly report', async () => {
+      const ctx = createContext([{ total_pageview_sum: '120000' }]);
 
       const result = await runPtrSelectorAnalysisStep(ctx);
 
@@ -329,7 +329,7 @@ describe('PTR Selector Audit', () => {
       expect(result.auditResult.reportDecision).to.equal('not enough data');
     });
 
-    it('should not enable audit when already enabled but still disable the opposite', async () => {
+    it('should not re-enable audits when already enabled for weekly decision', async () => {
       mockConfiguration.isHandlerEnabledForSite.withArgs('paid-traffic-analysis-weekly', site).returns(true);
       mockConfiguration.isHandlerEnabledForSite.withArgs('paid-traffic-analysis-monthly', site).returns(true);
       const ctx = createContext([{ total_pageview_sum: '500000' }]);
@@ -337,7 +337,7 @@ describe('PTR Selector Audit', () => {
       await runPtrSelectorAnalysisStep(ctx);
 
       expect(mockConfiguration.enableHandlerForSite).to.not.have.been.called;
-      expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('paid-traffic-analysis-monthly', site);
+      expect(mockConfiguration.disableHandlerForSite).to.not.have.been.called;
       expect(logStub.info).to.have.been.calledWithMatch(/already enabled/);
     });
 
@@ -371,14 +371,14 @@ describe('PTR Selector Audit', () => {
     });
 
     it('should use default values for missing database and table env vars', async () => {
-      const ctx = createContext([{ total_pageview_sum: '30000' }]);
+      const ctx = createContext([{ total_pageview_sum: '20000' }]);
       ctx.env = {
         S3_IMPORTER_BUCKET_NAME: 'test-bucket',
       };
 
       const result = await runPtrSelectorAnalysisStep(ctx);
 
-      expect(result.auditResult.totalPageViewSum).to.equal(30000);
+      expect(result.auditResult.totalPageViewSum).to.equal(20000);
       expect(result.auditResult.reportDecision).to.equal('not enough data');
     });
   });
