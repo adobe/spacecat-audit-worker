@@ -12,7 +12,7 @@
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { resolveConsolidatedBucketName, extractCustomerDomain } from '../utils/cdn-utils.js';
-import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL } from '../common/user-agent-classification.js';
+import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL, shouldIncludeSearchBots } from '../common/user-agent-classification.js';
 import { ELMO_LIVE_HOST } from '../common/constants.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 
@@ -221,13 +221,19 @@ export async function buildLlmErrorPagesQuery(options) {
 
   const remotePatterns = site ? await fetchRemotePatterns(site) : null;
 
+  // Include search bots only for specific organization IDs
+  const includeSearchBots = shouldIncludeSearchBots(
+    /* c8 ignore next */
+    site?.getOrganizationId?.() || null,
+  );
+
   return getStaticContent({
     databaseName,
     tableName,
     whereClause,
     // user-agent labeling and classification
-    userAgentDisplay: buildUserAgentDisplaySQL(),
-    agentTypeClassification: buildAgentTypeClassificationSQL(),
+    userAgentDisplay: buildUserAgentDisplaySQL(includeSearchBots),
+    agentTypeClassification: buildAgentTypeClassificationSQL(includeSearchBots),
     // product/category classification via patterns
     topicExtraction: buildTopicExtractionSQL(remotePatterns),
     pageCategoryClassification: generatePageTypeClassification(remotePatterns),
