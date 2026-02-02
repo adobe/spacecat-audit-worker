@@ -82,7 +82,6 @@ function createDirectMystiqueMessage({
     auditId: auditId || '',
     deliveryType,
     time: new Date().toISOString(),
-    aggregationKey,
     data: {
       url,
       opportunityId: opportunity.getId(),

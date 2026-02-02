@@ -2703,13 +2703,12 @@ describe('createDirectMystiqueMessage', () => {
       siteId,
       auditId,
       deliveryType,
-      aggregationKey,
     });
     expect(result.data).to.deep.equal({
       url: 'https://example.com',
       opportunityId: 'oppty-123',
       issuesList,
-      aggregationKey,
+      aggregationKey: 'test-agg-key',
     });
     expect(result.time).to.be.a('string');
   });
@@ -4836,11 +4835,11 @@ describe('sendMystiqueMessage', () => {
       expect(message).to.have.property('auditId', 'audit-999');
       expect(message).to.have.property('deliveryType', 'aem_cs');
       expect(message).to.have.property('time');
-      expect(message).to.have.property('aggregationKey', 'agg-key-13');
       expect(message.data).to.deep.include({
         url: 'https://example.com/page13',
         opportunityId: 'oppty-123',
         issuesList: [{ issueName: 'color-contrast', details: 'Low contrast' }],
+        aggregationKey: 'agg-key-13',
       });
     });
 
