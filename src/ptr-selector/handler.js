@@ -24,7 +24,7 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 const IMPORT_TYPE_TRAFFIC_ANALYSIS = 'traffic-analysis';
 
 const THRESHOLD_LOW = 30000;
-const THRESHOLD_HIGH = 200000;
+const THRESHOLD_HIGH = 120000;
 
 const REPORT_DECISION = {
   NOT_ENOUGH_DATA: 'not enough data',

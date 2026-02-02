@@ -274,7 +274,7 @@ describe('PTR Selector Audit', () => {
       expect(logStub.info).to.have.been.calledWithMatch(/below 30K threshold/);
     });
 
-    it('should set reportDecision to "monthly report" and disable weekly when totalPageViewSum >= 30K and < 200K', async () => {
+    it('should set reportDecision to "monthly report" and disable weekly when totalPageViewSum >= 30K and < 120K', async () => {
       mockConfiguration.isHandlerEnabledForSite.withArgs('paid-traffic-analysis-weekly', site).returns(true);
       const ctx = createContext([{ total_pageview_sum: '100000' }]);
 
@@ -289,7 +289,7 @@ describe('PTR Selector Audit', () => {
       expect(logStub.info).to.have.been.calledWithMatch(/Enabled paid-traffic-analysis-monthly/);
     });
 
-    it('should set reportDecision to "weekly report" and enable both weekly and monthly when totalPageViewSum >= 200K', async () => {
+    it('should set reportDecision to "weekly report" and enable both weekly and monthly when totalPageViewSum >= 120K', async () => {
       const ctx = createContext([{ total_pageview_sum: '500000' }]);
 
       const result = await runPtrSelectorAnalysisStep(ctx);
@@ -312,8 +312,8 @@ describe('PTR Selector Audit', () => {
       expect(result.auditResult.reportDecision).to.equal('monthly report');
     });
 
-    it('should handle boundary value of exactly 200K as weekly report', async () => {
-      const ctx = createContext([{ total_pageview_sum: '200000' }]);
+    it('should handle boundary value of exactly 120K as weekly report', async () => {
+      const ctx = createContext([{ total_pageview_sum: '120000' }]);
 
       const result = await runPtrSelectorAnalysisStep(ctx);
 
