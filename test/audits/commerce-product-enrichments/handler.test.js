@@ -158,6 +158,9 @@ describe('Commerce Product Enrichments Handler', () => {
       siteId: 'site-1',
       jobId: 'site-1',
       processingType: 'default',
+      auditContext: {
+        scrapeJobId: 'site-1',
+      },
       options: {
         waitTimeoutForMetaTags: 5000,
       },
@@ -340,6 +343,9 @@ describe('Commerce Product Enrichments Handler', () => {
       siteId: 'site-1',
       jobId: 'site-1',
       processingType: 'default',
+      auditContext: {
+        scrapeJobId: 'site-1',
+      },
       options: {
         waitTimeoutForMetaTags: 5000,
       },
