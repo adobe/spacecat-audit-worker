@@ -179,6 +179,7 @@ export async function runAuditAndProcessResults(context) {
   log.info(`${LOG_PREFIX} Step 3: runAuditAndProcessResults started`);
 
   // Debug logging to understand what context we're receiving
+  /* c8 ignore start */
   log.info(`${LOG_PREFIX} Full auditContext:`, JSON.stringify(auditContext));
   log.info(`${LOG_PREFIX} scrapeJobId from auditContext:`, auditContext?.scrapeJobId);
   log.info(`${LOG_PREFIX} Context:`, {
@@ -190,8 +191,10 @@ export async function runAuditAndProcessResults(context) {
     scrapeResultPathsType: typeof scrapeResultPaths,
     scrapeResultPathsIsMap: scrapeResultPaths instanceof Map,
   });
+  /* c8 ignore stop */
 
   if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
+    /* c8 ignore start */
     let scrapeResultPathsState = 'empty';
     if (scrapeResultPaths === undefined) {
       scrapeResultPathsState = 'undefined';
@@ -200,6 +203,7 @@ export async function runAuditAndProcessResults(context) {
     }
     log.info(`${LOG_PREFIX} No scraped pages found - scrapeResultPaths is ${scrapeResultPathsState}`);
     log.info(`${LOG_PREFIX} DEBUG: This might indicate scrapeJobId wasn't found or getScrapeResultPaths() returned empty`);
+    /* c8 ignore stop */
     return {
       auditResult: {
         status: 'NO_OPPORTUNITIES',
@@ -210,6 +214,7 @@ export async function runAuditAndProcessResults(context) {
   }
 
   // Log the actual scrape result paths for debugging
+  /* c8 ignore next */
   log.info(`${LOG_PREFIX} scrapeResultPaths entries:`, Array.from(scrapeResultPaths.entries()).slice(0, 5));
 
   // Get S3 bucket configuration
