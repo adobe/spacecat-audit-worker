@@ -151,12 +151,16 @@ describe('Commerce Product Enrichments Handler', () => {
 
     expect(result).to.deep.equal({
       urls: [
-        'https://example.com/page-1',
-        'ht!tp://bad-url',
-        'https://example.com/page-2',
+        { url: 'https://example.com/page-1' },
+        { url: 'ht!tp://bad-url' },
+        { url: 'https://example.com/page-2' },
       ],
+      siteId: 'site-1',
       processingType: 'default',
-      options: {},
+      options: {
+        waitTimeoutForMetaTags: 5000,
+      },
+      allowCache: false,
       maxScrapeAge: 0,
     });
   });
@@ -183,8 +187,8 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await submitForScraping(context);
 
     expect(result.urls).to.have.lengthOf(5);
-    expect(result.urls[0]).to.equal('https://example.com/page-1');
-    expect(result.urls[4]).to.equal('https://example.com/page-5');
+    expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
+    expect(result.urls[4]).to.deep.equal({ url: 'https://example.com/page-5' });
   });
 
   it('submitForScraping uses all top pages when limit not provided', async () => {
@@ -208,8 +212,8 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await submitForScraping(context);
 
     expect(result.urls).to.have.lengthOf(50);
-    expect(result.urls[0]).to.equal('https://example.com/page-1');
-    expect(result.urls[49]).to.equal('https://example.com/page-50');
+    expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
+    expect(result.urls[49]).to.deep.equal({ url: 'https://example.com/page-50' });
   });
 
   it('submitForScraping respects limit from context.data when provided as JSON string', async () => {
@@ -234,8 +238,8 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await submitForScraping(context);
 
     expect(result.urls).to.have.lengthOf(10);
-    expect(result.urls[0]).to.equal('https://example.com/page-1');
-    expect(result.urls[9]).to.equal('https://example.com/page-10');
+    expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
+    expect(result.urls[9]).to.deep.equal({ url: 'https://example.com/page-10' });
   });
 
   it('submitForScraping handles invalid JSON gracefully', async () => {
@@ -284,8 +288,8 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await submitForScraping(context);
 
     expect(result.urls).to.have.lengthOf(7);
-    expect(result.urls[0]).to.equal('https://example.com/page-1');
-    expect(result.urls[6]).to.equal('https://example.com/page-7');
+    expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
+    expect(result.urls[6]).to.deep.equal({ url: 'https://example.com/page-7' });
   });
 
   it('submitForScraping prefers auditContext limit over data limit', async () => {
@@ -311,8 +315,8 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await submitForScraping(context);
 
     expect(result.urls).to.have.lengthOf(3);
-    expect(result.urls[0]).to.equal('https://example.com/page-1');
-    expect(result.urls[2]).to.equal('https://example.com/page-3');
+    expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
+    expect(result.urls[2]).to.deep.equal({ url: 'https://example.com/page-3' });
   });
 
   it('submitForScraping handles missing site config and defaults to top pages only', async () => {
@@ -331,9 +335,13 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await submitForScraping(context);
 
     expect(result).to.deep.equal({
-      urls: ['https://example.com/page-1'],
+      urls: [{ url: 'https://example.com/page-1' }],
+      siteId: 'site-1',
       processingType: 'default',
-      options: {},
+      options: {
+        waitTimeoutForMetaTags: 5000,
+      },
+      allowCache: false,
       maxScrapeAge: 0,
     });
   });

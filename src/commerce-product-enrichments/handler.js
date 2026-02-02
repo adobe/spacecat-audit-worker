@@ -145,7 +145,8 @@ export async function submitForScraping(context) {
   log.info(`${LOG_PREFIX} Filtered ${finalUrls.length - filteredUrls.length} PDF files from ${finalUrls.length} URLs`);
 
   const result = {
-    urls: filteredUrls,
+    urls: filteredUrls.map((url) => ({ url })),
+    siteId: site.getId(),
     processingType: 'default',
     options: {
       waitTimeoutForMetaTags: 5000,
