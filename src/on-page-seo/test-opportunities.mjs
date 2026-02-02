@@ -297,7 +297,7 @@ function processValidationResult(result) {
  */
 async function runTechnicalChecks(urls) {
   log.info(`\n🔍 Running Technical Checks:`);
-  log.info(`   Checking ${urls.length} URLs (10 concurrent requests)...\n`);
+  log.info(`   Checking ${urls.length} URLs (3 concurrent requests to avoid rate limiting)...\n`);
   
   const context = { log };
   const validationResults = await validateUrls(urls, context);

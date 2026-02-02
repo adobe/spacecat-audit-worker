@@ -21,6 +21,115 @@ import { limitConcurrencyAllSettled } from '../support/utils.js';
 const robotsTxtCache = new Map();
 const ROBOTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+// Cache technical check results to avoid redundant validation
+const checkCache = new Map();
+const CHECK_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+// Rate limiting configuration: random delays to mimic human behavior
+// Can be overridden via environment variables for different client needs
+const DELAY_BETWEEN_CALLS = [
+  parseInt(process.env.SPACECAT_DELAY_CALLS_MIN, 10) || 500,
+  parseInt(process.env.SPACECAT_DELAY_CALLS_MAX, 10) || 1000,
+]; // Default: 0.5-1s between individual calls
+
+const DELAY_BETWEEN_DOMAINS = [
+  parseInt(process.env.SPACECAT_DELAY_DOMAINS_MIN, 10) || 2000,
+  parseInt(process.env.SPACECAT_DELAY_DOMAINS_MAX, 10) || 4000,
+]; // Default: 2-4s between domains (conservative for unknown clients)
+
+/**
+ * Get cached technical check result for a URL
+ * @param {string} url - URL to check
+ * @returns {Object|null} Cached result or null if not cached/expired
+ */
+function getCachedCheck(url) {
+  const cached = checkCache.get(url);
+  if (cached && Date.now() - cached.timestamp < CHECK_CACHE_TTL) {
+    return cached.result;
+  }
+  if (cached) {
+    checkCache.delete(url);
+  }
+  return null;
+}
+
+/**
+ * Cache technical check result for a URL
+ * @param {string} url - URL being checked
+ * @param {Object} result - Validation result to cache
+ */
+function setCachedCheck(url, result) {
+  checkCache.set(url, {
+    result,
+    timestamp: Date.now(),
+  });
+
+  if (checkCache.size > 10000) {
+    const cutoff = Date.now() - CHECK_CACHE_TTL;
+    for (const [key, value] of checkCache.entries()) {
+      if (value.timestamp < cutoff) {
+        checkCache.delete(key);
+      }
+    }
+  }
+}
+
+/**
+ * Group URLs by domain for rate limiting
+ * @param {Array} urls - Array of URL objects or strings
+ * @param {Object} log - Logger instance (optional)
+ * @returns {Map} Map of domain -> array of URL objects
+ */
+function groupByDomain(urls, log = null) {
+  const grouped = new Map();
+  const invalidUrls = [];
+
+  urls.forEach((urlObj) => {
+    const url = typeof urlObj === 'string' ? urlObj : urlObj.url;
+    try {
+      const domain = new URL(url).hostname;
+
+      if (!grouped.has(domain)) {
+        grouped.set(domain, []);
+      }
+      grouped.get(domain).push(urlObj);
+    } catch (error) {
+      invalidUrls.push({ url, error: error.message });
+    }
+  });
+
+  if (invalidUrls.length > 0 && log) {
+    log.warn(`${invalidUrls.length} invalid URL(s) skipped during grouping:`);
+    invalidUrls.forEach(({ url, error }) => {
+      log.warn(`  ${url}: ${error}`);
+    });
+  }
+
+  return grouped;
+}
+
+/**
+ * Sleep helper for delays
+ * @param {number} ms - Milliseconds to sleep
+ * @returns {Promise<void>}
+ */
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Sleep with random delay between min and max milliseconds
+ * @param {number} minMs - Minimum milliseconds to sleep
+ * @param {number} maxMs - Maximum milliseconds to sleep
+ * @returns {Promise<void>}
+ */
+function randomSleep(minMs, maxMs) {
+  const delay = minMs + Math.random() * (maxMs - minMs);
+  return sleep(Math.round(delay));
+}
+
 /**
  * Validates HTTP status (reuses sitemap logic)
  * Checks for 4xx and 5xx errors, and detects cached error responses with 200 status
@@ -419,7 +528,45 @@ export async function validateUrl(url, context) {
 }
 
 /**
- * Validates multiple URLs with concurrency control
+ * Validates a URL with retry logic for rate limiting (403/429)
+ * @param {string} url - URL to validate
+ * @param {Object} context - Audit context containing log
+ * @param {number} maxRetries - Maximum number of retries (default: 1)
+ * @returns {Promise<Object>} Complete validation result
+ */
+async function validateUrlWithRetry(url, context, maxRetries = 1) {
+  // eslint-disable-next-line no-plusplus
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // eslint-disable-next-line no-await-in-loop
+    const result = await validateUrl(url, context);
+
+    const statusCode = result.checks?.httpStatus?.statusCode;
+    const blockerType = result.checks?.httpStatus?.blockerType;
+
+    if (blockerType === 'googlebot-blocked') {
+      context.log.debug(`Bot detection block for ${url}, not retrying`);
+      return result;
+    }
+
+    const isRateLimited = statusCode === 403 || statusCode === 429;
+
+    if (isRateLimited && attempt < maxRetries) {
+      const delay = 5000 * (2 ** attempt);
+      const attemptInfo = `(attempt ${attempt + 1}/${maxRetries + 1})`;
+      context.log.warn(`Rate limited (${statusCode}) for ${url}, retrying in ${delay}ms ${attemptInfo}`);
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(delay);
+    } else {
+      return result;
+    }
+  }
+
+  context.log.warn(`Retry loop exited unexpectedly for ${url}, performing final attempt`);
+  return validateUrl(url, context);
+}
+
+/**
+ * Validates multiple URLs with concurrency control and per-domain rate limiting
  * @param {Array} urls - Array of URL objects with keyword data (or strings)
  * @param {Object} context - Audit context
  * @returns {Promise<Array>} Array of validation results
@@ -429,16 +576,76 @@ export async function validateUrls(urls, context) {
 
   log.info(`Validating ${urls.length} URLs for indexability`);
 
-  const tasks = urls.map((urlData) => async () => {
-    const url = typeof urlData === 'string' ? urlData : urlData.url;
-    const result = await validateUrl(url, context);
-    return {
-      ...(typeof urlData === 'object' ? urlData : {}),
-      ...result,
-    };
-  });
+  const results = [];
+  const uncachedUrls = [];
+  let cacheHits = 0;
 
-  const results = await limitConcurrencyAllSettled(tasks, 10);
+  for (const urlData of urls) {
+    const url = typeof urlData === 'string' ? urlData : urlData.url;
+    const cached = getCachedCheck(url);
+
+    if (cached) {
+      cacheHits += 1;
+      log.debug(`Cache hit: ${url}`);
+      results.push({
+        ...(typeof urlData === 'object' ? urlData : {}),
+        ...cached,
+      });
+    } else {
+      uncachedUrls.push(urlData);
+    }
+  }
+
+  if (cacheHits > 0) {
+    const hitRate = Math.round((cacheHits / urls.length) * 100);
+    log.info(`${cacheHits} URLs served from cache (${hitRate}% hit rate)`);
+  }
+
+  if (uncachedUrls.length === 0) {
+    log.info('All URLs served from cache');
+    return results;
+  }
+
+  log.info(`Checking ${uncachedUrls.length} uncached URLs`);
+
+  const urlsByDomain = groupByDomain(uncachedUrls, log);
+  log.info(`URLs grouped across ${urlsByDomain.size} domain(s)`);
+
+  const domainArray = Array.from(urlsByDomain.entries());
+
+  // eslint-disable-next-line no-plusplus
+  for (let i = 0; i < domainArray.length; i++) {
+    const [domain, domainUrls] = domainArray[i];
+    log.info(`Checking ${domainUrls.length} URL(s) on ${domain}`);
+
+    const tasks = domainUrls.map((urlData) => async () => {
+      const url = typeof urlData === 'string' ? urlData : urlData.url;
+      const result = await validateUrlWithRetry(url, context, 1);
+      setCachedCheck(url, result);
+
+      // Small random delay after each call to appear more human-like
+      await randomSleep(DELAY_BETWEEN_CALLS[0], DELAY_BETWEEN_CALLS[1]);
+
+      return {
+        ...(typeof urlData === 'object' ? urlData : {}),
+        ...result,
+      };
+    });
+
+    // eslint-disable-next-line no-await-in-loop
+    const domainResults = await limitConcurrencyAllSettled(tasks, 2);
+    results.push(...domainResults);
+
+    const isLastDomain = i === domainArray.length - 1;
+    if (!isLastDomain && urlsByDomain.size > 1) {
+      const delayMin = DELAY_BETWEEN_DOMAINS[0];
+      const delayMax = DELAY_BETWEEN_DOMAINS[1];
+      const delay = Math.round(delayMin + (Math.random() * (delayMax - delayMin)));
+      log.debug(`Waiting ${delay}ms before checking next domain`);
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(delay);
+    }
+  }
 
   const cleanCount = results.filter((r) => r.indexable).length;
   const blockedCount = results.filter((r) => !r.indexable).length;
