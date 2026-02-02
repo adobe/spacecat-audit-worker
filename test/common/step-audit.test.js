@@ -438,17 +438,11 @@ describe('Step-based Audit Tests', () => {
       expect(context.log.info).to.have.been.calledWith('Created scrapeJob with id: scrape-job-123');
     });
 
-    // TODO: Rewrite test for SQS-based bot protection (CloudWatch polling removed)
-    it.skip('loads scrape result paths when scrapeJobId is provided', async () => {
+    it('loads scrape result paths when scrapeJobId is provided', async () => {
       // Mock HTTP request for URL resolution
       nock('https://space.cat')
         .get('/')
         .reply(200, 'Success');
-
-      // Mock CloudWatch to return no bot protection events
-      sandbox.stub(CloudWatchLogsClient.prototype, 'send').resolves({
-        events: [],
-      });
 
       // Mock ScrapeClient - getScrapeResultPaths returns a Map of URL to Path pairs
       const mockScrapeResultPaths = new Map([
@@ -477,10 +471,12 @@ describe('Step-based Audit Tests', () => {
 
       // Create a simple audit for testing scrape result loading
       let capturedScrapeResultPaths;
+      let capturedScrapeJobId;
       const scrapeResultAudit = new AuditBuilder()
         .addStep('process-scrape', async (stepContext) => {
-          // Capture the scrapeResultPaths for verification outside the step
+          // Capture the scrapeResultPaths and scrapeJobId for verification outside the step
           capturedScrapeResultPaths = stepContext.scrapeResultPaths;
+          capturedScrapeJobId = stepContext.scrapeJobId;
           return { status: 'processed' };
         })
         .build();
@@ -511,10 +507,10 @@ describe('Step-based Audit Tests', () => {
       expect(ScrapeClient.createFrom).to.have.been.calledOnce;
       expect(mockScrapeClient.getScrapeResultPaths).to.have.been.calledWith('scrape-job-456');
 
-      // Verify CloudWatch was checked for bot protection
-      expect(CloudWatchLogsClient.prototype.send).to.have.been.called;
+      // Verify the step received the scrapeJobId (line 168 in step-audit.js)
+      expect(capturedScrapeJobId).to.equal('scrape-job-456');
 
-      // Verify the step received the scrape result paths correctly
+      // Verify the step received the scrape result paths correctly (lines 169-171)
       expect(capturedScrapeResultPaths).to.be.instanceOf(Map);
       expect(capturedScrapeResultPaths.size).to.equal(3);
       expect(capturedScrapeResultPaths.get('https://space.cat/')).to.equal('s3://bucket/path1.json');
