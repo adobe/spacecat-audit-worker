@@ -64,12 +64,18 @@ function mapToAIInsightsSuggestions(opportunityId, guidanceArr) {
   }));
 }
 
-async function ignorePreviousOpportunitiesForPeriod(Opportunity, siteId, _period, log, newOpptyId) {
+async function ignorePreviousOpportunitiesForPeriod(Opportunity, siteId, period, log, newOpptyId) {
   const existing = await Opportunity.allBySiteId(siteId);
   const candidates = existing
     .filter((oppty) => oppty.getType() === TRAFFIC_OPP_TYPE)
     .filter((oppty) => oppty.getStatus() === 'NEW')
-    .filter((oppty) => oppty.getId() !== newOpptyId);
+    .filter((oppty) => oppty.getId() !== newOpptyId)
+    .filter((oppty) => {
+      const data = oppty.getData() || {};
+      if (period.week != null) return data.week != null;
+      if (period.month != null) return data.month != null;
+      return false;
+    });
 
   await Promise.all(candidates.map(async (oppty) => {
     const data = oppty.getData();
