@@ -147,6 +147,7 @@ export async function submitForScraping(context) {
   const result = {
     urls: filteredUrls.map((url) => ({ url })),
     siteId: site.getId(),
+    jobId: site.getId(), // Use siteId as jobId so scraper stores results in correct path
     processingType: 'default',
     options: {
       waitTimeoutForMetaTags: 5000,
