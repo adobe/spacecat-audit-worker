@@ -54,6 +54,49 @@ export class StepAudit extends BaseAudit {
     return currentIndex < this.stepNames.length - 1 ? this.stepNames[currentIndex + 1] : null;
   }
 
+  /**
+   * Handles abort signals from upstream services (e.g., bot protection from content scraper).
+   * Logs detailed information for bot protection aborts and returns an appropriate response.
+   * @private
+   * @param {Object} abort - Abort signal with reason and details
+   * @param {string} jobId - Job identifier
+   * @param {string} type - Audit type
+   * @param {Object} site - Site object
+   * @param {string} siteId - Site identifier
+   * @param {Object} log - Logger instance
+   * @returns {Object} HTTP response indicating audit was skipped
+   */
+  static handleAbort(abort, jobId, type, site, siteId, log) {
+    const { reason, details } = abort;
+
+    if (reason === 'bot-protection') {
+      const {
+        blockedUrlsCount, totalUrlsCount, byBlockerType, byHttpStatus, blockedUrls,
+      } = details;
+
+      const statusDetails = Object.entries(byHttpStatus || {})
+        .map(([status, count]) => `${status}: ${count}`)
+        .join(', ');
+      const blockerDetails = Object.entries(byBlockerType || {})
+        .map(([blockerType, count]) => `${blockerType}: ${count}`)
+        .join(', ');
+
+      log.warn(
+        `[BOT-BLOCKED] Audit aborted for jobId=${jobId}, type=${type}, site=${site.getBaseURL()} (${siteId}): `
+        + `HTTP Status: [${statusDetails}], Blocker Types: [${blockerDetails}], `
+        + `${blockedUrlsCount}/${totalUrlsCount} URLs blocked, `
+        + `Bot Protected URLs: [${blockedUrls?.map((u) => u.url).join(', ') || 'none'}]`,
+      );
+    }
+
+    // Return generic abort response
+    return ok({
+      skipped: true,
+      reason,
+      ...details,
+    });
+  }
+
   async chainStep(step, stepResult, context) {
     const { audit, log } = context;
 
@@ -114,33 +157,7 @@ export class StepAudit extends BaseAudit {
 
       // Check if scrape job was aborted (e.g., due to bot protection)
       if (abort) {
-        const { reason, details } = abort;
-        if (reason === 'bot-protection') {
-          const {
-            blockedUrlsCount, totalUrlsCount, byBlockerType, byHttpStatus, blockedUrls,
-          } = details;
-
-          const statusDetails = Object.entries(byHttpStatus || {})
-            .map(([status, count]) => `${status}: ${count}`)
-            .join(', ');
-          const blockerDetails = Object.entries(byBlockerType || {})
-            .map(([blockerType, count]) => `${blockerType}: ${count}`)
-            .join(', ');
-
-          log.warn(
-            `[BOT-BLOCKED] Audit aborted for jobId=${jobId}, type=${type}, site=${site.getBaseURL()} (${siteId}): `
-            + `HTTP Status: [${statusDetails}], Blocker Types: [${blockerDetails}], `
-            + `${blockedUrlsCount}/${totalUrlsCount} URLs blocked, `
-            + `Bot Protected URLs: [${blockedUrls?.map((u) => u.url).join(', ') || 'none'}]`,
-          );
-        }
-
-        // Return generic abort response
-        return ok({
-          skipped: true,
-          reason,
-          ...details,
-        });
+        return StepAudit.handleAbort(abort, jobId, type, site, siteId, log);
       }
 
       // Determine which step to run
