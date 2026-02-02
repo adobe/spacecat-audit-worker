@@ -145,10 +145,13 @@ export async function submitForScraping(context) {
   log.info(`${LOG_PREFIX} Filtered ${finalUrls.length - filteredUrls.length} PDF files from ${finalUrls.length} URLs`);
 
   const result = {
-    urls: filteredUrls.map((url) => ({ url })),
-    siteId: site.getId(),
+    urls: filteredUrls,
     processingType: 'default',
+    options: {
+      waitTimeoutForMetaTags: 5000,
+    },
     allowCache: false,
+    maxScrapeAge: 0,
   };
 
   log.info(`${LOG_PREFIX} Step 2: submitForScraping completed, returning ${result.urls.length} URLs for scraping`);
@@ -165,24 +168,20 @@ export async function submitForScraping(context) {
  */
 export async function runAuditAndProcessResults(context) {
   const {
-    site, audit, finalUrl, log, data, s3Client, env,
+    site, audit, finalUrl, log, scrapeResultPaths, s3Client, env,
   } = context;
 
   log.info(`${LOG_PREFIX} Step 3: runAuditAndProcessResults started`);
-
-  // Get scrape results from the completion message sent by content-scraper
-  const scrapeResults = data?.scrapeResults || [];
 
   log.info(`${LOG_PREFIX} Context:`, {
     siteId: site.getId(),
     auditId: audit.getId(),
     finalUrl,
-    jobId: data?.jobId,
-    scrapeResultsCount: scrapeResults.length,
-    hasData: !!data,
+    scrapeResultPathsSize: scrapeResultPaths?.size || 0,
+    hasScrapeResultPaths: !!scrapeResultPaths,
   });
 
-  if (scrapeResults.length === 0) {
+  if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
     log.info(`${LOG_PREFIX} No scraped pages found`);
     return {
       auditResult: {
@@ -207,35 +206,21 @@ export async function runAuditAndProcessResults(context) {
     };
   }
 
-  log.info(`${LOG_PREFIX} Processing ${scrapeResults.length} scrape results from S3 bucket: ${bucketName}`);
+  log.info(`${LOG_PREFIX} Processing ${scrapeResultPaths.size} scrape results from S3 bucket: ${bucketName}`);
 
   // Process each scraped result in parallel
   const processResults = await Promise.all(
-    scrapeResults.map(async (result) => {
-      const { location, metadata } = result;
-      const pageUrl = metadata?.url || 'unknown';
-
-      // Skip failed scrapes
-      if (metadata?.status !== 'COMPLETE') {
-        log.warn(`${LOG_PREFIX} Skipping failed scrape: ${pageUrl} (status: ${metadata?.status})`);
-        return {
-          success: false,
-          url: pageUrl,
-          status: metadata?.status,
-          reason: metadata?.reason || 'Unknown',
-        };
-      }
-
+    [...scrapeResultPaths].map(async ([url, s3Path]) => {
       try {
         // Read the scrape.json file from S3
-        log.debug(`${LOG_PREFIX} Reading scrape data from S3: ${location}`);
-        const scrapeData = await getObjectFromKey(s3Client, bucketName, location, log);
+        log.debug(`${LOG_PREFIX} Reading scrape data from S3: ${s3Path}`);
+        const scrapeData = await getObjectFromKey(s3Client, bucketName, s3Path, log);
 
         if (!scrapeData) {
-          log.warn(`${LOG_PREFIX} No scrape data found for: ${pageUrl}`);
+          log.warn(`${LOG_PREFIX} No scrape data found for: ${url}`);
           return {
             success: false,
-            url: pageUrl,
+            url,
             status: 'NO_DATA',
             reason: 'Empty scrape data',
           };
@@ -253,20 +238,20 @@ export async function runAuditAndProcessResults(context) {
           isProductPage = skuCount === 1;
         }
 
-        log.debug(`${LOG_PREFIX} Processed page: ${pageUrl} (isProductPage: ${isProductPage})`);
+        log.debug(`${LOG_PREFIX} Processed page: ${url} (isProductPage: ${isProductPage})`);
 
         return {
           success: true,
-          url: pageUrl,
-          location,
+          url,
+          location: s3Path,
           isProductPage,
           skuCount,
         };
       } catch (error) {
-        log.error(`${LOG_PREFIX} Error processing scrape result for ${pageUrl}: ${error.message}`, error);
+        log.error(`${LOG_PREFIX} Error processing scrape result for ${url}: ${error.message}`, error);
         return {
           success: false,
-          url: pageUrl,
+          url,
           status: 'PROCESSING_ERROR',
           reason: error.message,
         };
@@ -283,7 +268,7 @@ export async function runAuditAndProcessResults(context) {
 
   log.info(`${LOG_PREFIX} ============================================`);
   log.info(`${LOG_PREFIX} Audit Processing Complete`);
-  log.info(`${LOG_PREFIX} Total scraped pages: ${scrapeResults.length}`);
+  log.info(`${LOG_PREFIX} Total scraped pages: ${scrapeResultPaths.size}`);
   log.info(`${LOG_PREFIX} Successfully processed: ${processedPages.length}`);
   log.info(`${LOG_PREFIX} Failed/Skipped: ${failedPages.length}`);
   log.info(`${LOG_PREFIX} Product pages found: ${productPages.length}`);
@@ -296,7 +281,7 @@ export async function runAuditAndProcessResults(context) {
     auditResult: {
       status: productPages.length > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
       message: `Found ${productPages.length} product pages out of ${processedPages.length} processed pages`,
-      totalScraped: scrapeResults.length,
+      totalScraped: scrapeResultPaths.size,
       processedPages: processedPages.length,
       failedPages: failedPages.length,
       productPages: productPages.length,
@@ -308,6 +293,6 @@ export async function runAuditAndProcessResults(context) {
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('run-audit-and-process-results', runAuditAndProcessResults)
   .build();
