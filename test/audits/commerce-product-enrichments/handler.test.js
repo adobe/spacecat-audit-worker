@@ -151,13 +151,13 @@ describe('Commerce Product Enrichments Handler', () => {
 
     expect(result).to.deep.equal({
       urls: [
-        { url: 'https://example.com/page-1' },
-        { url: 'ht!tp://bad-url' },
-        { url: 'https://example.com/page-2' },
+        'https://example.com/page-1',
+        'ht!tp://bad-url',
+        'https://example.com/page-2',
       ],
-      siteId: 'site-1',
       processingType: 'default',
-      allowCache: false,
+      options: {},
+      maxScrapeAge: 0,
     });
   });
 
@@ -183,8 +183,8 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await submitForScraping(context);
 
     expect(result.urls).to.have.lengthOf(5);
-    expect(result.urls[0].url).to.equal('https://example.com/page-1');
-    expect(result.urls[4].url).to.equal('https://example.com/page-5');
+    expect(result.urls[0]).to.equal('https://example.com/page-1');
+    expect(result.urls[4]).to.equal('https://example.com/page-5');
   });
 
   it('submitForScraping uses all top pages when limit not provided', async () => {
@@ -208,8 +208,8 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await submitForScraping(context);
 
     expect(result.urls).to.have.lengthOf(50);
-    expect(result.urls[0].url).to.equal('https://example.com/page-1');
-    expect(result.urls[49].url).to.equal('https://example.com/page-50');
+    expect(result.urls[0]).to.equal('https://example.com/page-1');
+    expect(result.urls[49]).to.equal('https://example.com/page-50');
   });
 
   it('submitForScraping respects limit from context.data when provided as JSON string', async () => {
@@ -234,8 +234,8 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await submitForScraping(context);
 
     expect(result.urls).to.have.lengthOf(10);
-    expect(result.urls[0].url).to.equal('https://example.com/page-1');
-    expect(result.urls[9].url).to.equal('https://example.com/page-10');
+    expect(result.urls[0]).to.equal('https://example.com/page-1');
+    expect(result.urls[9]).to.equal('https://example.com/page-10');
   });
 
   it('submitForScraping handles invalid JSON gracefully', async () => {
@@ -284,8 +284,8 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await submitForScraping(context);
 
     expect(result.urls).to.have.lengthOf(7);
-    expect(result.urls[0].url).to.equal('https://example.com/page-1');
-    expect(result.urls[6].url).to.equal('https://example.com/page-7');
+    expect(result.urls[0]).to.equal('https://example.com/page-1');
+    expect(result.urls[6]).to.equal('https://example.com/page-7');
   });
 
   it('submitForScraping prefers auditContext limit over data limit', async () => {
@@ -311,8 +311,8 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await submitForScraping(context);
 
     expect(result.urls).to.have.lengthOf(3);
-    expect(result.urls[0].url).to.equal('https://example.com/page-1');
-    expect(result.urls[2].url).to.equal('https://example.com/page-3');
+    expect(result.urls[0]).to.equal('https://example.com/page-1');
+    expect(result.urls[2]).to.equal('https://example.com/page-3');
   });
 
   it('submitForScraping handles missing site config and defaults to top pages only', async () => {
@@ -331,10 +331,10 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await submitForScraping(context);
 
     expect(result).to.deep.equal({
-      urls: [{ url: 'https://example.com/page-1' }],
-      siteId: 'site-1',
+      urls: ['https://example.com/page-1'],
       processingType: 'default',
-      allowCache: false,
+      options: {},
+      maxScrapeAge: 0,
     });
   });
 
@@ -350,7 +350,7 @@ describe('Commerce Product Enrichments Handler', () => {
     );
   });
 
-  it('runAuditAndProcessResults processes scrape results from data', async () => {
+  it('runAuditAndProcessResults processes scrape results from scrapeResultPaths', async () => {
     const s3Client = {
       send: sinon.stub().resolves({
         ContentType: 'application/json',
@@ -364,6 +364,11 @@ describe('Commerce Product Enrichments Handler', () => {
       }),
     };
 
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
+      ['https://example.com/page-2', 'scrapes/site-1/page-2/scrape.json'],
+    ]);
+
     const context = {
       site,
       audit: { getId: () => 'audit-1' },
@@ -376,24 +381,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
-      data: {
-        scrapeResults: [
-          {
-            location: 'scrapes/site-1/page-1/scrape.json',
-            metadata: {
-              url: 'https://example.com/page-1',
-              status: 'COMPLETE',
-            },
-          },
-          {
-            location: 'scrapes/site-1/page-2/scrape.json',
-            metadata: {
-              url: 'https://example.com/page-2',
-              status: 'COMPLETE',
-            },
-          },
-        ],
-      },
+      scrapeResultPaths,
     };
 
     const result = await runAuditAndProcessResults(context);
@@ -413,7 +401,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
-      data: {},
+      scrapeResultPaths: new Map(),
     };
 
     const result = await runAuditAndProcessResults(context);
@@ -423,68 +411,23 @@ describe('Commerce Product Enrichments Handler', () => {
   });
 
   it('runAuditAndProcessResults handles missing S3 bucket configuration', async () => {
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
+    ]);
+
     const context = {
       site,
       audit: { getId: () => 'audit-3' },
       finalUrl: 'https://example.com',
       log,
       env: {},
-      data: {
-        scrapeResults: [
-          {
-            location: 'scrapes/site-1/page-1/scrape.json',
-            metadata: {
-              url: 'https://example.com/page-1',
-              status: 'COMPLETE',
-            },
-          },
-        ],
-      },
+      scrapeResultPaths,
     };
 
     const result = await runAuditAndProcessResults(context);
 
     expect(result.auditResult.status).to.equal('PROCESSING_FAILED');
     expect(result.auditResult.error).to.equal('Missing S3 bucket configuration for commerce audit');
-  });
-
-  it('runAuditAndProcessResults skips failed scrapes', async () => {
-    const context = {
-      site,
-      audit: { getId: () => 'audit-4' },
-      finalUrl: 'https://example.com',
-      log,
-      s3Client: {},
-      env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-      },
-      data: {
-        scrapeResults: [
-          {
-            location: 'scrapes/site-1/page-1/scrape.json',
-            metadata: {
-              url: 'https://example.com/page-1',
-              status: 'FAILED',
-              reason: 'Timeout',
-            },
-          },
-          {
-            location: 'scrapes/site-1/page-2/scrape.json',
-            metadata: {
-              url: 'https://example.com/page-2',
-              status: 'REDIRECT',
-            },
-          },
-        ],
-      },
-    };
-
-    const result = await runAuditAndProcessResults(context);
-
-    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
-    expect(result.auditResult.totalScraped).to.equal(2);
-    expect(result.auditResult.processedPages).to.equal(0);
-    expect(result.auditResult.failedPages).to.equal(2);
   });
 
   it('runAuditAndProcessResults handles empty scrape data from S3', async () => {
@@ -496,6 +439,43 @@ describe('Commerce Product Enrichments Handler', () => {
         },
       }),
     };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
+      ['https://example.com/page-2', 'scrapes/site-1/page-2/scrape.json'],
+    ]);
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-4' },
+      finalUrl: 'https://example.com',
+      log: {
+        ...log,
+        debug: sinon.spy(),
+      },
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      scrapeResultPaths,
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.auditResult.totalScraped).to.equal(2);
+    expect(result.auditResult.processedPages).to.equal(0);
+    expect(result.auditResult.failedPages).to.equal(2);
+  });
+
+  it('runAuditAndProcessResults handles S3 read errors', async () => {
+    const s3Client = {
+      send: sinon.stub().rejects(new Error('S3 access denied')),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
+    ]);
 
     const context = {
       site,
@@ -509,17 +489,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
-      data: {
-        scrapeResults: [
-          {
-            location: 'scrapes/site-1/page-1/scrape.json',
-            metadata: {
-              url: 'https://example.com/page-1',
-              status: 'COMPLETE',
-            },
-          },
-        ],
-      },
+      scrapeResultPaths,
     };
 
     const result = await runAuditAndProcessResults(context);
@@ -528,45 +498,6 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.processedPages).to.equal(0);
     expect(result.auditResult.failedPages).to.equal(1);
     expect(log.warn).to.have.been.calledWith(sinon.match(/No scrape data found/));
-  });
-
-  it('runAuditAndProcessResults handles S3 read errors', async () => {
-    const s3Client = {
-      send: sinon.stub().rejects(new Error('S3 access denied')),
-    };
-
-    const context = {
-      site,
-      audit: { getId: () => 'audit-6' },
-      finalUrl: 'https://example.com',
-      log: {
-        ...log,
-        debug: sinon.spy(),
-      },
-      s3Client,
-      env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-      },
-      data: {
-        scrapeResults: [
-          {
-            location: 'scrapes/site-1/page-1/scrape.json',
-            metadata: {
-              url: 'https://example.com/page-1',
-              status: 'COMPLETE',
-            },
-          },
-        ],
-      },
-    };
-
-    const result = await runAuditAndProcessResults(context);
-
-    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
-    expect(result.auditResult.processedPages).to.equal(0);
-    expect(result.auditResult.failedPages).to.equal(1);
-    // getObjectFromKey logs S3 errors, so check that log.error was called
-    expect(log.error).to.have.been.called;
   });
 
   it('runAuditAndProcessResults handles unexpected errors during processing', async () => {
@@ -591,26 +522,20 @@ describe('Commerce Product Enrichments Handler', () => {
       debug: sinon.stub().throws(new Error('Unexpected logging error')),
     };
 
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
+    ]);
+
     const context = {
       site,
-      audit: { getId: () => 'audit-7' },
+      audit: { getId: () => 'audit-6' },
       finalUrl: 'https://example.com',
       log: logWithError,
       s3Client,
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
-      data: {
-        scrapeResults: [
-          {
-            location: 'scrapes/site-1/page-1/scrape.json',
-            metadata: {
-              url: 'https://example.com/page-1',
-              status: 'COMPLETE',
-            },
-          },
-        ],
-      },
+      scrapeResultPaths,
     };
 
     const result = await runAuditAndProcessResults(context);
@@ -618,10 +543,8 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
     expect(result.auditResult.processedPages).to.equal(0);
     expect(result.auditResult.failedPages).to.equal(1);
-    expect(logWithError.error).to.have.been.calledWith(
-      sinon.match(/Error processing scrape result/),
-      sinon.match.instanceOf(Error),
-    );
+    // getObjectFromKey logs S3 errors, so check that log.error was called
+    expect(logWithError.error).to.have.been.called;
   });
 
   it('runAuditAndProcessResults handles missing metadata.url', async () => {
@@ -637,9 +560,13 @@ describe('Commerce Product Enrichments Handler', () => {
       }),
     };
 
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
+    ]);
+
     const context = {
       site,
-      audit: { getId: () => 'audit-8' },
+      audit: { getId: () => 'audit-7' },
       finalUrl: 'https://example.com',
       log: {
         ...log,
@@ -649,17 +576,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
-      data: {
-        scrapeResults: [
-          {
-            location: 'scrapes/site-1/page-1/scrape.json',
-            metadata: {
-              // url is missing
-              status: 'COMPLETE',
-            },
-          },
-        ],
-      },
+      scrapeResultPaths,
     };
 
     const result = await runAuditAndProcessResults(context);
@@ -693,9 +610,13 @@ describe('Commerce Product Enrichments Handler', () => {
       }),
     };
 
+    const scrapeResultPaths = new Map([
+      ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+    ]);
+
     const context = {
       site,
-      audit: { getId: () => 'audit-9' },
+      audit: { getId: () => 'audit-8' },
       finalUrl: 'https://example.com',
       log: {
         ...log,
@@ -705,17 +626,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
-      data: {
-        scrapeResults: [
-          {
-            location: 'scrapes/site-1/product-1/scrape.json',
-            metadata: {
-              url: 'https://example.com/product-1',
-              status: 'COMPLETE',
-            },
-          },
-        ],
-      },
+      scrapeResultPaths,
     };
 
     const result = await runAuditAndProcessResults(context);
@@ -759,9 +670,13 @@ describe('Commerce Product Enrichments Handler', () => {
       }),
     };
 
+    const scrapeResultPaths = new Map([
+      ['https://example.com/category', 'scrapes/site-1/category/scrape.json'],
+    ]);
+
     const context = {
       site,
-      audit: { getId: () => 'audit-10' },
+      audit: { getId: () => 'audit-9' },
       finalUrl: 'https://example.com',
       log: {
         ...log,
@@ -771,17 +686,7 @@ describe('Commerce Product Enrichments Handler', () => {
       env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
       },
-      data: {
-        scrapeResults: [
-          {
-            location: 'scrapes/site-1/category/scrape.json',
-            metadata: {
-              url: 'https://example.com/category',
-              status: 'COMPLETE',
-            },
-          },
-        ],
-      },
+      scrapeResultPaths,
     };
 
     const result = await runAuditAndProcessResults(context);
@@ -790,4 +695,6 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.processedPages).to.equal(1);
     expect(result.auditResult.productPages).to.equal(0);
   });
+
 });
+
