@@ -176,6 +176,8 @@ export async function runAuditAndProcessResults(context) {
     site, audit, finalUrl, log, scrapeResultPaths, s3Client, env, auditContext,
   } = context;
 
+  // Version identifier for deployment tracking
+  log.info(`${LOG_PREFIX} CODE VERSION: 2026-02-02T16:30:00Z - eagles-nest-isolated test deployment`);
   log.info(`${LOG_PREFIX} Step 3: runAuditAndProcessResults started`);
 
   // Debug logging to understand what context we're receiving
