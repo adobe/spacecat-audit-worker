@@ -289,8 +289,7 @@ describe('PTR Selector Audit', () => {
       expect(logStub.info).to.have.been.calledWithMatch(/Enabled paid-traffic-analysis-monthly/);
     });
 
-    it('should set reportDecision to "weekly report" and disable monthly when totalPageViewSum >= 200K', async () => {
-      mockConfiguration.isHandlerEnabledForSite.withArgs('paid-traffic-analysis-monthly', site).returns(true);
+    it('should set reportDecision to "weekly report" and enable both weekly and monthly when totalPageViewSum >= 200K', async () => {
       const ctx = createContext([{ total_pageview_sum: '500000' }]);
 
       const result = await runPtrSelectorAnalysisStep(ctx);
@@ -299,9 +298,10 @@ describe('PTR Selector Audit', () => {
       expect(result.auditResult.reportDecision).to.equal('weekly report');
       expect(result.fullAuditRef).to.equal(auditUrl);
       expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('paid-traffic-analysis-weekly', site);
-      expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('paid-traffic-analysis-monthly', site);
+      expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('paid-traffic-analysis-monthly', site);
+      expect(mockConfiguration.disableHandlerForSite).to.not.have.been.called;
       expect(mockConfiguration.save).to.have.been.called;
-      expect(logStub.info).to.have.been.calledWithMatch(/Enabled paid-traffic-analysis-weekly/);
+      expect(logStub.info).to.have.been.calledWithMatch(/Enabled paid-traffic-analysis-weekly and paid-traffic-analysis-monthly/);
     });
 
     it('should handle boundary value of exactly 30K as monthly report', async () => {
@@ -329,7 +329,7 @@ describe('PTR Selector Audit', () => {
       expect(result.auditResult.reportDecision).to.equal('not enough data');
     });
 
-    it('should not enable audit when already enabled but still disable the opposite', async () => {
+    it('should not re-enable audits when already enabled for weekly decision', async () => {
       mockConfiguration.isHandlerEnabledForSite.withArgs('paid-traffic-analysis-weekly', site).returns(true);
       mockConfiguration.isHandlerEnabledForSite.withArgs('paid-traffic-analysis-monthly', site).returns(true);
       const ctx = createContext([{ total_pageview_sum: '500000' }]);
@@ -337,7 +337,7 @@ describe('PTR Selector Audit', () => {
       await runPtrSelectorAnalysisStep(ctx);
 
       expect(mockConfiguration.enableHandlerForSite).to.not.have.been.called;
-      expect(mockConfiguration.disableHandlerForSite).to.have.been.calledWith('paid-traffic-analysis-monthly', site);
+      expect(mockConfiguration.disableHandlerForSite).to.not.have.been.called;
       expect(logStub.info).to.have.been.calledWithMatch(/already enabled/);
     });
 

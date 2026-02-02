@@ -175,8 +175,8 @@ export async function runPtrSelectorAnalysisStep(context) {
 
     if (reportDecision === REPORT_DECISION.WEEKLY) {
       await enableAuditForSite('paid-traffic-analysis-weekly', site, configuration, log);
-      await disableAuditForSite('paid-traffic-analysis-monthly', site, configuration, log);
-      log.info(`[ptr-selector] totalPageViewSum=${totalPageViewSum}. Enabled paid-traffic-analysis-weekly for site ${siteId}.`);
+      await enableAuditForSite('paid-traffic-analysis-monthly', site, configuration, log);
+      log.info(`[ptr-selector] totalPageViewSum=${totalPageViewSum}. Enabled paid-traffic-analysis-weekly and paid-traffic-analysis-monthly for site ${siteId}.`);
     } else if (reportDecision === REPORT_DECISION.MONTHLY) {
       await enableAuditForSite('paid-traffic-analysis-monthly', site, configuration, log);
       await disableAuditForSite('paid-traffic-analysis-weekly', site, configuration, log);
