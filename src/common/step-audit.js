@@ -117,22 +117,6 @@ export class StepAudit extends BaseAudit {
         return ok();
       }
 
-      /* c8 ignore start */
-      // DEBUG: Log received message structure to trace SQS flow
-      const actualJobId = jobId || auditContext?.scrapeJobId || 'none';
-      log.info(`[SQS-RECEIVE-DEBUG] Message received: type=${type}, siteId=${siteId}, `
-        + `jobId=${actualJobId}, hasAbort=${!!abort}, abortReason=${abort?.reason || 'none'}`);
-
-      if (auditContext?.scrapeJobId) {
-        log.info(`[SQS-RECEIVE-DEBUG] JobId found in auditContext.scrapeJobId: ${auditContext.scrapeJobId}`);
-      }
-
-      if (abort) {
-        log.info(`[SQS-RECEIVE-DEBUG] Abort field found: ${JSON.stringify(abort)}`);
-      }
-      /* c8 ignore stop */
-
-      /* c8 ignore start */
       // Check if scrape job was aborted (e.g., due to bot protection)
       if (abort) {
         const { reason, details } = abort;
@@ -145,7 +129,7 @@ export class StepAudit extends BaseAudit {
         // Handle bot-protection abort specifically for detailed logging
         if (reason === 'bot-protection') {
           const {
-            blockedUrlsCount, totalUrlsCount, byBlockerType, byHttpStatus,
+            blockedUrlsCount, totalUrlsCount, byBlockerType, byHttpStatus, blockedUrls,
           } = details;
 
           const statusDetails = Object.entries(byHttpStatus || {})
@@ -156,9 +140,10 @@ export class StepAudit extends BaseAudit {
             .join(', ');
 
           log.warn(
-            `[BOT-BLOCKED] Audit aborted for type ${type} for site ${site.getBaseURL()} (${siteId}): `
+            `[BOT-BLOCKED] Audit aborted for jobId=${jobId}, type=${type}, site=${site.getBaseURL()} (${siteId}): `
             + `HTTP Status: [${statusDetails}], Blocker Types: [${blockerDetails}], `
-            + `${blockedUrlsCount}/${totalUrlsCount} URLs blocked`,
+            + `${blockedUrlsCount}/${totalUrlsCount} URLs blocked, `
+            + `Bot Protected URLs: [${blockedUrls?.map((u) => u.url).join(', ') || 'none'}]`,
           );
         }
 
@@ -169,7 +154,6 @@ export class StepAudit extends BaseAudit {
           ...details,
         });
       }
-      /* c8 ignore stop */
 
       // Determine which step to run
       const hasNext = hasText(auditContext.next);
