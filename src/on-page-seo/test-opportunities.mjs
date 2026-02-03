@@ -7,7 +7,7 @@
  * runs technical SEO checks, and outputs filtered results for analysis.
  * 
  * Features:
- * - SERP position filtering (4-20 primary, 4-30 fallback)
+ * - SERP position filtering (4-30 range)
  * - Opportunity scoring based on CTR and search volume
  * - Technical validation (HTTP status, redirects, canonical, noindex, robots.txt)
  * - Multiple output CSVs for analysis
@@ -92,8 +92,7 @@ function writeCsvFile(filePath, records, columns) {
  * 
  * Business Rules (from handler.js):
  * - Positions 1-3: Exclude (already performing well)
- * - Positions 4-20: Include (sweet spot - low-hanging fruit)
- * - Positions 21-30: Secondary (softer range if < 3 opportunities)
+ * - Positions 4-30: Include (optimization opportunity range)
  * - Positions 31+: Exclude (too difficult for quick wins)
  */
 function isEligibleForOptimization(serpPosition, useSofterRange = false) {
@@ -106,7 +105,7 @@ function isEligibleForOptimization(serpPosition, useSofterRange = false) {
     return true; // Primary range
   }
   if (useSofterRange && pos >= 21 && pos <= 30) {
-    return true; // Secondary range (if needed)
+    return true; // Extended range (21-30)
   }
   return false; // Too high (1-3) or too low (31+)
 }
@@ -180,33 +179,22 @@ function calculateOpportunityScore(searchVolume, currentRanking) {
  * Apply opportunity selection logic (from handler.js)
  * 
  * Steps:
- * 1. Filter by SERP position (4-20)
- * 2. If < topN, soften range to (4-30)
- * 3. Calculate opportunity scores
- * 4. Sort by score descending
- * 5. Select top N
+ * 1. Filter by SERP position (4-30)
+ * 2. Calculate opportunity scores
+ * 3. Sort by score descending
+ * 4. Select top N
  */
 function selectOpportunities(records, topN) {
   log.info(`\n📊 Opportunity Selection:`);
   log.info(`   Total URLs in CSV: ${records.length}`);
   
-  // Step 1: Filter eligible opportunities by SERP position (4-20)
-  let eligibleOpportunities = records.filter((record) => {
+  // Step 1: Filter eligible opportunities by SERP position (4-30)
+  const eligibleOpportunities = records.filter((record) => {
     const serpPosition = record.serp_position || record.serpPosition || record.ranking;
-    return isEligibleForOptimization(serpPosition, false);
+    return isEligibleForOptimization(serpPosition, true);
   });
   
-  log.info(`   Eligible (positions 4-20): ${eligibleOpportunities.length}`);
-  
-  // Step 2: If fewer than topN, soften range to 4-30
-  if (eligibleOpportunities.length < topN) {
-    log.warn(`   Fewer than ${topN} opportunities found, softening range to positions 4-30`);
-    eligibleOpportunities = records.filter((record) => {
-      const serpPosition = record.serp_position || record.serpPosition || record.ranking;
-      return isEligibleForOptimization(serpPosition, true);
-    });
-    log.info(`   Eligible (positions 4-30): ${eligibleOpportunities.length}`);
-  }
+  log.info(`   Eligible (positions 4-30): ${eligibleOpportunities.length}`);
   
   // Step 3: Calculate opportunity scores
   const scoredOpportunities = eligibleOpportunities.map((record) => {
