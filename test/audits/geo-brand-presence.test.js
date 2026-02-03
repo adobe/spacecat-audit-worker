@@ -667,7 +667,26 @@ describe('Geo Brand Presence Handler', () => {
     }
   });
 
-  it('should skip sending message to Mystique in step 1 when success is false', async () => {
+  it('should continue with human prompts only when import fails (success is false)', async () => {
+    const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+    fakeConfigS3Response({
+      ...llmoConfig.defaultConfig(),
+      categories: {
+        [cat1]: { name: 'Category 1', region: ['us'] },
+      },
+      topics: {
+        'a3c8d1e2-4f5b-6c7d-8e9f-0a1b2c3d4e5f': {
+          name: 'Human Topic 1',
+          category: cat1,
+          prompts: [
+            { prompt: 'human prompt 1', regions: ['us'], origin: 'human', source: 'config' },
+          ],
+        },
+      },
+    });
+
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
     await loadPromptsAndSendDetection({
       ...context,
       auditContext: {
@@ -677,14 +696,43 @@ describe('Geo Brand Presence Handler', () => {
       },
     }, getPresignedUrl);
 
-    expect(sqs.sendMessage).to.not.have.been.called;
-    expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique',
+    // Should log warning and continue with human prompts
+    expect(log.warn).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Import failed for site id %s (%s). Continuing with human prompts only.',
       site.getId(),
       site.getBaseURL(),
-      sinon.match.object,
     );
+
+    // Should still send detection message with human prompts
+    expect(sqs.sendMessage).to.have.been.calledOnce;
+    const [, message] = sqs.sendMessage.firstCall.args;
+    expect(message.type).to.equal('detect:geo-brand-presence');
   });
+
+  it('should skip sending message when import fails and no human prompts available', async () => {
+    // Empty config - no human prompts
+    fakeConfigS3Response(llmoConfig.defaultConfig());
+
+    await loadPromptsAndSendDetection({
+      ...context,
+      auditContext: {
+        success: false,
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    // Should log warning about import failure
+    expect(log.warn).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Import failed for site id %s (%s). Continuing with human prompts only.',
+      site.getId(),
+      site.getBaseURL(),
+    );
+
+    // Should NOT send message when no prompts available
+    expect(sqs.sendMessage).to.not.have.been.called;
+  });
+
 
   it('should skip sending message to Mystique in step 1 when calendarWeek is invalid', async () => {
     await loadPromptsAndSendDetection({
