@@ -725,6 +725,7 @@ describe('FAQs Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.promptsByUrl).to.have.lengthOf(1);
+      expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/starter-guide');
       expect(result.auditResult.promptsByUrl[0].topic).to.equal('Topic2');
       expect(result.auditResult.promptsByUrl[0].prompts).to.have.lengthOf(1);
       expect(log.info).to.have.been.calledWith(
