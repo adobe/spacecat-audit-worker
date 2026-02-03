@@ -134,6 +134,22 @@ function deduplicatePrompts(prompts) {
   return Array.from(seenQuestions.values());
 }
 
+/**
+ * Sorts prompts with URLs first, then prompts without URLs
+ * @param {Array} prompts - Array of prompt objects with url, topic, and question
+ * @returns {Array} Sorted array of prompts
+ */
+function sortPrompts(prompts) {
+  return prompts.sort((a, b) => {
+    const aHasUrl = a.url && a.url.length > 0;
+    const bHasUrl = b.url && b.url.length > 0;
+
+    if (aHasUrl && !bHasUrl) return -1;
+    if (!aHasUrl && bHasUrl) return 1;
+    return 0;
+  });
+}
+
 async function runFaqsAudit(url, context, site) {
   const {
     log,
@@ -207,7 +223,7 @@ async function runFaqsAudit(url, context, site) {
       );
 
       if (prompts.length > 0) {
-        topPrompts = prompts;
+        topPrompts = sortPrompts(prompts);
         usedPeriodIdentifier = periodIdentifier;
         log.info(`[FAQ] Successfully found brand presence data for ${periodIdentifier} with ${prompts.length} prompts`);
         break;
