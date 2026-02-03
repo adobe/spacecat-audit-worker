@@ -21,6 +21,7 @@ import {
   DeleteObjectsCommand,
   ListObjectsV2Command,
   PutObjectCommand,
+  HeadObjectCommand,
 } from '@aws-sdk/client-s3';
 import {
   deleteOriginalFiles,
@@ -35,6 +36,8 @@ import {
   sendRunImportMessage,
   getAuditPrefixes,
   sendCodeFixMessagesToMystique,
+  mergeAccessibilityData,
+  getCodeInfo,
 } from '../../../src/accessibility/utils/data-processing.js';
 
 use(sinonChai);
@@ -1579,8 +1582,18 @@ describe('data-processing utility functions', () => {
         url: 'https://example.com/page1',
         violations: {
           total: 5,
-          critical: { count: 3, items: {} },
-          serious: { count: 2, items: {} },
+          critical: {
+            count: 3,
+            items: {
+              'color-contrast': { count: 3, description: 'Color contrast', level: 'critical' },
+            },
+          },
+          serious: {
+            count: 2,
+            items: {
+              'link-name': { count: 2, description: 'Link name', level: 'serious' },
+            },
+          },
         },
         traffic: 100,
       };
@@ -1588,8 +1601,18 @@ describe('data-processing utility functions', () => {
         url: 'https://example.com/page2',
         violations: {
           total: 3,
-          critical: { count: 1, items: {} },
-          serious: { count: 2, items: {} },
+          critical: {
+            count: 1,
+            items: {
+              'image-alt': { count: 1, description: 'Image alt', level: 'critical' },
+            },
+          },
+          serious: {
+            count: 2,
+            items: {
+              'heading-order': { count: 2, description: 'Heading order', level: 'serious' },
+            },
+          },
         },
         traffic: 50,
       };
@@ -1608,6 +1631,9 @@ describe('data-processing utility functions', () => {
         .resolves({
           CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
         });
+      // S3 HeadObjectCommand mock - simulate file does NOT exist (so no merge happens)
+      mockS3Client.send.withArgs(sinon.match.instanceOf(HeadObjectCommand))
+        .rejects(new Error('NoSuchKey'));
       // S3 PutObject mock (saving aggregated data)
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
       // S3 DeleteObjects/DeleteObject mocks (for cleanupS3Files)
@@ -1762,7 +1788,21 @@ describe('data-processing utility functions', () => {
       const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
       const mockFileData = { // Data for the current processing
         url: 'https://example.com/page1',
-        violations: { total: 5 },
+        violations: {
+          total: 5,
+          critical: {
+            count: 3,
+            items: {
+              'color-contrast': { count: 3, description: 'Color issue', level: 'critical' },
+            },
+          },
+          serious: {
+            count: 2,
+            items: {
+              'link-name': { count: 2, description: 'Link issue', level: 'serious' },
+            },
+          },
+        },
         traffic: 100,
       };
       const lastWeekFileKey1 = `accessibility/test-site/${new Date(new Date(targetDate).setDate(new Date(targetDate).getDate() - 14)).toISOString().split('T')[0]}-final-result.json`;
@@ -1775,6 +1815,9 @@ describe('data-processing utility functions', () => {
         .resolves({
           CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
         });
+      // S3 HeadObjectCommand mock - simulate file does NOT exist (so no merge happens)
+      mockS3Client.send.withArgs(sinon.match.instanceOf(HeadObjectCommand))
+        .rejects(new Error('NoSuchKey'));
       // S3 PutObject mock
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
       // S3 DeleteObject/DeleteObjects mock (for cleanupS3Files)
@@ -1808,8 +1851,7 @@ describe('data-processing utility functions', () => {
 
       expect(result.success).to.be.true;
 
-      // const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey1}`;
-      // The log message in the code actually uses lastWeekObjectKeys[1] for the key part.
+      // With 2 keys [key1, key2], code loads lastWeekObjectKeys[length-2] = lastWeekObjectKeys[0] = lastWeekFileKey1
       const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey2}`;
       const logCall = mockLog.debug.getCalls().find((call) => call.args[0].includes(expectedKeyInLog) && call.args[0].includes('with content:'));
       expect(logCall).to.not.be.undefined;
@@ -1821,7 +1863,25 @@ describe('data-processing utility functions', () => {
     it('should call all required functions in correct order', async () => {
       const targetDate = '2024-01-01';
       const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
-      const mockFileData = { url: 'https://example.com/page1', violations: { total: 5 }, traffic: 100 };
+      const mockFileData = {
+        url: 'https://example.com/page1',
+        violations: {
+          total: 5,
+          critical: {
+            count: 3,
+            items: {
+              'color-contrast': { count: 3, description: 'Color issue', level: 'critical' },
+            },
+          },
+          serious: {
+            count: 2,
+            items: {
+              'link-name': { count: 2, description: 'Link issue', level: 'serious' },
+            },
+          },
+        },
+        traffic: 100,
+      };
       const dt = new Date(targetDate);
       const prevDate = new Date(dt.setDate(dt.getDate() - 7));
       const lastWeekFileKey = `accessibility/test-site/${prevDate.toISOString().split('T')[0]}-final-result.json`;
@@ -1830,6 +1890,9 @@ describe('data-processing utility functions', () => {
       // For getSubfolders (via getObjectKeysFromSubfolders)
       mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
         .resolves({ CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }] });
+      // S3 HeadObjectCommand mock - simulate file does NOT exist (so no merge happens)
+      mockS3Client.send.withArgs(sinon.match.instanceOf(HeadObjectCommand))
+        .rejects(new Error('NoSuchKey'));
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({}); // For save
       mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
 
@@ -6326,6 +6389,996 @@ describe('data-processing utility functions', () => {
           '[accessibility] [Site Id: site-123] Code file verified in S3 bucket',
         );
         expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      });
+    });
+  });
+
+  describe('mergeAccessibilityData', () => {
+    it('should skip existing URLs and log debug message (lines 341-344)', () => {
+      const existingData = {
+        'https://example.com/page1': {
+          violations: {
+            critical: { count: 3, items: {} },
+            serious: { count: 2, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 5,
+            critical: { count: 3, items: {} },
+            serious: { count: 2, items: {} },
+          },
+        },
+      };
+
+      const newData = {
+        'https://example.com/page1': {
+          violations: {
+            critical: { count: 1, items: {} },
+            serious: { count: 1, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 2,
+            critical: { count: 1, items: {} },
+            serious: { count: 1, items: {} },
+          },
+        },
+      };
+
+      const result = mergeAccessibilityData(existingData, newData, mockLog, 'TestMerge');
+
+      // Verify the URL already exists skipped message was logged
+      expect(mockLog.debug).to.have.been.calledWith('[TestMerge] URL already exists, skipping: https://example.com/page1');
+      expect(mockLog.info).to.have.been.calledWith('[TestMerge] Added 0 new URLs, skipped 1 existing URLs');
+    });
+
+    it('should add new URL when it does not exist', () => {
+      const existingData = {
+        'https://example.com/page1': {
+          violations: {
+            critical: { count: 3, items: {} },
+            serious: { count: 2, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 5,
+            critical: { count: 3, items: {} },
+            serious: { count: 2, items: {} },
+          },
+        },
+      };
+
+      const newData = {
+        'https://example.com/page2': {
+          violations: {
+            critical: { count: 1, items: {} },
+            serious: { count: 1, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 2,
+            critical: { count: 1, items: {} },
+            serious: { count: 1, items: {} },
+          },
+        },
+      };
+
+      const result = mergeAccessibilityData(existingData, newData, mockLog, 'TestMerge');
+
+      // Verify the new URL was added
+      expect(mockLog.info).to.have.been.calledWith('[TestMerge] Added new URL data for: https://example.com/page2');
+      expect(mockLog.info).to.have.been.calledWith('[TestMerge] Added 1 new URLs, skipped 0 existing URLs');
+      expect(result).to.have.property('https://example.com/page2');
+    });
+
+    it('should copy only core fields when first seeing a rule (lines 368-409)', () => {
+      const existingData = {
+        'https://example.com/page1': {
+          violations: {
+            critical: {
+              count: 3,
+              items: {
+                rule1: {
+                  count: 3,
+                  description: 'Rule 1 description',
+                  level: 'critical',
+                  understandingUrl: 'https://example.com/rule1',
+                  successCriteriaNumber: '1.1.1',
+                  helpUrl: 'https://help.com/rule1',
+                  failureSummary: 'Failure summary',
+                  htmlWithIssues: ['<div>Issue 1</div>'],
+                  target: ['target1'],
+                  successCriteriaTags: ['tag1'],
+                },
+              },
+            },
+            serious: { count: 0, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 3,
+            critical: { count: 3, items: {} },
+            serious: { count: 0, items: {} },
+          },
+        },
+      };
+
+      const newData = {
+        'https://example.com/page2': {
+          violations: {
+            critical: {
+              count: 2,
+              items: {
+                rule2: {
+                  count: 2,
+                  description: 'Rule 2 description',
+                  level: 'critical',
+                  understandingUrl: 'https://example.com/rule2',
+                  successCriteriaNumber: '1.2.1',
+                  helpUrl: 'https://help.com/rule2',
+                  failureSummary: 'Another failure',
+                  htmlWithIssues: ['<span>Issue 2</span>'],
+                  target: ['target2'],
+                  successCriteriaTags: ['tag2', 'tag3'],
+                },
+              },
+            },
+            serious: { count: 0, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 2,
+            critical: { count: 2, items: {} },
+            serious: { count: 0, items: {} },
+          },
+        },
+      };
+
+      const result = mergeAccessibilityData(existingData, newData, mockLog);
+
+      // Verify the new rule was added with only the core 5 fields
+      // (matching the structure created by updateViolationData)
+      expect(result.overall.violations.critical.items.rule2).to.deep.equal({
+        count: 2,
+        description: 'Rule 2 description',
+        level: 'critical',
+        understandingUrl: 'https://example.com/rule2',
+        successCriteriaNumber: '1.2.1',
+      });
+
+      // Verify that array fields are NOT included in overall
+      expect(result.overall.violations.critical.items.rule2).to.not.have.property('htmlWithIssues');
+      expect(result.overall.violations.critical.items.rule2).to.not.have.property('target');
+      expect(result.overall.violations.critical.items.rule2).to.not.have.property('successCriteriaTags');
+      expect(result.overall.violations.critical.items.rule2).to.not.have.property('helpUrl');
+      expect(result.overall.violations.critical.items.rule2).to.not.have.property('failureSummary');
+    });
+
+    it('should accumulate counts when merging existing rules (lines 388-409)', () => {
+      const existingData = {
+        'https://example.com/page1': {
+          violations: {
+            critical: {
+              count: 3,
+              items: {
+                rule1: {
+                  count: 3,
+                  description: 'Rule 1 description',
+                  level: 'critical',
+                  understandingUrl: 'https://example.com/rule1',
+                  successCriteriaNumber: '1.1.1',
+                  helpUrl: 'https://help.com/rule1',
+                  failureSummary: 'Failure summary',
+                  htmlWithIssues: ['<div>Issue 1</div>'],
+                  target: ['target1'],
+                  successCriteriaTags: ['tag1'],
+                },
+              },
+            },
+            serious: { count: 0, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 3,
+            critical: {
+              count: 3,
+              items: {
+                rule1: {
+                  count: 3,
+                  description: 'Rule 1 description',
+                  level: 'critical',
+                  understandingUrl: 'https://example.com/rule1',
+                  successCriteriaNumber: '1.1.1',
+                },
+              },
+            },
+            serious: { count: 0, items: {} },
+          },
+        },
+      };
+
+      const newData = {
+        'https://example.com/page2': {
+          violations: {
+            critical: {
+              count: 2,
+              items: {
+                rule1: {
+                  count: 2,
+                  description: 'Rule 1 description',
+                  level: 'critical',
+                  understandingUrl: 'https://example.com/rule1',
+                  successCriteriaNumber: '1.1.1',
+                  helpUrl: 'https://help.com/rule1',
+                  failureSummary: 'Failure summary',
+                  htmlWithIssues: ['<div>Issue 2</div>'],
+                  target: ['target2'],
+                  successCriteriaTags: ['tag2'],
+                },
+              },
+            },
+            serious: { count: 0, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 2,
+            critical: { count: 2, items: {} },
+            serious: { count: 0, items: {} },
+          },
+        },
+      };
+
+      const result = mergeAccessibilityData(existingData, newData, mockLog);
+
+      // Verify the rule count was accumulated (3 + 2 = 5)
+      expect(result.overall.violations.critical.items.rule1.count).to.equal(5);
+
+      // Verify only core fields are present (no arrays in overall)
+      expect(result.overall.violations.critical.items.rule1).to.have.property('description');
+      expect(result.overall.violations.critical.items.rule1).to.have.property('level');
+      expect(result.overall.violations.critical.items.rule1).to.have.property('understandingUrl');
+      expect(result.overall.violations.critical.items.rule1).to.have.property('successCriteriaNumber');
+
+      // Verify array fields are NOT in overall (they stay in individual URLs only)
+      expect(result.overall.violations.critical.items.rule1).to.not.have.property('htmlWithIssues');
+      expect(result.overall.violations.critical.items.rule1).to.not.have.property('target');
+      expect(result.overall.violations.critical.items.rule1).to.not.have.property('successCriteriaTags');
+    });
+
+    it('should handle merging rules with missing fields gracefully', () => {
+      const existingData = {
+        'https://example.com/page1': {
+          violations: {
+            serious: {
+              count: 3,
+              items: {
+                rule1: {
+                  count: 3,
+                  description: 'Rule 1 description',
+                  level: 'serious',
+                },
+              },
+            },
+            critical: { count: 0, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 3,
+            serious: {
+              count: 3,
+              items: {
+                rule1: {
+                  count: 3,
+                  description: 'Rule 1 description',
+                  level: 'serious',
+                },
+              },
+            },
+            critical: { count: 0, items: {} },
+          },
+        },
+      };
+
+      const newData = {
+        'https://example.com/page2': {
+          violations: {
+            serious: {
+              count: 2,
+              items: {
+                rule1: {
+                  count: 2,
+                  description: 'Rule 1 description',
+                  level: 'serious',
+                  htmlWithIssues: ['<div>Issue 2</div>'],
+                  target: ['target2'],
+                  successCriteriaTags: ['tag2'],
+                },
+              },
+            },
+            critical: { count: 0, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 2,
+            serious: { count: 2, items: {} },
+            critical: { count: 0, items: {} },
+          },
+        },
+      };
+
+      const result = mergeAccessibilityData(existingData, newData, mockLog);
+
+      // Verify count was accumulated correctly
+      expect(result.overall.violations.serious.items.rule1.count).to.equal(5); // 3 + 2
+
+      // Verify no arrays in overall (core fields only)
+      expect(result.overall.violations.serious.items.rule1).to.not.have.property('htmlWithIssues');
+      expect(result.overall.violations.serious.items.rule1).to.not.have.property('target');
+      expect(result.overall.violations.serious.items.rule1).to.not.have.property('successCriteriaTags');
+    });
+
+    it('should handle invalid ruleId or ruleData (line 369)', () => {
+      const existingData = {
+        'https://example.com/page1': {
+          violations: {
+            critical: {
+              count: 3,
+              items: {
+                'valid-rule': {
+                  count: 3,
+                  description: 'Valid rule',
+                  level: 'critical',
+                },
+                // Empty string ruleId (invalid)
+                '': {
+                  count: 1,
+                  description: 'Should be skipped',
+                  level: 'critical',
+                },
+              },
+            },
+            serious: { count: 0, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 4,
+            critical: { count: 4, items: {} },
+            serious: { count: 0, items: {} },
+          },
+        },
+      };
+
+      const newData = {
+        'https://example.com/page2': {
+          violations: {
+            critical: {
+              count: 2,
+              items: {
+                'another-rule': {
+                  count: 2,
+                  description: 'Another valid rule',
+                  level: 'critical',
+                },
+                // null ruleData (invalid)
+                'null-rule': null,
+                // Non-object ruleData (invalid)
+                'string-rule': 'invalid',
+                // Number ruleData (invalid)
+                'number-rule': 123,
+              },
+            },
+            serious: { count: 0, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 2,
+            critical: { count: 2, items: {} },
+            serious: { count: 0, items: {} },
+          },
+        },
+      };
+
+      const result = mergeAccessibilityData(existingData, newData, mockLog);
+
+      // Valid rules should be processed
+      expect(result.overall.violations.critical.items['valid-rule']).to.exist;
+      expect(result.overall.violations.critical.items['another-rule']).to.exist;
+
+      // Invalid rules should be skipped
+      expect(result.overall.violations.critical.items['']).to.be.undefined;
+      expect(result.overall.violations.critical.items['null-rule']).to.be.undefined;
+      expect(result.overall.violations.critical.items['string-rule']).to.be.undefined;
+      expect(result.overall.violations.critical.items['number-rule']).to.be.undefined;
+    });
+
+    it('should handle missing rule fields with default values (lines 375-378)', () => {
+      const existingData = {
+        'https://example.com/page1': {
+          violations: {
+            critical: {
+              count: 2,
+              items: {
+                'incomplete-rule': {
+                  // Missing count
+                  // Missing description
+                  // Missing level
+                  // Only has some fields
+                  understandingUrl: 'https://example.com/rule',
+                },
+              },
+            },
+            serious: { count: 0, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 2,
+            critical: { count: 2, items: {} },
+            serious: { count: 0, items: {} },
+          },
+        },
+      };
+
+      const newData = {
+        'https://example.com/page2': {
+          violations: {
+            critical: {
+              count: 1,
+              items: {
+                'another-incomplete-rule': {
+                  count: 0, // Falsy count
+                  description: '', // Empty description
+                  level: '', // Empty level
+                  understandingUrl: '', // Empty understandingUrl
+                  successCriteriaNumber: '', // Empty successCriteriaNumber
+                  helpUrl: '', // Empty helpUrl
+                  failureSummary: '', // Empty failureSummary
+                },
+              },
+            },
+            serious: { count: 0, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 1,
+            critical: { count: 1, items: {} },
+            serious: { count: 0, items: {} },
+          },
+        },
+      };
+
+      const result = mergeAccessibilityData(existingData, newData, mockLog);
+
+      // Rule with missing fields should use defaults
+      expect(result.overall.violations.critical.items['incomplete-rule'].count).to.equal(0);
+      expect(result.overall.violations.critical.items['incomplete-rule'].description).to.equal('');
+      expect(result.overall.violations.critical.items['incomplete-rule'].level).to.equal('');
+
+      // Rule with falsy values should use those values (not override with OR defaults)
+      expect(result.overall.violations.critical.items['another-incomplete-rule'].count).to.equal(0);
+      expect(result.overall.violations.critical.items['another-incomplete-rule'].description).to.equal('');
+      expect(result.overall.violations.critical.items['another-incomplete-rule'].level).to.equal('');
+    });
+
+    it('should handle missing count when merging existing rules (line 390)', () => {
+      const existingData = {
+        'https://example.com/page1': {
+          violations: {
+            serious: {
+              count: 3,
+              items: {
+                rule1: {
+                  // count is missing
+                  description: 'Rule without count',
+                  level: 'serious',
+                },
+              },
+            },
+            critical: { count: 0, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 3,
+            serious: { count: 3, items: {} },
+            critical: { count: 0, items: {} },
+          },
+        },
+      };
+
+      const newData = {
+        'https://example.com/page2': {
+          violations: {
+            serious: {
+              count: 2,
+              items: {
+                rule1: {
+                  // count is also missing in new data
+                  description: 'Rule without count',
+                  level: 'serious',
+                },
+              },
+            },
+            critical: { count: 0, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 2,
+            serious: { count: 2, items: {} },
+            critical: { count: 0, items: {} },
+          },
+        },
+      };
+
+      const result = mergeAccessibilityData(existingData, newData, mockLog);
+
+      // When both counts are missing, should default to 0 + 0 = 0
+      expect(result.overall.violations.serious.items.rule1.count).to.equal(0);
+    });
+
+    it('should handle missing count in reduce function (line 414)', () => {
+      const existingData = {
+        'https://example.com/page1': {
+          violations: {
+            critical: {
+              count: 5,
+              items: {
+                rule1: {
+                  count: 3,
+                  description: 'Rule 1',
+                  level: 'critical',
+                },
+                rule2: {
+                  // Missing count field
+                  description: 'Rule 2 without count',
+                  level: 'critical',
+                },
+                rule3: {
+                  count: 0, // Falsy count
+                  description: 'Rule 3 with zero count',
+                  level: 'critical',
+                },
+              },
+            },
+            serious: { count: 0, items: {} },
+          },
+        },
+        overall: {
+          violations: {
+            total: 5,
+            critical: { count: 5, items: {} },
+            serious: { count: 0, items: {} },
+          },
+        },
+      };
+
+      const newData = {
+        overall: {
+          violations: {
+            total: 0,
+            critical: { count: 0, items: {} },
+            serious: { count: 0, items: {} },
+          },
+        },
+      };
+
+      const result = mergeAccessibilityData(existingData, newData, mockLog);
+
+      // The reduce should handle missing counts gracefully
+      // rule1: 3, rule2: 0 (missing -> 0), rule3: 0 (falsy -> 0)
+      expect(result.overall.violations.critical.count).to.equal(3);
+      expect(result.overall.violations.critical.items.rule1.count).to.equal(3);
+      expect(result.overall.violations.critical.items.rule2.count).to.equal(0);
+      expect(result.overall.violations.critical.items.rule3.count).to.equal(0);
+    });
+  });
+
+  describe('aggregateAccessibilityData - additional coverage', () => {
+    it('should log and create new file when HeadObjectCommand fails (lines 547-550)', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+      const mockFileData = {
+        url: 'https://example.com/page1',
+        violations: {
+          total: 5,
+          critical: { count: 3, items: { issue1: { count: 3 } } },
+          serious: { count: 2, items: { issue2: { count: 2 } } },
+        },
+        traffic: 100,
+      };
+
+      // Setup S3 mocks
+      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
+        });
+
+      // Simulate HeadObjectCommand failure (file doesn't exist)
+      mockS3Client.send.withArgs(sinon.match.instanceOf(HeadObjectCommand))
+        .rejects(new Error('NoSuchKey'));
+
+      // For S3 PutObject to save aggregated data
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
+      // For cleanupS3Files
+      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub()
+            .onFirstCall().resolves(['file1.json'])
+            .onSecondCall().resolves([`accessibility/test-site/${targetDate}-final-result.json`]),
+          getObjectFromKey: sandbox.stub()
+            .onFirstCall().resolves(mockFileData)
+            .onSecondCall().resolves(null),
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'accessibility',
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.true;
+      // Verify the logs for file doesn't exist
+      expect(mockLog.info).to.have.been.calledWith(sinon.match(/File doesn't exist \(HeadObjectCommand failed\)/));
+      expect(mockLog.info).to.have.been.calledWith(sinon.match(/Will create new file with current aggregatedData/));
+    });
+
+    it('should log last week file content when available (lines 574-576)', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+      const mockFileData = {
+        url: 'https://example.com/page1',
+        violations: {
+          total: 5,
+          critical: { count: 3, items: { issue1: { count: 3 } } },
+          serious: { count: 2, items: { issue2: { count: 2 } } },
+        },
+        traffic: 100,
+      };
+
+      const lastWeekData = {
+        url: 'https://example.com/page1',
+        violations: {
+          total: 4,
+          critical: { count: 2, items: {} },
+          serious: { count: 2, items: {} },
+        },
+        traffic: 90,
+      };
+
+      const lastWeekKey = `accessibility/test-site/${new Date(new Date(targetDate).setDate(new Date(targetDate).getDate() - 7)).toISOString().split('T')[0]}-final-result.json`;
+
+      // Setup S3 mocks
+      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
+        });
+
+      // Simulate HeadObjectCommand failure (file doesn't exist)
+      mockS3Client.send.withArgs(sinon.match.instanceOf(HeadObjectCommand))
+        .rejects(new Error('NoSuchKey'));
+
+      // For S3 PutObject to save aggregated data
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
+      // For cleanupS3Files
+      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub()
+            .onFirstCall().resolves(['file1.json'])
+            .onSecondCall().resolves([
+              `accessibility/test-site/${targetDate}-final-result.json`,
+              lastWeekKey,
+            ]),
+          getObjectFromKey: sandbox.stub()
+            .onFirstCall().resolves(mockFileData)
+            .onSecondCall().resolves(lastWeekData), // Return last week data
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'accessibility',
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.true;
+      // Verify the last week file log
+      expect(mockLog.debug).to.have.been.calledWith(sinon.match(/Last week file key:/));
+      expect(mockLog.debug).to.have.been.calledWith(sinon.match(/with content:/));
+      expect(result.finalResultFiles.lastWeek).to.deep.equal(lastWeekData);
+    });
+
+    it('should not log last week file content when not available', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+      const mockFileData = {
+        url: 'https://example.com/page1',
+        violations: {
+          total: 5,
+          critical: { count: 3, items: { issue1: { count: 3 } } },
+          serious: { count: 2, items: { issue2: { count: 2 } } },
+        },
+        traffic: 100,
+      };
+
+      // Setup S3 mocks
+      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
+        });
+
+      mockS3Client.send.withArgs(sinon.match.instanceOf(HeadObjectCommand))
+        .rejects(new Error('NoSuchKey'));
+
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
+      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub()
+            .onFirstCall().resolves(['file1.json'])
+            .onSecondCall().resolves([`accessibility/test-site/${targetDate}-final-result.json`]), // Only one file
+          getObjectFromKey: sandbox.stub()
+            .onFirstCall().resolves(mockFileData),
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'accessibility',
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.true;
+      // Verify no last week file log since there's only one file (length < 2)
+      expect(mockLog.debug).to.not.have.been.calledWith(sinon.match(/Last week file key:/));
+      expect(result.finalResultFiles.lastWeek).to.be.null;
+    });
+  });
+
+  describe('getCodeInfo', () => {
+    let mockSite;
+    let mockContext;
+    let mockConfiguration;
+
+    beforeEach(() => {
+      mockSite = {
+        getId: () => 'site-123',
+        getDeliveryType: () => 'aem_edge',
+        getCode: () => null, // No code config for simpler AEMY testing
+        getBaseURL: () => 'https://example.com',
+      };
+
+      mockConfiguration = {
+        getHandlers: sinon.stub().returns({
+          'a11y-aemy-code-injection': { enabled: true },
+        }),
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+      };
+
+      mockContext = {
+        log: mockLog,
+        s3Client: mockS3Client,
+        env: {
+          S3_IMPORTER_BUCKET_NAME: 'importer-bucket',
+          S3_MYSTIQUE_BUCKET_NAME: 'mystique-bucket',
+        },
+        dataAccess: {
+          Configuration: {
+            findLatest: sinon.stub().resolves(mockConfiguration),
+          },
+        },
+      };
+    });
+
+    describe('AEMY enabled (default flow)', () => {
+      it('should use AEMY flow when feature flag is enabled for accessibility', async () => {
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(mockContext.dataAccess.Configuration.findLatest).to.have.been.calledOnce;
+        expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('a11y-aemy-code-injection', mockSite);
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: '',
+        });
+      });
+
+      it('should use AEMY flow for CWV audit without checking feature flag', async () => {
+        const result = await getCodeInfo(mockSite, 'cwv', mockContext);
+
+        expect(mockContext.dataAccess.Configuration.findLatest).to.not.have.been.called;
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: '',
+        });
+      });
+
+      it('should default to AEMY when Configuration is missing', async () => {
+        delete mockContext.dataAccess.Configuration;
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: '',
+        });
+      });
+
+      it('should default to AEMY when feature flag check throws error', async () => {
+        mockContext.dataAccess.Configuration.findLatest.rejects(new Error('Database error'));
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(mockLog.warn).to.have.been.calledWith(
+          sinon.match(/Could not check feature flag, defaulting to AEMY enabled/),
+        );
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: '',
+        });
+      });
+    });
+
+    describe('AEMY disabled (manual flow)', () => {
+      beforeEach(() => {
+        mockConfiguration.isHandlerEnabledForSite.returns(false);
+      });
+
+      it('should use manual flow when AEMY is disabled for accessibility', async () => {
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(mockContext.dataAccess.Configuration.findLatest).to.have.been.calledOnce;
+        expect(result).to.deep.equal({
+          codeBucket: 'mystique-bucket',
+          codePath: 'tmp/codefix/source/example.tar.gz',
+        });
+        expect(mockLog.info).to.have.been.calledWith(
+          sinon.match(/Using manual code archive.*example\.tar\.gz/),
+        );
+      });
+
+      it('should extract main domain name correctly', async () => {
+        mockSite.getBaseURL = () => 'https://www.example.co.uk';
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(result.codePath).to.equal('tmp/codefix/source/example.tar.gz');
+      });
+
+      it('should extract domain name from www subdomain', async () => {
+        mockSite.getBaseURL = () => 'https://www.sunstargum.com';
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(result.codePath).to.equal('tmp/codefix/source/sunstargum.tar.gz');
+      });
+
+      it('should handle base URL without protocol', async () => {
+        mockSite.getBaseURL = () => 'example.com';
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(result.codePath).to.equal('tmp/codefix/source/example.tar.gz');
+      });
+
+      it('should return null when base URL is missing', async () => {
+        mockSite.getBaseURL = () => null;
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(result).to.be.null;
+        expect(mockLog.warn).to.have.been.calledWith(
+          sinon.match(/No base URL for manual code path/),
+        );
+      });
+
+      it('should return null when base URL is invalid', async () => {
+        mockSite.getBaseURL = () => 'not a valid url';
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(result).to.be.null;
+        expect(mockLog.warn).to.have.been.calledWith(
+          sinon.match(/Invalid base URL/),
+        );
+      });
+
+      it('should throw error when S3_MYSTIQUE_BUCKET_NAME is not configured', async () => {
+        delete mockContext.env.S3_MYSTIQUE_BUCKET_NAME;
+
+        try {
+          await getCodeInfo(mockSite, 'accessibility', mockContext);
+          expect.fail('Should have thrown error');
+        } catch (error) {
+          expect(error.message).to.equal('S3_MYSTIQUE_BUCKET_NAME not configured');
+          expect(mockLog.error).to.have.been.calledWith(
+            sinon.match(/S3_MYSTIQUE_BUCKET_NAME not configured/),
+          );
+        }
+      });
+
+      it('should not validate S3 bucket for non-accessibility audits in manual flow', async () => {
+        // This shouldn't happen in practice (CWV always uses AEMY), but tests the conditional
+        delete mockContext.env.S3_MYSTIQUE_BUCKET_NAME;
+        mockConfiguration.isHandlerEnabledForSite.returns(false);
+
+        const result = await getCodeInfo(mockSite, 'cwv', mockContext);
+
+        // For CWV, feature flag is never checked, so it uses AEMY flow
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: '',
+        });
+      });
+    });
+
+    describe('Feature flag edge cases', () => {
+      it('should use AEMY when handler config exists but is not enabled for site', async () => {
+        mockConfiguration.getHandlers.returns({
+          'a11y-aemy-code-injection': { enabled: true },
+        });
+        mockConfiguration.isHandlerEnabledForSite.returns(false);
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        // Should use manual flow (handler config exists but disabled for site)
+        expect(result.codePath).to.include('tmp/codefix/source/');
+      });
+
+      it('should use AEMY when handler is missing from configuration', async () => {
+        mockConfiguration.getHandlers.returns({});
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        // Handler undefined, so defaults to AEMY
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: '',
+        });
+      });
+
+      it('should use AEMY when getHandlers returns null', async () => {
+        mockConfiguration.getHandlers.returns(null);
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: '',
+        });
       });
     });
   });

@@ -15,6 +15,7 @@ import { getCodeInfo } from '../accessibility/utils/data-processing.js';
 
 const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv';
 const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
+const CWV_AUTO_FIX_FEATURE_TOGGLE = 'cwv-auto-fix';
 
 /**
  * Checks if a specific suggestion should receive auto-suggest from Mystique
@@ -22,7 +23,7 @@ const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
  * CWV suggestion structure:
  * {
  *   opportunityId: string,
- *   status: 'NEW' | 'APPROVED' | 'SKIPPED' | 'FIXED' | 'ERROR',
+ *   status: 'NEW' | 'APPROVED' | 'SKIPPED' | 'FIXED' | 'ERROR' | 'REJECTED',
  *   ...
  *   data: {
  *     type: 'url' | 'group',
@@ -41,7 +42,7 @@ const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
  * }
  *
  * Filters out suggestions that:
- * - Are not NEW (IN_PROGRESS, APPROVED, FIXED, SKIPPED, ERROR)
+ * - Are not NEW (IN_PROGRESS, APPROVED, FIXED, SKIPPED, ERROR, REJECTED)
  * - Already have guidance (data.issues with non-empty values)
  *
  * @param {Object} suggestion - Suggestion object
@@ -72,7 +73,7 @@ export function shouldSendAutoSuggestForSuggestion(suggestion) {
  * Checks if auto-suggest is enabled, filters suggestions that need guidance,
  * and sends messages to Mystique for AI-powered guidance generation.
  * Sends one message per suggestion that needs auto-suggest (NEW status, no guidance)
- * Includes code repository information (codeBucket, codePath) if available
+ * Includes code repository information (codeBucket, codePath) if auto-fix feature is enabled
  *
  * @param {Object} context - Context object containing log, sqs, env, s3Client
  * @param {Object} opportunity - Opportunity object with siteId, auditId, opportunityId, and data
@@ -95,6 +96,13 @@ export async function processAutoSuggest(context, opportunity, site) {
     return;
   }
 
+  // Check if CWV auto-fix feature is enabled for this site
+  const isAutoFixEnabled = await isAuditEnabledForSite(
+    CWV_AUTO_FIX_FEATURE_TOGGLE,
+    site,
+    context,
+  );
+
   try {
     const siteId = opportunity.getSiteId();
     const auditId = opportunity.getAuditId();
@@ -103,8 +111,8 @@ export async function processAutoSuggest(context, opportunity, site) {
 
     log.info(`[audit-worker-cwv] siteId: ${siteId} | Processing ${suggestions.length} suggestions for CWV auto-suggest, opportunityId: ${opportunityId}`);
 
-    // Get code repository information (codeBucket, codePath) if available
-    const codeInfo = site ? await getCodeInfo(site, 'cwv', context) : null;
+    // Get code repository information only if auto-fix is enabled
+    const codeInfo = (isAutoFixEnabled && site) ? await getCodeInfo(site, 'cwv', context) : null;
     const hasCodeInfo = codeInfo && codeInfo.codeBucket && codeInfo.codePath !== undefined;
 
     // Send one SQS message per suggestion that needs auto-suggest
@@ -135,7 +143,9 @@ export async function processAutoSuggest(context, opportunity, site) {
         siteId,
         auditId,
         deliveryType: site ? site.getDeliveryType() : 'aem_cs',
+        time: new Date().toISOString(),
         data: {
+          type: 'cwv', // Discriminator for Pydantic Union type resolution
           url,
           opportunityId,
           suggestionId,
@@ -151,6 +161,7 @@ export async function processAutoSuggest(context, opportunity, site) {
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, sqsMessage);
       log.debug(`[audit-worker-cwv] siteId: ${siteId} | CWV suggestion sent to Mystique, suggestionId: ${suggestionId}, url: ${url}`);
+      log.info(`[audit-worker-cwv] siteId: ${siteId} | CWV suggestion message sent to Mystique (suggestionId: ${suggestionId}):\n${JSON.stringify(sqsMessage, null, 2)}`);
     }
 
     log.info(`[audit-worker-cwv] siteId: ${siteId} | Completed sending CWV auto-suggest messages, opportunityId: ${opportunityId}`);

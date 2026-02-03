@@ -17,12 +17,11 @@ import sinonChai from 'sinon-chai';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import sinon from 'sinon';
 import nock from 'nock';
+import { Audit, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import esmock from 'esmock';
 import { generateSuggestionData } from '../../../src/internal-links/suggestions-generator.js';
 import { MockContextBuilder } from '../../shared.js';
-import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
-import esmock from 'esmock';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
@@ -164,9 +163,7 @@ describe('generateSuggestionData', async function test() {
     configuration.isHandlerEnabledForSite.returns(true);
 
     // Mock responses based on broken_url in request body
-    let callCount = 0;
     azureOpenAIClient.fetchChatCompletion.callsFake(async (requestBody) => {
-      callCount++;
       // requestBody could be a string or object containing the prompt
       let brokenUrl = null;
       try {
@@ -382,7 +379,7 @@ describe('generateSuggestionData', async function test() {
       NextContinuationToken: 'token',
     });
 
-    const mockFileResponse = {
+    const mockFileResponseWithPrefix = {
       ContentType: 'application/json',
       Body: {
         transformToString: sandbox.stub().resolves(JSON.stringify({
@@ -398,7 +395,7 @@ describe('generateSuggestionData', async function test() {
         })),
       },
     };
-    context.s3Client.send.resolves(mockFileResponse);
+    context.s3Client.send.resolves(mockFileResponseWithPrefix);
 
     // Broken link where urlTo has no prefix but urlFrom does
     // urlTo must have no path prefix (empty string from extractPathPrefix) to hit false branch
@@ -453,7 +450,8 @@ describe('generateSuggestionData', async function test() {
     context.s3Client.send.resolves(mockFileResponseWithLocale);
 
     // Broken link with same prefix (/uk/) - this will trigger the true branch
-    // prefixFilteredSiteData.length > 0 will be true, so linkFilteredSiteData = prefixFilteredSiteData
+    // prefixFilteredSiteData.length > 0 will be true
+    // linkFilteredSiteData = prefixFilteredSiteData
     const brokenLinksWithSamePrefix = [
       { urlTo: 'https://bulk.com/uk/broken1', urlFrom: 'https://bulk.com/uk/page1' },
     ];
@@ -514,7 +512,8 @@ describe('generateSuggestionData', async function test() {
   });
 
   it('should handle siteData items that are objects, not strings', async () => {
-    // Test when siteData items are objects (not strings) - covers the object case in ternary operator
+    // Test when siteData items are objects (not strings)
+    // covers the object case in ternary operator
     // Import actual filter functions to use in mock
     const { filterByAuditScope, extractPathPrefix, isWithinAuditScope } = await import('../../../src/internal-links/subpath-filter.js');
 
@@ -554,7 +553,8 @@ describe('generateSuggestionData', async function test() {
   });
 
   it('should handle headerLinks items that are objects', async () => {
-    // Test when headerLinks items are objects (not strings) - covers the object case in ternary operator
+    // Test when headerLinks items are objects (not strings)
+    // covers the object case in ternary operator
     // Import actual filter functions to use in mock
     const { filterByAuditScope, extractPathPrefix, isWithinAuditScope } = await import('../../../src/internal-links/subpath-filter.js');
 
@@ -641,17 +641,23 @@ describe('generateSuggestionData', async function test() {
       }],
     });
 
-    const result = await generateSuggestionData('https://bulk.com', brokenLinksWithDifferentPrefix, context, siteWithSubpath);
+    const result = await generateSuggestionData(
+      'https://bulk.com',
+      brokenLinksWithDifferentPrefix,
+      context,
+      siteWithSubpath,
+    );
 
-    // Should still process with base-filtered data (fallback to base-filtered when prefix-filtered is empty)
-    // This ensures the false branch is covered (linkFilteredSiteData stays as filteredSiteData)
+    // Should still process with base-filtered data
+    // (fallback to base-filtered when prefix-filtered is empty)
+    // This ensures the false branch is covered
     expect(result).to.be.an('array');
     expect(result.length).to.equal(1);
   });
 
   it('should use dataBatches when link.filteredSiteData is not available', async () => {
     // Test when link.filteredSiteData is falsy, so we use dataBatches instead
-    // This happens when linkPathPrefix is falsy or filteredSiteData.length === 0
+    // This happens when linkPathPrefix is falsy
     const siteNoSubpath = {
       ...site,
       getBaseURL: () => 'https://bulk.com', // No subpath
@@ -665,7 +671,7 @@ describe('generateSuggestionData', async function test() {
       NextContinuationToken: 'token',
     });
 
-    const mockFileResponse = {
+    const mockFileResponseNoBatch = {
       ContentType: 'application/json',
       Body: {
         transformToString: sandbox.stub().resolves(JSON.stringify({
@@ -681,9 +687,10 @@ describe('generateSuggestionData', async function test() {
         })),
       },
     };
-    context.s3Client.send.resolves(mockFileResponse);
+    context.s3Client.send.resolves(mockFileResponseNoBatch);
 
-    // Broken link with no prefix - linkPathPrefix will be empty, so link.filteredSiteData won't be set
+    // Broken link with no prefix - linkPathPrefix will be empty
+    // link.filteredSiteData won't be set
     const brokenLinks = [
       { urlTo: 'https://bulk.com/broken1', urlFrom: 'https://bulk.com/page1' },
     ];
@@ -700,8 +707,9 @@ describe('generateSuggestionData', async function test() {
     expect(result.length).to.equal(1);
   });
 
-  it('should use filteredHeaderLinks when link.filteredHeaderLinks is not available', async () => {
-    // Test when link.filteredHeaderLinks is falsy, so we use filteredHeaderLinks instead
+  it('should use filteredHeaderLinks when link.filteredHeaderLinks not available', async () => {
+    // Test when link.filteredHeaderLinks is falsy
+    // so we use filteredHeaderLinks instead
     // This happens when linkPathPrefix is falsy
     const siteNoSubpath = {
       ...site,
@@ -716,7 +724,7 @@ describe('generateSuggestionData', async function test() {
       NextContinuationToken: 'token',
     });
 
-    const mockFileResponse = {
+    const mockFileResponseNoHeader = {
       ContentType: 'application/json',
       Body: {
         transformToString: sandbox.stub().resolves(JSON.stringify({
@@ -732,9 +740,10 @@ describe('generateSuggestionData', async function test() {
         })),
       },
     };
-    context.s3Client.send.resolves(mockFileResponse);
+    context.s3Client.send.resolves(mockFileResponseNoHeader);
 
-    // Broken link with no prefix - linkPathPrefix will be empty, so link.filteredHeaderLinks won't be set
+    // Broken link with no prefix - linkPathPrefix will be empty
+    // link.filteredHeaderLinks won't be set
     const brokenLinks = [
       { urlTo: 'https://bulk.com/broken1', urlFrom: 'https://bulk.com/page1' },
     ];
@@ -811,7 +820,7 @@ describe('generateSuggestionData', async function test() {
 
     let callCount = 0;
     azureOpenAIClient.fetchChatCompletion.callsFake(async () => {
-      callCount++;
+      callCount += 1;
       // First two: headers (succeed normally)
       if (callCount <= 2) {
         return {
@@ -832,7 +841,7 @@ describe('generateSuggestionData', async function test() {
               content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
               aiRationale: 'Rationale',
             },
-            finish_reason: 'length',  // This triggers processBatch to return null
+            finish_reason: 'length', // This triggers processBatch to return null
           }],
         };
       }
@@ -867,7 +876,7 @@ describe('generateSuggestionData', async function test() {
 
     let callCount = 0;
     azureOpenAIClient.fetchChatCompletion.callsFake(async () => {
-      callCount++;
+      callCount += 1;
       // Headers succeed
       if (callCount <= 2) {
         return {
@@ -890,14 +899,14 @@ describe('generateSuggestionData', async function test() {
           }],
         };
       }
-      // Final request for broken1: return finish_reason: 'length' (covers lines 181-183)
+      // Final request for broken1: return finish_reason: 'length'
       if (callCount === 11) {
         return {
           choices: [{
             message: {
               content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Final' }),
             },
-            finish_reason: 'length',  // This triggers line 181 condition
+            finish_reason: 'length', // This triggers line 181 condition
           }],
         };
       }
@@ -932,6 +941,7 @@ describe('generateSuggestionData', async function test() {
 
   it('should handle empty batch URLs', async () => {
     class EmptySliceArray extends Array {
+      // eslint-disable-next-line class-methods-use-this
       slice() {
         return [];
       }
@@ -979,7 +989,7 @@ describe('generateSuggestionData', async function test() {
 
     let callCount = 0;
     azureOpenAIClient.fetchChatCompletion.callsFake(async () => {
-      callCount++;
+      callCount += 1;
       // Header for broken1: return finish_reason: 'length'
       if (callCount === 1) {
         return {
@@ -988,7 +998,7 @@ describe('generateSuggestionData', async function test() {
               content: JSON.stringify({ suggested_urls: ['https://fix.com'] }),
               aiRationale: 'Rationale',
             },
-            finish_reason: 'length',  // This triggers header suggestion error path
+            finish_reason: 'length', // This triggers header suggestion error path
           }],
         };
       }
@@ -1059,7 +1069,7 @@ describe('generateSuggestionData', async function test() {
 
     let callCount = 0;
     azureOpenAIClient.fetchChatCompletion.callsFake(async () => {
-      callCount++;
+      callCount += 1;
       // Headers succeed
       if (callCount <= 2) {
         return {
@@ -1112,7 +1122,7 @@ describe('generateSuggestionData', async function test() {
 
     let callCount = 0;
     azureOpenAIClient.fetchChatCompletion.callsFake(async () => {
-      callCount++;
+      callCount += 1;
       // Headers succeed
       if (callCount <= 2) {
         return {
@@ -1272,4 +1282,213 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     expect(mappedSuggestion.data.aiRationale).to.equal('');
   });
 
+  it('should preserve urlEdited when isEdited is true', async () => {
+    const brokenInternalLinks = [
+      {
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        trafficDomain: 100,
+        urlsSuggested: ['https://example.com/suggested1'],
+        aiRationale: 'Test rationale',
+      },
+    ];
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks,
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const callArgs = mockSyncSuggestions.getCall(0).args[0];
+    const mergeDataFn = callArgs.mergeDataFunction;
+    expect(mergeDataFn).to.be.a('function');
+
+    // Test that urlEdited is preserved when isEdited is true
+    const existingData = {
+      urlFrom: 'https://example.com/from1',
+      urlTo: 'https://example.com/to1',
+      title: 'Old Title',
+      trafficDomain: 50,
+      urlEdited: 'https://example.com/user-fixed-url',
+      isEdited: true,
+      urlsSuggested: ['https://example.com/old-suggested'],
+    };
+
+    const newData = {
+      urlFrom: 'https://example.com/from1',
+      urlTo: 'https://example.com/to1',
+      title: 'New Title',
+      trafficDomain: 100,
+      urlsSuggested: ['https://example.com/new-suggested'],
+      aiRationale: 'New rationale',
+    };
+
+    const result = mergeDataFn(existingData, newData);
+
+    expect(result.urlEdited).to.equal('https://example.com/user-fixed-url');
+    expect(result.isEdited).to.equal(true);
+    expect(result.title).to.equal('New Title');
+    expect(result.trafficDomain).to.equal(100);
+    expect(result.urlsSuggested).to.deep.equal(['https://example.com/new-suggested']);
+  });
+
+  it('should preserve urlEdited when isEdited is false (AI selection)', async () => {
+    const brokenInternalLinks = [
+      {
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        trafficDomain: 100,
+      },
+    ];
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks,
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const callArgs = mockSyncSuggestions.getCall(0).args[0];
+    const mergeDataFn = callArgs.mergeDataFunction;
+
+    // Test that urlEdited IS preserved when isEdited is false (user selected AI suggestion)
+    const existingData = {
+      urlFrom: 'https://example.com/from1',
+      urlTo: 'https://example.com/to1',
+      urlEdited: 'https://example.com/old-edited-url',
+      isEdited: false,
+    };
+
+    const newData = {
+      urlFrom: 'https://example.com/from1',
+      urlTo: 'https://example.com/to1',
+      title: 'New Title',
+    };
+
+    const result = mergeDataFn(existingData, newData);
+
+    // urlEdited should be preserved even when isEdited is false
+    expect(result.urlEdited).to.equal('https://example.com/old-edited-url');
+    expect(result.isEdited).to.equal(false);
+    expect(result.title).to.equal('New Title');
+  });
+
+  it('should not preserve urlEdited when urlEdited is undefined', async () => {
+    const brokenInternalLinks = [
+      {
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        trafficDomain: 100,
+      },
+    ];
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks,
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const callArgs = mockSyncSuggestions.getCall(0).args[0];
+    const mergeDataFn = callArgs.mergeDataFunction;
+
+    // Test that urlEdited is NOT preserved when it's undefined
+    const existingData = {
+      urlFrom: 'https://example.com/from1',
+      urlTo: 'https://example.com/to1',
+      isEdited: true,
+      // urlEdited is undefined
+    };
+
+    const newData = {
+      urlFrom: 'https://example.com/from1',
+      urlTo: 'https://example.com/to1',
+      title: 'New Title',
+    };
+
+    const result = mergeDataFn(existingData, newData);
+
+    expect(result.urlEdited).to.be.undefined;
+    expect(result.title).to.equal('New Title');
+  });
+
+  it('should handle when isEdited is null', async () => {
+    const brokenInternalLinks = [
+      {
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        trafficDomain: 100,
+      },
+    ];
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks,
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const callArgs = mockSyncSuggestions.getCall(0).args[0];
+    const mergeDataFn = callArgs.mergeDataFunction;
+
+    // Test with null isEdited
+    const existingData = {
+      urlFrom: 'https://example.com/from1',
+      urlTo: 'https://example.com/to1',
+      urlEdited: 'https://example.com/edited-url',
+      isEdited: null,
+    };
+
+    const newData = {
+      urlFrom: 'https://example.com/from1',
+      urlTo: 'https://example.com/to1',
+      title: 'New Title',
+    };
+
+    const result = mergeDataFn(existingData, newData);
+
+    expect(result.urlEdited).to.be.undefined;
+    expect(result.title).to.equal('New Title');
+  });
+
+  it('should handle when urlEdited is null', async () => {
+    const brokenInternalLinks = [
+      {
+        urlFrom: 'https://example.com/from1',
+        urlTo: 'https://example.com/to1',
+        trafficDomain: 100,
+      },
+    ];
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks,
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const callArgs = mockSyncSuggestions.getCall(0).args[0];
+    const mergeDataFn = callArgs.mergeDataFunction;
+
+    // Test with null urlEdited but true isEdited
+    const existingData = {
+      urlFrom: 'https://example.com/from1',
+      urlTo: 'https://example.com/to1',
+      urlEdited: null,
+      isEdited: true,
+    };
+
+    const newData = {
+      urlFrom: 'https://example.com/from1',
+      urlTo: 'https://example.com/to1',
+      title: 'New Title',
+    };
+
+    const result = mergeDataFn(existingData, newData);
+
+    // Should not preserve null urlEdited
+    expect(result.urlEdited).to.be.undefined;
+    expect(result.title).to.equal('New Title');
+  });
 });

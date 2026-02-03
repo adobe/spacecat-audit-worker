@@ -68,6 +68,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     // 5. Filter only inaccessible links and transform for further processing
     // Also filter by audit scope (subpath/locale) if baseURL has a subpath
     const baseURL = site.getBaseURL();
+
     const inaccessibleLinks = accessibilityResults
       .filter((result) => result.inaccessible)
       .filter((result) => (
@@ -77,6 +78,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
         && isWithinAuditScope(result.link.url_to, baseURL)
       ))
       .map((result) => ({
+        // Preserve original URLs from RUM data
         urlFrom: result.link.url_from,
         urlTo: result.link.url_to,
         trafficDomain: result.link.traffic_domain,
@@ -266,6 +268,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
     // Build broken links array without per-link alternatives
     // Mystique expects: brokenLinks with only urlFrom, urlTo, suggestionId
+    // URLs are already normalized at audit time (step 5 in internalLinksAuditRunner)
     const brokenLinks = suggestions
       .map((suggestion) => ({
         urlFrom: suggestion?.getData()?.urlFrom,
@@ -347,6 +350,9 @@ export const opportunityAndSuggestionsStep = async (context) => {
         alternativeUrls,
         opportunityId: opportunity.getId(),
         brokenLinks,
+        // Include canonical domain for Mystique to use when looking up content
+        // This ensures Mystique uses the same domain as the normalized URLs
+        siteBaseURL: `https://${finalUrl}`,
       },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);

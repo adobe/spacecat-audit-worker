@@ -86,6 +86,35 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 }
 
 /**
+ * Retrieves the top pages for a given site.
+ *
+ * @param {Object} dataAccess - The data access object for database operations.
+ * @param {string} siteId - The site ID to retrieve the top pages for.
+ * @param {Object} context - The context object containing necessary information.
+ * @param {Object} log - The logging object.
+ * @returns {Promise<Array<Object>>} - A promise that resolves to an array of top pages.
+ */
+export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
+  try {
+    const { SiteTopPage } = dataAccess;
+    const result = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    log.info('Received top pages response:', JSON.stringify(result, null, 2));
+
+    const topPages = result || [];
+    if (topPages.length > 0) {
+      const topPagesUrls = topPages.map((page) => ({ url: page.getUrl() }));
+      log.info(`Found ${topPagesUrls.length} top pages`);
+      return topPagesUrls;
+    }
+    log.info('No top pages found');
+    return [];
+  } catch (error) {
+    log.error(`Error retrieving top pages for site ${siteId}: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
  * Retrieves the IMS org ID for a given site.
  *
  * @param {Object} site - The site object.
@@ -139,6 +168,7 @@ export const handleOutdatedSuggestions = async ({
 }) => {
   const { Suggestion } = context.dataAccess;
   const { log } = context;
+
   const existingOutdatedSuggestions = existingSuggestions
     .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
     .filter((existing) => ![
@@ -146,7 +176,16 @@ export const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.FIXED,
       SuggestionDataAccess.STATUSES.ERROR,
       SuggestionDataAccess.STATUSES.SKIPPED,
+      SuggestionDataAccess.STATUSES.REJECTED,
+      SuggestionDataAccess.STATUSES.APPROVED,
+      SuggestionDataAccess.STATUSES.IN_PROGRESS,
+      SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
     ].includes(existing.getStatus()))
+    .filter((existing) => {
+      // Preserve suggestions that have been deployed (tokowakaDeployed or edgeDeployed)
+      const data = existing.getData?.();
+      return !(data?.tokowakaDeployed || data?.edgeDeployed);
+    })
     .filter((existing) => {
       // mark suggestions as outdated only if their URL was actually scraped
       if (scrapedUrlsSet) {
@@ -199,9 +238,43 @@ const defaultMergeDataFunction = (existingData, newData) => ({
 });
 
 /**
+ * Default merge function for determining the status of an existing suggestion.
+ * This function encapsulates the default behavior for status transitions:
+ * - REJECTED suggestions remain REJECTED
+ * - OUTDATED suggestions transition to PENDING_VALIDATION or NEW (possible regression)
+ * - Other statuses remain unchanged
+ *
+ * @param {Object} existing - The existing suggestion object.
+ * @param {Object} newDataItem - The new data item being merged.
+ * @param {Object} context - The context object containing site and log.
+ * @returns {string|null} - The new status to set, or null to keep existing status.
+ */
+export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
+  const { log, site } = context;
+  const currentStatus = existing.getStatus();
+
+  if (currentStatus === SuggestionDataAccess.STATUSES.REJECTED) {
+    // Keep REJECTED status when same suggestion appears again in audit
+    log.debug('REJECTED suggestion found in audit. Preserving REJECTED status.');
+    return null; // Keep existing status
+  }
+
+  if (currentStatus === SuggestionDataAccess.STATUSES.OUTDATED) {
+    log.warn('Outdated suggestion found in audit. Possible regression.');
+    const requiresValidation = Boolean(site?.requiresValidation);
+    return requiresValidation
+      ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+      : SuggestionDataAccess.STATUSES.NEW;
+  }
+
+  return null; // Keep existing status
+};
+
+/**
  * Synchronizes existing suggestions with new data.
  * Handles outdated suggestions by updating their status, either to OUTDATED or the provided one.
  * Updates existing suggestions with new data if they match based on the provided key.
+ * For REJECTED suggestions that appear again, preserves REJECTED status
  *
  * Prepares new suggestions from the new data and adds them to the opportunity.
  * Maps new data to suggestion objects using the provided mapping function.
@@ -214,6 +287,8 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * @param {Function} params.mapNewSuggestion - Function to map new data to suggestion objects.
  * @param {Function} [params.mergeDataFunction] - Function to merge existing and new data.
  *   Defaults to shallow merge.
+ * @param {Function} [params.mergeStatusFunction] - Function to determine the status of
+ *   existing suggestions.
  * @param {string} [params.statusToSetForOutdated] - Status to set for outdated suggestions.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
@@ -224,6 +299,7 @@ export async function syncSuggestions({
   buildKey,
   mapNewSuggestion,
   mergeDataFunction = defaultMergeDataFunction,
+  mergeStatusFunction = defaultMergeStatusFunction,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
 }) {
@@ -256,13 +332,12 @@ export async function syncSuggestions({
       .map((existing) => {
         const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
         existing.setData(mergeDataFunction(existing.getData(), newDataItem));
-        if ([SuggestionDataAccess.STATUSES.OUTDATED].includes(existing.getStatus())) {
-          log.warn('Resolved suggestion found in audit. Possible regression.');
-          const { site } = context;
-          const requiresValidation = Boolean(site?.requiresValidation);
-          existing.setStatus(requiresValidation
-            ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
-            : SuggestionDataAccess.STATUSES.NEW);
+
+        // Use the merge status function to determine if status should change
+        const newStatus = mergeStatusFunction(existing, newDataItem, context);
+        // null indicates to keep existing status
+        if (newStatus !== null) {
+          existing.setStatus(newStatus);
         }
         existing.setUpdatedBy('system');
         return existing.save();

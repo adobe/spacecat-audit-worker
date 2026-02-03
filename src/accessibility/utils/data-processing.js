@@ -19,6 +19,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
+import { extractMainDomainName } from '../../support/utils.js';
 import {
   createReportOpportunitySuggestionInstance,
   createInDepthReportOpportunity,
@@ -315,6 +316,95 @@ export function getAuditPrefixes(auditType) {
 }
 
 /**
+ * Merges two accessibility data objects, preserving data from both
+ * @param {object} existingData - the existing aggregated data
+ * @param {object} newData - the new aggregated data to merge
+ * @param {import('@azure/logger').Logger} log - a logger instance
+ * @param {string} logIdentifier - identifier for log messages
+ * @returns {object} merged data
+ */
+export function mergeAccessibilityData(existingData, newData, log, logIdentifier = 'A11yMerge') {
+  const merged = JSON.parse(JSON.stringify(existingData));
+
+  let addedCount = 0;
+  let skippedCount = 0;
+
+  Object.entries(newData).forEach(([key, value]) => {
+    if (key === 'overall') {
+      return; // Skip overall, we'll recalculate it
+    }
+
+    if (!merged[key]) {
+      // New URL not in existing data, add it
+      merged[key] = value;
+      addedCount += 1;
+      log.info(`[${logIdentifier}] Added new URL data for: ${key}`);
+    } else {
+      skippedCount += 1;
+      log.debug(`[${logIdentifier}] URL already exists, skipping: ${key}`);
+    }
+  });
+
+  log.info(`[${logIdentifier}] Added ${addedCount} new URLs, skipped ${skippedCount} existing URLs`);
+
+  // Recalculate overall statistics from all merged data
+  const recalculatedOverall = {
+    violations: {
+      total: 0,
+      critical: { count: 0, items: {} },
+      serious: { count: 0, items: {} },
+    },
+  };
+
+  // Process each URL's violations
+  Object.entries(merged).forEach(([key, urlData]) => {
+    if (key === 'overall' || !urlData || !urlData.violations) return;
+
+    // Process critical and serious violations
+    ['critical', 'serious'].forEach((severity) => {
+      const severityData = urlData.violations[severity];
+      if (!severityData?.items) return;
+
+      // Merge each rule's data
+      Object.entries(severityData.items).forEach(([ruleId, ruleData]) => {
+        if (!ruleId || !ruleData || typeof ruleData !== 'object') return;
+
+        const overallItems = recalculatedOverall.violations[severity].items;
+
+        if (!overallItems[ruleId]) {
+          // If first time seeing this rule, copy it with only the core fields
+          // (matching the structure created by updateViolationData)
+          overallItems[ruleId] = {
+            count: ruleData.count || 0,
+            description: ruleData.description || '',
+            level: ruleData.level || '',
+            understandingUrl: ruleData.understandingUrl || '',
+            successCriteriaNumber: ruleData.successCriteriaNumber || '',
+          };
+        } else {
+          // If rule already exists, accumulate the count
+          overallItems[ruleId].count = (overallItems[ruleId].count || 0) + (ruleData.count || 0);
+        }
+      });
+    });
+  });
+
+  // Calculate final severity counts (after all URLs processed)
+  ['critical', 'serious'].forEach((severity) => {
+    recalculatedOverall.violations[severity].count = Object.values(
+      recalculatedOverall.violations[severity].items,
+    ).reduce((sum, rule) => sum + (rule.count || 0), 0);
+  });
+
+  // Calculate total from severity counts (no double counting)
+  recalculatedOverall.violations.total = recalculatedOverall.violations.critical.count
+    + recalculatedOverall.violations.serious.count;
+
+  merged.overall = recalculatedOverall;
+  return merged;
+}
+
+/**
  * Aggregates accessibility audit data from multiple JSON files in S3 and creates a summary
  * @param {import('@aws-sdk/client-s3').S3Client} s3Client - an S3 client
  * @param {string} bucketName - the name of the S3 bucket
@@ -415,16 +505,36 @@ export async function aggregateAccessibilityData(
       }
     });
 
-    // Save aggregated data to S3
+    // Check if file already exists and merge if it does
+    let finalData = aggregatedData;
+
+    try {
+      await s3Client.send(new HeadObjectCommand({ Bucket: bucketName, Key: outputKey }));
+
+      const existingData = await getObjectFromKey(s3Client, bucketName, outputKey, log);
+      if (existingData) {
+        log.info(`[${logIdentifier}] Existing data loaded successfully`);
+
+        finalData = mergeAccessibilityData(existingData, aggregatedData, log, logIdentifier);
+
+        log.info(`[${logIdentifier}] Merge completed! Final data has ${Object.keys(finalData).length} keys`);
+        log.info(`[${logIdentifier}] Final data URLs (excluding overall): ${Object.keys(finalData).filter((k) => k !== 'overall').length}`);
+      } else {
+        log.warn(`[${logIdentifier}] File exists but getObjectFromKey returned null/undefined`);
+      }
+    } catch (error) {
+      log.info(`[${logIdentifier}] File doesn't exist (HeadObjectCommand failed): ${error.message}`);
+      log.info(`[${logIdentifier}] Will create new file with current aggregatedData`);
+    }
+
     await s3Client.send(new PutObjectCommand({
       Bucket: bucketName,
       Key: outputKey,
-      Body: JSON.stringify(aggregatedData, null, 2),
+      Body: JSON.stringify(finalData, null, 2),
       ContentType: 'application/json',
     }));
 
     log.debug(`[${logIdentifier}] Saved aggregated accessibility data to ${outputKey}`);
-
     // check if there are any other final-result files in the {storagePrefix}/siteId folder
     // if there are, we will use the latest one for comparison later on
     const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `${storagePrefix}/${siteId}/`, log, 10, '-final-result.json');
@@ -448,7 +558,7 @@ export async function aggregateAccessibilityData(
     return {
       success: true,
       finalResultFiles: {
-        current: aggregatedData,
+        current: finalData,
         lastWeek: lastWeekFile,
       },
       message: `Successfully aggregated ${objectKeys.length} files into ${outputKey}`,
@@ -984,11 +1094,63 @@ export async function sendRunImportMessage(
  * @returns {Promise<Object|null>} Object containing codeBucket and codePath, or null if should skip
  */
 export async function getCodeInfo(site, opportunityType, context) {
-  const { log, s3Client, env } = context;
+  const {
+    log, s3Client, env, dataAccess,
+  } = context;
   const siteId = site.getId();
   const deliveryType = site.getDeliveryType();
   const codeConfig = site.getCode();
+  const baseUrl = site.getBaseURL();
 
+  let isAemyEnabled = true;
+
+  if (opportunityType === 'accessibility' && dataAccess?.Configuration) {
+    try {
+      const { Configuration } = dataAccess;
+      const configuration = await Configuration.findLatest();
+      isAemyEnabled = configuration.isHandlerEnabledForSite('a11y-aemy-code-injection', site);
+    } catch (error) {
+      log.warn(`[${opportunityType}] [Site Id: ${siteId}] Could not check feature flag, defaulting to AEMY enabled: ${error.message}`);
+      isAemyEnabled = true;
+    }
+  }
+
+  if (!isAemyEnabled) {
+    if (!baseUrl) {
+      log.warn(`[${opportunityType}] [Site Id: ${siteId}] No base URL for manual code path`);
+      return null;
+    }
+
+    // Generate manual archive path from base URL
+    let hostname;
+    try {
+      let urlToParse = baseUrl;
+      if (!urlToParse.startsWith('http://') && !urlToParse.startsWith('https://')) {
+        urlToParse = `https://${urlToParse}`;
+      }
+      hostname = new URL(urlToParse).hostname;
+    } catch (error) {
+      log.warn(`[${opportunityType}] [Site Id: ${siteId}] Invalid base URL: ${baseUrl}`);
+      return null;
+    }
+
+    const domainName = extractMainDomainName(hostname);
+    const archiveName = `${domainName}.tar.gz`;
+    const codePath = `tmp/codefix/source/${archiveName}`;
+    const codeBucket = env.S3_MYSTIQUE_BUCKET_NAME;
+
+    if (!codeBucket) {
+      log.error(`[${opportunityType}] [Site Id: ${siteId}] S3_MYSTIQUE_BUCKET_NAME not configured`);
+      throw new Error('S3_MYSTIQUE_BUCKET_NAME not configured');
+    }
+
+    log.info(`[${opportunityType}] [Site Id: ${siteId}] Using manual code archive: ${codePath}`);
+
+    return {
+      codeBucket,
+      codePath,
+    };
+  }
   // For aem_edge delivery type, proceed without codeConfig
   if (!codeConfig) {
     if (deliveryType === 'aem_edge') {

@@ -22,6 +22,7 @@ import {
   loadLatestAgenticSheet,
   buildSheetHitsMap,
 } from './utils/shared.js';
+import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   TOP_AGENTIC_URLS_LIMIT,
@@ -588,9 +589,23 @@ export async function submitForScraping(context) {
   // Fetch Top Agentic URLs (limited by TOP_AGENTIC_URLS_LIMIT)
   const agenticUrls = await getTopAgenticUrls(site, context);
 
-  const finalUrls = [...new Set([...topPagesUrls, ...agenticUrls, ...includedURLs])];
+  // Merge URLs ensuring uniqueness while handling www vs non-www differences
+  // Also filters out non-HTML URLs (PDFs, images, etc.) in a single pass
+  const { urls: finalUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
+    topPagesUrls,
+    agenticUrls,
+    includedURLs,
+  );
 
-  log.info(`Prerender: Submitting ${finalUrls.length} URLs for scraping. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+  log.info(`
+    ${LOG_PREFIX} prerender_submit_scraping_metrics:
+    submittedUrls=${finalUrls.length},
+    agenticUrls=${agenticUrls.length},
+    topPagesUrls=${topPagesUrls.length},
+    includedURLs=${includedURLs.length},
+    filteredOutUrls=${filteredCount},
+    baseUrl=${site.getBaseURL()},
+    siteId=${siteId},`);
 
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
@@ -616,12 +631,13 @@ export async function submitForScraping(context) {
  * @param {string} auditUrl - Audited URL
  * @param {Object} auditData - Audit data with results
  * @param {Object} context - Processing context
+ * @param {boolean} isPaid - Whether the customer is a paid LLMO customer
  * @returns {Promise<void>}
  */
-export async function createScrapeForbiddenOpportunity(auditUrl, auditData, context) {
+export async function createScrapeForbiddenOpportunity(auditUrl, auditData, context, isPaid) {
   const { log } = context;
 
-  log.info(`Prerender - Creating dummy opportunity for forbidden scraping. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+  log.info(`Prerender - Creating dummy opportunity for forbidden scraping. baseUrl=${auditUrl}, siteId=${auditData.siteId}, isPaidLLMOCustomer=${isPaid}`);
 
   await convertToOpportunity(
     auditUrl,
@@ -718,12 +734,14 @@ async function prepareDomainWideAggregateSuggestion(
  * @param {string} auditUrl - Audited URL
  * @param {Object} auditData - Audit data with results
  * @param {Object} context - Processing context
+ * @param {boolean} isPaid - Whether the customer is a paid LLMO customer
  * @returns {Promise<Object>} The created/updated opportunity entity
  */
 export async function processOpportunityAndSuggestions(
   auditUrl,
   auditData,
   context,
+  isPaid,
 ) {
   const { log } = context;
 
@@ -812,6 +830,7 @@ export async function processOpportunityAndSuggestions(
       if (newDataItem.key) {
         return { ...newDataItem.data };
       }
+      /* c8 ignore next 5 - Individual suggestion merge logic, difficult to test in isolation */
       // Individual suggestions: merge with existing
       return {
         ...existingData,
@@ -820,7 +839,13 @@ export async function processOpportunityAndSuggestions(
     },
   });
 
-  log.info(`Prerender - Successfully synced ${allSuggestions.length} suggestions for baseUrl: ${auditUrl}, siteId: ${auditData.siteId}`);
+  log.info(`
+    ${LOG_PREFIX} prerender_suggestions_sync_metrics:
+    siteId=${auditData.siteId},
+    baseUrl=${auditUrl},
+    isPaidLLMOCustomer=${isPaid},
+    suggestions=${preRenderSuggestions.length},
+    totalSuggestions=${allSuggestions.length},`);
 
   return opportunity;
 }
@@ -901,7 +926,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
  */
 export async function processContentAndGenerateOpportunities(context) {
   const {
-    site, audit, log, scrapeResultPaths, data,
+    site, audit, log, scrapeResultPaths, data, dataAccess,
   } = context;
 
   // Check for AI-only mode - skip processing step (step 1 already triggered Mystique)
@@ -914,7 +939,10 @@ export async function processContentAndGenerateOpportunities(context) {
   const siteId = site.getId();
   const startTime = process.hrtime();
 
-  log.info(`Prerender - Generate opportunities for baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+  // Check if this is a paid LLMO customer early so we can use it in all logs
+  const isPaid = await isPaidLLMOCustomer(context);
+
+  log.info(`Prerender - Generate opportunities for baseUrl=${site.getBaseURL()}, siteId=${siteId}, isPaidLLMOCustomer=${isPaid}`);
 
   try {
     let urlsToCheck = [];
@@ -938,17 +966,25 @@ export async function processContentAndGenerateOpportunities(context) {
       const topPagesUrls = await getTopOrganicUrlsFromAhrefs(context);
 
       const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
-      const merged = [...agenticUrls, ...topPagesUrls];
-      urlsToCheck = [...new Set([...merged, ...includedURLs])];
+      // Use the same normalization and filtering logic for consistency
+      const { urls: filteredUrls, filteredCount } = mergeAndGetUniqueHtmlUrls(
+        topPagesUrls,
+        agenticUrls,
+        includedURLs,
+      );
+      urlsToCheck = filteredUrls;
+
       /* c8 ignore stop */
       const msg = `Prerender - Fallback for baseUrl=${site.getBaseURL()}, siteId=${siteId}. `
         + `Using agenticURLs=${agenticUrls.length}, `
         + `topPages=${topPagesUrls.length}, `
         + `includedURLs=${includedURLs.length}, `
+        + `filteredOutUrls=${filteredCount}, `
         + `total=${urlsToCheck.length}`;
       log.info(msg);
     }
 
+    /* c8 ignore next 5 - Edge case: empty URLs fallback, difficult to reach in tests */
     if (urlsToCheck.length === 0) {
       // Final fallback to base URL
       urlsToCheck = [site.getBaseURL()];
@@ -967,7 +1003,7 @@ export async function processContentAndGenerateOpportunities(context) {
     const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
     const successfulComparisons = comparisonResults.filter((result) => !result.error);
 
-    log.info(`Prerender - Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${urlsToCheck.length} URLs scraped`);
+    log.info(`Prerender - Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${urlsToCheck.length} URLs scraped. isPaidLLMOCustomer=${isPaid}`);
 
     // Check if all scrape.json files on S3 have statusCode=403
     const urlsWithScrapeJson = comparisonResults.filter((result) => result.hasScrapeMetadata);
@@ -975,7 +1011,7 @@ export async function processContentAndGenerateOpportunities(context) {
     const scrapeForbidden = urlsWithScrapeJson.length > 0
       && urlsWithForbiddenScrape.length === urlsWithScrapeJson.length;
 
-    log.info(`Prerender - Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}. scrapeForbidden=${scrapeForbidden}, totalUrlsChecked=${comparisonResults.length}, urlsWithScrapeJson=${urlsWithScrapeJson.length}, urlsWithForbiddenScrape=${urlsWithForbiddenScrape.length}`);
+    log.info(`Prerender - Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}. scrapeForbidden=${scrapeForbidden}, totalUrlsChecked=${comparisonResults.length}, urlsWithScrapeJson=${urlsWithScrapeJson.length}, urlsWithForbiddenScrape=${urlsWithForbiddenScrape.length}, isPaidLLMOCustomer=${isPaid}`);
 
     // Remove internal tracking fields from results before storing
     // eslint-disable-next-line
@@ -993,6 +1029,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
     let opportunityForGuidance = null;
 
+    /* c8 ignore next 13 - Opportunity processing branch, covered by integration tests */
     if (urlsNeedingPrerender.length > 0) {
       opportunityForGuidance = await processOpportunityAndSuggestions(
         site.getBaseURL(),
@@ -1003,6 +1040,7 @@ export async function processContentAndGenerateOpportunities(context) {
           scrapeJobId,
         },
         context,
+        isPaid,
       );
       /* c8 ignore next 12 */
     } else if (scrapeForbidden) {
@@ -1013,9 +1051,25 @@ export async function processContentAndGenerateOpportunities(context) {
         auditId: audit.getId(),
         auditResult,
         scrapeJobId,
-      }, context);
+      }, context, isPaid);
     } else {
-      log.info(`Prerender - No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}`);
+      // No opportunities found - check if there are existing suggestions to mark as outdated
+      log.info(`Prerender - No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}, isPaidLLMOCustomer=${isPaid}`);
+
+      // syncSuggestions with empty array marks all existing suggestions as OUTDATED
+      const { Opportunity } = dataAccess;
+      const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+      const existingOpportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
+
+      if (existingOpportunity) {
+        await syncSuggestions({
+          opportunity: existingOpportunity,
+          newData: [], // Empty array = all existing suggestions become outdated
+          context,
+          buildKey: (suggestion) => suggestion.url,
+          mapNewSuggestion: () => ({}), // Not used since newData is empty
+        });
+      }
     }
 
     const endTime = process.hrtime(startTime);
@@ -1033,6 +1087,7 @@ export async function processContentAndGenerateOpportunities(context) {
     };
 
     // After syncing suggestions, send a minimal guidance request to Mystique.
+    /* c8 ignore next 8 - Mystique integration branch, covered by integration tests */
     if (opportunityForGuidance) {
       await sendPrerenderGuidanceRequestToMystique(
         site.getBaseURL(),
@@ -1044,6 +1099,28 @@ export async function processContentAndGenerateOpportunities(context) {
 
     // Upload status summary to S3 (post-processing)
     await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
+
+    // Update LatestAudit with the detailed results from step 3
+    // LatestAudit is upsertable, unlike the immutable Audit records
+    try {
+      const { LatestAudit } = dataAccess;
+
+      await LatestAudit.create({
+        auditId: audit.getId(),
+        siteId,
+        auditType: AUDIT_TYPE,
+        auditResult,
+        fullAuditRef: audit.getFullAuditRef(),
+        auditedAt: audit.getAuditedAt(),
+        isLive: site.getIsLive(),
+        isError: false,
+        invocationId: audit.getInvocationId(),
+      });
+
+      log.info(`Prerender - Updated LatestAudit with detailed results. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+    } catch (error) {
+      log.error(`Prerender - Failed to update LatestAudit: ${error.message}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`, error);
+    }
 
     return {
       status: 'complete',
