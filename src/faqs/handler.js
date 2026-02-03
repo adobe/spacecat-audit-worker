@@ -134,6 +134,22 @@ function deduplicatePrompts(prompts) {
   return Array.from(seenQuestions.values());
 }
 
+/**
+ * Sorts prompts with URLs first, then prompts without URLs
+ * @param {Array} prompts - Array of prompt objects with url, topic, and question
+ * @returns {Array} Sorted array of prompts
+ */
+function sortPrompts(prompts) {
+  return prompts.sort((a, b) => {
+    const aHasUrl = a.url && a.url.length > 0;
+    const bHasUrl = b.url && b.url.length > 0;
+
+    if (aHasUrl && !bHasUrl) return -1;
+    if (!aHasUrl && bHasUrl) return 1;
+    return 0;
+  });
+}
+
 async function runFaqsAudit(url, context, site) {
   const {
     log,
@@ -230,12 +246,15 @@ async function runFaqsAudit(url, context, site) {
 
     log.info(`[FAQ] Using brand presence data from ${usedPeriodIdentifier}`);
 
-    // Deduplicate prompts before grouping
+    // Deduplicate prompts before grouping (prioritizes prompts with URLs)
     const uniquePrompts = deduplicatePrompts(topPrompts);
     log.info(`[FAQ] Deduplicated ${topPrompts.length} prompts to ${uniquePrompts.length} unique prompts`);
 
+    // Sort prompts: ones with URLs first, then ones without URLs
+    const sortedPrompts = sortPrompts(uniquePrompts);
+
     // Group prompts by URL and topic (already limited to MAX_ROWS_TO_READ)
-    const promptsByUrl = groupPromptsByUrlAndTopic(uniquePrompts);
+    const promptsByUrl = groupPromptsByUrlAndTopic(sortedPrompts);
 
     log.info(`[FAQ] Grouped ${uniquePrompts.length} prompts into ${promptsByUrl.length} topics`);
 
