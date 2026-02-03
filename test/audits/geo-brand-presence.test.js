@@ -733,7 +733,6 @@ describe('Geo Brand Presence Handler', () => {
     expect(sqs.sendMessage).to.not.have.been.called;
   });
 
-
   it('should skip sending message to Mystique in step 1 when calendarWeek is invalid', async () => {
     await loadPromptsAndSendDetection({
       ...context,
