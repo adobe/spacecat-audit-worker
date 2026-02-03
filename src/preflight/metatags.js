@@ -16,7 +16,6 @@ import { saveIntermediateResults } from './utils.js';
 import { metatagsAutoDetect } from '../metatags/handler.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
 import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
-import { getObjectFromKey } from '../utils/s3-utils.js';
 
 export const PREFLIGHT_METATAGS = 'metatags';
 
@@ -59,6 +58,7 @@ export default async function metatags(context, auditContext) {
     step,
     audits,
     auditsResult,
+    scrapedObjects,
     timeExecutionBreakdown,
   } = auditContext;
 
@@ -84,26 +84,20 @@ export default async function metatags(context, auditContext) {
     extractedTags,
   } = await metatagsAutoDetect(site, pageMap, context);
 
-  // Fetch scraped objects to get rawBody for selector generation
-  const { s3Client } = context;
-  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  // Build scrapeDataByPath from already-fetched scrapedObjects (avoids extra S3 calls)
   const scrapeDataByPath = new Map();
-
-  await Promise.all([...pageMap].map(async ([url, s3Key]) => {
-    try {
-      const object = await getObjectFromKey(s3Client, bucketName, s3Key, log);
-      if (object?.scrapeResult?.rawBody) {
-        /* c8 ignore next 2 - fallback branch for when finalUrl is not present */
-        const pageUrl = object.finalUrl ? new URL(object.finalUrl).pathname
-          : new URL(url).pathname;
+  scrapedObjects.forEach(({ data }) => {
+    if (data?.scrapeResult?.rawBody) {
+      /* c8 ignore next 3 - defensive: finalUrl should always exist if scrape succeeded */
+      const pageUrl = data.finalUrl
+        ? new URL(data.finalUrl).pathname
+        : null;
+      if (pageUrl) {
         const normalizedPath = stripTrailingSlash(pageUrl);
-        scrapeDataByPath.set(normalizedPath, object.scrapeResult.rawBody);
+        scrapeDataByPath.set(normalizedPath, data.scrapeResult.rawBody);
       }
-    /* c8 ignore next 3 - defensive error handling for S3 fetch failures */
-    } catch (error) {
-      log.warn(`[preflight-metatags] Failed to fetch scrape data for ${url}: ${error.message}`);
     }
-  }));
+  });
 
   try {
     const tagCollection = step === 'suggest'
