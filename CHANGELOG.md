@@ -1,3 +1,10 @@
+# [1.302.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.301.0...v1.302.0) (2026-02-03)
+
+
+### Features
+
+* add wikipedia-analysis to LLMO customer onboarding ([#1929](https://github.com/adobe/spacecat-audit-worker/issues/1929)) ([0ba3c57](https://github.com/adobe/spacecat-audit-worker/commit/0ba3c57f2a91110144a4748578e7a586c0144f2b))
+
 # [1.301.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.300.1...v1.301.0) (2026-02-03)
 
 
