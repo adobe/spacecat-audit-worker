@@ -110,4 +110,3 @@ src/commerce-product-enrichments/
 
 - [Product Metatags Audit](../product-metatags/README.md) - Reference implementation
 - [Developer Guide: Creating a New Audit Type](https://wiki.corp.adobe.com/pages/viewpage.action?spaceKey=EntComm&title=Developer+Guide%3A+Creating+a+New+Audit+Type+in+SpaceCat)
- 
