@@ -1,3 +1,10 @@
+# [1.304.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.303.0...v1.304.0) (2026-02-03)
+
+
+### Features
+
+* sort FAQs prompts based on URL existence ([#1933](https://github.com/adobe/spacecat-audit-worker/issues/1933)) ([1cc6d43](https://github.com/adobe/spacecat-audit-worker/commit/1cc6d434c4e6eecc2006b3ebaae97c57cef9d1e8))
+
 # [1.303.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.302.0...v1.303.0) (2026-02-03)
 
 
