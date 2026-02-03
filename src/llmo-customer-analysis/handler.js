@@ -299,6 +299,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       REFERRAL_TRAFFIC_AUDIT,
       'cdn-logs-report',
       'readability',
+      'wikipedia-analysis',
     ];
     const [isDailyEnabled, isPaidEnabled] = await Promise.all([
       configuration.isHandlerEnabledForSite('geo-brand-presence-daily', site),
