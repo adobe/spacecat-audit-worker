@@ -277,7 +277,7 @@ export default async function headings(context, auditContext) {
           // Generate selectors from the scraped HTML
           if (scrapeJsonObject) {
             const elementData = getElementsFromCheck(scrapeJsonObject, check);
-            if (elementData && (elementData.elements?.length > 0 || elementData.selector)) {
+            if (elementData?.elements?.length > 0) {
               Object.assign(opportunity, elementData);
             }
           }

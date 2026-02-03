@@ -211,6 +211,146 @@ describe('dom-selector.js', () => {
     });
   });
 
+  describe('CSS Escaping', () => {
+    it('should escape NULL character (U+0000) in class names - line 30', () => {
+      // NULL character should be replaced with U+FFFD (replacement character)
+      // Cheerio strips NULL chars during parsing, so we create a mock element directly
+      const mockElement = {
+        name: 'div',
+        type: 'tag',
+        attribs: { class: 'test\u0000class' },
+        parent: {
+          name: 'body',
+          type: 'tag',
+          attribs: {},
+          children: [],
+          parent: null,
+        },
+      };
+      mockElement.parent.children = [mockElement];
+      const selector = getDomElementSelector(mockElement);
+      // The NULL should be replaced with the replacement character
+      expect(selector).to.include('div.test\uFFFDclass');
+    });
+
+    it('should escape NULL character (U+0000) in ID - line 30', () => {
+      // Test NULL in ID as well
+      const mockElement = {
+        name: 'div',
+        type: 'tag',
+        attribs: { id: 'my\u0000id' },
+        parent: {
+          name: 'body',
+          type: 'tag',
+          attribs: {},
+          children: [],
+          parent: null,
+        },
+      };
+      mockElement.parent.children = [mockElement];
+      const selector = getDomElementSelector(mockElement);
+      // The NULL should be replaced with the replacement character
+      expect(selector).to.equal('div#my\uFFFDid');
+    });
+
+    it('should escape control characters (U+0001-U+001F) in IDs - line 35', () => {
+      // Control character U+001F (unit separator) should be escaped as hex
+      // Use mock element to ensure control char is preserved
+      const mockElement = {
+        name: 'div',
+        type: 'tag',
+        attribs: { id: 'test\u001Fid' },
+        parent: {
+          name: 'body',
+          type: 'tag',
+          attribs: {},
+          children: [],
+          parent: null,
+        },
+      };
+      mockElement.parent.children = [mockElement];
+      const selector = getDomElementSelector(mockElement);
+      // Control char 0x1F = 31 in decimal = "1f" in hex, escaped as \1f followed by space
+      expect(selector).to.equal('div#test\\1f id');
+    });
+
+    it('should escape DEL character (U+007F) in class names - line 35', () => {
+      // DEL character should be escaped as hex
+      // Use mock element to ensure DEL char is preserved
+      const mockElement = {
+        name: 'div',
+        type: 'tag',
+        attribs: { class: 'test\u007Fclass' },
+        parent: {
+          name: 'body',
+          type: 'tag',
+          attribs: {},
+          children: [],
+          parent: null,
+        },
+      };
+      mockElement.parent.children = [mockElement];
+      const selector = getDomElementSelector(mockElement);
+      // DEL char 0x7F = 127 in decimal = "7f" in hex
+      expect(selector).to.include('div.test\\7f class');
+    });
+
+    it('should escape single hyphen as identifier - line 40', () => {
+      // A single hyphen at the start (and only character) should be escaped
+      const html = '<div id="-">Content</div>';
+      const $test = cheerioLoad(html);
+      const element = $test('div').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.equal('div#\\-');
+    });
+
+    it('should escape special characters like @ and ! - lines 55-57', () => {
+      // Characters like @ and ! need to be escaped
+      const html = '<div class="test@class!name">Content</div>';
+      const $test = cheerioLoad(html);
+      const element = $test('div').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('div.test\\@class\\!name');
+    });
+
+    it('should escape dot in class name', () => {
+      const html = '<div class="version.1.0">Content</div>';
+      const $test = cheerioLoad(html);
+      const element = $test('div').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('div.version\\.1\\.0');
+    });
+
+    it('should escape colon in class name (Tailwind-style)', () => {
+      const html = '<div class="hover:bg-blue-500">Content</div>';
+      const $test = cheerioLoad(html);
+      const element = $test('div').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('div.hover\\:bg-blue-500');
+    });
+
+    it('should escape brackets in class name (Tailwind arbitrary values)', () => {
+      const html = '<div class="w-[200px]">Content</div>';
+      const $test = cheerioLoad(html);
+      const element = $test('div').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('div.w-\\[200px\\]');
+    });
+
+    it('should handle multiple special characters in parent classes', () => {
+      const html = `
+        <div class="container@main">
+          <p class="text!important">Content</p>
+        </div>
+      `;
+      const $test = cheerioLoad(html);
+      const element = $test('p').get(0);
+      const selector = getDomElementSelector(element);
+      expect(selector).to.include('div.container\\@main');
+      expect(selector).to.include('p.text\\!important');
+    });
+  });
+
   describe('toElementTargets', () => {
     it('should return an empty object for null or undefined input', () => {
       expect(toElementTargets(null)).to.deep.equal({});
@@ -361,8 +501,8 @@ describe('dom-selector.js', () => {
       });
     });
 
-    describe('toElementTargets - Cloud Service Format', () => {
-      it('should return CS format for cq[data-path] selectors', () => {
+    describe('toElementTargets - Unified format for all contexts', () => {
+      it('should return unified format for cq[data-path] selectors', () => {
         const selectors = [
           'cq[data-path="/content/wknd/en/jcr:content/root/container/breadcrumb"]',
           'cq[data-path="/content/wknd/en/jcr:content/root/container/carousel"]',
@@ -371,23 +511,11 @@ describe('dom-selector.js', () => {
         const result = toElementTargets(selectors);
 
         expect(result).to.be.an('object');
-        expect(result).to.have.property('selector');
-        expect(result.selector).to.have.property('elements');
-        expect(result.selector.elements).to.be.an('array');
-        expect(result.selector.elements).to.have.lengthOf(2);
-        expect(result.selector.elements[0]).to.equal(selectors[0]);
-        expect(result.selector.elements[1]).to.equal(selectors[1]);
-      });
-
-      it('should return CS format with context when provided', () => {
-        const selectors = ['cq[data-path="/content/wknd/en/jcr:content/root/container/title"]'];
-        const context = 'page title';
-
-        const result = toElementTargets(selectors, Infinity, context);
-
-        expect(result).to.be.an('object');
-        expect(result.selector).to.have.property('elements');
-        expect(result.selector).to.have.property('context', context);
+        expect(result).to.have.property('elements');
+        expect(result.elements).to.be.an('array');
+        expect(result.elements).to.have.lengthOf(2);
+        expect(result.elements[0]).to.deep.equal({ selector: selectors[0] });
+        expect(result.elements[1]).to.deep.equal({ selector: selectors[1] });
       });
 
       it('should handle single CS selector', () => {
@@ -396,9 +524,9 @@ describe('dom-selector.js', () => {
         const result = toElementTargets(selector);
 
         expect(result).to.be.an('object');
-        expect(result.selector.elements).to.be.an('array');
-        expect(result.selector.elements).to.have.lengthOf(1);
-        expect(result.selector.elements[0]).to.equal(selector);
+        expect(result.elements).to.be.an('array');
+        expect(result.elements).to.have.lengthOf(1);
+        expect(result.elements[0]).to.deep.equal({ selector });
       });
 
       it('should deduplicate CS selectors', () => {
@@ -410,7 +538,7 @@ describe('dom-selector.js', () => {
 
         const result = toElementTargets(selectors);
 
-        expect(result.selector.elements).to.have.lengthOf(2);
+        expect(result.elements).to.have.lengthOf(2);
       });
 
       it('should respect limit for CS selectors', () => {
@@ -422,7 +550,21 @@ describe('dom-selector.js', () => {
 
         const result = toElementTargets(selectors, 2);
 
-        expect(result.selector.elements).to.have.lengthOf(2);
+        expect(result.elements).to.have.lengthOf(2);
+      });
+
+      it('should return unified format for Universal Editor selectors', () => {
+        const selectors = [
+          'div[data-aue-resource="urn:aemconnection:/content/test"]',
+          'h1[data-aue-prop="title"]',
+        ];
+
+        const result = toElementTargets(selectors);
+
+        expect(result).to.have.property('elements');
+        expect(result.elements).to.have.lengthOf(2);
+        expect(result.elements[0]).to.deep.equal({ selector: selectors[0] });
+        expect(result.elements[1]).to.deep.equal({ selector: selectors[1] });
       });
 
       it('should extract and format CS selectors from real-world HTML', () => {
@@ -452,8 +594,9 @@ describe('dom-selector.js', () => {
 
         expect(selector).to.include('cq[data-path=');
         expect(selector).to.include('/content/wknd/language-masters/en/adventures/surf-camp-costa-rica');
-        expect(targets).to.have.property('selector');
-        expect(targets.selector.elements).to.be.an('array').with.lengthOf(1);
+        expect(targets).to.have.property('elements');
+        expect(targets.elements).to.be.an('array').with.lengthOf(1);
+        expect(targets.elements[0]).to.deep.equal({ selector });
       });
     });
   });

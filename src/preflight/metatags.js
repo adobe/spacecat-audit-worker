@@ -138,7 +138,7 @@ export default async function metatags(context, auditContext) {
           const selectors = generateSelectorsForTag(rawBody, tagName);
           if (selectors) {
             const elementData = toElementTargets(selectors);
-            if (elementData && (elementData.elements?.length > 0 || elementData.selector)) {
+            if (elementData?.elements?.length > 0) {
               Object.assign(opportunity, elementData);
             }
           }
