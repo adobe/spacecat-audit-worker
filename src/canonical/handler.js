@@ -557,8 +557,6 @@ export async function processScrapedContent(context) {
               explanation,
               urls: [],
             };
-            /* c8 ignore next */
-            log.info(`[canonical] First occurrence of ${checkType}: explanation = "${explanation}"`);
           }
           acc[checkType].urls.push(url);
         }
@@ -588,19 +586,14 @@ export async function processScrapedContent(context) {
   }
 
   // final results structure
-  const results = Object.entries(filteredAggregatedResults).map(([checkType, checkData]) => {
-    const result = {
-      type: checkType,
-      explanation: checkData.explanation,
-      affectedUrls: checkData.urls.map((url) => ({
-        url,
-        suggestion: generateCanonicalSuggestion(checkType),
-      })),
-    };
-    /* c8 ignore next */
-    log.info(`[canonical] Built result for ${checkType}: explanation ${result.explanation ? 'present' : 'MISSING'}, value: "${result.explanation}"`);
-    return result;
-  });
+  const results = Object.entries(filteredAggregatedResults).map(([checkType, checkData]) => ({
+    type: checkType,
+    explanation: checkData.explanation,
+    affectedUrls: checkData.urls.map((url) => ({
+      url,
+      suggestion: generateCanonicalSuggestion(checkType),
+    })),
+  }));
 
   // Generate suggestions from audit results
   const auditTypeOrder = [...Object.keys(CANONICAL_CHECKS)];
@@ -614,9 +607,6 @@ export async function processScrapedContent(context) {
       suggestionsByType[checkType] = [];
     }
 
-    /* c8 ignore next */
-    log.info(`[canonical] Processing issue type: ${checkType}, explanation: ${issue.explanation}`);
-
     issue.affectedUrls.forEach((urlData) => {
       const suggestion = {
         type: 'CODE_CHANGE',
@@ -625,9 +615,6 @@ export async function processScrapedContent(context) {
         suggestion: urlData.suggestion,
         explanation: issue.explanation,
       };
-
-      /* c8 ignore next */
-      log.info(`[canonical] Created suggestion with explanation for ${urlData.url}: ${suggestion.explanation ? 'present' : 'MISSING'}`);
 
       suggestionsByType[checkType].push(suggestion);
       allSuggestions.push(suggestion);
@@ -657,31 +644,23 @@ export async function processScrapedContent(context) {
 
     const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
 
-    /* c8 ignore next */
-    log.info(`[canonical] About to sync ${sortedSuggestions.length} suggestions. First suggestion sample: ${JSON.stringify(sortedSuggestions[0])}`);
-
     await syncSuggestions({
       opportunity,
       newData: sortedSuggestions,
       context,
       buildKey,
-      mapNewSuggestion: (suggestion) => {
-        const mapped = {
-          opportunityId: opportunity.getId(),
-          type: suggestion.type,
-          rank: 0,
-          data: {
-            type: 'url',
-            url: suggestion.url,
-            checkType: suggestion.checkType,
-            suggestion: suggestion.suggestion,
-            explanation: suggestion.explanation,
-          },
-        };
-        /* c8 ignore next */
-        log.info(`[canonical] Mapping suggestion for ${suggestion.url}: explanation ${mapped.data.explanation ? 'present' : 'MISSING'}, value: ${mapped.data.explanation?.substring(0, 50)}...`);
-        return mapped;
-      },
+      mapNewSuggestion: (suggestion) => ({
+        opportunityId: opportunity.getId(),
+        type: suggestion.type,
+        rank: 0,
+        data: {
+          type: 'url',
+          url: suggestion.url,
+          checkType: suggestion.checkType,
+          suggestion: suggestion.suggestion,
+          explanation: suggestion.explanation,
+        },
+      }),
       keepLatestMergeDataFunction,
       log,
     });
