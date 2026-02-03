@@ -218,9 +218,18 @@ function getElapsedSeconds(startTime) {
  */
 async function run(message, context) {
   const { log } = context;
-  const { type, siteId } = message;
+  const {
+    type, siteId, abort, jobId,
+  } = message;
 
-  log.info(`Received ${type} audit request for: ${siteId}. Message:`, message);
+  /* c8 ignore start */
+  // Enhanced logging for message reception with abort info
+  log.info(
+    `Received ${type} audit request for siteId=${siteId}, jobId=${jobId || 'none'}, `
+    + `hasAbort=${!!abort}, abortReason=${abort?.reason || 'none'}. Full message:`,
+    message,
+  );
+  /* c8 ignore stop */
 
   const handler = HANDLERS[type];
   if (!handler) {

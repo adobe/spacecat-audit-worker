@@ -69,10 +69,32 @@ export class StepAudit extends BaseAudit {
   static handleAbort(abort, jobId, type, site, siteId, log) {
     const { reason, details } = abort;
 
+    /* c8 ignore start */
+    // Log abort structure for debugging
+    log.info(
+      `[AUDIT-DEBUG] Processing abort signal: jobId=${jobId}, type=${type}, siteId=${siteId}, `
+      + `reason=${reason}, hasDetails=${!!details}, detailsKeys=${details ? Object.keys(details).join(',') : 'none'}`,
+    );
+    /* c8 ignore stop */
+
     if (reason === 'bot-protection') {
       const {
         blockedUrlsCount, totalUrlsCount, byBlockerType, byHttpStatus, blockedUrls,
-      } = details;
+      } = details || {};
+
+      /* c8 ignore start */
+      // Validate bot protection details structure
+      if (!details) {
+        log.error(
+          `[AUDIT-ERROR] Bot protection abort missing details: jobId=${jobId}, type=${type}, siteId=${siteId}`,
+        );
+      } else if (blockedUrlsCount === undefined || totalUrlsCount === undefined) {
+        log.warn(
+          `[AUDIT-WARNING] Bot protection abort has incomplete details: jobId=${jobId}, `
+          + `hasBlockedUrlsCount=${blockedUrlsCount !== undefined}, hasTotalUrlsCount=${totalUrlsCount !== undefined}`,
+        );
+      }
+      /* c8 ignore stop */
 
       const statusDetails = Object.entries(byHttpStatus || {})
         .map(([status, count]) => `${status}: ${count}`)
@@ -87,7 +109,22 @@ export class StepAudit extends BaseAudit {
         + `${blockedUrlsCount}/${totalUrlsCount} URLs blocked, `
         + `Bot Protected URLs: [${blockedUrls?.map((u) => u.url).join(', ') || 'none'}]`,
       );
+    } else {
+      /* c8 ignore start */
+      // Log non-bot-protection abort reasons
+      log.warn(
+        `[AUDIT-ABORT] Audit aborted for non-bot-protection reason: jobId=${jobId}, `
+        + `type=${type}, siteId=${siteId}, reason=${reason}`,
+      );
+      /* c8 ignore stop */
     }
+
+    /* c8 ignore start */
+    log.info(
+      `[AUDIT-DEBUG] Abort handled successfully: jobId=${jobId}, type=${type}, siteId=${siteId}, `
+      + `skipped=true, reason=${reason}`,
+    );
+    /* c8 ignore stop */
 
     // Return generic abort response
     return ok({
@@ -147,6 +184,11 @@ export class StepAudit extends BaseAudit {
       type, data, siteId, auditContext = {}, abort, jobId,
     } = message;
 
+    /* c8 ignore start */
+    // Debug: Log received message structure
+    log.info(`[DEBUG-AUDIT-RECEIVED] type=${type}, siteId=${siteId}, jobId=${jobId || 'none'}, hasAbort=${!!abort}, abortReason=${abort?.reason || 'none'}, messageKeys=${Object.keys(message).join(',')}`);
+    /* c8 ignore stop */
+
     try {
       const site = await this.siteProvider(siteId, context);
 
@@ -157,7 +199,33 @@ export class StepAudit extends BaseAudit {
 
       // Check if scrape job was aborted (e.g., due to bot protection)
       if (abort) {
-        return StepAudit.handleAbort(abort, jobId, type, site, siteId, log);
+        /* c8 ignore start */
+        log.info(
+          `[AUDIT-DEBUG] Abort detected in message: jobId=${jobId}, type=${type}, `
+          + `siteId=${siteId}, reason=${abort.reason}, `
+          + `hasDetails=${!!abort.details}, detailsBlockedCount=${abort.details?.blockedUrlsCount || 0}`,
+        );
+        /* c8 ignore stop */
+
+        try {
+          const result = StepAudit.handleAbort(abort, jobId, type, site, siteId, log);
+          /* c8 ignore start */
+          log.info(
+            `[AUDIT-DEBUG] Abort handled and audit skipped: jobId=${jobId}, type=${type}, `
+            + `siteId=${siteId}, resultSkipped=${result.body?.skipped}`,
+          );
+          /* c8 ignore stop */
+          return result;
+        } catch (error) {
+          /* c8 ignore start */
+          log.error(
+            `[AUDIT-ERROR] Failed to handle abort: jobId=${jobId}, type=${type}, `
+            + `siteId=${siteId}, error=${error.message}`,
+            error,
+          );
+          /* c8 ignore stop */
+          throw error;
+        }
       }
 
       // Determine which step to run

@@ -915,5 +915,91 @@ describe('Step-based Audit Tests', () => {
       expect(botBlockedLog).to.include('HTTP Status: []');
       expect(botBlockedLog).to.include('Blocker Types: []');
     });
+
+    it('handles bot-protection abort with null details (fallback to empty object)', async () => {
+      // Mock site URL
+      nock('https://space.cat')
+        .get('/')
+        .reply(200);
+
+      // Create a simple audit for testing null details
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('process', async () => ({
+          status: 'should-not-reach',
+          findings: ['should-not-reach'],
+        }))
+        .build();
+
+      const messageWithNullDetails = {
+        type: 'cwv',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        jobId: 'null-details-job',
+        abort: {
+          reason: 'bot-protection',
+          details: null, // Explicitly null to trigger || {} fallback
+        },
+        auditContext: {},
+      };
+
+      const result = await scrapeResultAudit.run(messageWithNullDetails, context);
+
+      // Should abort and return ok status
+      expect(result.status).to.equal(200);
+
+      // Verify the result includes the abort reason
+      const resultBody = await result.json();
+      expect(resultBody.skipped).to.be.true;
+      expect(resultBody.reason).to.equal('bot-protection');
+    });
+
+    it('handles errors during abort processing and rethrows', async () => {
+      // Create a site object that throws an error when getBaseURL is called
+      const errorSite = {
+        getId: () => '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        getBaseURL: () => {
+          throw new Error('Site URL retrieval failed');
+        },
+        getIsLive: () => true,
+      };
+
+      // Override Site.findById to return the error-throwing site
+      context.dataAccess.Site.findById.resolves(errorSite);
+
+      // Mock site URL resolution request (even though it won't reach this in handleAbort)
+      nock('https://space.cat')
+        .get('/')
+        .reply(200);
+
+      // Create a simple audit for testing error handling
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('process', async () => ({
+          status: 'should-not-reach',
+          findings: ['should-not-reach'],
+        }))
+        .build();
+
+      const messageWithAbort = {
+        type: 'cwv',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        jobId: 'error-handling-job',
+        abort: {
+          reason: 'bot-protection',
+          details: {
+            blockedUrlsCount: 3,
+            totalUrlsCount: 5,
+            byBlockerType: { cloudflare: 3 },
+            byHttpStatus: { 403: 3 },
+            blockedUrls: [
+              { url: 'https://example.com/page1', blockerType: 'cloudflare', httpStatus: 403 },
+            ],
+          },
+        },
+        auditContext: {},
+      };
+
+      // Should throw the error from site.getBaseURL during handleAbort
+      await expect(scrapeResultAudit.run(messageWithAbort, context))
+        .to.be.rejectedWith('Site URL retrieval failed');
+    });
   });
 });
