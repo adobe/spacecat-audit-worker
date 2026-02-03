@@ -24,9 +24,26 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
  * @returns {object} - Result object with audit metadata
  */
 export async function importTopPages(context) {
-  const { site, finalUrl, log } = context;
+  const {
+    site, finalUrl, log, data,
+  } = context;
 
-  log.info(`${LOG_PREFIX} Step 1: importTopPages started for site: ${site.getId()}`);
+  // Parse data if it's a string (from Slack bot), or use as-is if it's an object
+  let parsedData = {};
+  if (typeof data === 'string' && data.length > 0) {
+    try {
+      parsedData = JSON.parse(data);
+    } catch (e) {
+      log.warn(`${LOG_PREFIX} Could not parse data as JSON: ${data}`);
+    }
+  } else if (data && typeof data === 'object') {
+    parsedData = data;
+  }
+
+  const { limit } = parsedData;
+  const limitInfo = limit ? ` with limit: ${limit}` : '';
+
+  log.info(`${LOG_PREFIX} Step 1: importTopPages started for site: ${site.getId()}${limitInfo}`);
   log.info(`${LOG_PREFIX} Final URL: ${finalUrl}`);
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
@@ -36,6 +53,11 @@ export async function importTopPages(context) {
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
   };
+
+  // Add limit to auditContext so it's preserved between steps
+  if (limit) {
+    result.auditContext = { limit };
+  }
 
   log.info(`${LOG_PREFIX} Step 1: importTopPages completed, returning:`, result);
   return result;
@@ -53,13 +75,37 @@ export async function submitForScraping(context) {
     site,
     dataAccess,
     log,
+    data,
+    auditContext,
   } = context;
 
-  log.info(`${LOG_PREFIX} Step 2: submitForScraping started for site: ${site.getId()}`);
+  // Parse data if it's a string (from Slack bot), or use as-is if it's an object
+  let parsedData = {};
+  if (typeof data === 'string' && data.length > 0) {
+    try {
+      parsedData = JSON.parse(data);
+    } catch (e) {
+      log.warn(`${LOG_PREFIX} Could not parse data as JSON: ${data}`);
+    }
+  } else if (data && typeof data === 'object') {
+    parsedData = data;
+  }
+
+  // Read limit from auditContext (for step chaining) or data (for initial call)
+  const limit = auditContext?.limit || parsedData.limit;
+  const limitInfo = limit ? ` with limit: ${limit}` : '';
+
+  log.info(`${LOG_PREFIX} Step 2: submitForScraping started for site: ${site.getId()}${limitInfo}`);
 
   const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  log.info(`${LOG_PREFIX} Retrieved ${topPages.length} top pages from database`);
+  const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  log.info(`${LOG_PREFIX} Retrieved ${allTopPages.length} top pages from database`);
+
+  // Limit top pages for scraping if limit is provided
+  const topPages = limit ? allTopPages.slice(0, limit) : allTopPages;
+  if (limit) {
+    log.info(`${LOG_PREFIX} Limited to ${topPages.length} top pages for scraping`);
+  }
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
   log.info(`${LOG_PREFIX} Reading site config: ${JSON.stringify(site?.getConfig())}`);
@@ -100,7 +146,8 @@ export async function submitForScraping(context) {
   const result = {
     urls: filteredUrls.map((url) => ({ url })),
     siteId: site.getId(),
-    type: 'commerce-product-enrichments',
+    processingType: 'default',
+    allowCache: false,
   };
 
   log.info(`${LOG_PREFIX} Step 2: submitForScraping completed, returning ${result.urls.length} URLs for scraping`);
@@ -167,6 +214,6 @@ export async function runAuditAndProcessResults(context) {
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('run-audit-and-process-results', runAuditAndProcessResults)
   .build();
