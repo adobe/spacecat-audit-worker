@@ -86,7 +86,7 @@
     "@adobe/spacecat-shared-ahrefs-client": "1.10.5",
     "@adobe/spacecat-shared-athena-client": "1.9.2",
     "@adobe/spacecat-shared-data-access": "2.100.2",
-    "@adobe/spacecat-shared-google-client": "1.4.63",
+    "@adobe/spacecat-shared-google-client": "1.5.0",
     "@adobe/spacecat-shared-gpt-client": "1.6.16",
     "@adobe/spacecat-shared-html-analyzer": "1.2.2",
     "@adobe/spacecat-shared-http-utils": "1.20.0",
