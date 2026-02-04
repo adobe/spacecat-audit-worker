@@ -1852,6 +1852,160 @@ describe('Meta Tags', () => {
         expect(logStub.info).to.have.been.calledWith('Metatags auto-suggest is disabled for site');
         expect(context.sqs.sendMessage).to.not.have.been.called;
       });
+
+      it('should test mergeDataFunction in runAuditAndGenerateSuggestions preserves editedSuggestion', async () => {
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(5000);
+        const mockValidateDetectedIssues = sinon.stub().resolves({
+          '/page1': {
+            title: {
+              tagContent: 'Test',
+              issue: 'Title Too Short',
+              issueDetails: 'Details',
+              seoRecommendation: 'Recommendation',
+              seoImpact: 'MODERATE',
+            },
+          },
+        });
+        const mockSyncSuggestions = sinon.stub().resolves();
+        const mockConvertToOpportunity = sinon.stub().resolves(metatagsOppty);
+
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+          '../../src/utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
+        });
+
+        site.getDeliveryConfig = sinon.stub().returns({ useHostnameOnly: false });
+        dataAccessStub.Configuration.findLatest.resolves({
+          isHandlerEnabledForSite: sinon.stub().returns(true),
+        });
+
+        await auditStub.runAuditAndGenerateSuggestions(context);
+
+        expect(mockSyncSuggestions).to.have.been.calledOnce;
+        const syncCall = mockSyncSuggestions.getCall(0);
+        const mergeDataFn = syncCall.args[0].mergeDataFunction;
+        expect(mergeDataFn).to.be.a('function');
+
+        // Test preservation
+        const existingData = {
+          url: 'https://example.com/page1',
+          tagName: 'title',
+          editedSuggestion: 'User Edit',
+          is_edited: true,
+        };
+        const newData = { tagContent: 'New Content' };
+        const result = mergeDataFn(existingData, newData);
+
+        expect(result.editedSuggestion).to.equal('User Edit');
+        expect(result.is_edited).to.equal(true);
+      });
+
+      it('should test mergeDataFunction in runAuditAndGenerateSuggestions preserves when is_edited false (AI selection)', async () => {
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(5000);
+        const mockValidateDetectedIssues = sinon.stub().resolves({
+          '/page1': {
+            title: {
+              tagContent: 'Test',
+              issue: 'Title Too Short',
+              issueDetails: 'Details',
+              seoRecommendation: 'Recommendation',
+              seoImpact: 'MODERATE',
+            },
+          },
+        });
+        const mockSyncSuggestions = sinon.stub().resolves();
+        const mockConvertToOpportunity = sinon.stub().resolves(metatagsOppty);
+
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+          '../../src/utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
+        });
+
+        site.getDeliveryConfig = sinon.stub().returns({ useHostnameOnly: false });
+        dataAccessStub.Configuration.findLatest.resolves({
+          isHandlerEnabledForSite: sinon.stub().returns(true),
+        });
+
+        await auditStub.runAuditAndGenerateSuggestions(context);
+
+        const syncCall = mockSyncSuggestions.getCall(0);
+        const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+        // Test preservation when is_edited is false (user selected AI suggestion)
+        const existingData = {
+          editedSuggestion: 'Old Edit',
+          is_edited: false,
+        };
+        const newData = { tagContent: 'New Content' };
+        const result = mergeDataFn(existingData, newData);
+
+        // editedSuggestion should be preserved even when is_edited is false
+        expect(result.editedSuggestion).to.equal('Old Edit');
+        expect(result.is_edited).to.equal(false);
+      });
+
+      it('should test mergeDataFunction in runAuditAndGenerateSuggestions handles null editedSuggestion', async () => {
+        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub().resolves(5000);
+        const mockValidateDetectedIssues = sinon.stub().resolves({
+          '/page1': {
+            title: {
+              tagContent: 'Test',
+              issue: 'Title Too Short',
+              issueDetails: 'Details',
+              seoRecommendation: 'Recommendation',
+              seoImpact: 'MODERATE',
+            },
+          },
+        });
+        const mockSyncSuggestions = sinon.stub().resolves();
+        const mockConvertToOpportunity = sinon.stub().resolves(metatagsOppty);
+
+        const auditStub = await esmock('../../src/metatags/handler.js', {
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
+          '../../src/utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
+        });
+
+        site.getDeliveryConfig = sinon.stub().returns({ useHostnameOnly: false });
+        dataAccessStub.Configuration.findLatest.resolves({
+          isHandlerEnabledForSite: sinon.stub().returns(true),
+        });
+
+        await auditStub.runAuditAndGenerateSuggestions(context);
+
+        const syncCall = mockSyncSuggestions.getCall(0);
+        const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+        // Test that null editedSuggestion is not preserved
+        const existingData = {
+          editedSuggestion: null,
+          is_edited: true,
+        };
+        const newData = { tagContent: 'New Content' };
+        const result = mergeDataFn(existingData, newData);
+
+        expect(result.editedSuggestion).to.be.undefined;
+      });
     });
 
     describe('removeTrailingSlash', () => {
@@ -2546,6 +2700,370 @@ describe('Meta Tags', () => {
         expect(log.debug).to.have.been.calledWith('Removing title tag from /page1 (duplicate group without complete AI suggestions).');
         expect(log.debug).to.have.been.calledWith('Removing title tag from /page2 (duplicate group without complete AI suggestions).');
       });
+    });
+  });
+
+  describe('opportunityAndSuggestions - mergeDataFunction', () => {
+    it('should preserve editedSuggestion when is_edited is true', async () => {
+      const mockSyncSuggestions = sinon.stub().resolves();
+      const mockConvertToOpportunity = sinon.stub().resolves({
+        getId: () => 'opportunity-id',
+      });
+
+      const mockedHandler = await esmock('../../src/metatags/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: mockConvertToOpportunity,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: mockSyncSuggestions,
+        },
+      });
+
+      const auditData = {
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        auditResult: {
+          finalUrl: 'https://example.com',
+          detectedTags: {
+            '/page1': {
+              title: {
+                tagContent: 'Test Title',
+                issue: 'Title Too Short',
+                issueDetails: 'Some details',
+                seoRecommendation: 'Some recommendation',
+                seoImpact: 'MODERATE',
+              },
+            },
+          },
+        },
+      };
+
+      const testContext = {
+        log: {
+          info: sinon.stub(),
+          debug: sinon.stub(),
+          error: sinon.stub(),
+          warn: sinon.stub(),
+        },
+        dataAccess: {},
+        env: {},
+      };
+
+      await mockedHandler.opportunityAndSuggestions('https://example.com', auditData, testContext);
+
+      expect(mockSyncSuggestions).to.have.been.calledOnce;
+      const syncCall = mockSyncSuggestions.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+      expect(mergeDataFn).to.be.a('function');
+
+      // Test that editedSuggestion is preserved when is_edited is true
+      const existingData = {
+        url: 'https://example.com/page1',
+        tagName: 'title',
+        tagContent: 'Old Title',
+        issue: 'Title Too Short',
+        editedSuggestion: 'User Edited Amazing Title',
+        is_edited: true,
+      };
+
+      const newData = {
+        url: 'https://example.com/page1',
+        tagName: 'title',
+        tagContent: 'New Title',
+        issue: 'Title Too Short',
+        issueDetails: 'New details',
+      };
+
+      const result = mergeDataFn(existingData, newData);
+
+      expect(result.editedSuggestion).to.equal('User Edited Amazing Title');
+      expect(result.is_edited).to.equal(true);
+      expect(result.tagContent).to.equal('New Title');
+      expect(result.issueDetails).to.equal('New details');
+    });
+
+    it('should preserve editedSuggestion when is_edited is false (AI selection)', async () => {
+      const mockSyncSuggestions = sinon.stub().resolves();
+      const mockConvertToOpportunity = sinon.stub().resolves({
+        getId: () => 'opportunity-id',
+      });
+
+      const mockedHandler = await esmock('../../src/metatags/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: mockConvertToOpportunity,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: mockSyncSuggestions,
+        },
+      });
+
+      const auditData = {
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        auditResult: {
+          finalUrl: 'https://example.com',
+          detectedTags: {
+            '/page1': {
+              title: {
+                tagContent: 'Test Title',
+                issue: 'Title Too Short',
+                issueDetails: 'Some details',
+                seoRecommendation: 'Some recommendation',
+                seoImpact: 'MODERATE',
+              },
+            },
+          },
+        },
+      };
+
+      const testContext = {
+        log: {
+          info: sinon.stub(),
+          debug: sinon.stub(),
+          error: sinon.stub(),
+          warn: sinon.stub(),
+        },
+        dataAccess: {},
+        env: {},
+      };
+
+      await mockedHandler.opportunityAndSuggestions('https://example.com', auditData, testContext);
+
+      const syncCall = mockSyncSuggestions.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test editedSuggestion IS preserved when is_edited is false (AI selection)
+      const existingData = {
+        url: 'https://example.com/page1',
+        tagName: 'title',
+        editedSuggestion: 'Old Edited Title',
+        is_edited: false,
+      };
+
+      const newData = {
+        url: 'https://example.com/page1',
+        tagName: 'title',
+        tagContent: 'New Title',
+        issue: 'Title Too Short',
+      };
+
+      const result = mergeDataFn(existingData, newData);
+
+      // editedSuggestion should be preserved even when is_edited is false
+      expect(result.editedSuggestion).to.equal('Old Edited Title');
+      expect(result.is_edited).to.equal(false);
+      expect(result.tagContent).to.equal('New Title');
+    });
+
+    it('should not preserve editedSuggestion when editedSuggestion is undefined', async () => {
+      const mockSyncSuggestions = sinon.stub().resolves();
+      const mockConvertToOpportunity = sinon.stub().resolves({
+        getId: () => 'opportunity-id',
+      });
+
+      const mockedHandler = await esmock('../../src/metatags/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: mockConvertToOpportunity,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: mockSyncSuggestions,
+        },
+      });
+
+      const auditData = {
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        auditResult: {
+          finalUrl: 'https://example.com',
+          detectedTags: {
+            '/page1': {
+              title: {
+                tagContent: 'Test Title',
+                issue: 'Title Too Short',
+                issueDetails: 'Some details',
+                seoRecommendation: 'Some recommendation',
+                seoImpact: 'MODERATE',
+              },
+            },
+          },
+        },
+      };
+
+      const testContext = {
+        log: {
+          info: sinon.stub(),
+          debug: sinon.stub(),
+          error: sinon.stub(),
+          warn: sinon.stub(),
+        },
+        dataAccess: {},
+        env: {},
+      };
+
+      await mockedHandler.opportunityAndSuggestions('https://example.com', auditData, testContext);
+
+      const syncCall = mockSyncSuggestions.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test that editedSuggestion is NOT preserved when it's undefined
+      const existingData = {
+        url: 'https://example.com/page1',
+        tagName: 'title',
+        is_edited: true,
+        // editedSuggestion is undefined
+      };
+
+      const newData = {
+        url: 'https://example.com/page1',
+        tagName: 'title',
+        tagContent: 'New Title',
+      };
+
+      const result = mergeDataFn(existingData, newData);
+
+      expect(result.editedSuggestion).to.be.undefined;
+      expect(result.tagContent).to.equal('New Title');
+    });
+
+    it('should handle when is_edited is null', async () => {
+      const mockSyncSuggestions = sinon.stub().resolves();
+      const mockConvertToOpportunity = sinon.stub().resolves({
+        getId: () => 'opportunity-id',
+      });
+
+      const mockedHandler = await esmock('../../src/metatags/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: mockConvertToOpportunity,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: mockSyncSuggestions,
+        },
+      });
+
+      const auditData = {
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        auditResult: {
+          finalUrl: 'https://example.com',
+          detectedTags: {
+            '/page1': {
+              title: {
+                tagContent: 'Test Title',
+                issue: 'Title Too Short',
+                issueDetails: 'Some details',
+                seoRecommendation: 'Some recommendation',
+                seoImpact: 'MODERATE',
+              },
+            },
+          },
+        },
+      };
+
+      const testContext = {
+        log: {
+          info: sinon.stub(),
+          debug: sinon.stub(),
+          error: sinon.stub(),
+          warn: sinon.stub(),
+        },
+        dataAccess: {},
+        env: {},
+      };
+
+      await mockedHandler.opportunityAndSuggestions('https://example.com', auditData, testContext);
+
+      const syncCall = mockSyncSuggestions.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test with null is_edited
+      const existingData = {
+        url: 'https://example.com/page1',
+        tagName: 'title',
+        editedSuggestion: 'Edited Title',
+        is_edited: null,
+      };
+
+      const newData = {
+        url: 'https://example.com/page1',
+        tagName: 'title',
+        tagContent: 'New Title',
+      };
+
+      const result = mergeDataFn(existingData, newData);
+
+      expect(result.editedSuggestion).to.be.undefined;
+      expect(result.tagContent).to.equal('New Title');
+    });
+
+    it('should handle when editedSuggestion is null', async () => {
+      const mockSyncSuggestions = sinon.stub().resolves();
+      const mockConvertToOpportunity = sinon.stub().resolves({
+        getId: () => 'opportunity-id',
+      });
+
+      const mockedHandler = await esmock('../../src/metatags/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: mockConvertToOpportunity,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: mockSyncSuggestions,
+        },
+      });
+
+      const auditData = {
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        auditResult: {
+          finalUrl: 'https://example.com',
+          detectedTags: {
+            '/page1': {
+              title: {
+                tagContent: 'Test Title',
+                issue: 'Title Too Short',
+                issueDetails: 'Some details',
+                seoRecommendation: 'Some recommendation',
+                seoImpact: 'MODERATE',
+              },
+            },
+          },
+        },
+      };
+
+      const testContext = {
+        log: {
+          info: sinon.stub(),
+          debug: sinon.stub(),
+          error: sinon.stub(),
+          warn: sinon.stub(),
+        },
+        dataAccess: {},
+        env: {},
+      };
+
+      await mockedHandler.opportunityAndSuggestions('https://example.com', auditData, testContext);
+
+      const syncCall = mockSyncSuggestions.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test with null editedSuggestion but true is_edited
+      const existingData = {
+        url: 'https://example.com/page1',
+        tagName: 'title',
+        editedSuggestion: null,
+        is_edited: true,
+      };
+
+      const newData = {
+        url: 'https://example.com/page1',
+        tagName: 'title',
+        tagContent: 'New Title',
+      };
+
+      const result = mergeDataFn(existingData, newData);
+
+      // Should not preserve null editedSuggestion
+      expect(result.editedSuggestion).to.be.undefined;
+      expect(result.tagContent).to.equal('New Title');
     });
   });
 });

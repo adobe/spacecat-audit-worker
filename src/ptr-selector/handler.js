@@ -23,8 +23,8 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 const IMPORT_TYPE_TRAFFIC_ANALYSIS = 'traffic-analysis';
 
-const THRESHOLD_LOW = 50000;
-const THRESHOLD_HIGH = 200000;
+const THRESHOLD_LOW = 30000;
+const THRESHOLD_HIGH = 120000;
 
 const REPORT_DECISION = {
   NOT_ENOUGH_DATA: 'not enough data',
@@ -175,8 +175,8 @@ export async function runPtrSelectorAnalysisStep(context) {
 
     if (reportDecision === REPORT_DECISION.WEEKLY) {
       await enableAuditForSite('paid-traffic-analysis-weekly', site, configuration, log);
-      await disableAuditForSite('paid-traffic-analysis-monthly', site, configuration, log);
-      log.info(`[ptr-selector] totalPageViewSum=${totalPageViewSum}. Enabled paid-traffic-analysis-weekly for site ${siteId}.`);
+      await enableAuditForSite('paid-traffic-analysis-monthly', site, configuration, log);
+      log.info(`[ptr-selector] totalPageViewSum=${totalPageViewSum}. Enabled paid-traffic-analysis-weekly and paid-traffic-analysis-monthly for site ${siteId}.`);
     } else if (reportDecision === REPORT_DECISION.MONTHLY) {
       await enableAuditForSite('paid-traffic-analysis-monthly', site, configuration, log);
       await disableAuditForSite('paid-traffic-analysis-weekly', site, configuration, log);
@@ -184,7 +184,7 @@ export async function runPtrSelectorAnalysisStep(context) {
     } else {
       await disableAuditForSite('paid-traffic-analysis-weekly', site, configuration, log);
       await disableAuditForSite('paid-traffic-analysis-monthly', site, configuration, log);
-      log.info(`[ptr-selector] totalPageViewSum=${totalPageViewSum} is below 50K threshold. No audit enabled.`);
+      log.info(`[ptr-selector] totalPageViewSum=${totalPageViewSum} is below 30K threshold. No audit enabled.`);
     }
 
     await configuration.save();
