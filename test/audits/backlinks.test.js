@@ -53,10 +53,6 @@ describe('Backlinks Tests', function () {
     { getUrl: () => 'https://example.com/blog/page1' },
     { getUrl: () => 'https://example.com/blog/page2' },
   ];
-  const topPagesNoPrefix = [
-    { getUrl: () => 'https://example.com/page1' },
-    { getUrl: () => 'https://example.com/page2' },
-  ];
   const auditUrl = 'https://audit.url';
   const audit = {
     getId: () => auditDataMock.id,
@@ -279,7 +275,7 @@ describe('Backlinks Tests', function () {
     context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPagesOutsideScope);
 
     await expect(submitForScraping(context))
-      .to.be.rejectedWith(`All 2 top pages filtered out by audit scope. BaseURL: https://example.com/blog requires subpath match but no pages match scope.`);
+      .to.be.rejectedWith('All 2 top pages filtered out by audit scope. BaseURL: https://example.com/blog requires subpath match but no pages match scope.');
   });
 
   it('should filter out broken backlinks that return ok (even with redirection)', async () => {
@@ -444,7 +440,8 @@ describe('Backlinks Tests', function () {
           }),
         },
       ];
-      // Create new stub like internal links test does - MUST be set before generateSuggestionData is called
+      // Create new stub like internal links test does
+      // MUST be set before generateSuggestionData is called
       // The stub needs to accept opportunityId and status as parameters
       context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
         .withArgs('opportunity-id', sinon.match.any)
@@ -727,6 +724,395 @@ describe('Backlinks Tests', function () {
         projectedTrafficLost: 0,
         projectedTrafficValue: 0,
       });
+    });
+  });
+
+  describe('generateSuggestionData - mergeDataFunction', () => {
+    it('should preserve urlEdited when isEdited is true', async () => {
+      const mockSyncSuggestions = sinon.stub().resolves();
+      const mockConvertToOpportunity = sinon.stub().resolves({
+        getId: () => 'opportunity-id',
+      });
+
+      // Use dynamic import to get esmock
+      const esmock = (await import('esmock')).default;
+      const mockedHandler = await esmock('../../src/backlinks/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: mockConvertToOpportunity,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: mockSyncSuggestions,
+        },
+      });
+
+      const mockAuditResult = {
+        success: true,
+        brokenBacklinks: [
+          {
+            url_from: 'https://example.com/page1',
+            url_to: 'https://example.com/broken',
+            title: 'Test Page',
+            traffic_domain: 1000,
+          },
+        ],
+      };
+
+      const mockAudit = {
+        getId: () => 'audit-id',
+        getAuditResult: () => mockAuditResult,
+      };
+
+      const mockSite = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      const mockContext = {
+        site: mockSite,
+        audit: mockAudit,
+        finalUrl: 'https://example.com',
+        log: context.log,
+        dataAccess: {
+          Configuration: {
+            findLatest: sinon.stub().resolves({
+              isHandlerEnabledForSite: sinon.stub().returns(true),
+            }),
+          },
+          Suggestion: {
+            allByOpportunityIdAndStatus: sinon.stub().resolves([]),
+          },
+          SiteTopPage: {
+            allBySiteIdAndSource: sinon.stub().resolves([]),
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+          },
+        },
+        sqs: context.sqs,
+        env: context.env,
+      };
+
+      await mockedHandler.generateSuggestionData(mockContext);
+
+      expect(mockSyncSuggestions).to.have.been.calledOnce;
+      const syncCall = mockSyncSuggestions.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+      expect(mergeDataFn).to.be.a('function');
+
+      // Test that urlEdited is preserved when isEdited is true
+      const existingData = {
+        url_from: 'https://example.com/page1',
+        url_to: 'https://example.com/broken',
+        title: 'Old Title',
+        traffic_domain: 500,
+        urlEdited: 'https://example.com/user-fixed-url',
+        isEdited: true,
+      };
+
+      const newData = {
+        url_from: 'https://example.com/page1',
+        url_to: 'https://example.com/broken',
+        title: 'New Title',
+        traffic_domain: 1000,
+      };
+
+      const result = mergeDataFn(existingData, newData);
+
+      expect(result.urlEdited).to.equal('https://example.com/user-fixed-url');
+      expect(result.isEdited).to.equal(true);
+      expect(result.title).to.equal('New Title');
+      expect(result.traffic_domain).to.equal(1000);
+    });
+
+    it('should preserve urlEdited when isEdited is false (AI selection)', async () => {
+      const mockSyncSuggestions = sinon.stub().resolves();
+      const mockConvertToOpportunity = sinon.stub().resolves({
+        getId: () => 'opportunity-id',
+      });
+
+      const esmock = (await import('esmock')).default;
+      const mockedHandler = await esmock('../../src/backlinks/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: mockConvertToOpportunity,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: mockSyncSuggestions,
+        },
+      });
+
+      const mockAuditResult = {
+        success: true,
+        brokenBacklinks: [
+          {
+            url_from: 'https://example.com/page1',
+            url_to: 'https://example.com/broken',
+            title: 'Test Page',
+            traffic_domain: 1000,
+          },
+        ],
+      };
+
+      const mockAudit = {
+        getId: () => 'audit-id',
+        getAuditResult: () => mockAuditResult,
+      };
+
+      const mockSite = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      const mockContext = {
+        site: mockSite,
+        audit: mockAudit,
+        finalUrl: 'https://example.com',
+        log: context.log,
+        dataAccess: {
+          Configuration: {
+            findLatest: sinon.stub().resolves({
+              isHandlerEnabledForSite: sinon.stub().returns(true),
+            }),
+          },
+          Suggestion: {
+            allByOpportunityIdAndStatus: sinon.stub().resolves([]),
+          },
+          SiteTopPage: {
+            allBySiteIdAndSource: sinon.stub().resolves([]),
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+          },
+        },
+        sqs: context.sqs,
+        env: context.env,
+      };
+
+      await mockedHandler.generateSuggestionData(mockContext);
+
+      const syncCall = mockSyncSuggestions.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test that urlEdited IS preserved when isEdited is false (user selected AI suggestion)
+      const existingData = {
+        url_from: 'https://example.com/page1',
+        url_to: 'https://example.com/broken',
+        urlEdited: 'https://example.com/old-edited-url',
+        isEdited: false,
+      };
+
+      const newData = {
+        url_from: 'https://example.com/page1',
+        url_to: 'https://example.com/broken',
+        title: 'New Title',
+      };
+
+      const result = mergeDataFn(existingData, newData);
+
+      // urlEdited should be preserved even when isEdited is false
+      expect(result.urlEdited).to.equal('https://example.com/old-edited-url');
+      expect(result.isEdited).to.equal(false);
+      expect(result.title).to.equal('New Title');
+    });
+
+    it('should not preserve urlEdited when urlEdited is undefined', async () => {
+      const mockSyncSuggestions = sinon.stub().resolves();
+      const mockConvertToOpportunity = sinon.stub().resolves({
+        getId: () => 'opportunity-id',
+      });
+
+      const esmock = (await import('esmock')).default;
+      const mockedHandler = await esmock('../../src/backlinks/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: mockConvertToOpportunity,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: mockSyncSuggestions,
+        },
+      });
+
+      const mockAuditResult = {
+        success: true,
+        brokenBacklinks: [
+          {
+            url_from: 'https://example.com/page1',
+            url_to: 'https://example.com/broken',
+            title: 'Test Page',
+            traffic_domain: 1000,
+          },
+        ],
+      };
+
+      const mockAudit = {
+        getId: () => 'audit-id',
+        getAuditResult: () => mockAuditResult,
+      };
+
+      const mockSite = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      const mockContext = {
+        site: mockSite,
+        audit: mockAudit,
+        finalUrl: 'https://example.com',
+        log: context.log,
+        dataAccess: {
+          Configuration: {
+            findLatest: sinon.stub().resolves({
+              isHandlerEnabledForSite: sinon.stub().returns(true),
+            }),
+          },
+          Suggestion: {
+            allByOpportunityIdAndStatus: sinon.stub().resolves([]),
+          },
+          SiteTopPage: {
+            allBySiteIdAndSource: sinon.stub().resolves([]),
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+          },
+        },
+        sqs: context.sqs,
+        env: context.env,
+      };
+
+      await mockedHandler.generateSuggestionData(mockContext);
+
+      const syncCall = mockSyncSuggestions.getCall(0);
+      const mergeDataFn = syncCall.args[0].mergeDataFunction;
+
+      // Test that urlEdited is NOT preserved when it's undefined
+      const existingData = {
+        url_from: 'https://example.com/page1',
+        url_to: 'https://example.com/broken',
+        isEdited: true,
+        // urlEdited is undefined
+      };
+
+      const newData = {
+        url_from: 'https://example.com/page1',
+        url_to: 'https://example.com/broken',
+        title: 'New Title',
+      };
+
+      const result = mergeDataFn(existingData, newData);
+
+      expect(result.urlEdited).to.be.undefined;
+      expect(result.title).to.equal('New Title');
+    });
+
+    it('should handle when isEdited is null and not preserve', async () => {
+      const mockSyncSuggestions = sinon.stub().resolves();
+      const mockConvertToOpportunity = sinon.stub().resolves({
+        getId: () => 'opportunity-id',
+      });
+
+      const esmock = (await import('esmock')).default;
+      const mockedHandler = await esmock('../../src/backlinks/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: mockConvertToOpportunity,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: mockSyncSuggestions,
+        },
+      });
+
+      const mockAuditResult = {
+        success: true,
+        brokenBacklinks: [{
+          url_from: 'https://example.com/page1',
+          url_to: 'https://example.com/broken',
+          title: 'Test',
+          traffic_domain: 1000,
+        }],
+      };
+
+      const mockContext = {
+        site: { getId: () => 'site-id', getBaseURL: () => 'https://example.com' },
+        audit: { getId: () => 'audit-id', getAuditResult: () => mockAuditResult },
+        finalUrl: 'https://example.com',
+        log: context.log,
+        dataAccess: {
+          Configuration: {
+            findLatest: sinon.stub().resolves({
+              isHandlerEnabledForSite: sinon.stub().returns(true),
+            }),
+          },
+          Suggestion: { allByOpportunityIdAndStatus: sinon.stub().resolves([]) },
+          SiteTopPage: {
+            allBySiteIdAndSource: sinon.stub().resolves([]),
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+          },
+        },
+        sqs: context.sqs,
+        env: context.env,
+      };
+
+      await mockedHandler.generateSuggestionData(mockContext);
+      const mergeDataFn = mockSyncSuggestions.getCall(0).args[0].mergeDataFunction;
+
+      const result = mergeDataFn(
+        { urlEdited: 'https://example.com/edited-url', isEdited: null },
+        { title: 'New Title' },
+      );
+
+      expect(result.urlEdited).to.be.undefined;
+      expect(result.title).to.equal('New Title');
+    });
+
+    it('should handle when urlEdited is null and not preserve', async () => {
+      const mockSyncSuggestions = sinon.stub().resolves();
+      const mockConvertToOpportunity = sinon.stub().resolves({
+        getId: () => 'opportunity-id',
+      });
+
+      const esmock = (await import('esmock')).default;
+      const mockedHandler = await esmock('../../src/backlinks/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: mockConvertToOpportunity,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: mockSyncSuggestions,
+        },
+      });
+
+      const mockAuditResult = {
+        success: true,
+        brokenBacklinks: [{
+          url_from: 'https://example.com/page1',
+          url_to: 'https://example.com/broken',
+          title: 'Test',
+          traffic_domain: 1000,
+        }],
+      };
+
+      const mockContext = {
+        site: { getId: () => 'site-id', getBaseURL: () => 'https://example.com' },
+        audit: { getId: () => 'audit-id', getAuditResult: () => mockAuditResult },
+        finalUrl: 'https://example.com',
+        log: context.log,
+        dataAccess: {
+          Configuration: {
+            findLatest: sinon.stub().resolves({
+              isHandlerEnabledForSite: sinon.stub().returns(true),
+            }),
+          },
+          Suggestion: { allByOpportunityIdAndStatus: sinon.stub().resolves([]) },
+          SiteTopPage: {
+            allBySiteIdAndSource: sinon.stub().resolves([]),
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+          },
+        },
+        sqs: context.sqs,
+        env: context.env,
+      };
+
+      await mockedHandler.generateSuggestionData(mockContext);
+      const mergeDataFn = mockSyncSuggestions.getCall(0).args[0].mergeDataFunction;
+
+      const result = mergeDataFn(
+        { urlEdited: null, isEdited: true },
+        { title: 'New Title' },
+      );
+
+      // Should not preserve null urlEdited
+      expect(result.urlEdited).to.be.undefined;
+      expect(result.title).to.equal('New Title');
     });
   });
 });

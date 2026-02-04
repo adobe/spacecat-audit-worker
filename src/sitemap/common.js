@@ -12,7 +12,7 @@
 
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import {
-  isLoginPage,
+  isAuthUrl,
   toggleWWW,
   getBaseUrlPagesFromSitemapContents,
   getSitemapUrlsFromSitemapIndex,
@@ -177,7 +177,7 @@ export async function filterValidUrls(urls) {
         const finalUrl = redirectUrl ? new URL(redirectUrl, url).href : null;
 
         // Check if redirect leads to login page (treat as valid)
-        if (finalUrl && isLoginPage(finalUrl)) {
+        if (finalUrl && isAuthUrl(finalUrl)) {
           return { type: 'ok', url };
         }
 
