@@ -44,6 +44,7 @@ export class ContentAIClient {
     this.env = context.env;
     this.log = context.log;
     this.tokenResponse = null;
+    this.siteConfigCache = null;
   }
 
   /**
@@ -193,6 +194,13 @@ export class ContentAIClient {
    * @returns {Promise<Object|null>} The configuration object or null if not found
    */
   async getConfigurationForSite(site) {
+    const siteId = site.getId();
+
+    // Return cached config if same site (audit runs for one site per invocation)
+    if (this.siteConfigCache?.siteId === siteId) {
+      return this.siteConfigCache.config;
+    }
+
     const configurations = await this.getConfigurations();
 
     const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
@@ -205,7 +213,13 @@ export class ContentAIClient {
       ),
     );
 
-    return existingConf || null;
+    // Cache the result as an immutable object
+    this.siteConfigCache = Object.freeze({
+      siteId,
+      config: existingConf || null,
+    });
+
+    return this.siteConfigCache.config;
   }
 
   /**

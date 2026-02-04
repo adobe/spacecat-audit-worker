@@ -513,6 +513,39 @@ describe('Content AI Utils', () => {
 
         expect(config).to.be.null;
       });
+
+      it('should return cached configuration on subsequent calls for the same site', async () => {
+        mockFetch.onFirstCall().resolves({
+          ok: true,
+          json: sandbox.stub().resolves({
+            items: [{
+              uid: 'config-123',
+              steps: [{
+                baseUrl: 'https://example.com',
+                type: 'generative',
+              }],
+            }],
+          }),
+        });
+
+        const client = new ContentAIClient(context);
+        await client.initialize();
+
+        // First call - should fetch from API
+        const config1 = await client.getConfigurationForSite(site);
+        expect(config1.uid).to.equal('config-123');
+        expect(mockFetch).to.have.been.calledOnce;
+
+        // Second call - should return cached result without API call
+        const config2 = await client.getConfigurationForSite(site);
+        expect(config2.uid).to.equal('config-123');
+        expect(mockFetch).to.have.been.calledOnce; // Still only one call
+
+        // Third call - still cached
+        const config3 = await client.getConfigurationForSite(site);
+        expect(config3).to.deep.equal(config1);
+        expect(mockFetch).to.have.been.calledOnce;
+      });
     });
 
     describe('runSemanticSearch', () => {
