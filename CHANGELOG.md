@@ -1,3 +1,10 @@
+## [1.304.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.4...v1.304.5) (2026-02-04)
+
+
+### Bug Fixes
+
+* improve notification for llmo ([#1939](https://github.com/adobe/spacecat-audit-worker/issues/1939)) ([d04e19e](https://github.com/adobe/spacecat-audit-worker/commit/d04e19eee9a99f47701059381990e1d316ea6005))
+
 ## [1.304.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.3...v1.304.4) (2026-02-04)
 
 
