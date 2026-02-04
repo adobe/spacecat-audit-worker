@@ -155,17 +155,24 @@ describe('Step-based Audit Tests', () => {
         .build();
     });
 
-    it('skips execution when audit is disabled for site', async () => {
-      // Configure audit to be disabled
-      configuration.isHandlerEnabledForSite.returns(false);
+    it('executes regardless of enabled status (enabled check happens before SQS)', async () => {
+      // Enabled check is now done before sending SQS message, not in the worker
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
 
       const result = await audit.run(message, context);
 
-      // Verify audit was skipped
+      // Verify audit ran (not skipped)
       expect(result.status).to.equal(200);
-      expect(context.dataAccess.Audit.create).not.to.have.been.called;
-      expect(context.sqs.sendMessage).not.to.have.been.called;
-      expect(context.log.warn).to.have.been.calledWith('content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07, skipping...');
+      expect(context.dataAccess.Audit.create).to.have.been.called;
+      expect(context.log.warn).not.to.have.been.calledWith('content-audit audits disabled for site 42322ae6-b8b1-4a61-9c88-25205fa65b07, skipping...');
     });
 
     it('executes first step and creates audit record', async () => {

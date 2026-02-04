@@ -16,7 +16,6 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 import { hasText, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { BaseAudit } from './base-audit.js';
 import {
-  isAuditEnabledForSite,
   loadExistingAudit,
   sendContinuationMessage,
 } from './audit-utils.js';
@@ -107,11 +106,6 @@ export class StepAudit extends BaseAudit {
 
     try {
       const site = await this.siteProvider(siteId, context);
-
-      if (!(await isAuditEnabledForSite(type, site, context))) {
-        log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
-        return ok();
-      }
 
       // Determine which step to run
       const hasNext = hasText(auditContext.next);

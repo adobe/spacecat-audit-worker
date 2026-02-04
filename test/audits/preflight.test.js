@@ -1161,8 +1161,8 @@ describe('Preflight Audit', () => {
 
       await preflightAuditFunction(context);
 
-      // isHandlerEnabledForSite is now called through isAuditEnabledForSite
-      expect(configuration.isHandlerEnabledForSite).to.have.been.called;
+      // Enabled check is now done before sending SQS message, not in the worker
+      expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
       expect(genvarClient.generateSuggestions).not.to.have.been.called;
 
       // Verify that AsyncJob.findById was called for the final save
@@ -1473,8 +1473,11 @@ describe('Preflight Audit', () => {
           });
         }
       });
-      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_BODY_SIZE}-preflight`, site).returns(true);
-      configuration.isHandlerEnabledForSite.returns(false);
+      // Mock configuration to only have body-size-preflight enabled (with product codes)
+      // Other handlers are disabled by not having product codes
+      configuration.getHandlers = sinon.stub().returns({
+        'body-size-preflight': { productCodes: ['aem-sites'] },
+      });
 
       await preflightAuditFunction(context);
 
@@ -1529,7 +1532,11 @@ describe('Preflight Audit', () => {
         }
       });
 
-      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_LOREM_IPSUM}-preflight`, site).returns(true);
+      // Mock configuration to only have lorem-ipsum-preflight enabled (with product codes)
+      // Other handlers are disabled by not having product codes
+      configuration.getHandlers = sinon.stub().returns({
+        'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
+      });
 
       await preflightAuditFunction(context);
 
@@ -1584,7 +1591,11 @@ describe('Preflight Audit', () => {
         }
       });
 
-      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_H1_COUNT}-preflight`, site).returns(true);
+      // Mock configuration to only have h1-count-preflight enabled (with product codes)
+      // Other handlers are disabled by not having product codes
+      configuration.getHandlers = sinon.stub().returns({
+        'h1-count-preflight': { productCodes: ['aem-sites'] },
+      });
 
       await preflightAuditFunction(context);
 
@@ -4691,9 +4702,11 @@ describe('Preflight Audit', () => {
     });
 
     it('merges checks into existing metadata payload and saves', async () => {
-      // Enable only body-size so no handlers run
-      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_BODY_SIZE}-preflight`, site).returns(true);
-      configuration.isHandlerEnabledForSite.returns(false);
+      // Mock configuration to only have body-size-preflight enabled (with product codes)
+      // Other handlers are disabled by not having product codes
+      configuration.getHandlers = sinon.stub().returns({
+        'body-size-preflight': { productCodes: ['aem-sites'] },
+      });
 
       const jobEntity = {
         getMetadata: sinon.stub().returns(job.getMetadata()),
