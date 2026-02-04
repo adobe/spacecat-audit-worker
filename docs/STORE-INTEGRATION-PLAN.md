@@ -67,11 +67,23 @@ This document describes the architecture for integrating URL Store and Guideline
 
 HTTP client that calls spacecat-api-service REST endpoints.
 
+**Why Local (Not a Shared Package)?**
+- All consumers are in the same repo (`spacecat-audit-worker`)
+- `wikipedia-analysis`, `reddit-analysis`, `youtube-analysis` all import from `../utils/store-client.js`
+- Mystique (Python) fetches content directly - doesn't use this JS client
+- No need for npm publish/version management overhead
+
 **Methods:**
 ```javascript
 StoreClient.createFrom(context)           // Factory from Lambda context
 client.getUrls(siteId, auditType)         // GET /sites/{siteId}/url-store/by-audit/{auditType}
 client.getGuidelines(siteId, auditType)   // GET /sites/{siteId}/sentiment/config?audit={auditType}
+```
+
+**Usage in Handlers:**
+```javascript
+// All handlers in spacecat-audit-worker use:
+import StoreClient, { StoreEmptyError, URL_TYPES, GUIDELINE_TYPES } from '../utils/store-client.js';
 ```
 
 **Environment Variables:**
