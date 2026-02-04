@@ -613,6 +613,132 @@ export function checkDynamoItem(item, safetyMargin = 0.85) {
   return { safe: sizeKB < safeLimitKB, sizeKB };
 }
 
+// Form Deduplication section
+const DELIMITER = '__';
+
+function normalizeClassList(classString) {
+  if (!classString) return '';
+  return classString.trim().split(/\s+/).sort().join(' ');
+}
+
+function getFieldSignature(field) {
+  const tag = (field.tagName || '').toLowerCase();
+  let type = (field.type || '').toLowerCase();
+  // Default to 'text' if input has no type,
+  if (tag === 'input' && !type) type = 'text';
+
+  const classes = normalizeClassList(field.classList);
+
+  return `${tag}|${type}|${classes}`;
+}
+
+function getFormFingerprint(scrape) {
+  const idPart = (scrape.id || '').trim();
+  const sourcePart = (scrape.formSource || '').trim();
+
+  const fieldSignatures = (scrape.formFields || [])
+    .map((field) => getFieldSignature(field))
+    .join('__FIELD_SEP__');
+
+  return {
+    id: idPart,
+    formSource: sourcePart,
+    fieldSignatures: `${(scrape.formFields || []).length}::${fieldSignatures}`,
+  };
+}
+
+function isFingerMatch(myFingerprint, otherPrint) {
+  return (
+    (myFingerprint.id && otherPrint.id && myFingerprint.id === otherPrint.id)
+    || (myFingerprint.formSource && myFingerprint.formSource === otherPrint.formSource)
+    || (myFingerprint.fieldSignatures === otherPrint.fieldSignatures)
+  );
+}
+
+function buildKey(url, formSource) {
+  return `${url}${DELIMITER}${formSource}`;
+}
+
+/**
+ * Identifies and deduplicates forms across different URLs by comparing form fingerprints.
+ *
+ * A form fingerprint is composed of:
+ * - Form ID
+ * - Form source (e.g., the URL or origin of the form)
+ * - Field signatures (tag name, input type, and normalized CSS classes for each field)
+ *
+ * Two forms are considered duplicates if they share the same ID, source, or field signatures.
+ *
+ * @class
+ * @param {Array<Object>} formOpportunities - Array of form opportunity objects containing
+ *   `form` (URL) and `formsource` properties.
+ * @param {Object} scrapedData - Scraped data object containing `formData` array with
+ *   form details including `finalUrl` and `scrapeResult`.
+ *
+ */
+export class FormDeDuplicator {
+  constructor(formOpportunities, scrapedData) {
+    this.fingerprintByUrl = new Map();
+    this.urlSourceOppMap = new Map();
+    this._build(formOpportunities, scrapedData);
+    this._buildUrlSourceOppMap(formOpportunities);
+  }
+
+  _build(formOpportunities, scrapedData) {
+    const { formData } = scrapedData;
+    for (const opportunity of formOpportunities) {
+      const { form, formsource } = opportunity;
+      const scrapeData = formData.find((it) => it.finalUrl === form);
+      if (scrapeData) {
+        const scrapesWithExcludedForms = [];
+        for (const sr of scrapeData.scrapeResult) {
+          if (!shouldExcludeForm(sr)) {
+            scrapesWithExcludedForms.push(sr);
+          }
+        }
+        const sr = scrapesWithExcludedForms.find((it) => it.formSource === formsource);
+        if (sr) {
+          const fingerprint = getFormFingerprint(sr);
+          this.fingerprintByUrl.set(buildKey(form, formsource), fingerprint);
+        }
+      }
+    }
+  }
+
+  _buildUrlSourceOppMap(formOpportunities) {
+    formOpportunities.forEach((opp) => {
+      this.urlSourceOppMap.set(
+        buildKey(opp.form, opp.formsource),
+        opp,
+      );
+    });
+  }
+
+  /**
+   * @param url
+   * @param formSource
+   * @returns {*[]} and array of form @param fingerprintKey
+   * for all the forms that matched with this key
+   */
+  findDuplicate(url, formSource) {
+    const fingerprintKey = buildKey(url, formSource);
+    const myFingerprint = this.fingerprintByUrl.get(fingerprintKey);
+    if (!myFingerprint) return [];
+
+    const duplicates = [];
+    for (const [key, otherFingerprint] of this.fingerprintByUrl) {
+      if (key !== fingerprintKey && isFingerMatch(myFingerprint, otherFingerprint)) {
+        duplicates.push(key);
+      }
+    }
+    return duplicates;
+  }
+
+  getOpportunity(fingerprintKey) {
+    return this.urlSourceOppMap.get(fingerprintKey);
+  }
+}
+
 /**
  * Apply filtering and deduplication logic to opportunities.
  * This function performs three steps:
@@ -626,6 +752,7 @@ export function checkDynamoItem(item, safetyMargin = 0.85) {
  *   (e.g., FORM_OPPORTUNITY_TYPES.LOW_CONVERSION)
  * @param {Object} log - Logger object
  * @param {number} maxLimit - Maximum number of opportunities to return (default: 3)
+ * @param scrapeData {object} - the scrape data
  * @returns {Array} - Filtered and limited array of opportunity data objects
  */
 export function applyOpportunityFilters(
@@ -634,6 +761,7 @@ export function applyOpportunityFilters(
   opportunityType,
   log,
   maxLimit = 2,
+  scrapeData = {},
 ) {
   let opportunities = [...newOpportunities];
 
@@ -670,6 +798,38 @@ export function applyOpportunityFilters(
       });
       opportunities = Array.from(formSourceMap.values());
     }
+  }
+
+  if (opportunities.length > maxLimit && scrapeData?.formData?.length > 0) {
+    const deDuplicator = new FormDeDuplicator(opportunities, scrapeData);
+    const processedForms = new Set(); // Track processed form URLs
+    const filteredByFormFingerPrint = [];
+    opportunities.forEach((opp) => {
+      const fingerprintKey = deDuplicator.buildKey(opp.form, opp.formsource);
+      if (processedForms.has(fingerprintKey)) {
+        return;
+      }
+      const duplicates = deDuplicator.findDuplicate(opp.form, opp.formsource);
+      if (duplicates.length > 0) {
+        // Mark all duplicates as processed
+        duplicates.forEach((key) => processedForms.add(key));
+        processedForms.add(fingerprintKey);
+        // Find the one with max pageviews among opp and its duplicates
+        let maxPageViews = opp.pageviews;
+        let maxToAdd = opp;
+        for (const key of duplicates) {
+          const duplicateOpp = deDuplicator.getOpportunity(key);
+          if (duplicateOpp && duplicateOpp.pageviews > maxPageViews) {
+            maxPageViews = duplicateOpp.pageviews;
+            maxToAdd = duplicateOpp;
+          }
+        }
+        filteredByFormFingerPrint.push(maxToAdd);
+      } else {
+        filteredByFormFingerPrint.push(opp);
+      }
+    });
+    opportunities = filteredByFormFingerPrint;
   }
 
   // Step 3: Limit to top N opportunities by pageviews

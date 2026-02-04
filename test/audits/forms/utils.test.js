@@ -23,8 +23,10 @@ import {
   getFormTitle,
   applyOpportunityFilters,
   shouldIgnoreFormByDetails,
+  FormDeDuplicator,
 } from '../../../src/forms-opportunities/utils.js';
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
+
 
 describe('isSearchForm', () => {
   it('should return true for search form type', () => {
@@ -1300,4 +1302,1016 @@ describe('applyOpportunityFilters', () => {
     expect(result[0].form).to.equal('https://example.com/form2'); // 2000 pageviews
     expect(result[1].form).to.equal('https://example.com/form4'); // 1800 pageviews
   });
+
+  // fingerprint tests
+  it('should deduplicate forms by fingerprint, keeping the one with highest pageviews', () => {
+    const filteredOpportunities = [
+      { form: 'https://example.com/page1', formsource: '#CONTENT #newsletter-form', pageviews: 1000 },
+      { form: 'https://example.com/page2', formsource: '#newsletter-form', pageviews: 3000 },
+      { form: 'https://example.com/page3', formsource: '#contact-form', pageviews: 500 },
+    ];
+
+    const scrapeData = {
+      formData: [
+        {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: [{
+            formSource: '#CONTENT #newsletter-form',
+            id: '',
+            formFields: [
+                { tagName: 'input', type: 'email', classList: 'email-field' },
+               { tagName: 'input', type: 'text', classList: 'name-field' },
+              { tagName: 'button', type: 'submit', classList: 'submit-field' }
+            ],
+            fieldCount: 3,
+            hasButton: true,
+          }],
+        },
+        {
+          finalUrl: 'https://example.com/page2',
+          scrapeResult: [{
+            formSource: '#newsletter-form',
+            id: '',
+            formFields: [
+              { tagName: 'input', type: 'email', classList: 'email-field' },
+              { tagName: 'input', type: 'text', classList: 'name-field' },
+              { tagName: 'button', type: 'submit', classList: 'submit-field' }
+            ],
+            fieldCount: 3,
+            hasButton: true,
+          }],
+        },
+        {
+          finalUrl: 'https://example.com/page3',
+          scrapeResult: [{
+            formSource: '#contact-form',
+            id: 'contact',
+            formFields: [
+                { tagName: 'input', type: 'text', classList: 'name-field' },
+              { tagName: 'input', type: 'text', classList: 'name-field' },
+              { tagName: 'button', type: 'text', classList: 'name-field' },
+            ],
+            fieldCount: 3,
+            hasButton: true,
+          }],
+        },
+      ],
+    };
+
+    const result = applyOpportunityFilters(
+      filteredOpportunities,
+      [],
+      FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+      logStub,
+      2,
+      scrapeData,
+    );
+
+    // page1 and page2 have same fingerprint (same id 'newsletter'), should keep page2 (3000 pageviews)
+    expect(result).to.have.lengthOf(2);
+    expect(result[0].form).to.equal('https://example.com/page2');
+    expect(result[1].form).to.equal('https://example.com/page3');
+  });
+
+});
+
+describe('FormDeDuplicator', () => {
+
+  let logStub;
+
+  beforeEach(() => {
+    logStub = {
+      debug: sinon.stub(),
+      info: sinon.stub(),
+      error: sinon.stub(),
+    };
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should detect duplicate if the formSource is same', () => {
+    const opportunities = [
+      {
+        form: '/test/exact-source-match-1',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/exact-source-match-2',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "_comment": "Exact source match",
+          "finalUrl": "/test/exact-source-match-1",
+          "scrapeResult": [
+            {
+              "id": "form1",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "_comment": "Exact source match",
+          "finalUrl": "/test/exact-source-match-2",
+          "scrapeResult": [
+            {
+              "id": "form1",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+      ]
+    }
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    const duplicate1 = testClass.findDuplicate("/test/exact-source-match-1", "#section1 form")
+
+    //
+    expect(duplicate1.length).to.equal(1);
+    expect(duplicate1[0]).to.equal("/test/exact-source-match-2" + "__" + "#section1 form");
+
+    const duplicate2 = testClass.findDuplicate("/test/exact-source-match-2", "#section1 form")
+
+    //
+    expect(duplicate2.length).to.equal(1);
+    expect(duplicate2[0]).to.equal("/test/exact-source-match-1" + "__" + "#section1 form");
+  });
+
+  it('should detect duplicate if the formSource is different, but fingerprint is same', () => {
+    const opportunities = [
+      {
+        form: '/test/exact-source-match-1',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/exact-source-match-2',
+        formsource: '#section2 form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "_comment": "Source Mismatch; FingerPrint match",
+          "finalUrl": "/test/exact-source-match-1",
+          "scrapeResult": [
+            {
+              "id": "form1",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "_comment": "ExSource Mismatch; FingerPrint match",
+          "finalUrl": "/test/exact-source-match-2",
+          "scrapeResult": [
+            {
+              "id": "form1",
+              "formSource": "#section2 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+      ]
+    }
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    const duplicate1 = testClass.findDuplicate("/test/exact-source-match-1", "#section1 form")
+
+    //
+    expect(duplicate1.length).to.equal(1);
+    expect(duplicate1[0]).to.equal("/test/exact-source-match-2" + "__" + "#section2 form");
+
+    const duplicate2 = testClass.findDuplicate("/test/exact-source-match-2", "#section2 form")
+
+    //
+    expect(duplicate2.length).to.equal(1);
+    expect(duplicate2[0]).to.equal("/test/exact-source-match-1" + "__" + "#section1 form");
+
+  });
+
+  it('should detect duplicate if the form ID is same', () => {
+    const opportunities = [
+      {
+        form: '/test/id-match-1',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/id-match-2',
+        formsource: '#section2 form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/id-match-1",
+          "scrapeResult": [
+            {
+              "id": "shared-form-id",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "finalUrl": "/test/id-match-2",
+          "scrapeResult": [
+            {
+              "id": "shared-form-id",
+              "formSource": "#section2 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 3,
+              "formFields": [
+                { "tagName": "input", "type": "text", "classList": "" },
+                { "tagName": "input", "type": "phone", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+      ]
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    const duplicate1 = testClass.findDuplicate("/test/id-match-1", "#section1 form");
+    expect(duplicate1.length).to.equal(1);
+    expect(duplicate1[0]).to.equal("/test/id-match-2"+ "__" + "#section2 form");
+  });
+
+  it('should not detect duplicate if id, source and fieldSignatures are all different', () => {
+    const opportunities = [
+      {
+        form: '/test/unique-form-1',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/unique-form-2',
+        formsource: '#section2 form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/unique-form-1",
+          "scrapeResult": [
+            {
+              "id": "form-id-1",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "finalUrl": "/test/unique-form-2",
+          "scrapeResult": [
+            {
+              "id": "form-id-2",
+              "formSource": "#section2 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 3,
+              "formFields": [
+                { "tagName": "input", "type": "text", "classList": "" },
+                { "tagName": "input", "type": "phone", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+      ]
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    const duplicate1 = testClass.findDuplicate("/test/unique-form-1", "#section1 form");
+    expect(duplicate1.length).to.equal(0);
+
+    const duplicate2 = testClass.findDuplicate("/test/unique-form-2", "#section2 form");
+    expect(duplicate2.length).to.equal(0);
+  });
+
+  it('should return empty array when findDuplicate is called with non-existent URL', () => {
+    const opportunities = [
+      {
+        form: '/test/form-1',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/form-1",
+          "scrapeResult": [
+            {
+              "id": "form1",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+      ]
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    const duplicates = testClass.findDuplicate("/test/non-existent-form", "#section1 form");
+    expect(duplicates).to.deep.equal([]);
+  });
+
+  it('should return correct opportunity from getOppForUrlAndSource', () => {
+    const opportunities = [
+      {
+        form: '/test/form-1',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/form-2',
+        formsource: '#section2 form',
+        pageviews: 2000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": []
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    const opp1 = testClass.getOpportunity('/test/form-1' + "__" + '#section1 form');
+    expect(opp1).to.deep.equal(opportunities[0]);
+
+    const opp2 = testClass.getOpportunity('/test/form-2' + "__" + '#section2 form');
+    expect(opp2).to.deep.equal(opportunities[1]);
+  });
+
+  it('should return undefined from getOppForUrlAndSource for non-existent key', () => {
+    const opportunities = [
+      {
+        form: '/test/form-1',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": []
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    const opp = testClass.getOpportunity('/test/non-existent' + '__' + '#section1 form');
+    expect(opp).to.be.undefined;
+  });
+
+  it('should detect duplicate when class lists are in different order', () => {
+    const opportunities = [
+      {
+        form: '/test/class-order-1',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/class-order-2',
+        formsource: '#section2 form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/class-order-1",
+          "scrapeResult": [
+            {
+              "id": "form-a",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "class-a class-b class-c" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "finalUrl": "/test/class-order-2",
+          "scrapeResult": [
+            {
+              "id": "form-b",
+              "formSource": "#section2 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "class-c class-a class-b" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+      ]
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    const duplicate = testClass.findDuplicate("/test/class-order-1", "#section1 form");
+    expect(duplicate.length).to.equal(1);
+    expect(duplicate[0]).to.equal("/test/class-order-2" + "__" + "#section2 form");
+  });
+
+  it('should treat input without type as text type', () => {
+    const opportunities = [
+      {
+        form: '/test/input-no-type-1',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/input-no-type-2',
+        formsource: '#section2 form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/input-no-type-1",
+          "scrapeResult": [
+            {
+              "id": "form-a",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "finalUrl": "/test/input-no-type-2",
+          "scrapeResult": [
+            {
+              "id": "form-b",
+              "formSource": "#section2 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "text", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+      ]
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    const duplicate = testClass.findDuplicate("/test/input-no-type-1", "#section1 form");
+    expect(duplicate.length).to.equal(1);
+    expect(duplicate[0]).to.equal("/test/input-no-type-2" + "__" + "#section2 form");
+  });
+
+  it('should detect multiple duplicates for one form', () => {
+    const opportunities = [
+      {
+        form: '/test/main-form',
+        formsource: '#main form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/duplicate-1',
+        formsource: '#main form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/duplicate-2',
+        formsource: '#main form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/main-form",
+          "scrapeResult": [
+            {
+              "id": "shared-id",
+              "formSource": "#main form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "finalUrl": "/test/duplicate-1",
+          "scrapeResult": [
+            {
+              "id": "shared-id",
+              "formSource": "#main form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "finalUrl": "/test/duplicate-2",
+          "scrapeResult": [
+            {
+              "id": "shared-id",
+              "formSource": "#main form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+      ]
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    const duplicates = testClass.findDuplicate("/test/main-form", "#main form");
+    expect(duplicates.length).to.equal(2);
+    expect(duplicates).to.include("/test/duplicate-1" + "__" + "#main form");
+    expect(duplicates).to.include("/test/duplicate-2" + "__" + "#main form");
+  });
+
+  it('should exclude search forms from fingerprinting', () => {
+    const opportunities = [
+      {
+        form: '/test/normal-form',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/search-form',
+        formsource: '#search form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/normal-form",
+          "scrapeResult": [
+            {
+              "id": "normal-form",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "finalUrl": "/test/search-form",
+          "scrapeResult": [
+            {
+              "id": "normal-form",
+              "formSource": "#search form",
+              "formType": "search",
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+      ]
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    // Search form should not be in fingerprint map, so no duplicates found
+    const duplicates = testClass.findDuplicate("/test/normal-form", "#section1 form");
+    expect(duplicates.length).to.equal(0);
+
+    // Search form should return empty since it's excluded
+    const searchDuplicates = testClass.findDuplicate("/test/search-form", "#search form");
+    expect(searchDuplicates).to.deep.equal([]);
+  });
+
+  it('should handle missing scrape data for an opportunity', () => {
+    const opportunities = [
+      {
+        form: '/test/form-with-data',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/form-without-data',
+        formsource: '#section2 form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/form-with-data",
+          "scrapeResult": [
+            {
+              "id": "form1",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        // No scrape data for /test/form-without-data
+      ]
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    // Only one form should have fingerprint
+    expect(testClass.fingerprintByUrl.size).to.equal(1);
+    expect(testClass.fingerprintByUrl.has('/test/form-with-data' + '__' + '#section1 form')).to.be.true;
+    expect(testClass.fingerprintByUrl.has('/test/form-without-data' + '__' + '#section2 form')).to.be.false;
+
+    // Both opportunities should be in urlSourceOppMap
+    expect(testClass.urlSourceOppMap.size).to.equal(2);
+  });
+
+  it('should handle forms with empty id and source', () => {
+    const opportunities = [
+      {
+        form: '/test/form-1',
+        formsource: '',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/form-2',
+        formsource: '',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/form-1",
+          "scrapeResult": [
+            {
+              "id": "",
+              "formSource": "",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "finalUrl": "/test/form-2",
+          "scrapeResult": [
+            {
+              "id": "",
+              "formSource": "",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+      ]
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    // Should match by fieldSignatures since id and source are empty
+    const duplicates = testClass.findDuplicate("/test/form-1", '');
+    expect(duplicates.length).to.equal(1);
+    expect(duplicates[0]).to.equal("/test/form-2__");
+  });
+
+  it('should handle multiple scrapeResults for same URL and match correct formsource', () => {
+    const opportunities = [
+      {
+        form: '/test/multi-form-page',
+        formsource: '#newsletter form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/other-page',
+        formsource: '#newsletter form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/multi-form-page",
+          "scrapeResult": [
+            {
+              "id": "contact-form",
+              "formSource": "#contact form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 3,
+              "formFields": [
+                { "tagName": "input", "type": "text", "classList": "" },
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            },
+            {
+              "id": "newsletter-form",
+              "formSource": "#newsletter form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "finalUrl": "/test/other-page",
+          "scrapeResult": [
+            {
+              "id": "newsletter-form",
+              "formSource": "#newsletter form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+      ]
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    // Should match by the newsletter form, not the contact form
+    const duplicates = testClass.findDuplicate("/test/multi-form-page", "#newsletter form");
+    expect(duplicates.length).to.equal(1);
+    expect(duplicates[0]).to.equal("/test/other-page" + "__" + "#newsletter form");
+  });
+
+  it('should not match forms with different field counts', () => {
+    const opportunities = [
+      {
+        form: '/test/two-fields',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/three-fields',
+        formsource: '#section2 form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/two-fields",
+          "scrapeResult": [
+            {
+              "id": "different-id-1",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "finalUrl": "/test/three-fields",
+          "scrapeResult": [
+            {
+              "id": "different-id-2",
+              "formSource": "#section2 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 3,
+              "formFields": [
+                { "tagName": "input", "type": "text", "classList": "" },
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+      ]
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    // Should not match since field signatures are different
+    const duplicates = testClass.findDuplicate("/test/two-fields", "#section1 form");
+    expect(duplicates.length).to.equal(0);
+  });
+
+  it('should handle forms with null/undefined formFields', () => {
+    const opportunities = [
+      {
+        form: '/test/null-fields',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/null-fields",
+          "scrapeResult": [
+            {
+              "id": "form1",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 0,
+              "formFields": null
+            }
+          ]
+        },
+      ]
+    };
+
+    // Should be excluded due to fieldCount: 0
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+    expect(testClass.fingerprintByUrl.size).to.equal(0);
+  });
+
+  it('should correctly match forms with different tagNames', () => {
+    const opportunities = [
+      {
+        form: '/test/form-1',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/form-2',
+        formsource: '#section2 form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/form-1",
+          "scrapeResult": [
+            {
+              "id": "unique-id-1",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "finalUrl": "/test/form-2",
+          "scrapeResult": [
+            {
+              "id": "unique-id-2",
+              "formSource": "#section2 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "textarea", "type": "", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+      ]
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    // Should not match since tagNames are different
+    const duplicates = testClass.findDuplicate("/test/form-1", "#section1 form");
+    expect(duplicates.length).to.equal(0);
+  });
+  
 });
