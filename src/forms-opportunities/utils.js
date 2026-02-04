@@ -805,7 +805,7 @@ export function applyOpportunityFilters(
     const processedForms = new Set(); // Track processed form URLs
     const filteredByFormFingerPrint = [];
     opportunities.forEach((opp) => {
-      const fingerprintKey = deDuplicator.buildKey(opp.form, opp.formsource);
+      const fingerprintKey = buildKey(opp.form, opp.formsource);
       if (processedForms.has(fingerprintKey)) {
         return;
       }
