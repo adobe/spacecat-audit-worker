@@ -622,7 +622,7 @@ function normalizeClassList(classString) {
 }
 
 function getFieldSignature(field) {
-  const tag = (field.tagName || '').toLowerCase();
+  const tag = field.tagName.toLowerCase();
   let type = (field.type || '').toLowerCase();
   // Default to 'text' if input has no type,
   if (tag === 'input' && !type) type = 'text';
@@ -636,14 +636,14 @@ function getFormFingerprint(scrape) {
   const idPart = (scrape.id || '').trim();
   const sourcePart = (scrape.formSource || '').trim();
 
-  const fieldSignatures = (scrape.formFields || [])
+  const fieldSignatures = scrape.formFields
     .map((field) => getFieldSignature(field))
     .join('__FIELD_SEP__');
 
   return {
     id: idPart,
     formSource: sourcePart,
-    fieldSignatures: `${(scrape.formFields || []).length}::${fieldSignatures}`,
+    fieldSignatures: `${scrape.formFields.length}::${fieldSignatures}`,
   };
 }
 

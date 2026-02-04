@@ -1846,6 +1846,115 @@ describe('FormDeDuplicator', () => {
     expect(duplicate[0]).to.equal("/test/input-no-type-2" + "__" + "#section2 form");
   });
 
+  it('should treat tagName case-insensitively', () => {
+    const opportunities = [
+      {
+        form: '/test/tagname-case-1',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/tagname-case-2',
+        formsource: '#section2 form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/tagname-case-1",
+          "scrapeResult": [
+            {
+              "id": "form-a",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "INPUT", "type": "email", "classList": "" },
+                { "tagName": "input", "type": "text", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+        {
+          "finalUrl": "/test/tagname-case-2",
+          "scrapeResult": [
+            {
+              "id": "form-b",
+              "formSource": "#section2 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 2,
+              "formFields": [
+                { "tagName": "input", "type": "email", "classList": "" },
+                { "tagName": "input", "type": "text", "classList": "" },
+                { "tagName": "button", "type": "submit", "classList": "" }
+              ]
+            }
+          ]
+        },
+      ]
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+
+    const duplicate = testClass.findDuplicate("/test/tagname-case-1", "#section1 form");
+    expect(duplicate.length).to.equal(1);
+    expect(duplicate[0]).to.equal("/test/tagname-case-2" + "__" + "#section2 form");
+  });
+
+  it('should handle missing formFields when building fingerprints', () => {
+    const opportunities = [
+      {
+        form: '/test/missing-fields-1',
+        formsource: '#section1 form',
+        pageviews: 1000,
+      },
+      {
+        form: '/test/missing-fields-2',
+        formsource: '#section2 form',
+        pageviews: 1000,
+      },
+    ];
+
+    const scrapeData = {
+      "formData": [
+        {
+          "finalUrl": "/test/missing-fields-1",
+          "scrapeResult": [
+            {
+              "id": "form-a",
+              "formSource": "#section1 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 0
+            }
+          ]
+        },
+        {
+          "finalUrl": "/test/missing-fields-2",
+          "scrapeResult": [
+            {
+              "id": "form-b",
+              "formSource": "#section2 form",
+              "formType": null,
+              "classList": "",
+              "fieldCount": 0,
+              "formFields": []
+            }
+          ]
+        },
+      ]
+    };
+
+    const testClass = new FormDeDuplicator(opportunities, scrapeData);
+    const duplicate = testClass.findDuplicate("/test/missing-fields-1", "#section1 form");
+    expect(duplicate.length).to.equal(0);
+  });
+  
   it('should detect multiple duplicates for one form', () => {
     const opportunities = [
       {
