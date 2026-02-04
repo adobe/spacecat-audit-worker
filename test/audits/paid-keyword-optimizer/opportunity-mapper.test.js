@@ -124,7 +124,7 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       expect(result.siteId).to.equal(TEST_SITE_ID);
       expect(result.id).to.be.a('string');
       expect(result.auditId).to.equal('audit-id-123');
-      expect(result.type).to.equal('paid-keyword-optimizer');
+      expect(result.type).to.equal('ad-intent-mismatch');
       expect(result.origin).to.equal('AUTOMATION');
       expect(result.status).to.equal('NEW');
     });
@@ -193,7 +193,7 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       expect(result.data.url).to.equal(TEST_URL);
       expect(result.data.cpc).to.equal(0.075);
       expect(result.data.sumTraffic).to.equal(23423.5);
-      expect(result.data.opportunityType).to.equal('paid-keyword-optimizer');
+      expect(result.data.opportunityType).to.equal('ad-intent-mismatch');
     });
 
     it('includes audit result stats', () => {

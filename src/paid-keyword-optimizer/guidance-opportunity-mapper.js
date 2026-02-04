@@ -64,7 +64,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
     siteId,
     id: randomUUID(),
     auditId: audit.getAuditId(),
-    type: 'paid-keyword-optimizer',
+    type: 'ad-intent-mismatch',
     origin: 'AUTOMATION',
     title: 'Low-performing paid search page detected',
     description: 'Page with predominantly paid search traffic and high bounce rate. '
@@ -86,7 +86,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
         DATA_SOURCES.RUM,
         DATA_SOURCES.PAGE,
       ],
-      opportunityType: 'paid-keyword-optimizer',
+      opportunityType: 'ad-intent-mismatch',
       url,
       cpc,
       sumTraffic,
