@@ -12,17 +12,22 @@
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import StoreClient, { StoreEmptyError, URL_TYPES, GUIDELINE_TYPES } from '../utils/store-client.js';
+
+const LOG_PREFIX = '[Wikipedia]';
 
 /**
  * Wikipedia Analysis Audit Handler
  *
- * This audit triggers the Wikipedia Analysis workflow in Mystique to:
- * 1. Analyze the company's Wikipedia page
- * 2. Find and analyze competitor Wikipedia pages
- * 3. Generate improvement suggestions
+ * This audit performs Wikipedia analysis by:
+ * 1. Fetching Wikipedia URLs from the URL Store (discovered during brand presence analysis)
+ * 2. Fetching analysis topics and guidelines from the Sentiment Config
+ * 3. Sending all data to Mystique for analysis
  *
- * The audit sends a message to Mystique which performs the actual analysis
- * and returns results via the guidance handler.
+ * Mystique will fetch the actual page content from the Content Store directly
+ * (content can exceed SQS message size limits).
+ *
+ * Results are returned via the guidance handler.
  */
 
 /**
@@ -34,14 +39,46 @@ function getWikipediaConfig(site) {
   const config = site.getConfig();
   const baseURL = site.getBaseURL();
 
-  // Try to get Wikipedia configuration from site config
-  // If not configured, use baseURL directly
   return {
     companyName: config?.getCompanyName?.() || baseURL,
     companyWebsite: baseURL,
-    wikipediaUrl: config?.getWikipediaUrl?.() || '', // Empty = auto-detect
-    competitors: config?.getCompetitors?.() || [], // Empty = auto-detect
+    competitors: config?.getCompetitors?.() || [],
     competitorRegion: config?.getCompetitorRegion?.() || null,
+    // Include any additional config that might be useful for analysis
+    industry: config?.getIndustry?.() || null,
+    brandKeywords: config?.getBrandKeywords?.() || [],
+  };
+}
+
+/**
+ * Fetches all required data from stores for Wikipedia analysis
+ * @param {string} siteId - The site ID
+ * @param {Object} context - The audit context
+ * @returns {Promise<Object>} Object containing urls and sentimentConfig
+ * @throws {StoreEmptyError} If any store returns empty results
+ */
+async function fetchStoreData(siteId, context) {
+  const { log } = context;
+  const storeClient = StoreClient.createFrom(context);
+
+  log.info(`${LOG_PREFIX} Fetching data from stores for siteId: ${siteId}`);
+
+  // Fetch Wikipedia URLs from URL Store
+  // Uses: GET /sites/{siteId}/url-store/by-audit/wikipedia-analysis
+  const urls = await storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA);
+  log.info(`${LOG_PREFIX} Retrieved ${urls.length} Wikipedia URLs from URL Store`);
+
+  // Fetch sentiment config (topics + guidelines) filtered by audit type
+  // Uses: GET /sites/{siteId}/sentiment/config?audit=wikipedia-analysis
+  const auditType = GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS;
+  const sentimentConfig = await storeClient.getGuidelines(siteId, auditType);
+  const topicCount = sentimentConfig.topics.length;
+  const guidelineCount = sentimentConfig.guidelines.length;
+  log.info(`${LOG_PREFIX} Retrieved ${topicCount} topics and ${guidelineCount} guidelines`);
+
+  return {
+    urls,
+    sentimentConfig,
   };
 }
 
@@ -54,15 +91,17 @@ function getWikipediaConfig(site) {
  */
 async function runWikipediaAnalysisAudit(url, context, site) {
   const { log } = context;
+  const siteId = site.getId();
 
-  log.info(`[Wikipedia] Starting Wikipedia analysis audit for site: ${site.getId()}`);
+  log.info(`${LOG_PREFIX} Starting Wikipedia analysis audit for site: ${siteId}`);
 
   try {
+    // Get site configuration
     const wikipediaConfig = getWikipediaConfig(site);
 
     // Validate that we have a company name
     if (!wikipediaConfig.companyName) {
-      log.warn('[Wikipedia] No company name configured for site, skipping audit');
+      log.warn(`${LOG_PREFIX} No company name configured for site, skipping audit`);
       return {
         auditResult: {
           success: false,
@@ -72,18 +111,37 @@ async function runWikipediaAnalysisAudit(url, context, site) {
       };
     }
 
-    log.info(`[Wikipedia] Wikipedia config: companyName=${wikipediaConfig.companyName}, website=${wikipediaConfig.companyWebsite}`);
+    log.info(`${LOG_PREFIX} Config: companyName=${wikipediaConfig.companyName}, website=${wikipediaConfig.companyWebsite}`);
+
+    // Fetch data from all stores
+    const storeData = await fetchStoreData(siteId, context);
+
+    log.info(`${LOG_PREFIX} Successfully fetched all store data for ${wikipediaConfig.companyName}`);
 
     return {
       auditResult: {
         success: true,
         status: 'pending_analysis',
         config: wikipediaConfig,
+        storeData,
       },
       fullAuditRef: url,
     };
   } catch (error) {
-    log.error(`[Wikipedia] Audit failed: ${error.message}`);
+    // Handle store empty errors specifically
+    if (error instanceof StoreEmptyError) {
+      log.error(`${LOG_PREFIX} Store data missing: ${error.message}`);
+      return {
+        auditResult: {
+          success: false,
+          error: error.message,
+          storeName: error.storeName,
+        },
+        fullAuditRef: url,
+      };
+    }
+
+    log.error(`${LOG_PREFIX} Audit failed: ${error.message}`);
     return {
       auditResult: {
         success: false,
@@ -109,12 +167,12 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
   // Skip if audit failed
   if (!auditResult.success) {
-    log.info('[Wikipedia] Audit failed, skipping Mystique message');
+    log.info(`${LOG_PREFIX} Audit failed, skipping Mystique message`);
     return auditData;
   }
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    log.warn('[Wikipedia] SQS or Mystique queue not configured, skipping message');
+    log.warn(`${LOG_PREFIX} SQS or Mystique queue not configured, skipping message`);
     return auditData;
   }
 
@@ -123,12 +181,15 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const { Site } = dataAccess;
     const site = await Site.findById(siteId);
     if (!site) {
-      log.warn('[Wikipedia] Site not found, skipping Mystique message');
+      log.warn(`${LOG_PREFIX} Site not found, skipping Mystique message`);
       return auditData;
     }
 
-    const { config } = auditResult;
+    const { config, storeData } = auditResult;
+    const { urls, sentimentConfig } = storeData;
 
+    // Build message with all data Mystique needs
+    // Note: Content is fetched by Mystique directly from Content Store (avoids SQS size limits)
     const message = {
       type: 'guidance:wikipedia-analysis',
       siteId,
@@ -137,18 +198,27 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
+        // Site configuration
         companyName: config.companyName,
         companyWebsite: config.companyWebsite,
-        wikipediaUrl: config.wikipediaUrl,
         competitors: config.competitors,
         competitorRegion: config.competitorRegion,
+        industry: config.industry,
+        brandKeywords: config.brandKeywords,
+
+        // Store data - Mystique will fetch content separately
+        urls, // Array of URL objects from URL Store
+        topics: sentimentConfig.topics, // Sentiment topics
+        guidelines: sentimentConfig.guidelines, // Analysis guidelines filtered by audit type
       },
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`[Wikipedia] Queued Wikipedia analysis request to Mystique for ${config.companyName}`);
+    log.info(`${LOG_PREFIX} Queued Wikipedia analysis request to Mystique for ${config.companyName} with ${urls.length} URLs`);
   } catch (error) {
-    log.error(`[Wikipedia] Failed to send Mystique message: ${error.message}`);
+    log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
+    // Re-throw to fail the audit if we can't send to Mystique
+    throw error;
   }
 
   return auditData;
