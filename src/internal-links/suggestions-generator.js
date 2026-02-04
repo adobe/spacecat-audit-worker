@@ -256,13 +256,36 @@ export async function syncBrokenInternalLinksSuggestions({
   context,
   opportunityId,
 }) {
+  // Include itemType in key to distinguish between links and assets pointing to same URL
   const buildKey = (item) => `${item.urlFrom}-${item.urlTo}-${item.itemType || 'link'}`;
+
+  // Custom merge function to preserve user-edited fields
+  const mergeDataFunction = (existingData, newData) => {
+    const merged = {
+      ...existingData,
+      ...newData,
+    };
+
+    // Preserve urlEdited and isEdited flag if user has made a selection (AI or custom)
+    // eslint-disable-next-line max-len
+    if (existingData.urlEdited !== undefined && existingData.urlEdited !== null && existingData.isEdited !== null) {
+      merged.urlEdited = existingData.urlEdited;
+      merged.isEdited = existingData.isEdited;
+    } else {
+      // Explicitly remove urlEdited if not present or flag is null
+      delete merged.urlEdited;
+    }
+
+    return merged;
+  };
+
   await syncSuggestions({
     opportunity,
     newData: brokenInternalLinks,
     context,
     buildKey,
     statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
+    mergeDataFunction,
     mapNewSuggestion: (entry) => {
       const itemType = entry.itemType || 'link';
       const isAsset = itemType !== 'link';

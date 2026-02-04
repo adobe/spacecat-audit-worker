@@ -82,11 +82,11 @@ function createDirectMystiqueMessage({
     auditId: auditId || '',
     deliveryType,
     time: new Date().toISOString(),
-    aggregationKey,
     data: {
       url,
       opportunityId: opportunity.getId(),
       issuesList,
+      aggregationKey,
     },
   };
 }
@@ -664,7 +664,7 @@ export async function createIndividualOpportunitySuggestions(
         },
       }),
       mergeDataFunction: keepSameDataFunction,
-      statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
+      statusToSetForOutdated: SuggestionDataAccess.STATUSES.OUTDATED,
       scrapedUrlsSet,
     });
 

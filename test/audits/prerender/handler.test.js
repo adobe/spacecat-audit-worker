@@ -862,7 +862,7 @@ describe('Prerender Audit', () => {
         expect(result.auditResult.urlsNeedingPrerender).to.be.greaterThan(0);
         expect(context.log.info).to.have.been.called;
         // Verify that the opportunity processing was logged
-        expect(context.log.info.args.some((call) => call[0].includes('Successfully synced'))).to.be.true;
+        expect(context.log.info.args.some((call) => typeof call[0] === 'string' && call[0].includes('prerender_suggestions_sync_metrics'))).to.be.true;
       });
 
       it('should create dummy opportunity when scraping is forbidden', async () => {
@@ -983,12 +983,12 @@ describe('Prerender Audit', () => {
           },
         };
 
-        await mockHandler.createScrapeForbiddenOpportunity('https://example.com', auditData, context);
+        await mockHandler.createScrapeForbiddenOpportunity('https://example.com', auditData, context, true);
 
         expect(convertToOpportunityStub).to.have.been.calledOnce;
         expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com');
         expect(context.log.info).to.have.been.calledWith(
-          'Prerender - Creating dummy opportunity for forbidden scraping. baseUrl=https://example.com, siteId=test-site-id'
+          'Prerender - Creating dummy opportunity for forbidden scraping. baseUrl=https://example.com, siteId=test-site-id, isPaidLLMOCustomer=true'
         );
       });
     });
@@ -1331,7 +1331,7 @@ describe('Prerender Audit', () => {
           log: { info: logStub, debug: logStub },
         };
 
-        await processOpportunityAndSuggestions('https://example.com', auditData, context);
+        await processOpportunityAndSuggestions('https://example.com', auditData, context, false);
 
         expect(logStub).to.have.been.calledWith('Prerender - No prerender opportunities found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
       });
@@ -1351,7 +1351,7 @@ describe('Prerender Audit', () => {
           log: { info: logStub, debug: logStub },
         };
 
-        await processOpportunityAndSuggestions('https://example.com', auditData, context);
+        await processOpportunityAndSuggestions('https://example.com', auditData, context, false);
 
         expect(logStub).to.have.been.calledWith('Prerender - No URLs needing prerender found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
       });
@@ -1379,7 +1379,7 @@ describe('Prerender Audit', () => {
 
         // This will fail due to missing mocks, but we test the early logging
         try {
-          await processOpportunityAndSuggestions('https://example.com', auditData, context);
+          await processOpportunityAndSuggestions('https://example.com', auditData, context, true);
         } catch (error) {
           // Expected to fail due to missing convertToOpportunity and syncSuggestions imports
           // But we can verify the function attempts to process
@@ -1431,7 +1431,7 @@ describe('Prerender Audit', () => {
         };
 
         try {
-          await processOpportunityAndSuggestions('https://example.com', auditData, context);
+          await processOpportunityAndSuggestions('https://example.com', auditData, context, true);
         } catch (error) {
           // May still fail due to complex convertToOpportunity logic, but we should reach the opportunity creation
           // The key is that we test the filtering and logging logic
@@ -1731,6 +1731,7 @@ describe('Prerender Audit', () => {
         // This test specifically ensures lines 460-466 are covered (mapNewSuggestion and mergeDataFunction)
         const mockOpportunity = { getId: () => 'test-opp-id' };
         const syncSuggestionsStub = sinon.stub().resolves();
+        const mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': {
@@ -1738,6 +1739,9 @@ describe('Prerender Audit', () => {
           },
           '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
           },
         });
 
@@ -1843,10 +1847,12 @@ describe('Prerender Audit', () => {
 
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
+        const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
           '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+          '../../../src/prerender/utils/utils.js': { isPaidLLMOCustomer: mockIsPaidLLMOCustomer },
         });
 
         const context = {
@@ -1906,10 +1912,12 @@ describe('Prerender Audit', () => {
 
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
+        const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
           '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+          '../../../src/prerender/utils/utils.js': { isPaidLLMOCustomer: mockIsPaidLLMOCustomer },
         });
 
         const context = {
@@ -1979,10 +1987,12 @@ describe('Prerender Audit', () => {
 
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
+        const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
           '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+          '../../../src/prerender/utils/utils.js': { isPaidLLMOCustomer: mockIsPaidLLMOCustomer },
         });
 
         const context = {
@@ -2048,10 +2058,12 @@ describe('Prerender Audit', () => {
 
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
+        const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
           '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+          '../../../src/prerender/utils/utils.js': { isPaidLLMOCustomer: mockIsPaidLLMOCustomer },
         });
 
         const context = {
@@ -2104,10 +2116,12 @@ describe('Prerender Audit', () => {
 
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
+        const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
           '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+          '../../../src/prerender/utils/utils.js': { isPaidLLMOCustomer: mockIsPaidLLMOCustomer },
         });
 
         const context = {
@@ -2192,10 +2206,12 @@ describe('Prerender Audit', () => {
 
         const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
         const syncSuggestionsStub = sandbox.stub().resolves();
+        const mockIsPaidLLMOCustomer = sandbox.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
           '../../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+          '../../../src/prerender/utils/utils.js': { isPaidLLMOCustomer: mockIsPaidLLMOCustomer },
         });
 
         const context = {
@@ -3958,6 +3974,7 @@ describe('Prerender Audit', () => {
         // Test the full opportunity creation and suggestion sync flow including S3 key generation
         const mockOpportunity = { getId: () => 'test-opportunity-id' };
         const syncSuggestionsStub = sinon.stub().resolves();
+        const mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': {
@@ -3965,6 +3982,9 @@ describe('Prerender Audit', () => {
           },
           '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
           },
         });
 
@@ -4000,7 +4020,7 @@ describe('Prerender Audit', () => {
         // Verify that syncSuggestions was called once with combined data
         expect(syncSuggestionsStub).to.have.been.calledOnce;
         // Verify that suggestion syncing was logged
-        expect(context.log.info.args.some((call) => call[0].includes('Successfully synced'))).to.be.true;
+        expect(context.log.info.args.some((call) => typeof call[0] === 'string' && call[0].includes('prerender_suggestions_sync_metrics'))).to.be.true;
 
         // Get the single call with combined data
         const individualSyncCall = syncSuggestionsStub.getCall(0);
@@ -4041,6 +4061,7 @@ describe('Prerender Audit', () => {
       it('should prefer scrapeJobId over siteId when building S3 HTML keys', async () => {
         const mockOpportunity = { getId: () => 'test-opportunity-id' };
         const syncSuggestionsStub = sinon.stub().resolves();
+        const mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': {
@@ -4048,6 +4069,9 @@ describe('Prerender Audit', () => {
           },
           '../../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
+          },
+          '../../../src/prerender/utils/utils.js': {
+            isPaidLLMOCustomer: mockIsPaidLLMOCustomer,
           },
         });
 
