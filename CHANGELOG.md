@@ -1,3 +1,10 @@
+## [1.304.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.5...v1.304.6) (2026-02-04)
+
+
+### Bug Fixes
+
+* faqs prompts should get all rows ([#1938](https://github.com/adobe/spacecat-audit-worker/issues/1938)) ([fc34c38](https://github.com/adobe/spacecat-audit-worker/commit/fc34c381e9d0618dd5a1e2f78bed8467f86eb3eb))
+
 ## [1.304.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.4...v1.304.5) (2026-02-04)
 
 
