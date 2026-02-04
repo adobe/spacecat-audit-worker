@@ -1466,6 +1466,7 @@ describe('LLMO Customer Analysis Handler', () => {
         getConfig: () => ({
           enableImport: sandbox.stub().resolves(),
           isImportEnabled: sandbox.stub().returns(false),
+          getLlmoDataFolder: () => 'dev/test-site',
           llmo: {
             dataFolder: 'dev/test-site',
           },
@@ -1514,6 +1515,7 @@ describe('LLMO Customer Analysis Handler', () => {
         getConfig: () => ({
           enableImport: sandbox.stub().resolves(),
           isImportEnabled: sandbox.stub().returns(false),
+          getLlmoDataFolder: () => undefined,
           llmo: {},
         }),
         save: sandbox.stub().resolves(),
