@@ -12,17 +12,34 @@
 /* eslint-disable no-console */
 import { main as universalMain } from './index.js';
 
+/**
+ * Local testing entry point
+ *
+ * Required environment variables:
+ *   SPACECAT_API_BASE_URL - e.g., https://spacecat-services--api-service.aem-dev.hlx.page
+ *   SPACECAT_API_KEY - Your API key
+ *   QUEUE_SPACECAT_TO_MYSTIQUE - Queue name (e.g., spacecat-to-mystique)
+ *
+ * Before running, seed test data:
+ *   ./scripts/seed-test-data.sh <siteId> <apiKey> [baseUrl]
+ */
 export const main = async () => {
+  // Change this to test different audit types
+  const AUDIT_TYPE = process.env.AUDIT_TYPE || 'wikipedia-analysis';
+  const SITE_ID = process.env.SITE_ID || 'b1555a54-48b4-47ee-97c1-438257bd3839';
+
   const messageBody = {
-    type: 'llm-blocked',
-    siteId: 'b1555a54-48b4-47ee-97c1-438257bd3839',
+    type: AUDIT_TYPE,
+    siteId: SITE_ID,
     auditContext: {
-      next: 'check-llm-blocked',
+      next: `check-${AUDIT_TYPE}`,
       auditId: 'a263123c-9f9a-44a8-9531-955884563472',
-      type: 'llm-blocked',
-      fullAuditRef: 'llm-blocked::cisco.com',
+      type: AUDIT_TYPE,
+      fullAuditRef: `${AUDIT_TYPE}::example.com`,
     },
   };
+
+  console.log(`\n=== Running ${AUDIT_TYPE} for siteId: ${SITE_ID} ===\n`);
 
   const message = {
     Records: [
@@ -38,7 +55,7 @@ export const main = async () => {
       info: console.log,
       error: console.error,
       warn: console.warn,
-      debug: () => {}, // Disable debug logging
+      debug: console.log, // Enable debug logging for local testing
     },
     runtime: {
       region: 'us-east-1',
