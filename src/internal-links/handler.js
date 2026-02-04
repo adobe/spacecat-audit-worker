@@ -27,7 +27,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { filterByAuditScope, isWithinAuditScope, extractPathPrefix } from './subpath-filter.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const INTERVAL = 30; // days
+const INTERVAL = 180; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 /**
@@ -142,7 +142,7 @@ export async function prepareScrapingStep(context) {
   const baseURL = site.getBaseURL();
   const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope`);
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages, ${filteredTopPages.length} within audit scope for scraping`);
 
   if (filteredTopPages.length === 0) {
     if (topPages.length === 0) {
