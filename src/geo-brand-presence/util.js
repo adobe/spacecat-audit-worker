@@ -184,12 +184,16 @@ export const refreshSheetResultSchema = z.object({
  * @param {string} prompt - The prompt to search
  * @param {Object} site - The site object
  * @param {Object} context - The context object
+ * @param {ContentAIClient} [contentAIClient] - Optional pre-initialized client for reuse
  * @returns {Promise<string[]>} The URLs
  */
-export async function promptToLinks(prompt, site, context) {
-  const contentAIClient = new ContentAIClient(context);
-  await contentAIClient.initialize();
-  const response = await contentAIClient.runGenerativeSearch(prompt, site);
+export async function promptToLinks(prompt, site, context, contentAIClient = null) {
+  let client = contentAIClient;
+  if (!client) {
+    client = new ContentAIClient(context);
+    await client.initialize();
+  }
+  const response = await client.runGenerativeSearch(prompt, site);
   if (response.status !== 200) {
     throw new Error(`Error calling ContentAI - ${response.statusText}`);
   }
@@ -493,9 +497,10 @@ export async function loadEnrichmentJson(s3Client, bucket, auditId) {
  * @param {Object} site - The site object
  * @param {Object} context - The context object
  * @param {Object} log - Logger instance
+ * @param {ContentAIClient} contentAIClient - Pre-initialized ContentAI client for reuse
  * @returns {Promise<boolean>} True if enriched successfully
  */
-async function enrichPromptWithRelatedUrl(prompt, index, site, context, log) {
+async function enrichPromptWithRelatedUrl(prompt, index, site, context, log, contentAIClient) {
   const promptText = prompt.prompt?.trim() || '';
 
   if (!promptText) {
@@ -503,7 +508,7 @@ async function enrichPromptWithRelatedUrl(prompt, index, site, context, log) {
   }
 
   try {
-    const urls = await promptToLinks(promptText, site, context);
+    const urls = await promptToLinks(promptText, site, context, contentAIClient);
     if (urls && urls.length > 0) {
       const [firstUrl] = urls;
       // first returned URL is the most relevant
@@ -539,6 +544,10 @@ export async function processJsonEnrichmentBatch(
   context,
   log,
 ) {
+  // Create and initialize ContentAI client ONCE for the entire batch
+  const contentAIClient = new ContentAIClient(context);
+  await contentAIClient.initialize();
+
   const results = await Promise.all(
     indicesToProcess.map((index) => enrichPromptWithRelatedUrl(
       prompts[index],
@@ -546,6 +555,7 @@ export async function processJsonEnrichmentBatch(
       site,
       context,
       log,
+      contentAIClient,
     )),
   );
 
