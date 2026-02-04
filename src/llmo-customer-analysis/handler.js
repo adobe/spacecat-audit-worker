@@ -349,7 +349,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   if (isFirstTimeOnboarding) {
     await triggerMystiqueCategorization(context, siteId, domain);
-    await sendOnboardingNotification(context, site, 'first_configuration', { configVersion });
+    await sendOnboardingNotification(context, site, 'first_onboarding');
   }
 
   // Handle referral traffic imports for first-time onboarding
