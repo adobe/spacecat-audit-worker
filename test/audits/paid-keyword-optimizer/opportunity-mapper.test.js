@@ -49,6 +49,20 @@ function createMessage(overrides = {}) {
   };
 }
 
+const DEFAULT_PAID_PAGES = [
+  {
+    url: TEST_URL,
+    bounceRate: 0.65,
+    pageViews: 5000,
+    trafficLoss: 2500,
+    clickRate: 0.1,
+    engagementRate: 0.3,
+    engagedScrollRate: 0.2,
+    trfType: 'paid',
+    trfChannel: 'search',
+  },
+];
+
 function createMockAudit(auditResult) {
   return {
     getAuditId: () => 'audit-id-123',
@@ -184,6 +198,7 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       const audit = createMockAudit({
         totalPageViews: 10000,
         averageBounceRate: 0.45,
+        predominantlyPaidPages: DEFAULT_PAID_PAGES,
         temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       });
       const message = createMessage();
@@ -191,15 +206,17 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
 
       expect(result.data.url).to.equal(TEST_URL);
+      expect(result.data.page).to.equal(TEST_URL);
       expect(result.data.cpc).to.equal(0.075);
       expect(result.data.sumTraffic).to.equal(23423.5);
-      expect(result.data.opportunityType).to.equal('ad-intent-mismatch');
+      expect(result.data).to.not.have.property('opportunityType');
     });
 
     it('includes audit result stats', () => {
       const audit = createMockAudit({
         totalPageViews: 10000,
         averageBounceRate: 0.45,
+        predominantlyPaidPages: DEFAULT_PAID_PAGES,
         temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       });
       const message = createMessage();
@@ -209,6 +226,71 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       expect(result.data.totalPageViews).to.equal(10000);
       expect(result.data.averageBounceRate).to.equal(0.45);
       expect(result.data.temporalCondition).to.equal('(year=2025 AND week IN (1,2,3,4))');
+    });
+
+    it('includes HOLCTR-compatible per-page fields from predominantlyPaidPages lookup', () => {
+      const audit = createMockAudit({
+        totalPageViews: 10000,
+        averageBounceRate: 0.45,
+        predominantlyPaidPages: DEFAULT_PAID_PAGES,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      });
+      const message = createMessage();
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.page).to.equal(TEST_URL);
+      expect(result.data.pageViews).to.equal(5000);
+      expect(result.data.trackedPageKPIName).to.equal('Bounce Rate');
+      expect(result.data.trackedPageKPIValue).to.equal(0.65);
+      expect(result.data.trackedKPISiteAverage).to.equal(0.45);
+      expect(result.data.metrics).to.deep.equal([]);
+      expect(result.data.samples).to.equal(0);
+    });
+
+    it('calculates opportunityImpact as (pageBounce - siteAvgBounce) * pageViews when page bounce exceeds site avg', () => {
+      const audit = createMockAudit({
+        totalPageViews: 10000,
+        averageBounceRate: 0.45,
+        predominantlyPaidPages: DEFAULT_PAID_PAGES, // bounceRate: 0.65, pageViews: 5000
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      });
+      const message = createMessage();
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      // (0.65 - 0.45) * 5000 = 1000
+      expect(result.data.opportunityImpact).to.equal((0.65 - 0.45) * 5000);
+    });
+
+    it('calculates opportunityImpact as pageViews when page bounce is below site avg', () => {
+      const audit = createMockAudit({
+        totalPageViews: 10000,
+        averageBounceRate: 0.70,
+        predominantlyPaidPages: [{ url: TEST_URL, bounceRate: 0.50, pageViews: 3000 }],
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      });
+      const message = createMessage();
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.opportunityImpact).to.equal(3000);
+    });
+
+    it('handles missing predominantlyPaidPages gracefully', () => {
+      const audit = createMockAudit({
+        totalPageViews: 10000,
+        averageBounceRate: 0.45,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+        // no predominantlyPaidPages
+      });
+      const message = createMessage();
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.pageViews).to.equal(0);
+      expect(result.data.trackedPageKPIValue).to.equal(0);
+      expect(result.data.opportunityImpact).to.equal(0);
     });
 
     it('includes correct tags', () => {
@@ -365,6 +447,21 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       );
 
       expect(result.data.variations).to.deep.equal(suggestions);
+    });
+
+    it('includes kpiDeltas with estimatedKPILift in suggestion data', () => {
+      const context = {
+        site: { requiresValidation: false },
+      };
+      const message = createMessage();
+
+      const result = mapToKeywordOptimizerSuggestion(
+        context,
+        'opportunity-id',
+        message,
+      );
+
+      expect(result.data.kpiDeltas).to.deep.equal({ estimatedKPILift: 0 });
     });
 
     it('handles missing body data gracefully', () => {
