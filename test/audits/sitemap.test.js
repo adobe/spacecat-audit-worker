@@ -267,6 +267,22 @@ describe('Sitemap Audit', () => {
         'Fetch error for https://some-domain.adobe/test Status: 404',
       );
     });
+
+    it('should send User-Agent header with value Spacecat/1.0', async () => {
+      const mockResponse = {
+        payload: 'test',
+        type: 'text/plain',
+      };
+      nock(url)
+        .get('/test')
+        .matchHeader('User-Agent', 'Spacecat/1.0')
+        .reply(200, mockResponse.payload, {
+          'content-type': mockResponse.type,
+        });
+
+      const result = await fetchContent(`${url}/test`);
+      expect(result).to.eql(mockResponse);
+    });
   });
 
   describe('checkRobotsForSitemap', () => {
@@ -284,6 +300,17 @@ describe('Sitemap Audit', () => {
       await expect(checkRobotsForSitemap(protocol, domain)).to.be.rejectedWith(
         'Fetch error for https://some-domain.adobe/robots.txt Status: 404',
       );
+    });
+
+    it('should send User-Agent header when fetching robots.txt', async () => {
+      nock(url)
+        .get('/robots.txt')
+        .matchHeader('User-Agent', 'Spacecat/1.0')
+        .reply(200, `Sitemap: ${url}/sitemap.xml`);
+
+      const { paths, reasons } = await checkRobotsForSitemap(protocol, domain);
+      expect(paths).to.eql([`${url}/sitemap.xml`]);
+      expect(reasons).to.deep.equal([]);
     });
   });
 
@@ -530,7 +557,7 @@ describe('Sitemap Audit', () => {
     it('should return success when sitemap.xml is found', async () => {
       nock(url).get('/robots.txt').reply(200, 'Allow: /');
       nock(url).head('/sitemap.xml').reply(200);
-      nock(url).head('/sitemap_index.xml').reply(200);
+      nock(url).head('/sitemap_index.xml').reply(404);
       nock(url)
         .get('/sitemap.xml')
         .reply(
@@ -553,6 +580,7 @@ describe('Sitemap Audit', () => {
 
       const result = await findSitemap('https://some-domain.adobe', {
         info: () => {},
+        debug: () => {},
       });
       expect(result.success).to.equal(true);
     });
@@ -1346,6 +1374,18 @@ describe('filterValidUrls with redirect handling', () => {
     });
   });
 
+  it('should send User-Agent header with value Spacecat/1.0 in HEAD requests', async () => {
+    const urls = ['https://example.com/test'];
+
+    nock('https://example.com')
+      .head('/test')
+      .matchHeader('User-Agent', 'Spacecat/1.0')
+      .reply(200);
+
+    const result = await filterValidUrls(urls);
+    expect(result.ok).to.deep.equal(['https://example.com/test']);
+  });
+
   it('should capture final redirect URLs for 301/302 responses', async () => {
     const urls = [
       'https://example.com/ok',
@@ -1885,6 +1925,27 @@ describe('filterValidUrls with HEAD to GET fallback', () => {
     // HEAD returns 404, but GET returns 200
     nock('https://example.com').head('/head-404-get-200').reply(404);
     nock('https://example.com').get('/head-404-get-200').reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.deep.equal(['https://example.com/head-404-get-200']);
+    expect(result.notOk).to.be.empty;
+  });
+
+  it('should send User-Agent header in both HEAD and GET fallback requests', async () => {
+    const urls = ['https://example.com/head-404-get-200'];
+
+    // HEAD returns 404 with User-Agent check
+    nock('https://example.com')
+      .head('/head-404-get-200')
+      .matchHeader('User-Agent', 'Spacecat/1.0')
+      .reply(404);
+
+    // GET fallback returns 200 with User-Agent check
+    nock('https://example.com')
+      .get('/head-404-get-200')
+      .matchHeader('User-Agent', 'Spacecat/1.0')
+      .reply(200);
 
     const result = await filterValidUrls(urls);
 

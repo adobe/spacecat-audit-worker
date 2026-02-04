@@ -20,6 +20,9 @@ import {
   getUrlWithoutPath,
 } from '../support/utils.js';
 
+// User Agent constant
+const USER_AGENT = 'Spacecat/1.0'; // identify ourselves in all HTTP requests
+
 // Performance tuning constants - Optimized for 20K-30K URLs in 15min Lambda
 export const BATCH_SIZE = 50; // Aggressive batching for high volume
 export const BATCH_DELAY_MS = 50; // Minimal delay to prevent server overload
@@ -85,6 +88,10 @@ async function fetchWithHeadFallback(url, options = {}) {
       ...options,
       method: 'HEAD',
       signal: controller.signal,
+      headers: {
+        ...options.headers,
+        'User-Agent': USER_AGENT,
+      },
     });
 
     clearTimeout(timeoutId);
@@ -98,6 +105,10 @@ async function fetchWithHeadFallback(url, options = {}) {
           ...options,
           method: 'GET',
           signal: controller.signal,
+          headers: {
+            ...options.headers,
+            'User-Agent': USER_AGENT,
+          },
         });
 
         clearTimeout(getTimeoutId);
@@ -127,6 +138,9 @@ export async function fetchContent(targetUrl) {
     const response = await fetch(targetUrl, {
       method: 'GET',
       signal: controller.signal,
+      headers: {
+        'User-Agent': USER_AGENT,
+      },
     });
 
     clearTimeout(timeoutId);
@@ -149,7 +163,7 @@ export async function fetchContent(targetUrl) {
 /**
  * Simplified URL validation with better performance and rate limiting
  */
-export async function filterValidUrls(urls) {
+export async function filterValidUrls(urls, log) {
   if (!urls.length) {
     return {
       ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
@@ -168,8 +182,12 @@ export async function filterValidUrls(urls) {
 
       // Handle successful responses
       if (response.status === 200) {
+        log?.debug(`Valid URL found: ${url}`);
         return { type: 'ok', url };
       }
+
+      /* c8 ignore next */
+      log?.debug(`URL check for ${url} returned status: ${response.status}`);
 
       // Handle redirects
       if (response.status === 301 || response.status === 302) {
