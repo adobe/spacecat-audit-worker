@@ -349,6 +349,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   if (isFirstTimeOnboarding) {
     await triggerMystiqueCategorization(context, siteId, domain);
+    await sendOnboardingNotification(context, site, 'first_configuration', { configVersion });
   }
 
   // Handle referral traffic imports for first-time onboarding
@@ -401,7 +402,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     oldConfig = oldConfigResult.config;
   } else {
     oldConfig = llmoConfig.defaultConfig();
-    await sendOnboardingNotification(context, site, 'first_configuration', { configVersion });
   }
 
   const changes = compareConfigs(oldConfig ?? {}, newConfig ?? {});
@@ -410,12 +410,15 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   if (changes.cdnBucketConfig) {
     try {
-      log.info('LLMO config changes detected in CDN bucket configuration; processing CDN config changes');
+      log.info('LLMO config changes detected in CDN bucket configuration; processing CDN config changes', {
+        siteId,
+        cdnBucketConfig: changes.cdnBucketConfig,
+      });
 
       /* c8 ignore next */
       if (isFirstTimeOnboarding || !oldConfig.cdnBucketConfig) {
         await sendOnboardingNotification(context, site, 'cdn_provisioning', { cdnBucketConfig: changes.cdnBucketConfig });
-        log.info('First-time LLMO onboarding detected', {
+        log.info('First-time LLMO CDN bucket configuration changes detected', {
           siteId,
           cdnBucketConfig: changes.cdnBucketConfig,
         });

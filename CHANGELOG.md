@@ -1,3 +1,10 @@
+## [1.304.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.3...v1.304.4) (2026-02-04)
+
+
+### Bug Fixes
+
+* improve log message and first configuration notification ([#1937](https://github.com/adobe/spacecat-audit-worker/issues/1937)) ([216d218](https://github.com/adobe/spacecat-audit-worker/commit/216d218109107e8df63a2f5be7c8584e72dac136))
+
 ## [1.304.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.2...v1.304.3) (2026-02-04)
 
 
