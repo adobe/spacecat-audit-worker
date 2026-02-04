@@ -230,9 +230,11 @@ export async function loadPromptsAndSendDetection(
     : WEB_SEARCH_PROVIDERS;
   log.info('GEO BRAND PRESENCE: aiPlatform: %s for site id %s (%s). Will use providers: %j', aiPlatform, siteId, baseURL, providersToUse);
 
-  if (success === false) {
-    log.error('GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
-    return;
+  // When import fails (success === false), continue with human prompts only.
+  // This allows graceful degradation when Ahrefs API is unavailable.
+  const importFailed = success === false;
+  if (importFailed) {
+    log.warn('GEO BRAND PRESENCE: Import failed for site id %s (%s). Continuing with human prompts only.', siteId, baseURL);
   }
 
   // For weekly cadence, validate calendarWeek; for daily, use dailyDateContext
@@ -241,7 +243,7 @@ export async function loadPromptsAndSendDetection(
     log.error('GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
     return;
   }
-  if (!Array.isArray(parquetFiles) || !parquetFiles.every((x) => typeof x === 'string')) {
+  if (!importFailed && (!Array.isArray(parquetFiles) || !parquetFiles.every((x) => typeof x === 'string'))) {
     log.error('GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
     return;
   }
@@ -250,12 +252,14 @@ export async function loadPromptsAndSendDetection(
 
   const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
 
-  // Load AI prompts from parquet
-  const recordSets = await Promise.all(
-    parquetFiles.map((key) => loadParquetDataFromS3({ key, bucket, s3Client })),
-  );
-
-  let aiPrompts = recordSets.flat();
+  // Load AI prompts from parquet (skip if import failed)
+  let aiPrompts = [];
+  if (!importFailed && parquetFiles?.length > 0) {
+    const recordSets = await Promise.all(
+      parquetFiles.map((key) => loadParquetDataFromS3({ key, bucket, s3Client })),
+    );
+    aiPrompts = recordSets.flat();
+  }
   for (const x of aiPrompts) {
     x.market = x.region; // TODO(aurelio): remove when .region is supported by Mystique
     x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick

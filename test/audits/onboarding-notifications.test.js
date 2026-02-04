@@ -46,8 +46,8 @@ describe('Onboarding Notifications', () => {
     sinon.restore();
   });
 
-  it('sends first configuration notification', async () => {
-    await sendOnboardingNotification(context, site, 'first_configuration', { configVersion: 'v1.0' });
+  it('sends onboarding detected notification', async () => {
+    await sendOnboardingNotification(context, site, 'first_onboarding');
 
     expect(mockSlackClient.postMessage.calledOnce).to.be.true;
     const message = mockSlackClient.postMessage.firstCall.args[0];
@@ -73,17 +73,6 @@ describe('Onboarding Notifications', () => {
     expect(context.log.warn.calledWith('Unknown onboarding event type: unknown_type')).to.be.true;
   });
 
-  it('handles first configuration without version', async () => {
-    await sendOnboardingNotification(context, site, 'first_configuration');
-
-    expect(mockSlackClient.postMessage.calledOnce).to.be.true;
-    const message = mockSlackClient.postMessage.firstCall.args[0];
-
-    const configVersionField = message.attachments[0].blocks[1].fields.find(field =>
-      field.text.includes('Config Version')
-    );
-    expect(configVersionField.text).to.include('_Not specified_');
-  });
 
   it('handles CDN provisioning without config', async () => {
     await sendOnboardingNotification(context, site, 'cdn_provisioning', { cdnBucketConfig: {} });
