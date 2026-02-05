@@ -1388,6 +1388,42 @@ describe('Crawl Detection Module', () => {
       expect(canonicalResult.urlTo).to.equal('https://example.com/page');
     });
 
+    it('should skip canonical links without href attribute', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      const htmlWithEmptyCanonical = `
+        <html>
+          <head>
+            <link rel="canonical">
+          </head>
+          <body>
+            <a href="/valid-link">Valid</a>
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.withArgs(sinon.match.any, 'test-bucket', 's3-key-1').resolves({
+        scrapeResult: { rawBody: htmlWithEmptyCanonical },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.resolves(false);
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      // Should skip canonical without href
+      const canonicalLinks = result.results.filter((r) => r.itemType === 'canonical');
+      expect(canonicalLinks).to.have.lengthOf(0);
+    });
+
     it('should handle invalid canonical link URLs gracefully', async () => {
       const scrapeResultPaths = new Map([
         ['https://example.com/page1', 's3-key-1'],
@@ -1460,6 +1496,45 @@ describe('Crawl Detection Module', () => {
       expect(result.results).to.have.lengthOf(0);
       const formLinks = result.results.filter((r) => r.itemType === 'form');
       expect(formLinks).to.have.lengthOf(0);
+    });
+
+    it('should skip alternate links without href attribute', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      const htmlWithEmptyAlternate = `
+        <html>
+          <head>
+            <link rel="alternate" hreflang="es">
+            <link rel="alternate" hreflang="fr" href="/valid-fr">
+          </head>
+          <body>
+            <a href="/valid-link">Valid</a>
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.withArgs(sinon.match.any, 'test-bucket', 's3-key-1').resolves({
+        scrapeResult: { rawBody: htmlWithEmptyAlternate },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.withArgs('https://example.com/valid-fr').resolves(true);
+      isLinkInaccessibleStub.resolves(false);
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      // Should skip alternate without href but process valid one
+      const alternateLinks = result.results.filter((r) => r.itemType === 'alternate');
+      expect(alternateLinks).to.have.lengthOf(1);
+      expect(alternateLinks[0].urlTo).to.equal('https://example.com/valid-fr');
     });
 
     it('should handle invalid alternate link URLs gracefully', async () => {
