@@ -142,7 +142,7 @@ export default async function handler(message, context) {
   const defaultBucketName = env.S3_MYSTIQUE_BUCKET_NAME;
 
   // Process updates
-  if (!opportunityId) {
+  if (!isNonEmptyArray(updates)) {
     log.warn(`[${AUDIT_TYPE} Code-Fix] [Site: ${siteId}] Empty updates array provided in message data. Skipping processing!`);
     return ok();
   }
