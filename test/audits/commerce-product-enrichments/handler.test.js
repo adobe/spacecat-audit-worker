@@ -51,7 +51,7 @@ describe('Commerce Product Enrichments Handler', () => {
     };
   });
 
-  it('importTopPages returns top-pages metadata without limit when not provided', async () => {
+  it('importTopPages returns top-pages metadata with default limit when not provided', async () => {
     const context = {
       site,
       finalUrl: 'https://example.com',
@@ -63,6 +63,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
+      auditContext: { limit: 20 }, // DEFAULT_LIMIT
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
@@ -107,7 +108,7 @@ describe('Commerce Product Enrichments Handler', () => {
     });
   });
 
-  it('importTopPages handles invalid JSON gracefully', async () => {
+  it('importTopPages handles invalid JSON gracefully and uses default limit', async () => {
     const context = {
       site,
       finalUrl: 'https://example.com',
@@ -120,10 +121,10 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
+      auditContext: { limit: 20 }, // DEFAULT_LIMIT when parsing fails
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
-    expect(result).to.not.have.property('limit');
     expect(log.warn).to.have.been.calledWith(sinon.match(/Could not parse data as JSON/));
   });
 
@@ -145,6 +146,7 @@ describe('Commerce Product Enrichments Handler', () => {
       site,
       dataAccess,
       log,
+      auditContext: { limit: 20 },
     };
 
     const result = await submitForScraping(context);
@@ -169,7 +171,7 @@ describe('Commerce Product Enrichments Handler', () => {
     });
   });
 
-  it('submitForScraping respects limit from context.data', async () => {
+  it('submitForScraping respects limit from auditContext', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -185,7 +187,7 @@ describe('Commerce Product Enrichments Handler', () => {
       site,
       dataAccess,
       log,
-      data: { limit: 5 },
+      auditContext: { limit: 5 },
     };
 
     const result = await submitForScraping(context);
@@ -195,7 +197,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.urls[4]).to.deep.equal({ url: 'https://example.com/page-5' });
   });
 
-  it('submitForScraping uses all top pages when limit not provided', async () => {
+  it('submitForScraping uses DEFAULT_LIMIT (20) when limit not provided in auditContext', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -215,12 +217,13 @@ describe('Commerce Product Enrichments Handler', () => {
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(50);
+    // Should use DEFAULT_LIMIT of 20
+    expect(result.urls).to.have.lengthOf(20);
     expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
-    expect(result.urls[49]).to.deep.equal({ url: 'https://example.com/page-50' });
+    expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
   });
 
-  it('submitForScraping respects limit from context.data when provided as JSON string', async () => {
+  it('submitForScraping respects numeric limit from auditContext', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -236,7 +239,7 @@ describe('Commerce Product Enrichments Handler', () => {
       site,
       dataAccess,
       log,
-      data: '{"limit":10}',
+      auditContext: { limit: 10 },
     };
 
     const result = await submitForScraping(context);
@@ -246,7 +249,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.urls[9]).to.deep.equal({ url: 'https://example.com/page-10' });
   });
 
-  it('submitForScraping handles invalid JSON gracefully', async () => {
+  it('submitForScraping uses DEFAULT_LIMIT with empty auditContext object', async () => {
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
     }));
@@ -261,16 +264,16 @@ describe('Commerce Product Enrichments Handler', () => {
       site,
       dataAccess,
       log,
-      data: 'invalid-json{',
+      auditContext: {},
     };
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(50);
-    expect(log.warn).to.have.been.calledWith(sinon.match(/Could not parse data as JSON/));
+    // Should use DEFAULT_LIMIT of 20
+    expect(result.urls).to.have.lengthOf(20);
   });
 
-  it('submitForScraping respects limit from auditContext (step chaining)', async () => {
+  it('submitForScraping applies limit of 7 from auditContext correctly', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -296,7 +299,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.urls[6]).to.deep.equal({ url: 'https://example.com/page-7' });
   });
 
-  it('submitForScraping prefers auditContext limit over data limit', async () => {
+  it('submitForScraping uses auditContext limit (step chaining from Step 1)', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -308,11 +311,11 @@ describe('Commerce Product Enrichments Handler', () => {
       getIncludedURLs: sinon.stub().resolves([]),
     });
 
+    // Simulate step chaining where Step 1 has set the limit in auditContext
     const context = {
       site,
       dataAccess,
       log,
-      data: { limit: 20 },
       auditContext: { limit: 3 },
     };
 
@@ -334,6 +337,7 @@ describe('Commerce Product Enrichments Handler', () => {
       site,
       dataAccess,
       log,
+      auditContext: { limit: 20 },
     };
 
     const result = await submitForScraping(context);
@@ -359,6 +363,7 @@ describe('Commerce Product Enrichments Handler', () => {
       site,
       dataAccess,
       log,
+      auditContext: { limit: 20 },
     };
 
     await expect(submitForScraping(context)).to.be.rejectedWith(
@@ -513,34 +518,43 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
     expect(result.auditResult.processedPages).to.equal(0);
     expect(result.auditResult.failedPages).to.equal(1);
-    expect(log.warn).to.have.been.calledWith(sinon.match(/No scrape data found/));
+    expect(log.error).to.have.been.calledWith(sinon.match(/No scrape data found/));
   });
 
   it('runAuditAndProcessResults handles unexpected errors during processing', async () => {
+    const scrapeData = {
+      url: 'https://example.com/page-1',
+      finalUrl: 'https://example.com/page-1',
+      scrapeResult: {
+        structuredData: {
+          jsonld: {
+            Product: [{ sku: 'TEST-SKU' }],
+          },
+        },
+      },
+    };
+
     const s3Client = {
       send: sinon.stub().resolves({
         ContentType: 'application/json',
         Body: {
-          transformToString: sinon.stub().resolves(JSON.stringify({
-            url: 'https://example.com/page-1',
-            finalUrl: 'https://example.com/page-1',
-            scrapeResult: {},
-          })),
+          transformToString: sinon.stub().resolves(JSON.stringify(scrapeData)),
         },
       }),
-    };
-
-    // Create a log mock where debug throws an error
-    const logWithError = {
-      info: sinon.spy(),
-      warn: sinon.spy(),
-      error: sinon.spy(),
-      debug: sinon.stub().throws(new Error('Unexpected logging error')),
     };
 
     const scrapeResultPaths = new Map([
       ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
     ]);
+
+    // Create a log mock where info throws an error when called with SKU count message
+    const logWithError = {
+      info: sinon.stub(),
+      warn: sinon.spy(),
+      error: sinon.spy(),
+    };
+    // Make log.info throw on the SKU count log message
+    logWithError.info.withArgs(sinon.match(/SKU count/)).throws(new Error('Unexpected logging error'));
 
     const context = {
       site,
@@ -559,8 +573,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
     expect(result.auditResult.processedPages).to.equal(0);
     expect(result.auditResult.failedPages).to.equal(1);
-    // getObjectFromKey logs S3 errors, so check that log.error was called
-    expect(logWithError.error).to.have.been.called;
+    expect(logWithError.error).to.have.been.calledWith(sinon.match(/Error processing scrape result/));
   });
 
   it('runAuditAndProcessResults handles missing metadata.url', async () => {
@@ -713,4 +726,3 @@ describe('Commerce Product Enrichments Handler', () => {
   });
 
 });
-

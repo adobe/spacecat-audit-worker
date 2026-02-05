@@ -17,7 +17,8 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 import { getWeekInfo, getTemporalCondition, getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { retrieveAuditById } from '../utils/data-access.js';
+import { getCPCData, calculateProjectedTrafficValue, DEFAULT_CPC } from './ahrefs-cpc.js';
+import { calculateBounceGapLoss as calculateGenericBounceGapLoss } from './bounce-gap-calculator.js';
 import {
   getTop3PagesWithTrafficLostTemplate,
   getBounceGapMetricsTemplate,
@@ -26,7 +27,6 @@ import {
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 const CUT_OFF_BOUNCE_RATE = 0.3;
-const DEFAULT_CPC = 0.8;
 
 const AUDIT_CONSTANTS = {
   GUIDANCE_TYPE: 'guidance:paid-cookie-consent',
@@ -164,64 +164,49 @@ async function executeBounceGapMetricsQuery(
  * Calculates projected traffic lost using bounce gap attribution.
  * Formula: sum of (PV_show × max(0, BR_show - BR_hidden)) per trf_type
  *
+ * Data transformation:
+ * - Input: flat array of rows with {trfType, consent, pageViews, bounceRate}
+ * - Groups by: trfType (paid, earned, owned)
+ * - Treatment: 'show' (consent banner visible)
+ * - Control: 'hidden' (consent banner not visible)
+ *
  * @param {Array} bounceGapData - Array of {trfType, consent, pageViews, bounceRate}
  * @param {Object} log - Logger instance
- * @returns {Object} { projectedTrafficLost, hasShowData, hasHiddenData }
+ * @returns {Object} { projectedTrafficLost, hasShowData, hasHiddenData, byTrafficType }
  */
 export function calculateBounceGapLoss(bounceGapData, log) {
-  // Group by trf_type
-  const byTrfType = {};
+  const TREATMENT = 'show'; // consent banner visible - causes higher bounce rate
+  const CONTROL = 'hidden'; // consent banner not visible - baseline bounce rate
+
+  // Group flat data by traffic type, then by consent state
+  // Result: { paid: { show: {...}, hidden: {...} }, earned: {...}, owned: {...} }
+  const groupedByTrafficType = {};
   for (const row of bounceGapData) {
-    if (!byTrfType[row.trfType]) {
-      byTrfType[row.trfType] = {};
-    }
-    byTrfType[row.trfType][row.consent] = {
+    if (!groupedByTrafficType[row.trfType]) groupedByTrafficType[row.trfType] = {};
+    groupedByTrafficType[row.trfType][row.consent] = {
       pageViews: row.pageViews,
       bounceRate: row.bounceRate,
     };
   }
 
-  // Check if we have any show or hidden data at all
-  const hasShowData = Object.values(byTrfType).some((data) => data.show);
-  const hasHiddenData = Object.values(byTrfType).some((data) => data.hidden);
+  // Validate we have both treatment and control data
+  const hasShowData = Object.values(groupedByTrafficType).some((g) => g[TREATMENT]);
+  const hasHiddenData = Object.values(groupedByTrafficType).some((g) => g[CONTROL]);
 
-  if (!hasShowData) {
-    log.warn('[paid-audit] No show consent data found; cannot calculate bounce gap');
-    return { projectedTrafficLost: 0, hasShowData: false, hasHiddenData };
+  if (!hasShowData || !hasHiddenData) {
+    log.warn(`[paid-audit] Missing consent data - show:${hasShowData} hidden:${hasHiddenData}`);
+    return { projectedTrafficLost: 0, hasShowData, hasHiddenData };
   }
 
-  if (!hasHiddenData) {
-    log.warn('[paid-audit] No hidden consent data found; cannot calculate bounce gap');
-    return { projectedTrafficLost: 0, hasShowData, hasHiddenData: false };
-  }
+  // Calculate bounce gap loss per traffic type
+  const result = calculateGenericBounceGapLoss(groupedByTrafficType, log, TREATMENT, CONTROL);
 
-  // Calculate bounce gap loss per trf_type
-  let totalLoss = 0;
-  for (const [trfType, data] of Object.entries(byTrfType)) {
-    const showData = data.show;
-    const hiddenData = data.hidden;
-
-    if (!showData) {
-      log.debug(`[paid-audit] No show data for trf_type=${trfType}; skipping`);
-    } else if (!hiddenData) {
-      log.debug(`[paid-audit] No hidden data for trf_type=${trfType}; skipping`);
-    } else {
-      // delta = max(0, BR_show - BR_hidden)
-      const delta = Math.max(0, showData.bounceRate - hiddenData.bounceRate);
-      // loss = PV_show × delta
-      const loss = showData.pageViews * delta;
-
-      log.debug(
-        `[paid-audit] trf_type=${trfType}: BR_show=${showData.bounceRate.toFixed(3)}, `
-        + `BR_hidden=${hiddenData.bounceRate.toFixed(3)}, delta=${delta.toFixed(3)}, `
-        + `PV_show=${showData.pageViews}, loss=${loss.toFixed(0)}`,
-      );
-
-      totalLoss += loss;
-    }
-  }
-
-  return { projectedTrafficLost: totalLoss, hasShowData: true, hasHiddenData: true };
+  return {
+    projectedTrafficLost: result.totalLoss,
+    hasShowData,
+    hasHiddenData,
+    byTrafficType: result.byGroup,
+  };
 }
 
 /**
@@ -253,7 +238,7 @@ export function calculateSitewideBounceDelta(bounceGapData) {
   return Math.max(0, sitewideShowBR - sitewideHiddenBR);
 }
 
-function buildMystiqueMessage(site, auditId, url) {
+function buildMystiqueMessage(site, auditId, url, top3PageUrls) {
   return {
     type: AUDIT_CONSTANTS.GUIDANCE_TYPE,
     observation: AUDIT_CONSTANTS.OBSERVATION,
@@ -264,6 +249,7 @@ function buildMystiqueMessage(site, auditId, url) {
     time: new Date().toISOString(),
     data: {
       url,
+      top3PageUrls,
     },
   };
 }
@@ -301,6 +287,7 @@ export async function paidAuditRunner(auditUrl, context, site) {
       projectedTrafficLost,
       hasShowData,
       hasHiddenData,
+      byTrafficType,
     } = calculateBounceGapLoss(bounceGapData, log);
 
     // Calculate sitewide bounce delta for description text
@@ -330,7 +317,15 @@ export async function paidAuditRunner(auditUrl, context, site) {
       };
     }
 
-    const projectedTrafficValue = projectedTrafficLost * DEFAULT_CPC;
+    // Get CPC data and calculate projected traffic value per traffic type
+    const cpcData = await getCPCData(context, site.getId());
+    const projectedTrafficValue = calculateProjectedTrafficValue(byTrafficType, cpcData);
+
+    // For output, use paid CPC as the applied CPC (this is a paid cookie consent audit)
+    const appliedCPC = cpcData.paidCPC;
+    const cpcSource = cpcData.source;
+
+    log.info(`[paid-audit] [Site: ${siteId}] Traffic: lost=${projectedTrafficLost.toFixed(0)}, value=$${projectedTrafficValue.toFixed(2)}, cpc=$${appliedCPC.toFixed(4)} (${cpcSource})`);
 
     // Continue with existing queries for top3 pages and device breakdown
     const lostTrafficSummary = await executeTop3TrafficLostPagesQuery(athenaClient, ['device'], 'Top 3 Pages with Traffic Lost', siteId, temporalCondition, 0, null, config, log, baseURL);
@@ -361,8 +356,17 @@ export async function paidAuditRunner(auditUrl, context, site) {
       averageTrafficLostTop3,
       averageBounceRateMobileTop3,
       temporalCondition,
+      // CPC information for transparency
+      appliedCPC,
+      cpcSource,
+      defaultCPC: DEFAULT_CPC,
+      // Only include Ahrefs CPC values if available
+      ...(cpcSource === 'ahrefs' && {
+        ahrefsOrganicCPC: cpcData.organicCPC,
+        ahrefsPaidCPC: cpcData.paidCPC,
+      }),
     };
-    log.info(`[paid-audit] [Site: ${auditUrl}] Audit initial result:`, JSON.stringify(auditResult, null, 2));
+    log.info(`[paid-audit] [Site: ${auditUrl}] Summary: pv=${totalPageViews}, lost=${projectedTrafficLost.toFixed(0)}, value=$${projectedTrafficValue.toFixed(2)}, top3=${top3Pages.length}`);
     return {
       auditResult,
       fullAuditRef: auditUrl,
@@ -378,10 +382,10 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
     log, sqs, env,
   } = context;
 
-  const { auditResult, id } = auditData;
+  const { top3Pages, id } = auditData;
 
-  // // take first page which has highest projectedTrafficLost
-  const selected = auditResult.top3Pages?.length > 0 ? auditResult.top3Pages[0] : null;
+  // take first page which has highest projectedTrafficLost
+  const selected = top3Pages?.length > 0 ? top3Pages[0] : null;
   const selectedPageUrl = selected?.url;
   if (!selectedPageUrl) {
     log.warn(
@@ -390,19 +394,20 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
     return;
   }
 
-  const mystiqueMessage = buildMystiqueMessage(site, id, selectedPageUrl);
+  // Extract all top3 page URLs for Mystique
+  const top3PageUrls = top3Pages.map((page) => page.url);
+  const mystiqueMessage = buildMystiqueMessage(site, id, selectedPageUrl, top3PageUrls);
 
   const projected = selected?.trafficLoss;
-  log.debug(
-    `[paid-audit] [Site: ${auditUrl}] Sending consent-seen page ${selectedPageUrl} with message `
-    + `(projectedTrafficLoss: ${projected}) ${JSON.stringify(mystiqueMessage, 2)} `
-    + 'evaluation to mystique',
+  log.info(
+    `[paid-audit] [Site: ${auditUrl}] Sending consent-seen page ${selectedPageUrl} `
+    + `(projectedTrafficLoss: ${projected}, bounceRate: ${selected?.bounceRate}) to mystique: ${JSON.stringify(mystiqueMessage)}`,
   );
   if (selected?.bounceRate >= CUT_OFF_BOUNCE_RATE) {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-    log.debug(`[paid-audit] [Site: ${auditUrl}] Completed mystique evaluation step`);
+    log.info(`[paid-audit] [Site: ${auditUrl}] Completed mystique evaluation step`);
   } else {
-    log.debug(`[paid-audit] [Site: ${auditUrl}] Skipping mystique evaluation step for page ${selectedPageUrl} with bounce rate ${selected?.bounceRate}`);
+    log.info(`[paid-audit] [Site: ${auditUrl}] Skipping mystique evaluation step for page ${selectedPageUrl} with bounce rate ${selected?.bounceRate} (< ${CUT_OFF_BOUNCE_RATE})`);
   }
 }
 
@@ -429,8 +434,10 @@ function createImportStep(weekIndex) {
     }
 
     return {
+      // Placeholder auditResult - real results will be stored in a new audit created in step 5.
+      // This audit is just a placeholder for the framework's continuation mechanism.
       auditResult: {
-        status: 'pending',
+        status: 'processing',
         message: `Importing traffic-analysis data for week ${week}/${year}`,
       },
       fullAuditRef: finalUrl,
@@ -453,41 +460,49 @@ export const importWeekStep3 = createImportStep(3);
 
 export async function runPaidConsentAnalysisStep(context) {
   const {
-    site, finalUrl, log, dataAccess, auditContext,
+    site, finalUrl, log, auditContext, audit, env,
   } = context;
 
   log.info(`[paid-audit] [Site: ${finalUrl}] Step 5: Running consent banner analysis`);
 
-  // The StepAudit framework only loads the audit for steps that have a next step.
-  // Since this is the final step, we need to fetch the audit ourselves.
-  const audit = await retrieveAuditById(dataAccess, auditContext.auditId, log);
-  if (!audit) {
-    log.error(`[paid-audit] [Site: ${finalUrl}] Audit ${auditContext.auditId} not found; cannot update results`);
-    return {};
-  }
+  const config = getConfig(env);
+  const siteId = site.getId();
+  const baseURL = site.getBaseURL();
 
-  // Run existing analysis logic (reuses paidAuditRunner)
-  const result = await paidAuditRunner(finalUrl, context, site);
+  // Get temporal parameters (7 days back from current week)
+  const { week, year } = getWeekInfo();
+  const temporalCondition = getTemporalCondition({ week, year, numSeries: 4 });
 
-  // IMPORTANT: paidAuditRunner returns { auditResult: null } when no
-  // show/hidden consent data exists. Must handle this early-exit case.
-  if (!result.auditResult) {
-    log.warn(`[paid-audit] [Site: ${finalUrl}] No consent data available; skipping analysis step`);
-    return {};
-  }
+  const athenaClient = AWSAthenaClient.fromContext(context, `${config.athenaTemp}/paid-audit-cookie-consent/${siteId}-${Date.now()}`);
 
-  // Update audit with real results (replaces the "pending" placeholder from step 1)
-  audit.setAuditResult(result.auditResult);
-  await audit.save();
-
-  // Run existing post-processor logic (moved from .withPostProcessors)
-  // Wrapped in try-catch to match post-processor error semantics:
-  // audit is already saved, so a failure here should log but not fail the step.
   try {
-    const auditData = { auditResult: result.auditResult, id: audit.getId() };
+    // Only query top3Pages - this is all we need to send to Mystique
+    const top3Pages = await executeTop3TrafficLostPagesQuery(
+      athenaClient,
+      ['path'],
+      'Top 3 Pages with Traffic Lost',
+      siteId,
+      temporalCondition,
+      0,
+      3,
+      config,
+      log,
+      baseURL,
+    );
+
+    if (!top3Pages || top3Pages.length === 0) {
+      log.warn(`[paid-audit] [Site: ${finalUrl}] No top3Pages data available; skipping Mystique step`);
+      return {};
+    }
+
+    // Get the placeholder audit ID from step 1
+    const auditId = audit?.getId() || auditContext?.auditId;
+
+    // Send top3Pages to Mystique (guidance handler will query full data)
+    const auditData = { top3Pages, id: auditId };
     await paidConsentBannerCheck(finalUrl, auditData, context, site);
   } catch (error) {
-    log.error(`[paid-audit] [Site: ${finalUrl}] Post-processor paidConsentBannerCheck failed: ${error.message}`);
+    log.error(`[paid-audit] [Site: ${finalUrl}] Step 5 failed: ${error.message}`);
   }
 
   return {};

@@ -63,19 +63,6 @@ function getRankFromPriority(priority) {
 }
 
 /**
- * Maps Wikipedia suggestions to suggestion DTO format
- * @param {Array} suggestions - Raw suggestions from Mystique
- * @returns {Array} Mapped suggestions
- */
-function mapSuggestions(suggestions) {
-  return suggestions.map((suggestion) => ({
-    rank: getRankFromPriority(suggestion.priority),
-    type: 'CONTENT_UPDATE',
-    data: suggestion, // Pass through entire suggestion object
-  }));
-}
-
-/**
  * Handles Mystique response for Wikipedia analysis
  * @param {Object} message - Message from Mystique with analysis results
  * @param {Object} context - Context object with data access and logger
@@ -162,19 +149,16 @@ export default async function handler(message, context) {
       context,
     );
 
-    // Map and sync suggestions
-    const mappedSuggestions = mapSuggestions(suggestions);
-
     await syncSuggestions({
       context,
       opportunity,
-      newData: mappedSuggestions,
-      buildKey: (suggestion) => `wikipedia::${suggestion.data.id}`,
+      newData: suggestions,
+      buildKey: (suggestion) => `wikipedia::${suggestion.id}`,
       mapNewSuggestion: (suggestion) => ({
         opportunityId: opportunity.getId(),
-        type: suggestion.type,
-        rank: suggestion.rank,
-        data: suggestion.data,
+        type: 'CONTENT_UPDATE',
+        rank: getRankFromPriority(suggestion.priority),
+        data: suggestion,
       }),
     });
 

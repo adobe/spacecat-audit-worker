@@ -17,6 +17,8 @@ import { LOG_PREFIX } from './constants.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
+const DEFAULT_LIMIT = 20;
+
 /**
  * Step 1: Import Top Pages
  * Prepares the audit context and returns metadata for the import worker.
@@ -29,20 +31,26 @@ export async function importTopPages(context) {
     site, finalUrl, log, data,
   } = context;
 
-  // Parse data if it's a string (from Slack bot), or use as-is if it's an object
+  log.info(`${LOG_PREFIX} Step 1: Received data parameter - value: ${JSON.stringify(data)}, type: ${typeof data}`);
+
   let parsedData = {};
   if (typeof data === 'string' && data.length > 0) {
     try {
       parsedData = JSON.parse(data);
+      log.info(`${LOG_PREFIX} Step 1: Successfully parsed data as JSON: ${JSON.stringify(parsedData)}`);
     } catch (e) {
-      log.warn(`${LOG_PREFIX} Could not parse data as JSON: ${data}`);
+      log.warn(`${LOG_PREFIX} Could not parse data as JSON: ${data}. Error: ${e.message}`);
     }
   } else if (data && typeof data === 'object') {
     parsedData = data;
+    log.info(`${LOG_PREFIX} Step 1: Data is already an object: ${JSON.stringify(parsedData)}`);
+  } else {
+    log.info(`${LOG_PREFIX} Step 1: No data provided or data is empty`);
   }
 
-  const { limit } = parsedData;
-  const limitInfo = limit ? ` with limit: ${limit}` : '';
+  // Use provided limit or fall back to default
+  const limit = parsedData.limit ? Number(parsedData.limit) : DEFAULT_LIMIT;
+  const limitInfo = ` with limit: ${limit}${!parsedData.limit ? ' (default)' : ''}`;
 
   log.info(`${LOG_PREFIX} Step 1: importTopPages started for site: ${site.getId()}${limitInfo}`);
   log.info(`${LOG_PREFIX} Final URL: ${finalUrl}`);
@@ -53,6 +61,8 @@ export async function importTopPages(context) {
     siteId: site.getId(),
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
+    // Always include limit in auditContext so it's preserved between steps
+    auditContext: { limit },
   };
 
   // Add limit to auditContext so it's preserved between steps
@@ -76,37 +86,20 @@ export async function submitForScraping(context) {
     site,
     dataAccess,
     log,
-    data,
     auditContext,
   } = context;
 
-  // Parse data if it's a string (from Slack bot), or use as-is if it's an object
-  let parsedData = {};
-  if (typeof data === 'string' && data.length > 0) {
-    try {
-      parsedData = JSON.parse(data);
-    } catch (e) {
-      log.warn(`${LOG_PREFIX} Could not parse data as JSON: ${data}`);
-    }
-  } else if (data && typeof data === 'object') {
-    parsedData = data;
-  }
+  log.info(`${LOG_PREFIX} Step 2: Received auditContext: ${JSON.stringify(auditContext)}`);
 
-  // Read limit from auditContext (for step chaining) or data (for initial call)
-  const limit = auditContext?.limit || parsedData.limit;
-  const limitInfo = limit ? ` with limit: ${limit}` : '';
+  const limit = auditContext?.limit || DEFAULT_LIMIT;
+  const limitInfo = ` with limit: ${limit}${!auditContext?.limit ? ' (default)' : ''}`;
 
   log.info(`${LOG_PREFIX} Step 2: submitForScraping started for site: ${site.getId()}${limitInfo}`);
 
   const { SiteTopPage } = dataAccess;
   const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  log.info(`${LOG_PREFIX} Retrieved ${allTopPages.length} top pages from database`);
-
-  // Limit top pages for scraping if limit is provided
-  const topPages = limit ? allTopPages.slice(0, limit) : allTopPages;
-  if (limit) {
-    log.info(`${LOG_PREFIX} Limited to ${topPages.length} top pages for scraping`);
-  }
+  const topPages = allTopPages.slice(0, limit);
+  log.info(`${LOG_PREFIX} Limited to ${topPages.length} top pages for scraping (limit: ${limit}) out of ${allTopPages.length} total top pages.`);
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
   log.info(`${LOG_PREFIX} Reading site config: ${JSON.stringify(site?.getConfig())}`);
@@ -116,6 +109,10 @@ export async function submitForScraping(context) {
   const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
   log.info(`${LOG_PREFIX} Retrieved ${includedURLs.length} included URLs from site config`);
 
+  for (const url of includedURLs) {
+    log.info(`${LOG_PREFIX} Included URL: ${url}`);
+  }
+
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
   log.info(`${LOG_PREFIX} Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
 
@@ -124,7 +121,6 @@ export async function submitForScraping(context) {
     throw new Error('No URLs found for site neither top pages nor included URLs');
   }
 
-  // Filter out PDF files
   const isPdfUrl = (url) => {
     try {
       const pathname = new URL(url).pathname.toLowerCase();
@@ -176,6 +172,8 @@ export async function runAuditAndProcessResults(context) {
     site, audit, finalUrl, log, scrapeResultPaths, s3Client, env, auditContext,
   } = context;
 
+  // Version identifier for deployment tracking
+  log.info(`${LOG_PREFIX} CODE VERSION: 2026-02-03T12:00:00Z - Added DEFAULT_LIMIT=20 and debug logging`);
   log.info(`${LOG_PREFIX} Step 3: runAuditAndProcessResults started`);
 
   // Debug logging to understand what context we're receiving
@@ -238,11 +236,11 @@ export async function runAuditAndProcessResults(context) {
     [...scrapeResultPaths].map(async ([url, s3Path]) => {
       try {
         // Read the scrape.json file from S3
-        log.debug(`${LOG_PREFIX} Reading scrape data from S3: ${s3Path}`);
+        log.info(`${LOG_PREFIX} Reading scrape data from S3: ${s3Path}`);
         const scrapeData = await getObjectFromKey(s3Client, bucketName, s3Path, log);
 
         if (!scrapeData) {
-          log.warn(`${LOG_PREFIX} No scrape data found for: ${url}`);
+          log.error(`${LOG_PREFIX} No scrape data found for: ${url}`);
           return {
             success: false,
             url,
@@ -260,10 +258,11 @@ export async function runAuditAndProcessResults(context) {
         if (Array.isArray(Product) && Product.length > 0) {
           // Count products with SKU
           skuCount = Product.filter((product) => product.sku).length;
+          log.info(`${LOG_PREFIX} SKU count: ${skuCount}`);
           isProductPage = skuCount === 1;
         }
 
-        log.debug(`${LOG_PREFIX} Processed page: ${url} (isProductPage: ${isProductPage})`);
+        log.info(`${LOG_PREFIX} Processed page: ${url} (isProductPage: ${isProductPage})`);
 
         return {
           success: true,

@@ -1,3 +1,214 @@
+## [1.305.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.305.1...v1.305.2) (2026-02-05)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1952](https://github.com/adobe/spacecat-audit-worker/issues/1952)) ([b72250d](https://github.com/adobe/spacecat-audit-worker/commit/b72250df65a25a1d79d93d7e7393125267a40189))
+
+## [1.305.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.305.0...v1.305.1) (2026-02-05)
+
+
+### Bug Fixes
+
+* SITES-39444 Autofix Slack trigger ([#1950](https://github.com/adobe/spacecat-audit-worker/issues/1950)) ([26f7fe2](https://github.com/adobe/spacecat-audit-worker/commit/26f7fe2d1f72eab527eb0afa8def75d92e93f3c7))
+
+# [1.305.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.10...v1.305.0) (2026-02-05)
+
+
+### Features
+
+* process new vulnerability code-fix schema ([#1942](https://github.com/adobe/spacecat-audit-worker/issues/1942)) ([e28458f](https://github.com/adobe/spacecat-audit-worker/commit/e28458f4919760b20de11d5801413322b3fb3637))
+
+## [1.304.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.9...v1.304.10) (2026-02-05)
+
+
+### Bug Fixes
+
+* sync suggestions for wikipedia-analysis ([#1943](https://github.com/adobe/spacecat-audit-worker/issues/1943)) ([c3a4804](https://github.com/adobe/spacecat-audit-worker/commit/c3a48046082f5a8f73a765137d00e996089bd297))
+
+## [1.304.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.8...v1.304.9) (2026-02-05)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.40.7 ([#1947](https://github.com/adobe/spacecat-audit-worker/issues/1947)) ([bc827bd](https://github.com/adobe/spacecat-audit-worker/commit/bc827bd8e54d5c1bea3f3728cc2d7d5a1c2dab73))
+* rename opportunity type from paid-keyword-optimizer to ad-intent-mismatch ([#1940](https://github.com/adobe/spacecat-audit-worker/issues/1940)) ([a6da25b](https://github.com/adobe/spacecat-audit-worker/commit/a6da25bfeb89c4ba95b3547e4bd9ed943bc23386))
+
+## [1.304.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.7...v1.304.8) (2026-02-05)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.103.0 ([#1945](https://github.com/adobe/spacecat-audit-worker/issues/1945)) ([37225e8](https://github.com/adobe/spacecat-audit-worker/commit/37225e85fbe24b16fcaff2d49837d2020ef6ede5))
+
+## [1.304.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.6...v1.304.7) (2026-02-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.102.0 ([#1941](https://github.com/adobe/spacecat-audit-worker/issues/1941)) ([926b561](https://github.com/adobe/spacecat-audit-worker/commit/926b56160e0f56dd8b94c0f7917482356ad984aa))
+
+## [1.304.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.5...v1.304.6) (2026-02-04)
+
+
+### Bug Fixes
+
+* faqs prompts should get all rows ([#1938](https://github.com/adobe/spacecat-audit-worker/issues/1938)) ([fc34c38](https://github.com/adobe/spacecat-audit-worker/commit/fc34c381e9d0618dd5a1e2f78bed8467f86eb3eb))
+
+## [1.304.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.4...v1.304.5) (2026-02-04)
+
+
+### Bug Fixes
+
+* improve notification for llmo ([#1939](https://github.com/adobe/spacecat-audit-worker/issues/1939)) ([d04e19e](https://github.com/adobe/spacecat-audit-worker/commit/d04e19eee9a99f47701059381990e1d316ea6005))
+
+## [1.304.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.3...v1.304.4) (2026-02-04)
+
+
+### Bug Fixes
+
+* improve log message and first configuration notification ([#1937](https://github.com/adobe/spacecat-audit-worker/issues/1937)) ([216d218](https://github.com/adobe/spacecat-audit-worker/commit/216d218109107e8df63a2f5be7c8584e72dac136))
+
+## [1.304.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.2...v1.304.3) (2026-02-04)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1934](https://github.com/adobe/spacecat-audit-worker/issues/1934)) ([87bbcbc](https://github.com/adobe/spacecat-audit-worker/commit/87bbcbcec20dcbcb78dd15fbc02345d729090b92))
+
+## [1.304.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.1...v1.304.2) (2026-02-03)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-google-client to v1.5.0 ([#1931](https://github.com/adobe/spacecat-audit-worker/issues/1931)) ([f6ff63c](https://github.com/adobe/spacecat-audit-worker/commit/f6ff63ce3597f5c9708bae680847545b445b9a64))
+
+## [1.304.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.0...v1.304.1) (2026-02-03)
+
+
+### Bug Fixes
+
+* SITES-39944 - [canonical] Missed explanations for suggestions ([#1920](https://github.com/adobe/spacecat-audit-worker/issues/1920)) ([379a574](https://github.com/adobe/spacecat-audit-worker/commit/379a574e13293296c2bc1fcf9ea6c6748e44c195))
+
+# [1.304.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.303.0...v1.304.0) (2026-02-03)
+
+
+### Features
+
+* sort FAQs prompts based on URL existence ([#1933](https://github.com/adobe/spacecat-audit-worker/issues/1933)) ([1cc6d43](https://github.com/adobe/spacecat-audit-worker/commit/1cc6d434c4e6eecc2006b3ebaae97c57cef9d1e8))
+
+# [1.303.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.302.0...v1.303.0) (2026-02-03)
+
+
+### Features
+
+* gracefully handle import failures in geo-brand-presence ([#1932](https://github.com/adobe/spacecat-audit-worker/issues/1932)) ([05ecefd](https://github.com/adobe/spacecat-audit-worker/commit/05ecefd4da246533b4c96738ca0c3e16190388f4))
+
+# [1.302.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.301.0...v1.302.0) (2026-02-03)
+
+
+### Features
+
+* add wikipedia-analysis to LLMO customer onboarding ([#1929](https://github.com/adobe/spacecat-audit-worker/issues/1929)) ([0ba3c57](https://github.com/adobe/spacecat-audit-worker/commit/0ba3c57f2a91110144a4748578e7a586c0144f2b))
+
+# [1.301.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.300.1...v1.301.0) (2026-02-03)
+
+
+### Features
+
+* AGENTCOM-278 - commerce product enrichments content scraper ([#1930](https://github.com/adobe/spacecat-audit-worker/issues/1930)) ([3b65e79](https://github.com/adobe/spacecat-audit-worker/commit/3b65e79be1903fcd031b4d7861d94a6a7c85177d))
+
+## [1.300.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.300.0...v1.300.1) (2026-02-03)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1921](https://github.com/adobe/spacecat-audit-worker/issues/1921)) ([6ffab53](https://github.com/adobe/spacecat-audit-worker/commit/6ffab539070cf76b29a48803935a52e62d511b88))
+
+# [1.300.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.299.1...v1.300.0) (2026-02-03)
+
+
+### Features
+
+* adjust security-csp auto-fix data model ([#1907](https://github.com/adobe/spacecat-audit-worker/issues/1907)) ([e34dd9b](https://github.com/adobe/spacecat-audit-worker/commit/e34dd9babce221560b33c24f5d57fe371d02b12f))
+
+## [1.299.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.299.0...v1.299.1) (2026-02-02)
+
+
+### Bug Fixes
+
+* Rerunning an audit needs to preserve any previous edits from the… ([#1918](https://github.com/adobe/spacecat-audit-worker/issues/1918)) ([a94d444](https://github.com/adobe/spacecat-audit-worker/commit/a94d4447d5e4bd49a6b5ded651651d24204b5dad))
+
+# [1.299.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.298.0...v1.299.0) (2026-02-02)
+
+
+### Features
+
+* paid-traffic opportunities - ignore past montly/weekly oppty ([#1926](https://github.com/adobe/spacecat-audit-worker/issues/1926)) ([8ade10d](https://github.com/adobe/spacecat-audit-worker/commit/8ade10d8a1ecfc3a8b80c25b85209ece94b38979))
+
+# [1.298.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.297.2...v1.298.0) (2026-02-02)
+
+
+### Features
+
+* added feature flag for manual a11y code injection flow ([#1880](https://github.com/adobe/spacecat-audit-worker/issues/1880)) ([b4c45ee](https://github.com/adobe/spacecat-audit-worker/commit/b4c45eef0f0484f6bdc06ece94d07de277c7281f))
+
+## [1.297.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.297.1...v1.297.2) (2026-02-02)
+
+
+### Bug Fixes
+
+* filter ptr-selector by paid traffic and lower threshold to 30K ([#1923](https://github.com/adobe/spacecat-audit-worker/issues/1923)) ([19d165d](https://github.com/adobe/spacecat-audit-worker/commit/19d165dd6db40e5bc31f89c1e31b83692bb1f152))
+
+## [1.297.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.297.0...v1.297.1) (2026-02-02)
+
+
+### Bug Fixes
+
+* exclude searchbots from cdn log reports ([#1922](https://github.com/adobe/spacecat-audit-worker/issues/1922)) ([7a41032](https://github.com/adobe/spacecat-audit-worker/commit/7a41032108b23a44886cb77df4cf3bae01006098))
+
+# [1.297.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.296.2...v1.297.0) (2026-01-31)
+
+
+### Features
+
+* add ptr-selector audit ([#1919](https://github.com/adobe/spacecat-audit-worker/issues/1919)) ([44d6888](https://github.com/adobe/spacecat-audit-worker/commit/44d68886d9c60434f9e34df7d302687754df78e0))
+
+## [1.296.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.296.1...v1.296.2) (2026-01-31)
+
+
+### Bug Fixes
+
+*  audit is immutable move db queries to where they are needed ([#1917](https://github.com/adobe/spacecat-audit-worker/issues/1917)) ([aba6e70](https://github.com/adobe/spacecat-audit-worker/commit/aba6e707c1b06aa32b6cf1179c00c8334bfdb686))
+
+## [1.296.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.296.0...v1.296.1) (2026-01-30)
+
+
+### Bug Fixes
+
+* SITES-39831 - [canonical] Add post-scrape filtering for auth pages ([#1911](https://github.com/adobe/spacecat-audit-worker/issues/1911)) ([b810c14](https://github.com/adobe/spacecat-audit-worker/commit/b810c14414fddf5aeca8a36e3f0d445e8f95ae43))
+
+# [1.296.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.295.2...v1.296.0) (2026-01-30)
+
+
+### Features
+
+* exclude paths in Athena query builder ([#1904](https://github.com/adobe/spacecat-audit-worker/issues/1904)) ([d82489c](https://github.com/adobe/spacecat-audit-worker/commit/d82489c79a09994d9d57d1f88008ed3ae321499b))
+
+## [1.295.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.295.1...v1.295.2) (2026-01-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.99.0 ([#1915](https://github.com/adobe/spacecat-audit-worker/issues/1915)) ([49bcd7e](https://github.com/adobe/spacecat-audit-worker/commit/49bcd7e1de060537aca27ffe01de8148a5e580b0))
+
+## [1.295.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.295.0...v1.295.1) (2026-01-30)
+
+
+### Bug Fixes
+
+* fetch ahref cpc if available ([#1913](https://github.com/adobe/spacecat-audit-worker/issues/1913)) ([cfc3239](https://github.com/adobe/spacecat-audit-worker/commit/cfc3239edf92038d75b9bd1c2dd62679b80c7d1f))
+
 # [1.295.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.294.5...v1.295.0) (2026-01-30)
 
 
