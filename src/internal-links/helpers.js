@@ -11,8 +11,7 @@
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { createAuditLogger } from '../common/context-logger.js';
-// eslint-disable-next-line import/no-cycle
-import { normalizeUrl } from './crawl-detection.js';
+import { normalizeUrl } from './url-utils.js';
 
 const AUDIT_TYPE = 'broken-internal-links';
 

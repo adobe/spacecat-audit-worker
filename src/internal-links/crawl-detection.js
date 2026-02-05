@@ -14,6 +14,8 @@ import { load as cheerioLoad } from 'cheerio';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { isWithinAuditScope } from './subpath-filter.js';
 import { createAuditLogger } from '../common/context-logger.js';
+import { normalizeUrl } from './url-utils.js';
+import { isLinkInaccessible } from './helpers.js';
 
 const AUDIT_TYPE = 'broken-internal-links';
 
@@ -27,54 +29,6 @@ export const PAGES_PER_BATCH = 10;
 const sleep = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
-
-/**
- * Normalizes a URL for consistent comparison and storage.
- * Handles encoding issues, trailing slashes, and www prefix.
- * @param {string} url - The URL to normalize
- * @returns {string} Normalized URL
- */
-export function normalizeUrl(url) {
-  try {
-    const parsed = new URL(url);
-
-    // Remove www prefix for consistency
-    parsed.hostname = parsed.hostname.replace(/^www\./, '');
-
-    // Decode and clean up pathname
-    // Handle spaces and other problematic characters
-    let pathname = decodeURIComponent(parsed.pathname);
-
-    // Replace URL-encoded spaces with hyphens (common pattern in slugs)
-    // e.g., "sage-green-colour-%20combination" -> "sage-green-colour-combination"
-    pathname = pathname.replace(/%20/g, '-').replace(/\s+/g, '-');
-
-    // Remove duplicate hyphens
-    pathname = pathname.replace(/-+/g, '-');
-
-    // Remove trailing slashes (except for root path)
-    if (pathname !== '/' && pathname.endsWith('/')) {
-      pathname = pathname.slice(0, -1);
-    }
-
-    parsed.pathname = pathname;
-
-    // Sort query parameters for consistent ordering
-    parsed.searchParams.sort();
-
-    // Remove hash/fragment for link checking purposes
-    parsed.hash = '';
-
-    return parsed.toString();
-  } catch (error) {
-    // If URL parsing fails, return original URL
-    return url;
-  }
-}
-
-// Import after normalizeUrl is defined to avoid circular dependency
-// eslint-disable-next-line import/order, import/first, import/no-cycle
-import { isLinkInaccessible } from './helpers.js';
 
 /**
  * Extracts internal links from HTML using cheerio

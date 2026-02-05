@@ -28,9 +28,9 @@ import { filterByAuditScope, isWithinAuditScope, extractPathPrefix } from './sub
 import {
   detectBrokenLinksFromCrawlBatch,
   mergeAndDeduplicate,
-  normalizeUrl,
   PAGES_PER_BATCH,
 } from './crawl-detection.js';
+import { normalizeUrl } from './url-utils.js';
 import {
   loadBatchState,
   saveBatchState,
