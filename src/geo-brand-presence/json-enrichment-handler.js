@@ -177,8 +177,23 @@ async function sendFallbackToMystique(metadata, prompts, context, log) {
  * @returns {Promise<Object>} HTTP response
  */
 export default async function handleJsonEnrichment(message, context) {
+  // TODO: Remove diagnostic logging after debugging
+  // eslint-disable-next-line no-console
+  console.log('ENRICHMENT_HANDLER_INVOKED:', JSON.stringify(message));
+
+  let log;
+  try {
+    ({
+      log,
+    } = context);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('ENRICHMENT_HANDLER_CONTEXT_ERROR:', e);
+    throw e;
+  }
+
   const {
-    log, dataAccess, sqs, s3Client, env,
+    dataAccess, sqs, s3Client, env,
   } = context;
   const { Site } = dataAccess;
   const { auditId, siteId, batchStart = 0 } = message;
@@ -309,13 +324,20 @@ export default async function handleJsonEnrichment(message, context) {
 
       const { Configuration } = dataAccess;
       const configuration = await Configuration.findLatest();
+      const auditQueue = configuration.getQueues().audits;
 
-      await sqs.sendMessage(configuration.getQueues().audits, {
+      // TODO: Remove diagnostic logging after debugging
+      log.info('%s: Sending continuation to queue: %s, batchStart: %d', AUDIT_NAME, auditQueue, batchEnd);
+
+      await sqs.sendMessage(auditQueue, {
         type: URL_ENRICHMENT_TYPE,
         auditId,
         siteId,
         batchStart: batchEnd,
       });
+
+      // TODO: Remove diagnostic logging after debugging
+      log.info('%s: Continuation message sent successfully for auditId: %s', AUDIT_NAME, auditId);
 
       return ok({
         status: 'processing',
