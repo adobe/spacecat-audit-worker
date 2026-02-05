@@ -156,6 +156,7 @@ export default async function handler(message, context) {
 
   // Get deleteOldSuggestions config from site handler configuration (defaults to true)
   const altTextConfig = site.getConfig()?.getHandlers()?.[FEATURE_FLAG_CONFIG] || {};
+  log.debug(`[${AUDIT_TYPE}]: altTextConfig: ${JSON.stringify(altTextConfig)}`);
   const deleteOldSuggestions = altTextConfig?.enabled?.sites?.includes(siteId) ?? false;
 
   log.debug(`[${AUDIT_TYPE}]: deleteOldSuggestions config: ${deleteOldSuggestions}`);
