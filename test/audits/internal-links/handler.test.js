@@ -578,7 +578,11 @@ describe('Broken internal links audit', () => {
     expect(result.auditResult).to.have.property('success', true);
     expect(result.urls.length).to.be.greaterThan(0);
   }).timeout(10000);
-  it('runAuditAndSubmitForScraping should throw error when RUM audit returns success=false', async () => {
+  it.skip('runAuditAndSubmitForScraping should throw error when RUM audit returns success=false (DISABLED: RUM detection is disabled)', async () => {
+    // This test is skipped because RUM detection is currently disabled in crawl-only mode
+    // The function no longer runs internalLinksAuditRunner, so it won't throw this error
+    // When RUM detection is re-enabled, uncomment this test
+    
     // Mock AhrefsAPIClient
     const mockAhrefsClient = {
       getTopPages: sandbox.stub().resolves({
