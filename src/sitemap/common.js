@@ -20,9 +20,6 @@ import {
   getUrlWithoutPath,
 } from '../support/utils.js';
 
-// User Agent constant
-const USER_AGENT = 'Spacecat/1.0'; // identify ourselves in all HTTP requests
-
 // Performance tuning constants - Optimized for 20K-30K URLs in 15min Lambda
 export const BATCH_SIZE = 50; // Aggressive batching for high volume
 export const BATCH_DELAY_MS = 50; // Minimal delay to prevent server overload
@@ -88,10 +85,6 @@ async function fetchWithHeadFallback(url, options = {}) {
       ...options,
       method: 'HEAD',
       signal: controller.signal,
-      headers: {
-        ...options.headers,
-        'User-Agent': USER_AGENT,
-      },
     });
 
     clearTimeout(timeoutId);
@@ -105,10 +98,6 @@ async function fetchWithHeadFallback(url, options = {}) {
           ...options,
           method: 'GET',
           signal: controller.signal,
-          headers: {
-            ...options.headers,
-            'User-Agent': USER_AGENT,
-          },
         });
 
         clearTimeout(getTimeoutId);
@@ -138,9 +127,6 @@ export async function fetchContent(targetUrl) {
     const response = await fetch(targetUrl, {
       method: 'GET',
       signal: controller.signal,
-      headers: {
-        'User-Agent': USER_AGENT,
-      },
     });
 
     clearTimeout(timeoutId);
