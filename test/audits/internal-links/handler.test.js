@@ -59,24 +59,25 @@ const AUDIT_RESULT_DATA = [
   },
 ];
 
-// Audit result with priority (after merge step calculates priority)
+// Audit result with priority (after normalization and priority calculation)
+// URLs are normalized: www prefix removed, trailing slashes removed, etc.
 const AUDIT_RESULT_DATA_WITH_PRIORITY = [
   {
     trafficDomain: 1800,
-    urlTo: 'https://www.petplace.com/a01',
-    urlFrom: 'https://www.petplace.com/a02nf',
+    urlTo: 'https://petplace.com/a01',
+    urlFrom: 'https://petplace.com/a02nf',
     priority: 'high',
   },
   {
     trafficDomain: 1200,
-    urlTo: 'https://www.petplace.com/ax02',
-    urlFrom: 'https://www.petplace.com/ax02nf',
+    urlTo: 'https://petplace.com/ax02',
+    urlFrom: 'https://petplace.com/ax02nf',
     priority: 'medium',
   },
   {
     trafficDomain: 200,
-    urlTo: 'https://www.petplace.com/a01',
-    urlFrom: 'https://www.petplace.com/a01nf',
+    urlTo: 'https://petplace.com/a01',
+    urlFrom: 'https://petplace.com/a01nf',
     priority: 'low',
   },
 ];
@@ -232,9 +233,12 @@ describe('Broken internal links audit', () => {
     ];
 
     // Use esmock to mock isLinkInaccessible to throw for one link
+    // Note: isLinkInaccessible is called BEFORE normalization in handler.js (line 159),
+    // so it receives URLs with www prefix as they come from RUM
     const { internalLinksAuditRunner: internalLinksAuditRunnerMocked } = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/helpers.js': {
         isLinkInaccessible: async (url) => {
+          // Check for original URL (with www) since that's what's passed from RUM
           if (url === 'https://www.example.com/catastrophic-error') {
             throw new Error('Database connection failed');
           }
@@ -255,7 +259,8 @@ describe('Broken internal links audit', () => {
     // Should handle the rejection gracefully and only include successful validations
     expect(result.auditResult.success).to.equal(true);
     expect(result.auditResult.brokenInternalLinks.length).to.equal(1);
-    expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/valid');
+    // URLs are normalized (www prefix removed)
+    expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://example.com/valid');
     
     // Should have logged the error - check with matcher for the prefix
     const errorCalls = contextWithError.log.error.getCalls();
@@ -356,9 +361,11 @@ describe('Broken internal links audit', () => {
     // CRITICAL: Verify scraper configuration for dynamic content
     expect(result.processingType).to.equal('default');
     expect(result.options).to.be.an('object');
+    expect(result.options.enableJavascript).to.equal(true); // CRITICAL: JavaScript must be enabled
     expect(result.options.pageLoadTimeout).to.equal(30000);
     expect(result.options.waitForSelector).to.equal('body');
     expect(result.options.waitTimeoutForMetaTags).to.equal(5000);
+    expect(result.options.scrollToBottom).to.equal(true); // NEW: Verify scroll option
   }).timeout(10000);
 
   it('submitForScraping should fall back to includedURLs when database fetch fails', async () => {

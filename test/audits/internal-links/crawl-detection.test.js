@@ -1120,4 +1120,387 @@ describe('Crawl Detection Module', () => {
     });
   });
 
+  describe('normalizeUrl', () => {
+    let normalizeUrl;
+
+    beforeEach(async () => {
+      const module = await esmock('../../../src/internal-links/crawl-detection.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectFromKey: getObjectFromKeyStub,
+        },
+        '../../../src/internal-links/helpers.js': {
+          isLinkInaccessible: isLinkInaccessibleStub,
+        },
+        '../../../src/internal-links/subpath-filter.js': {
+          isWithinAuditScope: isWithinAuditScopeStub,
+        },
+      });
+      normalizeUrl = module.normalizeUrl;
+    });
+
+    it('should remove trailing slashes from non-root paths', () => {
+      const result = normalizeUrl('https://example.com/path/to/page/');
+      expect(result).to.equal('https://example.com/path/to/page');
+    });
+
+    it('should preserve trailing slash for root path', () => {
+      const result = normalizeUrl('https://example.com/');
+      expect(result).to.equal('https://example.com/');
+    });
+
+    it('should handle URL-encoded spaces (%20) in path', () => {
+      const result = normalizeUrl('https://example.com/blogs/sage-green-colour-%20combination-for-the-wall.html');
+      expect(result).to.equal('https://example.com/blogs/sage-green-colour-combination-for-the-wall.html');
+    });
+
+    it('should replace regular spaces with hyphens', () => {
+      const result = normalizeUrl('https://example.com/path with spaces/page.html');
+      expect(result).to.equal('https://example.com/path-with-spaces/page.html');
+    });
+
+    it('should remove duplicate hyphens', () => {
+      const result = normalizeUrl('https://example.com/path--with---multiple----hyphens/');
+      expect(result).to.equal('https://example.com/path-with-multiple-hyphens');
+    });
+
+    it('should remove www prefix', () => {
+      const result = normalizeUrl('https://www.example.com/path');
+      expect(result).to.equal('https://example.com/path');
+    });
+
+    it('should sort query parameters', () => {
+      const result = normalizeUrl('https://example.com/page?z=1&a=2&m=3');
+      expect(result).to.equal('https://example.com/page?a=2&m=3&z=1');
+    });
+
+    it('should remove hash fragments', () => {
+      const result = normalizeUrl('https://example.com/page#section');
+      expect(result).to.equal('https://example.com/page');
+    });
+
+    it('should handle complex URL with multiple normalization issues', () => {
+      const result = normalizeUrl('https://www.example.com/path/with%20spaces/page.html/?z=1&a=2#section');
+      expect(result).to.equal('https://example.com/path/with-spaces/page.html?a=2&z=1');
+    });
+
+    it('should return original URL if parsing fails', () => {
+      const invalidUrl = 'not-a-valid-url';
+      const result = normalizeUrl(invalidUrl);
+      expect(result).to.equal(invalidUrl);
+    });
+  });
+
+  describe('Form Actions and Additional Link Types', () => {
+    const createMockHtmlWithForms = () => `
+      <html>
+        <head>
+          <title>Test Page</title>
+          <link rel="canonical" href="https://example.com/canonical-page" />
+          <link rel="alternate" hreflang="es" href="https://example.com/es/page" />
+          <link rel="alternate" hreflang="fr" href="https://example.com/fr/page" />
+        </head>
+        <body>
+          <a href="https://example.com/regular-link">Regular Link</a>
+          <form action="https://example.com/submit-form" method="POST">
+            <input type="text" name="field" />
+          </form>
+          <form action="https://example.com/another-submit" method="GET">
+            <input type="text" name="query" />
+          </form>
+          <form action="#fragment-only">
+            <input type="text" name="ignored" />
+          </form>
+          <form action="javascript:void(0)">
+            <input type="text" name="ignored" />
+          </form>
+        </body>
+      </html>
+    `;
+
+    it('should extract form action URLs', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      getObjectFromKeyStub.withArgs(sinon.match.any, 'test-bucket', 's3-key-1').resolves({
+        scrapeResult: { rawBody: createMockHtmlWithForms() },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.withArgs('https://example.com/submit-form').resolves(true);
+      isLinkInaccessibleStub.withArgs('https://example.com/another-submit').resolves(false);
+      isLinkInaccessibleStub.withArgs('https://example.com/regular-link').resolves(false);
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      // Should find broken form action
+      expect(result.results).to.have.lengthOf(1);
+      expect(result.results[0]).to.deep.include({
+        urlFrom: 'https://example.com/page1',
+        urlTo: 'https://example.com/submit-form',
+        itemType: 'form',
+        anchorText: '[form action]',
+      });
+    });
+
+    it('should extract canonical link URLs', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      getObjectFromKeyStub.withArgs(sinon.match.any, 'test-bucket', 's3-key-1').resolves({
+        scrapeResult: { rawBody: createMockHtmlWithForms() },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.withArgs('https://example.com/canonical-page').resolves(true);
+      isLinkInaccessibleStub.resolves(false);
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      // Should find broken canonical link
+      const canonicalLink = result.results.find((r) => r.itemType === 'canonical');
+      expect(canonicalLink).to.exist;
+      expect(canonicalLink).to.deep.include({
+        urlFrom: 'https://example.com/page1',
+        urlTo: 'https://example.com/canonical-page',
+        itemType: 'canonical',
+        anchorText: '[canonical]',
+      });
+    });
+
+    it('should extract alternate language links', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      getObjectFromKeyStub.withArgs(sinon.match.any, 'test-bucket', 's3-key-1').resolves({
+        scrapeResult: { rawBody: createMockHtmlWithForms() },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.withArgs('https://example.com/es/page').resolves(true);
+      isLinkInaccessibleStub.withArgs('https://example.com/fr/page').resolves(true);
+      isLinkInaccessibleStub.resolves(false);
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      // Should find broken alternate links
+      const alternateLinks = result.results.filter((r) => r.itemType === 'alternate');
+      expect(alternateLinks).to.have.lengthOf(2);
+      
+      const esLink = alternateLinks.find((r) => r.anchorText === '[alternate:es]');
+      expect(esLink).to.exist;
+      expect(esLink.urlTo).to.equal('https://example.com/es/page');
+
+      const frLink = alternateLinks.find((r) => r.anchorText === '[alternate:fr]');
+      expect(frLink).to.exist;
+      expect(frLink.urlTo).to.equal('https://example.com/fr/page');
+    });
+
+    it('should ignore form actions with hash-only or javascript URLs', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      getObjectFromKeyStub.withArgs(sinon.match.any, 'test-bucket', 's3-key-1').resolves({
+        scrapeResult: { rawBody: createMockHtmlWithForms() },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.resolves(false);
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      // Should NOT check form actions with # or javascript:
+      expect(isLinkInaccessibleStub).to.not.have.been.calledWith('#fragment-only');
+      expect(isLinkInaccessibleStub).to.not.have.been.calledWith('javascript:void(0)');
+    });
+
+    it('should apply URL normalization to all extracted links', async () => {
+      const htmlWithEncodedUrls = `
+        <html>
+          <head>
+            <link rel="canonical" href="https://example.com/page/" />
+          </head>
+          <body>
+            <a href="https://example.com/path/with%20spaces/">Link with spaces</a>
+            <form action="https://www.example.com/submit/">
+              <input type="text" />
+            </form>
+          </body>
+        </html>
+      `;
+
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      getObjectFromKeyStub.withArgs(sinon.match.any, 'test-bucket', 's3-key-1').resolves({
+        scrapeResult: { rawBody: htmlWithEncodedUrls },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.resolves(true);
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      // All URLs should be normalized (no trailing slashes, no %20, no www)
+      expect(result.results).to.have.lengthOf(3);
+      
+      const linkResult = result.results.find((r) => r.itemType === 'link');
+      expect(linkResult.urlTo).to.equal('https://example.com/path/with-spaces');
+
+      const formResult = result.results.find((r) => r.itemType === 'form');
+      expect(formResult.urlTo).to.equal('https://example.com/submit');
+
+      const canonicalResult = result.results.find((r) => r.itemType === 'canonical');
+      expect(canonicalResult.urlTo).to.equal('https://example.com/page');
+    });
+
+    it('should handle invalid canonical link URLs gracefully', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      const htmlWithInvalidCanonical = `
+        <html>
+          <head>
+            <link rel="canonical" href="http://[invalid-bracket">
+          </head>
+          <body>
+            <a href="/valid-link">Valid</a>
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.withArgs(sinon.match.any, 'test-bucket', 's3-key-1').resolves({
+        scrapeResult: { rawBody: htmlWithInvalidCanonical },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.resolves(false);
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      // Should skip invalid canonical and process valid link
+      expect(result.results).to.have.lengthOf(0);
+      const canonicalLinks = result.results.filter((r) => r.itemType === 'canonical');
+      expect(canonicalLinks).to.have.lengthOf(0);
+    });
+
+    it('should handle invalid form action URLs gracefully', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      const htmlWithInvalidForm = `
+        <html>
+          <body>
+            <form action="http://]invalid-bracket">
+              <input type="text" name="test" />
+            </form>
+            <a href="/valid-link">Valid</a>
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.withArgs(sinon.match.any, 'test-bucket', 's3-key-1').resolves({
+        scrapeResult: { rawBody: htmlWithInvalidForm },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.resolves(false);
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      // Should skip invalid form action and process valid link
+      expect(result.results).to.have.lengthOf(0);
+      const formLinks = result.results.filter((r) => r.itemType === 'form');
+      expect(formLinks).to.have.lengthOf(0);
+    });
+
+    it('should handle invalid alternate link URLs gracefully', async () => {
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 's3-key-1'],
+      ]);
+
+      const htmlWithInvalidAlternate = `
+        <html>
+          <head>
+            <link rel="alternate" hreflang="es" href="http:// invalid-space">
+            <link rel="alternate" hreflang="fr" href="/valid-fr">
+          </head>
+          <body>
+            <a href="/valid-link">Valid</a>
+          </body>
+        </html>
+      `;
+
+      getObjectFromKeyStub.withArgs(sinon.match.any, 'test-bucket', 's3-key-1').resolves({
+        scrapeResult: { rawBody: htmlWithInvalidAlternate },
+        finalUrl: 'https://example.com/page1',
+      });
+
+      isLinkInaccessibleStub.withArgs('https://example.com/valid-fr').resolves(true);
+      isLinkInaccessibleStub.resolves(false);
+
+      const result = await detectBrokenLinksFromCrawlBatch({
+        scrapeResultPaths,
+        batchStartIndex: 0,
+        batchSize: 1,
+        initialBrokenUrls: [],
+        initialWorkingUrls: [],
+      }, mockContext);
+
+      // Should skip invalid alternate but process valid one
+      const alternateLinks = result.results.filter((r) => r.itemType === 'alternate');
+      expect(alternateLinks).to.have.lengthOf(1);
+      expect(alternateLinks[0].urlTo).to.equal('https://example.com/valid-fr');
+      expect(alternateLinks[0].anchorText).to.equal('[alternate:fr]');
+    });
+  });
+
 });

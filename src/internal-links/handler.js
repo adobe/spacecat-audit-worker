@@ -28,6 +28,7 @@ import { filterByAuditScope, isWithinAuditScope, extractPathPrefix } from './sub
 import {
   detectBrokenLinksFromCrawlBatch,
   mergeAndDeduplicate,
+  normalizeUrl,
   PAGES_PER_BATCH,
 } from './crawl-detection.js';
 import {
@@ -187,9 +188,9 @@ export async function internalLinksAuditRunner(auditUrl, context) {
         && isWithinAuditScope(result.link.url_to, baseURL)
       ))
       .map((result) => ({
-        // Preserve original URLs from RUM data
-        urlFrom: result.link.url_from,
-        urlTo: result.link.url_to,
+        // Normalize URLs for consistent comparison with crawl detection
+        urlFrom: normalizeUrl(result.link.url_from),
+        urlTo: normalizeUrl(result.link.url_to),
         trafficDomain: result.link.traffic_domain,
       }));
 
@@ -334,6 +335,10 @@ export async function submitForScraping(context) {
   log.info(`Submitting ${finalUrls.length} URLs for scraping (cache enabled)`);
   log.info('==========================================');
 
+  // Configure scraper to capture lazy-loaded content
+  // Many sites use Intersection Observers to load content (related articles, comments, etc.)
+  // only when scrolled into view. scrollToBottom: true enables gradual scrolling with
+  // safeguards against infinite scroll pages (10s max, height change detection).
   return {
     auditResult: audit.getAuditResult(),
     fullAuditRef: audit.getFullAuditRef(),
@@ -342,12 +347,16 @@ export async function submitForScraping(context) {
     type: 'broken-internal-links',
     processingType: 'default',
     options: {
-      pageLoadTimeout: 30000, // Increase from default 15s to 30s for slow sites
+      // CRITICAL: Ensure JavaScript is enabled
+      enableJavascript: true,
+      // Increase from default 15s to 30s for slow sites
+      pageLoadTimeout: 30000,
+      // Wait for body element to be present
       waitForSelector: 'body',
-      // Adds 5s wait for meta tags - triggers additional delay for dynamic content
+      // Wait up to 5s for meta tags (legacy option)
       waitTimeoutForMetaTags: 5000,
-      // Note: This waits for networkidle2 + body + meta tags
-      // Helps capture late-loading content like "Explore related blogs" sections
+      // Scroll to trigger lazy-loaded content like related blogs
+      scrollToBottom: true,
     },
   };
 }

@@ -538,4 +538,48 @@ describe('isLinkInaccessible - Asset Handling', () => {
     const result = await isLinkInaccessible('https://example.com/redirect', mockLog, 'test-site-id');
     expect(result).to.be.false;
   });
+
+  it('should normalize URL before checking (trailing slash)', async function call() {
+    this.timeout(6000);
+    // Input URL has trailing slash, but normalized URL should not
+    nock('https://example.com')
+      .head('/page')
+      .reply(404);
+
+    const result = await isLinkInaccessible('https://example.com/page/', mockLog, 'test-site-id');
+    expect(result).to.be.true;
+  });
+
+  it('should normalize URL before checking (URL-encoded space)', async function call() {
+    this.timeout(6000);
+    // Input URL has %20, but normalized URL should have hyphen
+    nock('https://example.com')
+      .head('/blogs/sage-green-colour-combination-for-the-wall.html')
+      .reply(404);
+
+    const result = await isLinkInaccessible('https://example.com/blogs/sage-green-colour-%20combination-for-the-wall.html', mockLog, 'test-site-id');
+    expect(result).to.be.true;
+  });
+
+  it('should normalize URL before checking (www prefix)', async function call() {
+    this.timeout(6000);
+    // Input URL has www prefix, but normalized URL should not
+    nock('https://example.com')
+      .head('/page')
+      .reply(200);
+
+    const result = await isLinkInaccessible('https://www.example.com/page', mockLog, 'test-site-id');
+    expect(result).to.be.false;
+  });
+
+  it('should normalize URL before checking (multiple issues combined)', async function call() {
+    this.timeout(6000);
+    // Input URL has trailing slash, %20, and www - all should be normalized
+    nock('https://example.com')
+      .head('/path/with-spaces/page.html')
+      .reply(200);
+
+    const result = await isLinkInaccessible('https://www.example.com/path/with%20spaces/page.html/', mockLog, 'test-site-id');
+    expect(result).to.be.false;
+  });
 });

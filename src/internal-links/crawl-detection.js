@@ -12,7 +12,6 @@
 
 import { load as cheerioLoad } from 'cheerio';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { isLinkInaccessible } from './helpers.js';
 import { isWithinAuditScope } from './subpath-filter.js';
 import { createAuditLogger } from '../common/context-logger.js';
 
@@ -30,6 +29,54 @@ const sleep = (ms) => new Promise((resolve) => {
 });
 
 /**
+ * Normalizes a URL for consistent comparison and storage.
+ * Handles encoding issues, trailing slashes, and www prefix.
+ * @param {string} url - The URL to normalize
+ * @returns {string} Normalized URL
+ */
+export function normalizeUrl(url) {
+  try {
+    const parsed = new URL(url);
+
+    // Remove www prefix for consistency
+    parsed.hostname = parsed.hostname.replace(/^www\./, '');
+
+    // Decode and clean up pathname
+    // Handle spaces and other problematic characters
+    let pathname = decodeURIComponent(parsed.pathname);
+
+    // Replace URL-encoded spaces with hyphens (common pattern in slugs)
+    // e.g., "sage-green-colour-%20combination" -> "sage-green-colour-combination"
+    pathname = pathname.replace(/%20/g, '-').replace(/\s+/g, '-');
+
+    // Remove duplicate hyphens
+    pathname = pathname.replace(/-+/g, '-');
+
+    // Remove trailing slashes (except for root path)
+    if (pathname !== '/' && pathname.endsWith('/')) {
+      pathname = pathname.slice(0, -1);
+    }
+
+    parsed.pathname = pathname;
+
+    // Sort query parameters for consistent ordering
+    parsed.searchParams.sort();
+
+    // Remove hash/fragment for link checking purposes
+    parsed.hash = '';
+
+    return parsed.toString();
+  } catch (error) {
+    // If URL parsing fails, return original URL
+    return url;
+  }
+}
+
+// Import after normalizeUrl is defined to avoid circular dependency
+// eslint-disable-next-line import/order, import/first, import/no-cycle
+import { isLinkInaccessible } from './helpers.js';
+
+/**
  * Extracts internal links from HTML using cheerio
  * @param {Object} $ - Cheerio instance
  * @param {string} pageUrl - The page URL for resolving relative links
@@ -40,6 +87,7 @@ const sleep = (ms) => new Promise((resolve) => {
 function extractInternalLinks($, pageUrl, baseHostname, log) {
   const internalLinks = [];
 
+  // Extract links from anchor tags
   $('a[href]').each((_, el) => {
     const $a = $(el);
     const href = $a.attr('href');
@@ -51,13 +99,78 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
 
       if (linkHostname === baseHostname) {
         internalLinks.push({
-          url: absoluteUrl,
+          url: normalizeUrl(absoluteUrl),
           anchorText: $a.text().trim() || '[no text]',
           type: 'link',
         });
       }
     } catch (urlError) {
       log.debug(`Skipping invalid href on ${pageUrl}: ${href}`);
+    }
+  });
+
+  // Extract form action URLs
+  $('form[action]').each((_, el) => {
+    const action = $(el).attr('action');
+    // eslint-disable-next-line no-script-url
+    if (!action || action.startsWith('#') || action.startsWith('javascript:')) return;
+
+    try {
+      const absoluteUrl = new URL(action, pageUrl).toString();
+      const linkHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
+
+      if (linkHostname === baseHostname) {
+        internalLinks.push({
+          url: normalizeUrl(absoluteUrl),
+          anchorText: '[form action]',
+          type: 'form',
+        });
+      }
+    } catch (urlError) {
+      log.debug(`Skipping invalid form action on ${pageUrl}: ${action}`);
+    }
+  });
+
+  // Extract canonical URLs
+  $('link[rel="canonical"]').each((_, el) => {
+    const href = $(el).attr('href');
+    if (!href) return;
+
+    try {
+      const absoluteUrl = new URL(href, pageUrl).toString();
+      const linkHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
+
+      if (linkHostname === baseHostname) {
+        internalLinks.push({
+          url: normalizeUrl(absoluteUrl),
+          anchorText: '[canonical]',
+          type: 'canonical',
+        });
+      }
+    } catch (urlError) {
+      log.debug(`Skipping invalid canonical on ${pageUrl}: ${href}`);
+    }
+  });
+
+  // Extract alternate language/locale links
+  $('link[rel="alternate"][hreflang]').each((_, el) => {
+    const href = $(el).attr('href');
+    if (!href) return;
+
+    try {
+      const absoluteUrl = new URL(href, pageUrl).toString();
+      const linkHostname = new URL(absoluteUrl).hostname.replace(/^www\./, '');
+
+      if (linkHostname === baseHostname) {
+        const hreflang = $(el).attr('hreflang');
+        internalLinks.push({
+          url: normalizeUrl(absoluteUrl),
+          anchorText: `[alternate:${hreflang}]`,
+          type: 'alternate',
+        });
+      }
+    } catch (urlError) {
+      log.debug(`Skipping invalid alternate link on ${pageUrl}: ${href}`);
     }
   });
 
@@ -88,7 +201,7 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
         const path = new URL(absoluteUrl).pathname.toLowerCase();
         const type = path.endsWith('.svg') ? 'svg' : 'image';
         assetReferences.push({
-          url: absoluteUrl,
+          url: normalizeUrl(absoluteUrl),
           type,
         });
       }
@@ -109,7 +222,7 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
 
       if (assetHostname === baseHostname || assetHostname.endsWith(`.${baseHostname}`)) {
         assetReferences.push({
-          url: absoluteUrl,
+          url: normalizeUrl(absoluteUrl),
           type: 'css',
         });
       }
@@ -130,7 +243,7 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
 
       if (assetHostname === baseHostname || assetHostname.endsWith(`.${baseHostname}`)) {
         assetReferences.push({
-          url: absoluteUrl,
+          url: normalizeUrl(absoluteUrl),
           type: 'js',
         });
       }

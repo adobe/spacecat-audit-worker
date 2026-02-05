@@ -11,6 +11,8 @@
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { createAuditLogger } from '../common/context-logger.js';
+// eslint-disable-next-line import/no-cycle
+import { normalizeUrl } from './crawl-detection.js';
 
 const AUDIT_TYPE = 'broken-internal-links';
 
@@ -206,17 +208,20 @@ async function checkLinkWithGet(url, isAsset, log) {
 export async function isLinkInaccessible(url, baseLog, siteId) {
   const log = createAuditLogger(baseLog, AUDIT_TYPE, siteId);
 
-  const isAsset = isStaticAsset(url);
+  // Normalize URL before validation for consistency with crawl detection
+  const normalizedUrl = normalizeUrl(url);
+
+  const isAsset = isStaticAsset(normalizedUrl);
 
   // Static assets often fail HEAD, so skip to GET with Range header
   if (!isAsset) {
-    const headResult = await checkLinkWithHead(url, log);
+    const headResult = await checkLinkWithHead(normalizedUrl, log);
     if (headResult !== null) {
       return headResult;
     }
   }
 
-  return checkLinkWithGet(url, isAsset, log);
+  return checkLinkWithGet(normalizedUrl, isAsset, log);
 }
 
 /**
