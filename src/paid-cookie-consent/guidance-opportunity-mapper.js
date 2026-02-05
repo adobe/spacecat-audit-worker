@@ -128,9 +128,9 @@ export function isLowSeverityGuidanceBody(body) {
   return false;
 }
 
-export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
-  // Get the data from urlConsent segment and filter for 'show' consent
-  const stats = audit.getAuditResult();
+export function mapToPaidOpportunity(siteId, url, auditData, pageGuidance, auditId) {
+  // auditData contains the stats directly (from getAuditData)
+  const stats = auditData;
   /*
       projectedTrafficLost,
       projectedTrafficValue,
@@ -144,7 +144,7 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
   return {
     siteId,
     id: randomUUID(),
-    auditId: audit.getAuditId(),
+    auditId,
     type: 'consent-banner',
     origin: 'AUTOMATION',
     title: 'Consent Banner covers essential page content',
@@ -174,6 +174,12 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
       bounceRate: stats.totalAverageBounceRate,
       pageType: 'unknown',
       temporalCondition: stats.temporalCondition,
+      // CPC information from audit result
+      appliedCPC: stats.appliedCPC,
+      cpcSource: stats.cpcSource,
+      defaultCPC: stats.defaultCPC,
+      ahrefsOrganicCPC: stats.ahrefsOrganicCPC,
+      ahrefsPaidCPC: stats.ahrefsPaidCPC,
     },
     status: 'NEW',
     tags: [

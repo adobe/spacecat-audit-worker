@@ -1,3 +1,94 @@
+## [1.300.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.300.0...v1.300.1) (2026-02-03)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1921](https://github.com/adobe/spacecat-audit-worker/issues/1921)) ([6ffab53](https://github.com/adobe/spacecat-audit-worker/commit/6ffab539070cf76b29a48803935a52e62d511b88))
+
+# [1.300.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.299.1...v1.300.0) (2026-02-03)
+
+
+### Features
+
+* adjust security-csp auto-fix data model ([#1907](https://github.com/adobe/spacecat-audit-worker/issues/1907)) ([e34dd9b](https://github.com/adobe/spacecat-audit-worker/commit/e34dd9babce221560b33c24f5d57fe371d02b12f))
+
+## [1.299.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.299.0...v1.299.1) (2026-02-02)
+
+
+### Bug Fixes
+
+* Rerunning an audit needs to preserve any previous edits from the… ([#1918](https://github.com/adobe/spacecat-audit-worker/issues/1918)) ([a94d444](https://github.com/adobe/spacecat-audit-worker/commit/a94d4447d5e4bd49a6b5ded651651d24204b5dad))
+
+# [1.299.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.298.0...v1.299.0) (2026-02-02)
+
+
+### Features
+
+* paid-traffic opportunities - ignore past montly/weekly oppty ([#1926](https://github.com/adobe/spacecat-audit-worker/issues/1926)) ([8ade10d](https://github.com/adobe/spacecat-audit-worker/commit/8ade10d8a1ecfc3a8b80c25b85209ece94b38979))
+
+# [1.298.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.297.2...v1.298.0) (2026-02-02)
+
+
+### Features
+
+* added feature flag for manual a11y code injection flow ([#1880](https://github.com/adobe/spacecat-audit-worker/issues/1880)) ([b4c45ee](https://github.com/adobe/spacecat-audit-worker/commit/b4c45eef0f0484f6bdc06ece94d07de277c7281f))
+
+## [1.297.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.297.1...v1.297.2) (2026-02-02)
+
+
+### Bug Fixes
+
+* filter ptr-selector by paid traffic and lower threshold to 30K ([#1923](https://github.com/adobe/spacecat-audit-worker/issues/1923)) ([19d165d](https://github.com/adobe/spacecat-audit-worker/commit/19d165dd6db40e5bc31f89c1e31b83692bb1f152))
+
+## [1.297.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.297.0...v1.297.1) (2026-02-02)
+
+
+### Bug Fixes
+
+* exclude searchbots from cdn log reports ([#1922](https://github.com/adobe/spacecat-audit-worker/issues/1922)) ([7a41032](https://github.com/adobe/spacecat-audit-worker/commit/7a41032108b23a44886cb77df4cf3bae01006098))
+
+# [1.297.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.296.2...v1.297.0) (2026-01-31)
+
+
+### Features
+
+* add ptr-selector audit ([#1919](https://github.com/adobe/spacecat-audit-worker/issues/1919)) ([44d6888](https://github.com/adobe/spacecat-audit-worker/commit/44d68886d9c60434f9e34df7d302687754df78e0))
+
+## [1.296.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.296.1...v1.296.2) (2026-01-31)
+
+
+### Bug Fixes
+
+*  audit is immutable move db queries to where they are needed ([#1917](https://github.com/adobe/spacecat-audit-worker/issues/1917)) ([aba6e70](https://github.com/adobe/spacecat-audit-worker/commit/aba6e707c1b06aa32b6cf1179c00c8334bfdb686))
+
+## [1.296.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.296.0...v1.296.1) (2026-01-30)
+
+
+### Bug Fixes
+
+* SITES-39831 - [canonical] Add post-scrape filtering for auth pages ([#1911](https://github.com/adobe/spacecat-audit-worker/issues/1911)) ([b810c14](https://github.com/adobe/spacecat-audit-worker/commit/b810c14414fddf5aeca8a36e3f0d445e8f95ae43))
+
+# [1.296.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.295.2...v1.296.0) (2026-01-30)
+
+
+### Features
+
+* exclude paths in Athena query builder ([#1904](https://github.com/adobe/spacecat-audit-worker/issues/1904)) ([d82489c](https://github.com/adobe/spacecat-audit-worker/commit/d82489c79a09994d9d57d1f88008ed3ae321499b))
+
+## [1.295.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.295.1...v1.295.2) (2026-01-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.99.0 ([#1915](https://github.com/adobe/spacecat-audit-worker/issues/1915)) ([49bcd7e](https://github.com/adobe/spacecat-audit-worker/commit/49bcd7e1de060537aca27ffe01de8148a5e580b0))
+
+## [1.295.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.295.0...v1.295.1) (2026-01-30)
+
+
+### Bug Fixes
+
+* fetch ahref cpc if available ([#1913](https://github.com/adobe/spacecat-audit-worker/issues/1913)) ([cfc3239](https://github.com/adobe/spacecat-audit-worker/commit/cfc3239edf92038d75b9bd1c2dd62679b80c7d1f))
+
 # [1.295.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.294.5...v1.295.0) (2026-01-30)
 
 

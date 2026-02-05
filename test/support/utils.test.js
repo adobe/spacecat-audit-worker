@@ -26,6 +26,7 @@ import {
   generatePlainHtml,
   limitConcurrency,
   limitConcurrencyAllSettled,
+  extractMainDomainName,
 } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -55,6 +56,43 @@ describe('getUrlWithoutPath', () => {
     const url = 'https://www.example.com/path/to/resource#fragment';
     const expected = 'https://www.example.com';
     expect(getUrlWithoutPath(url)).to.deep.equal(expected);
+  });
+});
+
+describe('extractMainDomainName', () => {
+  it('should extract domain name from www. prefixed hostname', () => {
+    const hostname = 'www.sunstargum.com';
+    expect(extractMainDomainName(hostname)).to.equal('sunstargum');
+  });
+
+  it('should extract domain name from hostname without www prefix', () => {
+    const hostname = 'example.com';
+    expect(extractMainDomainName(hostname)).to.equal('example');
+  });
+
+  it('should extract domain name from hostname with multiple dots', () => {
+    const hostname = 'example.co.uk';
+    expect(extractMainDomainName(hostname)).to.equal('example');
+  });
+
+  it('should extract domain name from www. prefixed hostname with multiple dots', () => {
+    const hostname = 'www.example.co.uk';
+    expect(extractMainDomainName(hostname)).to.equal('example');
+  });
+
+  it('should extract subdomain when present (not www)', () => {
+    const hostname = 'subdomain.example.com';
+    expect(extractMainDomainName(hostname)).to.equal('subdomain');
+  });
+
+  it('should handle single-level hostname', () => {
+    const hostname = 'localhost';
+    expect(extractMainDomainName(hostname)).to.equal('localhost');
+  });
+
+  it('should handle www. prefixed single-level hostname', () => {
+    const hostname = 'www.localhost';
+    expect(extractMainDomainName(hostname)).to.equal('localhost');
   });
 });
 

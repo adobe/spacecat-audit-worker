@@ -18,9 +18,11 @@ use(sinonChai);
 
 describe('User Agent Patterns', () => {
   let userAgentPatterns;
+  let cdnUtils;
 
   before(async () => {
     userAgentPatterns = await import('../../../src/common/user-agent-classification.js');
+    cdnUtils = await import('../../../src/utils/cdn-utils.js');
   });
 
   describe('PROVIDER_USER_AGENT_PATTERNS', () => {
@@ -31,7 +33,49 @@ describe('User Agent Patterns', () => {
       expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('perplexity');
       expect(PROVIDER_USER_AGENT_PATTERNS.chatgpt).to.include('ChatGPT');
       expect(PROVIDER_USER_AGENT_PATTERNS.perplexity).to.include('Perplexity');
+    });
+
+    it('separates Google AI agents from searchbots', () => {
+      const { PROVIDER_USER_AGENT_PATTERNS } = userAgentPatterns;
+
+      // Google AI agents
+      expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('googleai');
+      expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google$');
+      expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Gemini-Deep-Research');
+      expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google-NotebookLM');
+      expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('GoogleAgent');
+
+      // Google searchbots
+      expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('google');
+      expect(PROVIDER_USER_AGENT_PATTERNS.google).to.include('Googlebot');
+      expect(PROVIDER_USER_AGENT_PATTERNS.google).to.include('Google-Extended');
+    });
+
+    it('includes Bingbot as searchbot', () => {
+      const { PROVIDER_USER_AGENT_PATTERNS } = userAgentPatterns;
+
       expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('bing');
+      expect(PROVIDER_USER_AGENT_PATTERNS.bing).to.include('Bingbot');
+    });
+  });
+
+  describe('buildUserAgentFilter', () => {
+    it('excludes searchbots and includes AI agents', () => {
+      const { buildUserAgentFilter } = cdnUtils;
+      const filter = buildUserAgentFilter();
+
+      // Should exclude searchbots
+      expect(filter).to.not.include('Googlebot');
+      expect(filter).to.not.include('Google-Extended');
+      expect(filter).to.not.include('Bingbot');
+
+      // Should include AI agents (googleai, not google)
+      expect(filter).to.include('ChatGPT');
+      expect(filter).to.include('Perplexity');
+      expect(filter).to.include('GoogleAgent');
+      expect(filter).to.include('Gemini-Deep-Research');
+      expect(filter).to.include('Google-NotebookLM');
+      expect(filter).to.include('Claude');
     });
   });
 
