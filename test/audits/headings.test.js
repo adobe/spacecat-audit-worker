@@ -4427,28 +4427,29 @@ describe('Headings Audit', () => {
         // Verify that brand profile was used
         expect(mockLog.info).to.have.been.calledWith('[Brand Guidelines] Using brand profile from site config');
 
-        // Verify the extracted guidelines
-        expect(result).to.have.property('brand_persona');
-        expect(result.brand_persona).to.equal('Lovesac comes across as both a nurturing host and an inspired creator');
+        // Result should be a formatted markdown string
+        expect(result).to.be.a('string');
+        expect(result).to.include('## Brand Guidelines (from Brand Profile)');
 
-        expect(result).to.have.property('tone');
-        expect(result.tone).to.equal('warm, enthusiastic, optimistic, inviting, premium');
+        // Verify tone attributes are included
+        expect(result).to.include('### TONE ATTRIBUTES');
+        expect(result).to.include('warm');
+        expect(result).to.include('enthusiastic');
 
-        expect(result).to.have.property('editorial_guidelines');
-        expect(result.editorial_guidelines).to.have.property('do');
-        expect(result.editorial_guidelines.do).to.be.an('array').with.length(3);
-        expect(result.editorial_guidelines).to.have.property('dont');
-        expect(result.editorial_guidelines.dont).to.be.an('array').with.length(3);
+        // Verify editorial guidelines are included
+        expect(result).to.include('### EDITORIAL GUIDELINES');
+        expect(result).to.include('DO:');
+        expect(result).to.include("DON'T:");
 
-        expect(result).to.have.property('forbidden');
-        expect(result.forbidden).to.be.an('array');
-        expect(result.forbidden).to.include('Lowest price guaranteed');
-        expect(result.forbidden).to.include('aloof');
+        // Verify language patterns to avoid are included
+        expect(result).to.include('### LANGUAGE PATTERNS');
+        expect(result).to.include('Avoid:');
+        expect(result).to.include('Lowest price guaranteed');
 
         // Verify AI was not called (no fetchChatCompletion in this test)
       });
 
-      it('should extract all forbidden items from both language patterns and tone attributes', async () => {
+      it('should extract all avoid items from both language patterns and tone attributes', async () => {
         const mockBrandProfile = {
           main_profile: {
             tone_attributes: {
@@ -4499,14 +4500,18 @@ describe('Headings Audit', () => {
 
         const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
 
-        expect(result.forbidden).to.be.an('array').with.length(5);
-        expect(result.forbidden).to.include.members(['phrase1', 'phrase2', 'phrase3', 'tone1', 'tone2']);
+        // Result should be a formatted markdown string containing avoid items
+        expect(result).to.be.a('string');
+        expect(result).to.include('MUST AVOID: tone1, tone2');
+        expect(result).to.include('phrase1');
+        expect(result).to.include('phrase2');
+        expect(result).to.include('phrase3');
       });
 
       it('should handle missing main_profile and use empty defaults (covers fallback branches)', async () => {
-        // This test covers the fallback branch on line 150 when main_profile is missing
+        // This test covers the fallback branch when main_profile is missing
         const mockBrandProfile = {
-          // Missing main_profile - tests line 150 {} fallback
+          // Missing main_profile - tests fallback
           // But we need at least one property so it's not considered empty by getBrandGuidelines
           version: 1,
         };
@@ -4542,22 +4547,18 @@ describe('Headings Audit', () => {
 
         const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
 
-        // Should use empty defaults
-        expect(result.brand_persona).to.equal('');
-        expect(result.tone).to.equal('');
-        expect(result.editorial_guidelines.do).to.deep.equal([]);
-        expect(result.editorial_guidelines.dont).to.deep.equal([]);
-        expect(result.forbidden).to.deep.equal([]);
+        // Result should be a minimal markdown string with header only (no content sections)
+        expect(result).to.be.a('string');
+        expect(result).to.include('## Brand Guidelines (from Brand Profile)');
+        // Should not have any MUST USE since no primary tones
+        expect(result).to.not.include('MUST USE:');
       });
 
       it('should handle missing nested properties and use empty defaults', async () => {
         // Test with main_profile present but missing nested properties
         const mockBrandProfile = {
           main_profile: {
-            // Missing brand_personality - tests line 154 '' fallback
-            // Missing tone_attributes - tests line 157 {} fallback
-            // Missing editorial_guidelines - tests line 162-163 {} fallback
-            // Missing language_patterns - tests line 168 {} fallback
+            // Missing all nested properties - tests empty fallbacks
           },
         };
 
@@ -4592,12 +4593,13 @@ describe('Headings Audit', () => {
 
         const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
 
-        // Should use empty defaults for all missing properties
-        expect(result.brand_persona).to.equal('');
-        expect(result.tone).to.equal('');
-        expect(result.editorial_guidelines.do).to.deep.equal([]);
-        expect(result.editorial_guidelines.dont).to.deep.equal([]);
-        expect(result.forbidden).to.deep.equal([]);
+        // Result should be a minimal markdown string with header only
+        expect(result).to.be.a('string');
+        expect(result).to.include('## Brand Guidelines (from Brand Profile)');
+        // Should not have content sections when properties are missing
+        expect(result).to.not.include('MUST USE:');
+        expect(result).to.not.include('SIGNATURE PHRASES');
+        expect(result).to.not.include('BRAND VALUES');
       });
 
       it('should handle brand profile with missing avoid arrays', async () => {
@@ -4609,15 +4611,14 @@ describe('Headings Audit', () => {
             },
             tone_attributes: {
               primary: ['professional'],
-              // Missing avoid - tests line 170 || [] fallback
+              // Missing avoid - tests empty fallback
             },
             language_patterns: {
               preferred: ['test phrase'],
-              // Missing avoid - tests line 169 || [] fallback
+              // Missing avoid - tests empty fallback
             },
             editorial_guidelines: {
-              // Missing dos - tests line 164 || [] fallback
-              // Missing donts - tests line 165 || [] fallback
+              // Missing dos and donts - tests empty fallback
             },
           },
         };
@@ -4653,12 +4654,13 @@ describe('Headings Audit', () => {
 
         const result = await getBrandGuidelines(healthyTagsObject, mockLog, mockContext, mockSite);
 
-        // Should use empty arrays for missing avoid properties
-        expect(result.brand_persona).to.equal('Test persona');
-        expect(result.tone).to.equal('professional');
-        expect(result.editorial_guidelines.do).to.deep.equal([]);
-        expect(result.editorial_guidelines.dont).to.deep.equal([]);
-        expect(result.forbidden).to.deep.equal([]);
+        // Result should be a markdown string with present values
+        expect(result).to.be.a('string');
+        expect(result).to.include('## Brand Guidelines (from Brand Profile)');
+        expect(result).to.include('MUST USE: professional');
+        expect(result).to.include('test phrase');
+        // Should not have MUST AVOID since avoid array is missing
+        expect(result).to.not.include('MUST AVOID:');
       });
     });
 
