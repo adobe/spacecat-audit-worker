@@ -88,6 +88,27 @@ describe('Brand Profile Utils', () => {
       expect(result.signature_phrases).to.deep.equal([]);
       expect(result.editorial_guidelines.dos).to.deep.equal([]);
     });
+
+    it('should handle brand values with missing name or evidence', () => {
+      const brandProfile = {
+        main_profile: {
+          brand_values: {
+            core_values: [
+              { name: 'HasName' }, // missing evidence
+              { evidence: 'Has evidence' }, // missing name
+              {}, // missing both
+            ],
+          },
+        },
+      };
+
+      const result = extractBrandGuidelinesFromProfile(brandProfile);
+
+      expect(result.brand_values).to.have.lengthOf(3);
+      expect(result.brand_values[0]).to.deep.equal({ name: 'HasName', evidence: '' });
+      expect(result.brand_values[1]).to.deep.equal({ name: '', evidence: 'Has evidence' });
+      expect(result.brand_values[2]).to.deep.equal({ name: '', evidence: '' });
+    });
   });
 
   describe('formatBrandGuidelinesToMarkdown', () => {
