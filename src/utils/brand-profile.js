@@ -178,7 +178,7 @@ export function getBrandGuidelinesFromSite(site, log = null) {
       return formattedGuidelines;
     }
   } catch (error) {
-    log?.warn(`[Brand Guidelines] Error accessing brand profile from site config: ${error.message}`);
+    log?.error(`[Brand Guidelines] Error accessing brand profile from site config: ${error.message}`);
   }
 
   return '';
