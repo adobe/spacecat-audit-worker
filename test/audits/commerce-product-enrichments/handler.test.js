@@ -25,22 +25,46 @@ import {
 use(sinonChai);
 use(chaiAsPromised);
 
+// Valid ACCS format config for mocking
+const validACCSConfig = {
+  public: {
+    default: {
+      'commerce-endpoint': 'https://commerce.example.com/graphql',
+      headers: {
+        cs: {
+          'Magento-Environment-Id': 'env-123',
+          'Magento-Store-Code': 'store-code',
+          'Magento-Store-View-Code': 'view-code',
+          'Magento-Website-Code': 'website-code',
+          'Magento-Customer-Group': 'customer-group',
+          'x-api-key': 'api-key-123',
+        },
+      },
+    },
+  },
+};
+
 describe('Commerce Product Enrichments Handler', () => {
   let log;
   let site;
   let dataAccess;
+  let fetchStub;
 
   beforeEach(() => {
+    fetchStub = sinon.stub(global, 'fetch');
+
     log = {
       info: sinon.spy(),
       warn: sinon.spy(),
       error: sinon.spy(),
+      debug: sinon.spy(),
     };
 
     site = {
       getId: sinon.stub().returns('site-1'),
       getConfig: sinon.stub().returns({
         getIncludedURLs: sinon.stub().resolves([]),
+        getHandlers: sinon.stub().returns({}),
       }),
     };
 
@@ -49,6 +73,10 @@ describe('Commerce Product Enrichments Handler', () => {
         allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
       },
     };
+  });
+
+  afterEach(() => {
+    sinon.restore();
   });
 
   it('importTopPages returns top-pages metadata without limit when not provided', async () => {
@@ -712,5 +740,172 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.productPages).to.equal(0);
   });
 
-});
+  it('runAuditAndProcessResults extracts and logs commerce config successfully', async () => {
+    // Mock fetch to return valid ACCS config
+    fetchStub.resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(validACCSConfig),
+    });
 
+    site.getConfig.returns({
+      getHandlers: sinon.stub().returns({
+        'commerce-product-enrichments': {
+          instanceType: 'ACCS',
+        },
+      }),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: 'https://example.com/page-1',
+            finalUrl: 'https://example.com/page-1',
+            scrapeResult: {},
+          })),
+        },
+      }),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
+    ]);
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-10' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      scrapeResultPaths,
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(log.info).to.have.been.calledWith(sinon.match(/Commerce config extracted successfully/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/Commerce endpoint URL:/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/Magento-Environment-Id:/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/x-api-key: \[REDACTED\]/));
+  });
+
+  it('runAuditAndProcessResults logs warning when commerce config extraction fails', async () => {
+    // Mock fetch to return error
+    fetchStub.resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: 'https://example.com/page-1',
+            finalUrl: 'https://example.com/page-1',
+            scrapeResult: {},
+          })),
+        },
+      }),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
+    ]);
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-11' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      scrapeResultPaths,
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to extract commerce config/));
+  });
+
+  it('runAuditAndProcessResults logs optional headers as not set for AC format config', async () => {
+    const minimalACCSConfig = {
+      public: {
+        default: {
+          'commerce-endpoint': 'https://commerce.example.com/graphql',
+          headers: {
+            cs: {
+              'Magento-Environment-Id': 'env-123',
+            },
+          },
+        },
+      },
+    };
+
+    fetchStub.resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(minimalACCSConfig),
+    });
+
+    site.getConfig.returns({
+      getHandlers: sinon.stub().returns({
+        'commerce-product-enrichments': {
+          instanceType: 'ACCS',
+        },
+      }),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: 'https://example.com/page-1',
+            finalUrl: 'https://example.com/page-1',
+            scrapeResult: {},
+          })),
+        },
+      }),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
+    ]);
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-12' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      scrapeResultPaths,
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(log.info).to.have.been.calledWith(sinon.match(/Magento-Store-Code: not set/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/Magento-Store-View-Code: not set/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/Magento-Website-Code: not set/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/Magento-Customer-Group: not set/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/x-api-key: not set/));
+  });
+
+});

@@ -131,6 +131,32 @@ export function validateConfig(config, locale) {
 }
 
 /**
+ * Normalizes commerce config keys to support dot-separated alternatives.
+ * Adds hyphenated keys for any `commerce.*` keys while preserving originals.
+ * @param {Object} config - Raw config object.
+ * @returns {Object} Normalized config with hyphenated commerce keys.
+ */
+function normalizeCommerceConfigKeys(config) {
+  if (!config || typeof config !== 'object') {
+    return config;
+  }
+
+  let normalized = config;
+  for (const [key, value] of Object.entries(config)) {
+    if (key.startsWith('commerce.')) {
+      const hyphenKey = key.replace(/\./g, '-');
+      if (!hasText(config[hyphenKey])) {
+        if (normalized === config) {
+          normalized = { ...config };
+        }
+        normalized[hyphenKey] = value;
+      }
+    }
+  }
+  return normalized;
+}
+
+/**
  * Validates the commerce config return shape.
  * Checks for url and all required headers.
  * Supports both legacy Magento-* headers and new AC format (minimal headers).
@@ -169,13 +195,12 @@ function validateCommerceConfigShape(config, locale) {
     const isLegacyFormat = hasLegacyFields;
 
     if (isLegacyFormat) {
-      // Legacy Magento-* format validation - all fields required
+      // Legacy Magento-* format validation - store identifiers required
+      // Magento-Customer-Group and x-api-key are optional.
       const requiredHeaders = [
-        'Magento-Customer-Group',
         'Magento-Store-Code',
         'Magento-Store-View-Code',
         'Magento-Website-Code',
-        'x-api-key',
       ];
 
       for (const field of requiredHeaders) {
@@ -207,12 +232,13 @@ export async function extractCommerceConfigFromPAAS(params, log) {
     storeUrl,
     locale,
   } = params;
+  const localeLabel = locale || 'default';
 
   if (!params.config) {
     const localePath = locale ? `${locale}/` : '';
     const configPath = `${storeUrl}/${localePath}${configName}.json`;
     log.debug(`Fetching PAAS config from ${configPath}`);
-    const configData = await requestSpreadsheet(configPath, configSheet);
+    const configData = params.configData || await requestSpreadsheet(configPath, configSheet);
 
     let data;
     if (params.configSection) {
@@ -227,35 +253,56 @@ export async function extractCommerceConfigFromPAAS(params, log) {
       // Try to use default if it exists
       if (configData?.public?.default) {
         // eslint-disable-next-line no-param-reassign
-        params.config = configData.public.default;
+        params.config = normalizeCommerceConfigKeys(configData.public.default);
       } else {
         log.warn(`Invalid config file ${configPath} format for ${locale || 'default'} locale`);
         throw new Error(`Invalid config file ${configPath} format for ${locale || 'default'} locale`);
       }
     } else if (data && Array.isArray(data)) {
       // eslint-disable-next-line no-param-reassign
-      params.config = data.reduce((acc, { key, value }) => ({ ...acc, [key]: value }), {});
+      params.config = normalizeCommerceConfigKeys(
+        data.reduce((acc, { key, value }) => ({ ...acc, [key]: value }), {}),
+      );
     } else if (configData?.public?.default) {
       // eslint-disable-next-line no-param-reassign
-      params.config = configData.public.default;
+      params.config = normalizeCommerceConfigKeys(configData.public.default);
     } else {
       log.warn(`Invalid config file ${configPath} format for ${locale || 'default'} locale`);
       throw new Error(`Invalid config file ${configPath} format for ${locale || 'default'} locale`);
     }
+  } else {
+    // eslint-disable-next-line no-param-reassign
+    params.config = normalizeCommerceConfigKeys(params.config);
   }
 
-  const config = validateConfig(params.config, locale);
+  const { config } = params;
+  const validationConfig = {
+    ...config,
+    'commerce-customer-group': hasText(config['commerce-customer-group'])
+      ? config['commerce-customer-group']
+      : 'optional',
+    'commerce-x-api-key': hasText(config['commerce-x-api-key'])
+      ? config['commerce-x-api-key']
+      : 'optional',
+  };
+  validateConfig(validationConfig, localeLabel);
+
+  const headers = {
+    'Magento-Environment-Id': config['commerce-environment-id'],
+    'Magento-Store-Code': config['commerce-store-code'],
+    'Magento-Store-View-Code': config['commerce-store-view-code'],
+    'Magento-Website-Code': config['commerce-website-code'],
+  };
+  if (hasText(config['commerce-customer-group'])) {
+    headers['Magento-Customer-Group'] = config['commerce-customer-group'];
+  }
+  if (hasText(config['commerce-x-api-key'])) {
+    headers['x-api-key'] = config['commerce-x-api-key'];
+  }
 
   return {
     url: config['commerce-endpoint'],
-    headers: {
-      'Magento-Customer-Group': config['commerce-customer-group'],
-      'Magento-Environment-Id': config['commerce-environment-id'],
-      'Magento-Store-Code': config['commerce-store-code'],
-      'Magento-Store-View-Code': config['commerce-store-view-code'],
-      'Magento-Website-Code': config['commerce-website-code'],
-      'x-api-key': config['commerce-x-api-key'],
-    },
+    headers,
   };
 }
 
@@ -288,20 +335,23 @@ export async function extractCommerceConfigFromACCS(params, log) {
     const configPath = `${params.storeUrl}/${localePath}${params.configName || 'config'}.json`;
     log.debug(`Fetching ACCS config from ${configPath}`);
 
-    const configData = await requestSpreadsheet(configPath, params.configSheet);
     const configSection = params.configSection || 'public';
     const locale = params.locale || 'default';
+    const originalSection = configSection;
+    const configData = params.configData
+      || await requestSpreadsheet(configPath, params.configSheet);
+    const isSectionValid = (section) => section && Object.keys(section).length > 0;
 
-    // Navigate to the section (e.g., "public") with defensive validation
-    const sectionData = configData[configSection];
-    if (!sectionData) {
+    let sectionData = configData[configSection];
+    if (!isSectionValid(sectionData) && configSection !== 'public') {
       log.warn(`Config section "${configSection}" not found, attempting fallback to 'public'`);
-      const fallbackSection = configData.public || { default: {} };
-      if (!fallbackSection || !fallbackSection.default) {
-        throw new Error(`Config section "${configSection}" not found and no valid fallback available`);
-      }
-      return extractCommerceConfigFromACCS({ ...params, configSection: 'public' }, log);
+      sectionData = configData.public;
     }
+
+    if (!isSectionValid(sectionData)) {
+      throw new Error(`Config section "${originalSection}" not found and no valid fallback available`);
+    }
+    const resolvedSection = sectionData === configData.public ? 'public' : configSection;
 
     // Use path-based matching instead of hardcoded locale key format
     const localeKey = findBestMatchingPath(sectionData, locale);
@@ -322,15 +372,16 @@ export async function extractCommerceConfigFromACCS(params, log) {
     }
 
     if (!localeData) {
-      throw new Error(`Locale data not found for "${localeKey}" in section "${configSection}"`);
+      throw new Error(`Locale data not found for "${localeKey}" in section "${resolvedSection}"`);
     }
 
     // Deep merge entire configs (not just headers) to preserve analytics, plugins, etc.
     const defaultConfig = sectionData.default || {};
     const mergedConfig = localeKey === 'default' ? defaultConfig : deepMerge(defaultConfig, localeData);
+    const normalizedConfig = normalizeCommerceConfigKeys(mergedConfig);
 
     // Extract commerce endpoint from merged config
-    const commerceEndpoint = mergedConfig['commerce-endpoint'];
+    const commerceEndpoint = normalizedConfig['commerce-endpoint'];
 
     // Extract headers using generic scope support
     const mergedHeaders = extractHeaders(sectionData, localeData, params.scope || 'cs');
@@ -502,6 +553,8 @@ export async function requestSaaS(query, operationName, variables, params, log) 
  * Retrieves commerce configuration for a site from handler config or remote config.
  * Supports multiple instance types: PAAS, ACCS, ACO.
  * Instance is determined by the instanceType field in the handler config.
+ * When configName is not explicitly set, optional fallbacks can be attempted
+ * (configs/config/global) without changing behavior when the default works.
  * @param {Object} site - The site object with configuration.
  * @param {string} auditType - The audit type to get handler config for.
  * @param {string} finalUrl - The site URL.
@@ -519,7 +572,7 @@ export async function requestSaaS(query, operationName, variables, params, log) 
  *     'AC-View-ID'?: string,
  *   }
  * }>} Commerce configuration with url and headers.
- * For PAAS: Returns legacy Magento-* headers (all required).
+ * For PAAS: Returns legacy Magento-* headers.
  * For ACCS/ACO: Returns Magento-Environment-Id (required) + optional AC-View-ID.
  * Note: AC-Environment-Id is used as fallback source but not sent in headers.
  */
@@ -535,27 +588,115 @@ export async function getCommerceConfig(site, auditType, finalUrl, log, locale =
       configName: customConfig?.configName,
       configSection: customConfig?.configSection,
       configSheet: customConfig?.configSheet,
-      instanceType,
       config: customConfig?.config?.[locale] || customConfig?.config,
     };
 
     log.info(`Fetching commerce config for site: ${site.getId()}, locale: ${locale || 'default'}, instanceType: ${instanceType}`);
 
-    // Extract and format config based on instance type
-    switch (instanceType) {
-      case 'ACCS':
-        log.info('Successfully retrieved commerce config');
-        return await extractCommerceConfigFromACCS(params, log);
+    const hasExplicitConfigName = Boolean(params.config)
+      || (customConfig && Object.prototype.hasOwnProperty.call(customConfig, 'configName'));
+    const isAccsFamily = instanceType === 'ACCS' || instanceType === 'ACO';
+    const defaultConfigName = isAccsFamily ? 'config' : 'configs';
+    const fallbackNames = isAccsFamily
+      ? ['configs', 'global']
+      : ['config', 'global'];
+    const configNameCandidates = hasExplicitConfigName
+      ? [params.configName]
+      : [defaultConfigName, ...fallbackNames]
+        .filter((name, index, list) => name && list.indexOf(name) === index);
 
-      case 'ACO':
-        log.info('Successfully retrieved commerce config');
-        return await extractCommerceConfigFromACO(params, log);
+    const [firstConfigName, secondConfigName, thirdConfigName] = configNameCandidates;
+    let primaryError;
 
-      case 'PAAS':
-      default:
-        log.info('Successfully retrieved commerce config');
-        return await extractCommerceConfigFromPAAS(params, log);
+    const scoreConfig = (config) => {
+      if (!config) {
+        return -1;
+      }
+      let score = 0;
+      if (hasText(config.url)) {
+        score += 1;
+      }
+      if (config.headers && typeof config.headers === 'object') {
+        for (const value of Object.values(config.headers)) {
+          if (hasText(value)) {
+            score += 1;
+          }
+        }
+      }
+      return score;
+    };
+
+    let bestFallbackConfig = null;
+    let bestFallbackScore = scoreConfig(bestFallbackConfig);
+
+    const considerFallbackConfig = (config) => {
+      const score = scoreConfig(config);
+      if (score > bestFallbackScore) {
+        bestFallbackScore = score;
+        bestFallbackConfig = config;
+      }
+    };
+
+    const attemptFirstParams = { ...params, configName: firstConfigName };
+    try {
+      let config;
+      if (instanceType === 'ACCS') {
+        config = await extractCommerceConfigFromACCS(attemptFirstParams, log);
+      } else if (instanceType === 'ACO') {
+        config = await extractCommerceConfigFromACO(attemptFirstParams, log);
+      } else {
+        config = await extractCommerceConfigFromPAAS(attemptFirstParams, log);
+      }
+      log.info('Successfully retrieved commerce config');
+      return config;
+    } catch (error) {
+      primaryError = error;
+      if (hasExplicitConfigName) {
+        throw error;
+      }
+      log.debug(`Commerce config extraction failed for "${firstConfigName}": ${error.message}`);
     }
+
+    if (secondConfigName) {
+      const attemptSecondParams = { ...params, configName: secondConfigName };
+      try {
+        let config;
+        if (instanceType === 'ACCS') {
+          config = await extractCommerceConfigFromACCS(attemptSecondParams, log);
+        } else if (instanceType === 'ACO') {
+          config = await extractCommerceConfigFromACO(attemptSecondParams, log);
+        } else {
+          config = await extractCommerceConfigFromPAAS(attemptSecondParams, log);
+        }
+        considerFallbackConfig(config);
+      } catch (error) {
+        log.debug(`Commerce config extraction failed for "${secondConfigName}": ${error.message}`);
+      }
+    }
+
+    if (thirdConfigName) {
+      const attemptThirdParams = { ...params, configName: thirdConfigName };
+      try {
+        let config;
+        if (instanceType === 'ACCS') {
+          config = await extractCommerceConfigFromACCS(attemptThirdParams, log);
+        } else if (instanceType === 'ACO') {
+          config = await extractCommerceConfigFromACO(attemptThirdParams, log);
+        } else {
+          config = await extractCommerceConfigFromPAAS(attemptThirdParams, log);
+        }
+        considerFallbackConfig(config);
+      } catch (error) {
+        log.debug(`Commerce config extraction failed for "${thirdConfigName}": ${error.message}`);
+      }
+    }
+
+    if (bestFallbackConfig) {
+      log.info('Successfully retrieved commerce config');
+      return bestFallbackConfig;
+    }
+
+    throw primaryError;
   } catch (error) {
     log.error(`Error fetching commerce config for site ${site.getId()}:`, error);
     throw error;

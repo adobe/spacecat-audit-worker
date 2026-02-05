@@ -13,7 +13,8 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { LOG_PREFIX } from './constants.js';
+import { LOG_PREFIX, AUDIT_TYPE } from './constants.js';
+import { getCommerceConfig } from '../utils/saas.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -232,6 +233,35 @@ export async function runAuditAndProcessResults(context) {
   }
 
   log.info(`${LOG_PREFIX} Processing ${scrapeResultPaths.size} scrape results from S3 bucket: ${bucketName}`);
+
+  // Extract and log commerce configuration (for future use)
+  log.info(`${LOG_PREFIX} ============================================`);
+  log.info(`${LOG_PREFIX} Extracting Commerce Configuration`);
+  log.info(`${LOG_PREFIX} ============================================`);
+
+  try {
+    const commerceConfig = await getCommerceConfig(site, AUDIT_TYPE, finalUrl, log);
+    log.info(`${LOG_PREFIX} Commerce config extracted successfully`);
+    log.info(`${LOG_PREFIX} Commerce endpoint URL: ${commerceConfig.url}`);
+    log.info(`${LOG_PREFIX} Commerce headers:`, JSON.stringify(commerceConfig.headers, null, 2));
+
+    // Log individual header values for debugging
+    if (commerceConfig?.headers) {
+      const { headers } = commerceConfig;
+      log.info(`${LOG_PREFIX} - Magento-Environment-Id: ${headers['Magento-Environment-Id']}`);
+      log.info(`${LOG_PREFIX} - Magento-Store-Code: ${headers['Magento-Store-Code'] || 'not set'}`);
+      log.info(`${LOG_PREFIX} - Magento-Store-View-Code: ${headers['Magento-Store-View-Code'] || 'not set'}`);
+      log.info(`${LOG_PREFIX} - Magento-Website-Code: ${headers['Magento-Website-Code'] || 'not set'}`);
+      log.info(`${LOG_PREFIX} - Magento-Customer-Group: ${headers['Magento-Customer-Group'] || 'not set'}`);
+      log.info(`${LOG_PREFIX} - x-api-key: ${headers['x-api-key'] ? '[REDACTED]' : 'not set'}`);
+      log.info(`${LOG_PREFIX} - AC-View-ID: ${headers['AC-View-ID'] || 'not set'}`);
+    }
+  } catch (configError) {
+    log.warn(`${LOG_PREFIX} Failed to extract commerce config: ${configError.message}`);
+    log.warn(`${LOG_PREFIX} This is expected if the site does not have commerce configuration`);
+  }
+
+  log.info(`${LOG_PREFIX} ============================================`);
 
   // Process each scraped result in parallel
   const processResults = await Promise.all(
