@@ -189,18 +189,18 @@ export const refreshSheetResultSchema = z.object({
  */
 // eslint-disable-next-line no-unused-vars
 export async function promptToLinks(prompt, site, context, contentAIClient = null) {
-  // let client = contentAIClient;
-  // if (!client) {
-  //   client = new ContentAIClient(context);
-  //   await client.initialize();
-  // }
-  // const response = await client.runGenerativeSearch(prompt, site);
-  // if (response.status !== 200) {
-  //   throw new Error(`Error calling ContentAI - ${response.statusText}`);
-  // }
-  // const res = await response.json();
-  // return res.data.urls;
-  return [`${site.getBaseURL()}/en_US/related-mock-url}`];
+  let client = contentAIClient;
+  if (!client) {
+    client = new ContentAIClient(context);
+    await client.initialize();
+  }
+  const response = await client.runGenerativeSearch(prompt, site);
+  if (response.status !== 200) {
+    throw new Error(`Error calling ContentAI - ${response.statusText}`);
+  }
+  const res = await response.json();
+  return res.data.urls;
+  // return [`${site.getBaseURL()}/en_US/related-mock-url`];
 }
 
 export const URL_ENRICHMENT_BATCH_SIZE = 10;

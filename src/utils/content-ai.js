@@ -95,6 +95,8 @@ export class ContentAIClient {
         headers: {
           'Content-Type': 'application/json',
           Authorization: this.getAuthHeader(),
+          // https://wiki.corp.adobe.com/pages/viewpage.action?pageId=3537471430
+          'x-api-key': this.env.CONTENTAI_CLIENT_ID,
         },
       });
 
@@ -152,6 +154,7 @@ export class ContentAIClient {
       headers: {
         'Content-Type': 'application/json',
         Authorization: this.getAuthHeader(),
+        'x-api-key': this.env.CONTENTAI_CLIENT_ID,
       },
       body: JSON.stringify(requestBody),
     });
@@ -181,6 +184,7 @@ export class ContentAIClient {
       headers: {
         'Content-Type': 'application/json',
         Authorization: this.getAuthHeader(),
+        'x-api-key': this.env.CONTENTAI_CLIENT_ID,
       },
       body: JSON.stringify(requestBody),
     });
@@ -288,6 +292,7 @@ export class ContentAIClient {
       headers: {
         'Content-Type': 'application/json',
         Authorization: this.getAuthHeader(),
+        'x-api-key': this.env.CONTENTAI_CLIENT_ID,
       },
     });
 
