@@ -12,7 +12,11 @@
 
 import { tracingFetch as fetch, prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import {
+  Audit,
+  Suggestion as SuggestionModel,
+  FixEntity as FixEntityModel,
+} from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -267,12 +271,24 @@ export const generateSuggestionData = async (context) => {
       },
     }),
     // Reconciliation: check if disappeared suggestion's url_to now redirects to a suggested target
-    getPagePath: (data) => data?.url_from,
-    getUpdatedValue: (data) => data?.urlEdited || data?.urlsSuggested?.[0] || '',
-    /* c8 ignore next */
-    getOldValue: (data) => data?.url_to || '',
     /* c8 ignore start */
-    isIssueFixed: async (suggestion) => {
+    buildFixEntityPayload: (suggestion, opp) => {
+      const data = suggestion?.getData?.();
+      return {
+        opportunityId: opp.getId(),
+        status: FixEntityModel.STATUSES.PUBLISHED,
+        type: suggestion?.getType?.(),
+        executedAt: new Date().toISOString(),
+        changeDetails: {
+          system: site.getDeliveryType(),
+          pagePath: data?.url_from,
+          oldValue: data?.url_to || '',
+          updatedValue: data?.urlEdited || data?.urlsSuggested?.[0] || '',
+        },
+        suggestions: [suggestion?.getId?.()],
+      };
+    },
+    isIssueFixedWithAISuggestion: async (suggestion) => {
       const data = suggestion?.getData?.();
       const urlTo = data?.url_to;
       const suggestedTargets = Array.isArray(data?.urlsSuggested) ? data.urlsSuggested : [];
@@ -292,7 +308,7 @@ export const generateSuggestionData = async (context) => {
         // Check if final URL matches any target (with/without query strings)
         return targets.some((t) => urlsMatch(t, finalResolvedUrl));
       } catch (e) {
-        log.debug(`[isIssueFixed] Failed to fetch ${urlTo} with error: ${e.message}`);
+        log.debug(`[isIssueFixedWithAISuggestion] fetch ${urlTo} failed: ${e.message}`);
         return false;
       }
     },

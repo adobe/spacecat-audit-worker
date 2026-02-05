@@ -17,7 +17,7 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-import { Suggestion as SuggestionDataAccess, FixEntity as FixEntityDataAccess } from '@adobe/spacecat-shared-data-access';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import {
   retrieveSiteBySiteId,
   syncSuggestions,
@@ -385,12 +385,24 @@ describe('utils/data-access', () => {
       opportunity,
       // Pass all three suggestions as disappeared - function should only process NEW ones
       disappearedSuggestions: [fixedSuggestion, approvedSuggestion, newCandidate],
-      getPagePath: (d) => d?.urlFrom,
-      getUpdatedValue: (d) => d?.urlsSuggested?.[0],
-      getOldValue: (d) => d?.urlTo,
-      site,
       log,
-      isIssueFixed: async () => true, // mark as fixed
+      isIssueFixedWithAISuggestion: async () => true, // mark as fixed
+      buildFixEntityPayload: (suggestion, opp) => {
+        const data = suggestion?.getData?.();
+        return {
+          opportunityId: opp.getId(),
+          status: 'PUBLISHED',
+          type: suggestion?.getType?.(),
+          executedAt: new Date().toISOString(),
+          changeDetails: {
+            system: site.getDeliveryType(),
+            pagePath: data?.urlFrom,
+            oldValue: data?.urlTo,
+            updatedValue: data?.urlsSuggested?.[0],
+          },
+          suggestions: [suggestion?.getId?.()],
+        };
+      },
     });
 
     // Only newCandidate (in NEW status) should be processed
@@ -399,7 +411,7 @@ describe('utils/data-access', () => {
     expect(newCandidate.save).to.have.been.calledOnce;
   });
 
-  it('reconcileDisappearedSuggestions uses default getUpdatedValue/getOldValue when not provided', async () => {
+  it('reconcileDisappearedSuggestions calls buildFixEntityPayload when provided', async () => {
     const candidate = {
       getId: () => 'candidate-2',
       getStatus: () => 'NEW',
@@ -417,9 +429,6 @@ describe('utils/data-access', () => {
       getId: () => 'oppty-2',
       addFixEntities: sandbox.stub().resolves({ createdItems: [{}], errorItems: [] }),
     };
-    const site = {
-      getDeliveryType: () => 'aem_edge',
-    };
 
     utils = await esmock('../../src/utils/data-access.js', {
       '@adobe/spacecat-shared-data-access': {
@@ -430,22 +439,26 @@ describe('utils/data-access', () => {
     const { reconcileDisappearedSuggestions } = utils;
 
     const log = { debug: sandbox.stub(), warn: sandbox.stub(), info: sandbox.stub() };
+    const buildFixEntityPayload = sandbox.stub().returns({
+      opportunityId: 'oppty-2',
+      status: 'PUBLISHED',
+      type: 'REDIRECT_UPDATE',
+    });
+
     await reconcileDisappearedSuggestions({
       opportunity,
       disappearedSuggestions: [candidate],
-      getPagePath: (d) => d?.urlFrom,
-      // NOT passing getUpdatedValue and getOldValue - uses default fallback
-      site,
       log,
-      isIssueFixed: async () => true,
+      isIssueFixedWithAISuggestion: async () => true,
+      buildFixEntityPayload,
     });
 
     expect(candidate.setStatus).to.have.been.calledWith('FIXED');
-    // Verify addFixEntities was called (uses default getUpdatedValue/getOldValue)
+    expect(buildFixEntityPayload).to.have.been.calledOnceWith(candidate, opportunity);
     expect(opportunity.addFixEntities).to.have.been.calledOnce;
   });
 
-  it('reconcileDisappearedSuggestions skips suggestion when isIssueFixed returns false', async () => {
+  it('reconcileDisappearedSuggestions skips suggestion when isIssueFixedWithAISuggestion returns false', async () => {
     const candidate = {
       getId: () => 'candidate-3',
       getStatus: () => 'NEW',
@@ -459,9 +472,6 @@ describe('utils/data-access', () => {
       getId: () => 'oppty-3',
       addFixEntities: sandbox.stub().resolves({ createdItems: [], errorItems: [] }),
     };
-    const site = {
-      getDeliveryType: () => 'aem_edge',
-    };
 
     utils = await esmock('../../src/utils/data-access.js', {
       '@adobe/spacecat-shared-data-access': {
@@ -475,30 +485,25 @@ describe('utils/data-access', () => {
     await reconcileDisappearedSuggestions({
       opportunity,
       disappearedSuggestions: [candidate],
-      getPagePath: (d) => d?.urlFrom,
-      site,
       log,
-      isIssueFixed: async () => false, // Issue is NOT fixed
+      isIssueFixedWithAISuggestion: async () => false, // Issue is NOT fixed
     });
 
-    // Suggestion should NOT be marked as fixed since isIssueFixed returned false
+    // Suggestion should NOT be marked as fixed since isIssueFixedWithAISuggestion returned false
     expect(candidate.setStatus).to.not.have.been.called;
     expect(candidate.save).to.not.have.been.called;
     expect(opportunity.addFixEntities).to.not.have.been.called;
   });
 
   it('reconcileDisappearedSuggestions handles outer error gracefully', async () => {
+    // Force error by making getStatus throw
     const candidate = {
       getId: () => 'candidate-4',
-      getStatus: () => 'NEW',
-      getData: () => { throw new Error('getData failed'); },
+      getStatus: () => { throw new Error('getStatus failed'); },
     };
     const opportunity = {
       getId: () => 'oppty-4',
       addFixEntities: sandbox.stub(),
-    };
-    const site = {
-      getDeliveryType: () => 'aem_edge',
     };
 
     utils = await esmock('../../src/utils/data-access.js', {
@@ -513,10 +518,8 @@ describe('utils/data-access', () => {
     await reconcileDisappearedSuggestions({
       opportunity,
       disappearedSuggestions: [candidate],
-      getPagePath: (d) => d?.urlFrom,
-      site,
       log,
-      isIssueFixed: async () => true,
+      isIssueFixedWithAISuggestion: async () => true,
     });
 
     // Should log warning for the outer catch block
@@ -721,197 +724,6 @@ describe('data-access', () => {
       expect(mockLogger.error).to.not.have.been.called;
     });
 
-    it('should create new suggestion for regression when FIXED suggestion has all PUBLISHED fix entities', async () => {
-      // Existing FIXED suggestion with key '1'
-      const fixedSuggestion = {
-        id: 'fixed-1',
-        getId: sinon.stub().returns('fixed-1'),
-        data: { key: '1' },
-        getData: sinon.stub().returns({ key: '1' }),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
-        setData: sinon.stub(),
-        save: sinon.stub().resolves(),
-        setUpdatedBy: sinon.stub().returnsThis(),
-      };
-      // Same issue reappears in audit (key '1')
-      const newData = [{ key: '1' }];
-
-      // Mock fix entities - all PUBLISHED
-      const publishedFixEntity = {
-        getStatus: sinon.stub().returns(FixEntityDataAccess.STATUSES.PUBLISHED),
-      };
-
-      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
-      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [{ data: { key: '1' } }] });
-
-      // Add Suggestion.getFixEntitiesBySuggestionId to context
-      context.dataAccess.Suggestion = {
-        ...context.dataAccess.Suggestion,
-        getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [publishedFixEntity] }),
-      };
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey,
-        mapNewSuggestion,
-      });
-
-      // Verify a NEW suggestion is created for the regression
-      expect(mockOpportunity.addSuggestions).to.have.been.calledOnce;
-      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0).args[0];
-      expect(addedSuggestions.length).to.equal(1);
-      expect(addedSuggestions[0].data).to.deep.equal({ key: '1' });
-      expect(addedSuggestions[0].status).to.equal(SuggestionDataAccess.STATUSES.NEW);
-    });
-
-    it('should NOT create new suggestion when FIXED suggestion has non-PUBLISHED fix entities', async () => {
-      // Existing FIXED suggestion with key '1'
-      const fixedSuggestion = {
-        id: 'fixed-1',
-        getId: sinon.stub().returns('fixed-1'),
-        data: { key: '1' },
-        getData: sinon.stub().returns({ key: '1' }),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
-        setData: sinon.stub(),
-        save: sinon.stub().resolves(),
-        setUpdatedBy: sinon.stub().returnsThis(),
-      };
-      // Same issue reappears in audit (key '1')
-      const newData = [{ key: '1' }];
-
-      // Mock fix entities - one DEPLOYED (not yet PUBLISHED)
-      const deployedFixEntity = {
-        getStatus: sinon.stub().returns(FixEntityDataAccess.STATUSES.DEPLOYED),
-      };
-
-      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
-      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
-
-      // Add Suggestion.getFixEntitiesBySuggestionId to context
-      context.dataAccess.Suggestion = {
-        ...context.dataAccess.Suggestion,
-        getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [deployedFixEntity] }),
-      };
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey,
-        mapNewSuggestion,
-      });
-
-      // Verify NO new suggestion is created (fix not yet fully published)
-      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
-      expect(addedSuggestions.length).to.equal(0);
-    });
-
-    it('should NOT create new suggestion when FIXED suggestion has no fix entities', async () => {
-      // Existing FIXED suggestion with key '1' but no fix entities
-      const fixedSuggestion = {
-        id: 'fixed-1',
-        getId: sinon.stub().returns('fixed-1'),
-        data: { key: '1' },
-        getData: sinon.stub().returns({ key: '1' }),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
-        setData: sinon.stub(),
-        save: sinon.stub().resolves(),
-        setUpdatedBy: sinon.stub().returnsThis(),
-      };
-      // Same issue reappears in audit (key '1')
-      const newData = [{ key: '1' }];
-
-      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
-      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
-
-      // Add Suggestion.getFixEntitiesBySuggestionId to context - returns empty
-      context.dataAccess.Suggestion = {
-        ...context.dataAccess.Suggestion,
-        getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
-      };
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey,
-        mapNewSuggestion,
-      });
-
-      // Verify NO new suggestion is created (no fix entities = fix not complete)
-      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
-      expect(addedSuggestions.length).to.equal(0);
-    });
-
-    it('should skip FIXED suggestion when getId returns undefined', async () => {
-      // FIXED suggestion without getId method
-      const fixedSuggestionNoId = {
-        data: { key: '1' },
-        getData: sinon.stub().returns({ key: '1' }),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
-        getId: sinon.stub().returns(undefined), // No ID
-        setData: sinon.stub(),
-        save: sinon.stub().resolves(),
-        setUpdatedBy: sinon.stub().returnsThis(),
-      };
-      const newData = [{ key: '1' }];
-
-      mockOpportunity.getSuggestions.resolves([fixedSuggestionNoId]);
-      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
-
-      // Add Suggestion.getFixEntitiesBySuggestionId to context
-      context.dataAccess.Suggestion = {
-        ...context.dataAccess.Suggestion,
-        getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
-      };
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey,
-        mapNewSuggestion,
-      });
-
-      // getFixEntitiesBySuggestionId should NOT have been called (skipped due to no ID)
-      expect(context.dataAccess.Suggestion.getFixEntitiesBySuggestionId).to.not.have.been.called;
-      // Should not create new suggestion (FIXED suggestion blocks it but wasn't fully processed)
-      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
-      expect(addedSuggestions.length).to.equal(0);
-    });
-
-    it('should handle getFixEntitiesBySuggestionId throwing an error', async () => {
-      const fixedSuggestion = {
-        id: 'fixed-1',
-        getId: sinon.stub().returns('fixed-1'),
-        data: { key: '1' },
-        getData: sinon.stub().returns({ key: '1' }),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
-        setData: sinon.stub(),
-        save: sinon.stub().resolves(),
-        setUpdatedBy: sinon.stub().returnsThis(),
-      };
-      const newData = [{ key: '1' }];
-
-      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
-      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
-
-      // Make getFixEntitiesBySuggestionId throw an error
-      context.dataAccess.Suggestion = {
-        ...context.dataAccess.Suggestion,
-        getFixEntitiesBySuggestionId: sinon.stub().rejects(new Error('Database connection failed')),
-      };
-
-      await syncSuggestions({
-        context,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey,
-        mapNewSuggestion,
-      });
-    });
     it('should use "unknown" as siteId when getSiteId is undefined', async () => {
       const newData = [{ key: '1' }];
       const suggestionsResult = {
@@ -939,47 +751,6 @@ describe('data-access', () => {
       expect(mockLogger.debug).to.have.been.calledWith(
         sinon.match(/Successfully created.*suggestions for siteId unknown/),
       );
-    });
-
-    it('should handle context.dataAccess without Suggestion property', async () => {
-      const fixedSuggestion = {
-        id: 'fixed-1',
-        getId: sinon.stub().returns('fixed-1'),
-        data: { key: '1' },
-        getData: sinon.stub().returns({ key: '1' }),
-        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
-        setData: sinon.stub(),
-        save: sinon.stub().resolves(),
-        setUpdatedBy: sinon.stub().returnsThis(),
-      };
-      const newData = [{ key: '1' }];
-
-      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
-      mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [] });
-
-      // Create context with dataAccess but without Suggestion.getFixEntitiesBySuggestionId
-      const contextWithoutSuggestionMethod = {
-        log: mockLogger,
-        site: {},
-        dataAccess: {
-          Suggestion: {
-            bulkUpdateStatus: sinon.stub().resolves(),
-            // No getFixEntitiesBySuggestionId method
-          },
-        },
-      };
-
-      await syncSuggestions({
-        context: contextWithoutSuggestionMethod,
-        opportunity: mockOpportunity,
-        newData,
-        buildKey,
-        mapNewSuggestion,
-      });
-
-      // Should not crash and should not create new suggestion (FIXED blocks it, but can't verify)
-      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
-      expect(addedSuggestions.length).to.equal(0);
     });
 
     it('should not create duplicate suggestion when existing non-FIXED suggestion matches', async () => {
@@ -1582,7 +1353,7 @@ describe('data-access', () => {
       expect(existingSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
       expect(existingSuggestions[0].setStatus).to.have.been
         .calledOnceWith(SuggestionDataAccess.STATUSES.NEW);
-      expect(mockLogger.warn).to.have.been.calledOnceWith('Outdated suggestion found in audit. Possible regression.');
+      expect(mockLogger.warn).to.have.been.calledOnceWith('Resolved suggestion found in audit. Possible regression.');
       expect(existingSuggestions[0].save).to.have.been.calledOnce;
     });
 

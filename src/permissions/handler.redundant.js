@@ -21,7 +21,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import {
   createAdminOpportunityData, createAdminMetrics,
 } from './opportunity-data-mapper.js';
-import { mapAdminSuggestion, mergeSuggestionStatus } from './suggestion-data-mapper.js';
+import { mapAdminSuggestion } from './suggestion-data-mapper.js';
 import { fetchPermissionsReport, markOpportunityAsFixed } from './common.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { noopUrlResolver } from '../common/index.js';
@@ -175,7 +175,6 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
     opportunity: adminOpt,
     newData: flattenedPermissions,
     buildKey: buildAdminSuggestionKey,
-    mergeStatusFunction: mergeSuggestionStatus,
     mapNewSuggestion: (entry) => mapAdminSuggestion(adminOpt, entry),
   });
 

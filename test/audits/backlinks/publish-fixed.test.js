@@ -32,11 +32,9 @@ describe('backlinks: syncSuggestions callback tests', () => {
   async function setupHandlerWithCallbackCapture(fetchResponse = { url: 'https://example.com/new-fixed', ok: true, status: 200 }) {
     const capturedCallbacks = {};
     const syncSuggestionsStub = sandbox.stub().callsFake(async (params) => {
-      capturedCallbacks.isIssueFixed = params.isIssueFixed;
+      capturedCallbacks.isIssueFixedWithAISuggestion = params.isIssueFixedWithAISuggestion;
       capturedCallbacks.isIssueResolvedOnProduction = params.isIssueResolvedOnProduction;
-      capturedCallbacks.getPagePath = params.getPagePath;
-      capturedCallbacks.getUpdatedValue = params.getUpdatedValue;
-      capturedCallbacks.getOldValue = params.getOldValue;
+      capturedCallbacks.buildFixEntityPayload = params.buildFixEntityPayload;
     });
 
     handler = await esmock('../../../src/backlinks/handler.js', {
@@ -98,7 +96,7 @@ describe('backlinks: syncSuggestions callback tests', () => {
     return { syncSuggestionsStub, capturedCallbacks };
   }
 
-  describe('isIssueFixed callback', () => {
+  describe('isIssueFixedWithAISuggestion callback', () => {
     it('returns true when url_to redirects to urlsSuggested', async () => {
       const { capturedCallbacks } = await setupHandlerWithCallbackCapture({
         url: 'https://example.com/new-fixed',
@@ -114,7 +112,7 @@ describe('backlinks: syncSuggestions callback tests', () => {
           urlsSuggested: ['https://example.com/new-fixed'],
         }),
       };
-      const isFixed = await capturedCallbacks.isIssueFixed(suggestion);
+      const isFixed = await capturedCallbacks.isIssueFixedWithAISuggestion(suggestion);
       expect(isFixed).to.equal(true);
 
       await esmock.purge(handler);
@@ -137,7 +135,7 @@ describe('backlinks: syncSuggestions callback tests', () => {
           urlEdited: 'https://example.com/custom-edited',
         }),
       };
-      const isFixed = await capturedCallbacks.isIssueFixed(suggestion);
+      const isFixed = await capturedCallbacks.isIssueFixedWithAISuggestion(suggestion);
       expect(isFixed).to.equal(true);
 
       await esmock.purge(handler);
@@ -159,7 +157,7 @@ describe('backlinks: syncSuggestions callback tests', () => {
           urlsSuggested: ['https://example.com/new-fixed'],
         }),
       };
-      const isFixed = await capturedCallbacks.isIssueFixed(suggestion);
+      const isFixed = await capturedCallbacks.isIssueFixedWithAISuggestion(suggestion);
       expect(isFixed).to.equal(false);
 
       await esmock.purge(handler);
@@ -177,7 +175,7 @@ describe('backlinks: syncSuggestions callback tests', () => {
           urlsSuggested: [],
         }),
       };
-      const isFixed = await capturedCallbacks.isIssueFixed(suggestion);
+      const isFixed = await capturedCallbacks.isIssueFixedWithAISuggestion(suggestion);
       expect(isFixed).to.equal(false);
 
       await esmock.purge(handler);
@@ -194,7 +192,7 @@ describe('backlinks: syncSuggestions callback tests', () => {
           urlsSuggested: ['https://example.com/new-fixed'],
         }),
       };
-      const isFixed = await capturedCallbacks.isIssueFixed(suggestion);
+      const isFixed = await capturedCallbacks.isIssueFixedWithAISuggestion(suggestion);
       expect(isFixed).to.equal(false);
 
       await esmock.purge(handler);
@@ -216,7 +214,7 @@ describe('backlinks: syncSuggestions callback tests', () => {
           urlsSuggested: ['https://example.com/new-fixed'], // no trailing slash
         }),
       };
-      const isFixed = await capturedCallbacks.isIssueFixed(suggestion);
+      const isFixed = await capturedCallbacks.isIssueFixedWithAISuggestion(suggestion);
       expect(isFixed).to.equal(true);
 
       await esmock.purge(handler);
@@ -260,46 +258,60 @@ describe('backlinks: syncSuggestions callback tests', () => {
   });
 
   describe('helper callbacks', () => {
-    it('getPagePath extracts url_from from data', async () => {
+    it('buildFixEntityPayload builds correct fix entity structure', async () => {
       const { capturedCallbacks } = await setupHandlerWithCallbackCapture();
 
       await handler.generateSuggestionData(context);
 
-      const data = { url_from: 'https://from.com/page', url_to: 'https://to.com/broken' };
-      expect(capturedCallbacks.getPagePath(data)).to.equal('https://from.com/page');
+      const mockSuggestion = {
+        getId: () => 'suggestion-123',
+        getType: () => 'REDIRECT_UPDATE',
+        getData: () => ({
+          url_from: 'https://from.com/page',
+          url_to: 'https://to.com/broken',
+          urlEdited: 'https://edited.com',
+          urlsSuggested: ['https://suggested.com'],
+        }),
+      };
+      const mockOpportunity = {
+        getId: () => 'oppty-456',
+      };
+
+      const payload = capturedCallbacks.buildFixEntityPayload(mockSuggestion, mockOpportunity);
+
+      expect(payload.opportunityId).to.equal('oppty-456');
+      expect(payload.status).to.equal('PUBLISHED');
+      expect(payload.type).to.equal('REDIRECT_UPDATE');
+      expect(payload.changeDetails.pagePath).to.equal('https://from.com/page');
+      expect(payload.changeDetails.oldValue).to.equal('https://to.com/broken');
+      expect(payload.changeDetails.updatedValue).to.equal('https://edited.com');
+      expect(payload.suggestions).to.deep.equal(['suggestion-123']);
 
       await esmock.purge(handler);
       handler = undefined;
     }).timeout(8000);
 
-    it('getUpdatedValue returns urlEdited if present, otherwise first urlsSuggested', async () => {
+    it('buildFixEntityPayload falls back to urlsSuggested when urlEdited not present', async () => {
       const { capturedCallbacks } = await setupHandlerWithCallbackCapture();
 
       await handler.generateSuggestionData(context);
 
-      // With urlEdited
-      const dataWithEdited = { urlEdited: 'https://edited.com', urlsSuggested: ['https://suggested.com'] };
-      expect(capturedCallbacks.getUpdatedValue(dataWithEdited)).to.equal('https://edited.com');
+      const mockSuggestion = {
+        getId: () => 'suggestion-789',
+        getType: () => 'REDIRECT_UPDATE',
+        getData: () => ({
+          url_from: 'https://from.com/page',
+          url_to: 'https://to.com/broken',
+          urlsSuggested: ['https://suggested.com'],
+        }),
+      };
+      const mockOpportunity = {
+        getId: () => 'oppty-101',
+      };
 
-      // Without urlEdited
-      const dataWithoutEdited = { urlsSuggested: ['https://suggested.com'] };
-      expect(capturedCallbacks.getUpdatedValue(dataWithoutEdited)).to.equal('https://suggested.com');
+      const payload = capturedCallbacks.buildFixEntityPayload(mockSuggestion, mockOpportunity);
 
-      // Empty
-      const emptyData = {};
-      expect(capturedCallbacks.getUpdatedValue(emptyData)).to.equal('');
-
-      await esmock.purge(handler);
-      handler = undefined;
-    }).timeout(8000);
-
-    it('getOldValue returns url_to from data', async () => {
-      const { capturedCallbacks } = await setupHandlerWithCallbackCapture();
-
-      await handler.generateSuggestionData(context);
-
-      const data = { url_to: 'https://broken.com/old' };
-      expect(capturedCallbacks.getOldValue(data)).to.equal('https://broken.com/old');
+      expect(payload.changeDetails.updatedValue).to.equal('https://suggested.com');
 
       await esmock.purge(handler);
       handler = undefined;

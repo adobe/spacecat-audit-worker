@@ -630,7 +630,7 @@ describe('Backlinks Tests', function () {
       expect(context.log.warn).to.have.been.calledWith('No alternative URLs available. Cannot generate suggestions. Skipping message to Mystique.');
     });
 
-    it('should call syncSuggestions with isIssueFixed and isIssueResolvedOnProduction callbacks', async () => {
+    it('should call syncSuggestions with isIssueFixedWithAISuggestion and isIssueResolvedOnProduction callbacks', async () => {
       configuration.isHandlerEnabledForSite.returns(true);
       context.audit.getAuditResult.returns({
         success: true,
@@ -662,11 +662,9 @@ describe('Backlinks Tests', function () {
       // Verify syncSuggestions was called with the expected callbacks
       expect(syncSuggestionsStub).to.have.been.calledOnce;
       const callArgs = syncSuggestionsStub.getCall(0).args[0];
-      expect(callArgs).to.have.property('isIssueFixed').that.is.a('function');
+      expect(callArgs).to.have.property('isIssueFixedWithAISuggestion').that.is.a('function');
       expect(callArgs).to.have.property('isIssueResolvedOnProduction').that.is.a('function');
-      expect(callArgs).to.have.property('getPagePath').that.is.a('function');
-      expect(callArgs).to.have.property('getUpdatedValue').that.is.a('function');
-      expect(callArgs).to.have.property('getOldValue').that.is.a('function');
+      expect(callArgs).to.have.property('buildFixEntityPayload').that.is.a('function');
     });
   });
 
