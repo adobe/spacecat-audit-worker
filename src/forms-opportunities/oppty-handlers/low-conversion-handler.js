@@ -127,7 +127,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
   if (opptyOptions !== OPPTY_OPTIONS_ALL) {
     // Apply filtering logic: deduplicate, filter INVALIDATED, and limit to top opportunities
     // eslint-disable-next-line max-len
-    filteredOpportunities = applyOpportunityFilters(filteredOpportunities, opportunities, FORM_OPPORTUNITY_TYPES.LOW_CONVERSION, log, OPPORTUNITY_LIMIT);
+    filteredOpportunities = applyOpportunityFilters(filteredOpportunities, opportunities, FORM_OPPORTUNITY_TYPES.LOW_CONVERSION, log, OPPORTUNITY_LIMIT, scrapedData);
   }
   log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] filtered opportunities high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
 
