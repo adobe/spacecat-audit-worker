@@ -283,7 +283,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
 
     expect(Opportunity.create).not.to.have.been.called;
     expect(Suggestion.create).not.to.have.been.called;
-    expect(logStub.info).to.have.been.calledWithMatch(/Skipping opportunity creation/);
+    expect(logStub.info).to.have.been.calledWithMatch(/\[paid-audit\] Skipping paid-keyword-optimizer opportunity creation/);
     expect(result.status).to.equal(ok().status);
   });
 

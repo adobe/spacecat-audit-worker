@@ -99,10 +99,10 @@ export default async function handler(message, context) {
     url, guidance,
   } = data;
 
-  log.debug(`Message received for ${GUIDANCE_TYPE} handler site: ${siteId} url: ${url} message: ${JSON.stringify(message)}`);
+  log.info(`[paid-audit] Received paid-traffic-analysis message for site: ${siteId}, url: ${url}, audit: ${auditId}`);
   const audit = await Audit.findById(auditId);
   if (!audit) {
-    log.warn(`No audit found for auditId: ${auditId}`);
+    log.warn(`[paid-audit] Failed paid-traffic-analysis: no audit found for site: ${siteId}, url: ${url}, audit: ${auditId}`);
     return notFound();
   }
 
@@ -116,6 +116,7 @@ export default async function handler(message, context) {
 
   // Create new paid-traffic opportunity for this period
   const entity = mapToPaidOpportunity(siteId, audit, period);
+  log.info(`[paid-audit] Creating paid-traffic-analysis opportunity for site: ${siteId}, url: ${url}, audit: ${auditId}`);
   const opportunity = await Opportunity.create(entity);
 
   // Map AI Insights suggestions from guidance (already in expected structure)

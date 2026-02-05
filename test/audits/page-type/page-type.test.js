@@ -280,7 +280,7 @@ describe('Page Type Detection Audit', () => {
 
         expect(result.status).to.equal(404);
         expect(context.log.warn).to.have.been.calledWith(
-          'No site found for siteId: non-existent-site',
+          '[page-type] Failed: no site found for site: non-existent-site, audit: audit-123',
         );
       });
 
@@ -301,7 +301,7 @@ describe('Page Type Detection Audit', () => {
 
         expect(result.status).to.equal(200);
         expect(context.log.warn).to.have.been.calledWith(
-          'No valid guidance body received for site: test-site-id',
+          '[page-type] Skipping: no valid guidance body for site: test-site-id, audit: audit-123',
         );
       });
 
@@ -326,7 +326,7 @@ describe('Page Type Detection Audit', () => {
 
         expect(result.status).to.equal(200);
         expect(context.log.warn).to.have.been.calledWith(
-          'No valid patterns received for site: test-site-id',
+          '[page-type] Skipping: no valid patterns for site: test-site-id, audit: audit-123',
         );
       });
     });
@@ -361,8 +361,8 @@ describe('Page Type Detection Audit', () => {
         expect(result.status).to.equal(200);
         expect(mockSite.setPageTypes).to.not.have.been.called;
         expect(mockSite.save).to.not.have.been.called;
-        expect(context.log.warn).to.have.been.calledWith(
-          sinon.match(/accuracy 70% is below threshold 75%/),
+        expect(context.log.info).to.have.been.calledWith(
+          '[page-type] Skipping: accuracy 70% below threshold 75% for site: test-site-id, audit: audit-123',
         );
       });
 
@@ -390,8 +390,8 @@ describe('Page Type Detection Audit', () => {
 
         expect(result.status).to.equal(200);
         expect(mockSite.setPageTypes).to.not.have.been.called;
-        expect(context.log.warn).to.have.been.calledWith(
-          sinon.match(/accuracy null% is below threshold/),
+        expect(context.log.info).to.have.been.calledWith(
+          '[page-type] Skipping: accuracy null% below threshold 75% for site: test-site-id, audit: audit-123',
         );
       });
 
@@ -460,7 +460,7 @@ describe('Page Type Detection Audit', () => {
         ]);
         expect(mockSite.save).to.have.been.calledOnce;
         expect(context.log.info).to.have.been.calledWith(
-          'Successfully stored 2 page type patterns for site: test-site-id',
+          '[page-type] Created: stored 2 patterns for site: test-site-id, audit: audit-123',
         );
       });
     });
@@ -592,7 +592,7 @@ describe('Page Type Detection Audit', () => {
 
         expect(result.status).to.equal(200);
         expect(context.log.error).to.have.been.calledWith(
-          sinon.match(/Failed to store page type patterns/),
+          sinon.match(/\[page-type\] Failed: could not store patterns/),
         );
       });
     });
@@ -637,7 +637,7 @@ describe('Page Type Detection Audit', () => {
         );
         expect(audit.save).to.have.been.calledOnce;
         expect(context.log.info).to.have.been.calledWith(
-          'Saved audit result for auditId: audit-123',
+          '[page-type] Created: stored 1 patterns for site: test-site-id, audit: audit-123',
         );
       });
 
@@ -720,7 +720,7 @@ describe('Page Type Detection Audit', () => {
 
         expect(result.status).to.equal(200);
         expect(context.log.warn).to.have.been.calledWith(
-          'Audit not found for auditId: non-existent-audit',
+          '[page-type] Failed: audit not found for site: test-site-id, audit: non-existent-audit',
         );
       });
 
@@ -748,7 +748,7 @@ describe('Page Type Detection Audit', () => {
 
         expect(result.status).to.equal(200);
         expect(context.log.error).to.have.been.calledWith(
-          sinon.match(/Failed to save audit result/),
+          sinon.match(/\[page-type\] Failed: could not save audit result/),
         );
       });
 
@@ -810,8 +810,8 @@ describe('Page Type Detection Audit', () => {
           }),
         );
 
-        expect(context.log.info).to.have.been.calledWith(
-          'Execution metrics: processed 5000 URLs in 60s',
+        expect(context.log.debug).to.have.been.calledWith(
+          '[page-type] Execution: processed 5000 URLs in 60s',
         );
       });
 
@@ -854,8 +854,8 @@ describe('Page Type Detection Audit', () => {
           }),
         );
 
-        expect(context.log.info).to.have.been.calledWith(
-          'Validation results: 85% accuracy with 500 samples',
+        expect(context.log.debug).to.have.been.calledWith(
+          '[page-type] Validation: 85% accuracy with 500 samples',
         );
       });
 
@@ -1006,7 +1006,7 @@ describe('Page Type Detection Audit', () => {
 
         expect(result.status).to.equal(200);
         expect(context.log.warn).to.have.been.calledWith(
-          'No valid guidance body received for site: test-site-id',
+          '[page-type] Skipping: no valid guidance body for site: test-site-id, audit: audit-123',
         );
       });
 
@@ -1052,8 +1052,8 @@ describe('Page Type Detection Audit', () => {
         expect(result.status).to.equal(200);
         // Should still process since patterns exist, but fail on accuracy check
         // When accuracy_pct is missing, it will be undefined, not null
-        expect(context.log.warn).to.have.been.calledWith(
-          sinon.match(/accuracy undefined% is below threshold/),
+        expect(context.log.info).to.have.been.calledWith(
+          '[page-type] Skipping: accuracy undefined% below threshold 75% for site: test-site-id, audit: audit-123',
         );
       });
 
@@ -1070,8 +1070,8 @@ describe('Page Type Detection Audit', () => {
 
         await guidanceHandlerModule.default(message, context);
 
-        expect(context.log.info).to.have.been.calledWith(
-          sinon.match(/Message received for detect:page-types handler/),
+        expect(context.log.debug).to.have.been.calledWith(
+          sinon.match(/\[page-type\] Message received for site/),
         );
       });
 
@@ -1100,7 +1100,7 @@ describe('Page Type Detection Audit', () => {
         expect(result.status).to.equal(200);
         // When patterns is false, pageTypesData will be null, so we get 'No valid guidance body received'
         expect(context.log.warn).to.have.been.calledWith(
-          'No valid guidance body received for site: test-site-id',
+          '[page-type] Skipping: no valid guidance body for site: test-site-id, audit: audit-123',
         );
       });
     });

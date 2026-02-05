@@ -81,7 +81,7 @@ describe('sqs', () => {
     const messageId = 'message-id';
     const message = { key: 'value' };
     const queueUrl = 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue';
-    const logSpy = sandbox.spy(context.log, 'debug');
+    const logSpy = sandbox.spy(context.log, 'info');
 
     nock('https://sqs.us-east-1.amazonaws.com')
       .post('/')
@@ -99,7 +99,7 @@ describe('sqs', () => {
       await ctx.sqs.sendMessage(queueUrl, message);
     }).with(sqsWrapper)({}, context);
 
-    expect(logSpy).to.have.been.calledWith(`Success, message sent. MessageID:  ${messageId}`);
+    expect(logSpy).to.have.been.calledWith(`Success, message sent. Queue: test-queue, Type: unknown, MessageID: ${messageId}`);
   });
 
   it('automatically adds traceId from context to message', async () => {
