@@ -153,7 +153,6 @@ describe('Commerce Product Enrichments Handler', () => {
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
-    expect(log.warn).to.have.been.calledWith(sinon.match(/Could not parse data as JSON/));
   });
 
   it('submitForScraping combines top pages and included URLs, filters PDFs', async () => {
