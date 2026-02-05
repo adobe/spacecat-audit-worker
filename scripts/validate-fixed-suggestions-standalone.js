@@ -189,7 +189,7 @@ async function checkLinkExistsOnPage(urlFrom, urlTo, log) {
  * Validates a single suggestion by checking if the link still exists and is broken.
  */
 async function validateSuggestion({
-  suggestion, opportunityId, siteId, log, hasFixEntity, fixCount,
+  suggestion, opportunityId, opportunityStatus, siteId, log, hasFixEntity, fixCount,
 }) {
   const suggestionData = suggestion.getData();
   const urlFrom = suggestionData?.urlFrom;
@@ -200,6 +200,7 @@ async function validateSuggestion({
       type: 'missing-data',
       suggestionId: suggestion.getId(),
       opportunityId,
+      opportunityStatus,
       siteId,
       hasFixEntity,
       fixCount,
@@ -217,6 +218,7 @@ async function validateSuggestion({
       type: 'scrape-error',
       suggestionId: suggestion.getId(),
       opportunityId,
+      opportunityStatus,
       siteId,
       urlFrom,
       urlTo,
@@ -232,6 +234,7 @@ async function validateSuggestion({
       type: 'link-removed',
       suggestionId: suggestion.getId(),
       opportunityId,
+      opportunityStatus,
       siteId,
       urlFrom,
       urlTo,
@@ -254,6 +257,7 @@ async function validateSuggestion({
     type: isBroken ? 'still-broken' : 'now-working',
     suggestionId: suggestion.getId(),
     opportunityId,
+    opportunityStatus,
     siteId,
     urlFrom,
     urlTo,
@@ -329,6 +333,7 @@ export async function validateFixedSuggestions({ dataAccess, log, siteId, csvStr
   for (const opportunity of opportunities) {
     const opportunityId = opportunity.getId();
     const siteIdForOppty = opportunity.getSiteId?.() || 'unknown';
+    const opportunityStatus = opportunity.getStatus?.() || 'unknown';
 
     // Get FIXED suggestions for this opportunity
     const fixedSuggestions = await Suggestion.allByOpportunityIdAndStatus(
@@ -336,7 +341,7 @@ export async function validateFixedSuggestions({ dataAccess, log, siteId, csvStr
       SuggestionDataAccess.STATUSES.FIXED,
     );
 
-    log.debug(`[validate-fixed-suggestions] Opportunity ${opportunityId} (Site: ${siteIdForOppty}): ${fixedSuggestions.length} FIXED suggestions`);
+    log.debug(`[validate-fixed-suggestions] Opportunity ${opportunityId} (Site: ${siteIdForOppty}, Status: ${opportunityStatus}): ${fixedSuggestions.length} FIXED suggestions`);
 
     // Enrich suggestions with opportunity context and check for fix entities
     for (const suggestion of fixedSuggestions) {
@@ -350,6 +355,7 @@ export async function validateFixedSuggestions({ dataAccess, log, siteId, csvStr
       allFixedSuggestions.push({
         suggestion,
         opportunityId,
+        opportunityStatus,
         siteId: siteIdForOppty,
         hasFixEntity,
         fixCount: fixes ? fixes.length : 0,
@@ -381,6 +387,7 @@ export async function validateFixedSuggestions({ dataAccess, log, siteId, csvStr
     (item) => validateSuggestion({
       suggestion: item.suggestion,
       opportunityId: item.opportunityId,
+      opportunityStatus: item.opportunityStatus,
       siteId: item.siteId,
       hasFixEntity: item.hasFixEntity,
       fixCount: item.fixCount,
@@ -402,6 +409,7 @@ export async function validateFixedSuggestions({ dataAccess, log, siteId, csvStr
     const suggestionWithStatus = {
       suggestionId: result.suggestionId,
       opportunityId: result.opportunityId,
+      opportunityStatus: result.opportunityStatus,
       siteId: result.siteId,
       urlTo: result.urlTo,
       urlFrom: result.urlFrom,
@@ -442,6 +450,7 @@ export async function validateFixedSuggestions({ dataAccess, log, siteId, csvStr
         suggestionWithStatus.suggestionId || '',
         suggestionWithStatus.siteId || '',
         suggestionWithStatus.opportunityId || '',
+        suggestionWithStatus.opportunityStatus || '',
         suggestionWithStatus.urlTo || '',
         suggestionWithStatus.urlFrom || '',
         (suggestionWithStatus.title || '').replace(/"/g, '""'),

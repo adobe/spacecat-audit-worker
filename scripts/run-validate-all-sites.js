@@ -132,7 +132,7 @@ Examples:
       csvStream = fs.createWriteStream(outputFile);
       
       // Write CSV header
-      csvStream.write('Suggestion ID,Site ID,Opportunity ID,URL To,URL From,Title,Has Fix Entity,Fix Count,Validation Status,Reason,Is Still Broken\n');
+      csvStream.write('Suggestion ID,Site ID,Opportunity ID,Opportunity Status,URL To,URL From,Title,Has Fix Entity,Fix Count,Validation Status,Reason,Is Still Broken\n');
       
       globalLog.info(`Writing results line-by-line to: ${outputFile}`);
     }
