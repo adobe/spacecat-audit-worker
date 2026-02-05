@@ -1,3 +1,10 @@
+## [1.305.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.305.0...v1.305.1) (2026-02-05)
+
+
+### Bug Fixes
+
+* SITES-39444 Autofix Slack trigger ([#1950](https://github.com/adobe/spacecat-audit-worker/issues/1950)) ([26f7fe2](https://github.com/adobe/spacecat-audit-worker/commit/26f7fe2d1f72eab527eb0afa8def75d92e93f3c7))
+
 # [1.305.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.10...v1.305.0) (2026-02-05)
 
 
