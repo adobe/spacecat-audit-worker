@@ -1637,6 +1637,27 @@ describe('saas extractors - fallbacks and routing', () => {
     expect(fetchStub).to.have.been.calledOnce;
   });
 
+  it('rethrows the primary error when all fallback configs fail', async () => {
+    fetchStub.resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+
+    const site = {
+      getId: () => 'site-all-fallbacks-fail',
+      getConfig: () => ({ getHandlers: () => ({ auditPAAS: { instanceType: 'PAAS' } }) }),
+    };
+
+    await expect(
+      getCommerceConfig(site, 'auditPAAS', 'https://example.com', log, 'default'),
+    ).to.be.rejectedWith(/configs\.json/);
+
+    expect(fetchStub).to.have.been.calledThrice;
+  });
+
 });
 
 

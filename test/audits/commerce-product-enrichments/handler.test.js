@@ -79,7 +79,7 @@ describe('Commerce Product Enrichments Handler', () => {
     sinon.restore();
   });
 
-  it('importTopPages returns top-pages metadata without limit when not provided', async () => {
+  it('importTopPages returns top-pages metadata with default limit when not provided', async () => {
     const context = {
       site,
       finalUrl: 'https://example.com',
@@ -91,6 +91,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
+      auditContext: { limit: 20 },
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
@@ -148,10 +149,10 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
+      auditContext: { limit: 20 },
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
-    expect(result).to.not.have.property('limit');
     expect(log.warn).to.have.been.calledWith(sinon.match(/Could not parse data as JSON/));
   });
 
@@ -223,7 +224,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.urls[4]).to.deep.equal({ url: 'https://example.com/page-5' });
   });
 
-  it('submitForScraping uses all top pages when limit not provided', async () => {
+  it('submitForScraping uses default limit when limit not provided', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -243,9 +244,9 @@ describe('Commerce Product Enrichments Handler', () => {
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(50);
+    expect(result.urls).to.have.lengthOf(20);
     expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
-    expect(result.urls[49]).to.deep.equal({ url: 'https://example.com/page-50' });
+    expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
   });
 
   it('submitForScraping respects limit from context.data when provided as JSON string', async () => {
@@ -294,7 +295,7 @@ describe('Commerce Product Enrichments Handler', () => {
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(50);
+    expect(result.urls).to.have.lengthOf(20);
     expect(log.warn).to.have.been.calledWith(sinon.match(/Could not parse data as JSON/));
   });
 

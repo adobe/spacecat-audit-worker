@@ -18,6 +18,8 @@ import { getCommerceConfig } from '../utils/saas.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
+const DEFAULT_LIMIT = 20;
+
 /**
  * Step 1: Import Top Pages
  * Prepares the audit context and returns metadata for the import worker.
@@ -30,20 +32,27 @@ export async function importTopPages(context) {
     site, finalUrl, log, data,
   } = context;
 
+  log.info(`${LOG_PREFIX} Step 1: Received data parameter - value: ${JSON.stringify(data)}, type: ${typeof data}`);
+
   // Parse data if it's a string (from Slack bot), or use as-is if it's an object
   let parsedData = {};
   if (typeof data === 'string' && data.length > 0) {
     try {
       parsedData = JSON.parse(data);
+      log.info(`${LOG_PREFIX} Step 1: Successfully parsed data as JSON: ${JSON.stringify(parsedData)}`);
     } catch (e) {
-      log.warn(`${LOG_PREFIX} Could not parse data as JSON: ${data}`);
+      log.warn(`${LOG_PREFIX} Could not parse data as JSON: ${data}. Error: ${e.message}`);
     }
   } else if (data && typeof data === 'object') {
     parsedData = data;
+    log.info(`${LOG_PREFIX} Step 1: Data is already an object: ${JSON.stringify(parsedData)}`);
+  } else {
+    log.info(`${LOG_PREFIX} Step 1: No data provided or data is empty`);
   }
 
-  const { limit } = parsedData;
-  const limitInfo = limit ? ` with limit: ${limit}` : '';
+  // Use provided limit or fall back to default
+  const limit = parsedData.limit ? Number(parsedData.limit) : DEFAULT_LIMIT;
+  const limitInfo = ` with limit: ${limit}${!parsedData.limit ? ' (default)' : ''}`;
 
   log.info(`${LOG_PREFIX} Step 1: importTopPages started for site: ${site.getId()}${limitInfo}`);
   log.info(`${LOG_PREFIX} Final URL: ${finalUrl}`);
@@ -54,12 +63,9 @@ export async function importTopPages(context) {
     siteId: site.getId(),
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
+    // Always include limit in auditContext so it's preserved between steps
+    auditContext: { limit },
   };
-
-  // Add limit to auditContext so it's preserved between steps
-  if (limit) {
-    result.auditContext = { limit };
-  }
 
   log.info(`${LOG_PREFIX} Step 1: importTopPages completed, returning:`, result);
   return result;
@@ -81,6 +87,8 @@ export async function submitForScraping(context) {
     auditContext,
   } = context;
 
+  log.info(`${LOG_PREFIX} Step 2: Received auditContext: ${JSON.stringify(auditContext)}`);
+
   // Parse data if it's a string (from Slack bot), or use as-is if it's an object
   let parsedData = {};
   if (typeof data === 'string' && data.length > 0) {
@@ -94,20 +102,15 @@ export async function submitForScraping(context) {
   }
 
   // Read limit from auditContext (for step chaining) or data (for initial call)
-  const limit = auditContext?.limit || parsedData.limit;
-  const limitInfo = limit ? ` with limit: ${limit}` : '';
+  const limit = auditContext?.limit || parsedData.limit || DEFAULT_LIMIT;
+  const limitInfo = ` with limit: ${limit}${!auditContext?.limit && !parsedData.limit ? ' (default)' : ''}`;
 
   log.info(`${LOG_PREFIX} Step 2: submitForScraping started for site: ${site.getId()}${limitInfo}`);
 
   const { SiteTopPage } = dataAccess;
   const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  log.info(`${LOG_PREFIX} Retrieved ${allTopPages.length} top pages from database`);
-
-  // Limit top pages for scraping if limit is provided
-  const topPages = limit ? allTopPages.slice(0, limit) : allTopPages;
-  if (limit) {
-    log.info(`${LOG_PREFIX} Limited to ${topPages.length} top pages for scraping`);
-  }
+  const topPages = allTopPages.slice(0, limit);
+  log.info(`${LOG_PREFIX} Limited to ${topPages.length} top pages for scraping (limit: ${limit}) out of ${allTopPages.length} total top pages.`);
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
   log.info(`${LOG_PREFIX} Reading site config: ${JSON.stringify(site?.getConfig())}`);
