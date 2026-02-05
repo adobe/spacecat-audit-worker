@@ -45,6 +45,9 @@ describe('Missing Alt Text Guidance Handler', () => {
     mockSite = {
       getId: () => 'test-site-id',
       getBaseURL: () => 'https://example.com',
+      getConfig: () => ({
+        getHandlers: () => ({}),
+      }),
     };
 
     context = {
@@ -478,5 +481,275 @@ describe('Missing Alt Text Guidance Handler', () => {
 
     expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
     expect(getProjectedMetricsStub).to.have.been.called;
+  });
+
+  describe('deleteOldSuggestions feature flag', () => {
+    it('should not delete suggestions for URLs outside pageUrlSet when deleteOldSuggestions is false (default)', async () => {
+      // Site config without the feature flag enabled
+      mockSite.getConfig = () => ({
+        getHandlers: () => ({}),
+      });
+
+      // Existing suggestions: one in pageUrlSet, one outside
+      const existingSuggestions = [
+        {
+          getData: () => ({
+            recommendations: [{
+              id: 'suggestion-in-batch',
+              pageUrl: 'https://example.com/page1', // In pageUrlSet
+              imageUrl: 'https://example.com/image1.jpg',
+            }],
+          }),
+          getStatus: () => 'NEW',
+        },
+        {
+          getData: () => ({
+            recommendations: [{
+              id: 'suggestion-outside-batch',
+              pageUrl: 'https://example.com/other-page', // NOT in pageUrlSet
+              imageUrl: 'https://example.com/image-other.jpg',
+            }],
+          }),
+          getStatus: () => 'NEW',
+        },
+      ];
+
+      mockOpportunity.getSuggestions.returns(existingSuggestions);
+
+      const result = await guidanceHandler(mockMessage, context);
+
+      expect(result.status).to.equal(200);
+      // Only the suggestion in pageUrlSet should be marked as OUTDATED
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
+        [existingSuggestions[0]],
+        'OUTDATED',
+      );
+    });
+
+    it('should delete suggestions for ALL URLs when deleteOldSuggestions is true', async () => {
+      // Site config with the feature flag enabled for this site
+      mockSite.getConfig = () => ({
+        getHandlers: () => ({
+          'alt-text-delete-old-suggestions': {
+            enabled: {
+              sites: ['test-site-id'],
+            },
+          },
+        }),
+      });
+
+      // Existing suggestions: one in pageUrlSet, one outside
+      const existingSuggestions = [
+        {
+          getData: () => ({
+            recommendations: [{
+              id: 'suggestion-in-batch',
+              pageUrl: 'https://example.com/page1', // In pageUrlSet
+              imageUrl: 'https://example.com/image1.jpg',
+            }],
+          }),
+          getStatus: () => 'NEW',
+        },
+        {
+          getData: () => ({
+            recommendations: [{
+              id: 'suggestion-outside-batch',
+              pageUrl: 'https://example.com/other-page', // NOT in pageUrlSet
+              imageUrl: 'https://example.com/image-other.jpg',
+            }],
+          }),
+          getStatus: () => 'NEW',
+        },
+      ];
+
+      mockOpportunity.getSuggestions.returns(existingSuggestions);
+
+      const result = await guidanceHandler(mockMessage, context);
+
+      expect(result.status).to.equal(200);
+      // BOTH suggestions should be marked as OUTDATED
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
+        existingSuggestions,
+        'OUTDATED',
+      );
+    });
+
+    it('should never delete manually edited suggestions regardless of deleteOldSuggestions', async () => {
+      // Site config with the feature flag enabled
+      mockSite.getConfig = () => ({
+        getHandlers: () => ({
+          'alt-text-delete-old-suggestions': {
+            enabled: {
+              sites: ['test-site-id'],
+            },
+          },
+        }),
+      });
+
+      // Existing suggestions: one manually edited, one not
+      const existingSuggestions = [
+        {
+          getData: () => ({
+            recommendations: [{
+              id: 'manually-edited-suggestion',
+              pageUrl: 'https://example.com/page1',
+              imageUrl: 'https://example.com/image1.jpg',
+              isManuallyEdited: true, // Should NOT be deleted
+            }],
+          }),
+          getStatus: () => 'NEW',
+        },
+        {
+          getData: () => ({
+            recommendations: [{
+              id: 'regular-suggestion',
+              pageUrl: 'https://example.com/page1',
+              imageUrl: 'https://example.com/image2.jpg',
+              isManuallyEdited: false,
+            }],
+          }),
+          getStatus: () => 'NEW',
+        },
+        {
+          getData: () => ({
+            recommendations: [{
+              id: 'suggestion-no-flag',
+              pageUrl: 'https://example.com/page1',
+              imageUrl: 'https://example.com/image3.jpg',
+              // isManuallyEdited not set
+            }],
+          }),
+          getStatus: () => 'NEW',
+        },
+      ];
+
+      mockOpportunity.getSuggestions.returns(existingSuggestions);
+
+      const result = await guidanceHandler(mockMessage, context);
+
+      expect(result.status).to.equal(200);
+      // Only non-manually-edited suggestions should be marked as OUTDATED
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
+        [existingSuggestions[1], existingSuggestions[2]],
+        'OUTDATED',
+      );
+    });
+
+    it('should handle when site has no config', async () => {
+      mockSite.getConfig = () => null;
+
+      const result = await guidanceHandler(mockMessage, context);
+
+      expect(result.status).to.equal(200);
+      // Should default to deleteOldSuggestions = false behavior
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: deleteOldSuggestions config: false',
+      );
+    });
+
+    it('should handle when site config has no handlers', async () => {
+      mockSite.getConfig = () => ({
+        getHandlers: () => null,
+      });
+
+      const result = await guidanceHandler(mockMessage, context);
+
+      expect(result.status).to.equal(200);
+      // Should default to deleteOldSuggestions = false behavior
+      expect(context.log.debug).to.have.been.calledWith(
+        '[alt-text]: deleteOldSuggestions config: false',
+      );
+    });
+
+    it('should handle when feature flag config exists but site is not in enabled list', async () => {
+      mockSite.getConfig = () => ({
+        getHandlers: () => ({
+          'alt-text-delete-old-suggestions': {
+            enabled: {
+              sites: ['other-site-id'], // Different site ID
+            },
+          },
+        }),
+      });
+
+      const existingSuggestions = [
+        {
+          getData: () => ({
+            recommendations: [{
+              id: 'suggestion-outside-batch',
+              pageUrl: 'https://example.com/other-page', // NOT in pageUrlSet
+              imageUrl: 'https://example.com/image-other.jpg',
+            }],
+          }),
+          getStatus: () => 'NEW',
+        },
+      ];
+
+      mockOpportunity.getSuggestions.returns(existingSuggestions);
+
+      const result = await guidanceHandler(mockMessage, context);
+
+      expect(result.status).to.equal(200);
+      // Should NOT delete suggestion outside pageUrlSet since deleteOldSuggestions is false
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    });
+
+    it('should calculate removed decorative count correctly when clearing suggestions', async () => {
+      mockSite.getConfig = () => ({
+        getHandlers: () => ({
+          'alt-text-delete-old-suggestions': {
+            enabled: {
+              sites: ['test-site-id'],
+            },
+          },
+        }),
+      });
+
+      const existingSuggestions = [
+        {
+          getData: () => ({
+            recommendations: [{
+              id: 'decorative-suggestion',
+              pageUrl: 'https://example.com/page1',
+              imageUrl: 'https://example.com/image1.jpg',
+              isDecorative: true,
+            }],
+          }),
+          getStatus: () => 'NEW',
+        },
+        {
+          getData: () => ({
+            recommendations: [{
+              id: 'non-decorative-suggestion',
+              pageUrl: 'https://example.com/page1',
+              imageUrl: 'https://example.com/image2.jpg',
+              isDecorative: false,
+            }],
+          }),
+          getStatus: () => 'NEW',
+        },
+      ];
+
+      mockOpportunity.getSuggestions.returns(existingSuggestions);
+      mockOpportunity.getData.returns({
+        decorativeImagesCount: 5,
+        projectedTrafficLost: 100,
+        projectedTrafficValue: 100,
+      });
+
+      getProjectedMetricsStub.resetBehavior();
+      getProjectedMetricsStub.resolves({
+        projectedTrafficLost: 50,
+        projectedTrafficValue: 50,
+      });
+
+      await guidanceHandler(mockMessage, context);
+
+      // Verify decorative count is subtracted correctly (5 - 1 removed decorative + new decoratives)
+      expect(mockOpportunity.setData).to.have.been.called;
+      const setDataCall = mockOpportunity.setData.firstCall.args[0];
+      // 5 (existing) - 1 (removed decorative) + 0 (new from mockMessage has isDecorative: false) = 4
+      expect(setDataCall.decorativeImagesCount).to.equal(4);
+    });
   });
 });
