@@ -104,7 +104,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
       setStatus: sinon.stub(),
       setDescription: sinon.stub(),
       save: sinon.stub().resolvesThis(),
-      getType: () => 'paid-keyword-optimizer',
+      getType: () => 'ad-intent-mismatch',
       getData: () => ({ url: TEST_URL }),
       getStatus: () => 'NEW',
       getUpdatedBy: () => 'system',
@@ -167,7 +167,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
   it('should mark existing opportunities for the same URL as IGNORED', async () => {
     const existingOpptyForSameUrl = makeOppty({
       id: 'opptyId-1',
-      type: 'paid-keyword-optimizer',
+      type: 'ad-intent-mismatch',
       status: 'NEW',
       updatedBy: 'system',
       url: TEST_URL, // Same URL
@@ -192,7 +192,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
   it('should NOT mark existing opportunities for different URLs as IGNORED', async () => {
     const existingOpptyForDifferentUrl = makeOppty({
       id: 'opptyId-1',
-      type: 'paid-keyword-optimizer',
+      type: 'ad-intent-mismatch',
       status: 'NEW',
       updatedBy: 'system',
       url: 'https://example-page/different-page', // Different URL
@@ -216,14 +216,14 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
   it('should only mark same-URL system opportunities as IGNORED, not user-modified ones', async () => {
     const systemOpptyForSameUrl = makeOppty({
       id: 'opptyId-system',
-      type: 'paid-keyword-optimizer',
+      type: 'ad-intent-mismatch',
       status: 'NEW',
       updatedBy: 'system',
       url: TEST_URL,
     });
     const userOpptyForSameUrl = makeOppty({
       id: 'opptyId-user',
-      type: 'paid-keyword-optimizer',
+      type: 'ad-intent-mismatch',
       status: 'NEW',
       updatedBy: 'user',
       url: TEST_URL,
@@ -376,7 +376,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
   it('should not mark the newly created opportunity as IGNORED', async () => {
     const existingOppty = makeOppty({
       id: 'existing-oppty-id',
-      type: 'paid-keyword-optimizer',
+      type: 'ad-intent-mismatch',
       status: 'NEW',
       updatedBy: 'system',
       url: TEST_URL,
