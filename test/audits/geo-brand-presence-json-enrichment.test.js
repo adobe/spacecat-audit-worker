@@ -15,6 +15,7 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import {
   checkJsonEnrichmentNeeded,
@@ -34,6 +35,7 @@ import {
 } from '../../src/geo-brand-presence/util.js';
 
 use(sinonChai);
+use(chaiAsPromised);
 
 describe('JSON Enrichment Utilities', () => {
   describe('checkJsonEnrichmentNeeded', () => {
@@ -622,6 +624,23 @@ describe('JSON Enrichment Handler', () => {
   it('should export the handler as default', async () => {
     const { handler } = await createHandler();
     expect(handler.default).to.be.a('function');
+  });
+
+  it('should throw error when context destructuring fails', async () => {
+    const { handler } = await createHandler();
+    const badContext = Object.create(null); // Object without standard properties
+
+    // Use a getter that throws to simulate destructuring error
+    Object.defineProperty(badContext, 'log', {
+      get() {
+        throw new Error('Context access error');
+      },
+      enumerable: true,
+    });
+
+    await expect(
+      handler.default({ auditId, siteId, batchStart: 0 }, badContext),
+    ).to.be.rejectedWith('Context access error');
   });
 
   describe('Site validation', () => {
