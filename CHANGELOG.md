@@ -1,3 +1,74 @@
+## [1.305.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.305.0...v1.305.1) (2026-02-05)
+
+
+### Bug Fixes
+
+* SITES-39444 Autofix Slack trigger ([#1950](https://github.com/adobe/spacecat-audit-worker/issues/1950)) ([26f7fe2](https://github.com/adobe/spacecat-audit-worker/commit/26f7fe2d1f72eab527eb0afa8def75d92e93f3c7))
+
+# [1.305.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.10...v1.305.0) (2026-02-05)
+
+
+### Features
+
+* process new vulnerability code-fix schema ([#1942](https://github.com/adobe/spacecat-audit-worker/issues/1942)) ([e28458f](https://github.com/adobe/spacecat-audit-worker/commit/e28458f4919760b20de11d5801413322b3fb3637))
+
+## [1.304.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.9...v1.304.10) (2026-02-05)
+
+
+### Bug Fixes
+
+* sync suggestions for wikipedia-analysis ([#1943](https://github.com/adobe/spacecat-audit-worker/issues/1943)) ([c3a4804](https://github.com/adobe/spacecat-audit-worker/commit/c3a48046082f5a8f73a765137d00e996089bd297))
+
+## [1.304.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.8...v1.304.9) (2026-02-05)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.40.7 ([#1947](https://github.com/adobe/spacecat-audit-worker/issues/1947)) ([bc827bd](https://github.com/adobe/spacecat-audit-worker/commit/bc827bd8e54d5c1bea3f3728cc2d7d5a1c2dab73))
+* rename opportunity type from paid-keyword-optimizer to ad-intent-mismatch ([#1940](https://github.com/adobe/spacecat-audit-worker/issues/1940)) ([a6da25b](https://github.com/adobe/spacecat-audit-worker/commit/a6da25bfeb89c4ba95b3547e4bd9ed943bc23386))
+
+## [1.304.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.7...v1.304.8) (2026-02-05)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.103.0 ([#1945](https://github.com/adobe/spacecat-audit-worker/issues/1945)) ([37225e8](https://github.com/adobe/spacecat-audit-worker/commit/37225e85fbe24b16fcaff2d49837d2020ef6ede5))
+
+## [1.304.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.6...v1.304.7) (2026-02-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.102.0 ([#1941](https://github.com/adobe/spacecat-audit-worker/issues/1941)) ([926b561](https://github.com/adobe/spacecat-audit-worker/commit/926b56160e0f56dd8b94c0f7917482356ad984aa))
+
+## [1.304.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.5...v1.304.6) (2026-02-04)
+
+
+### Bug Fixes
+
+* faqs prompts should get all rows ([#1938](https://github.com/adobe/spacecat-audit-worker/issues/1938)) ([fc34c38](https://github.com/adobe/spacecat-audit-worker/commit/fc34c381e9d0618dd5a1e2f78bed8467f86eb3eb))
+
+## [1.304.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.4...v1.304.5) (2026-02-04)
+
+
+### Bug Fixes
+
+* improve notification for llmo ([#1939](https://github.com/adobe/spacecat-audit-worker/issues/1939)) ([d04e19e](https://github.com/adobe/spacecat-audit-worker/commit/d04e19eee9a99f47701059381990e1d316ea6005))
+
+## [1.304.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.3...v1.304.4) (2026-02-04)
+
+
+### Bug Fixes
+
+* improve log message and first configuration notification ([#1937](https://github.com/adobe/spacecat-audit-worker/issues/1937)) ([216d218](https://github.com/adobe/spacecat-audit-worker/commit/216d218109107e8df63a2f5be7c8584e72dac136))
+
+## [1.304.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.2...v1.304.3) (2026-02-04)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1934](https://github.com/adobe/spacecat-audit-worker/issues/1934)) ([87bbcbc](https://github.com/adobe/spacecat-audit-worker/commit/87bbcbcec20dcbcb78dd15fbc02345d729090b92))
+
 ## [1.304.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.304.1...v1.304.2) (2026-02-03)
 
 

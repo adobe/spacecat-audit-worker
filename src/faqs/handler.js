@@ -17,7 +17,7 @@ import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-
 import { getPreviousWeekTriples } from '../utils/date-utils.js';
 import { SPREADSHEET_COLUMNS, validateContentAI } from './utils.js';
 
-const MAX_ROWS_TO_READ = 200;
+const MAX_SUGGESTION_PROMPTS = 200;
 const WEEKS_TO_LOOK_BACK = 4;
 
 /**
@@ -68,10 +68,11 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
     }
 
     const prompts = [];
-    const maxRows = Math.min(MAX_ROWS_TO_READ, worksheet.rowCount - 1);
-    const rows = worksheet.getRows(2, maxRows) || [];
+    // Read all rows (excluding header row)
+    const totalDataRows = worksheet.rowCount - 1;
+    const rows = worksheet.getRows(2, totalDataRows) || [];
 
-    log.info(`[FAQ] Reading ${maxRows} rows from spreadsheet (total rows: ${worksheet.rowCount})`);
+    log.info(`[FAQ] Reading all ${totalDataRows} rows from spreadsheet (total rows: ${worksheet.rowCount})`);
 
     // Extract data using named column constants
     rows.forEach((row) => {
@@ -88,7 +89,8 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
       }
     });
 
-    log.info(`[FAQ] Extracted ${prompts.length} prompts from ${maxRows} rows`);
+    log.info(`[FAQ] Extracted ${prompts.length} prompts from ${totalDataRows} rows`);
+
     return prompts;
   } catch (error) {
     // File not found is expected when trying multiple weeks
@@ -100,38 +102,6 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
     }
     return [];
   }
-}
-
-/**
- * Deduplicates prompts based on question text
- * Prioritizes prompts with URL, then keeps the first occurrence
- * @param {Array} prompts - Array of prompt objects with url, topic, and question
- * @returns {Array} Deduplicated array of prompts
- */
-function deduplicatePrompts(prompts) {
-  const seenQuestions = new Map();
-
-  prompts.forEach((prompt) => {
-    const questionKey = prompt.question.toLowerCase().trim();
-    const existing = seenQuestions.get(questionKey);
-
-    if (!existing) {
-      // First occurrence of this question
-      seenQuestions.set(questionKey, prompt);
-    } else {
-      // Duplicate found - prioritize the one with a URL
-      const existingHasUrl = existing.url && existing.url.length > 0;
-      const currentHasUrl = prompt.url && prompt.url.length > 0;
-
-      // Replace existing if current has URL and existing doesn't
-      if (currentHasUrl && !existingHasUrl) {
-        seenQuestions.set(questionKey, prompt);
-      }
-      // Otherwise keep existing (either it has URL, or both don't have URL - keep first)
-    }
-  });
-
-  return Array.from(seenQuestions.values());
 }
 
 /**
@@ -148,6 +118,28 @@ function sortPrompts(prompts) {
     if (!aHasUrl && bHasUrl) return 1;
     return 0;
   });
+}
+
+/**
+ * Deduplicates prompts based on question text
+ * Keeps the first occurrence of each unique question
+ * @param {Array} prompts - Array of prompt objects with url, topic, and question
+ * @returns {Array} Deduplicated array of prompts
+ */
+function deduplicatePrompts(prompts) {
+  const seenQuestions = new Map();
+
+  prompts.forEach((prompt) => {
+    const questionKey = prompt.question.toLowerCase().trim();
+
+    if (!seenQuestions.has(questionKey)) {
+      // First occurrence of this question - keep it
+      seenQuestions.set(questionKey, prompt);
+    }
+    // Skip duplicates
+  });
+
+  return Array.from(seenQuestions.values());
 }
 
 async function runFaqsAudit(url, context, site) {
@@ -246,17 +238,20 @@ async function runFaqsAudit(url, context, site) {
 
     log.info(`[FAQ] Using brand presence data from ${usedPeriodIdentifier}`);
 
-    // Deduplicate prompts before grouping (prioritizes prompts with URLs)
-    const uniquePrompts = deduplicatePrompts(topPrompts);
-    log.info(`[FAQ] Deduplicated ${topPrompts.length} prompts to ${uniquePrompts.length} unique prompts`);
-
     // Sort prompts: ones with URLs first, then ones without URLs
-    const sortedPrompts = sortPrompts(uniquePrompts);
+    const sortedPrompts = sortPrompts(topPrompts);
 
-    // Group prompts by URL and topic (already limited to MAX_ROWS_TO_READ)
-    const promptsByUrl = groupPromptsByUrlAndTopic(sortedPrompts);
+    // Deduplicate prompts (keeps first occurrence, which prioritizes URLs due to sorting)
+    const uniquePrompts = deduplicatePrompts(sortedPrompts);
+    log.info(`[FAQ] Deduplicated ${sortedPrompts.length} prompts to ${uniquePrompts.length} unique prompts`);
 
-    log.info(`[FAQ] Grouped ${uniquePrompts.length} prompts into ${promptsByUrl.length} topics`);
+    // Limit to top MAX_SUGGESTION_PROMPTS prompts
+    const limitedPrompts = uniquePrompts.slice(0, MAX_SUGGESTION_PROMPTS);
+
+    // Group prompts by URL and topic
+    const promptsByUrl = groupPromptsByUrlAndTopic(limitedPrompts);
+
+    log.info(`[FAQ] Grouped ${limitedPrompts.length} prompts into ${promptsByUrl.length} topics`);
 
     const auditResult = {
       success: true,
