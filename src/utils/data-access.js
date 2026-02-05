@@ -16,6 +16,18 @@ import {
 } from '@adobe/spacecat-shared-data-access';
 
 /**
+ * Opportunity types that only make changes in the author environment (no publish state).
+ * For these types:
+ * - Fix entities are created directly in DEPLOYED state (final state)
+ * - Skip the publish step (publishDeployedFixEntities)
+ * - Regression checks look for DEPLOYED fix entities instead of PUBLISHED
+ */
+export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
+  'security-permissions-redundant',
+  'security-permissions',
+];
+
+/**
  * Safely stringify an object for logging, truncating large arrays to prevent
  * exceeding JavaScript's maximum string length.
  *
@@ -283,9 +295,10 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * @param {Function} [params.isIssueFixedWithAISuggestion] - Async callback for reconcile.
  *   If provided, reconciliation is performed before syncing.
  * @param {Function} [params.buildFixEntityPayload] - Function to build fix entity payload.
- *   Receives (suggestion, opportunity) and returns fix entity object or null.
+ *   Receives (suggestion, opportunity, isAuthorOnly) and returns fix entity object or null.
  * @param {Function} [params.isIssueResolvedOnProduction] - Async callback for publishing.
  *   If provided, fix entity publishing is performed after reconciliation.
+ *   Skipped for author-only opportunity types (see AUTHOR_ONLY_OPPORTUNITY_TYPES).
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
 export async function syncSuggestions({
@@ -308,6 +321,10 @@ export async function syncSuggestions({
   }
   const { log, site, dataAccess } = context;
 
+  // Determine if this is an author-only opportunity type from the constant list
+  const opportunityType = opportunity.getType?.();
+  const isAuthorOnly = AUTHOR_ONLY_OPPORTUNITY_TYPES.includes(opportunityType);
+
   // Fetch existing suggestions and compute disappeared suggestions once
   const newDataKeys = new Set(newData.map(buildKey));
   const existingSuggestions = await opportunity.getSuggestions();
@@ -320,7 +337,7 @@ export async function syncSuggestions({
   log.debug(`[syncSuggestions] Existing suggestions = ${existingSuggestions.length}, Disappeared = ${disappearedSuggestions.length}`);
 
   // Step 1: Reconcile disappeared suggestions (if isIssueFixedWithAISuggestion is provided)
-  if (typeof isIssueFixedWithAISuggestion === 'function') {
+  if (typeof isIssueFixedWithAISuggestion === 'function' && typeof buildFixEntityPayload === 'function') {
     // eslint-disable-next-line no-use-before-define
     await reconcileDisappearedSuggestions({
       opportunity,
@@ -328,13 +345,17 @@ export async function syncSuggestions({
       log,
       isIssueFixedWithAISuggestion,
       buildFixEntityPayload,
+      isAuthorOnly,
     });
   } else {
     log.debug('[syncSuggestions] No isIssueFixedWithAISuggestion callback provided');
   }
 
   // Step 2: Publish deployed fix entities (if isIssueResolvedOnProduction is provided)
-  if (typeof isIssueResolvedOnProduction === 'function') {
+  // Skip for author-only opportunity types (DEPLOYED is the final state for them)
+  if (isAuthorOnly) {
+    log.debug('[syncSuggestions] Skipping publish step for author-only opportunity type');
+  } else if (typeof isIssueResolvedOnProduction === 'function') {
     try {
       // eslint-disable-next-line no-use-before-define
       await publishDeployedFixEntities({
@@ -363,11 +384,59 @@ export async function syncSuggestions({
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
-  // Update existing suggestions
+  // Determine which FIXED suggestions have completed fix entities
+  // For author-only: check for DEPLOYED status (final state)
+  // For regular: check for PUBLISHED status (final state)
+  const fixedStatus = SuggestionDataAccess.STATUSES.FIXED;
+  const finalFixEntityStatus = isAuthorOnly
+    ? FixEntityDataAccess?.STATUSES?.DEPLOYED
+    : FixEntityDataAccess?.STATUSES?.PUBLISHED;
+  /* c8 ignore next */
+  const { Suggestion } = dataAccess || {};
+
+  // Build a set of suggestion IDs for FIXED suggestions with completed fix entities
+  const completedFixedSuggestionIds = new Set();
+  const completedFixedKeys = new Set();
+  const fixedSuggestions = existingSuggestions.filter((s) => s.getStatus() === fixedStatus);
+
+  const canCheckFixEntities = fixedSuggestions.length > 0
+    && finalFixEntityStatus
+    && Suggestion?.getFixEntitiesBySuggestionId;
+  if (canCheckFixEntities) {
+    await Promise.all(fixedSuggestions.map(async (suggestion) => {
+      try {
+        const suggestionId = suggestion.getId?.();
+        if (!suggestionId) return;
+
+        const { data: fixEntities = [] } = await Suggestion.getFixEntitiesBySuggestionId(
+          suggestionId,
+        );
+
+        // For author-only: check all fix entities are DEPLOYED
+        // For regular: check all fix entities are PUBLISHED
+        if (fixEntities.length > 0
+          && fixEntities.every((fe) => fe.getStatus?.() === finalFixEntityStatus)) {
+          completedFixedSuggestionIds.add(suggestionId);
+          completedFixedKeys.add(buildKey(suggestion.getData()));
+        }
+      } catch (e) {
+        log.debug(`Failed to check fix entities for suggestion: ${e.message}`);
+      }
+    }));
+  }
+
+  // Update existing suggestions:
+  // Skip FIXED suggestions with completed fix entities (regression creates new suggestion)
   await Promise.all(
     existingSuggestions
       .filter((existing) => {
         const existingKey = buildKey(existing.getData());
+        const status = existing.getStatus();
+        const suggestionId = existing.getId?.();
+        // Skip FIXED with completed fix entities (regression creates new suggestion)
+        if (status === fixedStatus && completedFixedSuggestionIds.has(suggestionId)) {
+          return false;
+        }
         return newDataKeys.has(existingKey);
       })
       .map((existing) => {
@@ -391,11 +460,29 @@ export async function syncSuggestions({
   log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
   // Prepare new suggestions
+  // Allow creating new suggestion for regression when FIXED suggestion has completed fix entities
   const requiresValidation = Boolean(site?.requiresValidation);
   const newSuggestions = newData
-    .filter((data) => !existingSuggestions.some(
-      (existing) => buildKey(existing.getData()) === buildKey(data),
-    ))
+    .filter((data) => {
+      const key = buildKey(data);
+      const existingMatches = existingSuggestions.filter(
+        (existing) => buildKey(existing.getData()) === key,
+      );
+
+      // No existing suggestion with this key - allow creation
+      if (existingMatches.length === 0) return true;
+
+      // Allow creation if ALL existing matches are FIXED with completed fix entities (regression)
+      const allMatchesAreCompletedFixed = existingMatches.every(
+        (match) => match.getStatus() === fixedStatus && completedFixedKeys.has(key),
+      );
+
+      if (allMatchesAreCompletedFixed) {
+        log.warn('Previously fixed suggestion reappeared in audit. Creating new suggestion for regression.');
+      }
+
+      return allMatchesAreCompletedFixed;
+    })
     .map((data) => {
       const suggestion = mapNewSuggestion(data);
       return {
@@ -443,7 +530,11 @@ export async function syncSuggestions({
 /**
  * Reconciles suggestions that disappeared from current audit results.
  * If a previous suggestion is verified as fixed (via the provided callback),
- * marks it as FIXED and creates a PUBLISHED fix entity using the handler-provided builder.
+ * marks it as FIXED and creates a fix entity using the handler-provided builder.
+ *
+ * For author-only opportunity types (isAuthorOnly=true), fix entities are created
+ * in DEPLOYED state (final state). For regular opportunities, fix entities are
+ * created in PUBLISHED state.
  *
  * @param {Object} params - The parameters for the reconciliation.
  * @param {Object} params.opportunity - The opportunity object.
@@ -452,7 +543,9 @@ export async function syncSuggestions({
  * @param {Function} params.isIssueFixedWithAISuggestion - Async callback to determine if a
  *   suggestion's issue has been fixed with our AI suggestion. Returns true if fixed.
  * @param {Function} params.buildFixEntityPayload - Function to build fix entity payload.
- *   Receives (suggestion, opportunity) and returns fix entity object or null to skip.
+ *   Receives (suggestion, opportunity, isAuthorOnly) and returns fix entity object or null.
+ * @param {boolean} [params.isAuthorOnly=false] - If true, this is an author-only opportunity.
+ *   Fix entities should use DEPLOYED as final status instead of PUBLISHED.
  * @returns {Promise<void>}
  */
 export async function reconcileDisappearedSuggestions({
@@ -461,6 +554,7 @@ export async function reconcileDisappearedSuggestions({
   log,
   isIssueFixedWithAISuggestion,
   buildFixEntityPayload,
+  isAuthorOnly = false,
 }) {
   try {
     const newStatus = SuggestionDataAccess?.STATUSES?.NEW;
@@ -486,7 +580,8 @@ export async function reconcileDisappearedSuggestions({
       }
 
       log.debug(`[reconcileDisappearedSuggestions] Marking suggestion ${suggestion?.getId?.()} as FIXED`);
-      // Mark suggestion as FIXED and prepare a PUBLISHED fix entity on the opportunity
+      // Mark suggestion as FIXED and prepare fix entity on the opportunity
+      // For author-only opportunities, the fix entity is created in DEPLOYED state (final)
       let suggestionMarkedFixed = false;
       try {
         suggestion.setStatus?.(SuggestionDataAccess.STATUSES.FIXED);
@@ -502,7 +597,8 @@ export async function reconcileDisappearedSuggestions({
       // Only create fix entity if we successfully marked the suggestion as FIXED
       if (suggestionMarkedFixed && typeof buildFixEntityPayload === 'function') {
         try {
-          const fixEntity = buildFixEntityPayload(suggestion, opportunity);
+          // Pass isAuthorOnly so handler can set appropriate status (DEPLOYED vs PUBLISHED)
+          const fixEntity = buildFixEntityPayload(suggestion, opportunity, isAuthorOnly);
           if (fixEntity) {
             fixEntityObjects.push(fixEntity);
           }

@@ -25,6 +25,7 @@ import {
   retrieveAuditById,
   keepSameDataFunction,
   keepLatestMergeDataFunction,
+  AUTHOR_ONLY_OPPORTUNITY_TYPES,
 } from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -2249,6 +2250,292 @@ describe('data-access', () => {
       await expect(retrieveAuditById(mockDataAccess, 'audit1', mockLog)).to.be.rejectedWith('Error getting audit audit1: database error');
       expect(mockDataAccess.Audit.findById).to.have.been.calledOnceWith('audit1');
       expect(mockLog.warn).to.not.have.been.called;
+    });
+  });
+
+  describe('AUTHOR_ONLY_OPPORTUNITY_TYPES', () => {
+    it('should contain expected opportunity types', () => {
+      expect(AUTHOR_ONLY_OPPORTUNITY_TYPES).to.include('security-permissions-redundant');
+      expect(AUTHOR_ONLY_OPPORTUNITY_TYPES).to.include('security-permissions-too-strong');
+    });
+  });
+
+  describe('syncSuggestions - Author-Only Opportunity Types', () => {
+    let mockLogger;
+    let mockOpportunity;
+    let context;
+    const buildKey = (d) => d?.key;
+    const mapNewSuggestion = (d) => ({ type: 'TEST', data: d });
+
+    beforeEach(() => {
+      mockLogger = {
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        debug: sinon.stub(),
+        error: sinon.stub(),
+      };
+      mockOpportunity = {
+        getId: sinon.stub().returns('opp-id'),
+        getSiteId: sinon.stub().returns('site-id'),
+        getSuggestions: sinon.stub().resolves([]),
+        addSuggestions: sinon.stub().resolves({ createdItems: [], errorItems: [] }),
+        addFixEntities: sinon.stub().resolves({ createdItems: [], errorItems: [] }),
+        getType: sinon.stub().returns('security-permissions-redundant'), // Author-only type
+      };
+      context = {
+        dataAccess: {
+          Suggestion: {
+            bulkUpdateStatus: sinon.stub().resolves(),
+            getFixEntitiesBySuggestionId: sinon.stub().resolves({ data: [] }),
+          },
+          FixEntity: {
+            allByOpportunityIdAndStatus: sinon.stub().resolves({ data: [] }),
+          },
+        },
+        log: mockLogger,
+        site: {
+          getDeliveryType: sinon.stub().returns('aem_edge'),
+          requiresValidation: false,
+        },
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('should skip publish step for author-only opportunity type', async () => {
+      const newData = [{ key: '1' }];
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        isIssueResolvedOnProduction: sinon.stub().resolves(true),
+      });
+
+      // Verify publish step is skipped (debug log indicates skipping)
+      expect(mockLogger.debug).to.have.been.calledWith('[syncSuggestions] Skipping publish step for author-only opportunity type');
+    });
+
+    it('should pass isAuthorOnly=true to buildFixEntityPayload for author-only opportunity type', async () => {
+      const disappearedSuggestion = {
+        getId: sinon.stub().returns('sugg-1'),
+        getData: sinon.stub().returns({ key: '1', urlEdited: 'https://new.com' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+        getType: sinon.stub().returns('PERMISSION_FIX'),
+        setStatus: sinon.stub().resolves(),
+        save: sinon.stub().resolves(),
+      };
+
+      mockOpportunity.getSuggestions.resolves([disappearedSuggestion]);
+
+      // No matching data in newData - suggestion has "disappeared"
+      const newData = [];
+
+      const buildFixEntityPayloadStub = sinon.stub().callsFake((suggestion, opp, isAuthorOnly) => ({
+        opportunityId: opp.getId(),
+        status: isAuthorOnly ? 'DEPLOYED' : 'PUBLISHED', // Handler uses isAuthorOnly to set status
+        type: suggestion.getType(),
+        suggestions: [suggestion.getId()],
+      }));
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: buildFixEntityPayloadStub,
+      });
+
+      // Verify buildFixEntityPayload was called with isAuthorOnly=true
+      expect(buildFixEntityPayloadStub).to.have.been.called;
+      const [, , isAuthorOnlyArg] = buildFixEntityPayloadStub.getCall(0).args;
+      expect(isAuthorOnlyArg).to.equal(true);
+
+      // Verify fix entity was created with DEPLOYED status (handler set it based on isAuthorOnly)
+      expect(mockOpportunity.addFixEntities).to.have.been.called;
+      const fixEntities = mockOpportunity.addFixEntities.getCall(0)?.args[0] || [];
+      expect(fixEntities.length).to.equal(1);
+      expect(fixEntities[0].status).to.equal('DEPLOYED');
+    });
+
+    it('should detect regression using DEPLOYED fix entities for author-only opportunity type', async () => {
+      // FIXED suggestion with DEPLOYED fix entities (completed for author-only)
+      const fixedSuggestion = {
+        getId: sinon.stub().returns('fixed-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
+        setData: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+
+      // Mock getFixEntitiesBySuggestionId to return DEPLOYED fix entities
+      context.dataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({
+        data: [{ getStatus: sinon.stub().returns('DEPLOYED') }],
+      });
+
+      // Same issue reappears in audit (regression)
+      const newData = [{ key: '1' }];
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify regression is detected - new suggestion should be created
+      expect(mockLogger.warn).to.have.been.calledWith(
+        'Previously fixed suggestion reappeared in audit. Creating new suggestion for regression.',
+      );
+      expect(mockOpportunity.addSuggestions).to.have.been.called;
+      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
+      expect(addedSuggestions.length).to.equal(1);
+    });
+
+    it('should NOT detect regression when FIXED suggestion has no fix entities', async () => {
+      // FIXED suggestion WITHOUT completed fix entities
+      const fixedSuggestion = {
+        getId: sinon.stub().returns('fixed-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
+        setData: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+
+      // No fix entities
+      context.dataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({
+        data: [],
+      });
+
+      // Same issue reappears in audit
+      const newData = [{ key: '1' }];
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify no regression warning - the existing FIXED suggestion is updated instead
+      expect(mockLogger.warn).to.not.have.been.calledWith(
+        'Previously fixed suggestion reappeared in audit. Creating new suggestion for regression.',
+      );
+      // No new suggestion should be added
+      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
+      expect(addedSuggestions.length).to.equal(0);
+    });
+
+    it('should NOT detect regression when FIXED suggestion has PUBLISHED fix entities (wrong status for author-only)', async () => {
+      // FIXED suggestion with PUBLISHED fix entities (not the right status for author-only)
+      const fixedSuggestion = {
+        getId: sinon.stub().returns('fixed-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
+        setData: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+
+      // Fix entities with PUBLISHED status (not DEPLOYED, so not completed for author-only)
+      context.dataAccess.Suggestion.getFixEntitiesBySuggestionId.resolves({
+        data: [{ getStatus: sinon.stub().returns('PUBLISHED') }],
+      });
+
+      // Same issue reappears in audit
+      const newData = [{ key: '1' }];
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify no regression - PUBLISHED is not the right status for author-only types
+      expect(mockLogger.warn).to.not.have.been.calledWith(
+        'Previously fixed suggestion reappeared in audit. Creating new suggestion for regression.',
+      );
+      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
+      expect(addedSuggestions.length).to.equal(0);
+    });
+
+    it('should log debug when checking fix entities fails', async () => {
+      const fixedSuggestion = {
+        getId: sinon.stub().returns('fixed-1'),
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
+        setData: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestion]);
+
+      // Simulate error when getting fix entities
+      context.dataAccess.Suggestion.getFixEntitiesBySuggestionId.rejects(new Error('DB error'));
+
+      const newData = [{ key: '1' }];
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify error is logged
+      expect(mockLogger.debug).to.have.been.calledWith(
+        sinon.match(/Failed to check fix entities for suggestion/),
+      );
+    });
+
+    it('should skip fix entity check when FIXED suggestion has no ID', async () => {
+      // FIXED suggestion without ID
+      const fixedSuggestionNoId = {
+        getId: sinon.stub().returns(null), // No ID
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.FIXED),
+        setData: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      mockOpportunity.getSuggestions.resolves([fixedSuggestionNoId]);
+
+      const newData = [{ key: '1' }];
+
+      await syncSuggestions({
+        context,
+        opportunity: mockOpportunity,
+        newData,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // getFixEntitiesBySuggestionId should NOT be called since suggestion has no ID
+      expect(context.dataAccess.Suggestion.getFixEntitiesBySuggestionId).to.not.have.been.called;
+      // No new suggestion should be created (existing FIXED suggestion is updated)
+      const addedSuggestions = mockOpportunity.addSuggestions.getCall(0)?.args[0] || [];
+      expect(addedSuggestions.length).to.equal(0);
     });
   });
 

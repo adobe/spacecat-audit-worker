@@ -761,11 +761,26 @@ Each message preserves the `auditContext` to maintain the step chain. The `next`
 
 This section documents the shared utility functions available in `src/utils/data-access.js` for managing opportunities, suggestions, and fix entities. These utilities help audits implement consistent patterns for tracking issues and their resolutions.
 
+### Author-Only Opportunity Types
+
+Some opportunity types only affect the author environment and do not require a production publish step. These are defined in the `AUTHOR_ONLY_OPPORTUNITY_TYPES` constant in `src/utils/data-access.js`.
+
+For author-only opportunity types:
+- **Fix entities are created with `DEPLOYED` status** instead of `PUBLISHED` when suggestions are marked as fixed in `reconcileDisappearedSuggestions`
+- **Fix entity publishing is skipped** - `publishDeployedFixEntities` does not process these opportunities since `DEPLOYED` is the final state
+- **Regression checks use `DEPLOYED` status** - When checking for regressions of `FIXED` suggestions, the system looks for fix entities in `DEPLOYED` status instead of `PUBLISHED`
+
+Currently defined author-only opportunity types:
+- `security-permissions-redundant`
+- `security-permissions-too-strong`
+
+To add a new author-only opportunity type, add it to the `AUTHOR_ONLY_OPPORTUNITY_TYPES` array in `src/utils/data-access.js`.
+
 ### syncSuggestions
 
 Synchronizes new audit data with existing suggestions for an opportunity. This function:
 1. **Reconciles disappeared suggestions** - Marks suggestions as `FIXED` when issues are resolved (if `isIssueFixed` callback provided)
-2. **Publishes deployed fix entities** - Transitions `DEPLOYED` fix entities to `PUBLISHED` when verified (if `isIssueResolvedOnProduction` callback provided)
+2. **Publishes deployed fix entities** - Transitions `DEPLOYED` fix entities to `PUBLISHED` when verified (if `isIssueResolvedOnProduction` callback provided). Skipped for author-only opportunity types.
 3. **Marks outdated suggestions** - Updates suggestions no longer in audit data
 4. **Updates existing suggestions** - Merges new data with existing suggestions
 5. **Creates new suggestions** - Adds suggestions for newly detected issues
@@ -839,7 +854,9 @@ When audit data no longer includes a previously detected issue, it may mean the 
 1. Filters to suggestions in `NEW` status from the disappeared suggestions
 2. Uses a custom callback to verify if the issue was resolved
 3. Marks resolved suggestions as `FIXED`
-4. Creates `PUBLISHED` fix entities to track the resolution
+4. Creates fix entities to track the resolution:
+   - `PUBLISHED` status for standard opportunity types
+   - `DEPLOYED` status for author-only opportunity types (see [Author-Only Opportunity Types](#author-only-opportunity-types))
 
 #### Usage
 
@@ -919,12 +936,14 @@ await syncSuggestions({
 
 > **Note:** For most use cases, pass `isIssueResolvedOnProduction` to `syncSuggestions` instead of calling this function directly.
 
+> **Note:** This function is automatically skipped for author-only opportunity types (see [Author-Only Opportunity Types](#author-only-opportunity-types)), as `DEPLOYED` is their final state.
+
 When users deploy fixes (e.g., update content to resolve an issue), the fix entity status transitions from `NEW` to `DEPLOYED`. The `publishDeployedFixEntities` utility automatically verifies if deployed fixes have resolved the issue and transitions them to `PUBLISHED` status.
 
 This enables audits to track the full lifecycle of issue resolution:
 1. **NEW** → Fix entity created when user acknowledges an issue
 2. **DEPLOYED** → User has deployed changes to fix the issue
-3. **PUBLISHED** → System verified the issue is resolved in production
+3. **PUBLISHED** → System verified the issue is resolved in production (not applicable for author-only types)
 
 #### Usage
 
