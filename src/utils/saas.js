@@ -159,7 +159,7 @@ function normalizeCommerceConfigKeys(config) {
 /**
  * Validates the commerce config return shape.
  * Checks for url and all required headers.
- * Supports both legacy Magento-* headers and new AC format (minimal headers).
+ * Supports both PAAS Magento-* headers and new AC format (minimal headers).
  * AC-Environment-Id can be used in config as a fallback source for Magento-Environment-Id,
  * but only Magento-Environment-Id is sent in actual request headers.
  * @param {Object} config - The config object with url and headers.
@@ -183,19 +183,19 @@ function validateCommerceConfigShape(config, locale) {
       missingFields.push('headers.Magento-Environment-Id');
     }
 
-    // Determine if this is AC format or legacy Magento format
-    // AC format: only has Magento-Environment-Id and possibly AC-View-ID (no legacy fields)
-    // Legacy format: has all the Magento-* fields plus x-api-key
-    const hasLegacyFields = hasText(config.headers['Magento-Customer-Group'])
+    // Determine if this is AC format or PAAS Magento format
+    // AC format: only has Magento-Environment-Id and possibly AC-View-ID (no PAAS fields)
+    // PAAS format: has all the Magento-* fields plus x-api-key
+    const hasPaasFields = hasText(config.headers['Magento-Customer-Group'])
       || hasText(config.headers['Magento-Store-Code'])
       || hasText(config.headers['Magento-Store-View-Code'])
       || hasText(config.headers['Magento-Website-Code'])
       || hasText(config.headers['x-api-key']);
 
-    const isLegacyFormat = hasLegacyFields;
+    const isPaasFormat = hasPaasFields;
 
-    if (isLegacyFormat) {
-      // Legacy Magento-* format validation - store identifiers required
+    if (isPaasFormat) {
+      // PAAS Magento-* format validation - store identifiers required
       // Magento-Customer-Group and x-api-key are optional.
       const requiredHeaders = [
         'Magento-Store-Code',

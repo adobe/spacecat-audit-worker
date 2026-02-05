@@ -88,22 +88,11 @@ export async function submitForScraping(context) {
   } = context;
 
   log.info(`${LOG_PREFIX} Step 2: Received auditContext: ${JSON.stringify(auditContext)}`);
-
-  // Parse data if it's a string (from Slack bot), or use as-is if it's an object
-  let parsedData = {};
-  if (typeof data === 'string' && data.length > 0) {
-    try {
-      parsedData = JSON.parse(data);
-    } catch (e) {
-      log.warn(`${LOG_PREFIX} Could not parse data as JSON: ${data}`);
-    }
-  } else if (data && typeof data === 'object') {
-    parsedData = data;
-  }
+  log.info(`${LOG_PREFIX} Step 2: Received data parameter (ignored for limit): ${JSON.stringify(data)}`);
 
   // Read limit from auditContext (for step chaining) or data (for initial call)
-  const limit = auditContext?.limit || parsedData.limit || DEFAULT_LIMIT;
-  const limitInfo = ` with limit: ${limit}${!auditContext?.limit && !parsedData.limit ? ' (default)' : ''}`;
+  const limit = auditContext?.limit || DEFAULT_LIMIT;
+  const limitInfo = ` with limit: ${limit}${!auditContext?.limit ? ' (default)' : ''}`;
 
   log.info(`${LOG_PREFIX} Step 2: submitForScraping started for site: ${site.getId()}${limitInfo}`);
 

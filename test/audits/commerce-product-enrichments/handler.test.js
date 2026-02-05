@@ -198,7 +198,7 @@ describe('Commerce Product Enrichments Handler', () => {
     });
   });
 
-  it('submitForScraping respects limit from context.data', async () => {
+  it('submitForScraping ignores limit from context.data', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -219,9 +219,9 @@ describe('Commerce Product Enrichments Handler', () => {
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(5);
+    expect(result.urls).to.have.lengthOf(20);
     expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
-    expect(result.urls[4]).to.deep.equal({ url: 'https://example.com/page-5' });
+    expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
   });
 
   it('submitForScraping uses default limit when limit not provided', async () => {
@@ -249,7 +249,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
   });
 
-  it('submitForScraping respects limit from context.data when provided as JSON string', async () => {
+  it('submitForScraping ignores limit from context.data when provided as JSON string', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -270,9 +270,9 @@ describe('Commerce Product Enrichments Handler', () => {
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(10);
+    expect(result.urls).to.have.lengthOf(20);
     expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
-    expect(result.urls[9]).to.deep.equal({ url: 'https://example.com/page-10' });
+    expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
   });
 
   it('submitForScraping handles invalid JSON gracefully', async () => {
