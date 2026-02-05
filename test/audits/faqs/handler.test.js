@@ -725,6 +725,7 @@ describe('FAQs Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.promptsByUrl).to.have.lengthOf(1);
+      expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/starter-guide');
       expect(result.auditResult.promptsByUrl[0].topic).to.equal('Topic2');
       expect(result.auditResult.promptsByUrl[0].prompts).to.have.lengthOf(1);
       expect(log.info).to.have.been.calledWith(
@@ -860,6 +861,94 @@ describe('FAQs Handler', () => {
       expect(log.info).to.have.been.calledWith(
         sinon.match(/Deduplicated 2 prompts to 1 unique prompts/),
       );
+    });
+
+    it('should sort prompts with URLs first', async () => {
+      const mockWorkbook = {
+        worksheets: [
+          {
+            rowCount: 6,
+            getRows: () => [
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'Topic1' };
+                  if (col === 3) return { value: 'Question without URL 1' };
+                  if (col === 7) return { value: '' };
+                  return { value: '' };
+                },
+              },
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'Topic2' };
+                  if (col === 3) return { value: 'Question with URL 1' };
+                  if (col === 7) return { value: 'https://adobe.com/page1' };
+                  return { value: '' };
+                },
+              },
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'Topic3' };
+                  if (col === 3) return { value: 'Question without URL 2' };
+                  if (col === 7) return { value: '' };
+                  return { value: '' };
+                },
+              },
+              {
+                getCell: (col) => {
+                  if (col === 2) return { value: 'Topic4' };
+                  if (col === 3) return { value: 'Question with URL 2' };
+                  if (col === 7) return { value: 'https://adobe.com/page2' };
+                  return { value: '' };
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      readFromSharePointStub.resolves(Buffer.from('mock data'));
+
+      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
+        '../../../src/utils/report-uploader.js': {
+          createLLMOSharepointClient: createLLMOSharepointClientStub,
+          readFromSharePoint: readFromSharePointStub,
+        },
+        '../../../src/faqs/utils.js': {
+          validateContentAI: validateContentAIStub,
+        },
+        exceljs: {
+          Workbook: class {
+            constructor() {}
+
+            get xlsx() {
+              const self = this;
+              return {
+                load: async () => {
+                  Object.assign(self, mockWorkbook);
+                },
+              };
+            }
+          },
+        },
+      });
+
+      const runner = excelJsMock.default.runner;
+      const result = await runner('https://adobe.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.promptsByUrl).to.have.lengthOf(4);
+
+      // First two should have URLs
+      expect(result.auditResult.promptsByUrl[0].url).to.equal('https://adobe.com/page1');
+      expect(result.auditResult.promptsByUrl[0].topic).to.equal('Topic2');
+      expect(result.auditResult.promptsByUrl[1].url).to.equal('https://adobe.com/page2');
+      expect(result.auditResult.promptsByUrl[1].topic).to.equal('Topic4');
+
+      // Last two should be global (no URL)
+      expect(result.auditResult.promptsByUrl[2].url).to.equal('');
+      expect(result.auditResult.promptsByUrl[2].topic).to.equal('Topic1');
+      expect(result.auditResult.promptsByUrl[3].url).to.equal('');
+      expect(result.auditResult.promptsByUrl[3].topic).to.equal('Topic3');
     });
   });
 
