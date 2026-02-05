@@ -258,16 +258,29 @@ export async function runAuditAndSubmitForScraping(context) {
   log.info('====== RUM Detection + Scrape Submission ======');
   log.debug('starting audit');
 
-  const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
-    finalUrl,
-    context,
-  );
+  // const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
+  //   finalUrl,
+  //   context,
+  // );
 
-  const { success } = internalLinksAuditRunnerResult.auditResult;
+  // const { success } = internalLinksAuditRunnerResult.auditResult;
 
-  if (!success) {
-    throw new Error('Audit failed, skip scraping and suggestion generation');
-  }
+  // if (!success) {
+  //   throw new Error('Audit failed, skip scraping and suggestion generation');
+  // }
+
+  // RUM detection is disabled - create minimal audit result for crawl-only mode
+  log.info('Skipping RUM detection - running crawl-only mode');
+  const internalLinksAuditRunnerResult = {
+    auditResult: {
+      brokenInternalLinks: [], // No RUM data, crawl detection will populate this
+      fullAuditRef: finalUrl,
+      finalUrl,
+      auditContext: { interval: INTERVAL },
+      success: true,
+    },
+    fullAuditRef: finalUrl,
+  };
 
   // Fetch Ahrefs top pages directly with graceful fallback
   let topPagesUrls = [];
