@@ -11,11 +11,43 @@
  */
 
 import { stripTrailingSlash } from '@adobe/spacecat-shared-utils';
+import { load as cheerioLoad } from 'cheerio';
 import { saveIntermediateResults } from './utils.js';
 import { metatagsAutoDetect } from '../metatags/handler.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
+import { getDomElementSelector, toElementTargets } from '../utils/dom-selector.js';
 
 export const PREFLIGHT_METATAGS = 'metatags';
+
+/**
+ * Extract selectors for metatag elements from the scraped HTML
+ * @param {string} rawBody - The HTML content (must be truthy - caller should validate)
+ * @param {string} tagName - The tag name (title, description, h1)
+ * @returns {string|string[]|null} Selector(s) for the tag
+ */
+function generateSelectorsForTag(rawBody, tagName) {
+  const $ = cheerioLoad(rawBody);
+
+  if (tagName === 'title') {
+    const titleElement = $('head > title').get(0);
+    return titleElement ? getDomElementSelector(titleElement) : null;
+  }
+
+  if (tagName === 'description') {
+    const descElement = $('head > meta[name="description"]').get(0);
+    /* c8 ignore next - null branch for missing description element */
+    return descElement ? getDomElementSelector(descElement) : null;
+  }
+
+  if (tagName === 'h1') {
+    const h1Elements = $('h1').toArray();
+    return h1Elements
+      .map((h1) => getDomElementSelector(h1))
+      .filter(Boolean);
+  }
+  /* c8 ignore next 2 - unreachable: only title/description/h1 tag names from metatags audit */
+  return null;
+}
 
 export default async function metatags(context, auditContext) {
   const {
@@ -26,6 +58,7 @@ export default async function metatags(context, auditContext) {
     step,
     audits,
     auditsResult,
+    scrapedObjects,
     timeExecutionBreakdown,
   } = auditContext;
 
@@ -50,6 +83,22 @@ export default async function metatags(context, auditContext) {
     detectedTags,
     extractedTags,
   } = await metatagsAutoDetect(site, pageMap, context);
+
+  // Build scrapeDataByPath from already-fetched scrapedObjects (avoids extra S3 calls)
+  const scrapeDataByPath = new Map();
+  scrapedObjects.forEach(({ data }) => {
+    if (data?.scrapeResult?.rawBody) {
+      /* c8 ignore next 3 - defensive: finalUrl should always exist if scrape succeeded */
+      const pageUrl = data.finalUrl
+        ? new URL(data.finalUrl).pathname
+        : null;
+      if (pageUrl) {
+        const normalizedPath = stripTrailingSlash(pageUrl);
+        scrapeDataByPath.set(normalizedPath, data.scrapeResult.rawBody);
+      }
+    }
+  });
+
   try {
     const tagCollection = step === 'suggest'
       ? await metatagsAutoSuggest({
@@ -66,10 +115,31 @@ export default async function metatags(context, auditContext) {
         return previewPath === targetPath;
       });
       const audit = audits.get(pageUrl)?.audits.find((a) => a.name === PREFLIGHT_METATAGS);
-      return tags && Object.values(tags).forEach((data, tag) => audit.opportunities.push({
-        ...data,
-        tagName: Object.keys(tags)[tag],
-      }));
+
+      // Get the scraped HTML for this path to generate selectors
+      const normalizedPath = stripTrailingSlash(path);
+      const rawBody = scrapeDataByPath.get(normalizedPath);
+
+      return tags && Object.values(tags).forEach((data, tag) => {
+        const tagName = Object.keys(tags)[tag];
+        const opportunity = {
+          ...data,
+          tagName,
+        };
+
+        // Generate and add selectors for this tag
+        if (rawBody) {
+          const selectors = generateSelectorsForTag(rawBody, tagName);
+          if (selectors) {
+            const elementData = toElementTargets(selectors);
+            if (elementData?.elements?.length > 0) {
+              Object.assign(opportunity, elementData);
+            }
+          }
+        }
+
+        audit.opportunities.push(opportunity);
+      });
     });
   } catch (error) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit failed: ${error.message}`);

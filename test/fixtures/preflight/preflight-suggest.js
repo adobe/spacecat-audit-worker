@@ -23,6 +23,9 @@ export const suggestionData = [
             issue: 'Body content length is below 100 characters',
             seoImpact: 'Moderate',
             seoRecommendation: 'Add more meaningful content to the page',
+            elements: [
+              { selector: 'body' },
+            ],
           },
         ],
       },
@@ -40,6 +43,10 @@ export const suggestionData = [
             issue: 'Found 2 H1 tags',
             seoImpact: 'High',
             seoRecommendation: 'Use exactly one H1 tag per page for better SEO structure',
+            elements: [
+              { selector: 'body > h1:nth-of-type(1)' },
+              { selector: 'body > h1:nth-of-type(2)' },
+            ],
           },
         ],
       },
@@ -80,6 +87,7 @@ export const suggestionData = [
                 seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
                 aiSuggestion: 'https://main--example--page.aem.page/fix',
                 aiRationale: 'Rationale',
+                elements: [{ selector: 'body > a:nth-of-type(2)' }],
               },
               {
                 url: 'https://main--example--page.aem.page/another-broken-url',
@@ -88,6 +96,7 @@ export const suggestionData = [
                 seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
                 aiSuggestion: 'https://main--example--page.aem.page/fix',
                 aiRationale: 'Rationale',
+                elements: [{ selector: 'body > a:nth-of-type(3)' }],
               },
             ],
           },
@@ -104,6 +113,10 @@ export const suggestionData = [
             seoImpact: 'High',
             seoRecommendation: 'Found 2 h1 elements: Pages should have only one H1 element.',
             suggestion: 'Change additional H1 elements to H2 or appropriate levels.',
+            elements: [
+              { selector: 'body > h1:nth-of-type(1)' },
+              { selector: 'body > h1:nth-of-type(2)' },
+            ],
           },
         ],
       },
