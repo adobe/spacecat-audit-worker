@@ -138,7 +138,7 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const {
-    Opportunity, Site, Audit, Suggestion,
+    Opportunity, Site, Audit, Suggestion, Configuration,
   } = dataAccess;
   const {
     auditId, siteId, data, id: messageId,
@@ -154,10 +154,9 @@ export default async function handler(message, context) {
   const site = await Site.findById(siteId);
   const auditUrl = site.getBaseURL();
 
-  // Get deleteOldSuggestions config from site handler configuration (defaults to true)
-  const altTextConfig = site.getConfig()?.getHandlers()?.[FEATURE_FLAG_CONFIG] || {};
-  log.debug(`[${AUDIT_TYPE}]: getHandlers: ${JSON.stringify(site.getConfig()?.getHandlers())}`);
-  log.debug(`[${AUDIT_TYPE}]: altTextConfig: ${JSON.stringify(altTextConfig)}`);
+  // Get deleteOldSuggestions config from global Configuration handlers
+  const configuration = await Configuration.findLatest();
+  const altTextConfig = configuration?.getHandlers()?.[FEATURE_FLAG_CONFIG] || {};
   const deleteOldSuggestions = altTextConfig?.enabled?.sites?.includes(siteId) ?? false;
 
   log.debug(`[${AUDIT_TYPE}]: deleteOldSuggestions config: ${deleteOldSuggestions}`);

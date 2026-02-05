@@ -74,6 +74,11 @@ describe('Missing Alt Text Guidance Handler', () => {
             OUTDATED: 'OUTDATED',
           },
         },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            getHandlers: () => ({}),
+          }),
+        },
       },
       env: {
         RUM_ADMIN_KEY: 'test-key',
@@ -485,8 +490,8 @@ describe('Missing Alt Text Guidance Handler', () => {
 
   describe('deleteOldSuggestions feature flag', () => {
     it('should not delete suggestions for URLs outside pageUrlSet when deleteOldSuggestions is false (default)', async () => {
-      // Site config without the feature flag enabled
-      mockSite.getConfig = () => ({
+      // Global config without the feature flag enabled
+      context.dataAccess.Configuration.findLatest.resolves({
         getHandlers: () => ({}),
       });
 
@@ -527,8 +532,8 @@ describe('Missing Alt Text Guidance Handler', () => {
     });
 
     it('should delete suggestions for ALL URLs when deleteOldSuggestions is true', async () => {
-      // Site config with the feature flag enabled for this site
-      mockSite.getConfig = () => ({
+      // Global config with the feature flag enabled for this site
+      context.dataAccess.Configuration.findLatest.resolves({
         getHandlers: () => ({
           'alt-text-delete-old-suggestions': {
             enabled: {
@@ -575,8 +580,8 @@ describe('Missing Alt Text Guidance Handler', () => {
     });
 
     it('should never delete manually edited suggestions regardless of deleteOldSuggestions', async () => {
-      // Site config with the feature flag enabled
-      mockSite.getConfig = () => ({
+      // Global config with the feature flag enabled
+      context.dataAccess.Configuration.findLatest.resolves({
         getHandlers: () => ({
           'alt-text-delete-old-suggestions': {
             enabled: {
@@ -635,8 +640,8 @@ describe('Missing Alt Text Guidance Handler', () => {
       );
     });
 
-    it('should handle when site has no config', async () => {
-      mockSite.getConfig = () => null;
+    it('should handle when global configuration is null', async () => {
+      context.dataAccess.Configuration.findLatest.resolves(null);
 
       const result = await guidanceHandler(mockMessage, context);
 
@@ -647,8 +652,8 @@ describe('Missing Alt Text Guidance Handler', () => {
       );
     });
 
-    it('should handle when site config has no handlers', async () => {
-      mockSite.getConfig = () => ({
+    it('should handle when global configuration has no handlers', async () => {
+      context.dataAccess.Configuration.findLatest.resolves({
         getHandlers: () => null,
       });
 
@@ -662,7 +667,7 @@ describe('Missing Alt Text Guidance Handler', () => {
     });
 
     it('should handle when feature flag config exists but site is not in enabled list', async () => {
-      mockSite.getConfig = () => ({
+      context.dataAccess.Configuration.findLatest.resolves({
         getHandlers: () => ({
           'alt-text-delete-old-suggestions': {
             enabled: {
@@ -695,7 +700,7 @@ describe('Missing Alt Text Guidance Handler', () => {
     });
 
     it('should calculate removed decorative count correctly when clearing suggestions', async () => {
-      mockSite.getConfig = () => ({
+      context.dataAccess.Configuration.findLatest.resolves({
         getHandlers: () => ({
           'alt-text-delete-old-suggestions': {
             enabled: {
