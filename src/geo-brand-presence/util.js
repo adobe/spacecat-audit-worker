@@ -189,6 +189,9 @@ export const refreshSheetResultSchema = z.object({
  */
 // eslint-disable-next-line no-unused-vars
 export async function promptToLinks(prompt, site, context, contentAIClient = null) {
+  // Introduce a delay (e.g., 800ms) before returning.
+  // eslint-disable-next-line no-promise-executor-return
+  await new Promise((resolve) => setTimeout(resolve, 3500));
   // let client = contentAIClient;
   // if (!client) {
   //   client = new ContentAIClient(context);
