@@ -200,7 +200,7 @@ export async function promptToLinks(prompt, site, context, contentAIClient = nul
   // }
   // const res = await response.json();
   // return res.data.urls;
-  return [`https://${site.getBaseURL()}/en/mock-url`];
+  return [`${site.getBaseURL()}/en_US/related-mock-url}`];
 }
 
 export const URL_ENRICHMENT_BATCH_SIZE = 10;
