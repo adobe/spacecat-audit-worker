@@ -20,6 +20,7 @@ import {
   loadExistingAudit,
   sendContinuationMessage,
 } from './audit-utils.js';
+import { handleAbort } from './bot-detection.js';
 
 const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
@@ -52,86 +53,6 @@ export class StepAudit extends BaseAudit {
   getNextStepName(currentStepName) {
     const currentIndex = this.stepNames.indexOf(currentStepName);
     return currentIndex < this.stepNames.length - 1 ? this.stepNames[currentIndex + 1] : null;
-  }
-
-  /**
-   * Handles abort signals from upstream services (e.g., bot protection from content scraper).
-   * Logs detailed information for bot protection aborts and returns an appropriate response.
-   * @private
-   * @param {Object} abort - Abort signal with reason and details
-   * @param {string} jobId - Job identifier
-   * @param {string} type - Audit type
-   * @param {Object} site - Site object
-   * @param {string} siteId - Site identifier
-   * @param {Object} log - Logger instance
-   * @returns {Object} HTTP response indicating audit was skipped
-   */
-  static handleAbort(abort, jobId, type, site, siteId, log) {
-    const { reason, details } = abort;
-
-    /* c8 ignore start */
-    // Log abort structure for debugging
-    log.info(
-      `[AUDIT-DEBUG] Processing abort signal: jobId=${jobId}, type=${type}, siteId=${siteId}, `
-      + `reason=${reason}, hasDetails=${!!details}, detailsKeys=${details ? Object.keys(details).join(',') : 'none'}`,
-    );
-    /* c8 ignore stop */
-
-    if (reason === 'bot-protection') {
-      const {
-        blockedUrlsCount, totalUrlsCount, byBlockerType, byHttpStatus, blockedUrls,
-      } = details || {};
-
-      /* c8 ignore start */
-      // Validate bot protection details structure
-      if (!details) {
-        log.error(
-          `[AUDIT-ERROR] Bot protection abort missing details: jobId=${jobId}, type=${type}, siteId=${siteId}`,
-        );
-      } else if (blockedUrlsCount === undefined || totalUrlsCount === undefined) {
-        log.warn(
-          `[AUDIT-WARNING] Bot protection abort has incomplete details: jobId=${jobId}, `
-          + `hasBlockedUrlsCount=${blockedUrlsCount !== undefined}, hasTotalUrlsCount=${totalUrlsCount !== undefined}`,
-        );
-      }
-      /* c8 ignore stop */
-
-      const statusDetails = Object.entries(byHttpStatus || {})
-        .map(([status, count]) => `${status}: ${count}`)
-        .join(', ');
-      const blockerDetails = Object.entries(byBlockerType || {})
-        .map(([blockerType, count]) => `${blockerType}: ${count}`)
-        .join(', ');
-
-      log.warn(
-        `[BOT-BLOCKED] Audit aborted for jobId=${jobId}, type=${type}, site=${site.getBaseURL()} (${siteId}): `
-        + `HTTP Status: [${statusDetails}], Blocker Types: [${blockerDetails}], `
-        + `${blockedUrlsCount}/${totalUrlsCount} URLs blocked, `
-        + `Bot Protected URLs: [${blockedUrls?.map((u) => u.url).join(', ') || 'none'}]`,
-      );
-    } else {
-      /* c8 ignore start */
-      // Log non-bot-protection abort reasons
-      log.warn(
-        `[AUDIT-ABORT] Audit aborted for non-bot-protection reason: jobId=${jobId}, `
-        + `type=${type}, siteId=${siteId}, reason=${reason}`,
-      );
-      /* c8 ignore stop */
-    }
-
-    /* c8 ignore start */
-    log.info(
-      `[AUDIT-DEBUG] Abort handled successfully: jobId=${jobId}, type=${type}, siteId=${siteId}, `
-      + `skipped=true, reason=${reason}`,
-    );
-    /* c8 ignore stop */
-
-    // Return generic abort response
-    return ok({
-      skipped: true,
-      reason,
-      ...details,
-    });
   }
 
   async chainStep(step, stepResult, context) {
@@ -207,25 +128,7 @@ export class StepAudit extends BaseAudit {
         );
         /* c8 ignore stop */
 
-        try {
-          const result = StepAudit.handleAbort(abort, jobId, type, site, siteId, log);
-          /* c8 ignore start */
-          log.info(
-            `[AUDIT-DEBUG] Abort handled and audit skipped: jobId=${jobId}, type=${type}, `
-            + `siteId=${siteId}, resultSkipped=${result.body?.skipped}`,
-          );
-          /* c8 ignore stop */
-          return result;
-        } catch (error) {
-          /* c8 ignore start */
-          log.error(
-            `[AUDIT-ERROR] Failed to handle abort: jobId=${jobId}, type=${type}, `
-            + `siteId=${siteId}, error=${error.message}`,
-            error,
-          );
-          /* c8 ignore stop */
-          throw error;
-        }
+        return handleAbort(abort, jobId, type, site, siteId, log);
       }
 
       // Determine which step to run
@@ -247,7 +150,6 @@ export class StepAudit extends BaseAudit {
       if (hasNext) {
         stepContext.audit = await loadExistingAudit(auditContext.auditId, context);
       }
-
       // If there are scrape results, load the paths
       if (hasScrapeJobId) {
         stepContext.scrapeJobId = auditContext.scrapeJobId;

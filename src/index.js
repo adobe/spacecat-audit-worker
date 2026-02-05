@@ -222,14 +222,11 @@ async function run(message, context) {
     type, siteId, abort, jobId,
   } = message;
 
-  /* c8 ignore start */
-  // Enhanced logging for message reception with abort info
   log.info(
     `Received ${type} audit request for siteId=${siteId}, jobId=${jobId || 'none'}, `
-    + `hasAbort=${!!abort}, abortReason=${abort?.reason || 'none'}. Full message:`,
+    + `hasAbort=${!!abort}, abortReason=${abort?.reason || 'none'}. Message:`,
     message,
   );
-  /* c8 ignore stop */
 
   const handler = HANDLERS[type];
   if (!handler) {
