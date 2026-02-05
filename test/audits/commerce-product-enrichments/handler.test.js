@@ -274,7 +274,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
   });
 
-  it('submitForScraping handles invalid JSON gracefully', async () => {
+  it('submitForScraping ignores invalid JSON in context.data', async () => {
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
     }));
@@ -295,7 +295,6 @@ describe('Commerce Product Enrichments Handler', () => {
     const result = await submitForScraping(context);
 
     expect(result.urls).to.have.lengthOf(20);
-    expect(log.warn).to.have.been.calledWith(sinon.match(/Could not parse data as JSON/));
   });
 
   it('submitForScraping respects limit from auditContext (step chaining)', async () => {
