@@ -143,15 +143,9 @@ export async function submitForScraping(context) {
   const result = {
     urls: filteredUrls.map((url) => ({ url })),
     siteId: site.getId(),
-    jobId: site.getId(), // Use siteId as jobId so scraper stores results in correct path
-    processingType: 'default',
-    auditContext: {
-      scrapeJobId: site.getId(), // Pass scrapeJobId to Step 3 for retrieving results
-    },
     options: {
       waitTimeoutForMetaTags: 5000,
     },
-    allowCache: false,
     maxScrapeAge: 0,
   };
 
@@ -300,7 +294,6 @@ export async function runAuditAndProcessResults(context) {
   log.info(`${LOG_PREFIX} Audit ID: ${audit.getId()}`);
   log.info(`${LOG_PREFIX} ============================================`);
 
-  // Return audit results
   return {
     auditResult: {
       status: productPages.length > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',

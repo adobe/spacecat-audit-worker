@@ -128,6 +128,64 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(log.warn).to.have.been.calledWith(sinon.match(/Could not parse data as JSON/));
   });
 
+  it('importTopPages includes limit in auditContext when provided as object', async () => {
+    const context = {
+      site,
+      finalUrl: 'https://example.com',
+      log,
+      data: { limit: 25 },
+    };
+
+    const result = await importTopPages(context);
+
+    expect(result).to.deep.equal({
+      type: 'top-pages',
+      siteId: 'site-1',
+      auditContext: { limit: 25 },
+      auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+      fullAuditRef: 'scrapes/site-1/',
+    });
+  });
+
+  it('importTopPages includes limit in auditContext when provided as JSON string', async () => {
+    const context = {
+      site,
+      finalUrl: 'https://example.com',
+      log,
+      data: '{"limit":25}',
+    };
+
+    const result = await importTopPages(context);
+
+    expect(result).to.deep.equal({
+      type: 'top-pages',
+      siteId: 'site-1',
+      auditContext: { limit: 25 },
+      auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+      fullAuditRef: 'scrapes/site-1/',
+    });
+  });
+
+  it('importTopPages handles invalid JSON gracefully and uses default limit', async () => {
+    const context = {
+      site,
+      finalUrl: 'https://example.com',
+      log,
+      data: 'invalid-json{',
+    };
+
+    const result = await importTopPages(context);
+
+    expect(result).to.deep.equal({
+      type: 'top-pages',
+      siteId: 'site-1',
+      auditContext: { limit: 20 }, // DEFAULT_LIMIT when parsing fails
+      auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+      fullAuditRef: 'scrapes/site-1/',
+    });
+    expect(log.warn).to.have.been.calledWith(sinon.match(/Could not parse data as JSON/));
+  });
+
   it('submitForScraping combines top pages and included URLs, filters PDFs', async () => {
     dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
       { getUrl: () => 'https://example.com/page-1' },
@@ -158,15 +216,9 @@ describe('Commerce Product Enrichments Handler', () => {
         { url: 'https://example.com/page-2' },
       ],
       siteId: 'site-1',
-      jobId: 'site-1',
-      processingType: 'default',
-      auditContext: {
-        scrapeJobId: 'site-1',
-      },
       options: {
         waitTimeoutForMetaTags: 5000,
       },
-      allowCache: false,
       maxScrapeAge: 0,
     });
   });
@@ -345,15 +397,9 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       urls: [{ url: 'https://example.com/page-1' }],
       siteId: 'site-1',
-      jobId: 'site-1',
-      processingType: 'default',
-      auditContext: {
-        scrapeJobId: 'site-1',
-      },
       options: {
         waitTimeoutForMetaTags: 5000,
       },
-      allowCache: false,
       maxScrapeAge: 0,
     });
   });
@@ -726,3 +772,4 @@ describe('Commerce Product Enrichments Handler', () => {
   });
 
 });
+
