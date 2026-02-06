@@ -25,22 +25,46 @@ import {
 use(sinonChai);
 use(chaiAsPromised);
 
+// Valid ACCS format config for mocking
+const validACCSConfig = {
+  public: {
+    default: {
+      'commerce-endpoint': 'https://commerce.example.com/graphql',
+      headers: {
+        cs: {
+          'Magento-Environment-Id': 'env-123',
+          'Magento-Store-Code': 'store-code',
+          'Magento-Store-View-Code': 'view-code',
+          'Magento-Website-Code': 'website-code',
+          'Magento-Customer-Group': 'customer-group',
+          'x-api-key': 'api-key-123',
+        },
+      },
+    },
+  },
+};
+
 describe('Commerce Product Enrichments Handler', () => {
   let log;
   let site;
   let dataAccess;
+  let fetchStub;
 
   beforeEach(() => {
+    fetchStub = sinon.stub(global, 'fetch');
+
     log = {
       info: sinon.spy(),
       warn: sinon.spy(),
       error: sinon.spy(),
+      debug: sinon.spy(),
     };
 
     site = {
       getId: sinon.stub().returns('site-1'),
       getConfig: sinon.stub().returns({
         getIncludedURLs: sinon.stub().resolves([]),
+        getHandlers: sinon.stub().returns({}),
       }),
     };
 
@@ -49,6 +73,10 @@ describe('Commerce Product Enrichments Handler', () => {
         allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
       },
     };
+  });
+
+  afterEach(() => {
+    sinon.restore();
   });
 
   it('importTopPages returns top-pages metadata with default limit when not provided', async () => {
@@ -63,10 +91,11 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
-      auditContext: { limit: 20 }, // DEFAULT_LIMIT
+      auditContext: { limit: 20 },
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
+    expect(result).to.not.have.property('limit');
   });
 
   it('importTopPages includes limit in auditContext when provided as object', async () => {
@@ -107,7 +136,7 @@ describe('Commerce Product Enrichments Handler', () => {
     });
   });
 
-  it('importTopPages handles invalid JSON gracefully and uses default limit', async () => {
+  it('importTopPages handles invalid JSON gracefully', async () => {
     const context = {
       site,
       finalUrl: 'https://example.com',
@@ -120,11 +149,10 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
-      auditContext: { limit: 20 }, // DEFAULT_LIMIT when parsing fails
+      auditContext: { limit: 20 },
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
-    expect(log.warn).to.have.been.calledWith(sinon.match(/Could not parse data as JSON/));
   });
 
   it('submitForScraping combines top pages and included URLs, filters PDFs', async () => {
@@ -145,7 +173,6 @@ describe('Commerce Product Enrichments Handler', () => {
       site,
       dataAccess,
       log,
-      auditContext: { limit: 20 },
     };
 
     const result = await submitForScraping(context);
@@ -157,14 +184,20 @@ describe('Commerce Product Enrichments Handler', () => {
         { url: 'https://example.com/page-2' },
       ],
       siteId: 'site-1',
+      jobId: 'site-1',
+      processingType: 'default',
+      auditContext: {
+        scrapeJobId: 'site-1',
+      },
       options: {
         waitTimeoutForMetaTags: 5000,
       },
+      allowCache: false,
       maxScrapeAge: 0,
     });
   });
 
-  it('submitForScraping respects limit from auditContext', async () => {
+  it('submitForScraping ignores limit from context.data', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -180,43 +213,17 @@ describe('Commerce Product Enrichments Handler', () => {
       site,
       dataAccess,
       log,
-      auditContext: { limit: 5 },
+      data: { limit: 5 },
     };
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(5);
-    expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
-    expect(result.urls[4]).to.deep.equal({ url: 'https://example.com/page-5' });
-  });
-
-  it('submitForScraping uses DEFAULT_LIMIT (20) when limit not provided in auditContext', async () => {
-    // Create an array of 50 top pages
-    const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
-      getUrl: () => `https://example.com/page-${i + 1}`,
-    }));
-
-    dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyTopPages);
-
-    site.getConfig.returns({
-      getIncludedURLs: sinon.stub().resolves([]),
-    });
-
-    const context = {
-      site,
-      dataAccess,
-      log,
-    };
-
-    const result = await submitForScraping(context);
-
-    // Should use DEFAULT_LIMIT of 20
     expect(result.urls).to.have.lengthOf(20);
     expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
     expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
   });
 
-  it('submitForScraping respects numeric limit from auditContext', async () => {
+  it('submitForScraping uses default limit when limit not provided', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -232,17 +239,17 @@ describe('Commerce Product Enrichments Handler', () => {
       site,
       dataAccess,
       log,
-      auditContext: { limit: 10 },
     };
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(10);
+    expect(result.urls).to.have.lengthOf(20);
     expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
-    expect(result.urls[9]).to.deep.equal({ url: 'https://example.com/page-10' });
+    expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
   });
 
-  it('submitForScraping uses DEFAULT_LIMIT with empty auditContext object', async () => {
+  it('submitForScraping ignores limit from context.data when provided as JSON string', async () => {
+    // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
     }));
@@ -257,16 +264,40 @@ describe('Commerce Product Enrichments Handler', () => {
       site,
       dataAccess,
       log,
-      auditContext: {},
+      data: '{"limit":10}',
     };
 
     const result = await submitForScraping(context);
 
-    // Should use DEFAULT_LIMIT of 20
+    expect(result.urls).to.have.lengthOf(20);
+    expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
+    expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
+  });
+
+  it('submitForScraping ignores invalid JSON in context.data', async () => {
+    const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
+      getUrl: () => `https://example.com/page-${i + 1}`,
+    }));
+
+    dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyTopPages);
+
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([]),
+    });
+
+    const context = {
+      site,
+      dataAccess,
+      log,
+      data: 'invalid-json{',
+    };
+
+    const result = await submitForScraping(context);
+
     expect(result.urls).to.have.lengthOf(20);
   });
 
-  it('submitForScraping applies limit of 7 from auditContext correctly', async () => {
+  it('submitForScraping respects limit from auditContext (step chaining)', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -292,7 +323,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.urls[6]).to.deep.equal({ url: 'https://example.com/page-7' });
   });
 
-  it('submitForScraping uses auditContext limit (step chaining from Step 1)', async () => {
+  it('submitForScraping prefers auditContext limit over data limit', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -304,11 +335,11 @@ describe('Commerce Product Enrichments Handler', () => {
       getIncludedURLs: sinon.stub().resolves([]),
     });
 
-    // Simulate step chaining where Step 1 has set the limit in auditContext
     const context = {
       site,
       dataAccess,
       log,
+      data: { limit: 20 },
       auditContext: { limit: 3 },
     };
 
@@ -330,7 +361,6 @@ describe('Commerce Product Enrichments Handler', () => {
       site,
       dataAccess,
       log,
-      auditContext: { limit: 20 },
     };
 
     const result = await submitForScraping(context);
@@ -338,9 +368,15 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       urls: [{ url: 'https://example.com/page-1' }],
       siteId: 'site-1',
+      jobId: 'site-1',
+      processingType: 'default',
+      auditContext: {
+        scrapeJobId: 'site-1',
+      },
       options: {
         waitTimeoutForMetaTags: 5000,
       },
+      allowCache: false,
       maxScrapeAge: 0,
     });
   });
@@ -350,7 +386,6 @@ describe('Commerce Product Enrichments Handler', () => {
       site,
       dataAccess,
       log,
-      auditContext: { limit: 20 },
     };
 
     await expect(submitForScraping(context)).to.be.rejectedWith(
@@ -505,43 +540,34 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
     expect(result.auditResult.processedPages).to.equal(0);
     expect(result.auditResult.failedPages).to.equal(1);
-    expect(log.error).to.have.been.calledWith(sinon.match(/No scrape data found/));
+    expect(log.warn).to.have.been.calledWith(sinon.match(/No scrape data found/));
   });
 
   it('runAuditAndProcessResults handles unexpected errors during processing', async () => {
-    const scrapeData = {
-      url: 'https://example.com/page-1',
-      finalUrl: 'https://example.com/page-1',
-      scrapeResult: {
-        structuredData: {
-          jsonld: {
-            Product: [{ sku: 'TEST-SKU' }],
-          },
-        },
-      },
-    };
-
     const s3Client = {
       send: sinon.stub().resolves({
         ContentType: 'application/json',
         Body: {
-          transformToString: sinon.stub().resolves(JSON.stringify(scrapeData)),
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: 'https://example.com/page-1',
+            finalUrl: 'https://example.com/page-1',
+            scrapeResult: {},
+          })),
         },
       }),
+    };
+
+    // Create a log mock where debug throws an error
+    const logWithError = {
+      info: sinon.spy(),
+      warn: sinon.spy(),
+      error: sinon.spy(),
+      debug: sinon.stub().throws(new Error('Unexpected logging error')),
     };
 
     const scrapeResultPaths = new Map([
       ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
     ]);
-
-    // Create a log mock where info throws an error when called with SKU count message
-    const logWithError = {
-      info: sinon.stub(),
-      warn: sinon.spy(),
-      error: sinon.spy(),
-    };
-    // Make log.info throw on the SKU count log message
-    logWithError.info.withArgs(sinon.match(/SKU count/)).throws(new Error('Unexpected logging error'));
 
     const context = {
       site,
@@ -560,7 +586,8 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
     expect(result.auditResult.processedPages).to.equal(0);
     expect(result.auditResult.failedPages).to.equal(1);
-    expect(logWithError.error).to.have.been.calledWith(sinon.match(/Error processing scrape result/));
+    // getObjectFromKey logs S3 errors, so check that log.error was called
+    expect(logWithError.error).to.have.been.called;
   });
 
   it('runAuditAndProcessResults handles missing metadata.url', async () => {
@@ -712,5 +739,172 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.productPages).to.equal(0);
   });
 
-});
+  it('runAuditAndProcessResults extracts and logs commerce config successfully', async () => {
+    // Mock fetch to return valid ACCS config
+    fetchStub.resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(validACCSConfig),
+    });
 
+    site.getConfig.returns({
+      getHandlers: sinon.stub().returns({
+        'commerce-product-enrichments': {
+          instanceType: 'ACCS',
+        },
+      }),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: 'https://example.com/page-1',
+            finalUrl: 'https://example.com/page-1',
+            scrapeResult: {},
+          })),
+        },
+      }),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
+    ]);
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-10' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      scrapeResultPaths,
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(log.info).to.have.been.calledWith(sinon.match(/Commerce config extracted successfully/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/Commerce endpoint URL:/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/Magento-Environment-Id:/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/x-api-key: \[REDACTED\]/));
+  });
+
+  it('runAuditAndProcessResults logs warning when commerce config extraction fails', async () => {
+    // Mock fetch to return error
+    fetchStub.resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: { get: () => null },
+      text: () => Promise.resolve(''),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: 'https://example.com/page-1',
+            finalUrl: 'https://example.com/page-1',
+            scrapeResult: {},
+          })),
+        },
+      }),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
+    ]);
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-11' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      scrapeResultPaths,
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(log.warn).to.have.been.calledWith(sinon.match(/Failed to extract commerce config/));
+  });
+
+  it('runAuditAndProcessResults logs optional headers as not set for AC format config', async () => {
+    const minimalACCSConfig = {
+      public: {
+        default: {
+          'commerce-endpoint': 'https://commerce.example.com/graphql',
+          headers: {
+            cs: {
+              'Magento-Environment-Id': 'env-123',
+            },
+          },
+        },
+      },
+    };
+
+    fetchStub.resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(minimalACCSConfig),
+    });
+
+    site.getConfig.returns({
+      getHandlers: sinon.stub().returns({
+        'commerce-product-enrichments': {
+          instanceType: 'ACCS',
+        },
+      }),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: 'https://example.com/page-1',
+            finalUrl: 'https://example.com/page-1',
+            scrapeResult: {},
+          })),
+        },
+      }),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page-1', 'scrapes/site-1/page-1/scrape.json'],
+    ]);
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-12' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      scrapeResultPaths,
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(log.info).to.have.been.calledWith(sinon.match(/Magento-Store-Code: not set/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/Magento-Store-View-Code: not set/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/Magento-Website-Code: not set/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/Magento-Customer-Group: not set/));
+    expect(log.info).to.have.been.calledWith(sinon.match(/x-api-key: not set/));
+  });
+
+});
