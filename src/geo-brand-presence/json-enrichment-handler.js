@@ -57,8 +57,7 @@ const AUDIT_NAME = 'GEO_BRAND_PRESENCE_JSON_ENRICHMENT';
  * @param {Object} context - The context object
  * @returns {Promise<string>} The presigned URL
  */
-async function uploadPromptsAsPresignedUrl(prompts, bucket, context) {
-  const { s3Client, env } = context;
+async function uploadPromptsAsPresignedUrl(prompts, bucket, s3Client, env) {
   const { PutObjectCommand } = await import('@aws-sdk/client-s3');
   const { randomUUID } = await import('node:crypto');
 
@@ -85,10 +84,20 @@ async function uploadPromptsAsPresignedUrl(prompts, bucket, context) {
  * @param {Object} log - Logger instance
  */
 async function sendToMystique(prompts, metadata, context, log) {
-  const { sqs, env } = context;
+  const { sqs, env, s3Client } = context;
+
+  if (!s3Client) {
+    log.error(
+      '%s: Cannot send to Mystique - s3Client is undefined in context for auditId: %s',
+      AUDIT_NAME,
+      metadata.auditId,
+    );
+    throw new Error('s3Client is not available in context');
+  }
+
   const bucket = env.S3_IMPORTER_BUCKET_NAME;
 
-  const url = await uploadPromptsAsPresignedUrl(prompts, bucket, context);
+  const url = await uploadPromptsAsPresignedUrl(prompts, bucket, s3Client, env);
 
   const {
     siteId,
@@ -153,6 +162,19 @@ async function sendFallbackToMystique(metadata, prompts, context, log) {
     AUDIT_NAME,
     metadata.auditId,
   );
+
+  // Guard: Check if required context properties exist
+  if (!context.s3Client || !context.sqs || !context.env) {
+    log.error(
+      '%s: Cannot send fallback - missing required context properties (s3Client: %s, sqs: %s, env: %s) for auditId: %s',
+      AUDIT_NAME,
+      !!context.s3Client,
+      !!context.sqs,
+      !!context.env,
+      metadata.auditId,
+    );
+    return false;
+  }
 
   try {
     await sendToMystique(prompts, metadata, context, log);
