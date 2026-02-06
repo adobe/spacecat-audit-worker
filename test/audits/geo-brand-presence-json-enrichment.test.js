@@ -1001,6 +1001,71 @@ describe('JSON Enrichment Handler', () => {
         sinon.match.any,
       );
     });
+
+    it('should handle missing s3Client in sendToMystique', async () => {
+      const { handler, mockUtils } = await createHandler({
+        isEnrichmentTimedOut: sinon.stub().returns(true),
+        loadEnrichmentJson: sinon.stub().resolves([{ prompt: 'test' }]),
+      });
+
+      // Create context without s3Client (but with sqs and env to pass the guard check)
+      // Now that the guard check only checks sqs and env, s3Client can be undefined
+      // and sendToMystique will catch it
+      const contextWithoutS3Client = {
+        ...context,
+        s3Client: undefined,
+      };
+
+      const result = await handler.default(
+        { auditId, siteId, batchStart: 0 },
+        contextWithoutS3Client,
+      );
+
+      expect(result.status).to.equal(200);
+      // Should log error about s3Client being undefined in sendToMystique
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Cannot send to Mystique - s3Client is undefined/),
+        sinon.match.any,
+        auditId,
+      );
+      // Should also log fallback failure
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Failed to send fallback to Mystique/),
+        sinon.match.any,
+        auditId,
+        sinon.match.any,
+      );
+    });
+
+    it('should handle missing sqs in sendFallbackToMystique', async () => {
+      const { handler, mockUtils } = await createHandler({
+        isEnrichmentTimedOut: sinon.stub().returns(true),
+        loadEnrichmentMetadata: sinon.stub().resolves(createMetadata()),
+        loadEnrichmentJson: sinon.stub().resolves([{ prompt: 'test' }]),
+      });
+
+      // Create context missing sqs (env is needed earlier in the handler, so we keep it)
+      const contextMissingSqs = {
+        ...context,
+        sqs: undefined,
+      };
+
+      const result = await handler.default(
+        { auditId, siteId, batchStart: 0 },
+        contextMissingSqs,
+      );
+
+      expect(result.status).to.equal(200);
+      // Should log error about missing context properties (sqs)
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Cannot send fallback - missing required context properties/),
+        sinon.match.any,
+        false, // sqs: false (boolean)
+        true, // env: true (boolean)
+        auditId,
+      );
+    });
+
   });
 
   describe('Default batchStart', () => {

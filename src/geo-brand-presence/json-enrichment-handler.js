@@ -164,11 +164,11 @@ async function sendFallbackToMystique(metadata, prompts, context, log) {
   );
 
   // Guard: Check if required context properties exist
-  if (!context.s3Client || !context.sqs || !context.env) {
+  // Note: s3Client is checked in sendToMystique, so we only check sqs and env here
+  if (!context.sqs || !context.env) {
     log.error(
-      '%s: Cannot send fallback - missing required context properties (s3Client: %s, sqs: %s, env: %s) for auditId: %s',
+      '%s: Cannot send fallback - missing required context properties (sqs: %s, env: %s) for auditId: %s',
       AUDIT_NAME,
-      !!context.s3Client,
       !!context.sqs,
       !!context.env,
       metadata.auditId,
