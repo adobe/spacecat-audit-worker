@@ -69,7 +69,7 @@ export default async function handler(message, context) {
   // find and mark existing NEW system opportunities for the SAME URL as IGNORED
   const existingOpportunities = await Opportunity.allBySiteId(siteId);
   const existingMatches = existingOpportunities
-    .filter((oppty) => oppty.getType() === 'paid-keyword-optimizer')
+    .filter((oppty) => oppty.getType() === 'ad-intent-mismatch')
     .filter((oppty) => oppty.getStatus() === 'NEW' && oppty.getUpdatedBy() === 'system')
     .filter((oppty) => oppty.getData()?.url === url) // Only match same URL
     .filter((oppty) => oppty.getId() !== opportunity.getId()); // Exclude the newly created one
