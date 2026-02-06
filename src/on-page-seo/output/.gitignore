@@ -1,0 +1,6 @@
+# Ignore all CSV output files from test-on-page-seo.mjs
+*.csv
+
+# But track this .gitignore file
+!.gitignore
+
