@@ -1,3 +1,10 @@
+# [1.306.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.305.3...v1.306.0) (2026-02-06)
+
+
+### Features
+
+* **AGENTCOM-305:** extend commerce config extraction ([#1953](https://github.com/adobe/spacecat-audit-worker/issues/1953)) ([d2ae31e](https://github.com/adobe/spacecat-audit-worker/commit/d2ae31edaae76f1202e8c1212f9373394dcf0752))
+
 ## [1.305.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.305.2...v1.305.3) (2026-02-06)
 
 
