@@ -20,7 +20,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import {
-  getLastSunday, compareConfigs, areCategoryNamesDifferent,
+  getLastSunday, compareConfigs, areCategoryNamesDifferent, publishToAdminHlx,
 } from './utils.js';
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
@@ -283,6 +283,17 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   const siteId = site.getSiteId();
   const domain = finalUrl;
+
+  // check that query index is published
+  const siteConfig = site.getConfig();
+  const dataFolder = siteConfig?.getLlmoDataFolder?.();
+
+  if (dataFolder) {
+    log.debug(`Checking that query index is published for site ${siteId} at data folder ${dataFolder}`);
+    await publishToAdminHlx('query-index', dataFolder, log);
+  } else {
+    log.warn(`No LLMO data folder configured for site ${siteId}, skipping query index publication`);
+  }
 
   // Ensure relevant audits and imports are enabled
   try {

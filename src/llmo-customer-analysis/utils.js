@@ -224,3 +224,68 @@ export function compareConfigs(oldConfig, newConfig) {
   return changes;
 }
 /* c8 ignore end */
+
+/**
+ * Publishes a file to admin.hlx.page.
+ * @param {string} filename - The filename to publish
+ * @param {string} outputLocation - The output location
+ * @param {object} log - Logger instance
+ */
+export async function publishToAdminHlx(filename, outputLocation, log) {
+  try {
+    const org = 'adobe';
+    const site = 'project-elmo-ui-data';
+    const ref = 'main';
+    const jsonFilename = `${filename.replace(/\.[^/.]+$/, '')}.json`;
+    const path = `${outputLocation}/${jsonFilename}`;
+    const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}` };
+
+    if (!process.env.ADMIN_HLX_API_KEY) {
+      log.warn('LLMO onboarding: ADMIN_HLX_API_KEY is not set');
+    }
+
+    const baseUrl = 'https://admin.hlx.page';
+
+    // Check status first to see if publishing is necessary
+    const statusUrl = `${baseUrl}/status/${org}/${site}/${ref}/${path}`;
+    log.debug(`Checking status before publishing: ${statusUrl}`);
+
+    try {
+      const statusResponse = await fetch(statusUrl, { method: 'GET', headers });
+      if (statusResponse.ok) {
+        const statusData = await statusResponse.json();
+        if (statusData?.live?.status === 200) {
+          log.debug(`File is already published to live with status 200, skipping publish for ${jsonFilename}`);
+          return;
+        }
+      }
+    } catch (statusError) {
+      log.debug(`Status check failed, proceeding with publish: ${statusError.message}`);
+    }
+
+    const endpoints = [
+      { name: 'preview', url: `${baseUrl}/preview/${org}/${site}/${ref}/${path}` },
+      { name: 'live', url: `${baseUrl}/live/${org}/${site}/${ref}/${path}` },
+    ];
+
+    for (const [index, endpoint] of endpoints.entries()) {
+      log.debug(`Publishing Excel report via admin API (${endpoint.name}): ${endpoint.url}`);
+
+      // eslint-disable-next-line no-await-in-loop
+      const response = await fetch(endpoint.url, { method: 'POST', headers });
+
+      if (!response.ok) {
+        throw new Error(`${endpoint.name} failed: ${response.status} ${response.statusText}`);
+      }
+
+      log.debug(`Excel report successfully published to ${endpoint.name}`);
+
+      if (index === 0) {
+        // eslint-disable-next-line no-await-in-loop,max-statements-per-line
+        await new Promise((resolve) => { setTimeout(resolve, 2000); });
+      }
+    }
+  } catch (publishError) {
+    log.error(`Failed to publish via admin.hlx.page: ${publishError.message}`);
+  }
+}
