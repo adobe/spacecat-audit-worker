@@ -165,7 +165,11 @@ async function isUrlPrerenderEnabled(url, log) {
       .map((header) => ({ header, value: response.headers.get(header) }))
       .filter(({ value }) => Boolean(value));
 
-    return foundHeaders.length > 0;
+    const isFixed = foundHeaders.length > 0;
+
+    log.debug(`Prerender - URL verification: url=${url}, status=${response.status}, isFixed=${isFixed}`);
+
+    return isFixed;
   } catch (error) {
     clearTimeout(timeoutId);
     log.warn(`Prerender verification failed for ${url}: ${error.message}`);
