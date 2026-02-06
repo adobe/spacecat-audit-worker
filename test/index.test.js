@@ -107,12 +107,12 @@ describe('Index Tests', () => {
     const resp = await main(request, context);
 
     expect(resp.status).to.equal(200);
-    // Verify that log.info was called with abort information
-    const logCall = infoSpy.args.find((args) => args[0]?.includes('hasAbort=true'));
+    // Verify that log.info was called with message object containing abort information
+    const logCall = infoSpy.args.find((args) => args[1]?.abort);
     expect(logCall).to.exist;
-    expect(logCall[0]).to.include('hasAbort=true');
-    expect(logCall[0]).to.include('abortReason=bot-protection');
-    expect(logCall[0]).to.include('jobId=test-job-123');
-    expect(logCall[0]).to.include('siteId=test-site-456');
+    expect(logCall[1]).to.have.property('abort');
+    expect(logCall[1].abort.reason).to.equal('bot-protection');
+    expect(logCall[1].jobId).to.equal('test-job-123');
+    expect(logCall[1].siteId).to.equal('test-site-456');
   });
 });

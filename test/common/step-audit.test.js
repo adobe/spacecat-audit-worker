@@ -653,13 +653,14 @@ describe('Step-based Audit Tests', () => {
 
       // Verify [BOT-BLOCKED] log with detailed info including jobId
       expect(context.log.warn).to.have.been.calledWithMatch(/\[BOT-BLOCKED\] Audit aborted for jobId=abort-job-123/);
-      const botBlockedCall = context.log.warn.args.find((call) => call[0].includes('[BOT-BLOCKED]'));
+      const botBlockedCall = context.log.warn.args.find((call) => call[0] && call[0].includes('[BOT-BLOCKED]'));
       expect(botBlockedCall).to.exist;
       const botBlockedLog = botBlockedCall[0];
       expect(botBlockedLog).to.include('Audit aborted for jobId=abort-job-123');
-      expect(botBlockedLog).to.include('403: 5');
-      expect(botBlockedLog).to.include('cloudflare: 3');
-      expect(botBlockedLog).to.include('imperva: 2');
+      expect(botBlockedLog).to.include('type=cwv');
+      expect(botBlockedLog).to.include('site=https://space.cat');
+      expect(botBlockedLog).to.match(/HTTP Status: \[403: 5\]/);
+      expect(botBlockedLog).to.match(/Blocker Types: \[.*cloudflare: 3.*imperva: 2.*\]/);
       expect(botBlockedLog).to.include('5/10 URLs blocked');
       expect(botBlockedLog).to.include('https://example.com/page1');
       expect(botBlockedLog).to.include('https://example.com/page2');
@@ -794,6 +795,10 @@ describe('Step-based Audit Tests', () => {
       expect(botBlockedCall).to.exist;
       const botBlockedLog = botBlockedCall[0];
       expect(botBlockedLog).to.include('Audit aborted for jobId=many-urls-job');
+      expect(botBlockedLog).to.include('type=broken-backlinks');
+      expect(botBlockedLog).to.include('site=https://space.cat');
+      expect(botBlockedLog).to.match(/HTTP Status: \[403: 50\]/);
+      expect(botBlockedLog).to.match(/Blocker Types: \[cloudflare: 50\]/);
       expect(botBlockedLog).to.include('50/100 URLs blocked');
       // Check first and last URL
       expect(botBlockedLog).to.include('https://example.com/page1');
@@ -847,20 +852,17 @@ describe('Step-based Audit Tests', () => {
 
       // Verify [BOT-BLOCKED] log was called
       expect(context.log.warn).to.have.been.calledWithMatch(/\[BOT-BLOCKED\] Audit aborted for jobId=mixed-blockers-job/);
-      expect(context.log.warn).to.have.been.calledWithMatch(/403: 3/);
-      expect(context.log.warn).to.have.been.calledWithMatch(/cloudflare: 2/);
 
       // Verify status details in log
       const botBlockedCall = context.log.warn.args.find((call) => call && call[0] && call[0].includes('[BOT-BLOCKED]'));
       expect(botBlockedCall).to.exist;
       const botBlockedLog = botBlockedCall[0];
       expect(botBlockedLog).to.include('Audit aborted for jobId=mixed-blockers-job');
-      expect(botBlockedLog).to.match(/403: 3/);
-      expect(botBlockedLog).to.match(/429: 1/);
-      expect(botBlockedLog).to.match(/503: 1/);
-      expect(botBlockedLog).to.match(/cloudflare: 2/);
-      expect(botBlockedLog).to.match(/imperva: 1/);
-      expect(botBlockedLog).to.match(/akamai: 2/);
+      expect(botBlockedLog).to.include('type=sitemap');
+      expect(botBlockedLog).to.include('site=https://space.cat');
+      expect(botBlockedLog).to.match(/HTTP Status: \[.*403: 3.*429: 1.*503: 1.*\]/);
+      expect(botBlockedLog).to.match(/Blocker Types: \[.*cloudflare: 2.*imperva: 1.*akamai: 2.*\]/);
+      expect(botBlockedLog).to.include('10/20 URLs blocked');
     });
 
     it('handles abort with missing details fields (fallback to empty/none)', async () => {

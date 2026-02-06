@@ -55,14 +55,6 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 export function handleAbort(abort, jobId, type, site, siteId, log) {
   const { reason, details } = abort;
 
-  /* c8 ignore start */
-  // Log abort structure for debugging
-  log.info(
-    `[AUDIT-DEBUG] Processing abort signal: jobId=${jobId}, type=${type}, siteId=${siteId}, `
-    + `reason=${reason}, hasDetails=${!!details}, detailsKeys=${details ? Object.keys(details).join(',') : 'none'}`,
-  );
-  /* c8 ignore stop */
-
   if (reason === 'bot-protection') {
     const {
       blockedUrlsCount, totalUrlsCount, byBlockerType, byHttpStatus, blockedUrls,

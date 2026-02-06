@@ -105,11 +105,6 @@ export class StepAudit extends BaseAudit {
       type, data, siteId, auditContext = {}, abort, jobId,
     } = message;
 
-    /* c8 ignore start */
-    // Debug: Log received message structure
-    log.info(`[DEBUG-AUDIT-RECEIVED] type=${type}, siteId=${siteId}, jobId=${jobId || 'none'}, hasAbort=${!!abort}, abortReason=${abort?.reason || 'none'}, messageKeys=${Object.keys(message).join(',')}`);
-    /* c8 ignore stop */
-
     try {
       const site = await this.siteProvider(siteId, context);
 
@@ -120,14 +115,6 @@ export class StepAudit extends BaseAudit {
 
       // Check if scrape job was aborted (e.g., due to bot protection)
       if (abort) {
-        /* c8 ignore start */
-        log.info(
-          `[AUDIT-DEBUG] Abort detected in message: jobId=${jobId}, type=${type}, `
-          + `siteId=${siteId}, reason=${abort.reason}, `
-          + `hasDetails=${!!abort.details}, detailsBlockedCount=${abort.details?.blockedUrlsCount || 0}`,
-        );
-        /* c8 ignore stop */
-
         return handleAbort(abort, jobId, type, site, siteId, log);
       }
 

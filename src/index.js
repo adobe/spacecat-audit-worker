@@ -219,12 +219,11 @@ function getElapsedSeconds(startTime) {
 async function run(message, context) {
   const { log } = context;
   const {
-    type, siteId, abort, jobId,
+    type, siteId, jobId,
   } = message;
 
   log.info(
-    `Received ${type} audit request for siteId=${siteId}, jobId=${jobId || 'none'}, `
-    + `hasAbort=${!!abort}, abortReason=${abort?.reason || 'none'}. Message:`,
+    `Received ${type} audit request for siteId=${siteId}, jobId=${jobId || 'none'}`,
     message,
   );
 
