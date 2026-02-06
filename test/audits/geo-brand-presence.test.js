@@ -21,6 +21,7 @@ import {
   keywordPromptsImportStep,
   loadPromptsAndSendDetection,
   WEB_SEARCH_PROVIDERS,
+  isAiPromptDeleted,
 } from '../../src/geo-brand-presence/handler.js';
 import { receiveCategorization } from '../../src/geo-brand-presence/categorization-response-handler.js';
 import { llmoConfig } from '@adobe/spacecat-shared-utils';
@@ -803,6 +804,554 @@ describe('Geo Brand Presence Handler', () => {
       site.getBaseURL(),
       sinon.match.object,
     );
+  });
+
+  // Unit tests for isAiPromptDeleted helper function
+  // This function only checks AI prompts (origin='ai') and matches on prompt + region only
+  describe('isAiPromptDeleted', () => {
+    it('should return true when AI prompt matches a deleted entry by prompt and region', () => {
+      const deletedPrompts = {
+        '3c73fca4-eb1a-4847-8a1b-457f5b771ccc': {
+          prompt: 'What is the best cereal for breakfast?',
+          regions: ['ca'],
+          origin: 'ai',
+          source: 'ahrefs',
+          topic: 'Cereal Brands',
+          category: 'Breakfast Cereals',
+        },
+      };
+
+      const result = isAiPromptDeleted(
+        'What is the best cereal for breakfast?',
+        'ca',
+        deletedPrompts,
+      );
+
+      expect(result).to.be.true;
+    });
+
+    it('should return false when prompt text differs', () => {
+      const deletedPrompts = {
+        '3c73fca4-eb1a-4847-8a1b-457f5b771ccc': {
+          prompt: 'Deleted AI prompt text',
+          regions: ['us'],
+          origin: 'ai',
+          topic: 'Test Topic',
+          category: 'Test Category',
+        },
+      };
+
+      const result = isAiPromptDeleted(
+        'Different prompt text',
+        'us',
+        deletedPrompts,
+      );
+
+      expect(result).to.be.false;
+    });
+
+    it('should return false when region is not in deleted regions', () => {
+      const deletedPrompts = {
+        '3c73fca4-eb1a-4847-8a1b-457f5b771ccc': {
+          prompt: 'Test AI prompt',
+          regions: ['us'],
+          origin: 'ai',
+          topic: 'Test Topic',
+          category: 'Test Category',
+        },
+      };
+
+      const result = isAiPromptDeleted(
+        'Test AI prompt',
+        'ca', // Different region
+        deletedPrompts,
+      );
+
+      expect(result).to.be.false;
+    });
+
+    it('should ignore topic when matching AI prompts', () => {
+      const deletedPrompts = {
+        '3c73fca4-eb1a-4847-8a1b-457f5b771ccc': {
+          prompt: 'Test AI prompt',
+          regions: ['us'],
+          origin: 'ai',
+          topic: 'Original Topic from Mystique',
+          category: 'Test Category',
+        },
+      };
+
+      // Should match because we only check prompt + region for AI prompts
+      const result = isAiPromptDeleted(
+        'Test AI prompt',
+        'us',
+        deletedPrompts,
+      );
+
+      expect(result).to.be.true;
+    });
+
+    it('should ignore category when matching AI prompts', () => {
+      const deletedPrompts = {
+        '3c73fca4-eb1a-4847-8a1b-457f5b771ccc': {
+          prompt: 'Test AI prompt',
+          regions: ['us'],
+          origin: 'ai',
+          topic: 'Test Topic',
+          category: 'Mystique Assigned Category',
+        },
+      };
+
+      // Should match because we only check prompt + region for AI prompts
+      // The parquet prompt would have empty category, but we don't check it
+      const result = isAiPromptDeleted(
+        'Test AI prompt',
+        'us',
+        deletedPrompts,
+      );
+
+      expect(result).to.be.true;
+    });
+
+    it('should NOT match human-origin deleted prompts', () => {
+      const deletedPrompts = {
+        '3c73fca4-eb1a-4847-8a1b-457f5b771ccc': {
+          prompt: 'Human prompt text',
+          regions: ['us'],
+          origin: 'human', // Human prompt, not AI
+          source: 'config',
+          topic: 'Test Topic',
+          category: 'Test Category',
+        },
+      };
+
+      // Should return false because origin is 'human', not 'ai'
+      const result = isAiPromptDeleted(
+        'Human prompt text',
+        'us',
+        deletedPrompts,
+      );
+
+      expect(result).to.be.false;
+    });
+
+    it('should return false when deletedPrompts is empty', () => {
+      const result = isAiPromptDeleted(
+        'Test prompt',
+        'us',
+        {},
+      );
+
+      expect(result).to.be.false;
+    });
+
+    it('should match when AI prompt is deleted in multiple regions', () => {
+      const deletedPrompts = {
+        '3c73fca4-eb1a-4847-8a1b-457f5b771ccc': {
+          prompt: 'Test AI prompt',
+          regions: ['us', 'ca', 'uk'],
+          origin: 'ai',
+          topic: 'Test Topic',
+          category: 'Test Category',
+        },
+      };
+
+      expect(isAiPromptDeleted('Test AI prompt', 'us', deletedPrompts)).to.be.true;
+      expect(isAiPromptDeleted('Test AI prompt', 'ca', deletedPrompts)).to.be.true;
+      expect(isAiPromptDeleted('Test AI prompt', 'uk', deletedPrompts)).to.be.true;
+      expect(isAiPromptDeleted('Test AI prompt', 'de', deletedPrompts)).to.be.false;
+    });
+
+    it('should match against multiple deleted AI prompts', () => {
+      const deletedPrompts = {
+        'uuid-1': {
+          prompt: 'First deleted AI prompt',
+          regions: ['us'],
+          origin: 'ai',
+          topic: 'Topic A',
+          category: 'Category A',
+        },
+        'uuid-2': {
+          prompt: 'Second deleted AI prompt',
+          regions: ['ca'],
+          origin: 'ai',
+          topic: 'Topic B',
+          category: 'Category B',
+        },
+      };
+
+      expect(isAiPromptDeleted('First deleted AI prompt', 'us', deletedPrompts)).to.be.true;
+      expect(isAiPromptDeleted('Second deleted AI prompt', 'ca', deletedPrompts)).to.be.true;
+      expect(isAiPromptDeleted('Non-deleted prompt', 'us', deletedPrompts)).to.be.false;
+    });
+
+    it('should only match AI prompts when mixed origins exist', () => {
+      const deletedPrompts = {
+        'uuid-ai': {
+          prompt: 'Shared prompt text',
+          regions: ['us'],
+          origin: 'ai',
+          topic: 'AI Topic',
+          category: 'AI Category',
+        },
+        'uuid-human': {
+          prompt: 'Shared prompt text',
+          regions: ['ca'],
+          origin: 'human',
+          topic: 'Human Topic',
+          category: 'Human Category',
+        },
+      };
+
+      // Should match the AI deleted prompt for 'us'
+      expect(isAiPromptDeleted('Shared prompt text', 'us', deletedPrompts)).to.be.true;
+      // Should NOT match the human deleted prompt for 'ca'
+      expect(isAiPromptDeleted('Shared prompt text', 'ca', deletedPrompts)).to.be.false;
+    });
+  });
+
+  // Integration tests: Deleted AI prompts filtering in loadPromptsAndSendDetection
+  // AI prompts are loaded from parquet files and filtered against deleted.prompts (origin='ai')
+  // Matching is done on prompt + region only (ignoring category/topic) because parquet prompts
+  // have empty category while deleted prompts have Mystique-assigned categories
+  describe('Deleted AI Prompts Filtering', () => {
+    it('should filter out deleted AI prompts when loading from parquet', async () => {
+      // AI prompts from parquet - note category is empty string as per real parquet data
+      fakeParquetS3Response([
+        {
+          prompt: 'What is the best cereal for breakfast?',
+          region: 'ca',
+          category: '', // Empty category in parquet
+          topic: 'cereal',
+          url: 'https://example.com',
+          keyword: 'cereal',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 1000,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+        {
+          prompt: 'What is the best cereal for breakfast?',
+          region: 'us',
+          category: '',
+          topic: 'cereal',
+          url: 'https://example.com',
+          keyword: 'cereal',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 1000,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+        {
+          prompt: 'Which cereal has more fiber?',
+          region: 'ca',
+          category: '',
+          topic: 'cereal',
+          url: 'https://example.com',
+          keyword: 'cereal',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 500,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+        {
+          prompt: 'Which cereal has more fiber?',
+          region: 'us',
+          category: '',
+          topic: 'cereal',
+          url: 'https://example.com',
+          keyword: 'cereal',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 500,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+      ]);
+
+      const cat1 = '12280d61-2869-4c77-93da-a41b515ff59d';
+
+      fakeConfigS3Response({
+        ...llmoConfig.defaultConfig(),
+        categories: {
+          [cat1]: { name: 'Breakfast Cereals', region: ['ca', 'us'] },
+        },
+        topics: {},
+        deleted: {
+          prompts: {
+            '3c73fca4-eb1a-4847-8a1b-457f5b771ccc': {
+              prompt: 'What is the best cereal for breakfast?',
+              regions: ['ca'], // Only deleted for 'ca'
+              origin: 'ai',
+              source: 'ahrefs',
+              topic: 'Cereal Brands', // Mystique-assigned topic (different from parquet)
+              category: 'Breakfast Cereals', // Mystique-assigned category (different from parquet)
+            },
+          },
+        },
+      });
+
+      getPresignedUrl.resolves('https://example.com/presigned-url');
+
+      await loadPromptsAndSendDetection({
+        ...context,
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      // Verify the correct number of prompts are sent
+      // Original: 4 AI prompts (2 prompts × 2 regions)
+      // After filtering: 3 (removed 'What is the best cereal...' for 'ca')
+      expect(s3Client.send).calledWith(
+        matchS3Cmd('PutObjectCommand', {
+          Body: sinon.match((json) => {
+            const data = JSON.parse(json);
+            expect(data).to.have.lengthOf(3);
+
+            // The deleted prompt should only appear for 'us', not 'ca'
+            const deletedPromptItems = data.filter(
+              (p) => p.prompt === 'What is the best cereal for breakfast?',
+            );
+            expect(deletedPromptItems).to.have.lengthOf(1);
+            expect(deletedPromptItems[0].region).to.equal('us');
+
+            // The non-deleted prompt should appear for both regions
+            const otherPromptItems = data.filter(
+              (p) => p.prompt === 'Which cereal has more fiber?',
+            );
+            expect(otherPromptItems).to.have.lengthOf(2);
+            expect(otherPromptItems.map((p) => p.region).sort()).to.deep.equal(['ca', 'us']);
+
+            return true;
+          }),
+        }),
+      );
+
+      // Verify log message about filtered AI prompts
+      expect(log.info).to.have.been.calledWith(
+        'GEO BRAND PRESENCE: Filtered %d deleted AI prompts from parquet; AI prompts after filtering: %d (was %d) for site id %s (%s)',
+        1,
+        3,
+        4,
+        site.getId(),
+        site.getBaseURL(),
+      );
+    });
+
+    it('should not log filtered message when no AI prompts are deleted', async () => {
+      fakeParquetS3Response([
+        {
+          prompt: 'Test AI prompt',
+          region: 'us',
+          category: '',
+          topic: 'test',
+          url: 'https://example.com',
+          keyword: 'test',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 100,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+      ]);
+
+      const cat1 = '12280d61-2869-4c77-93da-a41b515ff59d';
+
+      fakeConfigS3Response({
+        ...llmoConfig.defaultConfig(),
+        categories: {
+          [cat1]: { name: 'Test Category', region: ['us'] },
+        },
+        topics: {},
+        deleted: {
+          prompts: {}, // Empty deleted prompts
+        },
+      });
+
+      getPresignedUrl.resolves('https://example.com/presigned-url');
+
+      await loadPromptsAndSendDetection({
+        ...context,
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      // Verify no log message about filtered AI prompts
+      expect(log.info).to.not.have.been.calledWith(
+        sinon.match('GEO BRAND PRESENCE: Filtered'),
+        sinon.match.any,
+        sinon.match.any,
+        sinon.match.any,
+      );
+    });
+
+    it('should filter all regions when AI prompt is deleted in all regions', async () => {
+      fakeParquetS3Response([
+        {
+          prompt: 'Fully deleted AI prompt',
+          region: 'ca',
+          category: '',
+          topic: 'test',
+          url: 'https://example.com',
+          keyword: 'test',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 100,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+        {
+          prompt: 'Fully deleted AI prompt',
+          region: 'us',
+          category: '',
+          topic: 'test',
+          url: 'https://example.com',
+          keyword: 'test',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 100,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+        {
+          prompt: 'Keep this AI prompt',
+          region: 'us',
+          category: '',
+          topic: 'test',
+          url: 'https://example.com',
+          keyword: 'test',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 200,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+      ]);
+
+      const cat1 = '12280d61-2869-4c77-93da-a41b515ff59d';
+      const deletedId = 'a1b2c3d4-e5f6-4a7b-8c9d-e0f1a2b3c4d5';
+
+      fakeConfigS3Response({
+        ...llmoConfig.defaultConfig(),
+        categories: {
+          [cat1]: { name: 'Test Category', region: ['ca', 'us'] },
+        },
+        topics: {},
+        deleted: {
+          prompts: {
+            [deletedId]: {
+              prompt: 'Fully deleted AI prompt',
+              regions: ['ca', 'us'], // Deleted in all regions
+              origin: 'ai',
+              source: 'ahrefs',
+              topic: 'Mystique Topic',
+              category: 'Mystique Category',
+            },
+          },
+        },
+      });
+
+      getPresignedUrl.resolves('https://example.com/presigned-url');
+
+      await loadPromptsAndSendDetection({
+        ...context,
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      expect(s3Client.send).calledWith(
+        matchS3Cmd('PutObjectCommand', {
+          Body: sinon.match((json) => {
+            const data = JSON.parse(json);
+            // Only the non-deleted prompt should remain
+            expect(data).to.have.lengthOf(1);
+            expect(data[0].prompt).to.equal('Keep this AI prompt');
+            return true;
+          }),
+        }),
+      );
+
+      // Verify 2 AI prompts were filtered (both regions of the deleted prompt)
+      expect(log.info).to.have.been.calledWith(
+        'GEO BRAND PRESENCE: Filtered %d deleted AI prompts from parquet; AI prompts after filtering: %d (was %d) for site id %s (%s)',
+        2,
+        1,
+        3,
+        site.getId(),
+        site.getBaseURL(),
+      );
+    });
+
+    it('should NOT filter human-origin deleted prompts from AI parquet data', async () => {
+      // AI prompts from parquet
+      fakeParquetS3Response([
+        {
+          prompt: 'Prompt that was deleted as human',
+          region: 'us',
+          category: '',
+          topic: 'test',
+          url: 'https://example.com',
+          keyword: 'test',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 100,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+      ]);
+
+      const cat1 = '12280d61-2869-4c77-93da-a41b515ff59d';
+
+      fakeConfigS3Response({
+        ...llmoConfig.defaultConfig(),
+        categories: {
+          [cat1]: { name: 'Test Category', region: ['us'] },
+        },
+        topics: {},
+        deleted: {
+          prompts: {
+            'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e': {
+              prompt: 'Prompt that was deleted as human',
+              regions: ['us'],
+              origin: 'human', // Human-origin deleted prompt
+              source: 'config',
+              topic: 'Human Topic',
+              category: 'Human Category',
+            },
+          },
+        },
+      });
+
+      getPresignedUrl.resolves('https://example.com/presigned-url');
+
+      await loadPromptsAndSendDetection({
+        ...context,
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      // The AI prompt should NOT be filtered because the deleted entry has origin='human'
+      expect(s3Client.send).calledWith(
+        matchS3Cmd('PutObjectCommand', {
+          Body: sinon.match((json) => {
+            const data = JSON.parse(json);
+            expect(data).to.have.lengthOf(1);
+            expect(data[0].prompt).to.equal('Prompt that was deleted as human');
+            return true;
+          }),
+        }),
+      );
+
+      // No filtering should have occurred
+      expect(log.info).to.not.have.been.calledWith(
+        sinon.match('GEO BRAND PRESENCE: Filtered'),
+        sinon.match.any,
+        sinon.match.any,
+        sinon.match.any,
+      );
+    });
   });
 
   // NEW TESTS: Deduplication Logic (Step 1)
