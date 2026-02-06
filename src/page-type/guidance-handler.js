@@ -11,7 +11,7 @@
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 
-const GUIDANCE_TYPE = 'page-type';
+const GUIDANCE_TYPE = 'detect:page-type';
 const MIN_ACCURACY_THRESHOLD = 75;
 
 function convertPatternsToPageTypes(patterns) {
@@ -33,7 +33,7 @@ async function updateSitePageTypes(site, patterns, log) {
     site.setPageTypes(pageTypes);
 
     await site.save();
-    log.debug(`[${GUIDANCE_TYPE}] Updated site pageTypes configuration with ${patterns.length} patterns for site: ${site.getId()}`);
+    log.info(`[${GUIDANCE_TYPE}] Updated site pageTypes configuration with ${patterns.length} patterns for site: ${site.getId()}`);
   } catch (error) {
     log.error(`[${GUIDANCE_TYPE}] Failed to update site pageTypes for site: ${site.getId()}: ${error.message}`);
     throw error;
@@ -45,7 +45,7 @@ export default async function handler(message, context) {
   const { Site, Audit } = dataAccess;
   const { siteId, auditId, data } = message;
 
-  log.debug(`[${GUIDANCE_TYPE}] Message received for site: ${siteId}, audit: ${auditId}`);
+  log.info(`[${GUIDANCE_TYPE}] Message received for site: ${siteId}, audit: ${auditId}`);
 
   const site = await Site.findById(siteId);
   if (!site) {
@@ -92,10 +92,10 @@ export default async function handler(message, context) {
       if (accuracyPct == null || accuracyPct < MIN_ACCURACY_THRESHOLD) {
         auditResult.error = `Accuracy ${accuracyPct}% below threshold ${MIN_ACCURACY_THRESHOLD}%`;
         auditResult.patternsStored = false;
-        log.info(`[${GUIDANCE_TYPE}] Skipping: accuracy ${accuracyPct}% below threshold ${MIN_ACCURACY_THRESHOLD}% for site: ${siteId}, audit: ${auditId}`);
+        log.warn(`[${GUIDANCE_TYPE}] Skipping: accuracy ${accuracyPct}% below threshold ${MIN_ACCURACY_THRESHOLD}% for site: ${siteId}, audit: ${auditId}`);
       } else {
         try {
-          log.debug(`[${GUIDANCE_TYPE}] Updating patterns for site: ${siteId}, audit: ${auditId}, patterns: ${JSON.stringify(patterns)}`);
+          log.info(`[${GUIDANCE_TYPE}] Updating patterns for site: ${siteId}, audit: ${auditId}, patterns: ${JSON.stringify(patterns)}`);
           const existingPageTypes = site.getPageTypes();
           const hadExistingPageTypes = existingPageTypes && existingPageTypes.length > 0;
 
@@ -116,8 +116,8 @@ export default async function handler(message, context) {
         }
       }
 
-      log.debug(`[${GUIDANCE_TYPE}] Validation: ${accuracyPct}% accuracy with ${validation?.sample_size} samples`);
-      log.debug(`[${GUIDANCE_TYPE}] Execution: processed ${executionMetrics?.total_urls} URLs in ${executionMetrics?.total_duration_seconds}s`);
+      log.info(`[${GUIDANCE_TYPE}] Validation: ${accuracyPct}% accuracy with ${validation?.sample_size} samples`);
+      log.info(`[${GUIDANCE_TYPE}] Execution: processed ${executionMetrics?.total_urls} URLs in ${executionMetrics?.total_duration_seconds}s`);
     }
   }
 
@@ -128,7 +128,7 @@ export default async function handler(message, context) {
       if (audit) {
         audit.setAuditResult(auditResult);
         await audit.save();
-        log.debug(`[${GUIDANCE_TYPE}] Saved audit result for site: ${siteId}, audit: ${auditId}`);
+        log.info(`[${GUIDANCE_TYPE}] Saved audit result for site: ${siteId}, audit: ${auditId}`);
       } else {
         log.warn(`[${GUIDANCE_TYPE}] Failed: audit not found for site: ${siteId}, audit: ${auditId}`);
       }
