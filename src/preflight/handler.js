@@ -27,6 +27,7 @@ import readability from '../readability/preflight/handler.js';
 import accessibility from './accessibility.js';
 import headings from './headings.js';
 import formAccessibility from './form-accessibility.js';
+import imageAlt from './image-alt.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const PREFLIGHT_STEP_IDENTIFY = 'identify';
@@ -50,6 +51,7 @@ export const AUDIT_ACCESSIBILITY = 'accessibility';
 export const AUDIT_READABILITY = 'readability';
 export const AUDIT_HEADINGS = 'headings';
 export const AUDIT_FORM_ACCESSIBILITY = 'form-accessibility';
+export const AUDIT_IMAGE_ALT = 'image-alt';
 
 const AVAILABLE_CHECKS = [
   AUDIT_CANONICAL,
@@ -62,6 +64,7 @@ const AVAILABLE_CHECKS = [
   AUDIT_READABILITY,
   AUDIT_HEADINGS,
   AUDIT_FORM_ACCESSIBILITY,
+  AUDIT_IMAGE_ALT,
 ];
 
 export const PREFLIGHT_HANDLERS = {
@@ -72,6 +75,7 @@ export const PREFLIGHT_HANDLERS = {
   readability,
   accessibility,
   'form-accessibility': formAccessibility,
+  'image-alt': imageAlt,
 };
 
 export async function scrapePages(context) {
