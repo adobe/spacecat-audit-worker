@@ -693,6 +693,19 @@ describe('Prerender Utils', () => {
       expect(result).to.equal(0);
       expect(fetchStub).to.not.have.been.called;
     });
+
+    it('should return 0 and log error when getSuggestions throws', async () => {
+      mockOpportunity.getSuggestions.rejects(new Error('Database error'));
+
+      const context = { log };
+      const result = await utilsWithFetch.verifyAndMarkFixedSuggestions(mockOpportunity, context);
+
+      expect(result).to.equal(0);
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/verification error.*Database error/),
+        sinon.match.instanceOf(Error),
+      );
+    });
   });
 });
 
