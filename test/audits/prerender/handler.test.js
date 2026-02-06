@@ -801,7 +801,10 @@ describe('Prerender Audit', () => {
 
       it('should trigger opportunity processing path when prerender is detected', async () => {
         // This test covers line 341 by ensuring the full opportunity processing flow executes
-        const mockOpportunity = { getId: () => 'test-opportunity-id' };
+        const mockOpportunity = {
+          getId: () => 'test-opportunity-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/common/opportunity.js': {
@@ -1729,7 +1732,10 @@ describe('Prerender Audit', () => {
 
       it('should properly execute syncSuggestions with domain-wide aggregate suggestion mapper and merge functions', async () => {
         // This test specifically ensures lines 460-466 are covered (mapNewSuggestion and mergeDataFunction)
-        const mockOpportunity = { getId: () => 'test-opp-id' };
+        const mockOpportunity = {
+          getId: () => 'test-opp-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
         const syncSuggestionsStub = sinon.stub().resolves();
         const mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
 
@@ -3972,7 +3978,10 @@ describe('Prerender Audit', () => {
 
       it('should trigger opportunity and suggestion creation flow', async () => {
         // Test the full opportunity creation and suggestion sync flow including S3 key generation
-        const mockOpportunity = { getId: () => 'test-opportunity-id' };
+        const mockOpportunity = {
+          getId: () => 'test-opportunity-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
         const syncSuggestionsStub = sinon.stub().resolves();
         const mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
 
@@ -4059,7 +4068,10 @@ describe('Prerender Audit', () => {
       });
 
       it('should prefer scrapeJobId over siteId when building S3 HTML keys', async () => {
-        const mockOpportunity = { getId: () => 'test-opportunity-id' };
+        const mockOpportunity = {
+          getId: () => 'test-opportunity-id',
+          getSuggestions: sinon.stub().resolves([]),
+        };
         const syncSuggestionsStub = sinon.stub().resolves();
         const mockIsPaidLLMOCustomer = sinon.stub().resolves(true);
 
