@@ -250,7 +250,6 @@ export async function verifyAndMarkFixedSuggestions(opportunity, context) {
       await Promise.all(
         fixedSuggestions.map((suggestion) => {
           suggestion.setStatus(SuggestionDataAccess.STATUSES.FIXED);
-          suggestion.setUpdatedBy('system');
           return suggestion.save();
         }),
       );

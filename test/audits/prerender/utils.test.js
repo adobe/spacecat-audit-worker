@@ -515,7 +515,6 @@ describe('Prerender Utils', () => {
 
       expect(result).to.equal(1);
       expect(mockSuggestion1.setStatus).to.have.been.calledWith('FIXED');
-      expect(mockSuggestion1.setUpdatedBy).to.have.been.calledWith('system');
       expect(mockSuggestion1.save).to.have.been.calledOnce;
 
       expect(mockSuggestion2.setStatus).to.not.have.been.called;
