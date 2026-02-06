@@ -793,6 +793,7 @@ describe('Experimentation Opportunities Tests', () => {
       const manualSuggestion = { getUpdatedBy: () => 'user' };
       const existingOpportunity = {
         getData: () => ({ page: urlUnderTest }),
+        getType: () => 'high-organic-low-ctr',
         getSuggestions: sinon.stub().resolves([manualSuggestion]),
       };
 

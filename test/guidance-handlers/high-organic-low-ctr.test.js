@@ -37,6 +37,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
   const dummyOpportunity = {
     getId: sandbox.stub().returns('existing-oppty-id'),
+    getType: sandbox.stub().returns('high-organic-low-ctr'),
     getSuggestions: sandbox.stub().resolves([]),
     getData: sandbox.stub().returns({
       page: 'https://abc.com/abc-adoption/account',
@@ -146,9 +147,31 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     expect(Suggestion.create).to.have.been.calledOnce;
     const suggestionArg = Suggestion.create.getCall(0).args[0];
     expect(suggestionArg.type).to.equal('CONTENT_UPDATE');
+    expect(suggestionArg.status).to.equal(SuggestionDataAccess.STATUSES.NEW);
     expect(suggestionArg.data.variations).to.deep.equal(
       guidanceMsgFromMystique.data.suggestions,
     );
+  });
+
+  it('should create suggestion with PENDING_VALIDATION status when site requires validation', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    context.site = { requiresValidation: true };
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://abc.com/abc-adoption/account',
+        guidance: guidanceMsgFromMystique.data.guidance,
+        suggestions: guidanceMsgFromMystique.data.suggestions,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(Suggestion.create).to.have.been.calledOnce;
+    const suggestionArg = Suggestion.create.getCall(0).args[0];
+    expect(suggestionArg.status).to.equal(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
   });
 
   it('should update existing opportunity if found', async () => {
@@ -247,6 +270,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     const opportunityWithManualSuggestions = {
       getId: sandbox.stub().returns('oppty-with-manual-suggestions'),
+      getType: sandbox.stub().returns('high-organic-low-ctr'),
       getSuggestions: sandbox.stub().resolves([manualSuggestion]),
       getData: sandbox.stub().returns({
         page: 'https://abc.com/abc-adoption/account',
@@ -289,6 +313,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     const systemOpportunity = {
       getId: sandbox.stub().returns('system-oppty-id'),
+      getType: sandbox.stub().returns('high-organic-low-ctr'),
       getSuggestions: sandbox.stub().resolves([systemSuggestion]),
       getData: sandbox.stub().returns({
         page: 'https://abc.com/abc-adoption/account',
@@ -329,6 +354,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     const legacyOpportunity = {
       getId: sandbox.stub().returns('legacy-oppty-id'),
+      getType: sandbox.stub().returns('high-organic-low-ctr'),
       getSuggestions: sandbox.stub().resolves([legacySuggestion]),
       getData: sandbox.stub().returns({
         page: 'https://abc.com/abc-adoption/account',
@@ -359,5 +385,261 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     expect(legacyOpportunity.setGuidance).to.have.been.called;
     expect(legacyOpportunity.save).to.have.been.called;
     expect(Suggestion.create).to.have.been.calledOnce;
+  });
+
+  describe('opportunity capacity management', () => {
+    const createMockOpportunity = (id, page, pageViews, type = 'high-organic-low-ctr') => ({
+      getId: sandbox.stub().returns(id),
+      getType: sandbox.stub().returns(type),
+      getData: sandbox.stub().returns({ page, pageViews }),
+      getSuggestions: sandbox.stub().resolves([]),
+      remove: sandbox.stub().resolves(),
+    });
+
+    it('should create opportunity when under capacity (< 3 existing)', async () => {
+      const existingOpportunities = [
+        createMockOpportunity('oppty-1', 'https://abc.com/page1', 5000),
+        createMockOpportunity('oppty-2', 'https://abc.com/page2', 6000),
+      ];
+      Opportunity.allBySiteId.resolves(existingOpportunities);
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account',
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(Suggestion.create).to.have.been.calledOnce;
+    });
+
+    it('should replace lowest pageViews opportunity when at capacity and new has higher pageViews', async () => {
+      const lowestOpportunity = createMockOpportunity('oppty-lowest', 'https://abc.com/lowest', 1000);
+      const existingOpportunities = [
+        createMockOpportunity('oppty-1', 'https://abc.com/page1', 50000),
+        createMockOpportunity('oppty-2', 'https://abc.com/page2', 60000),
+        lowestOpportunity,
+      ];
+      Opportunity.allBySiteId.resolves(existingOpportunities);
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account', // pageViews: 21450 in fixture
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(lowestOpportunity.remove).to.have.been.calledOnce;
+      expect(Opportunity.create).to.have.been.calledOnce;
+      expect(log.info).to.have.been.calledWithMatch(/Replacing high-organic-low-ctr opportunity/);
+    });
+
+    it('should drop new opportunity when at capacity and new has lower pageViews', async () => {
+      const existingOpportunities = [
+        createMockOpportunity('oppty-1', 'https://abc.com/page1', 50000),
+        createMockOpportunity('oppty-2', 'https://abc.com/page2', 60000),
+        createMockOpportunity('oppty-3', 'https://abc.com/page3', 70000),
+      ];
+      Opportunity.allBySiteId.resolves(existingOpportunities);
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account', // pageViews: 21450 in fixture
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      const result = await handler(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(Suggestion.create).not.to.have.been.called;
+      expect(log.warn).to.have.been.calledWithMatch(/Max opportunities \(3\) for high-organic-low-ctr already exist/);
+    });
+
+    it('should not check capacity when updating existing opportunity for same URL', async () => {
+      const existingOpportunityForSameUrl = {
+        getId: sandbox.stub().returns('existing-for-url'),
+        getType: sandbox.stub().returns('high-organic-low-ctr'),
+        getData: sandbox.stub().returns({
+          page: 'https://abc.com/abc-adoption/account',
+          pageViews: 1000,
+        }),
+        getSuggestions: sandbox.stub().resolves([]),
+        setAuditId: sandbox.stub(),
+        setData: sandbox.stub(),
+        setGuidance: sandbox.stub(),
+        save: sandbox.stub().resolvesThis(),
+        setUpdatedBy: sandbox.stub(),
+      };
+
+      const existingOpportunities = [
+        createMockOpportunity('oppty-1', 'https://abc.com/page1', 50000),
+        createMockOpportunity('oppty-2', 'https://abc.com/page2', 60000),
+        existingOpportunityForSameUrl,
+      ];
+      Opportunity.allBySiteId.resolves(existingOpportunities);
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account',
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      await handler(message, context);
+
+      // Should update, not create
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(existingOpportunityForSameUrl.setAuditId).to.have.been.called;
+      expect(existingOpportunityForSameUrl.save).to.have.been.called;
+      expect(Suggestion.create).to.have.been.calledOnce;
+    });
+
+    it('should only count high-organic-low-ctr opportunities for capacity check', async () => {
+      const existingOpportunities = [
+        createMockOpportunity('oppty-1', 'https://abc.com/page1', 50000),
+        createMockOpportunity('oppty-2', 'https://abc.com/page2', 60000),
+        createMockOpportunity('oppty-3', 'https://abc.com/page3', 70000, 'rageclick'), // different type
+      ];
+      Opportunity.allBySiteId.resolves(existingOpportunities);
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account',
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      await handler(message, context);
+
+      // Should create since only 2 high-organic-low-ctr exist (rageclick doesn't count)
+      expect(Opportunity.create).to.have.been.calledOnce;
+    });
+
+    it('should handle existing opportunities with undefined pageViews (treat as 0)', async () => {
+      const opptyWithNoPageViews = createMockOpportunity('oppty-no-views', 'https://abc.com/no-views', undefined);
+      const existingOpportunities = [
+        createMockOpportunity('oppty-1', 'https://abc.com/page1', 50000),
+        createMockOpportunity('oppty-2', 'https://abc.com/page2', 60000),
+        opptyWithNoPageViews,
+      ];
+      Opportunity.allBySiteId.resolves(existingOpportunities);
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account', // pageViews: 21450 in fixture
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      await handler(message, context);
+
+      // Should replace the one with undefined pageViews (treated as 0)
+      expect(opptyWithNoPageViews.remove).to.have.been.calledOnce;
+      expect(Opportunity.create).to.have.been.calledOnce;
+    });
+
+    it('should handle new opportunity with undefined pageViews (treat as 0)', async () => {
+      // Create audit result where the opportunity has no pageViews
+      const auditResultWithNoPageViews = {
+        experimentationOpportunities: [
+          {
+            type: 'high-organic-low-ctr',
+            page: 'https://abc.com/abc-adoption/account',
+            trackedPageKPIName: 'Click Through Rate',
+            trackedKPISiteAverage: '0.24',
+            trackedPageKPIValue: '0.14',
+            // pageViews intentionally omitted
+            samples: 215,
+            metrics: [],
+          },
+        ],
+      };
+      const customAudit = {
+        getAuditResult: () => auditResultWithNoPageViews,
+      };
+      Audit.findById.resolves(customAudit);
+
+      const existingOpportunities = [
+        createMockOpportunity('oppty-1', 'https://abc.com/page1', 50000),
+        createMockOpportunity('oppty-2', 'https://abc.com/page2', 60000),
+        createMockOpportunity('oppty-3', 'https://abc.com/page3', 1000),
+      ];
+      Opportunity.allBySiteId.resolves(existingOpportunities);
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account',
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      const result = await handler(message, context);
+
+      // New opportunity has pageViews=0, lowest existing has 1000
+      // Should drop the new opportunity
+      expect(result.status).to.equal(200);
+      expect(Opportunity.create).not.to.have.been.called;
+      expect(log.warn).to.have.been.calledWithMatch(/pageViews: 0.*has lower pageViews/);
+    });
+
+    it('should remove suggestions when removing opportunity for replacement', async () => {
+      const suggestionToRemove = { remove: sandbox.stub().resolves() };
+      const lowestOpportunity = {
+        getId: sandbox.stub().returns('oppty-lowest'),
+        getType: sandbox.stub().returns('high-organic-low-ctr'),
+        getData: sandbox.stub().returns({ page: 'https://abc.com/lowest', pageViews: 1000 }),
+        getSuggestions: sandbox.stub().resolves([suggestionToRemove, suggestionToRemove]),
+        remove: sandbox.stub().resolves(),
+      };
+      const existingOpportunities = [
+        createMockOpportunity('oppty-1', 'https://abc.com/page1', 50000),
+        createMockOpportunity('oppty-2', 'https://abc.com/page2', 60000),
+        lowestOpportunity,
+      ];
+      Opportunity.allBySiteId.resolves(existingOpportunities);
+
+      const message = {
+        auditId: 'audit-id',
+        siteId: 'site-id',
+        data: {
+          url: 'https://abc.com/abc-adoption/account',
+          guidance: guidanceMsgFromMystique.data.guidance,
+          suggestions: guidanceMsgFromMystique.data.suggestions,
+        },
+      };
+
+      await handler(message, context);
+
+      expect(suggestionToRemove.remove).to.have.been.calledTwice;
+      expect(lowestOpportunity.remove).to.have.been.calledOnce;
+    });
   });
 });
