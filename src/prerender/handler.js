@@ -22,7 +22,7 @@ import {
   loadLatestAgenticSheet,
   buildSheetHitsMap,
 } from './utils/shared.js';
-import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
+import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls, verifyAndMarkFixedSuggestions } from './utils/utils.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   TOP_AGENTIC_URLS_LIMIT,
@@ -839,13 +839,19 @@ export async function processOpportunityAndSuggestions(
     },
   });
 
+  // Verify NEW suggestions and mark as FIXED if prerendering is already enabled
+  log.info(`${LOG_PREFIX} verify_prerender_fix_start: opportunityId=${opportunity?.getId?.() || 'unknown'}, siteId=${auditData.siteId}`);
+  const fixedCount = await verifyAndMarkFixedSuggestions(opportunity, context);
+  log.info(`${LOG_PREFIX} verify_prerender_fix_complete: fixedCount=${fixedCount}, opportunityId=${opportunity?.getId?.() || 'unknown'}`);
+
   log.info(`
     ${LOG_PREFIX} prerender_suggestions_sync_metrics:
     siteId=${auditData.siteId},
     baseUrl=${auditUrl},
     isPaidLLMOCustomer=${isPaid},
     suggestions=${preRenderSuggestions.length},
-    totalSuggestions=${allSuggestions.length},`);
+    totalSuggestions=${allSuggestions.length},
+    autoFixedSuggestions=${fixedCount},`);
 
   return opportunity;
 }
