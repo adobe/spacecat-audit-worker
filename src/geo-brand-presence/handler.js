@@ -48,7 +48,14 @@ import { parquetReadObjects } from 'hyparquet';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
 import { getSignedUrl } from '../utils/getPresignedUrl.js';
-import { transformWebSearchProviderForMystique } from './util.js';
+import {
+  transformWebSearchProviderForMystique,
+  checkJsonEnrichmentNeeded,
+  saveEnrichmentMetadata,
+  saveEnrichmentJson,
+  acquireEnrichmentLock,
+  URL_ENRICHMENT_TYPE,
+} from './util.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
@@ -187,6 +194,7 @@ export async function loadPromptsAndSendDetection(
 ) {
   /* c8 ignore start */
   const {
+    // eslint-disable-next-line no-unused-vars
     auditContext, log, sqs, env, site, audit, s3Client, brandPresenceCadence,
   } = context;
 
@@ -309,6 +317,201 @@ export async function loadPromptsAndSendDetection(
     return;
   }
 
+  if (!isNonEmptyArray(providersToUse)) {
+    log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping', siteId, baseURL);
+    return;
+  }
+
+  // Check if any prompts need URL enrichment
+  const { needsEnrichment, indicesToEnrich } = checkJsonEnrichmentNeeded(allPrompts);
+  const cadenceLabel = isDaily ? ' DAILY' : '';
+
+  if (needsEnrichment) {
+    // Trigger async JSON enrichment before sending to Mystique
+    log.info(
+      'GEO BRAND PRESENCE%s: %d prompts need URL enrichment for site id %s (%s)',
+      cadenceLabel,
+      indicesToEnrich.length,
+      siteId,
+      baseURL,
+    );
+
+    const enrichmentTriggered = await triggerJsonEnrichment({
+      allPrompts,
+      indicesToEnrich,
+      siteId,
+      auditId: audit.getId(),
+      baseURL,
+      deliveryType: site.getDeliveryType(),
+      dateContext,
+      providersToUse,
+      isDaily,
+      configVersion,
+      configExists,
+      bucket,
+    }, context);
+
+    if (enrichmentTriggered) {
+      log.info(
+        'GEO BRAND PRESENCE%s: JSON enrichment triggered for site id %s (%s) - Mystique will be called after enrichment',
+        cadenceLabel,
+        siteId,
+        baseURL,
+      );
+      return;
+    }
+
+    // Fallback: enrichment failed to trigger, send directly to Mystique
+    log.warn(
+      'GEO BRAND PRESENCE%s: Failed to trigger enrichment for site id %s (%s), sending directly to Mystique',
+      cadenceLabel,
+      siteId,
+      baseURL,
+    );
+  }
+
+  // No enrichment needed OR fallback: send directly to Mystique
+  await sendPromptsToMystique({
+    allPrompts,
+    siteId,
+    auditId: audit.getId(),
+    baseURL,
+    deliveryType: site.getDeliveryType(),
+    dateContext,
+    providersToUse,
+    isDaily,
+    configVersion,
+    configExists,
+    bucket,
+  }, context, getPresignedUrlOverride);
+
+  log.info(
+    'GEO BRAND PRESENCE%s: Detection messages sent directly to Mystique for site id %s (%s)',
+    cadenceLabel,
+    siteId,
+    baseURL,
+  );
+  /* c8 ignore end */
+}
+
+/**
+ * Triggers async JSON enrichment before sending to Mystique.
+ * Saves prompts and metadata to S3, then sends SQS message to start batch processing.
+ *
+ * @param {Object} params - Parameters for enrichment
+ * @param {Object} context - The context object
+ * @returns {Promise<boolean>} True if enrichment was triggered successfully
+ */
+async function triggerJsonEnrichment(params, context) {
+  const {
+    allPrompts,
+    indicesToEnrich,
+    siteId,
+    auditId,
+    baseURL,
+    deliveryType,
+    dateContext,
+    providersToUse,
+    isDaily,
+    configVersion,
+    configExists,
+    bucket,
+  } = params;
+
+  const {
+    log, sqs, s3Client, dataAccess,
+  } = context;
+
+  try {
+    // Create a lock ID based on week/year to prevent concurrent enrichments
+    const lockId = `w${dateContext.week}-${dateContext.year}${isDaily ? `-${dateContext.date}` : ''}`;
+
+    // Try to acquire enrichment lock (Safeguard #2)
+    const lockResult = await acquireEnrichmentLock(
+      s3Client,
+      bucket,
+      siteId,
+      lockId,
+      auditId,
+      log,
+    );
+
+    if (!lockResult.acquired) {
+      log.info(
+        'GEO BRAND PRESENCE: Enrichment lock not acquired for site %s, another enrichment in progress',
+        siteId,
+      );
+      return false; // Fallback to direct send
+    }
+
+    // Save prompts to S3
+    await saveEnrichmentJson(s3Client, bucket, auditId, allPrompts);
+
+    // Save metadata to S3
+    const metadata = {
+      auditId,
+      siteId,
+      lockId,
+      baseURL,
+      deliveryType,
+      dateContext,
+      providersToUse,
+      isDaily,
+      configVersion,
+      configExists,
+      indicesToEnrich,
+      totalPrompts: allPrompts.length,
+      createdAt: new Date().toISOString(),
+    };
+    await saveEnrichmentMetadata(s3Client, bucket, metadata);
+
+    // Send initial enrichment message to SQS
+    const { Configuration } = dataAccess;
+    const configuration = await Configuration.findLatest();
+
+    await sqs.sendMessage(configuration.getQueues().audits, {
+      type: URL_ENRICHMENT_TYPE,
+      auditId,
+      siteId,
+      batchStart: 0,
+    });
+
+    return true;
+  } catch (error) {
+    log.error(
+      'GEO BRAND PRESENCE: Error triggering JSON enrichment for site %s: %s',
+      siteId,
+      error.message,
+    );
+    return false;
+  }
+}
+
+/**
+ * Sends prompts directly to Mystique (no enrichment).
+ * Used when no enrichment is needed or as fallback.
+ *
+ * @param {Object} params - Parameters for sending
+ * @param {Object} context - The context object
+ * @param {Function} getPresignedUrlOverride - Optional presigned URL override
+ */
+async function sendPromptsToMystique(params, context, getPresignedUrlOverride) {
+  const {
+    allPrompts,
+    siteId,
+    auditId,
+    baseURL,
+    deliveryType,
+    dateContext,
+    providersToUse,
+    isDaily,
+    configVersion,
+    configExists,
+    bucket,
+  } = params;
+
+  const { log, sqs, env } = context;
+
   const s3Context = isDaily
     ? {
       ...context, getPresignedUrl: getPresignedUrlOverride, isDaily, dateContext,
@@ -316,13 +519,6 @@ export async function loadPromptsAndSendDetection(
     : { ...context, getPresignedUrl: getPresignedUrlOverride };
 
   const url = await asPresignedJsonUrl(allPrompts, bucket, s3Context);
-
-  log.info('GEO BRAND PRESENCE: Presigned URL for combined prompts for site id %s (%s): %s', siteId, baseURL, url);
-
-  if (!isNonEmptyArray(providersToUse)) {
-    log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique', siteId, baseURL);
-    return;
-  }
 
   const opptyTypes = isDaily
     ? [GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE]
@@ -334,35 +530,25 @@ export async function loadPromptsAndSendDetection(
         type: opptyType,
         siteId,
         baseURL,
-        auditId: audit.getId(),
-        deliveryType: site.getDeliveryType(),
+        auditId,
+        deliveryType,
         calendarWeek: dateContext,
         url,
         webSearchProvider: transformWebSearchProviderForMystique(webSearchProvider),
-        configVersion: /* c8 ignore next */ configExists ? configVersion : null,
+        configVersion: configExists ? configVersion : null,
         ...(isDaily && { date: dateContext.date }),
       });
 
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-      const cadenceLabel = isDaily ? ' DAILY' : '';
       log.debug(
-        'GEO BRAND PRESENCE%s: %s detection message sent to Mystique for site id %s (%s) with provider %s',
-        cadenceLabel,
-        opptyType,
+        'GEO BRAND PRESENCE: Detection message sent to Mystique for site %s with provider %s',
         siteId,
-        baseURL,
         webSearchProvider,
       );
     },
   ));
 
   await Promise.all(detectionMessages);
-
-  const cadenceLabel = isDaily ? ' DAILY' : '';
-  const stepCompleteMsg = 'GEO BRAND PRESENCE%s: Unified step complete - detection '
-    + 'messages sent directly to Mystique (categorization will happen internally if needed) for site id %s (%s)';
-  log.info(stepCompleteMsg, cadenceLabel, siteId, baseURL);
-  /* c8 ignore end */
 }
 
 /**

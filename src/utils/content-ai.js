@@ -44,6 +44,7 @@ export class ContentAIClient {
     this.env = context.env;
     this.log = context.log;
     this.tokenResponse = null;
+    this.siteConfigCache = null;
   }
 
   /**
@@ -94,6 +95,8 @@ export class ContentAIClient {
         headers: {
           'Content-Type': 'application/json',
           Authorization: this.getAuthHeader(),
+          // https://wiki.corp.adobe.com/pages/viewpage.action?pageId=3537471430
+          'x-api-key': this.env.CONTENTAI_CLIENT_ID,
         },
       });
 
@@ -151,6 +154,37 @@ export class ContentAIClient {
       headers: {
         'Content-Type': 'application/json',
         Authorization: this.getAuthHeader(),
+        'x-api-key': this.env.CONTENTAI_CLIENT_ID,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    return searchResponse;
+  }
+
+  /**
+   * Runs a generative search query against Content AI
+   * @param {string} prompt - The prompt to search
+   * @param {Object} site - The site object
+   * @returns {Promise<Response>} The fetch response object
+   */
+  async runGenerativeSearch(prompt, site) {
+    const configuration = await this.getConfigurationForSite(site);
+    if (!configuration) {
+      throw new Error('ContentAI configuration not found');
+    }
+    const { uid: integratorId } = configuration;
+    const requestBody = {
+      query: prompt,
+      integratorId,
+    };
+
+    const searchResponse = await fetch(`${this.env.CONTENTAI_ENDPOINT}/gensearch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: this.getAuthHeader(),
+        'x-api-key': this.env.CONTENTAI_CLIENT_ID,
       },
       body: JSON.stringify(requestBody),
     });
@@ -164,6 +198,13 @@ export class ContentAIClient {
    * @returns {Promise<Object|null>} The configuration object or null if not found
    */
   async getConfigurationForSite(site) {
+    const siteId = site.getId();
+
+    // Return cached config if same site (audit runs for one site per invocation)
+    if (this.siteConfigCache?.siteId === siteId) {
+      return this.siteConfigCache.config;
+    }
+
     const configurations = await this.getConfigurations();
 
     const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
@@ -176,7 +217,13 @@ export class ContentAIClient {
       ),
     );
 
-    return existingConf || null;
+    // Cache the result as an immutable object
+    this.siteConfigCache = Object.freeze({
+      siteId,
+      config: existingConf || null,
+    });
+
+    return this.siteConfigCache.config;
   }
 
   /**
@@ -245,6 +292,7 @@ export class ContentAIClient {
       headers: {
         'Content-Type': 'application/json',
         Authorization: this.getAuthHeader(),
+        'x-api-key': this.env.CONTENTAI_CLIENT_ID,
       },
     });
 
