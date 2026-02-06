@@ -70,6 +70,18 @@ describe('Prerender Utils', () => {
       },
       '@adobe/spacecat-shared-data-access': {
         Entitlement: EntitlementStub,
+        Suggestion: {
+          STATUSES: {
+            NEW: 'NEW',
+            FIXED: 'FIXED',
+          },
+        },
+      },
+      '@adobe/spacecat-shared-utils': {
+        tracingFetch: sandbox.stub().resolves({
+          status: 200,
+          headers: { get: sandbox.stub().returns(null) },
+        }),
       },
     });
   });
@@ -393,6 +405,307 @@ describe('Prerender Utils', () => {
       expect(result.urls).to.have.lengthOf(1);
       expect(result.urls[0]).to.equal('https://example.com/page');
       expect(result.filteredCount).to.equal(3);
+    });
+  });
+
+  describe('verifyAndMarkFixedSuggestions', () => {
+    let fetchStub;
+    let mockOpportunity;
+    let mockSuggestion1;
+    let mockSuggestion2;
+    let mockDomainWideSuggestion;
+    let SuggestionDataAccessStub;
+    let utilsWithFetch;
+
+    before(async () => {
+      fetchStub = sinon.stub();
+
+      SuggestionDataAccessStub = {
+        STATUSES: {
+          NEW: 'NEW',
+          FIXED: 'FIXED',
+          APPROVED: 'APPROVED',
+          OUTDATED: 'OUTDATED',
+        },
+      };
+
+      utilsWithFetch = await esmock('../../../src/prerender/utils/utils.js', {
+        '@adobe/spacecat-shared-tier-client': {
+          TierClient: {
+            createForSite: sinon.stub().resolves({
+              checkValidEntitlement: sinon.stub().resolves({
+                entitlement: { getTier: sinon.stub().returns('paid') },
+              }),
+            }),
+          },
+        },
+        '@adobe/spacecat-shared-data-access': {
+          Entitlement: {
+            PRODUCT_CODES: { LLMO: 'llmo-product-code' },
+            TIERS: { PAID: 'paid' },
+          },
+          Suggestion: SuggestionDataAccessStub,
+        },
+        '@adobe/spacecat-shared-utils': {
+          tracingFetch: fetchStub,
+        },
+      });
+    });
+
+    beforeEach(() => {
+      fetchStub.reset();
+
+      mockSuggestion1 = {
+        getStatus: sandbox.stub().returns('NEW'),
+        getData: sandbox.stub().returns({ url: 'https://example.com/page1' }),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockSuggestion2 = {
+        getStatus: sandbox.stub().returns('NEW'),
+        getData: sandbox.stub().returns({ url: 'https://example.com/page2' }),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockDomainWideSuggestion = {
+        getStatus: sandbox.stub().returns('NEW'),
+        getData: sandbox.stub().returns({ key: 'domain-wide', data: {} }),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockOpportunity = {
+        getSuggestions: sandbox.stub().resolves([]),
+      };
+
+      log = {
+        debug: sandbox.stub(),
+        info: sandbox.stub(),
+        warn: sandbox.stub(),
+      };
+    });
+
+    it('should mark suggestions as FIXED when x-tokowaka-request-id header is present', async () => {
+      mockOpportunity.getSuggestions.resolves([mockSuggestion1, mockSuggestion2]);
+
+      // First URL has prerendering enabled (legacy tokowaka header), second doesn't
+      const headersWithTokowaka = sandbox.stub();
+      headersWithTokowaka.withArgs('x-tokowaka-request-id').returns('abc-123');
+      headersWithTokowaka.returns(null);
+
+      const headersWithoutPrerender = sandbox.stub();
+      headersWithoutPrerender.returns(null);
+
+      fetchStub.onFirstCall().resolves({
+        status: 200,
+        headers: { get: headersWithTokowaka },
+      });
+      fetchStub.onSecondCall().resolves({
+        status: 200,
+        headers: { get: headersWithoutPrerender },
+      });
+
+      const context = { log };
+      const result = await utilsWithFetch.verifyAndMarkFixedSuggestions(mockOpportunity, context);
+
+      expect(result).to.equal(1);
+      expect(mockSuggestion1.setStatus).to.have.been.calledWith('FIXED');
+      expect(mockSuggestion1.setUpdatedBy).to.have.been.calledWith('system');
+      expect(mockSuggestion1.save).to.have.been.calledOnce;
+
+      expect(mockSuggestion2.setStatus).to.not.have.been.called;
+      expect(mockSuggestion2.save).to.not.have.been.called;
+    });
+
+    it('should use Adobe edge optimize user agent and fastly-debug header for verification requests', async () => {
+      mockOpportunity.getSuggestions.resolves([mockSuggestion1]);
+      fetchStub.resolves({
+        status: 200,
+        headers: {
+          get: sandbox.stub().returns(null),
+        },
+      });
+
+      const context = { log };
+      await utilsWithFetch.verifyAndMarkFixedSuggestions(mockOpportunity, context);
+
+      expect(fetchStub).to.have.been.calledWith(
+        'https://example.com/page1',
+        sinon.match({
+          method: 'GET',
+          headers: sinon.match({
+            'User-Agent': 'Tokowaka-AI Tokowaka/1.0 AdobeEdgeOptimize-AI AdobeEdgeOptimize/1.0',
+            Accept: '*/*',
+            'fastly-debug': '1',
+          }),
+        }),
+      );
+    });
+
+    it('should mark suggestions as FIXED when x-edge-optimize-request-id header is present', async () => {
+      mockOpportunity.getSuggestions.resolves([mockSuggestion1]);
+
+      const headersWithEdgeOptimize = sandbox.stub();
+      headersWithEdgeOptimize.withArgs('x-edge-optimize-request-id').returns('edge-opt-123');
+      headersWithEdgeOptimize.returns(null);
+
+      fetchStub.resolves({
+        status: 200,
+        headers: { get: headersWithEdgeOptimize },
+      });
+
+      const context = { log };
+      const result = await utilsWithFetch.verifyAndMarkFixedSuggestions(mockOpportunity, context);
+
+      expect(result).to.equal(1);
+      expect(mockSuggestion1.setStatus).to.have.been.calledWith('FIXED');
+    });
+
+    it('should skip domain-wide aggregate suggestions', async () => {
+      mockOpportunity.getSuggestions.resolves([mockSuggestion1, mockDomainWideSuggestion]);
+
+      const headersWithPrerender = sandbox.stub();
+      headersWithPrerender.withArgs('x-edge-optimize-request-id').returns('xyz-789');
+      headersWithPrerender.returns(null);
+
+      fetchStub.resolves({
+        status: 200,
+        headers: { get: headersWithPrerender },
+      });
+
+      const context = { log };
+      const result = await utilsWithFetch.verifyAndMarkFixedSuggestions(mockOpportunity, context);
+
+      // Only one fetch call should be made (for the URL suggestion, not domain-wide)
+      expect(fetchStub).to.have.been.calledOnce;
+      expect(fetchStub).to.have.been.calledWith('https://example.com/page1', sinon.match.any);
+      expect(result).to.equal(1);
+    });
+
+    it('should skip suggestions that are not in NEW status', async () => {
+      const approvedSuggestion = {
+        getStatus: sandbox.stub().returns('APPROVED'),
+        getData: sandbox.stub().returns({ url: 'https://example.com/approved' }),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockOpportunity.getSuggestions.resolves([approvedSuggestion, mockSuggestion1]);
+
+      const headersWithPrerender = sandbox.stub();
+      headersWithPrerender.withArgs('x-tokowaka-request-id').returns('xyz-789');
+      headersWithPrerender.returns(null);
+
+      fetchStub.resolves({
+        status: 200,
+        headers: { get: headersWithPrerender },
+      });
+
+      const context = { log };
+      const result = await utilsWithFetch.verifyAndMarkFixedSuggestions(mockOpportunity, context);
+
+      // Only one fetch call for the NEW suggestion
+      expect(fetchStub).to.have.been.calledOnce;
+      expect(approvedSuggestion.setStatus).to.not.have.been.called;
+      expect(result).to.equal(1);
+    });
+
+    it('should return 0 when there are no NEW suggestions', async () => {
+      mockOpportunity.getSuggestions.resolves([]);
+
+      const context = { log };
+      const result = await utilsWithFetch.verifyAndMarkFixedSuggestions(mockOpportunity, context);
+
+      expect(result).to.equal(0);
+      expect(fetchStub).to.not.have.been.called;
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/No NEW suggestions to verify/),
+      );
+    });
+
+    it('should handle fetch errors gracefully', async () => {
+      mockOpportunity.getSuggestions.resolves([mockSuggestion1, mockSuggestion2]);
+
+      // First URL throws error, second has header present
+      fetchStub.onFirstCall().rejects(new Error('Network error'));
+      fetchStub.onSecondCall().resolves({
+        status: 200,
+        headers: {
+          get: sandbox.stub().returns('def-456'),
+        },
+      });
+
+      const context = { log };
+      const result = await utilsWithFetch.verifyAndMarkFixedSuggestions(mockOpportunity, context);
+
+      // Only the second suggestion should be marked as FIXED
+      expect(result).to.equal(1);
+      expect(mockSuggestion1.setStatus).to.not.have.been.called;
+      expect(mockSuggestion2.setStatus).to.have.been.calledWith('FIXED');
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/verification failed.*Network error/),
+      );
+    });
+
+    it('should mark all suggestions as FIXED when all have the header', async () => {
+      mockOpportunity.getSuggestions.resolves([mockSuggestion1, mockSuggestion2]);
+
+      fetchStub.resolves({
+        status: 200,
+        headers: {
+          get: sandbox.stub().returns('request-id-xyz'),
+        },
+      });
+
+      const context = { log };
+      const result = await utilsWithFetch.verifyAndMarkFixedSuggestions(mockOpportunity, context);
+
+      expect(result).to.equal(2);
+      expect(mockSuggestion1.setStatus).to.have.been.calledWith('FIXED');
+      expect(mockSuggestion2.setStatus).to.have.been.calledWith('FIXED');
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/Marked 2 suggestions as FIXED/),
+      );
+    });
+
+    it('should not mark any suggestions when none have the header', async () => {
+      mockOpportunity.getSuggestions.resolves([mockSuggestion1, mockSuggestion2]);
+
+      fetchStub.resolves({
+        status: 200,
+        headers: {
+          get: sandbox.stub().returns(null),
+        },
+      });
+
+      const context = { log };
+      const result = await utilsWithFetch.verifyAndMarkFixedSuggestions(mockOpportunity, context);
+
+      expect(result).to.equal(0);
+      expect(mockSuggestion1.setStatus).to.not.have.been.called;
+      expect(mockSuggestion2.setStatus).to.not.have.been.called;
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/No suggestions verified as fixed/),
+      );
+    });
+
+    it('should return 0 when only domain-wide suggestions exist', async () => {
+      mockOpportunity.getSuggestions.resolves([mockDomainWideSuggestion]);
+
+      const context = { log };
+      const result = await utilsWithFetch.verifyAndMarkFixedSuggestions(mockOpportunity, context);
+
+      expect(result).to.equal(0);
+      expect(fetchStub).to.not.have.been.called;
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/No URL-based suggestions to verify/),
+      );
     });
   });
 });

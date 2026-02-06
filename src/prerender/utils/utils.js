@@ -14,7 +14,8 @@
  * General utilities for the Prerender audit.
  */
 
-import { Entitlement } from '@adobe/spacecat-shared-data-access';
+import { Entitlement, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 
 /**
@@ -116,5 +117,153 @@ export async function isPaidLLMOCustomer(context) {
   } catch (e) {
     log.warn(`Prerender - Failed to check paid LLMO customer status for siteId=${site.getId()}: ${e.message}`);
     return false;
+  }
+}
+
+const EDGE_OPTIMIZE_USER_AGENT = 'Tokowaka-AI Tokowaka/1.0 AdobeEdgeOptimize-AI AdobeEdgeOptimize/1.0';
+
+/**
+ * Headers that indicate the URL is being served with prerendering/edge optimization enabled.
+ * x-tokowaka-request-id: Legacy header (being deprecated)
+ * x-edge-optimize-request-id: New header replacing tokowaka
+ */
+const PRERENDER_INDICATOR_HEADERS = [
+  'x-tokowaka-request-id',
+  'x-edge-optimize-request-id',
+];
+
+/**
+ * Timeout for verification requests (in milliseconds)
+ */
+const VERIFICATION_TIMEOUT_MS = 10000;
+
+/**
+ * Checks if a URL has prerendering enabled by making a request with the edge optimize user agent
+ * and checking for prerender indicator headers in the response.
+ *
+ * Checks for: x-tokowaka-request-id (legacy), x-edge-optimize-request-id
+ *
+ * @param {string} url - The URL to verify
+ * @param {Object} log - Logger instance
+ * @returns {Promise<boolean>} - True if prerendering is enabled (any indicator header present)
+ */
+async function isUrlPrerenderEnabled(url, log) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), VERIFICATION_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'User-Agent': EDGE_OPTIMIZE_USER_AGENT,
+        Accept: '*/*',
+        'fastly-debug': '1',
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    // Check for any of the prerender indicator headers
+    const foundHeaders = PRERENDER_INDICATOR_HEADERS
+      .map((header) => ({ header, value: response.headers.get(header) }))
+      .filter(({ value }) => Boolean(value));
+
+    const isFixed = foundHeaders.length > 0;
+
+    const headerStatus = foundHeaders.length > 0
+      ? foundHeaders.map(({ header, value }) => `${header}=${value}`).join(', ')
+      : 'no prerender headers found';
+
+    log.info(`Prerender - URL verification: url=${url}, status=${response.status}, ${headerStatus}, isFixed=${isFixed}`);
+
+    return isFixed;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    log.warn(`Prerender verification failed for ${url}: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Verifies NEW suggestions for prerender opportunity and marks them as FIXED
+ * if the URL is being served with prerendering/edge optimization enabled.
+ *
+ * Checks for presence of: x-tokowaka-request-id (legacy) or x-edge-optimize-request-id headers.
+ *
+ * @param {Object} opportunity - The opportunity object containing suggestions
+ * @param {Object} context - Context with log
+ * @returns {Promise<number>} - Number of suggestions marked as fixed
+ */
+export async function verifyAndMarkFixedSuggestions(opportunity, context) {
+  const { log } = context;
+  const opportunityId = opportunity?.getId?.() || 'unknown';
+
+  log.info(`Prerender - Starting verification for opportunityId=${opportunityId}`);
+
+  try {
+    const suggestions = await opportunity.getSuggestions();
+    log.info(`Prerender - Found ${suggestions.length} total suggestions for opportunityId=${opportunityId}`);
+
+    const newSuggestions = suggestions.filter(
+      (s) => s.getStatus() === SuggestionDataAccess.STATUSES.NEW,
+    );
+
+    if (newSuggestions.length === 0) {
+      log.info(`Prerender - No NEW suggestions to verify for opportunityId=${opportunityId}`);
+      return 0;
+    }
+
+    log.info(`Prerender - Verifying ${newSuggestions.length} NEW suggestions for opportunityId=${opportunityId}`);
+
+    // Filter out domain-wide aggregate suggestion (has 'key' in data but no 'url')
+    const urlSuggestions = newSuggestions.filter((s) => {
+      const data = s.getData();
+      return data?.url && !data?.key;
+    });
+
+    if (urlSuggestions.length === 0) {
+      log.info(`Prerender - No URL-based suggestions to verify for opportunityId=${opportunityId}`);
+      return 0;
+    }
+
+    log.info(`Prerender - Checking ${urlSuggestions.length} URLs for edge optimization headers, opportunityId=${opportunityId}`);
+
+    // Verify each suggestion URL in parallel
+    const verificationResults = await Promise.all(
+      urlSuggestions.map(async (suggestion) => {
+        const { url } = suggestion.getData();
+        const isFixed = await isUrlPrerenderEnabled(url, log);
+        return { suggestion, url, isFixed };
+      }),
+    );
+
+    // Log verification results summary
+    const fixedUrls = verificationResults.filter(({ isFixed }) => isFixed);
+    const notFixedUrls = verificationResults.filter(({ isFixed }) => !isFixed);
+    log.info(`Prerender - Verification results: ${fixedUrls.length} fixed, ${notFixedUrls.length} not fixed, opportunityId=${opportunityId}`);
+
+    // Update suggestions that are verified as fixed
+    const fixedSuggestions = fixedUrls.map(({ suggestion }) => suggestion);
+
+    if (fixedSuggestions.length > 0) {
+      await Promise.all(
+        fixedSuggestions.map((suggestion) => {
+          suggestion.setStatus(SuggestionDataAccess.STATUSES.FIXED);
+          suggestion.setUpdatedBy('system');
+          return suggestion.save();
+        }),
+      );
+
+      const fixedUrlsList = fixedUrls.map(({ url }) => url).join(', ');
+      log.info(`Prerender - Marked ${fixedSuggestions.length} suggestions as FIXED for opportunityId=${opportunityId}. URLs: ${fixedUrlsList}`);
+    } else {
+      log.info(`Prerender - No suggestions verified as fixed for opportunityId=${opportunityId}`);
+    }
+
+    return fixedSuggestions.length;
+  } catch (error) {
+    log.error(`Prerender - Error during verification for opportunityId=${opportunityId}: ${error.message}`, error);
+    return 0;
   }
 }

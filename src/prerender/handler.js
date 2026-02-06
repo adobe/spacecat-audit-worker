@@ -22,7 +22,7 @@ import {
   loadLatestAgenticSheet,
   buildSheetHitsMap,
 } from './utils/shared.js';
-import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls } from './utils/utils.js';
+import { isPaidLLMOCustomer, mergeAndGetUniqueHtmlUrls, verifyAndMarkFixedSuggestions } from './utils/utils.js';
 import {
   CONTENT_GAIN_THRESHOLD,
   TOP_AGENTIC_URLS_LIMIT,
@@ -839,13 +839,16 @@ export async function processOpportunityAndSuggestions(
     },
   });
 
+  const fixedCount = await verifyAndMarkFixedSuggestions(opportunity, context);
+
   log.info(`
     ${LOG_PREFIX} prerender_suggestions_sync_metrics:
     siteId=${auditData.siteId},
     baseUrl=${auditUrl},
     isPaidLLMOCustomer=${isPaid},
     suggestions=${preRenderSuggestions.length},
-    totalSuggestions=${allSuggestions.length},`);
+    totalSuggestions=${allSuggestions.length},
+    autoFixedSuggestions=${fixedCount},`);
 
   return opportunity;
 }
