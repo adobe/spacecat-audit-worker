@@ -49,7 +49,18 @@ export async function findSitemap(inputUrl, log) {
 
       if (urlsToCheck?.length) {
         // eslint-disable-next-line no-await-in-loop
-        const existingPages = await filterValidUrls(urlsToCheck);
+        const existingPages = await filterValidUrls(urlsToCheck, log);
+
+        /* c8 ignore start */
+        log?.info(`.. Stats for ${sitemapUrl} - OK: ${existingPages.ok.length}, Not OK: ${existingPages.notOk.length}, Network Errors: ${existingPages.networkErrors.length}, Other Errors: ${existingPages.otherStatusCodes.length}`);
+        if (existingPages.otherStatusCodes.length > 0) {
+          const statusCodeCounts = existingPages.otherStatusCodes.reduce((acc, item) => {
+            acc[item.statusCode] = (acc[item.statusCode] || 0) + 1;
+            return acc;
+          }, {});
+          log?.info(`.... Other status codes breakdown ('code': count) for ${sitemapUrl}: ${JSON.stringify(statusCodeCounts)}`);
+        }
+        /* c8 ignore end */
 
         // Collect issues for tracked status codes only
         if (existingPages.notOk?.length > 0) {
@@ -58,6 +69,8 @@ export async function findSitemap(inputUrl, log) {
           if (trackedIssues.length > 0) {
             notOkPagesFromSitemap[sitemapUrl] = trackedIssues;
           }
+          /* c8 ignore next */
+          log?.debug(`Number of URLs with tracked status from sitemap ${sitemapUrl}: ${trackedIssues.length}`);
         }
 
         // Keep sitemap if it has valid URLs or acceptable redirects
@@ -166,7 +179,8 @@ export function generateSuggestions(auditUrl, auditData, context) {
         : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
     }));
 
-  log.debug(`Generated ${suggestions.length} suggestions for ${auditUrl}`);
+  /* c8 ignore next */
+  log.info(`Generated ${suggestions.length} suggestions for ${auditUrl}`);
   return { ...auditData, suggestions };
 }
 

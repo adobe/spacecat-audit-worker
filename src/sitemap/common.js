@@ -149,7 +149,7 @@ export async function fetchContent(targetUrl) {
 /**
  * Simplified URL validation with better performance and rate limiting
  */
-export async function filterValidUrls(urls) {
+export async function filterValidUrls(urls, log) {
   if (!urls.length) {
     return {
       ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
@@ -168,8 +168,12 @@ export async function filterValidUrls(urls) {
 
       // Handle successful responses
       if (response.status === 200) {
+        log?.debug(`Valid URL found: ${url}`);
         return { type: 'ok', url };
       }
+
+      /* c8 ignore next */
+      log?.debug(`URL check for ${url} returned status: ${response.status}`);
 
       // Handle redirects
       if (response.status === 301 || response.status === 302) {
