@@ -487,6 +487,7 @@ describe('Prerender Utils', () => {
         debug: sandbox.stub(),
         info: sandbox.stub(),
         warn: sandbox.stub(),
+        error: sandbox.stub(),
       };
     });
 
