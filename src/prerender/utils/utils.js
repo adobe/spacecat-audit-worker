@@ -124,8 +124,6 @@ const EDGE_OPTIMIZE_USER_AGENT = 'Tokowaka-AI Tokowaka/1.0 AdobeEdgeOptimize-AI 
 
 /**
  * Headers that indicate the URL is being served with prerendering/edge optimization enabled.
- * x-tokowaka-request-id: Legacy header (being deprecated)
- * x-edgeoptimize-request-id: New header replacing tokowaka
  */
 const PRERENDER_INDICATOR_HEADERS = [
   'x-tokowaka-request-id',
@@ -163,7 +161,6 @@ async function isUrlPrerenderEnabled(url, log) {
 
     clearTimeout(timeoutId);
 
-    // Check for any of the prerender indicator headers
     const foundHeaders = PRERENDER_INDICATOR_HEADERS
       .map((header) => ({ header, value: response.headers.get(header) }))
       .filter(({ value }) => Boolean(value));
@@ -199,7 +196,6 @@ export async function verifyAndMarkFixedSuggestions(opportunity, context) {
       return 0;
     }
 
-    // Filter out domain-wide aggregate suggestion (has 'key' in data but no 'url')
     const urlSuggestions = newSuggestions.filter((s) => {
       const data = s.getData();
       return data?.url && !data?.key;
@@ -209,7 +205,6 @@ export async function verifyAndMarkFixedSuggestions(opportunity, context) {
       return 0;
     }
 
-    // Verify each suggestion URL in parallel
     const verificationResults = await Promise.all(
       urlSuggestions.map(async (suggestion) => {
         const { url } = suggestion.getData();
@@ -218,7 +213,6 @@ export async function verifyAndMarkFixedSuggestions(opportunity, context) {
       }),
     );
 
-    // Update suggestions that are verified as fixed
     const fixedSuggestions = verificationResults
       .filter(({ isFixed }) => isFixed)
       .map(({ suggestion }) => suggestion);
