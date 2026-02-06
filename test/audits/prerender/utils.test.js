@@ -521,7 +521,7 @@ describe('Prerender Utils', () => {
       expect(mockSuggestion2.save).to.not.have.been.called;
     });
 
-    it('should use Adobe edge optimize user agent and fastly-debug header for verification requests', async () => {
+    it('should use Adobe edge optimize user agent for verification requests', async () => {
       mockOpportunity.getSuggestions.resolves([mockSuggestion1]);
       fetchStub.resolves({
         status: 200,
@@ -540,7 +540,6 @@ describe('Prerender Utils', () => {
           headers: sinon.match({
             'User-Agent': 'Tokowaka-AI Tokowaka/1.0 AdobeEdgeOptimize-AI AdobeEdgeOptimize/1.0',
             Accept: '*/*',
-            'fastly-debug': '1',
           }),
         }),
       );

@@ -157,7 +157,6 @@ async function isUrlPrerenderEnabled(url, log) {
       headers: {
         'User-Agent': EDGE_OPTIMIZE_USER_AGENT,
         Accept: '*/*',
-        'fastly-debug': '1',
       },
       signal: controller.signal,
     });
