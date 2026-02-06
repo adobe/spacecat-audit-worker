@@ -13,7 +13,8 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { LOG_PREFIX } from './constants.js';
+import { LOG_PREFIX, AUDIT_TYPE } from './constants.js';
+import { getCommerceConfig } from '../utils/saas.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -33,6 +34,7 @@ export async function importTopPages(context) {
 
   log.info(`${LOG_PREFIX} Step 1: Received data parameter - value: ${JSON.stringify(data)}, type: ${typeof data}`);
 
+  // Parse data if it's a string (from Slack bot), or use as-is if it's an object
   let parsedData = {};
   if (typeof data === 'string' && data.length > 0) {
     try {
@@ -81,11 +83,14 @@ export async function submitForScraping(context) {
     site,
     dataAccess,
     log,
+    data,
     auditContext,
   } = context;
 
   log.info(`${LOG_PREFIX} Step 2: Received auditContext: ${JSON.stringify(auditContext)}`);
+  log.info(`${LOG_PREFIX} Step 2: Received data parameter (ignored for limit): ${JSON.stringify(data)}`);
 
+  // Read limit from auditContext (for step chaining) or data (for initial call)
   const limit = auditContext?.limit || DEFAULT_LIMIT;
   const limitInfo = ` with limit: ${limit}${!auditContext?.limit ? ' (default)' : ''}`;
 
@@ -104,10 +109,6 @@ export async function submitForScraping(context) {
   const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
   log.info(`${LOG_PREFIX} Retrieved ${includedURLs.length} included URLs from site config`);
 
-  for (const url of includedURLs) {
-    log.info(`${LOG_PREFIX} Included URL: ${url}`);
-  }
-
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
   log.info(`${LOG_PREFIX} Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
 
@@ -116,6 +117,7 @@ export async function submitForScraping(context) {
     throw new Error('No URLs found for site neither top pages nor included URLs');
   }
 
+  // Filter out PDF files
   const isPdfUrl = (url) => {
     try {
       const pathname = new URL(url).pathname.toLowerCase();
@@ -138,9 +140,15 @@ export async function submitForScraping(context) {
   const result = {
     urls: filteredUrls.map((url) => ({ url })),
     siteId: site.getId(),
+    jobId: site.getId(), // Use siteId as jobId so scraper stores results in correct path
+    processingType: 'default',
+    auditContext: {
+      scrapeJobId: site.getId(), // Pass scrapeJobId to Step 3 for retrieving results
+    },
     options: {
       waitTimeoutForMetaTags: 5000,
     },
+    allowCache: false,
     maxScrapeAge: 0,
   };
 
@@ -161,8 +169,6 @@ export async function runAuditAndProcessResults(context) {
     site, audit, finalUrl, log, scrapeResultPaths, s3Client, env, auditContext,
   } = context;
 
-  // Version identifier for deployment tracking
-  log.info(`${LOG_PREFIX} CODE VERSION: 2026-02-03T12:00:00Z - Added DEFAULT_LIMIT=20 and debug logging`);
   log.info(`${LOG_PREFIX} Step 3: runAuditAndProcessResults started`);
 
   // Debug logging to understand what context we're receiving
@@ -220,16 +226,45 @@ export async function runAuditAndProcessResults(context) {
 
   log.info(`${LOG_PREFIX} Processing ${scrapeResultPaths.size} scrape results from S3 bucket: ${bucketName}`);
 
+  // Extract and log commerce configuration (for future use)
+  log.info(`${LOG_PREFIX} ============================================`);
+  log.info(`${LOG_PREFIX} Extracting Commerce Configuration`);
+  log.info(`${LOG_PREFIX} ============================================`);
+
+  try {
+    const commerceConfig = await getCommerceConfig(site, AUDIT_TYPE, finalUrl, log);
+    log.info(`${LOG_PREFIX} Commerce config extracted successfully`);
+    log.info(`${LOG_PREFIX} Commerce endpoint URL: ${commerceConfig.url}`);
+    log.info(`${LOG_PREFIX} Commerce headers:`, JSON.stringify(commerceConfig.headers, null, 2));
+
+    // Log individual header values for debugging
+    if (commerceConfig?.headers) {
+      const { headers } = commerceConfig;
+      log.info(`${LOG_PREFIX} - Magento-Environment-Id: ${headers['Magento-Environment-Id']}`);
+      log.info(`${LOG_PREFIX} - Magento-Store-Code: ${headers['Magento-Store-Code'] || 'not set'}`);
+      log.info(`${LOG_PREFIX} - Magento-Store-View-Code: ${headers['Magento-Store-View-Code'] || 'not set'}`);
+      log.info(`${LOG_PREFIX} - Magento-Website-Code: ${headers['Magento-Website-Code'] || 'not set'}`);
+      log.info(`${LOG_PREFIX} - Magento-Customer-Group: ${headers['Magento-Customer-Group'] || 'not set'}`);
+      log.info(`${LOG_PREFIX} - x-api-key: ${headers['x-api-key'] ? '[REDACTED]' : 'not set'}`);
+      log.info(`${LOG_PREFIX} - AC-View-ID: ${headers['AC-View-ID'] || 'not set'}`);
+    }
+  } catch (configError) {
+    log.warn(`${LOG_PREFIX} Failed to extract commerce config: ${configError.message}`);
+    log.warn(`${LOG_PREFIX} This is expected if the site does not have commerce configuration`);
+  }
+
+  log.info(`${LOG_PREFIX} ============================================`);
+
   // Process each scraped result in parallel
   const processResults = await Promise.all(
     [...scrapeResultPaths].map(async ([url, s3Path]) => {
       try {
         // Read the scrape.json file from S3
-        log.info(`${LOG_PREFIX} Reading scrape data from S3: ${s3Path}`);
+        log.debug(`${LOG_PREFIX} Reading scrape data from S3: ${s3Path}`);
         const scrapeData = await getObjectFromKey(s3Client, bucketName, s3Path, log);
 
         if (!scrapeData) {
-          log.error(`${LOG_PREFIX} No scrape data found for: ${url}`);
+          log.warn(`${LOG_PREFIX} No scrape data found for: ${url}`);
           return {
             success: false,
             url,
@@ -247,11 +282,10 @@ export async function runAuditAndProcessResults(context) {
         if (Array.isArray(Product) && Product.length > 0) {
           // Count products with SKU
           skuCount = Product.filter((product) => product.sku).length;
-          log.info(`${LOG_PREFIX} SKU count: ${skuCount}`);
           isProductPage = skuCount === 1;
         }
 
-        log.info(`${LOG_PREFIX} Processed page: ${url} (isProductPage: ${isProductPage})`);
+        log.debug(`${LOG_PREFIX} Processed page: ${url} (isProductPage: ${isProductPage})`);
 
         return {
           success: true,
@@ -289,6 +323,7 @@ export async function runAuditAndProcessResults(context) {
   log.info(`${LOG_PREFIX} Audit ID: ${audit.getId()}`);
   log.info(`${LOG_PREFIX} ============================================`);
 
+  // Return audit results
   return {
     status: 'complete',
     auditResult: {
