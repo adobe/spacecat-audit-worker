@@ -840,9 +840,7 @@ export async function processOpportunityAndSuggestions(
   });
 
   // Verify NEW suggestions and mark as FIXED if prerendering is already enabled
-  log.info(`${LOG_PREFIX} verify_prerender_fix_start: opportunityId=${opportunity?.getId?.() || 'unknown'}, siteId=${auditData.siteId}`);
   const fixedCount = await verifyAndMarkFixedSuggestions(opportunity, context);
-  log.info(`${LOG_PREFIX} verify_prerender_fix_complete: fixedCount=${fixedCount}, opportunityId=${opportunity?.getId?.() || 'unknown'}`);
 
   log.info(`
     ${LOG_PREFIX} prerender_suggestions_sync_metrics:

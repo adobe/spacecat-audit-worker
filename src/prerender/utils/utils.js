@@ -157,7 +157,6 @@ async function isUrlPrerenderEnabled(url, log) {
       headers: {
         'User-Agent': EDGE_OPTIMIZE_USER_AGENT,
         Accept: '*/*',
-        'fastly-debug': '1',
       },
       signal: controller.signal,
     });
@@ -169,15 +168,7 @@ async function isUrlPrerenderEnabled(url, log) {
       .map((header) => ({ header, value: response.headers.get(header) }))
       .filter(({ value }) => Boolean(value));
 
-    const isFixed = foundHeaders.length > 0;
-
-    const headerStatus = foundHeaders.length > 0
-      ? foundHeaders.map(({ header, value }) => `${header}=${value}`).join(', ')
-      : 'no prerender headers found';
-
-    log.info(`Prerender - prerender_verify_url: url=${url}, status=${response.status}, ${headerStatus}, isFixed=${isFixed}`);
-
-    return isFixed;
+    return foundHeaders.length > 0;
   } catch (error) {
     clearTimeout(timeoutId);
     log.warn(`Prerender verification failed for ${url}: ${error.message}`);
@@ -197,24 +188,16 @@ async function isUrlPrerenderEnabled(url, log) {
  */
 export async function verifyAndMarkFixedSuggestions(opportunity, context) {
   const { log } = context;
-  const opportunityId = opportunity?.getId?.() || 'unknown';
-
-  log.info(`Prerender - prerender_verify_start: opportunityId=${opportunityId}`);
 
   try {
     const suggestions = await opportunity.getSuggestions();
-    log.info(`Prerender - prerender_verify_suggestions_count: total=${suggestions.length}, opportunityId=${opportunityId}`);
-
     const newSuggestions = suggestions.filter(
       (s) => s.getStatus() === SuggestionDataAccess.STATUSES.NEW,
     );
 
     if (newSuggestions.length === 0) {
-      log.info(`Prerender - prerender_verify_skip: reason=no_new_suggestions, opportunityId=${opportunityId}`);
       return 0;
     }
-
-    log.info(`Prerender - prerender_verify_new_count: newSuggestions=${newSuggestions.length}, opportunityId=${opportunityId}`);
 
     // Filter out domain-wide aggregate suggestion (has 'key' in data but no 'url')
     const urlSuggestions = newSuggestions.filter((s) => {
@@ -223,28 +206,22 @@ export async function verifyAndMarkFixedSuggestions(opportunity, context) {
     });
 
     if (urlSuggestions.length === 0) {
-      log.info(`Prerender - prerender_verify_skip: reason=no_url_suggestions, opportunityId=${opportunityId}`);
       return 0;
     }
-
-    log.info(`Prerender - prerender_verify_checking_urls: urlCount=${urlSuggestions.length}, opportunityId=${opportunityId}`);
 
     // Verify each suggestion URL in parallel
     const verificationResults = await Promise.all(
       urlSuggestions.map(async (suggestion) => {
         const { url } = suggestion.getData();
         const isFixed = await isUrlPrerenderEnabled(url, log);
-        return { suggestion, url, isFixed };
+        return { suggestion, isFixed };
       }),
     );
 
-    // Log verification results summary
-    const fixedUrls = verificationResults.filter(({ isFixed }) => isFixed);
-    const notFixedUrls = verificationResults.filter(({ isFixed }) => !isFixed);
-    log.info(`Prerender - prerender_verify_results: fixed=${fixedUrls.length}, notFixed=${notFixedUrls.length}, opportunityId=${opportunityId}`);
-
     // Update suggestions that are verified as fixed
-    const fixedSuggestions = fixedUrls.map(({ suggestion }) => suggestion);
+    const fixedSuggestions = verificationResults
+      .filter(({ isFixed }) => isFixed)
+      .map(({ suggestion }) => suggestion);
 
     if (fixedSuggestions.length > 0) {
       await Promise.all(
@@ -253,16 +230,11 @@ export async function verifyAndMarkFixedSuggestions(opportunity, context) {
           return suggestion.save();
         }),
       );
-
-      const fixedUrlsList = fixedUrls.map(({ url }) => url).join(', ');
-      log.info(`Prerender - prerender_verify_marked_fixed: count=${fixedSuggestions.length}, urls=${fixedUrlsList}, opportunityId=${opportunityId}`);
-    } else {
-      log.info(`Prerender - prerender_verify_none_fixed: opportunityId=${opportunityId}`);
     }
 
     return fixedSuggestions.length;
   } catch (error) {
-    log.error(`Prerender - prerender_verify_error: message=${error.message}, opportunityId=${opportunityId}`, error);
+    log.error(`Prerender - verification error: ${error.message}`, error);
     return 0;
   }
 }

@@ -521,7 +521,7 @@ describe('Prerender Utils', () => {
       expect(mockSuggestion2.save).to.not.have.been.called;
     });
 
-    it('should use Adobe edge optimize user agent and fastly-debug header for verification requests', async () => {
+    it('should use Adobe edge optimize user agent for verification requests', async () => {
       mockOpportunity.getSuggestions.resolves([mockSuggestion1]);
       fetchStub.resolves({
         status: 200,
@@ -540,7 +540,6 @@ describe('Prerender Utils', () => {
           headers: sinon.match({
             'User-Agent': 'Tokowaka-AI Tokowaka/1.0 AdobeEdgeOptimize-AI AdobeEdgeOptimize/1.0',
             Accept: '*/*',
-            'fastly-debug': '1',
           }),
         }),
       );
@@ -623,9 +622,6 @@ describe('Prerender Utils', () => {
 
       expect(result).to.equal(0);
       expect(fetchStub).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/prerender_verify_skip.*no_new_suggestions/),
-      );
     });
 
     it('should handle fetch errors gracefully', async () => {
@@ -668,9 +664,6 @@ describe('Prerender Utils', () => {
       expect(result).to.equal(2);
       expect(mockSuggestion1.setStatus).to.have.been.calledWith('FIXED');
       expect(mockSuggestion2.setStatus).to.have.been.calledWith('FIXED');
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/prerender_verify_marked_fixed.*count=2/),
-      );
     });
 
     it('should not mark any suggestions when none have the header', async () => {
@@ -689,9 +682,6 @@ describe('Prerender Utils', () => {
       expect(result).to.equal(0);
       expect(mockSuggestion1.setStatus).to.not.have.been.called;
       expect(mockSuggestion2.setStatus).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/prerender_verify_none_fixed/),
-      );
     });
 
     it('should return 0 when only domain-wide suggestions exist', async () => {
@@ -702,9 +692,6 @@ describe('Prerender Utils', () => {
 
       expect(result).to.equal(0);
       expect(fetchStub).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/prerender_verify_skip.*no_url_suggestions/),
-      );
     });
   });
 });
