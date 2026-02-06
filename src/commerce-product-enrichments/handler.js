@@ -325,6 +325,7 @@ export async function runAuditAndProcessResults(context) {
 
   // Return audit results
   return {
+    status: 'complete',
     auditResult: {
       status: productPages.length > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
       message: `Found ${productPages.length} product pages out of ${processedPages.length} processed pages`,
