@@ -14,6 +14,9 @@ import {
   mapToOpportunity,
   mapToSuggestion,
 } from './guidance-opportunity-mapper.js';
+import { createPaidLogger } from '../paid/paid-log.js';
+
+const GUIDANCE_TYPE = 'no-cta-above-the-fold';
 
 function isSuggestionFailure(guidanceEntry) {
   const failureMessage = 'Suggestion generation failed, no opportunity created';
@@ -37,23 +40,20 @@ export default async function handler(message, context) {
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
   const { url, guidance } = data;
+  const paidLog = createPaidLogger(log, GUIDANCE_TYPE);
 
-  log.info(
-    `[paid-audit] Received no-cta-above-the-fold message for site: ${siteId}, url: ${url}, audit: ${auditId}`,
-  );
+  paidLog.received(siteId, url, auditId);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
-    log.warn(`[paid-audit] Failed no-cta-above-the-fold: no audit found for site: ${siteId}, url: ${url}, audit: ${auditId}`);
+    paidLog.failed('no audit found', siteId, url, auditId);
     return notFound();
   }
 
   const guidanceParsed = getGuidanceObj(guidance);
 
   if (isSuggestionFailure(guidanceParsed)) {
-    log.info(
-      `[paid-audit] Skipping no-cta-above-the-fold opportunity creation for site: ${siteId}, url: ${url}, audit: ${auditId} due to suggestion generation failure`,
-    );
+    paidLog.skipping('suggestion generation failure', siteId, url, auditId);
     return ok();
   }
 
@@ -71,16 +71,12 @@ export default async function handler(message, context) {
     });
 
   if (matchingOpportunity) {
-    log.info(
-      `[paid-audit] Skipping no-cta-above-the-fold: opportunity already exists for site: ${siteId}, url: ${url}, audit: ${auditId}`,
-    );
+    paidLog.skipping('opportunity already exists', siteId, url, auditId);
     return ok();
   }
 
   const entity = mapToOpportunity(siteId, url, audit, guidanceParsed);
-  log.info(
-    `[paid-audit] Creating no-cta-above-the-fold opportunity for site: ${siteId}, url: ${url}, audit: ${auditId}`,
-  );
+  paidLog.creatingOpportunity(siteId, url, auditId);
 
   const opportunity = await Opportunity.create(entity);
 
@@ -92,7 +88,7 @@ export default async function handler(message, context) {
   );
 
   await Suggestion.create(suggestionData);
-  log.info(`[paid-audit] Created no-cta-above-the-fold suggestion for opportunity: ${opportunity.getId()}, site: ${siteId}, url: ${url}, audit: ${auditId}`);
+  paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
 
   return ok();
 }

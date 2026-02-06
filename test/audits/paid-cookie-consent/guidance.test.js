@@ -570,7 +570,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const result = await handler(message, context);
     expect(Opportunity.create).not.to.have.been.called;
     expect(Suggestion.create).not.to.have.been.called;
-    expect(logStub.info).to.have.been.calledWithMatch(/\[paid-audit\] Skipping paid-cookie-consent opportunity creation/);
+    expect(logStub.info).to.have.been.calledWithMatch(/\[paid-audit\] Skipping paid-cookie-consent: low issue severity/);
     expect(result.status).to.equal(ok().status);
   });
 

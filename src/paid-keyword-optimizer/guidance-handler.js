@@ -15,6 +15,9 @@ import {
   mapToKeywordOptimizerSuggestion,
   isLowSeverityGuidanceBody,
 } from './guidance-opportunity-mapper.js';
+import { createPaidLogger } from '../paid/paid-log.js';
+
+const GUIDANCE_TYPE = 'paid-keyword-optimizer';
 
 /**
  * Handler for paid keyword optimizer guidance responses from mystique
@@ -32,28 +35,25 @@ export default async function handler(message, context) {
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, body } = message;
   const url = body?.data?.url;
+  const paidLog = createPaidLogger(log, GUIDANCE_TYPE);
 
-  log.info(`[paid-audit] Received paid-keyword-optimizer message for site: ${siteId}, url: ${url}, audit: ${auditId}`);
-  log.debug(`[paid-audit] Full message payload: ${JSON.stringify(message, null, 2)}`);
+  paidLog.received(siteId, url, auditId);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
-    log.warn(`[paid-audit] Failed paid-keyword-optimizer: no audit found for site: ${siteId}, url: ${url}, audit: ${auditId}`);
+    paidLog.failed('no audit found', siteId, url, auditId);
     return notFound();
   }
-  log.debug(`[paid-audit] Found audit: ${auditId}, type: ${audit.getAuditType()}`);
 
   // Check for low severity and skip if so
   if (isLowSeverityGuidanceBody(body)) {
-    log.info(`[paid-audit] Skipping paid-keyword-optimizer opportunity creation for site: ${siteId}, url: ${url}, audit: ${auditId} due to low issue severity`);
+    paidLog.skipping('low issue severity', siteId, url, auditId);
     return ok();
   }
 
   const entity = mapToKeywordOptimizerOpportunity(siteId, audit, message);
-  log.debug(`[paid-audit] Creating opportunity entity: ${JSON.stringify(entity, null, 2)}`);
-
   const opportunity = await Opportunity.create(entity);
-  log.info(`[paid-audit] Created paid-keyword-optimizer opportunity for site: ${siteId}, url: ${url}, audit: ${auditId}`);
+  paidLog.createdOpportunity(siteId, url, auditId);
 
   // Create suggestion for the new opportunity
   const suggestionData = mapToKeywordOptimizerSuggestion(
@@ -61,9 +61,8 @@ export default async function handler(message, context) {
     opportunity.getId(),
     message,
   );
-  log.debug(`[paid-audit] Creating suggestion: ${JSON.stringify(suggestionData, null, 2)}`);
   await Suggestion.create(suggestionData);
-  log.debug(`[paid-audit] Created suggestion for opportunity ${opportunity.getId()}`);
+  paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
 
   // Only after suggestion is successfully created,
   // find and mark existing NEW system opportunities for the SAME URL as IGNORED
@@ -74,17 +73,13 @@ export default async function handler(message, context) {
     .filter((oppty) => oppty.getData()?.url === url) // Only match same URL
     .filter((oppty) => oppty.getId() !== opportunity.getId()); // Exclude the newly created one
 
-  log.debug(`[paid-audit] Found ${existingMatches.length} existing NEW system opportunities for url ${url} to mark as IGNORED`);
-
   if (existingMatches.length > 0) {
     await Promise.all(existingMatches.map(async (oldOppty) => {
       oldOppty.setStatus('IGNORED');
       await oldOppty.save();
-      log.debug(`[paid-audit] Marked opportunity ${oldOppty.getId()} as IGNORED`);
+      paidLog.markedIgnored(oldOppty.getId(), siteId, url, auditId);
     }));
   }
-
-  log.debug(`[paid-audit] Handler completed successfully for site: ${siteId}, audit: ${auditId}, opportunityId: ${opportunity.getId()}, url: ${url}`);
 
   return ok();
 }

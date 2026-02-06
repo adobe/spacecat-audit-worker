@@ -171,4 +171,25 @@ describe('sqs', () => {
       await ctx.sqs.sendMessage(queueUrl, message);
     }).with(sqsWrapper)({}, context);
   });
+
+  it('uses unknown as fallback when queueUrl is null or undefined', async () => {
+    const message = { key: 'value' };
+    const logSpy = sandbox.spy(context.log, 'info');
+
+    nock('https://sqs.us-east-1.amazonaws.com')
+      .post('/')
+      .reply(200, (_, body) => {
+        const { MessageBody } = JSON.parse(body);
+        return {
+          MessageId: 'message-id',
+          MD5OfMessageBody: crypto.createHash('md5').update(MessageBody, 'utf-8').digest('hex'),
+        };
+      });
+
+    await wrap(async (req, ctx) => {
+      await ctx.sqs.sendMessage(null, message);
+    }).with(sqsWrapper)({}, context);
+
+    expect(logSpy).to.have.been.calledWith('Success, message sent. Queue: unknown, Type: unknown, MessageID: message-id');
+  });
 });

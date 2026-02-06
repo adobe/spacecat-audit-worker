@@ -13,6 +13,7 @@ import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
+import { createPaidLogger } from '../paid/paid-log.js';
 
 const GUIDANCE_TYPE = 'guidance:traffic-analysis';
 const TRAFFIC_OPP_TYPE = 'paid-traffic';
@@ -95,14 +96,14 @@ export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
-  const {
-    url, guidance,
-  } = data;
+  const { url, guidance } = data;
+  const paidLog = createPaidLogger(log, GUIDANCE_TYPE);
 
-  log.info(`[paid-audit] Received paid-traffic-analysis message for site: ${siteId}, url: ${url}, audit: ${auditId}`);
+  paidLog.received(siteId, url, auditId);
+
   const audit = await Audit.findById(auditId);
   if (!audit) {
-    log.warn(`[paid-audit] Failed paid-traffic-analysis: no audit found for site: ${siteId}, url: ${url}, audit: ${auditId}`);
+    paidLog.failed('no audit found', siteId, url, auditId);
     return notFound();
   }
 
@@ -116,7 +117,7 @@ export default async function handler(message, context) {
 
   // Create new paid-traffic opportunity for this period
   const entity = mapToPaidOpportunity(siteId, audit, period);
-  log.info(`[paid-audit] Creating paid-traffic-analysis opportunity for site: ${siteId}, url: ${url}, audit: ${auditId}`);
+  paidLog.creatingOpportunity(siteId, url, auditId);
   const opportunity = await Opportunity.create(entity);
 
   // Map AI Insights suggestions from guidance (already in expected structure)
@@ -143,6 +144,5 @@ export default async function handler(message, context) {
     opportunity.getId(),
   );
 
-  log.debug(`Finished mapping [${GUIDANCE_TYPE}] -> OpportunityType [${TRAFFIC_OPP_TYPE}] for site: ${siteId} period: ${period.week != null ? `W${period.week}/Y${period.year}` : `M${period.month}/Y${period.year}`} opportunityId: ${opportunity.getId?.()}`);
   return ok();
 }
