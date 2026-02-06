@@ -1,3 +1,10 @@
+## [1.306.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.306.0...v1.306.1) (2026-02-06)
+
+
+### Bug Fixes
+
+* log type when sending sqs and standardize paid logs ([#1956](https://github.com/adobe/spacecat-audit-worker/issues/1956)) ([43dd0c0](https://github.com/adobe/spacecat-audit-worker/commit/43dd0c0f38c2c44226785d6adde765a16845bb01))
+
 # [1.306.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.305.3...v1.306.0) (2026-02-06)
 
 
