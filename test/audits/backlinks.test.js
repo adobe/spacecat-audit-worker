@@ -627,6 +627,518 @@ describe('Backlinks Tests', function () {
     });
   });
 
+  describe('generateSuggestionData - Bright Data integration', () => {
+    let configuration;
+    let mockBrightDataClient;
+    let mockedGenerateSuggestionData;
+    let savedConfiguration;
+
+    beforeEach(async () => {
+      // Save original configuration
+      savedConfiguration = context.dataAccess.Configuration;
+
+      configuration = {
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+      };
+      context.dataAccess.Configuration = {
+        findLatest: sinon.stub().resolves(configuration),
+      };
+
+      // Create mock BrightDataClient instance
+      mockBrightDataClient = {
+        googleSearchWithFallback: sinon.stub().resolves({
+          results: [],
+          query: 'site:example.com keywords',
+          keywords: 'test keywords',
+        }),
+      };
+
+      // Use esmock to mock BrightDataClient
+      const esmock = (await import('esmock')).default;
+      const mockedHandler = await esmock('../../src/backlinks/handler.js', {
+        '../../src/support/bright-data-client.js': {
+          default: {
+            createFrom: sinon.stub().returns(mockBrightDataClient),
+          },
+        },
+      });
+      mockedGenerateSuggestionData = mockedHandler.generateSuggestionData;
+    });
+
+    afterEach(() => {
+      // Restore original configuration
+      context.dataAccess.Configuration = savedConfiguration;
+      // Clean up env vars
+      delete context.env.BRIGHT_DATA_API_KEY;
+      delete context.env.BRIGHT_DATA_ZONE;
+      delete context.env.BRIGHT_DATA_VALIDATE_URLS;
+      delete context.env.BRIGHT_DATA_MAX_RESULTS;
+      delete context.env.BRIGHT_DATA_REQUEST_DELAY_MS;
+    });
+
+    it('should use Bright Data when API key and zone are configured', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const testSuggestions = [
+        {
+          getId: () => 'test-suggestion-1',
+          getData: () => ({
+            url_from: 'https://from.com/page',
+            url_to: 'https://example.com/broken-page',
+          }),
+        },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
+
+      await mockedGenerateSuggestionData(context);
+
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Bright Data enabled/));
+    });
+
+    it('should update suggestion when Bright Data returns results', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+
+      // Mock Bright Data returning a result
+      mockBrightDataClient.googleSearchWithFallback.resolves({
+        results: [{ link: 'https://example.com/suggested-page', title: 'Suggested Page' }],
+        query: 'site:example.com broken page',
+        keywords: 'broken page',
+      });
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const mockSuggestion = {
+        getId: () => 'test-suggestion-1',
+        getData: () => ({
+          url_from: 'https://from.com/page',
+          url_to: 'https://example.com/broken-page',
+        }),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const testSuggestions = [mockSuggestion];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
+      context.dataAccess.Suggestion.findById = sinon.stub().resolves(mockSuggestion);
+
+      await mockedGenerateSuggestionData(context);
+
+      expect(mockSuggestion.setData).to.have.been.calledOnce;
+      expect(mockSuggestion.save).to.have.been.calledOnce;
+
+      const setDataCall = mockSuggestion.setData.getCall(0).args[0];
+      expect(setDataCall.urlsSuggested).to.deep.equal(['https://example.com/suggested-page']);
+      expect(setDataCall.aiRationale).to.include('broken page');
+    });
+
+    it('should use site base URL when finalUrl is not set', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+      // Set finalUrl to null to test the fallback
+      context.finalUrl = null;
+
+      mockBrightDataClient.googleSearchWithFallback.resolves({
+        results: [{ link: 'https://example.com/result', title: 'Result' }],
+        query: 'site:example.com keywords',
+        keywords: 'keywords',
+      });
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+
+      const mockOpportunity = {
+        getId: () => 'opportunity-id',
+        setAuditId: sinon.stub(),
+        save: sinon.stub(),
+        getSuggestions: sinon.stub().returns([]),
+        addSuggestions: sinon.stub().returns(brokenBacklinksSuggestions),
+        getType: () => 'broken-backlinks',
+        setData: () => {},
+        getData: () => {},
+        setUpdatedBy: sinon.stub().returnsThis(),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      const mockSuggestion = {
+        getId: () => 'test-suggestion-1',
+        getData: () => ({
+          url_from: 'https://from.com/page',
+          url_to: 'https://example.com/blog/broken-page',
+        }),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([mockSuggestion]);
+      context.dataAccess.Suggestion.findById = sinon.stub().resolves(mockSuggestion);
+
+      await mockedGenerateSuggestionData(context);
+
+      // Should have called googleSearchWithFallback using site.getBaseURL() as fallback
+      expect(mockBrightDataClient.googleSearchWithFallback).to.have.been.called;
+    });
+
+    it('should skip Bright Data when no API key configured', async () => {
+      delete context.env.BRIGHT_DATA_API_KEY;
+      delete context.env.BRIGHT_DATA_ZONE;
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const testSuggestions = [
+        {
+          getId: () => 'test-suggestion-1',
+          getData: () => ({
+            url_from: 'https://from.com/page',
+            url_to: 'https://example.com/broken-page',
+          }),
+        },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
+
+      await mockedGenerateSuggestionData(context);
+
+      expect(context.log.info).to.not.have.been.calledWith(sinon.match(/Bright Data enabled/));
+    });
+
+    it('should fall through to Mystique when Bright Data returns no results', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+
+      // Mock Bright Data returning empty results
+      mockBrightDataClient.googleSearchWithFallback.resolves({
+        results: [],
+        query: 'site:example.com broken page',
+        keywords: 'broken page',
+      });
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+
+      // Setup opportunity properly for the mocked handler
+      const mockOpportunity = {
+        getId: () => 'opportunity-id',
+        setAuditId: sinon.stub(),
+        save: sinon.stub(),
+        getSuggestions: sinon.stub().returns([]),
+        addSuggestions: sinon.stub().returns(brokenBacklinksSuggestions),
+        getType: () => 'broken-backlinks',
+        setData: () => {},
+        getData: () => {},
+        setUpdatedBy: sinon.stub().returnsThis(),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      // Use /blog/ prefix to match topPages paths
+      const testSuggestions = [
+        {
+          getId: () => 'test-suggestion-1',
+          getData: () => ({
+            url_from: 'https://from.com/page',
+            url_to: 'https://example.com/blog/broken-page',
+          }),
+        },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+      const result = await mockedGenerateSuggestionData(context);
+
+      // Should still complete and send to Mystique
+      expect(result.status).to.equal('complete');
+      expect(context.sqs.sendMessage).to.have.been.called;
+    });
+
+    it('should handle Bright Data errors gracefully', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+
+      // Mock Bright Data throwing an error
+      mockBrightDataClient.googleSearchWithFallback.rejects(new Error('API error'));
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const testSuggestions = [
+        {
+          getId: () => 'test-suggestion-1',
+          getData: () => ({
+            url_from: 'https://from.com/page',
+            url_to: 'https://example.com/broken-page',
+          }),
+        },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
+
+      const result = await mockedGenerateSuggestionData(context);
+
+      // Should log warning and continue
+      expect(context.log.warn).to.have.been.calledWith(sinon.match(/Bright Data failed/), sinon.match.any);
+      expect(result.status).to.equal('complete');
+    });
+
+    it('should validate URLs when BRIGHT_DATA_VALIDATE_URLS is true', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+      context.env.BRIGHT_DATA_VALIDATE_URLS = 'true';
+
+      // Mock Bright Data returning a result
+      mockBrightDataClient.googleSearchWithFallback.resolves({
+        results: [{ link: 'https://example.com/valid-page', title: 'Valid Page' }],
+        query: 'site:example.com broken page',
+        keywords: 'broken page',
+      });
+
+      // Mock the URL validation - nock returns 200 for valid URLs (both HEAD and GET)
+      nock('https://example.com')
+        .head('/valid-page')
+        .reply(200);
+      nock('https://example.com')
+        .get('/valid-page')
+        .reply(200);
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+
+      // Setup opportunity properly for the mocked handler
+      const mockOpportunity = {
+        getId: () => 'opportunity-id',
+        setAuditId: sinon.stub(),
+        save: sinon.stub(),
+        getSuggestions: sinon.stub().returns([]),
+        addSuggestions: sinon.stub().returns(brokenBacklinksSuggestions),
+        getType: () => 'broken-backlinks',
+        setData: () => {},
+        getData: () => {},
+        setUpdatedBy: sinon.stub().returnsThis(),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      // Use /blog/ prefix to match topPages paths
+      const mockSuggestion = {
+        getId: () => 'test-suggestion-1',
+        getData: () => ({
+          url_from: 'https://from.com/page',
+          url_to: 'https://example.com/blog/broken-page',
+        }),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const testSuggestions = [mockSuggestion];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
+      context.dataAccess.Suggestion.findById = sinon.stub().resolves(mockSuggestion);
+
+      await mockedGenerateSuggestionData(context);
+
+      // Suggestion should be updated since URL is valid
+      expect(mockSuggestion.setData).to.have.been.calledOnce;
+    });
+
+    it('should skip suggestion when validated URL returns 404', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+      context.env.BRIGHT_DATA_VALIDATE_URLS = 'true';
+
+      // Mock Bright Data returning a result
+      mockBrightDataClient.googleSearchWithFallback.resolves({
+        results: [{ link: 'https://example.com/broken-suggested', title: 'Broken' }],
+        query: 'site:example.com broken page',
+        keywords: 'broken page',
+      });
+
+      // Mock URL validation returning 404
+      nock('https://example.com')
+        .head('/broken-suggested')
+        .reply(404);
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const mockSuggestion = {
+        getId: () => 'test-suggestion-1',
+        getData: () => ({
+          url_from: 'https://from.com/page',
+          url_to: 'https://example.com/broken-page',
+        }),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const testSuggestions = [mockSuggestion];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
+      context.dataAccess.Suggestion.findById = sinon.stub().resolves(mockSuggestion);
+
+      await mockedGenerateSuggestionData(context);
+
+      // Suggestion should NOT be updated since URL validation failed
+      expect(mockSuggestion.setData).to.not.have.been.called;
+    });
+
+    it('should handle missing suggestion gracefully', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+
+      // Mock Bright Data returning a result
+      mockBrightDataClient.googleSearchWithFallback.resolves({
+        results: [{ link: 'https://example.com/suggested-page', title: 'Suggested' }],
+        query: 'site:example.com broken page',
+        keywords: 'broken page',
+      });
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const testSuggestions = [
+        {
+          getId: () => 'test-suggestion-1',
+          getData: () => ({
+            url_from: 'https://from.com/page',
+            url_to: 'https://example.com/broken-page',
+          }),
+        },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
+      // Return null for findById to simulate missing suggestion
+      context.dataAccess.Suggestion.findById = sinon.stub().resolves(null);
+
+      await mockedGenerateSuggestionData(context);
+
+      expect(context.log.warn).to.have.been.calledWith(sinon.match(/suggestion not found/));
+    });
+
+    it('should process multiple broken links in batches with delay', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+      context.env.BRIGHT_DATA_REQUEST_DELAY_MS = '100';
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      // Create multiple suggestions
+      const testSuggestions = Array.from({ length: 15 }, (_, i) => ({
+        getId: () => `test-suggestion-${i}`,
+        getData: () => ({
+          url_from: `https://from.com/page${i}`,
+          url_to: `https://example.com/broken-page-${i}`,
+        }),
+      }));
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
+
+      const startTime = Date.now();
+      await mockedGenerateSuggestionData(context);
+      const elapsed = Date.now() - startTime;
+
+      // Should have called googleSearchWithFallback for each broken link
+      expect(mockBrightDataClient.googleSearchWithFallback.callCount).to.equal(15);
+
+      // With 15 items in batches of 10, there should be 1 delay between batches
+      // Elapsed time should be at least ~100ms for the delay
+      expect(elapsed).to.be.at.least(90); // Allow some variance
+    });
+
+    it('should handle result with no link gracefully', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+
+      // Mock Bright Data returning a result without a link
+      mockBrightDataClient.googleSearchWithFallback.resolves({
+        results: [{ title: 'No Link Result' }], // Missing link property
+        query: 'site:example.com broken page',
+        keywords: 'broken page',
+      });
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const mockSuggestion = {
+        getId: () => 'test-suggestion-1',
+        getData: () => ({
+          url_from: 'https://from.com/page',
+          url_to: 'https://example.com/broken-page',
+        }),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const testSuggestions = [mockSuggestion];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
+      context.dataAccess.Suggestion.findById = sinon.stub().resolves(mockSuggestion);
+
+      await mockedGenerateSuggestionData(context);
+
+      // Should not update suggestion when result has no link
+      expect(mockSuggestion.setData).to.not.have.been.called;
+    });
+
+    it('should use custom max results from env', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+      context.env.BRIGHT_DATA_MAX_RESULTS = '5';
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const testSuggestions = [
+        {
+          getId: () => 'test-suggestion-1',
+          getData: () => ({
+            url_from: 'https://from.com/page',
+            url_to: 'https://example.com/broken-page',
+          }),
+        },
+      ];
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves(testSuggestions);
+
+      await mockedGenerateSuggestionData(context);
+
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/maxResults=5/));
+    });
+  });
+
   describe('calculateKpiMetrics', () => {
     const auditData = {
       auditResult: {
