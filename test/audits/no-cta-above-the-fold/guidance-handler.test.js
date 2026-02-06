@@ -189,7 +189,7 @@ describe("No CTA above the fold guidance handler", () => {
     expect(Opportunity.create).not.to.have.been.called;
     expect(Suggestion.create).not.to.have.been.called;
     expect(logStub.info).to.have.been.calledWith(
-      `Skipping no-cta-above-the-fold opportunity creation for site: site-id page: https://example.com/testpage audit: audit-id, traceId: ${traceId} due to suggestion generation failure.`
+      '[paid-audit] Skipping no-cta-above-the-fold opportunity creation for site: site-id, url: https://example.com/testpage, audit: audit-id due to suggestion generation failure',
     );
   });
 
