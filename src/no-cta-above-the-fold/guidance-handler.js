@@ -14,6 +14,9 @@ import {
   mapToOpportunity,
   mapToSuggestion,
 } from './guidance-opportunity-mapper.js';
+import { createPaidLogger } from '../paid/paid-log.js';
+
+const GUIDANCE_TYPE = 'no-cta-above-the-fold';
 
 function isSuggestionFailure(guidanceEntry) {
   const failureMessage = 'Suggestion generation failed, no opportunity created';
@@ -37,24 +40,20 @@ export default async function handler(message, context) {
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
   const { url, guidance } = data;
+  const paidLog = createPaidLogger(log, GUIDANCE_TYPE);
 
-  log.debug(
-    `Message received for guidance:no-cta-above-the-fold handler site: ${siteId} url: ${url} message: ${JSON.stringify(message)}`,
-  );
+  paidLog.received(siteId, url, auditId);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
-    log.warn(`No audit found for auditId: ${auditId}`);
+    paidLog.failed('no audit found', siteId, url, auditId);
     return notFound();
   }
-  log.debug(`Fetched Audit ${JSON.stringify(message)}`);
 
   const guidanceParsed = getGuidanceObj(guidance);
 
   if (isSuggestionFailure(guidanceParsed)) {
-    log.info(
-      `Skipping opportunity creation for site: ${siteId} page: ${url} audit: ${auditId} due to suggestion generation failure.`,
-    );
+    paidLog.skipping('suggestion generation failure', siteId, url, auditId);
     return ok();
   }
 
@@ -72,16 +71,12 @@ export default async function handler(message, context) {
     });
 
   if (matchingOpportunity) {
-    log.info(
-      `no-cta-above-the-fold opportunity already exists for site: ${siteId} page: ${url}`,
-    );
+    paidLog.skipping('opportunity already exists', siteId, url, auditId);
     return ok();
   }
 
   const entity = mapToOpportunity(siteId, url, audit, guidanceParsed);
-  log.info(
-    `Creating a new no-cta-above-the-fold opportunity for ${siteId} page: ${url}`,
-  );
+  paidLog.creatingOpportunity(siteId, url, auditId);
 
   const opportunity = await Opportunity.create(entity);
 
@@ -92,12 +87,8 @@ export default async function handler(message, context) {
     guidanceParsed,
   );
 
-  log.info(
-    `no-cta-above-the-fold opportunity succesfully added for site: ${siteId} page: ${url} audit: ${auditId}  opportunity: ${JSON.stringify(opportunity, null, 2)}`,
-  );
-
   await Suggestion.create(suggestionData);
-  log.info(`Created suggestion for opportunity ${opportunity.getId()}`);
+  paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
 
   return ok();
 }
