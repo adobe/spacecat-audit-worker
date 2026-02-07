@@ -20,8 +20,6 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import { CloudWatchLogsClient } from '@aws-sdk/client-cloudwatch-logs';
-
 import { AuditBuilder } from '../../src/common/audit-builder.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -516,79 +514,6 @@ describe('Step-based Audit Tests', () => {
       expect(capturedScrapeResultPaths.get('https://space.cat/')).to.equal('s3://bucket/path1.json');
       expect(capturedScrapeResultPaths.get('https://space.cat/page1')).to.equal('s3://bucket/path2.json');
       expect(capturedScrapeResultPaths.get('https://space.cat/page2')).to.equal('s3://bucket/path3.json');
-    });
-
-    // TODO: Rewrite test for SQS-based bot protection (CloudWatch polling removed)
-    it.skip('continues audit when no bot protection is detected', async () => {
-      nock('https://space.cat')
-        .get('/')
-        .reply(200, 'Success');
-
-      // Mock CloudWatch to return no bot protection events
-      sandbox.stub(CloudWatchLogsClient.prototype, 'send').resolves({
-        events: [],
-      });
-
-      // Setup ScrapeClient mock without bot protection
-      const mockScrapeClient = {
-        getScrapeResultPaths: sandbox.stub().resolves(new Map([
-          ['https://space.cat/', 's3://bucket/path1.json'],
-        ])),
-        getScrapeJobUrlResults: sandbox.stub().resolves([
-          {
-            url: 'https://space.cat/',
-            status: 'COMPLETE',
-          },
-        ]),
-      };
-      sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
-
-      let stepWasExecuted = false;
-      const scrapeResultAudit = new AuditBuilder()
-        .addStep('scrape', async () => ({
-          auditResult: { status: 'scraping' },
-          fullAuditRef: 's3://test/123',
-        }), AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
-        .addStep('process-scrape', async () => {
-          stepWasExecuted = true;
-          return { status: 'processed' };
-        })
-        .build();
-
-      const createdAudit = {
-        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
-        getAuditType: () => 'content-audit',
-        getFullAuditRef: () => 's3://test/123',
-        getAuditedAt: () => mockDate,
-      };
-      context.dataAccess.Audit.create.resolves(createdAudit);
-
-      const existingAudit = {
-        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
-        getAuditType: () => 'content-audit',
-        getFullAuditRef: () => 's3://test/123',
-        getAuditedAt: () => mockDate,
-      };
-      context.dataAccess.Audit.findById.resolves(existingAudit);
-
-      const messageWithScrapeJobId = {
-        type: 'content-audit',
-        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
-        auditContext: {
-          next: 'process-scrape',
-          auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
-          scrapeJobId: 'scrape-job-456',
-        },
-      };
-
-      const result = await scrapeResultAudit.run(messageWithScrapeJobId, context);
-
-      // Should complete normally
-      expect(result.status).to.equal(200);
-      expect(stepWasExecuted).to.be.true;
-
-      // Verify bot protection was checked via CloudWatch
-      expect(CloudWatchLogsClient.prototype.send).to.have.been.called;
     });
   });
 
