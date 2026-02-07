@@ -757,3 +757,254 @@ Here's how messages flow between workers in a step-based audit:
 
 Each message preserves the `auditContext` to maintain the step chain. The `next` field determines which step runs next, while `auditId` and `fullAuditRef` track the audit state across workers.
 
+## How to Add Opportunities and Suggestions
+
+This section documents the shared utility functions available in `src/utils/data-access.js` for managing opportunities, suggestions, and fix entities. These utilities help audits implement consistent patterns for tracking issues and their resolutions.
+
+### Author-Only Opportunity Types
+
+Some opportunity types only affect the author environment and do not require a production publish step. These are defined in the `AUTHOR_ONLY_OPPORTUNITY_TYPES` constant in `src/utils/data-access.js`.
+
+For author-only opportunity types:
+- **Fix entities are created with `DEPLOYED` status** instead of `PUBLISHED` when suggestions are marked as fixed in `reconcileDisappearedSuggestions`
+- **Fix entity publishing is skipped** - `publishDeployedFixEntities` does not process these opportunities since `DEPLOYED` is the final state
+- **Regression checks use `DEPLOYED` status** - When checking for regressions of `FIXED` suggestions, the system looks for fix entities in `DEPLOYED` status instead of `PUBLISHED`
+
+Currently defined author-only opportunity types:
+- `security-permissions-redundant`
+- `security-permissions-too-strong`
+
+To add a new author-only opportunity type, add it to the `AUTHOR_ONLY_OPPORTUNITY_TYPES` array in `src/utils/data-access.js`.
+
+### syncSuggestions
+
+Synchronizes new audit data with existing suggestions for an opportunity. This function:
+1. **Reconciles disappeared suggestions** - Marks suggestions as `FIXED` when issues are resolved (if `isIssueFixed` callback provided)
+2. **Publishes deployed fix entities** - Transitions `DEPLOYED` fix entities to `PUBLISHED` when verified (if `isIssueResolvedOnProduction` callback provided). Skipped for author-only opportunity types.
+3. **Marks outdated suggestions** - Updates suggestions no longer in audit data
+4. **Updates existing suggestions** - Merges new data with existing suggestions
+5. **Creates new suggestions** - Adds suggestions for newly detected issues
+
+```js
+import { syncSuggestions } from '../utils/data-access.js';
+
+await syncSuggestions({
+  opportunity,
+  newData: auditResults,
+  buildKey: (item) => `${item.pageUrl}|${item.issueType}`,
+  context,
+  mapNewSuggestion: (item) => ({
+    opportunityId: opportunity.getId(),
+    type: 'ISSUE_DETECTED',
+    rank: item.severity,
+    data: item,
+  }),
+  // Optional: Enable disappeared suggestion reconciliation
+  isIssueFixed: async (suggestion) => {
+    const data = suggestion?.getData?.();
+    return checkIfResolved(data);
+  },
+  getPagePath: (data) => data?.pageUrl,
+  getUpdatedValue: (data) => data?.newValue || '',
+  getOldValue: (data) => data?.oldValue || '',
+  // Optional: Enable deployed fix entity publishing
+  isIssueResolvedOnProduction: async (suggestion) => {
+    const url = suggestion?.getData?.()?.targetUrl;
+    if (!url) return false;
+    const response = await fetch(url);
+    return response.ok;
+  },
+});
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `opportunity` | Object | The opportunity object |
+| `newData` | Array | Current audit results |
+| `buildKey` | Function | Creates a unique key from data |
+| `context` | Object | Context with `log`, `site`, `dataAccess` |
+| `mapNewSuggestion` | Function | Maps audit data to suggestion format |
+| `isIssueFixed` | Function | Optional. Async callback to verify if a disappeared suggestion's issue is fixed |
+| `getPagePath` | Function | Optional. Extracts page path from suggestion data (for fix entity) |
+| `getUpdatedValue` | Function | Optional. Extracts the new/fixed value from suggestion data |
+| `getOldValue` | Function | Optional. Extracts the old/broken value from suggestion data |
+| `isIssueResolvedOnProduction` | Function | Optional. Async callback to verify if issue is resolved on production |
+| `statusToSetForOutdated` | String | Optional. Status to set for outdated suggestions (default: `OUTDATED`) |
+| `scrapedUrlsSet` | Set | Optional. Set of URLs that were scraped (for filtering outdated suggestions) |
+
+### Helper: getDisappearedSuggestions
+
+Computes suggestions that have "disappeared" from the current audit data (their key is no longer present).
+
+```js
+import { getDisappearedSuggestions } from '../utils/data-access.js';
+
+const newDataKeys = new Set(auditResults.map(buildKey));
+const disappeared = getDisappearedSuggestions(existingSuggestions, newDataKeys, buildKey);
+```
+
+### reconcileDisappearedSuggestions (Advanced)
+
+> **Note:** For most use cases, pass `isIssueFixed` to `syncSuggestions` instead of calling this function directly. `syncSuggestions` handles the filtering internally.
+
+When audit data no longer includes a previously detected issue, it may mean the issue was fixed externally. This utility:
+
+1. Filters to suggestions in `NEW` status from the disappeared suggestions
+2. Uses a custom callback to verify if the issue was resolved
+3. Marks resolved suggestions as `FIXED`
+4. Creates fix entities to track the resolution:
+   - `PUBLISHED` status for standard opportunity types
+   - `DEPLOYED` status for author-only opportunity types (see [Author-Only Opportunity Types](#author-only-opportunity-types))
+
+#### Usage
+
+```js
+import { reconcileDisappearedSuggestions, getDisappearedSuggestions } from '../utils/data-access.js';
+
+// Compute disappeared suggestions first
+const newDataKeys = new Set(auditResults.map(buildKey));
+const existingSuggestions = await opportunity.getSuggestions();
+const disappearedSuggestions = getDisappearedSuggestions(existingSuggestions, newDataKeys, buildKey);
+
+await reconcileDisappearedSuggestions({
+  opportunity,
+  disappearedSuggestions,             // Pre-filtered disappeared suggestions
+  getPagePath: (data) => data?.urlFrom,
+  site,
+  log,
+  isIssueFixed: async (suggestion) => {
+    const data = suggestion?.getData?.();
+    return checkIfResolved(data);
+  },
+  getUpdatedValue: (data) => data?.newValue || '',
+  getOldValue: (data) => data?.oldValue || '',
+});
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `opportunity` | Object | The opportunity object with `addFixEntities()` method |
+| `disappearedSuggestions` | Array | Suggestions no longer in current audit data |
+| `getPagePath` | Function | Extracts the page path from suggestion data (for fix entity) |
+| `site` | Object | Site object with `getDeliveryType()` method |
+| `log` | Object | Logger object |
+| `isIssueFixed` | Function | Async callback that receives a suggestion and returns `true` if the issue is fixed |
+| `getUpdatedValue` | Function | Optional. Extracts the new/fixed value from suggestion data for the fix entity |
+| `getOldValue` | Function | Optional. Extracts the old/broken value from suggestion data for the fix entity |
+
+#### Example: Backlinks Handler (using syncSuggestions)
+
+```js
+const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
+
+// Recommended: Use syncSuggestions with isIssueFixed callback
+await syncSuggestions({
+  opportunity,
+  newData: auditResult.brokenBacklinks,
+  buildKey,
+  context,
+  mapNewSuggestion: (backlink) => ({
+    opportunityId: opportunity.getId(),
+    type: 'REDIRECT_UPDATE',
+    rank: backlink.traffic_domain,
+    data: backlink,
+  }),
+  isIssueFixed: async (suggestion) => {
+    const data = suggestion?.getData?.();
+    const url = data?.url_to;
+    if (!url) return false;
+    const stillBrokenItems = await filterOutValidBacklinks([{ url_to: url }], log);
+    return stillBrokenItems.length === 0;
+  },
+  getPagePath: (data) => data?.url_from,
+  getUpdatedValue: (data) => data?.url_to || '',
+  getOldValue: (data) => data?.url_to || '',
+  isIssueResolvedOnProduction: async (suggestion) => {
+    const url = suggestion?.getData?.()?.url_to;
+    if (!url) return false;
+    const stillBrokenItems = await filterOutValidBacklinks([{ url_to: url }], log);
+    return stillBrokenItems.length === 0;
+  },
+});
+```
+
+### publishDeployedFixEntities (Advanced)
+
+> **Note:** For most use cases, pass `isIssueResolvedOnProduction` to `syncSuggestions` instead of calling this function directly.
+
+> **Note:** This function is automatically skipped for author-only opportunity types (see [Author-Only Opportunity Types](#author-only-opportunity-types)), as `DEPLOYED` is their final state.
+
+When users deploy fixes (e.g., update content to resolve an issue), the fix entity status transitions from `NEW` to `DEPLOYED`. The `publishDeployedFixEntities` utility automatically verifies if deployed fixes have resolved the issue and transitions them to `PUBLISHED` status.
+
+This enables audits to track the full lifecycle of issue resolution:
+1. **NEW** → Fix entity created when user acknowledges an issue
+2. **DEPLOYED** → User has deployed changes to fix the issue
+3. **PUBLISHED** → System verified the issue is resolved in production (not applicable for author-only types)
+
+#### Usage
+
+```js
+import { publishDeployedFixEntities } from '../utils/data-access.js';
+
+await publishDeployedFixEntities({
+  opportunityId: opportunity.getId(),
+  dataAccess,
+  log,
+  currentAuditData: auditResults,                  // Optional: for fast-path optimization
+  buildKey: (item) => `${item.url_from}|${item.url_to}`, // Optional: for fast-path optimization
+  isIssueResolvedOnProduction: async (suggestion) => {
+    const url = suggestion?.getData?.()?.targetUrl;
+    if (!url) return false; // No URL = can't verify = not resolved
+    const response = await fetch(url);
+    return response.ok; // true if resolved, false if still broken
+  },
+});
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `opportunityId` | String | The opportunity ID to process fix entities for |
+| `dataAccess` | Object | Data access object containing `FixEntity` with `allByOpportunityIdAndStatus()` and `getSuggestionsByFixEntityId()` |
+| `log` | Object | Logger object for debug/warn messages |
+| `currentAuditData` | Array | Optional. Current audit results for fast-path optimization (skip prod check if issue still in audit data) |
+| `buildKey` | Function | Optional. Creates a unique key from data (required if `currentAuditData` is provided) |
+| `isIssueResolvedOnProduction` | Function | Async predicate that receives a suggestion and returns `true` if the issue is resolved, `false` if still broken |
+
+#### Example: Internal Links Handler
+
+```js
+await publishDeployedFixEntities({
+  opportunityId: opportunity.getId(),
+  dataAccess,
+  log,
+  isIssueResolvedOnProduction: async (suggestion) => {
+    const urlTo = suggestion?.getData?.()?.urlTo;
+    if (!urlTo) return false;
+    const is404 = await isLinkInaccessible(urlTo, log);
+    return !is404; // resolved if NOT 404
+  },
+});
+```
+
+#### Example: Backlinks Handler
+
+```js
+await publishDeployedFixEntities({
+  opportunityId: opportunity.getId(),
+  dataAccess,
+  log,
+  isIssueResolvedOnProduction: async (suggestion) => {
+    const url = suggestion?.getData?.()?.url_to;
+    if (!url) return false;
+    const stillBrokenItems = await filterOutValidBacklinks([{ url_to: url }], log);
+    return stillBrokenItems.length === 0; // resolved if NO items are still broken
+  },
+});
+```
+

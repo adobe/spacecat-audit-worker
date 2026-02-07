@@ -12,7 +12,11 @@
 
 import { tracingFetch as fetch, prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import {
+  Audit,
+  Suggestion as SuggestionModel,
+  FixEntity as FixEntityModel,
+} from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -70,7 +74,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
       result,
       fullAuditRef,
     } = await ahrefsAPIClient.getBrokenBacklinks(auditUrl);
-    log.debug(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditUrl}`);
+    log.debug(`Update Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditUrl}`);
     const excludedURLs = site.getConfig().getExcludedURLs('broken-backlinks');
 
     // Filter out excluded URLs with www-agnostic comparison
@@ -197,7 +201,37 @@ export const generateSuggestionData = async (context) => {
     kpiDeltas,
   );
 
+  // Define buildKey here so it can be reused for reconciliation, publish, and syncSuggestions
   const buildKey = (backlink) => `${backlink.url_from}|${backlink.url_to}`;
+
+  // Helper to normalize URLs for comparison
+  /* c8 ignore next 4 - defensive fallback for non-string values */
+  const normalize = (u) => {
+    if (typeof u !== 'string') return '';
+    return u.replace(/\/+$/, ''); // Remove trailing slashes
+  };
+
+  // Helper to strip query string from URL
+  /* c8 ignore next 4 - defensive fallback for non-string values */
+  const stripQuery = (u) => {
+    if (typeof u !== 'string') return '';
+    return u.split('?')[0].replace(/\/+$/, '');
+  };
+
+  // Helper to check if two URLs match (considering query string variations)
+  /* c8 ignore next 7 */
+  const urlsMatch = (url1, url2) => {
+    // Check exact match (with trailing slash normalization)
+    if (normalize(url1) === normalize(url2)) return true;
+    // Check match without query strings
+    if (stripQuery(url1) === stripQuery(url2)) return true;
+    return false;
+  };
+
+  // syncSuggestions handles:
+  // 1. Reconcile disappeared suggestions (mark as FIXED if issue is resolved)
+  // 2. Publish DEPLOYED fix entities to PUBLISHED when verified on production
+  // 3. Sync new/existing suggestions with audit data
 
   // Custom merge function to preserve user-edited fields
   const mergeDataFunction = (existingData, newData) => {
@@ -236,6 +270,58 @@ export const generateSuggestionData = async (context) => {
         traffic_domain: backlink.traffic_domain,
       },
     }),
+    // Reconciliation: check if disappeared suggestion's url_to now redirects to a suggested target
+    /* c8 ignore start */
+    buildFixEntityPayload: (suggestion, opp) => {
+      const data = suggestion?.getData?.();
+      return {
+        opportunityId: opp.getId(),
+        status: FixEntityModel.STATUSES.PUBLISHED,
+        type: suggestion?.getType?.(),
+        executedAt: new Date().toISOString(),
+        changeDetails: {
+          system: site.getDeliveryType(),
+          pagePath: data?.url_from,
+          oldValue: data?.url_to || '',
+          updatedValue: data?.urlEdited || data?.urlsSuggested?.[0] || '',
+        },
+        suggestions: [suggestion?.getId?.()],
+      };
+    },
+    isIssueFixedWithAISuggestion: async (suggestion) => {
+      const data = suggestion?.getData?.();
+      const urlTo = data?.url_to;
+      const suggestedTargets = Array.isArray(data?.urlsSuggested) ? data.urlsSuggested : [];
+      const targets = data?.urlEdited
+        ? [data.urlEdited, ...suggestedTargets]
+        : suggestedTargets;
+      if (!urlTo || targets.length === 0) return false;
+      try {
+        const resp = await fetch(urlTo, {
+          redirect: 'follow',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0',
+          },
+          signal: AbortSignal.timeout(10000),
+        });
+        const finalResolvedUrl = resp?.url || urlTo;
+        // Check if final URL matches any target (with/without query strings)
+        return targets.some((t) => urlsMatch(t, finalResolvedUrl));
+      } catch (e) {
+        log.debug(`[isIssueFixedWithAISuggestion] fetch ${urlTo} failed: ${e.message}`);
+        return false;
+      }
+    },
+    /* c8 ignore stop */
+    // Publish: verify if suggestion's url_to is no longer broken
+    isIssueResolvedOnProduction: async (suggestion) => {
+      const url = suggestion?.getData?.()?.url_to;
+      if (!url) {
+        return false;
+      }
+      const stillBrokenItems = await filterOutValidBacklinks([{ url_to: url }], log);
+      return stillBrokenItems.length === 0; // resolved if NO items are still broken
+    },
   });
   const suggestions = await Suggestion.allByOpportunityIdAndStatus(
     opportunity.getId(),

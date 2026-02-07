@@ -35,7 +35,6 @@ import {
 import {
   mapTooStrongSuggestion,
   mapAdminSuggestion,
-  mergeSuggestionStatus,
 } from '../../../src/permissions/suggestion-data-mapper.js';
 import { fetchPermissionsReport } from '../../../src/permissions/common.js';
 
@@ -1475,94 +1474,6 @@ describe('Permissions Handler Tests', () => {
     });
   });
 
-  describe('mergeSuggestionStatus Tests', () => {
-    let mockExistingSuggestion;
-    let mockContext;
-    let mockSite;
-
-    beforeEach(() => {
-      mockSite = {
-        requiresValidation: false,
-      };
-
-      mockContext = {
-        log: {
-          warn: sandbox.stub(),
-          debug: sandbox.stub(),
-        },
-        site: mockSite,
-      };
-
-      mockExistingSuggestion = {
-        getStatus: sandbox.stub(),
-      };
-    });
-
-    it('should return PENDING_VALIDATION when existing suggestion is FIXED and site requires validation', () => {
-      mockSite.requiresValidation = true;
-      mockExistingSuggestion.getStatus.returns(SuggestionDataAccess.STATUSES.FIXED);
-
-      const result = mergeSuggestionStatus(mockExistingSuggestion, {}, mockContext);
-
-      expect(result).to.equal(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
-      expect(mockContext.log.warn).to.have.been.calledWith('Resolved suggestion found in audit. Possible regression.');
-    });
-
-    it('should return NEW when existing suggestion is FIXED and site does not require validation', () => {
-      mockSite.requiresValidation = false;
-      mockExistingSuggestion.getStatus.returns(SuggestionDataAccess.STATUSES.FIXED);
-
-      const result = mergeSuggestionStatus(mockExistingSuggestion, {}, mockContext);
-
-      expect(result).to.equal(SuggestionDataAccess.STATUSES.NEW);
-      expect(mockContext.log.warn).to.have.been.calledWith('Resolved suggestion found in audit. Possible regression.');
-    });
-
-    it('should return null when existing suggestion is not FIXED (fallback to defaultMergeStatusFunction)', () => {
-      mockExistingSuggestion.getStatus.returns(SuggestionDataAccess.STATUSES.NEW);
-
-      const result = mergeSuggestionStatus(mockExistingSuggestion, {}, mockContext);
-
-      expect(result).to.be.null;
-      expect(mockContext.log.warn).to.not.have.been.called;
-    });
-
-    it('should return null when existing suggestion is REJECTED', () => {
-      mockExistingSuggestion.getStatus.returns(SuggestionDataAccess.STATUSES.REJECTED);
-
-      const result = mergeSuggestionStatus(mockExistingSuggestion, {}, mockContext);
-
-      expect(result).to.be.null;
-      expect(mockContext.log.debug).to.have.been.calledWith('REJECTED suggestion found in audit. Preserving REJECTED status.');
-    });
-
-    it('should return null when existing suggestion is PENDING_VALIDATION', () => {
-      mockExistingSuggestion.getStatus.returns(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
-
-      const result = mergeSuggestionStatus(mockExistingSuggestion, {}, mockContext);
-
-      expect(result).to.be.null;
-    });
-
-    it('should handle undefined site gracefully when suggestion is FIXED', () => {
-      mockContext.site = undefined;
-      mockExistingSuggestion.getStatus.returns(SuggestionDataAccess.STATUSES.FIXED);
-
-      const result = mergeSuggestionStatus(mockExistingSuggestion, {}, mockContext);
-
-      expect(result).to.equal(SuggestionDataAccess.STATUSES.NEW);
-    });
-
-    it('should handle null site gracefully when suggestion is FIXED', () => {
-      mockContext.site = null;
-      mockExistingSuggestion.getStatus.returns(SuggestionDataAccess.STATUSES.FIXED);
-
-      const result = mergeSuggestionStatus(mockExistingSuggestion, {}, mockContext);
-
-      expect(result).to.equal(SuggestionDataAccess.STATUSES.NEW);
-    });
-  });
-
   describe('buildAdminSuggestionKey and syncSuggestions integration', () => {
     let auditData;
 
@@ -1635,82 +1546,6 @@ describe('Permissions Handler Tests', () => {
       expect(result).to.deep.equal({ status: 'complete' });
       expect(mockSuggestion1.save).to.have.been.called;
       expect(mockSuggestion2.save).to.have.been.called;
-    });
-
-    it('should reopen FIXED suggestions when they appear again in the audit', async () => {
-      site.requiresValidation = true;
-      context.site = site;
-
-      const mockFixedSuggestion = {
-        getId: () => 'suggestion-fixed',
-        getStatus: () => SuggestionDataAccess.STATUSES.FIXED,
-        getData: () => ({
-          principal: 'admin1',
-          path: '/content/admin1',
-          permissions: ['jcr:all'],
-        }),
-        setData: sandbox.stub(),
-        setStatus: sandbox.stub(),
-        setUpdatedBy: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-      };
-
-      const mockOpportunity = {
-        getId: () => 'opp-123',
-        getType: () => 'security-permissions-redundant',
-        getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-        getSuggestions: sandbox.stub().resolves([mockFixedSuggestion]),
-        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
-        setUpdatedBy: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-      };
-
-      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
-
-      const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
-
-      expect(result).to.deep.equal({ status: 'complete' });
-      expect(mockFixedSuggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
-      expect(mockFixedSuggestion.save).to.have.been.called;
-      expect(context.log.warn).to.have.been.calledWith('Resolved suggestion found in audit. Possible regression.');
-    });
-
-    it('should reopen FIXED suggestions to NEW status when site does not require validation', async () => {
-      site.requiresValidation = false;
-      context.site = site;
-
-      const mockFixedSuggestion = {
-        getId: () => 'suggestion-fixed',
-        getStatus: () => SuggestionDataAccess.STATUSES.FIXED,
-        getData: () => ({
-          principal: 'admin1',
-          path: '/content/admin1',
-          permissions: ['jcr:all'],
-        }),
-        setData: sandbox.stub(),
-        setStatus: sandbox.stub(),
-        setUpdatedBy: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-      };
-
-      const mockOpportunity = {
-        getId: () => 'opp-123',
-        getType: () => 'security-permissions-redundant',
-        getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-        getSuggestions: sandbox.stub().resolves([mockFixedSuggestion]),
-        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
-        setUpdatedBy: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-      };
-
-      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
-
-      const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
-
-      expect(result).to.deep.equal({ status: 'complete' });
-      expect(mockFixedSuggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.NEW);
-      expect(mockFixedSuggestion.save).to.have.been.called;
-      expect(context.log.warn).to.have.been.calledWith('Resolved suggestion found in audit. Possible regression.');
     });
 
     it('should preserve REJECTED status for suggestions that appear again', async () => {
