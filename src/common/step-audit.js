@@ -20,6 +20,7 @@ import {
   loadExistingAudit,
   sendContinuationMessage,
 } from './audit-utils.js';
+import { handleAbort } from './bot-detection.js';
 
 const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
@@ -73,7 +74,6 @@ export class StepAudit extends BaseAudit {
       auditId: audit.getId(),
       auditType: audit.getAuditType(),
       fullAuditRef: audit.getFullAuditRef(),
-      scrapeJobId: context.scrapeJobId,
     };
 
     const auditContext = isNonEmptyObject(stepResult.auditContext)
@@ -102,7 +102,7 @@ export class StepAudit extends BaseAudit {
     const { stepNames } = this;
     const { log } = context;
     const {
-      type, data, siteId, auditContext = {},
+      type, data, siteId, auditContext = {}, abort, jobId,
     } = message;
 
     try {
@@ -111,6 +111,11 @@ export class StepAudit extends BaseAudit {
       if (!(await isAuditEnabledForSite(type, site, context))) {
         log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
         return ok();
+      }
+
+      // Check if scrape job was aborted (e.g., due to bot protection)
+      if (abort) {
+        return handleAbort(abort, jobId, type, site, siteId, log);
       }
 
       // Determine which step to run

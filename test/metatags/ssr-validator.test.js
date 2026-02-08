@@ -11,29 +11,37 @@
  */
 
 /* eslint-env mocha */
-
-import { expect } from 'chai';
+import { expect, use } from 'chai';
+import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 
-describe('SSR Validator', () => {
+use(sinonChai);
+use(chaiAsPromised);
+
+describe('SSR Meta Validator', () => {
   let validateMetaTagsViaSSR;
   let validateDetectedIssues;
   let fetchStub;
   let log;
 
   beforeEach(async () => {
-    fetchStub = sinon.stub();
     log = {
-      info: sinon.stub(),
       debug: sinon.stub(),
+      info: sinon.stub(),
       warn: sinon.stub(),
       error: sinon.stub(),
     };
 
+    fetchStub = sinon.stub();
+
     const ssrValidator = await esmock('../../src/metatags/ssr-meta-validator.js', {
       '@adobe/fetch': {
         context: () => ({ fetch: fetchStub }),
+      },
+      '@adobe/spacecat-shared-utils': {
+        hasText: (text) => text && text.length > 0,
       },
     });
 
@@ -46,17 +54,17 @@ describe('SSR Validator', () => {
   });
 
   describe('validateMetaTagsViaSSR', () => {
-    it('should successfully extract meta tags from HTML', async () => {
+    it('should successfully validate meta tags from SSR content', async () => {
       const html = `
         <!DOCTYPE html>
         <html>
           <head>
             <title>Test Page Title</title>
-            <meta name="description" content="Test page description">
+            <meta name="description" content="This is a test description">
           </head>
           <body>
             <h1>Main Heading</h1>
-            <h1>Secondary Heading</h1>
+            <h1>Second Heading</h1>
           </body>
         </html>
       `;
@@ -67,123 +75,24 @@ describe('SSR Validator', () => {
         text: async () => html,
       });
 
-      const result = await validateMetaTagsViaSSR('https://example.com/page', log);
+      const result = await validateMetaTagsViaSSR('https://example.com', log);
 
       expect(result).to.deep.equal({
         title: 'Test Page Title',
-        description: 'Test page description',
-        h1: ['Main Heading', 'Secondary Heading'],
+        description: 'This is a test description',
+        h1: ['Main Heading', 'Second Heading'],
       });
-      expect(log.debug.calledWith('Validating meta tags via SSR for: https://example.com/page')).to.be.true;
+
+      expect(log.debug).to.have.been.calledWith('Validating meta tags via SSR for: https://example.com');
+      expect(log.debug).to.have.been.calledWith(sinon.match(/SSR validation result for https:\/\/example\.com/));
     });
 
-    it('should return null for missing title', async () => {
+    it('should return null values for missing meta tags', async () => {
       const html = `
         <!DOCTYPE html>
         <html>
           <head>
-            <meta name="description" content="Test page description">
-          </head>
-          <body>
-            <h1>Main Heading</h1>
-          </body>
-        </html>
-      `;
-
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        text: async () => html,
-      });
-
-      const result = await validateMetaTagsViaSSR('https://example.com/page', log);
-
-      expect(result.title).to.be.null;
-      expect(result.description).to.equal('Test page description');
-      expect(result.h1).to.deep.equal(['Main Heading']);
-    });
-
-    it('should return null for missing description', async () => {
-      const html = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>Test Page Title</title>
-          </head>
-          <body>
-            <h1>Main Heading</h1>
-          </body>
-        </html>
-      `;
-
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        text: async () => html,
-      });
-
-      const result = await validateMetaTagsViaSSR('https://example.com/page', log);
-
-      expect(result.title).to.equal('Test Page Title');
-      expect(result.description).to.be.null;
-      expect(result.h1).to.deep.equal(['Main Heading']);
-    });
-
-    it('should return null for missing h1 tags', async () => {
-      const html = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>Test Page Title</title>
-            <meta name="description" content="Test page description">
-          </head>
-          <body>
-            <h2>Not an H1</h2>
-          </body>
-        </html>
-      `;
-
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        text: async () => html,
-      });
-
-      const result = await validateMetaTagsViaSSR('https://example.com/page', log);
-
-      expect(result.title).to.equal('Test Page Title');
-      expect(result.description).to.equal('Test page description');
-      expect(result.h1).to.be.null;
-    });
-
-    it('should return null when fetch fails', async () => {
-      fetchStub.resolves({
-        ok: false,
-        status: 404,
-      });
-
-      const result = await validateMetaTagsViaSSR('https://example.com/notfound', log);
-
-      expect(result).to.be.null;
-      expect(log.warn.calledWith('SSR validation failed with status 404 for https://example.com/notfound')).to.be.true;
-    });
-
-    it('should return null when fetch throws an error', async () => {
-      fetchStub.rejects(new Error('Network error'));
-
-      const result = await validateMetaTagsViaSSR('https://example.com/error', log);
-
-      expect(result).to.be.null;
-      expect(log.warn.calledWith(sinon.match('Error during SSR validation'))).to.be.true;
-    });
-
-    it('should handle empty/whitespace-only tags', async () => {
-      const html = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>   </title>
-            <meta name="description" content="  ">
+            <title></title>
           </head>
           <body>
             <h1>   </h1>
@@ -197,44 +106,155 @@ describe('SSR Validator', () => {
         text: async () => html,
       });
 
-      const result = await validateMetaTagsViaSSR('https://example.com/empty', log);
+      const result = await validateMetaTagsViaSSR('https://example.com', log);
 
-      expect(result.title).to.be.null;
-      expect(result.description).to.be.null;
-      expect(result.h1).to.be.null;
+      expect(result).to.deep.equal({
+        title: null,
+        description: null,
+        h1: null,
+      });
+    });
+
+    it('should handle HTML with no meta tags at all', async () => {
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <body>
+            <p>Content without meta tags</p>
+          </body>
+        </html>
+      `;
+
+      fetchStub.resolves({
+        ok: true,
+        status: 200,
+        text: async () => html,
+      });
+
+      const result = await validateMetaTagsViaSSR('https://example.com', log);
+
+      expect(result).to.deep.equal({
+        title: null,
+        description: null,
+        h1: null,
+      });
+    });
+
+    it('should filter out empty h1 tags', async () => {
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <body>
+            <h1>Valid Heading</h1>
+            <h1>   </h1>
+            <h1></h1>
+            <h1>Another Valid Heading</h1>
+          </body>
+        </html>
+      `;
+
+      fetchStub.resolves({
+        ok: true,
+        status: 200,
+        text: async () => html,
+      });
+
+      const result = await validateMetaTagsViaSSR('https://example.com', log);
+
+      expect(result.h1).to.deep.equal(['Valid Heading', 'Another Valid Heading']);
+    });
+
+    it('should handle 403 error', async () => {
+      fetchStub.resolves({
+        ok: false,
+        status: 403,
+      });
+
+      const result = await validateMetaTagsViaSSR('https://example.com', log);
+
+      expect(result).to.be.null;
+      expect(log.warn).to.have.been.calledWith('SSR validation failed with status 403 for https://example.com');
+    });
+
+    it('should handle non-403 HTTP errors', async () => {
+      fetchStub.resolves({
+        ok: false,
+        status: 500,
+      });
+
+      const result = await validateMetaTagsViaSSR('https://example.com', log);
+
+      expect(result).to.be.null;
+      expect(log.warn).to.have.been.calledWith('SSR validation failed with status 500 for https://example.com');
+    });
+
+    it('should handle 404 errors', async () => {
+      fetchStub.resolves({
+        ok: false,
+        status: 404,
+      });
+
+      const result = await validateMetaTagsViaSSR('https://example.com', log);
+
+      expect(result).to.be.null;
+      expect(log.warn).to.have.been.calledWith('SSR validation failed with status 404 for https://example.com');
+    });
+
+    it('should handle network errors', async () => {
+      fetchStub.rejects(new Error('Network connection failed'));
+
+      const result = await validateMetaTagsViaSSR('https://example.com', log);
+
+      expect(result).to.be.null;
+      expect(log.warn).to.have.been.calledWith('Error during SSR validation for https://example.com: Network connection failed');
+    });
+
+    it('should handle timeout errors', async () => {
+      fetchStub.rejects(new Error('Request timeout'));
+
+      const result = await validateMetaTagsViaSSR('https://example.com', log);
+
+      expect(result).to.be.null;
+      expect(log.warn).to.have.been.calledWith('Error during SSR validation for https://example.com: Request timeout');
     });
   });
 
   describe('validateDetectedIssues', () => {
-    beforeEach(() => {
-      // Mock the internal validateMetaTagsViaSSR calls
-      sinon.stub(Date, 'now').returns(1000);
+    it('should return unchanged tags when no endpoints detected', async () => {
+      const detectedTags = {};
+
+      const result = await validateDetectedIssues(detectedTags, 'https://example.com', log);
+
+      expect(result).to.deep.equal({});
+      expect(fetchStub).not.to.have.been.called;
     });
 
-    it('should remove false positives for missing tags', async () => {
+    it('should remove false positives for missing tags found in SSR', async () => {
       const detectedTags = {
         '/page1': {
-          title: { issue: 'Missing title', tagContent: '' },
-          description: { issue: 'Missing description', tagContent: '' },
+          title: { issue: 'Missing title tag' },
+          description: { issue: 'Missing description' },
         },
         '/page2': {
-          h1: { issue: 'Missing h1', tagContent: '' },
+          h1: { issue: 'Missing h1' },
         },
       };
 
       const html1 = `
+        <!DOCTYPE html>
         <html>
           <head>
-            <title>Actual Title</title>
-            <meta name="description" content="Actual description">
+            <title>Page 1 Title</title>
+            <meta name="description" content="Page 1 description">
           </head>
         </html>
       `;
 
       const html2 = `
+        <!DOCTYPE html>
         <html>
           <body>
-            <h1>Actual H1</h1>
+            <h1>Page 2 Heading</h1>
           </body>
         </html>
       `;
@@ -254,90 +274,25 @@ describe('SSR Validator', () => {
       const result = await validateDetectedIssues(detectedTags, 'https://example.com', log);
 
       expect(result).to.deep.equal({});
-      expect(log.info.calledWith(sinon.match('False positive detected'))).to.be.true;
+      expect(log.info).to.have.been.calledWith('False positive detected for title on /page1 - tag exists in SSR');
+      expect(log.info).to.have.been.calledWith('False positive detected for description on /page1 - tag exists in SSR');
+      expect(log.info).to.have.been.calledWith('False positive detected for h1 on /page2 - tag exists in SSR');
+      expect(log.info).to.have.been.calledWith('SSR validation complete. Removed 3 false positives from 2 endpoints');
     });
 
-    it('should keep legitimate issues', async () => {
+    it('should keep real issues when not found in SSR', async () => {
       const detectedTags = {
         '/page1': {
-          title: { issue: 'Missing title', tagContent: '' },
-          description: { issue: 'Too short description', tagContent: 'Short' },
+          title: { issue: 'Missing title tag' },
+          description: { issue: 'Missing description' },
         },
       };
 
-      const html1 = `
-        <html>
-          <head>
-            <meta name="description" content="Short">
-          </head>
-        </html>
-      `;
-
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        text: async () => html1,
-      });
-
-      const result = await validateDetectedIssues(detectedTags, 'https://example.com', log);
-
-      // Title is still missing (not in SSR), description issue is not about missing
-      expect(result['/page1'].title).to.exist;
-      expect(result['/page1'].description).to.exist;
-    });
-
-    it('should skip endpoints without missing issues', async () => {
-      const detectedTags = {
-        '/page1': {
-          title: { issue: 'Too long title', tagContent: 'Very long title' },
-          description: { issue: 'Duplicate description', tagContent: 'Duplicate' },
-        },
-      };
-
-      const result = await validateDetectedIssues(detectedTags, 'https://example.com', log);
-
-      expect(result).to.deep.equal(detectedTags);
-      expect(fetchStub.called).to.be.false;
-    });
-
-    it('should handle validation errors gracefully', async () => {
-      const detectedTags = {
-        '/page1': {
-          title: { issue: 'Missing title', tagContent: '' },
-        },
-      };
-
-      fetchStub.rejects(new Error('Network error'));
-
-      const result = await validateDetectedIssues(detectedTags, 'https://example.com', log);
-
-      // Should keep the issue if validation fails
-      expect(result['/page1'].title).to.exist;
-      expect(log.warn.called).to.be.true;
-    });
-
-    it('should return unchanged when no detected tags', async () => {
-      const detectedTags = {};
-
-      const result = await validateDetectedIssues(detectedTags, 'https://example.com', log);
-
-      expect(result).to.deep.equal({});
-      expect(fetchStub.called).to.be.false;
-    });
-
-    it('should partially remove false positives', async () => {
-      const detectedTags = {
-        '/page1': {
-          title: { issue: 'Missing title', tagContent: '' },
-          description: { issue: 'Missing description', tagContent: '' },
-        },
-      };
-
-      // SSR only has title, not description
       const html = `
+        <!DOCTYPE html>
         <html>
           <head>
-            <title>Actual Title</title>
+            <title></title>
           </head>
         </html>
       `;
@@ -350,9 +305,169 @@ describe('SSR Validator', () => {
 
       const result = await validateDetectedIssues(detectedTags, 'https://example.com', log);
 
-      // Title should be removed (false positive), description should remain
-      expect(result['/page1'].title).to.be.undefined;
-      expect(result['/page1'].description).to.exist;
+      expect(result).to.deep.equal({
+        '/page1': {
+          title: { issue: 'Missing title tag' },
+          description: { issue: 'Missing description' },
+        },
+      });
+      expect(log.info).to.have.been.calledWith('SSR validation complete. Removed 0 false positives from 1 endpoints');
+    });
+
+    it('should only validate endpoints with missing issues', async () => {
+      const detectedTags = {
+        '/page1': {
+          title: { issue: 'Title too long' },
+          description: { issue: 'Description too short' },
+        },
+        '/page2': {
+          title: { issue: 'Missing title tag' },
+        },
+      };
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Page Title</title>
+          </head>
+        </html>
+      `;
+
+      fetchStub.resolves({
+        ok: true,
+        status: 200,
+        text: async () => html,
+      });
+
+      const result = await validateDetectedIssues(detectedTags, 'https://example.com', log);
+
+      // Only /page2 should be validated (has missing issue)
+      expect(fetchStub).to.have.been.calledOnce;
+      expect(result['/page1']).to.exist;
+      expect(result['/page2']).to.not.exist;
+    });
+
+    it('should handle partial false positives', async () => {
+      const detectedTags = {
+        '/page1': {
+          title: { issue: 'Missing title tag' },
+          description: { issue: 'Missing description' },
+          h1: { issue: 'Missing h1' },
+        },
+      };
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Found Title</title>
+          </head>
+        </html>
+      `;
+
+      fetchStub.resolves({
+        ok: true,
+        status: 200,
+        text: async () => html,
+      });
+
+      const result = await validateDetectedIssues(detectedTags, 'https://example.com', log);
+
+      expect(result).to.deep.equal({
+        '/page1': {
+          description: { issue: 'Missing description' },
+          h1: { issue: 'Missing h1' },
+        },
+      });
+      expect(log.info).to.have.been.calledWith('False positive detected for title on /page1 - tag exists in SSR');
+      expect(log.info).to.have.been.calledWith('SSR validation complete. Removed 1 false positives from 1 endpoints');
+    });
+
+    it('should handle SSR validation failures gracefully', async () => {
+      const detectedTags = {
+        '/page1': {
+          title: { issue: 'Missing title tag' },
+        },
+        '/page2': {
+          description: { issue: 'Missing description' },
+        },
+      };
+
+      fetchStub.onFirstCall().rejects(new Error('Network error'));
+      fetchStub.onSecondCall().resolves({
+        ok: true,
+        status: 200,
+        text: async () => '<html><head><meta name="description" content="Found"></head></html>',
+      });
+
+      const result = await validateDetectedIssues(detectedTags, 'https://example.com', log);
+
+      // First page should remain (validation failed)
+      // Second page should be removed (false positive)
+      expect(result).to.deep.equal({
+        '/page1': {
+          title: { issue: 'Missing title tag' },
+        },
+      });
+      expect(log.info).to.have.been.calledWith('False positive detected for description on /page2 - tag exists in SSR');
+    });
+
+    it('should skip validation for non-missing issues', async () => {
+      const detectedTags = {
+        '/page1': {
+          title: { issue: 'Title is too long (200 characters)' },
+          description: { issue: 'Description is empty' },
+        },
+      };
+
+      const result = await validateDetectedIssues(detectedTags, 'https://example.com', log);
+
+      expect(result).to.deep.equal(detectedTags);
+      expect(fetchStub).not.to.have.been.called;
+    });
+
+    it('should handle multiple endpoints with mixed results', async () => {
+      const detectedTags = {
+        '/page1': {
+          title: { issue: 'Missing title tag' },
+        },
+        '/page2': {
+          description: { issue: 'Missing description' },
+        },
+        '/page3': {
+          h1: { issue: 'Missing h1' },
+        },
+      };
+
+      fetchStub.onCall(0).resolves({
+        ok: true,
+        status: 200,
+        text: async () => '<html><head><title>Found</title></head></html>',
+      });
+
+      fetchStub.onCall(1).resolves({
+        ok: false,
+        status: 500,
+      });
+
+      fetchStub.onCall(2).resolves({
+        ok: true,
+        status: 200,
+        text: async () => '<html><body></body></html>',
+      });
+
+      const result = await validateDetectedIssues(detectedTags, 'https://example.com', log);
+
+      expect(result).to.deep.equal({
+        '/page2': {
+          description: { issue: 'Missing description' },
+        },
+        '/page3': {
+          h1: { issue: 'Missing h1' },
+        },
+      });
+      expect(log.info).to.have.been.calledWith('SSR validation complete. Removed 1 false positives from 3 endpoints');
     });
   });
 });

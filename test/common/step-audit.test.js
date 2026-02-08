@@ -20,7 +20,6 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-
 import { AuditBuilder } from '../../src/common/audit-builder.js';
 import { MockContextBuilder } from '../shared.js';
 
@@ -205,7 +204,6 @@ describe('Step-based Audit Tests', () => {
           auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
           auditType: 'content-audit',
           fullAuditRef: 's3://test/123',
-          scrapeJobId: undefined,
         },
       };
 
@@ -251,7 +249,6 @@ describe('Step-based Audit Tests', () => {
         auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
         auditType: 'content-audit',
         fullAuditRef: 's3://test/123',
-        scrapeJobId: undefined,
         week: 35,
         year: 2025,
         customField: 'value',
@@ -304,7 +301,6 @@ describe('Step-based Audit Tests', () => {
           auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
           auditType: 'content-audit',
           fullAuditRef: 's3://test/123',
-          scrapeJobId: undefined,
         },
       };
 
@@ -454,15 +450,31 @@ describe('Step-based Audit Tests', () => {
       ]);
       const mockScrapeClient = {
         getScrapeResultPaths: sandbox.stub().resolves(mockScrapeResultPaths),
+        getScrapeJobUrlResults: sandbox.stub().resolves([
+          {
+            url: 'https://space.cat/',
+            status: 'COMPLETE',
+          },
+          {
+            url: 'https://space.cat/page1',
+            status: 'COMPLETE',
+          },
+          {
+            url: 'https://space.cat/page2',
+            status: 'COMPLETE',
+          },
+        ]),
       };
       sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
 
       // Create a simple audit for testing scrape result loading
       let capturedScrapeResultPaths;
+      let capturedScrapeJobId;
       const scrapeResultAudit = new AuditBuilder()
         .addStep('process-scrape', async (stepContext) => {
-          // Capture the scrapeResultPaths for verification outside the step
+          // Capture the scrapeResultPaths and scrapeJobId for verification outside the step
           capturedScrapeResultPaths = stepContext.scrapeResultPaths;
+          capturedScrapeJobId = stepContext.scrapeJobId;
           return { status: 'processed' };
         })
         .build();
@@ -471,6 +483,7 @@ describe('Step-based Audit Tests', () => {
         getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
         getAuditType: () => 'content-audit',
         getFullAuditRef: () => 's3://test/123',
+        getAuditedAt: () => mockDate,
       };
       context.dataAccess.Audit.findById.resolves(existingAudit);
 
@@ -492,12 +505,428 @@ describe('Step-based Audit Tests', () => {
       expect(ScrapeClient.createFrom).to.have.been.calledOnce;
       expect(mockScrapeClient.getScrapeResultPaths).to.have.been.calledWith('scrape-job-456');
 
-      // Verify the step received the scrape result paths correctly
+      // Verify the step received the scrapeJobId (line 168 in step-audit.js)
+      expect(capturedScrapeJobId).to.equal('scrape-job-456');
+
+      // Verify the step received the scrape result paths correctly (lines 169-171)
       expect(capturedScrapeResultPaths).to.be.instanceOf(Map);
       expect(capturedScrapeResultPaths.size).to.equal(3);
       expect(capturedScrapeResultPaths.get('https://space.cat/')).to.equal('s3://bucket/path1.json');
       expect(capturedScrapeResultPaths.get('https://space.cat/page1')).to.equal('s3://bucket/path2.json');
       expect(capturedScrapeResultPaths.get('https://space.cat/page2')).to.equal('s3://bucket/path3.json');
+    });
+  });
+
+  describe('SQS Abort Signal Handling', () => {
+    beforeEach(() => {
+      // Reset warn stub to ensure clean state for these tests
+      context.log.warn.resetHistory();
+
+      // Ensure configuration allows all audit types
+      configuration.isHandlerEnabledForSite.returns(true);
+      configuration.getHandlers.returns({
+        'content-audit': { productCodes: ['ASO', 'LLMO'] },
+        cwv: { productCodes: ['ASO', 'LLMO'] },
+        'meta-tags': { productCodes: ['ASO', 'LLMO'] },
+        'broken-backlinks': { productCodes: ['ASO', 'LLMO'] },
+        sitemap: { productCodes: ['ASO', 'LLMO'] },
+      });
+    });
+
+    it('aborts audit when receiving abort signal in message', async () => {
+      // Mock site URL
+      nock('https://space.cat')
+        .get('/')
+        .reply(200);
+
+      // Create a simple audit for testing abort handling (step should not execute due to abort)
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('process', async () => ({
+          status: 'should-not-reach',
+          findings: ['should-not-reach'],
+        }))
+        .build();
+
+      const messageWithAbort = {
+        type: 'cwv',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        jobId: 'abort-job-123',
+        abort: {
+          reason: 'bot-protection',
+          details: {
+            blockedUrlsCount: 5,
+            totalUrlsCount: 10,
+            blockedUrls: [
+              { url: 'https://example.com/page1', blockerType: 'cloudflare', httpStatus: 403 },
+              { url: 'https://example.com/page2', blockerType: 'cloudflare', httpStatus: 403 },
+              { url: 'https://example.com/page3', blockerType: 'imperva', httpStatus: 403 },
+            ],
+            byBlockerType: { cloudflare: 3, imperva: 2 },
+            byHttpStatus: { 403: 5 },
+            auditType: 'cwv',
+            siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+            siteUrl: 'https://example.com',
+          },
+        },
+        auditContext: {},
+      };
+
+      const result = await scrapeResultAudit.run(messageWithAbort, context);
+
+      // Should return ok status (audit aborted early)
+      expect(result.status).to.equal(200);
+
+      // Verify [BOT-BLOCKED] log with detailed info including jobId
+      expect(context.log.warn).to.have.been.calledWithMatch(/\[BOT-BLOCKED\] Audit aborted for jobId=abort-job-123/);
+      const botBlockedCall = context.log.warn.args.find((call) => call[0] && call[0].includes('[BOT-BLOCKED]'));
+      expect(botBlockedCall).to.exist;
+      const botBlockedLog = botBlockedCall[0];
+      expect(botBlockedLog).to.include('Audit aborted for jobId=abort-job-123');
+      expect(botBlockedLog).to.include('type=cwv');
+      expect(botBlockedLog).to.include('site=https://space.cat');
+      expect(botBlockedLog).to.match(/HTTP Status: \[403: 5\]/);
+      expect(botBlockedLog).to.match(/Blocker Types: \[.*cloudflare: 3.*imperva: 2.*\]/);
+      expect(botBlockedLog).to.include('5/10 URLs blocked');
+      expect(botBlockedLog).to.include('https://example.com/page1');
+      expect(botBlockedLog).to.include('https://example.com/page2');
+      expect(botBlockedLog).to.include('https://example.com/page3');
+    });
+
+    it('continues normal audit when no abort signal present', async () => {
+      // Mock site URL
+      nock('https://space.cat')
+        .get('/')
+        .reply(200);
+
+      // Mock audit creation
+      const createdAudit = {
+        getId: () => 'audit-normal-123',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/normal',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      // Create a simple audit for testing normal flow (final step returns status directly)
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('initial', async () => ({
+          status: 'complete',
+          findings: ['test'],
+        }))
+        .build();
+
+      const normalMessage = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        jobId: 'normal-job-456',
+        auditContext: {},
+      };
+
+      const result = await scrapeResultAudit.run(normalMessage, context);
+
+      // Should execute normally without abort
+      expect(result.status).to.equal(200);
+      expect(context.log.warn).to.not.have.been.calledWithMatch(/\[AUDIT-ABORTED\]/);
+      expect(context.log.warn).to.not.have.been.calledWithMatch(/\[BOT-BLOCKED\]/);
+    });
+
+    it('handles generic abort reasons other than bot-protection', async () => {
+      // Mock site URL
+      nock('https://space.cat')
+        .get('/')
+        .reply(200);
+
+      // Create a simple audit for testing generic abort (step should not execute)
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('process', async () => ({
+          status: 'should-not-reach',
+          findings: ['should-not-reach'],
+        }))
+        .build();
+
+      const messageWithGenericAbort = {
+        type: 'meta-tags',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        jobId: 'generic-abort-789',
+        abort: {
+          reason: 'rate-limited',
+          details: {
+            message: 'Rate limit exceeded',
+            retryAfter: 3600,
+          },
+        },
+        auditContext: {},
+      };
+
+      const result = await scrapeResultAudit.run(messageWithGenericAbort, context);
+
+      // Audit should abort early and return ok status
+      expect(result.status).to.equal(200);
+
+      // Verify no bot-protection specific logs for generic abort
+      expect(context.log.warn).to.not.have.been.calledWithMatch(/\[BOT-BLOCKED\]/);
+    });
+
+    it('includes all blocked URLs in log message', async () => {
+      // Mock site URL
+      nock('https://space.cat')
+        .get('/')
+        .reply(200);
+
+      // Create a simple audit for testing many URLs (step should not execute due to abort)
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('process', async () => ({
+          status: 'should-not-reach',
+          findings: ['should-not-reach'],
+        }))
+        .build();
+
+      const longBlockedUrls = Array.from({ length: 50 }, (_, i) => ({
+        url: `https://example.com/page${i + 1}`,
+        blockerType: 'cloudflare',
+        httpStatus: 403,
+      }));
+
+      const messageWithManyUrls = {
+        type: 'broken-backlinks',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        jobId: 'many-urls-job',
+        abort: {
+          reason: 'bot-protection',
+          details: {
+            blockedUrlsCount: 50,
+            totalUrlsCount: 100,
+            blockedUrls: longBlockedUrls,
+            byBlockerType: { cloudflare: 50 },
+            byHttpStatus: { 403: 50 },
+            auditType: 'broken-backlinks',
+            siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+            siteUrl: 'https://example.com',
+          },
+        },
+        auditContext: {},
+      };
+
+      const result = await scrapeResultAudit.run(messageWithManyUrls, context);
+
+      // Should abort and return ok status
+      expect(result.status).to.equal(200);
+
+      // Verify [BOT-BLOCKED] log was called
+      expect(context.log.warn).to.have.been.calledWithMatch(/\[BOT-BLOCKED\] Audit aborted for jobId=many-urls-job/);
+      expect(context.log.warn).to.have.been.calledWithMatch(/50\/100 URLs blocked/);
+
+      // Verify all URLs are in the log
+      const botBlockedCall = context.log.warn.args.find((call) => call && call[0] && call[0].includes('[BOT-BLOCKED]'));
+      expect(botBlockedCall).to.exist;
+      const botBlockedLog = botBlockedCall[0];
+      expect(botBlockedLog).to.include('Audit aborted for jobId=many-urls-job');
+      expect(botBlockedLog).to.include('type=broken-backlinks');
+      expect(botBlockedLog).to.include('site=https://space.cat');
+      expect(botBlockedLog).to.match(/HTTP Status: \[403: 50\]/);
+      expect(botBlockedLog).to.match(/Blocker Types: \[cloudflare: 50\]/);
+      expect(botBlockedLog).to.include('50/100 URLs blocked');
+      // Check first and last URL
+      expect(botBlockedLog).to.include('https://example.com/page1');
+      expect(botBlockedLog).to.include('https://example.com/page50');
+    });
+
+    it('handles abort with multiple blocker types and status codes', async () => {
+      // Mock site URL
+      nock('https://space.cat')
+        .get('/')
+        .reply(200);
+
+      // Create a simple audit for testing mixed blockers (step should not execute due to abort)
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('process', async () => ({
+          status: 'should-not-reach',
+          findings: ['should-not-reach'],
+        }))
+        .build();
+
+      const messageWithMixedBlockers = {
+        type: 'sitemap',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        jobId: 'mixed-blockers-job',
+        abort: {
+          reason: 'bot-protection',
+          details: {
+            blockedUrlsCount: 10,
+            totalUrlsCount: 20,
+            blockedUrls: [
+              { url: 'https://example.com/cf1', blockerType: 'cloudflare', httpStatus: 403 },
+              { url: 'https://example.com/cf2', blockerType: 'cloudflare', httpStatus: 403 },
+              { url: 'https://example.com/im1', blockerType: 'imperva', httpStatus: 403 },
+              { url: 'https://example.com/ak1', blockerType: 'akamai', httpStatus: 429 },
+              { url: 'https://example.com/ak2', blockerType: 'akamai', httpStatus: 503 },
+            ],
+            byBlockerType: { cloudflare: 2, imperva: 1, akamai: 2 },
+            byHttpStatus: { 403: 3, 429: 1, 503: 1 },
+            auditType: 'sitemap',
+            siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+            siteUrl: 'https://example.com',
+          },
+        },
+        auditContext: {},
+      };
+
+      const result = await scrapeResultAudit.run(messageWithMixedBlockers, context);
+
+      // Should abort and return ok status
+      expect(result.status).to.equal(200);
+
+      // Verify [BOT-BLOCKED] log was called
+      expect(context.log.warn).to.have.been.calledWithMatch(/\[BOT-BLOCKED\] Audit aborted for jobId=mixed-blockers-job/);
+
+      // Verify status details in log
+      const botBlockedCall = context.log.warn.args.find((call) => call && call[0] && call[0].includes('[BOT-BLOCKED]'));
+      expect(botBlockedCall).to.exist;
+      const botBlockedLog = botBlockedCall[0];
+      expect(botBlockedLog).to.include('Audit aborted for jobId=mixed-blockers-job');
+      expect(botBlockedLog).to.include('type=sitemap');
+      expect(botBlockedLog).to.include('site=https://space.cat');
+      expect(botBlockedLog).to.match(/HTTP Status: \[.*403: 3.*429: 1.*503: 1.*\]/);
+      expect(botBlockedLog).to.match(/Blocker Types: \[.*cloudflare: 2.*imperva: 1.*akamai: 2.*\]/);
+      expect(botBlockedLog).to.include('10/20 URLs blocked');
+    });
+
+    it('handles abort with missing details fields (fallback to empty/none)', async () => {
+      // Mock site URL
+      nock('https://space.cat')
+        .get('/')
+        .reply(200);
+
+      // Create a simple audit for testing missing fields
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('process', async () => ({
+          status: 'should-not-reach',
+          findings: ['should-not-reach'],
+        }))
+        .build();
+
+      const messageWithMissingFields = {
+        type: 'cwv',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        jobId: 'missing-fields-job',
+        abort: {
+          reason: 'bot-protection',
+          details: {
+            blockedUrlsCount: 5,
+            totalUrlsCount: 10,
+            // Missing: byBlockerType, byHttpStatus, blockedUrls
+            auditType: 'cwv',
+            siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+            siteUrl: 'https://example.com',
+          },
+        },
+        auditContext: {},
+      };
+
+      const result = await scrapeResultAudit.run(messageWithMissingFields, context);
+
+      // Should abort and return ok status
+      expect(result.status).to.equal(200);
+
+      // Verify [BOT-BLOCKED] log was called
+      expect(context.log.warn).to.have.been.calledWithMatch(/\[BOT-BLOCKED\]/);
+
+      // Verify fallback handling
+      const botBlockedCall = context.log.warn.args.find((call) => call && call[0] && call[0].includes('[BOT-BLOCKED]'));
+      expect(botBlockedCall).to.exist;
+      const botBlockedLog = botBlockedCall[0];
+
+      // Should use 'none' for missing blockedUrls
+      expect(botBlockedLog).to.include('Bot Protected URLs: [none]');
+
+      // Should have empty HTTP Status and Blocker Types
+      expect(botBlockedLog).to.include('HTTP Status: []');
+      expect(botBlockedLog).to.include('Blocker Types: []');
+    });
+
+    it('handles bot-protection abort with null details (fallback to empty object)', async () => {
+      // Mock site URL
+      nock('https://space.cat')
+        .get('/')
+        .reply(200);
+
+      // Create a simple audit for testing null details
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('process', async () => ({
+          status: 'should-not-reach',
+          findings: ['should-not-reach'],
+        }))
+        .build();
+
+      const messageWithNullDetails = {
+        type: 'cwv',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        jobId: 'null-details-job',
+        abort: {
+          reason: 'bot-protection',
+          details: null, // Explicitly null to trigger || {} fallback
+        },
+        auditContext: {},
+      };
+
+      const result = await scrapeResultAudit.run(messageWithNullDetails, context);
+
+      // Should abort and return ok status
+      expect(result.status).to.equal(200);
+
+      // Verify the result includes the abort reason
+      const resultBody = await result.json();
+      expect(resultBody.skipped).to.be.true;
+      expect(resultBody.reason).to.equal('bot-protection');
+    });
+
+    it('handles errors during abort processing and rethrows', async () => {
+      // Create a site object that throws an error when getBaseURL is called
+      const errorSite = {
+        getId: () => '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        getBaseURL: () => {
+          throw new Error('Site URL retrieval failed');
+        },
+        getIsLive: () => true,
+      };
+
+      // Override Site.findById to return the error-throwing site
+      context.dataAccess.Site.findById.resolves(errorSite);
+
+      // Mock site URL resolution request (even though it won't reach this in handleAbort)
+      nock('https://space.cat')
+        .get('/')
+        .reply(200);
+
+      // Create a simple audit for testing error handling
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('process', async () => ({
+          status: 'should-not-reach',
+          findings: ['should-not-reach'],
+        }))
+        .build();
+
+      const messageWithAbort = {
+        type: 'cwv',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        jobId: 'error-handling-job',
+        abort: {
+          reason: 'bot-protection',
+          details: {
+            blockedUrlsCount: 3,
+            totalUrlsCount: 5,
+            byBlockerType: { cloudflare: 3 },
+            byHttpStatus: { 403: 3 },
+            blockedUrls: [
+              { url: 'https://example.com/page1', blockerType: 'cloudflare', httpStatus: 403 },
+            ],
+          },
+        },
+        auditContext: {},
+      };
+
+      // Should throw the error from site.getBaseURL during handleAbort
+      await expect(scrapeResultAudit.run(messageWithAbort, context))
+        .to.be.rejectedWith('Site URL retrieval failed');
     });
   });
 });

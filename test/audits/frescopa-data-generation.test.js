@@ -480,14 +480,14 @@ describe('Frescopa Data Generation Handler', () => {
       expect(result.status).to.equal(200);
     });
 
-    it('should handle Sunday correctly in ISO week calculation (tests dayNum || 7 on line 109 and 125)', async () => {
-      // This tests the d.getUTCDay() || 7 logic on lines 109 and 125
+    it('should handle Sunday correctly in ISO week calculation (tests dayNum || 7 on line 114 and 130)', async () => {
+      // This tests the d.getUTCDay() || 7 logic on lines 114 and 130
       // Sunday dates (getUTCDay() === 0) trigger the || 7 fallback
-      // Sunday, January 5, 2025 is in week 01 of 2025
+      // Sunday, January 5, 2025 is in week 01 of 2025 (getUTCDay() returns 0)
       // We need to mock the current date to be a Sunday to trigger automatic week calculation
       
       const clock = sandbox.useFakeTimers({
-        now: new Date('2025-01-05T00:00:00Z').getTime(), // This is a Sunday
+        now: new Date(Date.UTC(2025, 0, 5, 12, 0, 0)).getTime(), // Sunday, Jan 5, 2025 at noon UTC
         shouldAdvanceTime: true,
         advanceTimeDelta: 20,
       });
@@ -539,6 +539,53 @@ describe('Frescopa Data Generation Handler', () => {
           expect(report.status).to.equal('success');
           expect(report.operations).to.have.lengthOf(6); // 1 copy + 4 moves + 1 unpublish
         });
+      } finally {
+        clock.restore();
+      }
+    });
+
+    it('should handle Sunday at year boundary (covers both getISOWeekNumber and getISOWeekYear)', async () => {
+      // Test Sunday, December 31, 2023 (week 52 of 2023)
+      // This ensures both line 114 (getISOWeekNumber) and line 130 (getISOWeekYear) are covered
+      // when getUTCDay() returns 0 (Sunday) at a year boundary
+      
+      const clock = sandbox.useFakeTimers({
+        now: new Date(Date.UTC(2023, 11, 31, 12, 0, 0)).getTime(), // Sunday, Dec 31, 2023 at noon UTC
+        shouldAdvanceTime: true,
+        advanceTimeDelta: 20,
+      });
+      
+      const yearBoundarySundayQueryIndex = {
+        data: [
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w51-2023.json', lastModified: '2023-12-24' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w50-2023.json', lastModified: '2023-12-17' },
+          { path: '/frescopa.coffee/agentic-traffic/agentictraffic-w49-2023.json', lastModified: '2023-12-10' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w51-2023.json', lastModified: '2023-12-24' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w50-2023.json', lastModified: '2023-12-17' },
+          { path: '/frescopa.coffee/brand-presence/brandpresence-all-w49-2023.json', lastModified: '2023-12-10' },
+          { path: '/frescopa.coffee/referral-traffic/referral-traffic-w51-2023.json', lastModified: '2023-12-24' },
+          { path: '/frescopa.coffee/referral-traffic/referral-traffic-w50-2023.json', lastModified: '2023-12-17' },
+          { path: '/frescopa.coffee/referral-traffic/referral-traffic-w49-2023.json', lastModified: '2023-12-10' },
+        ],
+      };
+
+      fetchStub.resolves({
+        ok: true,
+        json: sandbox.stub().resolves(yearBoundarySundayQueryIndex),
+      });
+
+      const message = {
+        auditContext: {}, // No weekIdentifier - will auto-calculate using Sunday date at year boundary
+      };
+
+      try {
+        const response = await handlerModule.default.run(message, context);
+        const result = await response.json();
+
+        // Should calculate week identifier using Sunday logic (|| 7 branch) at year boundary
+        // December 31, 2023 (Sunday) is in week 52 of 2023
+        expect(response.status).to.equal(200);
+        expect(result.targetWeekIdentifier).to.equal('w52-2023'); // Week 52 from Dec 31, 2023
       } finally {
         clock.restore();
       }

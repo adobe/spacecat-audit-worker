@@ -90,4 +90,29 @@ describe('Index Tests', () => {
     const resp = await main(request, context);
     expect(resp.status).to.equal(200);
   });
+
+  it('logs abort information when message contains abort property (covers line 227)', async () => {
+    const infoSpy = sandbox.spy(console, 'info');
+    messageBodyJson.abort = {
+      reason: 'bot-protection',
+      details: {
+        blockedUrlsCount: 5,
+        totalUrlsCount: 10,
+      },
+    };
+    messageBodyJson.jobId = 'test-job-123';
+    messageBodyJson.siteId = 'test-site-456';
+    context.invocation.event.Records[0].body = JSON.stringify(messageBodyJson);
+
+    const resp = await main(request, context);
+
+    expect(resp.status).to.equal(200);
+    // Verify that log.info was called with message object containing abort information
+    const logCall = infoSpy.args.find((args) => args[1]?.abort);
+    expect(logCall).to.exist;
+    expect(logCall[1]).to.have.property('abort');
+    expect(logCall[1].abort.reason).to.equal('bot-protection');
+    expect(logCall[1].jobId).to.equal('test-job-123');
+    expect(logCall[1].siteId).to.equal('test-site-456');
+  });
 });
