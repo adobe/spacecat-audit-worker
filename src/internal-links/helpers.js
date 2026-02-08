@@ -11,7 +11,6 @@
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { createAuditLogger } from '../common/context-logger.js';
-import { normalizeUrl } from './url-utils.js';
 
 const AUDIT_TYPE = 'broken-internal-links';
 
@@ -207,20 +206,19 @@ async function checkLinkWithGet(url, isAsset, log) {
 export async function isLinkInaccessible(url, baseLog, siteId) {
   const log = createAuditLogger(baseLog, AUDIT_TYPE, siteId);
 
-  // Normalize URL before validation for consistency with crawl detection
-  const normalizedUrl = normalizeUrl(url);
-
-  const isAsset = isStaticAsset(normalizedUrl);
+  // Validate URL as it appears on the page (no path encoding rewrite).
+  // Rewriting %20→hyphen would hide broken canonicals that point to the wrong URL.
+  const isAsset = isStaticAsset(url);
 
   // Static assets often fail HEAD, so skip to GET with Range header
   if (!isAsset) {
-    const headResult = await checkLinkWithHead(normalizedUrl, log);
+    const headResult = await checkLinkWithHead(url, log);
     if (headResult !== null) {
       return headResult;
     }
   }
 
-  return checkLinkWithGet(normalizedUrl, isAsset, log);
+  return checkLinkWithGet(url, isAsset, log);
 }
 
 /**

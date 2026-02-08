@@ -30,7 +30,6 @@ import {
   mergeAndDeduplicate,
   PAGES_PER_BATCH,
 } from './crawl-detection.js';
-import { normalizeUrl } from './url-utils.js';
 import {
   loadBatchState,
   saveBatchState,
@@ -188,9 +187,9 @@ export async function internalLinksAuditRunner(auditUrl, context) {
         && isWithinAuditScope(result.link.url_to, baseURL)
       ))
       .map((result) => ({
-        // Normalize URLs for consistent comparison with crawl detection
-        urlFrom: normalizeUrl(result.link.url_from),
-        urlTo: normalizeUrl(result.link.url_to),
+        // Store URLs as-is (same as crawl) so broken canonicals with wrong encoding are reported
+        urlFrom: result.link.url_from,
+        urlTo: result.link.url_to,
         trafficDomain: result.link.traffic_domain,
       }));
 

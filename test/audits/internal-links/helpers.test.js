@@ -539,32 +539,31 @@ describe('isLinkInaccessible - Asset Handling', () => {
     expect(result).to.be.false;
   });
 
-  it('should normalize URL before checking (trailing slash)', async function call() {
+  it('should validate URL as-is (trailing slash not stripped)', async function call() {
     this.timeout(6000);
-    // Input URL has trailing slash, but normalized URL should not
+    // URL is validated as it appears on the page (no pre-check normalization)
     nock('https://example.com')
-      .head('/page')
+      .head('/page/')
       .reply(404);
 
     const result = await isLinkInaccessible('https://example.com/page/', mockLog, 'test-site-id');
     expect(result).to.be.true;
   });
 
-  it('should normalize URL before checking (URL-encoded space)', async function call() {
+  it('should validate URL as-is (URL-encoded space not rewritten)', async function call() {
     this.timeout(6000);
-    // Input URL has %20, but normalized URL should have hyphen
+    // URL with %20 is validated as-is so broken canonicals with wrong encoding are caught
     nock('https://example.com')
-      .head('/blogs/sage-green-colour-combination-for-the-wall.html')
+      .head('/blogs/sage-green-colour-%20combination-for-the-wall.html')
       .reply(404);
 
     const result = await isLinkInaccessible('https://example.com/blogs/sage-green-colour-%20combination-for-the-wall.html', mockLog, 'test-site-id');
     expect(result).to.be.true;
   });
 
-  it('should normalize URL before checking (www prefix)', async function call() {
+  it('should validate URL as-is (www preserved)', async function call() {
     this.timeout(6000);
-    // Input URL has www prefix, but normalized URL should not
-    nock('https://example.com')
+    nock('https://www.example.com')
       .head('/page')
       .reply(200);
 
@@ -572,11 +571,11 @@ describe('isLinkInaccessible - Asset Handling', () => {
     expect(result).to.be.false;
   });
 
-  it('should normalize URL before checking (multiple issues combined)', async function call() {
+  it('should validate URL as-is (encoding and trailing slash preserved)', async function call() {
     this.timeout(6000);
-    // Input URL has trailing slash, %20, and www - all should be normalized
-    nock('https://example.com')
-      .head('/path/with-spaces/page.html')
+    // No normalization before check: path with %20 and trailing slash is requested as-is
+    nock('https://www.example.com')
+      .head('/path/with%20spaces/page.html/')
       .reply(200);
 
     const result = await isLinkInaccessible('https://www.example.com/path/with%20spaces/page.html/', mockLog, 'test-site-id');

@@ -60,24 +60,24 @@ const AUDIT_RESULT_DATA = [
 ];
 
 // Audit result with priority (after normalization and priority calculation)
-// URLs are normalized: www prefix removed, trailing slashes removed, etc.
+// URLs are normalized (path/trailing slash etc.); www prefix preserved
 const AUDIT_RESULT_DATA_WITH_PRIORITY = [
   {
     trafficDomain: 1800,
-    urlTo: 'https://petplace.com/a01',
-    urlFrom: 'https://petplace.com/a02nf',
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a02nf',
     priority: 'high',
   },
   {
     trafficDomain: 1200,
-    urlTo: 'https://petplace.com/ax02',
-    urlFrom: 'https://petplace.com/ax02nf',
+    urlTo: 'https://www.petplace.com/ax02',
+    urlFrom: 'https://www.petplace.com/ax02nf',
     priority: 'medium',
   },
   {
     trafficDomain: 200,
-    urlTo: 'https://petplace.com/a01',
-    urlFrom: 'https://petplace.com/a01nf',
+    urlTo: 'https://www.petplace.com/a01',
+    urlFrom: 'https://www.petplace.com/a01nf',
     priority: 'low',
   },
 ];
@@ -259,8 +259,8 @@ describe('Broken internal links audit', () => {
     // Should handle the rejection gracefully and only include successful validations
     expect(result.auditResult.success).to.equal(true);
     expect(result.auditResult.brokenInternalLinks.length).to.equal(1);
-    // URLs are normalized (www prefix removed)
-    expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://example.com/valid');
+    // URLs are normalized (www preserved)
+    expect(result.auditResult.brokenInternalLinks[0].urlTo).to.equal('https://www.example.com/valid');
     
     // Should have logged the error - check with matcher for the prefix
     const errorCalls = contextWithError.log.error.getCalls();
@@ -1780,14 +1780,6 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(context.log.warn).to.have.been.calledWith(
       sinon.match(/Capping URLs from 1200 to 1000/),
     );
-  }).timeout(10000);
-
-  // Note: This test is skipped because with MAX_URLS_TO_PROCESS = 1000 and MAX_ALTERNATIVE_URLS = 100,
-  // the alternativeUrls limit (lines 423-425 in handler.js) could be reached in theory,
-  // but it would require very specific conditions that are difficult to test reliably.
-  // topPages is capped to 1000, and alternativeUrls are a filtered subset.
-  it.skip('should limit alternativeUrls when exceeding MAX_ALTERNATIVE_URLS', async () => {
-    // Test skipped - difficult to test reliably with current setup
   }).timeout(10000);
 
 });

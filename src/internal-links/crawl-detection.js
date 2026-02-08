@@ -14,7 +14,6 @@ import { load as cheerioLoad } from 'cheerio';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { isWithinAuditScope } from './subpath-filter.js';
 import { createAuditLogger } from '../common/context-logger.js';
-import { normalizeUrl } from './url-utils.js';
 import { isLinkInaccessible } from './helpers.js';
 
 const AUDIT_TYPE = 'broken-internal-links';
@@ -53,7 +52,7 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
 
       if (linkHostname === baseHostname) {
         internalLinks.push({
-          url: normalizeUrl(absoluteUrl),
+          url: absoluteUrl,
           anchorText: $a.text().trim() || '[no text]',
           type: 'link',
         });
@@ -75,7 +74,7 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
 
       if (linkHostname === baseHostname) {
         internalLinks.push({
-          url: normalizeUrl(absoluteUrl),
+          url: absoluteUrl,
           anchorText: '[form action]',
           type: 'form',
         });
@@ -96,7 +95,7 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
 
       if (linkHostname === baseHostname) {
         internalLinks.push({
-          url: normalizeUrl(absoluteUrl),
+          url: absoluteUrl,
           anchorText: '[canonical]',
           type: 'canonical',
         });
@@ -118,7 +117,7 @@ function extractInternalLinks($, pageUrl, baseHostname, log) {
       if (linkHostname === baseHostname) {
         const hreflang = $(el).attr('hreflang');
         internalLinks.push({
-          url: normalizeUrl(absoluteUrl),
+          url: absoluteUrl,
           anchorText: `[alternate:${hreflang}]`,
           type: 'alternate',
         });
@@ -155,7 +154,7 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
         const path = new URL(absoluteUrl).pathname.toLowerCase();
         const type = path.endsWith('.svg') ? 'svg' : 'image';
         assetReferences.push({
-          url: normalizeUrl(absoluteUrl),
+          url: absoluteUrl,
           type,
         });
       }
@@ -176,7 +175,7 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
 
       if (assetHostname === baseHostname || assetHostname.endsWith(`.${baseHostname}`)) {
         assetReferences.push({
-          url: normalizeUrl(absoluteUrl),
+          url: absoluteUrl,
           type: 'css',
         });
       }
@@ -197,7 +196,7 @@ function extractAssetReferences($, pageUrl, baseHostname, log) {
 
       if (assetHostname === baseHostname || assetHostname.endsWith(`.${baseHostname}`)) {
         assetReferences.push({
-          url: normalizeUrl(absoluteUrl),
+          url: absoluteUrl,
           type: 'js',
         });
       }

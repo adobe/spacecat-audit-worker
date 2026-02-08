@@ -1271,7 +1271,7 @@ describe('Crawl Detection Module', () => {
       expect(isLinkInaccessibleStub).to.not.have.been.calledWith('javascript:void(0)');
     });
 
-    it('should apply URL normalization to all extracted links', async () => {
+    it('should preserve original URL encoding when extracting links (no pre-validation normalization)', async () => {
       const htmlWithEncodedUrls = `
         <html>
           <head>
@@ -1305,17 +1305,17 @@ describe('Crawl Detection Module', () => {
         initialWorkingUrls: [],
       }, mockContext);
 
-      // All URLs should be normalized (no trailing slashes, no %20, no www)
+      // URLs reported as-is (no %20→hyphen) so broken canonicals with wrong encoding are caught
       expect(result.results).to.have.lengthOf(3);
-      
+
       const linkResult = result.results.find((r) => r.itemType === 'link');
-      expect(linkResult.urlTo).to.equal('https://example.com/path/with-spaces');
+      expect(linkResult.urlTo).to.equal('https://example.com/path/with%20spaces/');
 
       const formResult = result.results.find((r) => r.itemType === 'form');
-      expect(formResult.urlTo).to.equal('https://example.com/submit');
+      expect(formResult.urlTo).to.equal('https://www.example.com/submit/');
 
       const canonicalResult = result.results.find((r) => r.itemType === 'canonical');
-      expect(canonicalResult.urlTo).to.equal('https://example.com/page');
+      expect(canonicalResult.urlTo).to.equal('https://example.com/page/');
     });
 
     it('should skip canonical links without href attribute', async () => {
