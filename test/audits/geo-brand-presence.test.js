@@ -99,6 +99,7 @@ describe('Geo Brand Presence Handler', () => {
       endDate: undefined,
       auditResult: { keywordQuestions: [], aiPlatform: undefined },
       fullAuditRef: finalUrl,
+      allowCache: true,
     });
   });
 
@@ -112,6 +113,7 @@ describe('Geo Brand Presence Handler', () => {
       endDate: '2025-08-13',
       auditResult: { keywordQuestions: [], aiPlatform: undefined },
       fullAuditRef: finalUrl,
+      allowCache: true,
     });
   });
 
@@ -125,6 +127,7 @@ describe('Geo Brand Presence Handler', () => {
       endDate: undefined,
       auditResult: { keywordQuestions: [], aiPlatform: undefined },
       fullAuditRef: finalUrl,
+      allowCache: true,
     });
   });
 
@@ -142,6 +145,7 @@ describe('Geo Brand Presence Handler', () => {
       endDate: '2025-09-15',
       auditResult: { keywordQuestions: [], aiPlatform: 'gemini' },
       fullAuditRef: finalUrl,
+      allowCache: true,
     });
     expect(log.debug).to.have.been.calledWith(
       'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s, referenceDate: %s',
@@ -163,6 +167,7 @@ describe('Geo Brand Presence Handler', () => {
       endDate: undefined,
       auditResult: { keywordQuestions: [], aiPlatform: undefined },
       fullAuditRef: finalUrl,
+      allowCache: true,
     });
     expect(log.warn).to.have.been.calledWith(
       'GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s',
