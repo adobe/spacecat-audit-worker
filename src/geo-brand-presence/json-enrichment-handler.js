@@ -46,7 +46,7 @@ import {
   releaseEnrichmentLock,
   transformWebSearchProviderForMystique,
 } from './util.js';
-import { getSignedUrl } from '../utils/getPresignedUrl.js';
+import { getPresignedUrl } from '../utils/getPresignedUrl.js';
 
 const AUDIT_NAME = 'GEO_BRAND_PRESENCE_JSON_ENRICHMENT';
 
@@ -57,7 +57,7 @@ const AUDIT_NAME = 'GEO_BRAND_PRESENCE_JSON_ENRICHMENT';
  * @param {Object} context - The context object
  * @returns {Promise<string>} The presigned URL
  */
-async function uploadPromptsAsPresignedUrl(prompts, bucket, s3Client, env) {
+async function uploadPromptsAsPresignedUrl(prompts, bucket, s3Client) {
   const { PutObjectCommand } = await import('@aws-sdk/client-s3');
   const { randomUUID } = await import('node:crypto');
 
@@ -70,10 +70,12 @@ async function uploadPromptsAsPresignedUrl(prompts, bucket, s3Client, env) {
     ContentType: 'application/json',
   }));
 
-  return getSignedUrl(
-    { host: `${bucket}.s3.${env.AWS_REGION}.amazonaws.com`, key },
-    env.AWS_REGION,
-  );
+  return getPresignedUrl({
+    s3Client,
+    bucket,
+    key,
+    expiresIn: 86400, // 24 hours
+  });
 }
 
 /**
@@ -97,7 +99,7 @@ async function sendToMystique(prompts, metadata, context, log) {
 
   const bucket = env.S3_IMPORTER_BUCKET_NAME;
 
-  const url = await uploadPromptsAsPresignedUrl(prompts, bucket, s3Client, env);
+  const url = await uploadPromptsAsPresignedUrl(prompts, bucket, s3Client);
 
   const {
     siteId,

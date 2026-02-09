@@ -565,7 +565,7 @@ describe('JSON Enrichment Handler', () => {
     const handler = await esmock('../../src/geo-brand-presence/json-enrichment-handler.js', {
       '../../src/geo-brand-presence/util.js': mockUtils,
       '../../src/utils/getPresignedUrl.js': {
-        getSignedUrl: sinon.stub().resolves('https://presigned-url.com'),
+        getPresignedUrl: sinon.stub().resolves('https://presigned-url.com'),
       },
     });
     return { handler, mockUtils };
