@@ -157,7 +157,7 @@ export async function runAuditAndProcessResults(context) {
     auditId: audit.getId(),
     finalUrl,
     scrapeResultPathsSize: scrapeResultPaths?.size || 0,
-    envKeys: Object.keys(env || {}),
+    envKeys: Object.keys(env),
   });
   log.info(`${LOG_PREFIX} Step 3: processing site: ${site.getId()}, audit: ${audit.getId()}, scrapeResults: ${scrapeResultPaths?.size || 0}`);
 

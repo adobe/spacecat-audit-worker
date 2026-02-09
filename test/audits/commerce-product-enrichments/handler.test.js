@@ -1141,6 +1141,77 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result.auditResult.enrichmentResponse).to.have.property('error');
   });
 
+  it('runAuditAndProcessResults handles enrichment API network error gracefully', async () => {
+    // Mock config fetch
+    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(validACCSConfig),
+    });
+
+    // Mock enrichment endpoint with network error (fetch throws)
+    fetchStub.withArgs('http://test-enrichment-endpoint/catalog-enrichment', sinon.match.any)
+      .rejects(new Error('Network connection refused'));
+
+    site.getConfig.returns({
+      getHandlers: sinon.stub().returns({
+        'commerce-product-enrichments': {
+          instanceType: 'ACCS',
+        },
+      }),
+    });
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: 'https://example.com/product-1',
+            finalUrl: 'https://example.com/product-1',
+            scrapeResult: {
+              structuredData: {
+                jsonld: {
+                  Product: [{ name: 'Test Product', sku: 'TEST-SKU-123' }],
+                },
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+    ]);
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-19' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'http://test-enrichment-endpoint/catalog-enrichment',
+      },
+      scrapeResultPaths,
+    };
+
+    const result = await runAuditAndProcessResults(context);
+
+    // Verify audit still completes
+    expect(result.auditResult.status).to.equal('OPPORTUNITIES_FOUND');
+
+    // Verify error was logged
+    expect(log.error).to.have.been.calledWith(sinon.match(/Enrichment API call failed/));
+
+    // Verify enrichment response contains error info
+    expect(result.auditResult.enrichmentResponse).to.deep.equal({
+      error: 'Network connection refused',
+    });
+  });
+
   it('runAuditAndProcessResults skips enrichment when CATALOG_ENRICHMENT_ENDPOINT not configured', async () => {
     // Mock config fetch
     fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
