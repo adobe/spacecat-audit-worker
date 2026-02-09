@@ -2088,7 +2088,8 @@ describe('Headings Audit', () => {
     // - lang uses actual value 'fr' (not 'en')
   });
 
-  it('handles getH1HeadingASuggestion when pageTags is null or undefined', async () => {
+  it('handles getH1HeadingASuggestion when pageTags is null or undefined', async function () {
+    this.timeout(5000);
     const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };

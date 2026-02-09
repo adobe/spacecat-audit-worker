@@ -554,15 +554,15 @@ describe('Step-based Audit Tests', () => {
         abort: {
           reason: 'bot-protection',
           details: {
-            blockedUrlsCount: 5,
+            blockedUrlsCount: 10,
             totalUrlsCount: 10,
             blockedUrls: [
               { url: 'https://example.com/page1', blockerType: 'cloudflare', httpStatus: 403 },
               { url: 'https://example.com/page2', blockerType: 'cloudflare', httpStatus: 403 },
               { url: 'https://example.com/page3', blockerType: 'imperva', httpStatus: 403 },
             ],
-            byBlockerType: { cloudflare: 3, imperva: 2 },
-            byHttpStatus: { 403: 5 },
+            byBlockerType: { cloudflare: 8, imperva: 2 },
+            byHttpStatus: { 403: 10 },
             auditType: 'cwv',
             siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
             siteUrl: 'https://example.com',
@@ -577,16 +577,18 @@ describe('Step-based Audit Tests', () => {
       expect(result.status).to.equal(200);
 
       // Verify [BOT-BLOCKED] log with detailed info including jobId
+      // There are two [BOT-BLOCKED] logs: one from step-audit.js and one from handleAbort
+      // Find the one from handleAbort (contains "Audit aborted for jobId")
       expect(context.log.warn).to.have.been.calledWithMatch(/\[BOT-BLOCKED\] Audit aborted for jobId=abort-job-123/);
-      const botBlockedCall = context.log.warn.args.find((call) => call[0] && call[0].includes('[BOT-BLOCKED]'));
+      const botBlockedCall = context.log.warn.args.find((call) => call[0] && call[0].includes('Audit aborted for jobId=abort-job-123'));
       expect(botBlockedCall).to.exist;
       const botBlockedLog = botBlockedCall[0];
       expect(botBlockedLog).to.include('Audit aborted for jobId=abort-job-123');
       expect(botBlockedLog).to.include('type=cwv');
       expect(botBlockedLog).to.include('site=https://space.cat');
-      expect(botBlockedLog).to.match(/HTTP Status: \[403: 5\]/);
-      expect(botBlockedLog).to.match(/Blocker Types: \[.*cloudflare: 3.*imperva: 2.*\]/);
-      expect(botBlockedLog).to.include('5/10 URLs blocked');
+      expect(botBlockedLog).to.match(/HTTP Status: \[403: 10\]/);
+      expect(botBlockedLog).to.match(/Blocker Types: \[.*cloudflare: 8.*imperva: 2.*\]/);
+      expect(botBlockedLog).to.include('10/10 URLs blocked');
       expect(botBlockedLog).to.include('https://example.com/page1');
       expect(botBlockedLog).to.include('https://example.com/page2');
       expect(botBlockedLog).to.include('https://example.com/page3');
@@ -635,11 +637,19 @@ describe('Step-based Audit Tests', () => {
         .get('/')
         .reply(200);
 
-      // Create a simple audit for testing generic abort (step should not execute)
+      // Mock audit creation for normal flow
+      const createdAudit = {
+        getId: () => 'audit-generic-123',
+        getAuditType: () => 'meta-tags',
+        getFullAuditRef: () => 's3://test/generic',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      // Create a simple audit for testing generic abort (should continue processing)
       const scrapeResultAudit = new AuditBuilder()
-        .addStep('process', async () => ({
-          status: 'should-not-reach',
-          findings: ['should-not-reach'],
+        .addStep('initial', async () => ({
+          status: 'complete',
+          findings: ['test'],
         }))
         .build();
 
@@ -659,7 +669,7 @@ describe('Step-based Audit Tests', () => {
 
       const result = await scrapeResultAudit.run(messageWithGenericAbort, context);
 
-      // Audit should abort early and return ok status
+      // Generic aborts are not handled yet - audit should continue processing
       expect(result.status).to.equal(200);
 
       // Verify no bot-protection specific logs for generic abort
@@ -694,7 +704,7 @@ describe('Step-based Audit Tests', () => {
           reason: 'bot-protection',
           details: {
             blockedUrlsCount: 50,
-            totalUrlsCount: 100,
+            totalUrlsCount: 50,
             blockedUrls: longBlockedUrls,
             byBlockerType: { cloudflare: 50 },
             byHttpStatus: { 403: 50 },
@@ -712,11 +722,13 @@ describe('Step-based Audit Tests', () => {
       expect(result.status).to.equal(200);
 
       // Verify [BOT-BLOCKED] log was called
+      // There are two [BOT-BLOCKED] logs: one from step-audit.js and one from handleAbort
+      // Find the one from handleAbort (contains "Audit aborted for jobId")
       expect(context.log.warn).to.have.been.calledWithMatch(/\[BOT-BLOCKED\] Audit aborted for jobId=many-urls-job/);
-      expect(context.log.warn).to.have.been.calledWithMatch(/50\/100 URLs blocked/);
+      expect(context.log.warn).to.have.been.calledWithMatch(/50\/50 URLs blocked/);
 
       // Verify all URLs are in the log
-      const botBlockedCall = context.log.warn.args.find((call) => call && call[0] && call[0].includes('[BOT-BLOCKED]'));
+      const botBlockedCall = context.log.warn.args.find((call) => call && call[0] && call[0].includes('Audit aborted for jobId=many-urls-job'));
       expect(botBlockedCall).to.exist;
       const botBlockedLog = botBlockedCall[0];
       expect(botBlockedLog).to.include('Audit aborted for jobId=many-urls-job');
@@ -724,7 +736,7 @@ describe('Step-based Audit Tests', () => {
       expect(botBlockedLog).to.include('site=https://space.cat');
       expect(botBlockedLog).to.match(/HTTP Status: \[403: 50\]/);
       expect(botBlockedLog).to.match(/Blocker Types: \[cloudflare: 50\]/);
-      expect(botBlockedLog).to.include('50/100 URLs blocked');
+      expect(botBlockedLog).to.include('50/50 URLs blocked');
       // Check first and last URL
       expect(botBlockedLog).to.include('https://example.com/page1');
       expect(botBlockedLog).to.include('https://example.com/page50');
@@ -752,7 +764,7 @@ describe('Step-based Audit Tests', () => {
           reason: 'bot-protection',
           details: {
             blockedUrlsCount: 10,
-            totalUrlsCount: 20,
+            totalUrlsCount: 10,
             blockedUrls: [
               { url: 'https://example.com/cf1', blockerType: 'cloudflare', httpStatus: 403 },
               { url: 'https://example.com/cf2', blockerType: 'cloudflare', httpStatus: 403 },
@@ -760,8 +772,8 @@ describe('Step-based Audit Tests', () => {
               { url: 'https://example.com/ak1', blockerType: 'akamai', httpStatus: 429 },
               { url: 'https://example.com/ak2', blockerType: 'akamai', httpStatus: 503 },
             ],
-            byBlockerType: { cloudflare: 2, imperva: 1, akamai: 2 },
-            byHttpStatus: { 403: 3, 429: 1, 503: 1 },
+            byBlockerType: { cloudflare: 2, imperva: 1, akamai: 7 },
+            byHttpStatus: { 403: 3, 429: 1, 503: 6 },
             auditType: 'sitemap',
             siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
             siteUrl: 'https://example.com',
@@ -776,18 +788,20 @@ describe('Step-based Audit Tests', () => {
       expect(result.status).to.equal(200);
 
       // Verify [BOT-BLOCKED] log was called
+      // There are two [BOT-BLOCKED] logs: one from step-audit.js and one from handleAbort
+      // Find the one from handleAbort (contains "Audit aborted for jobId")
       expect(context.log.warn).to.have.been.calledWithMatch(/\[BOT-BLOCKED\] Audit aborted for jobId=mixed-blockers-job/);
 
       // Verify status details in log
-      const botBlockedCall = context.log.warn.args.find((call) => call && call[0] && call[0].includes('[BOT-BLOCKED]'));
+      const botBlockedCall = context.log.warn.args.find((call) => call && call[0] && call[0].includes('Audit aborted for jobId=mixed-blockers-job'));
       expect(botBlockedCall).to.exist;
       const botBlockedLog = botBlockedCall[0];
       expect(botBlockedLog).to.include('Audit aborted for jobId=mixed-blockers-job');
       expect(botBlockedLog).to.include('type=sitemap');
       expect(botBlockedLog).to.include('site=https://space.cat');
-      expect(botBlockedLog).to.match(/HTTP Status: \[.*403: 3.*429: 1.*503: 1.*\]/);
-      expect(botBlockedLog).to.match(/Blocker Types: \[.*cloudflare: 2.*imperva: 1.*akamai: 2.*\]/);
-      expect(botBlockedLog).to.include('10/20 URLs blocked');
+      expect(botBlockedLog).to.match(/HTTP Status: \[.*403: 3.*429: 1.*503: 6.*\]/);
+      expect(botBlockedLog).to.match(/Blocker Types: \[.*cloudflare: 2.*imperva: 1.*akamai: 7.*\]/);
+      expect(botBlockedLog).to.include('10/10 URLs blocked');
     });
 
     it('handles abort with missing details fields (fallback to empty/none)', async () => {
@@ -811,7 +825,7 @@ describe('Step-based Audit Tests', () => {
         abort: {
           reason: 'bot-protection',
           details: {
-            blockedUrlsCount: 5,
+            blockedUrlsCount: 10,
             totalUrlsCount: 10,
             // Missing: byBlockerType, byHttpStatus, blockedUrls
             auditType: 'cwv',
@@ -828,10 +842,12 @@ describe('Step-based Audit Tests', () => {
       expect(result.status).to.equal(200);
 
       // Verify [BOT-BLOCKED] log was called
+      // There are two [BOT-BLOCKED] logs: one from step-audit.js and one from handleAbort
+      // Find the one from handleAbort (contains "Bot Protected URLs")
       expect(context.log.warn).to.have.been.calledWithMatch(/\[BOT-BLOCKED\]/);
 
       // Verify fallback handling
-      const botBlockedCall = context.log.warn.args.find((call) => call && call[0] && call[0].includes('[BOT-BLOCKED]'));
+      const botBlockedCall = context.log.warn.args.find((call) => call && call[0] && call[0].includes('Bot Protected URLs'));
       expect(botBlockedCall).to.exist;
       const botBlockedLog = botBlockedCall[0];
 
@@ -849,14 +865,6 @@ describe('Step-based Audit Tests', () => {
         .get('/')
         .reply(200);
 
-      // Create a simple audit for testing null details
-      const scrapeResultAudit = new AuditBuilder()
-        .addStep('process', async () => ({
-          status: 'should-not-reach',
-          findings: ['should-not-reach'],
-        }))
-        .build();
-
       const messageWithNullDetails = {
         type: 'cwv',
         siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
@@ -868,15 +876,28 @@ describe('Step-based Audit Tests', () => {
         auditContext: {},
       };
 
-      const result = await scrapeResultAudit.run(messageWithNullDetails, context);
+      // Mock audit creation for normal flow (null details means no counts, so audit continues)
+      const createdAudit = {
+        getId: () => 'audit-null-details-123',
+        getAuditType: () => 'cwv',
+        getFullAuditRef: () => 's3://test/null-details',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
 
-      // Should abort and return ok status
+      // Update audit to have a step that can complete
+      const scrapeResultAuditWithStep = new AuditBuilder()
+        .addStep('initial', async () => ({
+          status: 'complete',
+          findings: ['test'],
+        }))
+        .build();
+
+      const result = await scrapeResultAuditWithStep.run(messageWithNullDetails, context);
+
+      // Null details means no counts, so audit should continue (not abort)
       expect(result.status).to.equal(200);
-
-      // Verify the result includes the abort reason
-      const resultBody = await result.json();
-      expect(resultBody.skipped).to.be.true;
-      expect(resultBody.reason).to.equal('bot-protection');
+      // Verify no abort was triggered (no skipped flag, no BOT-BLOCKED log)
+      expect(context.log.warn).to.not.have.been.calledWithMatch(/\[BOT-BLOCKED\]/);
     });
 
     it('handles errors during abort processing and rethrows', async () => {
@@ -927,6 +948,47 @@ describe('Step-based Audit Tests', () => {
       // Should throw the error from site.getBaseURL during handleAbort
       await expect(scrapeResultAudit.run(messageWithAbort, context))
         .to.be.rejectedWith('Site URL retrieval failed');
+    });
+
+    it('handles handleAbort with null details (covers line 61 of bot-detection.js)', async () => {
+      // Import handleAbort directly to test the || {} fallback on line 61
+      const { handleAbort } = await import('../../src/common/bot-detection.js');
+
+      const mockSite = {
+        getBaseURL: () => 'https://example.com',
+      };
+
+      const mockLog = {
+        warn: sinon.stub(),
+      };
+
+      const abortWithNullDetails = {
+        reason: 'bot-protection',
+        details: null, // This will trigger || {} fallback on line 61
+      };
+
+      const result = handleAbort(
+        abortWithNullDetails,
+        'test-job-123',
+        'cwv',
+        mockSite,
+        'test-site-456',
+        mockLog,
+      );
+
+      // Should return ok response
+      expect(result.status).to.equal(200);
+      const resultBody = await result.json();
+      expect(resultBody.skipped).to.be.true;
+      expect(resultBody.reason).to.equal('bot-protection');
+
+      // Should log with empty arrays for HTTP Status and Blocker Types
+      expect(mockLog.warn).to.have.been.calledOnce;
+      const logCall = mockLog.warn.firstCall.args[0];
+      expect(logCall).to.include('[BOT-BLOCKED]');
+      expect(logCall).to.include('HTTP Status: []');
+      expect(logCall).to.include('Blocker Types: []');
+      expect(logCall).to.include('Bot Protected URLs: [none]');
     });
   });
 });

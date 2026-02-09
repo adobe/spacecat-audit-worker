@@ -3137,18 +3137,30 @@ describe('Product MetaTags', () => {
       expect(logStub.info).to.have.been.called;
     });
 
-    it.skip('should handle missing site config', async function () {
+    it('should handle missing site config', async function () {
       this.timeout(5000);
       // Mock site to have getBaseURL but null config
+      // getConfig returns null, which should be handled gracefully by optional chaining
       const mockSiteWithNullConfig = {
         getId: sinon.stub().returns('site123'),
         getBaseURL: sinon.stub().returns('https://example.com'),
         getConfig: sinon.stub().returns(null),
+        getDeliveryConfig: sinon.stub().returns({ useHostnameOnly: false }),
+      };
+
+      // Add Site.findById mock to dataAccess for opportunityAndSuggestions
+      const mockDataAccessWithNullConfig = {
+        ...mockDataAccess,
+        Site: {
+          findById: sinon.stub().resolves(mockSiteWithNullConfig),
+        },
       };
 
       const mockContextWithNullConfig = {
         ...mockContext,
         site: mockSiteWithNullConfig,
+        dataAccess: mockDataAccessWithNullConfig,
+        scrapeResultPaths: new Map([['https://example.com', 's3://bucket/path.json']]),
       };
 
       const mockAutoDetectResult = {
@@ -3158,13 +3170,36 @@ describe('Product MetaTags', () => {
       };
 
       const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
-        '../../src/product-metatags/handler.js': {
-          productMetatagsAutoDetect: sinon.stub().resolves(mockAutoDetectResult),
-          calculateProjectedTraffic: sinon.stub().resolves({}),
-          opportunityAndSuggestions: sinon.stub().resolves(),
+        '../../src/canonical/handler.js': {
+          getTopPagesForSiteId: sinon.stub().resolves([]),
         },
         '../../src/product-metatags/product-metatags-auto-suggest.js': {
           default: sinon.stub().resolves({}),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves({ errorItems: [], createdItems: [] }),
+        },
+        '../../src/utils/saas.js': {
+          getCommerceConfig: sinon.stub().resolves({}),
+        },
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({
+            getId: () => 'opportunity123',
+            getSiteId: () => 'site123',
+          }),
+        },
+        '@adobe/spacecat-shared-rum-api-client': {
+          default: {
+            createFrom: () => ({
+              query: sinon.stub().resolves([]),
+            }),
+          },
+        },
+        '../../src/support/utils.js': {
+          calculateCPCValue: sinon.stub().resolves(2.5),
+        },
+        '../../src/common/index.js': {
+          wwwUrlResolver: sinon.stub().resolves('https://example.com'),
         },
       });
 
@@ -3175,6 +3210,9 @@ describe('Product MetaTags', () => {
       expect(result).to.deep.equal({ status: 'complete' });
       // Verify the function executed successfully with null config handling
       expect(logStub.info).to.have.been.called;
+      // Note: Even if an error is logged during site config loading, the function should
+      // complete successfully as errors are caught and handled gracefully
+      // The important thing is that the function returns 'complete' status
     });
 
     it('should log detailed context information', async function () {

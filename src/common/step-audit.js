@@ -113,9 +113,24 @@ export class StepAudit extends BaseAudit {
         return ok();
       }
 
-      // Check if scrape job was aborted (e.g., due to bot protection)
+      // Check if scrape job was aborted
       if (abort) {
-        return handleAbort(abort, jobId, type, site, siteId, log);
+        const { blockedUrlsCount, totalUrlsCount } = abort.details || {};
+        if (blockedUrlsCount && totalUrlsCount) {
+          // Only abort if ALL URLs are blocked
+          if (blockedUrlsCount === totalUrlsCount) {
+            log.warn(
+              `[BOT-BLOCKED] All URLs blocked (${blockedUrlsCount}/${totalUrlsCount}), aborting audit`,
+            );
+            return handleAbort(abort, jobId, type, site, siteId, log);
+          }
+          // Some URLs blocked but not all - continue audit processing
+          log.info(
+            `[BOT-BLOCKED] Some URLs blocked (${blockedUrlsCount}/${totalUrlsCount}), `
+            + `but continuing audit processing for ${type} audit on ${site.getBaseURL()} `
+            + `as ${totalUrlsCount - blockedUrlsCount} URLs were successfully scraped`,
+          );
+        }
       }
 
       // Determine which step to run
