@@ -15,7 +15,6 @@ import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/space
 import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
-const FEATURE_FLAG_CONFIG = 'alt-text-delete-old-suggestions';
 
 /**
  * Maps Mystique alt-text suggestions to suggestion DTO format
@@ -57,7 +56,6 @@ function mapMystiqueSuggestionsToSuggestionDTOs(mystiquesuggestions, opportunity
  * @param {Object} context - Context object
  * @param {Object} Suggestion - Suggestion model from dataAccess
  * @param {Object} log - Logger
- * @param {boolean} deleteOldSuggestions - Whether to delete old suggestions
  * @returns {Promise<Object>} Metrics for removed suggestions
  */
 async function clearSuggestionsForPagesAndCalculateMetrics(
@@ -67,7 +65,6 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
   context,
   Suggestion,
   log,
-  deleteOldSuggestions,
 ) {
   const existingSuggestions = await opportunity.getSuggestions();
   const pageUrlSet = new Set(pageUrls);
@@ -75,10 +72,7 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
   * TODO: ASSETS-59781 - Update alt-text opportunity to use syncSuggestions
   * instead of current approach. This will enable handling of PENDING_VALIDATION status.
   */
-  // Find suggestions to remove
-  // If deleteOldSuggestions is true, remove suggestions for ALL URLs
-  // (including those not in current batch)
-  // Otherwise, only remove suggestions for URLs in the current pageUrlSet
+  // Find suggestions to remove, do not remove those that are manually edited
   const suggestionsToRemove = existingSuggestions.filter((suggestion) => {
     const rec = suggestion.getData()?.recommendations?.[0];
     const pageUrl = rec?.pageUrl;
@@ -86,12 +80,6 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
     // Never delete manually edited suggestions
     if (rec?.isManuallyEdited === true) {
       return false;
-    }
-
-    // If deleteOldSuggestions is true, include all suggestions (for any URL)
-    // Otherwise, only include suggestions for URLs in the current batch
-    if (deleteOldSuggestions) {
-      return !!pageUrl; // Include any suggestion with a valid pageUrl
     }
     return pageUrl && pageUrlSet.has(pageUrl);
   }).filter((suggestion) => {
@@ -138,7 +126,7 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const {
-    Opportunity, Site, Audit, Suggestion, Configuration,
+    Opportunity, Site, Audit, Suggestion,
   } = dataAccess;
   const {
     auditId, siteId, data, id: messageId,
@@ -153,13 +141,6 @@ export default async function handler(message, context) {
   }
   const site = await Site.findById(siteId);
   const auditUrl = site.getBaseURL();
-
-  // Get deleteOldSuggestions config from global Configuration handlers
-  const configuration = await Configuration.findLatest();
-  const altTextConfig = configuration?.getHandlers()?.[FEATURE_FLAG_CONFIG] || {};
-  const deleteOldSuggestions = altTextConfig?.enabled?.sites?.includes(siteId) ?? false;
-
-  log.debug(`[${AUDIT_TYPE}]: deleteOldSuggestions config: ${deleteOldSuggestions}`);
 
   let altTextOppty;
   try {
@@ -195,7 +176,6 @@ export default async function handler(message, context) {
       context,
       Suggestion,
       log,
-      deleteOldSuggestions,
     );
 
     let newMetrics = {
