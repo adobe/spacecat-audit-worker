@@ -60,11 +60,21 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
   const cpc = body?.data?.cpc;
   const sumTraffic = body?.data?.sum_traffic;
 
+  // Look up per-page data from predominantlyPaidPages
+  const paidPages = stats.predominantlyPaidPages || [];
+  const pageData = paidPages.find((p) => p.url === url) || {};
+  const pageBounceRate = pageData.bounceRate ?? 0;
+  const pageViews = pageData.pageViews ?? 0;
+  const avgBounceRate = stats.averageBounceRate ?? 0;
+  const impact = pageBounceRate > avgBounceRate
+    ? (pageBounceRate - avgBounceRate) * pageViews
+    : pageViews;
+
   return {
     siteId,
     id: randomUUID(),
     auditId: audit.getAuditId(),
-    type: 'paid-keyword-optimizer',
+    type: 'ad-intent-mismatch',
     origin: 'AUTOMATION',
     title: 'Low-performing paid search page detected',
     description: 'Page with predominantly paid search traffic and high bounce rate. '
@@ -86,13 +96,20 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
         DATA_SOURCES.RUM,
         DATA_SOURCES.PAGE,
       ],
-      opportunityType: 'paid-keyword-optimizer',
       url,
+      page: url,
       cpc,
       sumTraffic,
       totalPageViews: stats.totalPageViews,
       averageBounceRate: stats.averageBounceRate,
       temporalCondition: stats.temporalCondition,
+      pageViews,
+      trackedPageKPIName: 'Bounce Rate',
+      trackedPageKPIValue: pageBounceRate,
+      trackedKPISiteAverage: avgBounceRate,
+      opportunityImpact: impact,
+      metrics: [],
+      samples: 0,
     },
     status: 'NEW',
     tags: [
@@ -125,6 +142,7 @@ export function mapToKeywordOptimizerSuggestion(
       : SuggestionModel.STATUSES.NEW,
     data: {
       variations,
+      kpiDeltas: { estimatedKPILift: 0 },
     },
   };
 }
