@@ -1033,6 +1033,34 @@ describe('JSON Enrichment Handler', () => {
       );
     });
 
+    it('should handle missing auditId in message when context properties are missing', async () => {
+      const { handler, mockUtils } = await createHandler();
+
+      // Create context without s3Client - should be caught by early defensive check
+      const contextWithoutS3Client = {
+        ...context,
+        s3Client: undefined,
+      };
+
+      // Message without auditId to test the 'unknown' fallback
+      const result = await handler.default(
+        { siteId, batchStart: 0 }, // No auditId
+        contextWithoutS3Client,
+      );
+
+      expect(result.status).to.equal(500);
+      // Should log error with 'unknown' as auditId
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Missing required context properties/),
+        sinon.match.any,
+        false, // s3Client: false (boolean)
+        true, // env: true (boolean)
+        true, // sqs: true (boolean)
+        true, // dataAccess: true (boolean)
+        'unknown',
+      );
+    });
+
     it('should handle missing sqs in context', async () => {
       const { handler, mockUtils } = await createHandler({
         isEnrichmentTimedOut: sinon.stub().returns(true),
@@ -1065,6 +1093,88 @@ describe('JSON Enrichment Handler', () => {
       );
     });
 
+    it('should handle missing sqs in sendFallbackToMystique when timeout occurs', async () => {
+      const { handler, mockUtils } = await createHandler({
+        isEnrichmentTimedOut: sinon.stub().returns(true),
+        loadEnrichmentMetadata: sinon.stub().resolves(createMetadata()),
+        loadEnrichmentJson: sinon.stub().resolves([{ prompt: 'test' }]),
+      });
+
+      // Create context that passes early validation but has sqs as a getter that returns undefined
+      // when accessed in sendFallbackToMystique (after early validation passes)
+      let accessCount = 0;
+      const contextWithGetterSqs = {
+        ...context,
+        get sqs() {
+          accessCount++;
+          // After early validation (which accesses sqs once), return undefined
+          // This simulates sqs being undefined when sendFallbackToMystique accesses it
+          if (accessCount > 1) {
+            return undefined;
+          }
+          return sqs;
+        },
+      };
+
+      const result = await handler.default(
+        { auditId, siteId, batchStart: 0 },
+        contextWithGetterSqs,
+      );
+
+      expect(result.status).to.equal(200);
+      // Should log error about missing context properties in sendFallbackToMystique
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Cannot send fallback - missing required context properties/),
+        sinon.match.any,
+        false, // sqs: false (boolean)
+        true, // env: true (boolean)
+        auditId,
+      );
+    });
+
+    it('should handle missing s3Client in sendToMystique when sending to Mystique', async () => {
+      const { handler, mockUtils } = await createHandler({
+        // Don't timeout, let it complete normally
+        isEnrichmentTimedOut: sinon.stub().returns(false),
+        checkEnrichmentConflict: sinon.stub().resolves({ hasConflict: false }),
+      });
+
+      // Create context that passes early validation but has s3Client as a getter that returns undefined
+      // when accessed in sendToMystique (after early validation passes)
+      let accessCount = 0;
+      const contextWithGetterS3Client = {
+        ...context,
+        get s3Client() {
+          accessCount++;
+          // After early validation (which accesses s3Client once), return undefined
+          // This simulates s3Client being undefined when sendToMystique accesses it
+          if (accessCount > 1) {
+            return undefined;
+          }
+          return s3Client;
+        },
+      };
+
+      const result = await handler.default(
+        { auditId, siteId, batchStart: 0 },
+        contextWithGetterS3Client,
+      );
+
+      expect(result.status).to.equal(500);
+      // Should log error about s3Client being undefined in sendToMystique
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Cannot send to Mystique - s3Client is undefined/),
+        sinon.match.any,
+        auditId,
+      );
+      // Should also log fallback failure
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Failed to send fallback to Mystique/),
+        sinon.match.any,
+        auditId,
+        sinon.match.any,
+      );
+    });
   });
 
   describe('Default batchStart', () => {
