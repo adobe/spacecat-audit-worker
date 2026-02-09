@@ -52,6 +52,7 @@ export async function isAuditEnabledForSite(type, site, context) {
   const { Configuration } = context.dataAccess;
   const configuration = await Configuration.findLatest();
   const handler = configuration.getHandlers()?.[type];
+
   // Check if handler has productCodes and verify entitlements
   if (isNonEmptyArray(handler?.productCodes)) {
     const hasValidEntitlement = await checkProductCodeEntitlements(
@@ -68,8 +69,7 @@ export async function isAuditEnabledForSite(type, site, context) {
     context.log.error(`Handler ${type} has no product codes`);
     return false;
   }
-
-  return configuration.isHandlerEnabledForSite(type, site);
+  return true;
 }
 
 export async function loadExistingAudit(auditId, context) {
