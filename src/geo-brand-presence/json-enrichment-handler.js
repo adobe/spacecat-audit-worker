@@ -217,6 +217,21 @@ export default async function handleJsonEnrichment(message, context) {
   const {
     dataAccess, sqs, s3Client, env,
   } = context;
+
+  // Defensive check: Ensure required context properties are available
+  if (!s3Client || !env || !sqs || !dataAccess) {
+    log.error(
+      '%s: Missing required context properties (s3Client: %s, env: %s, sqs: %s, dataAccess: %s) for auditId: %s',
+      AUDIT_NAME,
+      !!s3Client,
+      !!env,
+      !!sqs,
+      !!dataAccess,
+      message.auditId || 'unknown',
+    );
+    return internalServerError('Missing required context properties');
+  }
+
   const { Site } = dataAccess;
   const { auditId, siteId, batchStart = 0 } = message;
 

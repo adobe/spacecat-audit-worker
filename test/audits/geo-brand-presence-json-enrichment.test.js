@@ -1002,15 +1002,13 @@ describe('JSON Enrichment Handler', () => {
       );
     });
 
-    it('should handle missing s3Client in sendToMystique', async () => {
+    it('should handle missing s3Client in context', async () => {
       const { handler, mockUtils } = await createHandler({
         isEnrichmentTimedOut: sinon.stub().returns(true),
         loadEnrichmentJson: sinon.stub().resolves([{ prompt: 'test' }]),
       });
 
-      // Create context without s3Client (but with sqs and env to pass the guard check)
-      // Now that the guard check only checks sqs and env, s3Client can be undefined
-      // and sendToMystique will catch it
+      // Create context without s3Client - should be caught by early defensive check
       const contextWithoutS3Client = {
         ...context,
         s3Client: undefined,
@@ -1021,30 +1019,28 @@ describe('JSON Enrichment Handler', () => {
         contextWithoutS3Client,
       );
 
-      expect(result.status).to.equal(200);
-      // Should log error about s3Client being undefined in sendToMystique
+      expect(result.status).to.equal(500);
+      // Should log error about missing context properties early
+      // Note: !! converts to boolean values
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/Cannot send to Mystique - s3Client is undefined/),
+        sinon.match(/Missing required context properties/),
         sinon.match.any,
+        false, // s3Client: false (boolean)
+        true, // env: true (boolean)
+        true, // sqs: true (boolean)
+        true, // dataAccess: true (boolean)
         auditId,
-      );
-      // Should also log fallback failure
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Failed to send fallback to Mystique/),
-        sinon.match.any,
-        auditId,
-        sinon.match.any,
       );
     });
 
-    it('should handle missing sqs in sendFallbackToMystique', async () => {
+    it('should handle missing sqs in context', async () => {
       const { handler, mockUtils } = await createHandler({
         isEnrichmentTimedOut: sinon.stub().returns(true),
         loadEnrichmentMetadata: sinon.stub().resolves(createMetadata()),
         loadEnrichmentJson: sinon.stub().resolves([{ prompt: 'test' }]),
       });
 
-      // Create context missing sqs (env is needed earlier in the handler, so we keep it)
+      // Create context missing sqs - should be caught by early defensive check
       const contextMissingSqs = {
         ...context,
         sqs: undefined,
@@ -1055,13 +1051,16 @@ describe('JSON Enrichment Handler', () => {
         contextMissingSqs,
       );
 
-      expect(result.status).to.equal(200);
-      // Should log error about missing context properties (sqs)
+      expect(result.status).to.equal(500);
+      // Should log error about missing context properties early
+      // Note: !! converts to boolean values
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/Cannot send fallback - missing required context properties/),
+        sinon.match(/Missing required context properties/),
         sinon.match.any,
-        false, // sqs: false (boolean)
+        true, // s3Client: true (boolean)
         true, // env: true (boolean)
+        false, // sqs: false (boolean)
+        true, // dataAccess: true (boolean)
         auditId,
       );
     });

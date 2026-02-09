@@ -203,6 +203,7 @@ export async function promptToLinks(prompt, site, context, contentAIClient = nul
   // }
   // const res = await response.json();
   // return res.data.urls;
+  // TODO: Remove this mock
   return [`${site.getBaseURL()}/en_US/related-mock-url`];
 }
 
