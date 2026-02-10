@@ -1060,13 +1060,23 @@ describe('Permissions Handler Tests', () => {
         auditId: 'audit-123',
       };
 
+      const addSuggestionStub = sandbox.stub().resolves({ errorItems: [], createdItems: [] });
+
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves({
+        getId: () => 'opp-123',
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub(),
+        addSuggestions: addSuggestionStub,
+        getSuggestions: sandbox.stub().resolves([]),
+      });
+
 
       const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.dataAccess.Opportunity.create).to.have.been.called;
-      expect(context.dataAccess.Opportunity.create.addSuggestions).to.have.been.calledAtMost(1);
+      expect(addSuggestionStub).to.have.been.calledOnce;
     });
 
     it('should handle opportunity creation failure', async () => {
