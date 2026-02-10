@@ -72,9 +72,15 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
   * TODO: ASSETS-59781 - Update alt-text opportunity to use syncSuggestions
   * instead of current approach. This will enable handling of PENDING_VALIDATION status.
   */
-  // Find suggestions to remove for these pages
+  // Find suggestions to remove, do not remove those that are manually edited
   const suggestionsToRemove = existingSuggestions.filter((suggestion) => {
-    const pageUrl = suggestion.getData()?.recommendations?.[0]?.pageUrl;
+    const rec = suggestion.getData()?.recommendations?.[0];
+    const pageUrl = rec?.pageUrl;
+
+    // Never delete manually edited suggestions
+    if (rec?.isManuallyEdited === true) {
+      return false;
+    }
     return pageUrl && pageUrlSet.has(pageUrl);
   }).filter((suggestion) => {
     const IGNORED_STATUSES = ['SKIPPED', 'FIXED', 'OUTDATED'];

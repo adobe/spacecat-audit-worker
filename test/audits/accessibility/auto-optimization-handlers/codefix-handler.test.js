@@ -144,7 +144,7 @@ describe('AccessibilityCodeFixHandler', () => {
           }],
         }],
         patchContent: 'mock diff content',
-        isCodeChangeAvailable: true,
+        isCodeChangeAvailable: false,
       });
       expect(mockSuggestion.save).to.have.been.called;
     });
@@ -955,7 +955,7 @@ describe('AccessibilityCodeFixHandler', () => {
           }],
         }],
         patchContent: mockDiffContent,
-        isCodeChangeAvailable: true,
+        isCodeChangeAvailable: false,
       });
       expect(mockSuggestion.save).to.have.been.called;
     });
@@ -1044,7 +1044,7 @@ describe('AccessibilityCodeFixHandler', () => {
           }],
         }],
         patchContent: 'mock diff content for aria-prohibited-attr',
-        isCodeChangeAvailable: true,
+        isCodeChangeAvailable: false,
       });
       expect(mockSuggestion2.setData).to.have.been.calledWith({
         url: 'https://example.com/page2',
@@ -1056,7 +1056,7 @@ describe('AccessibilityCodeFixHandler', () => {
           }],
         }],
         patchContent: 'mock diff content for aria-prohibited-attr',
-        isCodeChangeAvailable: true,
+        isCodeChangeAvailable: false,
       });
       expect(mockSuggestion.save).to.have.been.called;
       expect(mockSuggestion2.save).to.have.been.called;

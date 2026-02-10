@@ -1012,6 +1012,32 @@ describe('Permissions Handler Tests', () => {
       expect(result).to.deep.equal({ status: 'complete' });
     });
 
+    it('should not create opportunity or suggestions when adminChecks has no details', async () => {
+      const auditData = {
+        auditResult: {
+          permissionsReport: {
+            allPermissions: [],
+            adminChecks: [
+              {
+                principal: 'admin1',
+                details: [],
+              },
+            ],
+          },
+          success: true,
+        },
+        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        auditId: 'audit-123',
+      };
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+
+      const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    });
+
     it('should handle opportunity creation failure', async () => {
       const auditData = {
         auditResult: {
