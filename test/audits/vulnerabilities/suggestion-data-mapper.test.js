@@ -127,6 +127,14 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
       });
     });
 
+    it('should default to rank 0 when vulnerabilities are missing', () => {
+      const { vulnerabilities, ...baseVulnerability } = mockVulnerability;
+      const result = mapVulnerabilityToSuggestion(mockOpportunity, baseVulnerability);
+
+      expect(result.rank).to.equal(0);
+      expect(result.data.cves).to.deep.equal([]);
+    });
+
     it('should handle missing optional fields and various score formats', () => {
       const vulnerability = createVulnerability({
         name: 'test-library',
