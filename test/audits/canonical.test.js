@@ -2347,6 +2347,81 @@ describe('Canonical URL Tests', () => {
         expect(result.auditResult[0].affectedUrls[0]).to.have.property('url', 'https://example.com/page1');
       });
 
+      it('should include explanation in suggestion data when syncing suggestions', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          isPreview: false,
+          scrapeResult: {
+            canonical: {
+              exists: true,
+              count: 1,
+              href: 'https://example.com/other-page',
+              inHead: true,
+            },
+            rawBody: '<html><head><link rel="canonical" href="https://example.com/other-page"></head></html>',
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+        const addSuggestionsStub = sinon.stub().resolves({ createdItems: [] });
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
+          audit: {
+            getId: () => 'test-audit-id',
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteId: sinon.stub().resolves([]),
+              allBySiteIdAndStatus: sinon.stub().resolves([]),
+              create: sinon.stub().resolves({
+                getId: () => 'test-oppty-id',
+                getSiteId: () => 'test-site-id',
+                getSuggestions: sinon.stub().resolves([]),
+                addSuggestions: addSuggestionsStub,
+              }),
+            },
+            Suggestion: {
+              allByOpportunityId: sinon.stub().resolves([]),
+              createMany: sinon.stub().resolves([]),
+              removeMany: sinon.stub().resolves([]),
+            },
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+          },
+        );
+
+        await processScrapedContentMocked(testContext);
+
+        // Verify that addSuggestions was called with suggestions containing explanation
+        expect(addSuggestionsStub).to.have.been.called;
+        const suggestionArg = addSuggestionsStub.getCall(0).args[0];
+        expect(suggestionArg).to.be.an('array');
+        expect(suggestionArg.length).to.be.greaterThan(0);
+        
+        // Check that at least one suggestion has explanation field
+        const suggestionWithExplanation = suggestionArg.find((s) => s.data && s.data.explanation);
+        expect(suggestionWithExplanation).to.exist;
+        expect(suggestionWithExplanation.data.explanation).to.be.a('string');
+        expect(suggestionWithExplanation.data.explanation).to.not.be.empty;
+        expect(suggestionWithExplanation.data).to.have.property('checkType');
+        expect(suggestionWithExplanation.data).to.have.property('url', 'https://example.com/page1');
+        expect(suggestionWithExplanation.data).to.have.property('suggestion');
+      });
+
       it('should return success when no canonical issues detected', async () => {
         const scrapedContent = {
           url: 'https://example.com/page1',

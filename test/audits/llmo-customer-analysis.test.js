@@ -1430,6 +1430,8 @@ describe('LLMO Customer Analysis Handler', () => {
         'faqs',
         'llmo-referral-traffic',
         'cdn-logs-report',
+        'readability',
+        'wikipedia-analysis',
         'geo-brand-presence',
         'geo-brand-presence-free',
       ];

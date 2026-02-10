@@ -12,6 +12,9 @@
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
 import { getAuditData } from './audit-data-provider.js';
+import { createPaidLogger } from '../paid/paid-log.js';
+
+const GUIDANCE_TYPE = 'paid-cookie-consent';
 
 function getGuidanceObj(guidance) {
   const body = guidance && guidance[0] && guidance[0].body;
@@ -27,34 +30,33 @@ export default async function handler(message, context) {
   const { Site, Opportunity, Suggestion } = dataAccess;
   const { siteId, auditId, data } = message;
   const { url, guidance } = data;
+  const paidLog = createPaidLogger(log, GUIDANCE_TYPE);
 
-  log.debug(`Message received for guidance:paid-cookie-consent handler site: ${siteId} url: ${url} message: ${JSON.stringify(message)}`);
+  paidLog.received(siteId, url, auditId);
 
   // Get site to retrieve baseURL for Athena queries
   const site = await Site.findById(siteId);
   if (!site) {
-    log.warn(`No site found for siteId: ${siteId}`);
+    paidLog.failed('no site found', siteId, url, auditId);
     return notFound();
   }
 
   // Query Athena directly for audit data (no dependency on stored audit)
   const auditData = await getAuditData(context, siteId, site.getBaseURL());
   if (!auditData?.top3Pages) {
-    log.error(`Failed to get audit data for site ${siteId}. No consent data available.`);
+    log.error(`[paid-audit] Failed ${GUIDANCE_TYPE}: no audit data for site: ${siteId}, url: ${url}, audit: ${auditId}`);
     return notFound();
   }
-  log.debug(`Fetched audit data from Athena for site: ${siteId}`);
 
   // Check for low severity and skip if so
   const guidanceParsed = getGuidanceObj(guidance);
   if (isLowSeverityGuidanceBody(guidanceParsed.body)) {
-    log.info(`Skipping opportunity creation for site: ${siteId} page: ${url} due to low issue severity`);
+    paidLog.skipping('low issue severity', siteId, url, auditId);
     return ok();
   }
 
   const entity = mapToPaidOpportunity(siteId, url, auditData, guidanceParsed, auditId);
-  // Always create a new opportunity
-  log.debug(`Creating new paid-cookie-consent opportunity for ${siteId} page: ${url}`);
+  paidLog.creatingOpportunity(siteId, url, auditId);
 
   const opportunity = await Opportunity.create(entity);
   // Create suggestion for the new opportunity first
@@ -66,8 +68,7 @@ export default async function handler(message, context) {
     guidanceParsed,
   );
   await Suggestion.create(suggestionData);
-  log.info(`Created suggestion for opportunity ${opportunity.getId()}: ${JSON.stringify(suggestionData, null, 2)}`);
-  log.debug(`Created suggestion for opportunity ${opportunity.getId()}`);
+  paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
 
   // Only after suggestion is successfully created,
   // find and mark existing NEW system opportunities as IGNORED
@@ -78,15 +79,12 @@ export default async function handler(message, context) {
     .filter((oppty) => oppty.getId() !== opportunity.getId()); // Exclude the newly created one
 
   if (existingMatches.length > 0) {
-    log.debug(`Found ${existingMatches.length} existing NEW system opportunities for page ${url}. Marking them as IGNORED.`);
     await Promise.all(existingMatches.map(async (oldOppty) => {
       oldOppty.setStatus('IGNORED');
       await oldOppty.save();
-      log.info(`Marked opportunity ${oldOppty.getId()} as IGNORED`);
+      paidLog.markedIgnored(oldOppty.getId(), siteId, url, auditId);
     }));
   }
-
-  log.debug(`paid-cookie-consent opportunity successfully added for site: ${siteId} page: ${url} opportunity: ${JSON.stringify(opportunity, null, 2)}`);
 
   return ok();
 }

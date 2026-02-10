@@ -332,16 +332,16 @@ describe('Wikipedia Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       const syncCall = syncSuggestionsStub.firstCall;
-      const { newData } = syncCall.args[0];
+      const { newData, mapNewSuggestion } = syncCall.args[0];
 
-      expect(newData[0].rank).to.equal(0); // CRITICAL
-      expect(newData[1].rank).to.equal(1); // HIGH
-      expect(newData[2].rank).to.equal(2); // MEDIUM
-      expect(newData[3].rank).to.equal(3); // LOW
-      expect(newData[4].rank).to.equal(4); // UNKNOWN (default)
+      expect(mapNewSuggestion(newData[0]).rank).to.equal(0); // CRITICAL
+      expect(mapNewSuggestion(newData[1]).rank).to.equal(1); // HIGH
+      expect(mapNewSuggestion(newData[2]).rank).to.equal(2); // MEDIUM
+      expect(mapNewSuggestion(newData[3]).rank).to.equal(3); // LOW
+      expect(mapNewSuggestion(newData[4]).rank).to.equal(4); // UNKNOWN (default)
     });
 
-    it('should include all suggestion data in mapped suggestions', async () => {
+    it('should pass raw suggestions to syncSuggestions and map them correctly', async () => {
       const message = {
         siteId,
         auditId,
@@ -367,17 +367,22 @@ describe('Wikipedia Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       const syncCall = syncSuggestionsStub.firstCall;
-      const { newData } = syncCall.args[0];
+      const { newData, mapNewSuggestion } = syncCall.args[0];
 
-      expect(newData[0].data.id).to.equal('test_suggestion');
-      expect(newData[0].data.priority).to.equal('HIGH');
-      expect(newData[0].data.title).to.equal('Test Title');
-      expect(newData[0].data.priorityNote).to.equal('Important note');
-      expect(newData[0].data.description).to.equal('Test Description');
-      expect(newData[0].data.whyMatters).to.equal('This matters because...');
-      expect(newData[0].data.expectedResult).to.equal('Expected outcome');
-      expect(newData[0].data.dataSources).to.equal('Data source list');
-      expect(newData[0].type).to.equal('CONTENT_UPDATE');
+      expect(newData[0].id).to.equal('test_suggestion');
+      expect(newData[0].priority).to.equal('HIGH');
+      expect(newData[0].title).to.equal('Test Title');
+      expect(newData[0].priorityNote).to.equal('Important note');
+      expect(newData[0].description).to.equal('Test Description');
+      expect(newData[0].whyMatters).to.equal('This matters because...');
+      expect(newData[0].expectedResult).to.equal('Expected outcome');
+      expect(newData[0].dataSources).to.equal('Data source list');
+
+      // mapNewSuggestion should produce the correct structure
+      const mapped = mapNewSuggestion(newData[0]);
+      expect(mapped.type).to.equal('CONTENT_UPDATE');
+      expect(mapped.rank).to.equal(1); // HIGH priority
+      expect(mapped.data).to.deep.equal(newData[0]);
     });
 
     it('should use correct buildKey function', async () => {
@@ -398,39 +403,9 @@ describe('Wikipedia Analysis Guidance Handler', () => {
 
       const syncCall = syncSuggestionsStub.firstCall;
       const { buildKey } = syncCall.args[0];
-      const key = buildKey({ data: { id: 'my_suggestion_id' } });
+      const key = buildKey({ id: 'my_suggestion_id' });
 
       expect(key).to.equal('wikipedia::my_suggestion_id');
-    });
-
-    it('should use correct mapNewSuggestion function', async () => {
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          analysis: {
-            company: 'Example Corp',
-            suggestions: [
-              { id: 'test_id', priority: 'HIGH', title: 'Title', description: 'Desc', whyMatters: 'Test', expectedResult: 'Test', dataSources: 'Test' },
-            ],
-          },
-        },
-      };
-
-      await handler.default(message, context);
-
-      const syncCall = syncSuggestionsStub.firstCall;
-      const { mapNewSuggestion } = syncCall.args[0];
-      const mapped = mapNewSuggestion({
-        type: 'CONTENT_UPDATE',
-        rank: 1,
-        data: { id: 'test_id', title: 'Test' },
-      });
-
-      expect(mapped.opportunityId).to.equal('opp-123');
-      expect(mapped.type).to.equal('CONTENT_UPDATE');
-      expect(mapped.rank).to.equal(1);
-      expect(mapped.data).to.deep.equal({ id: 'test_id', title: 'Test' });
     });
   });
 

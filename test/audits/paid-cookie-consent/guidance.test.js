@@ -154,7 +154,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const message = { auditId: '123', siteId: 'site', data: { url: 'url', guidance: [{}] } };
     const result = await handler(message, context);
     expect(result.status).to.equal(notFound().status);
-    expect(logStub.warn).to.have.been.calledWithMatch(/No site found/);
+    expect(logStub.warn).to.have.been.calledWithMatch(/\[paid-audit\] Failed paid-cookie-consent: no site found/);
   });
 
   it('should return notFound and log error if audit data has empty top3Pages', async () => {
@@ -170,7 +170,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance: [{}] } };
     const result = await handler(message, context);
     expect(result.status).to.equal(notFound().status);
-    expect(logStub.error).to.have.been.calledWithMatch(/No consent data available/);
+    expect(logStub.error).to.have.been.calledWithMatch(/\[paid-audit\] Failed paid-cookie-consent: no audit data/);
   });
 
   it('should return notFound and log error if auditData is null', async () => {
@@ -186,7 +186,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const message = { auditId: 'auditId', siteId: 'site', data: { url: 'url', guidance: [{}] } };
     const result = await handler(message, context);
     expect(result.status).to.equal(notFound().status);
-    expect(logStub.error).to.have.been.calledWithMatch(/No consent data available/);
+    expect(logStub.error).to.have.been.calledWithMatch(/\[paid-audit\] Failed paid-cookie-consent: no audit data/);
   });
 
   it('should create a new opportunity and suggestion with plain markdown', async () => {
@@ -570,7 +570,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     const result = await handler(message, context);
     expect(Opportunity.create).not.to.have.been.called;
     expect(Suggestion.create).not.to.have.been.called;
-    expect(logStub.info).to.have.been.calledWithMatch(/Skipping opportunity creation/);
+    expect(logStub.info).to.have.been.calledWithMatch(/\[paid-audit\] Skipping paid-cookie-consent: low issue severity/);
     expect(result.status).to.equal(ok().status);
   });
 

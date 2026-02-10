@@ -10,7 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray, isString, buildSuggestionKey } from '@adobe/spacecat-shared-utils';
+import {
+  isNonEmptyArray,
+  isString,
+  buildSuggestionKey,
+  buildAggregationKeyFromSuggestion,
+} from '@adobe/spacecat-shared-utils';
 import { Opportunity as OpportunityDataAccess, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { createAccessibilityAssistiveOpportunity, createAccessibilityColorContrastOpportunity } from './report-oppty.js';
 import {
@@ -336,11 +341,13 @@ async function sendSuggestionsToMystiqueInternal(opportunity, suggestions, conte
  * @param {Object} context - Audit context containing site, sqs, env, dataAccess, and log
  * @param {Object} [options] - Optional configuration
  * @param {boolean} [options.skipMystiqueEnabledCheck] - Skip the a11y-mystique-auto-suggest check
+ * @param {string} [options.aggregationKey] - If provided, only process suggestions
+ *   matching this key
  * @returns {Promise<Object>} Result object with success status and details
  */
 export async function sendOpportunitySuggestionsToMystique(opportunityId, context, options = {}) {
   const { log, dataAccess, site } = context;
-  const { skipMystiqueEnabledCheck = false } = options;
+  const { skipMystiqueEnabledCheck = false, aggregationKey } = options;
   const LOG_TAG = '[A11yCodefix]';
 
   try {
@@ -359,9 +366,21 @@ export async function sendOpportunitySuggestionsToMystique(opportunityId, contex
       return { success: false, error: 'Opportunity not found' };
     }
 
-    const suggestions = await opportunity.getSuggestions();
+    let suggestions = await opportunity.getSuggestions();
+
+    if (aggregationKey) {
+      const originalCount = suggestions.length;
+      suggestions = suggestions.filter((suggestion) => {
+        const suggestionData = suggestion.getData();
+        const suggestionAggKey = buildAggregationKeyFromSuggestion(suggestionData);
+        return suggestionAggKey === aggregationKey;
+      });
+      log.info(`${LOG_TAG} Filtered suggestions by aggregationKey: ${suggestions.length} of ${originalCount} match`);
+    }
+
     if (suggestions.length === 0) {
-      log.info(`${LOG_TAG} No suggestions found for opportunity`);
+      const filterInfo = aggregationKey ? ` (filtered by aggregationKey: ${aggregationKey})` : '';
+      log.info(`${LOG_TAG} No suggestions found for opportunity${filterInfo}`);
       return { success: true, messagesProcessed: 0 };
     }
 

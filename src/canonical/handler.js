@@ -613,6 +613,7 @@ export async function processScrapedContent(context) {
         checkType: issue.type,
         url: urlData.url,
         suggestion: urlData.suggestion,
+        explanation: issue.explanation,
       };
 
       suggestionsByType[checkType].push(suggestion);
@@ -657,6 +658,7 @@ export async function processScrapedContent(context) {
           url: suggestion.url,
           checkType: suggestion.checkType,
           suggestion: suggestion.suggestion,
+          explanation: suggestion.explanation,
         },
       }),
       keepLatestMergeDataFunction,
