@@ -1,3 +1,31 @@
+# [1.308.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.307.1...v1.308.0) (2026-02-10)
+
+
+### Features
+
+* introduce selectors in the payload of preflight for highlighting and applying suggestions ([#1675](https://github.com/adobe/spacecat-audit-worker/issues/1675)) ([eb07d2c](https://github.com/adobe/spacecat-audit-worker/commit/eb07d2c0c52d1fbd80925517d7a18aa2a895e4c2))
+
+## [1.307.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.307.0...v1.307.1) (2026-02-10)
+
+
+### Bug Fixes
+
+* Make code patch disabled by default for a11y fixes ([#1964](https://github.com/adobe/spacecat-audit-worker/issues/1964)) ([638f450](https://github.com/adobe/spacecat-audit-worker/commit/638f4503912e143ab4dec6d6274a2838cae59641))
+
+# [1.307.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.306.3...v1.307.0) (2026-02-09)
+
+
+### Features
+
+* add bright data client for broken backlinks ([#1954](https://github.com/adobe/spacecat-audit-worker/issues/1954)) ([f6875c8](https://github.com/adobe/spacecat-audit-worker/commit/f6875c820e508eff8b6657bed1dfc717913e2429))
+
+## [1.306.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.306.2...v1.306.3) (2026-02-09)
+
+
+### Bug Fixes
+
+* Add additional logging to the Sitemap audit ([#1944](https://github.com/adobe/spacecat-audit-worker/issues/1944)) ([aa70db9](https://github.com/adobe/spacecat-audit-worker/commit/aa70db90ca6baec54341156d4aecac77f4aad902))
+
 ## [1.306.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.306.1...v1.306.2) (2026-02-09)
 
 
