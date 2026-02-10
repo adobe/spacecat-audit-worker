@@ -139,6 +139,49 @@ export async function submitForScraping(context) {
   return result;
 }
 
+async function sendEnrichment(productPages, commerceConfig, site, env, log) {
+  if (productPages.length === 0 || !commerceConfig) {
+    return null;
+  }
+
+  const enrichmentEndpoint = env.CATALOG_ENRICHMENT_ENDPOINT;
+  if (!enrichmentEndpoint) {
+    log.warn(`${LOG_PREFIX} Step 3: CATALOG_ENRICHMENT_ENDPOINT not configured, skipping enrichment`);
+    return null;
+  }
+
+  const enrichmentPayload = {
+    siteId: site.getId(),
+    environmentId: commerceConfig.headers['Magento-Environment-Id'],
+    websiteCode: commerceConfig.headers['Magento-Website-Code'],
+    storeCode: commerceConfig.headers['Magento-Store-Code'],
+    storeViewCode: commerceConfig.headers['Magento-Store-View-Code'],
+    scrapes: productPages.map((page) => ({
+      sku: page.sku,
+      path: page.location,
+    })),
+  };
+
+  log.info(`${LOG_PREFIX} Step 3: Sending enrichment to ${enrichmentEndpoint} with ${enrichmentPayload.scrapes.length} scrapes`);
+  log.debug(`${LOG_PREFIX} Step 3: Enrichment payload:`, JSON.stringify(enrichmentPayload));
+
+  const response = await fetch(enrichmentEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(enrichmentPayload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    log.error(`${LOG_PREFIX} Step 3: Enrichment API failed with status ${response.status}: ${errorText}`);
+    return { error: `HTTP ${response.status}`, details: errorText };
+  }
+
+  const responseData = await response.json();
+  log.debug(`${LOG_PREFIX} Step 3: Enrichment API response:`, responseData);
+  return responseData;
+}
+
 /**
  * Step 3: Run Audit and Process Results
  * This step is called after scraping is complete.
@@ -264,48 +307,12 @@ export async function runAuditAndProcessResults(context) {
   // Filter for product pages only
   const productPages = processedPages.filter((page) => page.isProductPage);
 
-  // Send enrichment payload if product pages found and commerce config available
   let enrichmentResponse = null;
-  if (productPages.length > 0 && commerceConfig) {
-    const enrichmentEndpoint = env.CATALOG_ENRICHMENT_ENDPOINT;
-    if (!enrichmentEndpoint) {
-      log.warn(`${LOG_PREFIX} Step 3: CATALOG_ENRICHMENT_ENDPOINT not configured, skipping enrichment`);
-    } else {
-      const enrichmentPayload = {
-        siteId: site.getId(),
-        environmentId: commerceConfig.headers['Magento-Environment-Id'],
-        websiteCode: commerceConfig.headers['Magento-Website-Code'],
-        storeCode: commerceConfig.headers['Magento-Store-Code'],
-        storeViewCode: commerceConfig.headers['Magento-Store-View-Code'],
-        scrapes: productPages.map((page) => ({
-          sku: page.sku,
-          path: page.location,
-        })),
-      };
-
-      log.info(`${LOG_PREFIX} Step 3: Sending enrichment to ${enrichmentEndpoint} with ${enrichmentPayload.scrapes.length} scrapes`);
-      log.debug(`${LOG_PREFIX} Step 3: Enrichment payload:`, JSON.stringify(enrichmentPayload));
-
-      try {
-        const response = await fetch(enrichmentEndpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(enrichmentPayload),
-        });
-
-        if (response.ok) {
-          enrichmentResponse = await response.json();
-          log.debug(`${LOG_PREFIX} Step 3: Enrichment API response:`, enrichmentResponse);
-        } else {
-          const errorText = await response.text();
-          log.error(`${LOG_PREFIX} Step 3: Enrichment API failed with status ${response.status}: ${errorText}`);
-          enrichmentResponse = { error: `HTTP ${response.status}`, details: errorText };
-        }
-      } catch (enrichmentError) {
-        log.error(`${LOG_PREFIX} Step 3: Enrichment API call failed: ${enrichmentError.message}`);
-        enrichmentResponse = { error: enrichmentError.message };
-      }
-    }
+  try {
+    enrichmentResponse = await sendEnrichment(productPages, commerceConfig, site, env, log);
+  } catch (enrichmentError) {
+    log.error(`${LOG_PREFIX} Step 3: Enrichment API call failed: ${enrichmentError.message}`);
+    enrichmentResponse = { error: enrichmentError.message };
   }
 
   log.info(`${LOG_PREFIX} Step 3: completed`, {
