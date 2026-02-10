@@ -189,22 +189,17 @@ export const refreshSheetResultSchema = z.object({
  */
 // eslint-disable-next-line no-unused-vars
 export async function promptToLinks(prompt, site, context, contentAIClient = null) {
-  // Introduce a delay (e.g., 800ms) before returning.
-  // eslint-disable-next-line no-promise-executor-return
-  await new Promise((resolve) => setTimeout(resolve, 3500));
-  // let client = contentAIClient;
-  // if (!client) {
-  //   client = new ContentAIClient(context);
-  //   await client.initialize();
-  // }
-  // const response = await client.runGenerativeSearch(prompt, site);
-  // if (response.status !== 200) {
-  //   throw new Error(`Error calling ContentAI - ${response.statusText}`);
-  // }
-  // const res = await response.json();
-  // return res.data.urls;
-  // TODO: Remove this mock
-  return [`${site.getBaseURL()}/en_US/related-mock-url`];
+  let client = contentAIClient;
+  if (!client) {
+    client = new ContentAIClient(context);
+    await client.initialize();
+  }
+  const response = await client.runGenerativeSearch(prompt, site);
+  if (response.status !== 200) {
+    throw new Error(`Error calling ContentAI - ${response.statusText}`);
+  }
+  const res = await response.json();
+  return res?.data?.urls || [];
 }
 
 export const URL_ENRICHMENT_BATCH_SIZE = 10;
