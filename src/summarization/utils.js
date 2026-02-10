@@ -11,7 +11,19 @@
  */
 
 function joinKeyPoints(keyPoints) {
+  if (!Array.isArray(keyPoints)) {
+    return '';
+  }
   return keyPoints.map((keyPoint) => `  * ${keyPoint}`).join('\n');
+}
+
+/**
+ * Returns true if the string has meaningful content (not null, undefined, or blank)
+ * @param {string} text
+ * @returns {boolean}
+ */
+function hasSummaryText(text) {
+  return typeof text === 'string' && text.trim().length > 0;
 }
 
 export function getJsonSummarySuggestion(suggestions) {
@@ -20,49 +32,39 @@ export function getJsonSummarySuggestion(suggestions) {
     // Get scrapedAt once for all suggestion values from this suggestion
     const scrapedAt = suggestion.scrapedAt || new Date().toISOString();
 
-    // handle page level summary
-    suggestionValues.push({
-      summarizationText: suggestion.pageSummary?.formatted_summary,
-      fullPage: true,
-      keyPoints: false,
-      url: suggestion.pageUrl,
-      title: suggestion.pageSummary?.title,
-      transformRules: {
-        selector: suggestion.pageSummary?.heading_selector || 'body',
-        action: suggestion.pageSummary?.insertion_method || 'appendChild',
-      },
-      scrapedAt,
-    });
-
-    // handle key points summary
-    suggestionValues.push({
-      summarizationText: `${joinKeyPoints(suggestion.keyPoints?.formatted_items)}`,
-      fullPage: true,
-      keyPoints: true,
-      url: suggestion.pageUrl,
-      title: suggestion.pageSummary?.title,
-      transformRules: {
-        selector: suggestion.pageSummary?.heading_selector || 'body',
-        action: suggestion.pageSummary?.insertion_method || 'appendChild',
-      },
-      scrapedAt,
-    });
-
-    // handle paragraph level summary
-    suggestion.sectionSummaries?.forEach((section) => {
+    // handle page level summary - only add if summary text is present
+    const pageSummaryText = suggestion.pageSummary?.formatted_summary;
+    if (hasSummaryText(pageSummaryText)) {
       suggestionValues.push({
-        summarizationText: section.formatted_summary,
-        fullPage: false,
+        summarizationText: pageSummaryText,
+        fullPage: true,
         keyPoints: false,
         url: suggestion.pageUrl,
-        title: section.title,
+        title: suggestion.pageSummary?.title,
         transformRules: {
-          selector: section.heading_selector,
-          action: section.insertion_method || 'insertAfter',
+          selector: suggestion.pageSummary?.heading_selector || 'body',
+          action: suggestion.pageSummary?.insertion_method || 'appendChild',
         },
         scrapedAt,
       });
-    });
+    }
+
+    // handle key points summary - only add if there are key points
+    const keyPointsText = joinKeyPoints(suggestion.keyPoints?.formatted_items);
+    if (hasSummaryText(keyPointsText)) {
+      suggestionValues.push({
+        summarizationText: keyPointsText,
+        fullPage: true,
+        keyPoints: true,
+        url: suggestion.pageUrl,
+        title: suggestion.pageSummary?.title,
+        transformRules: {
+          selector: suggestion.pageSummary?.heading_selector || 'body',
+          action: suggestion.pageSummary?.insertion_method || 'appendChild',
+        },
+        scrapedAt,
+      });
+    }
   });
 
   return suggestionValues;
