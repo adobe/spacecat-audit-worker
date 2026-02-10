@@ -19,11 +19,26 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
-import { isUnscrapeable } from '../utils/url-utils.js';
+import { filterBrokenSuggestedUrls, isUnscrapeable } from '../utils/url-utils.js';
+import BrightDataClient from '../support/bright-data-client.js';
+import { sleep } from '../support/utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 const TIMEOUT = 3000;
+const BRIGHT_DATA_VALIDATE_URLS = 'BRIGHT_DATA_VALIDATE_URLS';
+const BRIGHT_DATA_MAX_RESULTS = 'BRIGHT_DATA_MAX_RESULTS';
+const BRIGHT_DATA_REQUEST_DELAY_MS = 'BRIGHT_DATA_REQUEST_DELAY_MS';
+
+function getEnvBool(env, key, defaultValue) {
+  if (env?.[key] === undefined) return defaultValue;
+  return String(env[key]).toLowerCase() === 'true';
+}
+
+function getEnvInt(env, key, defaultValue) {
+  const value = Number.parseInt(env?.[key], 10);
+  return Number.isFinite(value) ? value : defaultValue;
+}
 
 async function filterOutValidBacklinks(backlinks, log) {
   const fetchWithTimeout = async (url, timeout) => {
@@ -251,6 +266,93 @@ export const generateSuggestionData = async (context) => {
     }))
     .filter((link) => link.urlFrom && link.urlTo && link.suggestionId); // Filter invalid entries
 
+  // Check if all suggestions were filtered out as invalid
+  if (brokenLinks.length === 0 && suggestions.length > 0) {
+    log.warn('No valid broken links to send to Mystique. Skipping message.');
+    return {
+      status: 'complete',
+    };
+  }
+
+  // Bright Data: resolve suggestions first, then fallback to Mystique
+  const useBrightData = Boolean(env.BRIGHT_DATA_API_KEY && env.BRIGHT_DATA_ZONE);
+  const validateBrightDataUrls = getEnvBool(env, BRIGHT_DATA_VALIDATE_URLS, false);
+  const brightDataMaxResults = getEnvInt(env, BRIGHT_DATA_MAX_RESULTS, 1);
+  const brightDataRequestDelayMs = getEnvInt(env, BRIGHT_DATA_REQUEST_DELAY_MS, 500);
+
+  const resolvedByBrightData = new Set();
+  if (useBrightData && brokenLinks.length > 0) {
+    log.info(`Bright Data enabled. Resolving ${brokenLinks.length} broken links (maxResults=${brightDataMaxResults}).`);
+    const brightDataClient = BrightDataClient.createFrom(context);
+
+    const processBrokenLink = async (brokenLink) => {
+      const {
+        results, keywords,
+      } = await brightDataClient.googleSearchWithFallback(
+        prependSchema(finalUrl || site.getBaseURL()),
+        brokenLink.urlTo,
+        brightDataMaxResults,
+        {
+          // Keep common prefixes like "blog" by default (do not strip)
+          stripCommonPrefixes: false,
+        },
+      );
+
+      if (!results || results.length === 0) {
+        return;
+      }
+
+      const best = results[0];
+      if (!best?.link) {
+        return;
+      }
+
+      let urlsSuggested = [best.link];
+      if (validateBrightDataUrls) {
+        const validated = await filterBrokenSuggestedUrls(urlsSuggested, site.getBaseURL());
+        if (validated.length === 0) {
+          return;
+        }
+        urlsSuggested = validated;
+      }
+
+      const suggestion = await Suggestion.findById(brokenLink.suggestionId);
+      if (!suggestion) {
+        log.warn(`Bright Data: suggestion not found for ${brokenLink.suggestionId}`);
+        return;
+      }
+
+      suggestion.setData({
+        ...suggestion.getData(),
+        urlsSuggested,
+        aiRationale: `The suggested URL is chosen based on top search results for closely matching keywords from the broken URL. Keywords used: "${keywords}".`,
+      });
+
+      await suggestion.save();
+      resolvedByBrightData.add(brokenLink.suggestionId);
+    };
+
+    const batchSize = 10;
+    for (let i = 0; i < brokenLinks.length; i += batchSize) {
+      const batch = brokenLinks.slice(i, i + batchSize);
+      // eslint-disable-next-line no-await-in-loop
+      await Promise.allSettled(batch.map((brokenLink) => processBrokenLink(brokenLink)
+        .catch((error) => {
+          log.warn(`Bright Data failed for ${brokenLink.urlTo}:`, error);
+        })));
+      if (i + batchSize < brokenLinks.length
+        && Number.isFinite(brightDataRequestDelayMs)
+        && brightDataRequestDelayMs > 0) {
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(brightDataRequestDelayMs);
+      }
+    }
+  }
+
+  const brokenLinksForMystique = brokenLinks.filter(
+    (link) => !resolvedByBrightData.has(link.suggestionId),
+  );
+
   // Get top pages and filter by audit scope
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
   const baseURL = site.getBaseURL();
@@ -262,7 +364,7 @@ export const generateSuggestionData = async (context) => {
 
   // Extract unique locales/subpaths from broken links
   const brokenLinkLocales = new Set();
-  brokenLinks.forEach((link) => {
+  brokenLinksForMystique.forEach((link) => {
     const locale = extractPathPrefix(link.urlTo);
     if (locale) {
       brokenLinkLocales.add(locale);
@@ -292,8 +394,8 @@ export const generateSuggestionData = async (context) => {
   }
 
   // Validate before sending to Mystique
-  if (brokenLinks.length === 0) {
-    log.warn('No valid broken links to send to Mystique. Skipping message.');
+  if (brokenLinksForMystique.length === 0) {
+    log.info('All broken links resolved via Bright Data. Skipping Mystique.');
     return {
       status: 'complete',
     };
@@ -315,7 +417,7 @@ export const generateSuggestionData = async (context) => {
     data: {
       alternativeUrls,
       opportunityId: opportunity?.getId(),
-      brokenLinks,
+      brokenLinks: brokenLinksForMystique,
     },
   };
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
