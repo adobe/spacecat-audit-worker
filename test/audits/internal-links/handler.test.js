@@ -721,7 +721,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // Verify suggestions statuses were updated
     expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
       mockSuggestions,
-      'FIXED',
+      'OUTDATED',
     );
     expect(existingOpportunity.save).to.have.been.calledOnce;
 
