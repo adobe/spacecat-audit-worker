@@ -35,6 +35,20 @@ const auditType = Audit.AUDIT_TYPES.CANONICAL;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 /**
+ * Check if canonical is self-referenced (ignoring protocol and case)
+ *
+ */
+export function normalizeUrlExport(url) {
+  try {
+    const urlObj = new URL(url);
+    // Remove protocol, domain, query params, and hash; lowercase; keep only pathname
+    return urlObj.pathname.toLowerCase();
+  } catch {
+    return url.toLowerCase();
+  }
+}
+
+/**
  * Step 1: Import top pages (used in multi-step audit)
  */
 export async function importTopPages(context) {
@@ -325,6 +339,161 @@ export async function validateCanonicalRecursively(
   return checks;
 }
 
+/*
+  * check if a scraped object have valid canonical url tag
+  */
+export async function validateCanonicalTag(scrapedObject, context, key = '') {
+  const {
+    site, log,
+  } = context;
+  const baseURL = site.getBaseURL();
+
+  try {
+    if (!scrapedObject?.scrapeResult?.canonical) {
+      log.warn(`[canonical] No canonical metadata in S3 object: ${key}`);
+      return { url: null, canonicalUrl: null, checks: [] };
+    }
+
+    const url = scrapedObject.url || scrapedObject.finalUrl;
+    if (!url) {
+      log.warn(`[canonical] No URL found in S3 object: ${key}`);
+      return { url: null, canonicalUrl: null, checks: [] };
+    }
+
+    const finalUrl = scrapedObject.finalUrl || url;
+
+    // Filter out scraped pages that redirected to auth/login pages or PDFs
+    // This prevents false positives when a legitimate page redirects to login
+    if (isAuthUrl(finalUrl)) {
+      log.info(`[canonical] Skipping ${url} - redirected to auth page: ${finalUrl}`);
+      return { url: null, canonicalUrl: null, checks: [] };
+    }
+    if (isPdfUrl(finalUrl)) {
+      log.info(`[canonical] Skipping ${url} - redirected to PDF: ${finalUrl}`);
+      return { url: null, canonicalUrl: null, checks: [] };
+    }
+
+    const isPreview = isPreviewPage(baseURL);
+
+    // Use canonical metadata already extracted by the scraper (Puppeteer)
+    const canonicalMetadata = scrapedObject.scrapeResult.canonical;
+    const canonicalUrl = canonicalMetadata.href || null;
+    const canonicalTagChecks = [];
+
+    // Check if canonical tag exists
+    if (!canonicalMetadata.exists || !canonicalUrl) {
+      canonicalTagChecks.push({
+        check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
+      });
+    } else {
+      // Canonical tag exists
+      canonicalTagChecks.push({
+        check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
+        success: true,
+      });
+
+      // Check if canonical is in <head>
+      if (!canonicalMetadata.inHead) {
+        canonicalTagChecks.push({
+          check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
+          success: false,
+          explanation: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.explanation,
+        });
+      } else {
+        canonicalTagChecks.push({
+          check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
+          success: true,
+        });
+      }
+
+      // Check if there are multiple canonical tags
+      if (canonicalMetadata.count > 1) {
+        canonicalTagChecks.push({
+          check: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.check,
+          success: false,
+          explanation: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.explanation,
+        });
+      } else {
+        canonicalTagChecks.push({
+          check: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.check,
+          success: true,
+        });
+      }
+
+      // Check if canonical is nonempty
+      if (!canonicalUrl || canonicalUrl.trim() === '') {
+        canonicalTagChecks.push({
+          check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
+          success: false,
+          explanation: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.explanation,
+        });
+      } else {
+        canonicalTagChecks.push({
+          check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
+          success: true,
+        });
+      }
+
+      const normalizedCanonical = normalizeUrlExport(canonicalUrl);
+      const normalizedFinal = normalizeUrlExport(finalUrl);
+
+      // Canonical should match the final URL (what was actually served)
+      const isSelfReferenced = normalizedCanonical === normalizedFinal;
+      if (isSelfReferenced) {
+        canonicalTagChecks.push({
+          check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+          success: true,
+        });
+      } else {
+        canonicalTagChecks.push({
+          check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+          success: false,
+          explanation: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.explanation,
+        });
+      }
+    }
+
+    const checks = [...canonicalTagChecks];
+
+    if (canonicalUrl) {
+      const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log, isPreview);
+      checks.push(...urlFormatChecks);
+
+      // self-reference check
+      const selfRefCheck = canonicalTagChecks.find(
+        (c) => c.check === CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+      );
+      const isSelfReferenced = selfRefCheck?.success === true;
+
+      // if self-referenced - skip accessibility
+      if (isSelfReferenced) {
+        checks.push({
+          check: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
+          success: true,
+        });
+        checks.push({
+          check: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
+          success: true,
+        });
+      } else {
+        // if not self-referenced - validate accessibility
+
+        const options = await getPreviewAuthOptions(isPreview, baseURL, site, context, log);
+
+        const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log, options);
+        checks.push(...urlContentCheck);
+      }
+    }
+
+    return { url, canonicalUrl, checks };
+  } catch (error) {
+    log.error(`[canonical] Error processing scraped content from ${key}: ${error.message}`);
+    return { url: null, canonicalUrl: null, checks: [] };
+  }
+}
+
 /**
  * Generates a suggestion for fixing a canonical issue based on the check type.
  *
@@ -391,155 +560,11 @@ export async function processScrapedContent(context) {
         return null;
       }
 
-      if (!scrapedObject?.scrapeResult?.canonical) {
-        log.warn(`[canonical] No canonical metadata in S3 object: ${key}`);
+      const result = await validateCanonicalTag(scrapedObject, context, key);
+      if (!result.url) {
         return null;
       }
-
-      const url = scrapedObject.url || scrapedObject.finalUrl;
-      if (!url) {
-        log.warn(`[canonical] No URL found in S3 object: ${key}`);
-        return null;
-      }
-
-      const finalUrl = scrapedObject.finalUrl || url;
-
-      // Filter out scraped pages that redirected to auth/login pages or PDFs
-      // This prevents false positives when a legitimate page redirects to login
-      if (isAuthUrl(finalUrl)) {
-        log.info(`[canonical] Skipping ${url} - redirected to auth page: ${finalUrl}`);
-        return null;
-      }
-      if (isPdfUrl(finalUrl)) {
-        log.info(`[canonical] Skipping ${url} - redirected to PDF: ${finalUrl}`);
-        return null;
-      }
-
-      const isPreview = isPreviewPage(baseURL);
-
-      // Use canonical metadata already extracted by the scraper (Puppeteer)
-      const canonicalMetadata = scrapedObject.scrapeResult.canonical;
-      const canonicalUrl = canonicalMetadata.href || null;
-      const canonicalTagChecks = [];
-
-      // Check if canonical tag exists
-      if (!canonicalMetadata.exists || !canonicalUrl) {
-        canonicalTagChecks.push({
-          check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
-          success: false,
-          explanation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
-        });
-      } else {
-        // Canonical tag exists
-        canonicalTagChecks.push({
-          check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
-          success: true,
-        });
-
-        // Check if canonical is in <head>
-        if (!canonicalMetadata.inHead) {
-          canonicalTagChecks.push({
-            check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
-            success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.explanation,
-          });
-        } else {
-          canonicalTagChecks.push({
-            check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
-            success: true,
-          });
-        }
-
-        // Check if there are multiple canonical tags
-        if (canonicalMetadata.count > 1) {
-          canonicalTagChecks.push({
-            check: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.check,
-            success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.explanation,
-          });
-        } else {
-          canonicalTagChecks.push({
-            check: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.check,
-            success: true,
-          });
-        }
-
-        // Check if canonical is nonempty
-        if (!canonicalUrl || canonicalUrl.trim() === '') {
-          canonicalTagChecks.push({
-            check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
-            success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.explanation,
-          });
-        } else {
-          canonicalTagChecks.push({
-            check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
-            success: true,
-          });
-        }
-
-        // Check if canonical is self-referenced (ignoring protocol, domain, query, hash, case)
-        const normalizeUrl = (u) => {
-          try {
-            const urlObj = new URL(u);
-            // Remove protocol, domain, query params, and hash; lowercase; keep only pathname
-            return urlObj.pathname.toLowerCase();
-          } catch {
-            return u.toLowerCase();
-          }
-        };
-        const normalizedCanonical = normalizeUrl(canonicalUrl);
-        const normalizedFinal = normalizeUrl(finalUrl);
-
-        // Canonical should match the final URL path (what was actually served)
-        const isSelfReferenced = normalizedCanonical === normalizedFinal;
-        if (isSelfReferenced) {
-          canonicalTagChecks.push({
-            check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-            success: true,
-          });
-        } else {
-          canonicalTagChecks.push({
-            check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-            success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.explanation,
-          });
-        }
-      }
-
-      const checks = [...canonicalTagChecks];
-
-      if (canonicalUrl) {
-        const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log, isPreview);
-        checks.push(...urlFormatChecks);
-
-        // self-reference check
-        const selfRefCheck = canonicalTagChecks.find(
-          (c) => c.check === CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-        );
-        const isSelfReferenced = selfRefCheck?.success === true;
-
-        // if self-referenced - skip accessibility
-        if (isSelfReferenced) {
-          checks.push({
-            check: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
-            success: true,
-          });
-          checks.push({
-            check: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
-            success: true,
-          });
-        } else {
-          // if not self-referenced - validate accessibility
-
-          const options = await getPreviewAuthOptions(isPreview, baseURL, site, context, log);
-
-          const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log, options);
-          checks.push(...urlContentCheck);
-        }
-      }
-
-      return { url, checks };
+      return { url: result.url, checks: result.checks };
     } catch (error) {
       log.error(`[canonical] Error processing scraped content from ${key}: ${error.message}`);
       return null;

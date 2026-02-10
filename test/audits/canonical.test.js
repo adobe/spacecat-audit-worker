@@ -26,6 +26,8 @@ import canonicalAudit, {
   submitForScraping,
   processScrapedContent,
   getPreviewAuthOptions,
+  normalizeUrlExport,
+  validateCanonicalTag,
 } from '../../src/canonical/handler.js';
 import { getTopPagesForSiteId } from '../../src/utils/data-access.js';
 import { CANONICAL_CHECKS } from '../../src/canonical/constants.js';
@@ -57,6 +59,21 @@ describe('Canonical URL Tests', () => {
   afterEach(() => {
     sinon.restore();
     nock.cleanAll();
+  });
+
+  // normalizeUrlExport() tests
+  describe('normalizeUrlExport', () => {
+    it('should normalize the URL correctly', () => {
+      const url = 'https://example.com/page';
+      const normalizedUrl = normalizeUrlExport(url);
+      expect(normalizedUrl).to.equal('/page');
+    });
+
+    it('should return lowercased input when URL parsing throws', () => {
+      const upperCaseUrl = 'not-a-valid-URL';
+      const normalizedUrl = normalizeUrlExport(upperCaseUrl);
+      expect(normalizedUrl).to.equal('not-a-valid-url');
+    });
   });
 
   describe('getPreviewAuthOptions', () => {
@@ -190,181 +207,367 @@ describe('Canonical URL Tests', () => {
     });
   });
 
-  /* REMOVED: validateCanonicalTag tests - function deleted from handler.js
-  describe('validateCanonicalTag', () => {
-  */
-
-  describe('validateCanonicalUrlFormat', () => {
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should handle missing canonical tag', async () => {
-          const url = 'http://example.com';
-          const html = '<!DOCTYPE html><html lang="en"><head><title>test</title></head><body></body></html>';
-          nock('http://example.com').get('/').reply(200, html);
-    
-          const result = await validateCanonicalTag(url, log);
-    
-          expect(result.canonicalUrl).to.be.null;
-          expect(result.checks).to.deep.include({
-            check: 'canonical-tag-missing',
-            success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
-          });
-          expect(log.info).to.have.been.called;
-        });
-    */
-
-    it('should handle invalid base URL correctly', () => {
+  // validateCanonicalFormat() tests
+  describe('validateCanonicalFormat', () => {
+    it('validateCanonicalFormat() should handle invalid base URL correctly', () => {
       const canonicalUrl = 'https://example.com';
       const baseUrl = 'invalid-url';
-      const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
-
+      const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);  
       expect(result).to.be.an('array').that.is.empty;
       expect(log.error).to.have.been.calledWith(`Invalid URL: ${baseUrl}`);
+    });  
+  });// END validateCanonicalUrlFormat() tests
+
+  // validateCanonicalTag() tests
+  describe('validateCanonicalTag', () => {
+    // validateCanonicalTag() test 1
+    it('should handle missing canonical tag', async () => {
+      const mockScrapedObject = {
+        url: 'http://example.com',
+        finalUrl: 'http://example.com',
+        isPreview: false,
+        scrapeResult: {
+          rawBody: createValidRawBody('<!DOCTYPE html><html lang="en"><head><title>test</title></head><body></body></html>'),
+          canonical: {
+            exists: false,
+            count: 0,
+            href: null,
+            inHead: false,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
+
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext);
+
+      expect(result.canonicalUrl).to.be.null;
+      expect(result.checks).to.deep.include({
+        check: 'canonical-tag-missing',
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
+      });
+    });      
+
+    // validateCanonicalTag() test 2
+    it('should return an error when URL is undefined or null', async () => {
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
+      const result = await validateCanonicalTag(null, mockContext, "mockS3Object");
+    
+      expect(result.canonicalUrl).to.be.null;
+      expect(result.checks).to.be.an('array').that.is.empty;
+      expect(log.warn).to.have.been.calledWith('[canonical] No canonical metadata in S3 object: mockS3Object');
+    });
+  
+    // validateCanonicalTag() test 3
+    it('should handle fetch error', async () => {
+      nock('http://example.com').get('/fetcherror').replyWithError('Test error');
+      const mockScrapedObject = {
+        url: 'http://example.com',
+        finalUrl: 'http://example.com',
+        isPreview: false,
+        scrapeResult: {
+          rawBody: createValidRawBody('<!DOCTYPE html><html lang="en"><head><title>test</title></head><body></body></html>'),
+          canonical: {
+            exists: true,
+            count: 0,
+            href: 'http://example.com/fetcherror',
+            inHead: false,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
+    
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext, "mockS3Object");
+    
+      expect(result.url).to.equal('http://example.com');
+      expect(result.canonicalUrl).to.equal('http://example.com/fetcherror');
+      expect(result.checks).to.deep.include({
+        check: 'canonical-url-fetch-error',
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.explanation,
+        });
+    });    
+
+    // validateCanonicalTag() test 4
+    it('validateCanonicalTag() should handle malformed canonical URL correctly', async () => {
+      const mockScrapedObject = {
+        url: 'http://example.com',
+        finalUrl: 'http://example.com',
+        scrapeResult: {
+          rawBody: createValidRawBody(),
+          canonical: {
+            exists: true,
+            count: 1,
+            href: 'http://ex ample.com',
+            inHead: true,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
+
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext);
+
+      expect(result.url).to.equal('http://example.com');
+      expect(result.canonicalUrl).to.equal('http://ex ample.com');
+      expect(result.checks).to.deep.include({
+        check: 'canonical-url-absolute',
+        success: true,
+      });
+      expect(log.error).to.have.been.calledWith('[canonical] Invalid canonical URL: http://ex ample.com');
+    });  
+
+    it('should handle empty canonical tag', async () => {
+      const mockScrapedObject = {
+        url: 'http://example.com',
+        finalUrl: 'http://example.com',
+        scrapeResult: {
+          rawBody: createValidRawBody(),
+          canonical: {
+            exists: true,
+            count: 1,
+            href: '',
+            inHead: true,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext);
+
+      expect(result.url).to.equal('http://example.com');
+      expect(result.canonicalUrl).to.be.null;
+      expect(result.checks).to.deep.include({
+        check: 'canonical-tag-missing',
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
+      });
+    });
+  
+    it('should handle multiple canonical tags', async () => {
+      const mockScrapedObject = {
+        url: 'http://example.com',
+        finalUrl: 'http://example.com',
+        scrapeResult: {
+          rawBody: createValidRawBody(),
+          canonical: {
+            exists: true,
+            count: 2,
+            href: 'http://example.com',
+            inHead: true,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
+
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext);
+
+      expect(result.checks).to.deep.include({
+        check: 'canonical-tag-multiple',
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.explanation,
+      });
+    });
+  
+
+    it('should fail if the canonical tag is not in the head section', async () => {
+      const mockScrapedObject = {
+        url: 'http://example.com',
+        finalUrl: 'http://example.com',
+        scrapeResult: {
+          rawBody: createValidRawBody(),
+          canonical: {
+            exists: true,
+            count: 1,
+            href: 'http://example.com',
+            inHead: false,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
+
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext);
+
+      expect(result.checks).to.deep.include({
+        check: 'canonical-tag-outside-head',
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.explanation,
+      });
     });
 
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should return an error when URL is undefined or null', async () => {
-          const result = await validateCanonicalTag(null, log);
-    
-          expect(result.canonicalUrl).to.be.null;
-          expect(result.checks).to.be.an('array').that.is.empty;
-          expect(log.error).to.have.been.calledWith('URL is undefined or null, cannot validate canonical tags');
-        });
-    */
+    it('should follow redirects and validate canonical tag on the final destination page', async () => {
+      const mockScrapedObject = {
+        url: 'http://example.com',
+        finalUrl: 'http://example.com/redirected',
+        scrapeResult: {
+          rawBody: createValidRawBody(),
+          canonical: {
+            exists: true,
+            count: 1,
+            href: 'http://example.com/redirected',
+            inHead: true,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
 
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should handle fetch error', async () => {
-          const url = 'http://example.com';
-          nock('http://example.com').get('/').replyWithError('Test error');
-    
-          const result = await validateCanonicalTag(url, log);
-    
-          expect(result.canonicalUrl).to.be.null;
-          expect(result.checks).to.deep.include({
-            check: 'canonical-url-fetch-error',
-            success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.explanation,
-          });
-        });
-    */
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext);
 
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should handle invalid canonical URL correctly', async () => {
-          const url = 'http://example.com';
-          const html = '<html lang="en"><head><link rel="canonical" href="invalid-url"><title>test</title></head><body></body></html>';
-          nock(url).get('/').reply(200, html);
-    
-          const result = await validateCanonicalTag(url, log);
-    
-          expect(result.checks).to.deep.include({
-            check: 'canonical-url-invalid',
-            success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_URL_INVALID.explanation,
-          });
-          expect(log.info).to.have.been.calledWith('Invalid canonical URL found for page http://example.com');
-        });
-    */
+      expect(result.canonicalUrl).to.equal('http://example.com/redirected');
+      expect(result.checks).to.deep.include({
+        check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+        success: true,
+      });
+    });
 
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should handle empty canonical tag', async () => {
-          const url = 'http://example.com';
-          const html = '<html lang="en"><head><link rel="canonical" href=""><title>test</title></head><body></body></html>';
-          nock(url).get('/').reply(200, html);
-    
-          const result = await validateCanonicalTag(url, log);
-    
-          expect(result.canonicalUrl).to.be.null;
-          expect(result.checks).to.deep.include({
-            check: 'canonical-tag-empty',
-            success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.explanation,
-          });
-          expect(log.info).to.have.been.calledWith(`Empty canonical tag found for URL: ${url}`);
-        });
-    */
+  
+    it('should fail absolute check when canonical href is relative', async () => {
+      const mockScrapedObject = {
+        url: 'http://example.com/a',
+        finalUrl: 'http://example.com/b',
+        scrapeResult: {
+          rawBody: createValidRawBody(),
+          canonical: {
+            exists: true,
+            count: 1,
+            href: '/b',
+            inHead: true,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext);
 
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should handle multiple canonical tags', async () => {
-          const url = 'http://example.com';
-          const html = '<html lang="en"><head><link rel="canonical" href="http://example.com/page1"><link rel="canonical" href="http://example.com/page2"><title>test</title></head><body></body></html>';
-          nock(url).get('/').reply(200, html);
-    
-          const result = await validateCanonicalTag(url, log);
-    
-          expect(result.checks).to.deep.include({
-            check: 'canonical-tag-multiple',
-            success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.explanation,
-          });
-        });
-    */
+      expect(result.url).to.equal('http://example.com/a');
+      expect(result.canonicalUrl).to.equal('/b');
+      expect(result.checks).to.deep.include({
+        check: 'canonical-url-absolute',
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.explanation,
+      });
+    });
 
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should fail if the canonical tag is not in the head section', async () => {
-          const url = 'http://example.com';
-          const html = '<html lang="en"><head><title>test</title></head><body><link rel="canonical" href="http://example.com"></body></html>';
-          nock(url).get('/').reply(200, html);
-    
-          const result = await validateCanonicalTag(url, log);
-    
-          expect(result.checks).to.deep.include({
-            check: 'canonical-tag-outside-head',
-            success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.explanation,
-          });
-          expect(log.info).to.have.been.calledWith('Canonical tag is not in the head section (detected via Cheerio)');
-        });
-    */
+    it('should return null url and empty checks when scraped object has canonical but no url or finalUrl', async () => {
+      const mockScrapedObject = {
+        scrapeResult: {
+          canonical: {
+            exists: true,
+            count: 1,
+            href: 'http://example.com/page',
+            inHead: true,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext, 'Mock S3 object');
+      expect(result.url).to.be.null;
+      expect(result.canonicalUrl).to.be.null;
+      expect(result.checks).to.be.an('array').that.is.empty;
+      expect(log.warn).to.have.been.calledWith('[canonical] No URL found in S3 object: Mock S3 object');
+    });
 
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should follow redirects and validate canonical tag on the final destination page', async () => {
-          const originalUrl = 'http://example.com/old';
-          const finalUrl = 'http://example.com/new';
-          const finalHtml = `<html lang="en"><head><link rel="canonical" href="${finalUrl}"><title>test</title></head><body></body></html>`;
-    
-          nock('http://example.com')
-            .get('/old')
-            .reply(301, undefined, { Location: finalUrl });
-    
-          nock('http://example.com')
-            .get('/new')
-            .reply(200, finalHtml);
-    
-          const result = await validateCanonicalTag(originalUrl, log);
-    
-          expect(result.canonicalUrl).to.equal(finalUrl);
-          expect(result.checks).to.deep.include({
-            check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-            success: true,
-          });
-        });
-    */
+    it('should return null result when finalUrl is an auth page', async () => {
+      const url = 'http://example.com';
+      const finalUrl = 'http://example.com/login';
+      const mockScrapedObject = {
+        url,
+        finalUrl,
+        scrapeResult: {
+          canonical: {
+            exists: true,
+            count: 1,
+            href: 'http://example.com/login',
+            inHead: true,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext);
+      expect(result.url).to.be.null;
+      expect(result.canonicalUrl).to.be.null;
+      expect(result.checks).to.be.an('array').that.is.empty;
+      expect(log.info).to.have.been.calledWith(`[canonical] Skipping ${url} - redirected to auth page: ${finalUrl}`);
+    });
 
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should resolve relative canonical against the final destination after redirect', async () => {
-          const originalUrl = 'https://example.com/a';
-          const finalUrl = 'https://example.com/b';
-          const html = '<html lang="en"><head><link rel="canonical" href="/b"><title>test</title></head><body></body></html>';
-    
-          nock('https://example.com')
-            .get('/a')
-            .reply(301, undefined, { Location: finalUrl });
-    
-          nock('https://example.com')
-            .get('/b')
-            .reply(200, html);
-    
-          const result = await validateCanonicalTag(originalUrl, log);
-    
-          expect(result.canonicalUrl).to.equal(finalUrl);
-          expect(result.checks).to.deep.include({
-            check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-            success: true,
-          });
-        });
-    */
-  });
-  // END validateCanonicalTag tests */
+    it('should return null result when finalUrl is a PDF', async () => {
+      const url = 'http://example.com';
+      const finalUrl = 'http://example.com/doc.pdf';
+      const mockScrapedObject = {
+        url,
+        finalUrl,
+        scrapeResult: {
+          canonical: {
+            exists: true,
+            count: 1,
+            href: 'http://example.com/doc.pdf',
+            inHead: true,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext);
+      expect(result.url).to.be.null;
+      expect(result.canonicalUrl).to.be.null;
+      expect(result.checks).to.be.an('array').that.is.empty;
+      expect(log.info).to.have.been.calledWith(`[canonical] Skipping ${url} - redirected to PDF: ${finalUrl}`);
+    });
+
+    it('should return null result and log error when an error is thrown inside validateCanonicalTag', async () => {
+      const throwingLog = {
+        warn: sinon.stub().throws(new Error('warn failed')),
+        info: sinon.stub(),
+        error: sinon.stub(),
+      };
+      const mockScrapedObject = {
+        scrapeResult: {
+          canonical: { exists: true, count: 1, href: 'http://example.com', inHead: true },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log: throwingLog,
+      };
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext, 'key');
+      expect(result.url).to.be.null;
+      expect(result.canonicalUrl).to.be.null;
+      expect(result.checks).to.be.an('array').that.is.empty;
+      expect(throwingLog.error).to.have.been.calledWith(sinon.match(/Error processing scraped content from key: warn failed/));
+    });
+  });// END validateCanonicalTag tests */
 
   describe('validateCanonicalUrlFormat', () => {
     it('should validate canonical URL format successfully', () => {
@@ -501,28 +704,46 @@ describe('Canonical URL Tests', () => {
       });
     });
 
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should pass if the canonical URL points to itself', async () => {
-          const url = 'http://example.com';
-          const html = `<html lang="en"><head><link rel="canonical" href="${url}"><title>test</title></head><body></body></html>`;
-          nock(url).get('/').reply(200, html);
-    
-          const result = await validateCanonicalTag(url, log);
-    
-          expect(result.checks).to.deep.include.members([
-            {
-              check: 'canonical-tag-empty',
-              success: true,
-            },
-            {
-              check: 'canonical-tag-missing',
-              success: true,
-            }]);
-          expect(log.info).to.have.been.calledWith(`Canonical URL ${url} references itself`);
-        });
-    */
+    it('should pass if the canonical URL points to itself', async () => {
+      const mockScrapedObject = {
+        url: 'http://example.com',
+        finalUrl: 'http://example.com',
+        isPreview: false,
+        scrapeResult: {
+          rawBody: createValidRawBody('<!DOCTYPE html><html lang="en"><head><title>test</title></head><body></body></html>'),
+          canonical: {
+            exists: true,
+            count: 1,
+            href: 'http://example.com',
+            inHead: true,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
+
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext);
+
+      expect(result.checks).to.deep.include.members([
+        {
+          check: 'canonical-tag-empty',
+          success: true,
+        },
+        {
+          check: 'canonical-tag-missing',
+          success: true,
+        },
+        {
+          check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+          success: true,
+        },
+      ]);
+    });
 
     it('should handle try-catch for invalid canonical URL', () => {
+      
       const invalidCanonicalUrl = 'http://%';
       const baseUrl = 'https://example.com';
 
@@ -536,85 +757,96 @@ describe('Canonical URL Tests', () => {
       expect(log.error).to.have.been.calledWith(`[canonical] Invalid canonical URL: ${invalidCanonicalUrl}`);
     });
 
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should fail if the canonical URL does not point to itself', async () => {
-          const url = 'http://example.com';
-          const canonicalUrl = 'http://example.com/other-page';
-          const html = `<html lang="en"><head><link rel="canonical" href="${canonicalUrl}"><title>test</title></head><body></body></html>`;
-          nock(url).get('/').reply(200, html);
-    
-          const result = await validateCanonicalTag(url, log);
-    
-          expect(result.checks).to.deep.include.members([{
-            check: 'canonical-tag-empty',
-            success: true,
-          }]);
-          expect(result.checks).to.deep.include.members([{
-            check: 'canonical-self-referenced',
-            success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.explanation,
-          }]);
-          expect(log.info).to.have.been.calledWith(`Canonical URL ${canonicalUrl} does not reference itself`);
-        });
-    */
+    it('should fail if the canonical URL does not point to itself', async () => {
+      const mockScrapedObject = {
+        url: 'http://example.com',
+        finalUrl: 'http://example.com',
+        isPreview: false,
+        scrapeResult: {
+          rawBody: createValidRawBody('<!DOCTYPE html><html lang="en"><head><title>test</title></head><body></body></html>'),
+          canonical: {
+            exists: true,
+            count: 1,
+            href: 'http://example.com/other-page',
+            inHead: true,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext);
 
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should pass self-reference check when canonical URL strips query parameters', async () => {
-            const url = 'https://example.com/products/category/item-name?id=12345&ref=abc';
-            const canonicalUrl = 'https://example.com/products/category/item-name';
-            const html = `<html lang="en"><head><link rel="canonical" href="${canonicalUrl}"><title>test</title></head><body></body></html>`;
+      expect(result.checks).to.deep.include.members([{
+        check: 'canonical-tag-empty',
+        success: true,
+      }]);
+      expect(result.checks).to.deep.include.members([{
+        check: 'canonical-self-referenced',
+        success: false,
+        explanation: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.explanation,
+      }]);
+    });
     
-            nock('https://example.com')
-                .get('/products/category/item-name?id=12345&ref=abc')
-                .reply(200, html);
-    
-            const result = await validateCanonicalTag(url, log);
-    
-            expect(result.canonicalUrl).to.equal(canonicalUrl);
-            expect(result.checks).to.deep.include({
-                check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-                success: true,
-            });
-            expect(log.info).to.have.been.calledWith(`Canonical URL ${canonicalUrl} references itself`);
-        });
-    */
+    it('should pass self-reference check when canonical URL strips query parameters', async () => {
+      const mockScrapedObject = {
+        url: 'https://example.com/products/category/item-name?id=12345&ref=abc',
+        finalUrl: 'https://example.com/products/category/item-name?id=12345&ref=abc',
+        isPreview: false,
+        scrapeResult: {
+          rawBody: createValidRawBody('<!DOCTYPE html><html lang="en"><head><title>test</title></head><body></body></html>'),
+          canonical: {
+            exists: true,
+            count: 1,
+            href: 'https://example.com/products/category/item-name',
+            inHead: true,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
 
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should handle canonical URL with unusual format during comparison', async () => {
-          const url = 'https://example.com/page?param=value';
-          // Use a relative canonical URL that becomes absolute but might have edge cases
-          const html = '<html lang="en"><head><link rel="canonical" href="/page"><title>test</title></head><body></body></html>';
-    
-          nock('https://example.com').get('/page').query({ param: 'value' }).reply(200, html);
-    
-          const result = await validateCanonicalTag(url, log);
-    
-          // Should handle the URL normalization and comparison gracefully
-          expect(result.canonicalUrl).to.equal('https://example.com/page');
-          expect(result.checks).to.deep.include({
+        const result = await validateCanonicalTag(mockScrapedObject, mockContext);
+
+        expect(result.canonicalUrl).to.equal('https://example.com/products/category/item-name');
+        expect(result.checks).to.deep.include({
             check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
             success: true,
-          });
         });
-    */
+    });
 
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should handle edge case with URL that has special encoded characters', async () => {
-          const url = 'https://example.com/page%20with%20spaces';
-          const canonicalUrl = 'https://example.com/page%20with%20spaces';
-          const html = `<html lang="en"><head><link rel="canonical" href="${canonicalUrl}"><title>test</title></head><body></body></html>`;
+    it('should handle edge case with URL that has special encoded characters', async () => {
+      const canonicalUrl = 'https://example.com/page%20with%20spaces';
+      const mockScrapedObject = {
+        url: canonicalUrl,
+        finalUrl: canonicalUrl,
+        scrapeResult: {
+          rawBody: createValidRawBody(),
+          canonical: {
+            exists: true,
+            count: 1,
+            href: canonicalUrl,
+            inHead: true,
+          },
+        },
+      };
+      const mockContext = {
+        site: { getBaseURL: () => 'http://example.com' },
+        log,
+      };
+
+      const result = await validateCanonicalTag(mockScrapedObject, mockContext);
+
+      expect(result.canonicalUrl).to.equal(canonicalUrl);
+      expect(result.checks).to.deep.include({
+        check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+        success: true,
+      });
+    });
     
-          nock('https://example.com').get('/page%20with%20spaces').reply(200, html);
-    
-          const result = await validateCanonicalTag(url, log);
-    
-          expect(result.canonicalUrl).to.equal(canonicalUrl);
-          expect(result.checks).to.deep.include({
-            check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-            success: true,
-          });
-        });
-    */
   });
 
   describe('validateCanonicalRecursively', () => {
@@ -685,44 +917,6 @@ describe('Canonical URL Tests', () => {
         explanation: CANONICAL_CHECKS.CANONICAL_URL_5XX.explanation,
       });
     });
-
-    /* REMOVED: Test references deleted validateCanonicalTag function
-        it('should correctly resolve relative canonical URL with base URL', async () => {
-          const url = 'https://example.com/some-page';
-          const href = '/canonical-page';
-          const expectedCanonicalUrl = 'https://example.com/canonical-page';
-    
-          const html = `
-        <html lang="en">
-          <head>
-            <link rel="canonical" href="${href}"><title>test</title>
-          </head>
-          <body>
-            <h1>Test Page</h1>
-          </body>
-        </html>
-      `;
-    
-          nock('https://example.com')
-            .get('/some-page')
-            .reply(200, html);
-    
-          const result = await validateCanonicalTag(url, log);
-    
-          // ensure that the resolved canonical URL is correct
-          expect(result.canonicalUrl).to.equal(expectedCanonicalUrl);
-          expect(result.checks).to.deep.include({
-            check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
-            success: true,
-          });
-          expect(result.checks).to.deep.include({
-            check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-            success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.explanation,
-          });
-          expect(log.info).to.have.been.calledWith(`Canonical URL ${expectedCanonicalUrl} does not reference itself`);
-        });
-    */
 
     it('should handle unexpected status code response correctly', async () => {
       const canonicalUrl = 'http://example.com/300';

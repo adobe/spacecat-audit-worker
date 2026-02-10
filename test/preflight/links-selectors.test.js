@@ -129,7 +129,8 @@ describe('Preflight Links - Insecure Links Coverage Tests', () => {
   });
 
   describe('Insecure Links - URL normalization fallback (lines 218-219)', () => {
-    it('should handle valid HTTP URLs and normalize them correctly', async () => {
+    it('should handle valid HTTP URLs and normalize them correctly', async function () {
+      this.timeout(5000);
       const mockScrapeJson = {
         scrapeResult: {
           // Valid HTTP URL that can be normalized

@@ -53,9 +53,6 @@ export const suggestionData = [
       {
         name: 'canonical',
         type: 'seo',
-        // TODO: Re-enable when preflight canonical is updated for new multi-step architecture
-        opportunities: [],
-        /*
         opportunities: [
           {
             check: 'canonical-self-referenced',
@@ -66,7 +63,6 @@ export const suggestionData = [
               + 'the preferred version of the content.',
           },
         ],
-        */
       },
       {
         name: 'metatags',
