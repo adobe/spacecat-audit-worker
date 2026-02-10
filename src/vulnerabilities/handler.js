@@ -308,9 +308,13 @@ export const opportunityAndSuggestionsStep = async (context) => {
     return { status: 'complete' };
   }
 
-  const suggestion = await opportunity.getSuggestions();
-  const newSuggestions = suggestion.filter((s) => s.status === 'NEW');
-  const suggestionIds = newSuggestions.map((s) => s.suggestionId);
+  const refreshedOpportunity = await dataAccess.Opportunity.findById?.(opportunity.getId());
+  const suggestions = await (refreshedOpportunity || opportunity).getSuggestions();
+  const newSuggestions = suggestions.filter((s) => [
+    SuggestionDataAccess.STATUSES.NEW,
+    SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
+  ].includes(s.getStatus()));
+  const suggestionIds = newSuggestions.map((s) => s.getId());
   const message = {
     type: 'codefix:security-vulnerabilities',
     siteId: site.getId(),
@@ -325,7 +329,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
     },
   };
 
-  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to Mystique for code fix generation`);
+  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to Mystique for code fix generation: ${JSON.stringify(message)}`);
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
   return { status: 'complete' };
 };

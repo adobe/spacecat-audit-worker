@@ -50,6 +50,16 @@ describe('Vulnerabilities Handler Integration Tests', () => {
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
     mockVulnerabilityReport = VULNERABILITY_REPORT_WITH_VULNERABILITIES;
+    const createdOpportunity = {
+      getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+      getType: () => 'security-vulnerabilities',
+      getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+      setStatus: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([]),
+      setUpdatedBy: sandbox.stub().resolves(),
+      save: sandbox.stub().resolves(),
+      addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+    };
 
     context = new MockContextBuilder()
       .withSandbox(sandbox)
@@ -86,16 +96,8 @@ describe('Vulnerabilities Handler Integration Tests', () => {
           },
           Opportunity: {
             allBySiteIdAndStatus: sandbox.stub().resolves([]),
-            create: sandbox.stub().resolves({
-              getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-              getType: () => 'security-vulnerabilities',
-              getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-              setStatus: sandbox.stub().resolves(),
-              getSuggestions: sandbox.stub().resolves([]),
-              setUpdatedBy: sandbox.stub().resolves(),
-              save: sandbox.stub().resolves(),
-              addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
-            }),
+            create: sandbox.stub().resolves(createdOpportunity),
+            findById: sandbox.stub().resolves(createdOpportunity),
           },
           Suggestion: {
             bulkUpdateStatus: sandbox.stub().resolves(),
@@ -370,13 +372,14 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       };
 
       // Mock existing opportunity
+      const suggestions = [
+        { getId: () => 'suggestion1', getStatus: () => 'NEW' },
+        { getId: () => 'suggestion2', getStatus: () => 'NEW' },
+      ];
       const mockOpportunity = {
         getType: () => 'security-vulnerabilities',
         setStatus: sandbox.stub().resolves(),
-        getSuggestions: sandbox.stub().resolves([
-          { id: 'suggestion1', status: 'NEW' },
-          { id: 'suggestion2', status: 'NEW' },
-        ]),
+        getSuggestions: sandbox.stub().resolves(suggestions),
         setUpdatedBy: sandbox.stub().resolves(),
         save: sandbox.stub().resolves(),
       };
@@ -389,10 +392,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(mockOpportunity.setStatus).to.have.been.calledWith('RESOLVED');
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
-        [
-          { id: 'suggestion1', status: 'NEW' },
-          { id: 'suggestion2', status: 'NEW' },
-        ],
+        suggestions,
         'FIXED',
       );
       expect(mockOpportunity.setUpdatedBy).to.have.been.calledWith('system');
