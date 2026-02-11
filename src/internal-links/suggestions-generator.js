@@ -12,7 +12,7 @@
 
 import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { getScrapedDataForSiteId, limitConcurrency } from '../support/utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from './subpath-filter.js';
@@ -285,6 +285,7 @@ export async function syncBrokenInternalLinksSuggestions({
     context,
     buildKey,
     mergeDataFunction,
+    statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
     mapNewSuggestion: (entry) => {
       const itemType = entry.itemType || 'link';
       const isAsset = itemType !== 'link';
