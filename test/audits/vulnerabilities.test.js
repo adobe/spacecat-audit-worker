@@ -546,6 +546,23 @@ describe('Vulnerabilities Handler Integration Tests', () => {
     });
 
     it('should handle auto suggest to trigger mystique', async () => {
+      const mockOpportunity = {
+        getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        getSuggestions: sandbox.stub()
+          .onCall(0)
+          .resolves([])
+          .onCall(1)
+          .resolves([
+            { getId: () => 'suggestion-new', getStatus: () => 'NEW' },
+            { getId: () => 'suggestion-pending', getStatus: () => 'PENDING_VALIDATION' },
+            { getId: () => 'suggestion-fixed', getStatus: () => 'FIXED' },
+          ]),
+      };
+
+      context.dataAccess.Opportunity.create.resolves(mockOpportunity);
+      context.dataAccess.Opportunity.findById.resolves(null);
+
       const configuration = {
         isHandlerEnabledForSite: sandbox.stub(),
       };
@@ -592,6 +609,10 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(message).to.have.property('deliveryType', 'aem_cs');
       expect(message.data).to.have.property('opportunityId');
       expect(message.data).to.have.property('suggestionIds');
+      expect(message.data.suggestionIds).to.deep.equal([
+        'suggestion-new',
+        'suggestion-pending',
+      ]);
       expect(message.data).to.have.property('codeBucket', 'spacecat-importer-bucket');
       expect(message.data).to.have.property(
         'codePath',
