@@ -1238,8 +1238,9 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     expect(callArgs.opportunity).to.equal(testOpportunity);
     expect(callArgs.newData).to.deep.equal(brokenInternalLinks);
     expect(callArgs.context).to.equal(testContext);
-    expect(callArgs.statusToSetForOutdated).to.equal(undefined);
-    expect(callArgs.buildKey(brokenInternalLinks[0])).to.equal('https://example.com/from1-https://example.com/to1');
+    expect(callArgs.statusToSetForOutdated).to.equal(SuggestionDataAccess.STATUSES.NEW);
+    expect(callArgs.buildKey(brokenInternalLinks[0])).to.equal('https://example.com/from1-https://example.com/to1-link');
+
 
     const mappedSuggestion = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
     expect(mappedSuggestion).to.deep.equal({
@@ -1250,11 +1251,64 @@ describe('syncBrokenInternalLinksSuggestions', () => {
         title: 'Test Title',
         urlFrom: 'https://example.com/from1',
         urlTo: 'https://example.com/to1',
+        itemType: 'link',
+        priority: 'high',
         urlsSuggested: ['https://example.com/suggested1'],
         aiRationale: 'Test rationale',
         trafficDomain: 100,
       },
     });
+  });
+
+  it('should handle assets in mapNewSuggestion', async () => {
+    const brokenAssets = [
+      {
+        urlFrom: 'https://example.com/page1',
+        urlTo: 'https://example.com/broken.png',
+        trafficDomain: 50,
+        itemType: 'image',
+        title: 'Broken Image',
+      },
+      {
+        urlFrom: 'https://example.com/page2',
+        urlTo: 'https://example.com/broken.css',
+        trafficDomain: 30,
+        itemType: 'css',
+        title: 'Broken CSS',
+      },
+    ];
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: brokenAssets,
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const callArgs = mockSyncSuggestions.getCall(0).args[0];
+
+    const imageSuggestion = callArgs.mapNewSuggestion(brokenAssets[0]);
+    expect(imageSuggestion).to.deep.equal({
+      opportunityId: 'oppty-id-1',
+      type: 'ASSET_FIX',
+      rank: 0,
+      data: {
+        title: 'Broken Image',
+        urlFrom: 'https://example.com/page1',
+        urlTo: 'https://example.com/broken.png',
+        itemType: 'image',
+        priority: 'medium',
+        urlsSuggested: [],
+        aiRationale: '',
+        trafficDomain: 50,
+      },
+    });
+
+    const cssSuggestion = callArgs.mapNewSuggestion(brokenAssets[1]);
+    expect(cssSuggestion.type).to.equal('ASSET_FIX');
+    expect(cssSuggestion.data.itemType).to.equal('css');
+    expect(cssSuggestion.data.priority).to.equal('medium');
   });
 
   it('should handle empty arrays in mapNewSuggestion', async () => {

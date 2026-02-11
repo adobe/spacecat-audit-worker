@@ -12,7 +12,7 @@
 
 import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { getScrapedDataForSiteId, limitConcurrency } from '../support/utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from './subpath-filter.js';
@@ -256,7 +256,8 @@ export async function syncBrokenInternalLinksSuggestions({
   context,
   opportunityId,
 }) {
-  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
+  // Include itemType in key to distinguish between links and assets pointing to same URL
+  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}-${item.itemType || 'link'}`;
 
   // Custom merge function to preserve user-edited fields
   const mergeDataFunction = (existingData, newData) => {
@@ -283,19 +284,27 @@ export async function syncBrokenInternalLinksSuggestions({
     newData: brokenInternalLinks,
     context,
     buildKey,
+    statusToSetForOutdated: SuggestionDataAccess.STATUSES.NEW,
     mergeDataFunction,
-    mapNewSuggestion: (entry) => ({
-      opportunityId,
-      type: 'CONTENT_UPDATE',
-      rank: entry.trafficDomain,
-      data: {
-        title: entry.title,
-        urlFrom: entry.urlFrom,
-        urlTo: entry.urlTo,
-        urlsSuggested: entry.urlsSuggested || [],
-        aiRationale: entry.aiRationale || '',
-        trafficDomain: entry.trafficDomain,
-      },
-    }),
+    mapNewSuggestion: (entry) => {
+      const itemType = entry.itemType || 'link';
+      const isAsset = itemType !== 'link';
+
+      return {
+        opportunityId,
+        type: isAsset ? 'ASSET_FIX' : 'CONTENT_UPDATE',
+        rank: isAsset ? 0 : entry.trafficDomain, // Assets don't have traffic domain
+        data: {
+          title: entry.title,
+          urlFrom: entry.urlFrom,
+          urlTo: entry.urlTo,
+          itemType,
+          priority: isAsset ? 'medium' : 'high',
+          urlsSuggested: isAsset ? [] : (entry.urlsSuggested || []),
+          aiRationale: entry.aiRationale || '',
+          trafficDomain: entry.trafficDomain,
+        },
+      };
+    },
   });
 }
