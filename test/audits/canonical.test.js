@@ -36,11 +36,21 @@ use(chaiAsPromised);
 
 describe('Canonical URL Tests', () => {
   let log;
+  // Helper function to generate valid rawBody (>= 300 chars) for tests
+  const createValidRawBody = (content = '') => {
+    const baseContent = content || '<html><head><title>Test Page</title></head><body><h1>Test Content</h1><p>This is a test page with enough content to pass the rawBody length check.</p></body></html>';
+    if (baseContent.length < 300) {
+      return baseContent + ' '.repeat(300 - baseContent.length);
+    }
+    return baseContent;
+  };
+
   beforeEach(() => {
     log = {
       debug: sinon.stub(),
       info: sinon.stub(),
       error: sinon.stub(),
+      warn: sinon.stub(),
     };
   });
 
@@ -2293,7 +2303,7 @@ describe('Canonical URL Tests', () => {
               href: 'https://example.com/other-page',
               inHead: true,
             },
-            rawBody: '<html><head><link rel="canonical" href="https://example.com/other-page"></head></html>',
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href="https://example.com/other-page"></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
           },
         };
 
@@ -2359,7 +2369,7 @@ describe('Canonical URL Tests', () => {
               href: 'https://example.com/other-page',
               inHead: true,
             },
-            rawBody: '<html><head><link rel="canonical" href="https://example.com/other-page"></head></html>',
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href="https://example.com/other-page"></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
           },
         };
 
@@ -2434,7 +2444,7 @@ describe('Canonical URL Tests', () => {
               href: 'https://example.com/page1',
               inHead: true,
             },
-            rawBody: '<html><head><link rel="canonical" href="https://example.com/page1"></head></html>',
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href="https://example.com/page1"></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
           },
         };
 
@@ -2484,7 +2494,7 @@ describe('Canonical URL Tests', () => {
               href: 'https://example.com/page1',
               inHead: true,
             },
-            rawBody: '<html><head><link rel="canonical" href="https://example.com/page1"></head></html>',
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href="https://example.com/page1"></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
           },
         };
 
@@ -2566,7 +2576,7 @@ describe('Canonical URL Tests', () => {
               href: 'https://example.com/page1',
               inHead: true,
             },
-            rawBody: '<html><head><link rel="canonical" href="https://example.com/page1"></head></html>',
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href="https://example.com/page1"></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
           },
         };
 
@@ -2645,7 +2655,7 @@ describe('Canonical URL Tests', () => {
               href: '',
               inHead: false,
             },
-            rawBody: '<html><head><title>Test</title></head></html>',
+            rawBody: createValidRawBody('<html><head><title>Test</title></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
           },
         };
 
@@ -2719,7 +2729,7 @@ describe('Canonical URL Tests', () => {
               href: '',  // Empty href - issue
               inHead: true,
             },
-            rawBody: '<html><head><link rel="canonical" href=""></head></html>',
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href=""></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
           },
         };
 
@@ -2787,7 +2797,7 @@ describe('Canonical URL Tests', () => {
               href: 'not-a-valid-url:::///malformed', // Malformed URL
               inHead: true,
             },
-            rawBody: '<html><head><link rel="canonical" href="not-a-valid-url:::///malformed"></head></html>',
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href="not-a-valid-url:::///malformed"></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
           },
         };
 
@@ -2848,7 +2858,7 @@ describe('Canonical URL Tests', () => {
               href: '   ', // Whitespace only
               inHead: true,
             },
-            rawBody: '<html><head><link rel="canonical" href="   "></head></html>',
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href="   "></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
           },
         };
 
@@ -2911,7 +2921,7 @@ describe('Canonical URL Tests', () => {
               href: '',
               inHead: false,
             },
-            rawBody: '<html><head></head></html>',
+            rawBody: createValidRawBody('<html><head></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
           },
         };
 
@@ -2971,7 +2981,7 @@ describe('Canonical URL Tests', () => {
               href: 'https://example.com/page1',
               inHead: true, // In head - should pass
             },
-            rawBody: '<html><head><link rel="canonical" href="https://example.com/page1"></head></html>',
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href="https://example.com/page1"></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
           },
         };
 
@@ -3029,7 +3039,7 @@ describe('Canonical URL Tests', () => {
               href: 'https://example.com/page1',
               inHead: false, // Outside head - should fail this check
             },
-            rawBody: '<html><head></head><body><link rel="canonical" href="https://example.com/page1"></body></html>',
+            rawBody: createValidRawBody('<html><head></head><body><link rel="canonical" href="https://example.com/page1"><p>Content for testing canonical URL validation.</p></body></html>'),
           },
         };
 
@@ -3166,7 +3176,7 @@ describe('Canonical URL Tests', () => {
               href: 'https://example.com/page1',
               inHead: true,
             },
-            rawBody: '<html><head><link rel="canonical" href="https://example.com/page1"></head></html>',
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href="https://example.com/page1"></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
           },
         };
 
@@ -3222,7 +3232,7 @@ describe('Canonical URL Tests', () => {
               href: null,
               inHead: false,
             },
-            rawBody: '<html><head><title>Login</title></head></html>',
+            rawBody: createValidRawBody('<html><head><title>Login</title></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
           },
         };
 
@@ -3272,7 +3282,7 @@ describe('Canonical URL Tests', () => {
               href: null,
               inHead: false,
             },
-            rawBody: '',
+            rawBody: createValidRawBody(''), // Empty string for PDF redirect test - will be padded to 300 chars
           },
         };
 
@@ -3308,6 +3318,139 @@ describe('Canonical URL Tests', () => {
         });
         expect(context.log.info).to.have.been.calledWith(
           '[canonical] Skipping https://example.com/document - redirected to PDF: https://example.com/files/document.pdf',
+        );
+      });
+
+      it('should skip pages with empty rawBody (length < 300)', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            canonical: {
+              exists: false,
+              count: 0,
+              href: null,
+              inHead: false,
+            },
+            rawBody: '<body></body>', // Only 13 characters, should be skipped
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
+          audit: {
+            getId: () => 'test-audit-id',
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteId: sinon.stub().resolves([]),
+              allBySiteIdAndStatus: sinon.stub().resolves([]),
+              create: sinon.stub().resolves({
+                getId: () => 'test-oppty-id',
+                getSuggestions: sinon.stub().resolves([]),
+                addSuggestions: sinon.stub().resolves({ createdItems: [] }),
+              }),
+            },
+            Suggestion: {
+              allByOpportunityId: sinon.stub().resolves([]),
+              bulkCreate: sinon.stub().resolves({ createdItems: [], errors: [] }),
+            },
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result).to.have.property('auditResult');
+        expect(result.auditResult).to.deep.equal({
+          status: 'success',
+          message: 'No canonical issues detected',
+        });
+        // Verify line 390 is executed: log.warn with exact message including key and rawBody length
+        expect(context.log.warn).to.have.been.calledOnce;
+        expect(context.log.warn).to.have.been.calledWith(
+          '[canonical] Scrape result is empty for scrapes/job-id/page1/scrape.json (rawBody length: 13)',
+        );
+      });
+
+      it('should skip pages with rawBody length 0', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            canonical: {
+              exists: false,
+              count: 0,
+              href: null,
+              inHead: false,
+            },
+            rawBody: '', // Empty string, length 0, should be skipped
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
+          audit: {
+            getId: () => 'test-audit-id',
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteId: sinon.stub().resolves([]),
+              allBySiteIdAndStatus: sinon.stub().resolves([]),
+              create: sinon.stub().resolves({
+                getId: () => 'test-oppty-id',
+                getSuggestions: sinon.stub().resolves([]),
+                addSuggestions: sinon.stub().resolves({ createdItems: [] }),
+              }),
+            },
+            Suggestion: {
+              allByOpportunityId: sinon.stub().resolves([]),
+              bulkCreate: sinon.stub().resolves({ createdItems: [], errors: [] }),
+            },
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result).to.have.property('auditResult');
+        expect(result.auditResult).to.deep.equal({
+          status: 'success',
+          message: 'No canonical issues detected',
+        });
+        // Verify line 390 is executed: log.warn with exact message including key and rawBody length 0
+        expect(context.log.warn).to.have.been.calledWith(
+          '[canonical] Scrape result is empty for scrapes/job-id/page1/scrape.json (rawBody length: 0)',
         );
       });
     });
