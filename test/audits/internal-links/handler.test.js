@@ -1058,6 +1058,31 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(result.status).to.equal('complete');
   }).timeout(5000);
 
+  it('handles undefined brokenInternalLinks in audit result (line 393 branch)', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
+
+    // Audit result has success but no brokenInternalLinks (undefined) to cover (x || []) branch
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        success: true,
+        auditContext: { interval: 30 },
+      }),
+    };
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+      },
+    });
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    expect(result.status).to.equal('complete');
+  }).timeout(5000);
+
   it('excludes canonical and alternate (hreflang) links from opportunity and suggestions', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
