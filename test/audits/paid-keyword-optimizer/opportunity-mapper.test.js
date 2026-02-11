@@ -285,6 +285,30 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       expect(result.data.opportunityImpact).to.equal(3000);
     });
 
+    it('handles empty guidance array gracefully', () => {
+      const audit = createMockAudit({
+        totalPageViews: 10000,
+        averageBounceRate: 0.45,
+        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+      });
+      const message = {
+        auditId: 'audit-id-123',
+        siteId: TEST_SITE_ID,
+        data: {
+          url: TEST_URL,
+          guidance: [],
+          suggestions: [],
+        },
+      };
+
+      const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
+
+      expect(result.data.url).to.be.undefined;
+      expect(result.data.cpc).to.be.undefined;
+      expect(result.data.sumTraffic).to.be.undefined;
+      expect(result.guidance.recommendations[0].insight).to.be.undefined;
+    });
+
     it('handles missing predominantlyPaidPages gracefully', () => {
       const audit = createMockAudit({
         totalPageViews: 10000,
