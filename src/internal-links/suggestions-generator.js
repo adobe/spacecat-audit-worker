@@ -284,8 +284,8 @@ export async function syncBrokenInternalLinksSuggestions({
     newData: brokenInternalLinks,
     context,
     buildKey,
+    statusToSetForOutdated: SuggestionDataAccess.STATUSES.NEW,
     mergeDataFunction,
-    statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
     mapNewSuggestion: (entry) => {
       const itemType = entry.itemType || 'link';
       const isAsset = itemType !== 'link';
