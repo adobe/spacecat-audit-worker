@@ -100,6 +100,20 @@ export async function updateAuditResult(
   return updatedAuditResult;
 }
 
+/** itemTypes excluded from broken-internal-links (handled by canonical/hreflang audits) */
+const EXCLUDED_ITEM_TYPES = new Set(['canonical', 'alternate']);
+
+/**
+ * Returns true if the link is from a canonical or hreflang tag.
+ * Those are covered by dedicated canonical/hreflang audits and should not be
+ * counted as broken internal links.
+ * @param {Object} link - Link object (may have itemType)
+ * @returns {boolean}
+ */
+function isCanonicalOrHreflangLink(link) {
+  return link?.itemType && EXCLUDED_ITEM_TYPES.has(link.itemType);
+}
+
 /**
  * Perform an audit to check which internal links for domain are broken.
  * This is the RUM-based detection phase.
@@ -375,9 +389,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
     log.info('Audit failed, skipping suggestions generation');
     return { status: 'complete' };
   }
+  // Exclude canonical and hreflang/alternate links; they are covered by dedicated audits
+  const brokenInternalLinksFiltered = (brokenInternalLinks || []).filter(
+    (link) => !isCanonicalOrHreflangLink(link),
+  );
 
-  if (!isNonEmptyArray(brokenInternalLinks)) {
-    // no broken internal links found - handle existing opportunity
+  if (!isNonEmptyArray(brokenInternalLinksFiltered)) {
+    // no broken internal links found
+    // fetch opportunity
     const { Opportunity } = dataAccess;
     let opportunity;
     try {
@@ -404,7 +423,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
     return { status: 'complete' };
   }
 
-  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinks);
+  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinksFiltered);
 
   const opportunity = await convertToOpportunity(
     finalUrl,
@@ -417,7 +436,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   await syncBrokenInternalLinksSuggestions({
     opportunity,
-    brokenInternalLinks,
+    brokenInternalLinks: brokenInternalLinksFiltered,
     context,
     opportunityId: opportunity.getId(),
     log,

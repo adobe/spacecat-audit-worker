@@ -1058,6 +1058,37 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     expect(result.status).to.equal('complete');
   }).timeout(5000);
 
+  it('excludes canonical and alternate (hreflang) links from opportunity and suggestions', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
+
+    // Audit result has only canonical and alternate links (covered by dedicated audits)
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [
+          { urlFrom: 'https://example.com/page', urlTo: 'https://example.com/canonical-404', itemType: 'canonical' },
+          { urlFrom: 'https://example.com/page', urlTo: 'https://example.com/es', itemType: 'alternate' },
+        ],
+        success: true,
+        auditContext: { interval: 30 },
+      }),
+    };
+
+    handler = await esmock('../../../src/internal-links/handler.js', {
+      '../../../src/internal-links/suggestions-generator.js': {
+        generateSuggestionData: () => [],
+        syncSuggestions: () => {},
+      },
+    });
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    // Filtered to zero links, so no opportunity created (same as "no broken links")
+    expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    expect(result.status).to.equal('complete');
+  }).timeout(5000);
+
   it('filters out unscrape-able file types (PDFs, Office docs) from alternative URLs', async () => {
     // Use root-level URLs (no path prefix) to ensure all alternatives are included
     const validSuggestions = [
