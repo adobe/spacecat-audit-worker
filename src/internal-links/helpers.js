@@ -10,8 +10,13 @@
  * governing permissions and limitations under the License.
  */
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { createAuditLogger } from '../common/context-logger.js';
 
-const LINK_TIMEOUT = 3000;
+const AUDIT_TYPE = 'broken-internal-links';
+
+// 5s timeout handles slow pages while avoiding false positives
+// Batching allows longer timeouts without Lambda timeout risk
+const LINK_TIMEOUT = 5000;
 export const CPC_DEFAULT_VALUE = 1;
 export const TRAFFIC_MULTIPLIER = 0.01; // 1%
 export const MAX_LINKS_TO_CONSIDER = 10;
@@ -25,7 +30,7 @@ export const resolveCpcValue = () => CPC_DEFAULT_VALUE;
 
 /**
  * Calculates KPI deltas based on broken internal links audit data
- * @param {Object} auditData - The audit data containing results
+ * @param {Array} brokenInternalLinks - Array of broken link objects
  * @returns {Object} KPI delta calculations
  */
 export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
@@ -42,8 +47,7 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
   Object.keys(linksMap).forEach((url) => {
     const links = linksMap[url];
     let linksToBeIncremented;
-    // Sort links by traffic domain if there are more than MAX_LINKS_TO_CONSIDER
-    // and only consider top MAX_LINKS_TO_CONSIDER for calculating deltas
+    // For many links to same URL, only consider top MAX_LINKS_TO_CONSIDER by traffic
     if (links.length > MAX_LINKS_TO_CONSIDER) {
       links.sort((a, b) => b.trafficDomain - a.trafficDomain);
       linksToBeIncremented = links.slice(0, MAX_LINKS_TO_CONSIDER);
@@ -64,45 +68,168 @@ export const calculateKpiDeltasForAudit = (brokenInternalLinks) => {
 };
 
 /**
- * Checks if a URL is inaccessible/not reachable by attempting to fetch it.
- * A URL is considered inaccessible if:
- * - The fetch request fails (network errors or timeouts)
- * - The response status code is >= 400 (400-499)
- * The check will timeout after LINK_TIMEOUT milliseconds.
- * Non-404 client errors (400-499) will log a warning.
- * All errors (network, timeout etc) will log an error and return true.
- * @param {string} url - The URL to validate
- * @returns {Promise<boolean>} True if the URL is inaccessible, times out, or errors
- * false if reachable/accessible
+ * Checks if an error is a timeout error
+ * @param {Error} error - The error to check
+ * @returns {boolean} True if it's a timeout error
  */
-export async function isLinkInaccessible(url, log) {
-  try {
-    const response = await fetch(url, { timeout: LINK_TIMEOUT });
-    const { status } = response;
+function isTimeoutError(error) {
+  const message = error?.message?.toLowerCase() || '';
+  const code = error?.code?.toLowerCase() || '';
+  return message.includes('timeout')
+    || message.includes('etimedout')
+    || code.includes('timeout')
+    || code === 'etimedout'
+    || code === 'esockettimedout';
+}
 
-    // Log non-404, non-200 status codes
-    if (status >= 400 && status < 500 && status !== 404) {
-      log.warn(`broken-internal-links audit: Warning: ${url} returned client error: ${status}`);
+/**
+ * Checks if a URL points to a static asset
+ * @param {string} url - The URL to check
+ * @returns {boolean} True if it's a static asset (image, SVG, CSS, JS, etc.)
+ */
+function isStaticAsset(url) {
+  return /\.(svg|png|jpe?g|gif|webp|css|js|ico|woff2?)(\?.*)?$/i.test(url);
+}
+
+/**
+ * Checks a link using HEAD request (faster than GET)
+ * @param {string} url - The URL to check
+ * @param {Object} log - Logger instance
+ * @returns {Promise<boolean|null>} True if broken, false if accessible, null if inconclusive
+ */
+async function checkLinkWithHead(url, log) {
+  try {
+    const headResponse = await fetch(url, {
+      method: 'HEAD',
+      timeout: LINK_TIMEOUT,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0',
+      },
+    });
+    const { status } = headResponse;
+
+    if (status < 400) {
+      return false;
     }
 
-    // URL is valid if status code is less than 400, otherwise it is invalid
-    return status >= 400;
-  } catch (error) {
-    log.error(`broken-internal-links audit: Error checking ${url}: ${error.code === 'ETIMEOUT' ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
-    // Any error means the URL is inaccessible
+    if (status === 404 || status >= 500) {
+      log.info(`✗ BROKEN LINK FOUND: ${url} (HEAD ${status})`);
+      return true;
+    }
+
+    // For auth errors (401, 403), return null to trigger GET verification
+    return null;
+  } catch (headError) {
+    // Timeout could be rate limiting, treat as accessible
+    if (isTimeoutError(headError)) {
+      log.info(`⏱ TIMEOUT: ${url} (HEAD request timed out after ${LINK_TIMEOUT}ms, assuming accessible)`);
+      return false;
+    }
+
+    return null;
+  }
+}
+
+/**
+ * Checks a link using GET request
+ * @param {string} url - The URL to check
+ * @param {boolean} isAsset - Whether the URL is a static asset
+ * @param {Object} log - Logger instance
+ * @returns {Promise<boolean>} True if broken, false if accessible
+ */
+async function checkLinkWithGet(url, isAsset, log) {
+  try {
+    const getHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Spacecat/1.0',
+    };
+
+    // For assets, request only 1 byte to avoid full download
+    if (isAsset) {
+      getHeaders.Range = 'bytes=0-0';
+    }
+
+    const getResponse = await fetch(url, {
+      method: 'GET',
+      timeout: LINK_TIMEOUT,
+      headers: getHeaders,
+    });
+    const { status } = getResponse;
+
+    if (status < 400) {
+      return false;
+    }
+
+    if (status >= 400 && status < 500 && status !== 404) {
+      log.warn(`⚠ WARNING: ${url} returned client error ${status}`);
+    }
+
+    const isBroken = status >= 400;
+    if (isBroken) {
+      log.info(`✗ BROKEN LINK FOUND: ${url} (GET ${status})`);
+    }
+    return isBroken;
+  } catch (getError) {
+    if (isTimeoutError(getError)) {
+      log.info(`⏱ TIMEOUT: ${url} (GET request timed out after ${LINK_TIMEOUT}ms, assuming accessible)`);
+      return false;
+    }
+
+    let errorMessage = getError.message || 'Unknown error';
+
+    if (getError.code) {
+      errorMessage = `${getError.code}: ${errorMessage}`;
+    }
+    if (getError.type) {
+      errorMessage = `${getError.type} - ${errorMessage}`;
+    }
+    if (getError.errno) {
+      errorMessage = `${errorMessage} (errno: ${getError.errno})`;
+    }
+
+    log.error(`✗ BROKEN LINK FOUND: ${url} (ERROR: ${errorMessage})`);
     return true;
   }
 }
 
 /**
- * Classifies links into priority categories based on views
+ * Checks if a URL is inaccessible by attempting to fetch it.
+ * Returns true if fetch fails, times out, or status >= 400.
+ *
+ * Strategy: HEAD first (faster), fallback to GET if inconclusive.
+ * Static assets skip HEAD (often fail) and use GET with Range header.
+ *
+ * @param {string} url - The URL to validate
+ * @param {Object} baseLog - Base logger object
+ * @param {string} siteId - Site ID for logging context
+ * @returns {Promise<boolean>} True if inaccessible, false if accessible
+ */
+export async function isLinkInaccessible(url, baseLog, siteId) {
+  const log = createAuditLogger(baseLog, AUDIT_TYPE, siteId);
+
+  // Validate URL as it appears on the page (no path encoding rewrite).
+  // Rewriting %20→hyphen would hide broken canonicals that point to the wrong URL.
+  const isAsset = isStaticAsset(url);
+
+  // Static assets often fail HEAD, so skip to GET with Range header
+  if (!isAsset) {
+    const headResult = await checkLinkWithHead(url, log);
+    if (headResult !== null) {
+      return headResult;
+    }
+  }
+
+  return checkLinkWithGet(url, isAsset, log);
+}
+
+/**
+ * Classifies links into priority categories based on traffic.
  * High: top 25%, Medium: next 25%, Low: bottom 50%
- * @param {Array} links - Array of objects with views property
- * @returns {Array} - Links with priority classifications included
+ * @param {Array} links - Array of objects with trafficDomain property
+ * @returns {Array} - Links sorted by trafficDomain (descending) with priority classifications
  */
 export function calculatePriority(links) {
-  // Sort links by views in descending order
-  const sortedLinks = [...links].sort((a, b) => b.views - a.views);
+  // Sort links by trafficDomain in descending order (handle undefined/null)
+  const sortedLinks = [...links].sort((a, b) => (b.trafficDomain || 0) - (a.trafficDomain || 0));
 
   // Calculate indices for the 25% and 50% marks
   const quarterIndex = Math.ceil(sortedLinks.length * 0.25);
