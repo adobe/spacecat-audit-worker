@@ -25,27 +25,33 @@ import {
 const TEST_SITE_ID = 'some-id';
 const TEST_URL = 'https://sample-page/page1';
 
-// Helper to create a message in the new format
-function createMessage(overrides = {}) {
+// Helper to create a message in the GuidanceWithBody format
+function createMessage({ bodyOverrides, guidanceOverrides } = {}) {
   return {
     auditId: 'audit-id-123',
     siteId: TEST_SITE_ID,
-    insight: 'test insight',
-    rationale: 'test rationale',
-    recommendation: 'test recommendation',
-    body: {
-      issueSeverity: 'medium',
-      data: {
-        url: TEST_URL,
-        suggestions: [
-          { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
-          { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
-        ],
-        cpc: 0.075,
-        sum_traffic: 23423.5,
-      },
+    data: {
+      url: TEST_URL,
+      guidance: [{
+        insight: 'test insight',
+        rationale: 'test rationale',
+        recommendation: 'test recommendation',
+        type: 'guidance',
+        ...guidanceOverrides,
+        body: {
+          issueSeverity: 'medium',
+          url: TEST_URL,
+          suggestions: [
+            { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
+            { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
+          ],
+          cpc: 0.075,
+          sumTraffic: 23423.5,
+          ...bodyOverrides,
+        },
+      }],
+      suggestions: [],
     },
-    ...overrides,
   };
 }
 
@@ -165,9 +171,11 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
         temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
       });
       const message = createMessage({
-        insight: 'custom insight',
-        rationale: 'custom rationale',
-        recommendation: 'custom recommendation',
+        guidanceOverrides: {
+          insight: 'custom insight',
+          rationale: 'custom rationale',
+          recommendation: 'custom recommendation',
+        },
       });
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
@@ -194,7 +202,7 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       expect(result.data.dataSources).to.include('Page');
     });
 
-    it('includes single URL and metrics from message body', () => {
+    it('includes single URL and metrics from guidance body', () => {
       const audit = createMockAudit({
         totalPageViews: 10000,
         averageBounceRate: 0.45,
@@ -321,7 +329,7 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       expect(result.description).to.include('0');
     });
 
-    it('handles missing body.data fields gracefully', () => {
+    it('handles missing guidance body fields gracefully', () => {
       const audit = createMockAudit({
         totalPageViews: 10000,
         averageBounceRate: 0.45,
@@ -330,10 +338,17 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       const message = {
         auditId: 'audit-id-123',
         siteId: TEST_SITE_ID,
-        insight: 'insight',
-        rationale: 'rationale',
-        recommendation: 'recommendation',
-        body: {},
+        data: {
+          url: TEST_URL,
+          guidance: [{
+            insight: 'insight',
+            rationale: 'rationale',
+            recommendation: 'recommendation',
+            type: 'guidance',
+            body: {},
+          }],
+          suggestions: [],
+        },
       };
 
       const result = mapToKeywordOptimizerOpportunity(TEST_SITE_ID, audit, message);
@@ -419,7 +434,7 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       expect(result.status).to.equal(SuggestionDataAccess.STATUSES.NEW);
     });
 
-    it('stores suggestions as variations from message body', () => {
+    it('stores suggestions as variations from guidance body', () => {
       const context = {
         site: { requiresValidation: false },
       };
@@ -428,17 +443,7 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
         { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
         { id: 'variation-1', name: 'Variation 1', screenshotUrl: 'https://example.com/var1.png' },
       ];
-      const message = createMessage({
-        body: {
-          issueSeverity: 'medium',
-          data: {
-            url: TEST_URL,
-            suggestions,
-            cpc: 0.075,
-            sum_traffic: 23423.5,
-          },
-        },
-      });
+      const message = createMessage({ bodyOverrides: { suggestions } });
 
       const result = mapToKeywordOptimizerSuggestion(
         context,
@@ -464,7 +469,7 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       expect(result.data.kpiDeltas).to.deep.equal({ estimatedKPILift: 0 });
     });
 
-    it('handles missing body data gracefully', () => {
+    it('handles missing message data gracefully', () => {
       const context = {
         site: { requiresValidation: false },
       };
@@ -492,21 +497,11 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       expect(result.status).to.equal(SuggestionDataAccess.STATUSES.NEW);
     });
 
-    it('handles empty suggestions array', () => {
+    it('handles empty suggestions array in guidance body', () => {
       const context = {
         site: { requiresValidation: false },
       };
-      const message = createMessage({
-        body: {
-          issueSeverity: 'medium',
-          data: {
-            url: TEST_URL,
-            suggestions: [],
-            cpc: 0.075,
-            sum_traffic: 23423.5,
-          },
-        },
-      });
+      const message = createMessage({ bodyOverrides: { suggestions: [] } });
 
       const result = mapToKeywordOptimizerSuggestion(
         context,
@@ -517,19 +512,27 @@ describe('Paid Keyword Optimizer opportunity mapper', () => {
       expect(result.data.variations).to.deep.equal([]);
     });
 
-    it('handles undefined suggestions in message body', () => {
+    it('handles undefined suggestions in guidance body', () => {
       const context = {
         site: { requiresValidation: false },
       };
       const message = {
-        body: {
-          issueSeverity: 'medium',
-          data: {
-            url: TEST_URL,
-            // suggestions is undefined
-            cpc: 0.075,
-            sum_traffic: 23423.5,
-          },
+        data: {
+          url: TEST_URL,
+          guidance: [{
+            insight: 'test insight',
+            rationale: 'test rationale',
+            recommendation: 'test recommendation',
+            type: 'guidance',
+            body: {
+              issueSeverity: 'medium',
+              url: TEST_URL,
+              // suggestions is undefined
+              cpc: 0.075,
+              sumTraffic: 23423.5,
+            },
+          }],
+          suggestions: [],
         },
       };
 
