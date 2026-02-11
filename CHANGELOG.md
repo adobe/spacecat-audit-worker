@@ -1,3 +1,46 @@
+## [1.311.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.311.0...v1.311.1) (2026-02-10)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1965](https://github.com/adobe/spacecat-audit-worker/issues/1965)) ([48af3bf](https://github.com/adobe/spacecat-audit-worker/commit/48af3bfbd5dcb3d774586fec93208b2e658870d6))
+* Empty security redundant opportunities created ([#1948](https://github.com/adobe/spacecat-audit-worker/issues/1948)) ([990f302](https://github.com/adobe/spacecat-audit-worker/commit/990f3027fa026446e87f34fbf81618a3904cee68))
+
+# [1.311.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.310.0...v1.311.0) (2026-02-10)
+
+
+### Features
+
+* **AGENTCOM-279:** add enrichment API call and clean up logging in commerce audit ([#1958](https://github.com/adobe/spacecat-audit-worker/issues/1958)) ([e39bf31](https://github.com/adobe/spacecat-audit-worker/commit/e39bf31d3d4fe54b6744ae6fbed2e69a8744a692))
+
+# [1.310.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.309.0...v1.310.0) (2026-02-10)
+
+
+### Features
+
+* **health-check:** add Ahrefs and base URL resolution checks ([#1959](https://github.com/adobe/spacecat-audit-worker/issues/1959)) ([4c9f895](https://github.com/adobe/spacecat-audit-worker/commit/4c9f895d4b0503a7fd2134e5314b9fb7ddcf6817))
+
+# [1.309.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.308.0...v1.309.0) (2026-02-10)
+
+
+### Features
+
+* added logic to mark old suggestions as oudated for alt-text audit ([#1949](https://github.com/adobe/spacecat-audit-worker/issues/1949)) ([2d40a2c](https://github.com/adobe/spacecat-audit-worker/commit/2d40a2c3007846d8b0dca9ec0d8baeb66aff3acf))
+
+# [1.308.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.307.1...v1.308.0) (2026-02-10)
+
+
+### Features
+
+* introduce selectors in the payload of preflight for highlighting and applying suggestions ([#1675](https://github.com/adobe/spacecat-audit-worker/issues/1675)) ([eb07d2c](https://github.com/adobe/spacecat-audit-worker/commit/eb07d2c0c52d1fbd80925517d7a18aa2a895e4c2))
+
+## [1.307.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.307.0...v1.307.1) (2026-02-10)
+
+
+### Bug Fixes
+
+* Make code patch disabled by default for a11y fixes ([#1964](https://github.com/adobe/spacecat-audit-worker/issues/1964)) ([638f450](https://github.com/adobe/spacecat-audit-worker/commit/638f4503912e143ab4dec6d6274a2838cae59641))
+
 # [1.307.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.306.3...v1.307.0) (2026-02-09)
 
 
