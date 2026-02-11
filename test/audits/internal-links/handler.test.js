@@ -2126,6 +2126,48 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       expect(context.log.info).to.have.been.calledWith(sinon.match(/All broken links resolved via Bright Data/));
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
+
+    it('should use site.getBaseURL when finalUrl is not provided', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+      context.finalUrl = null; // Test the fallback branch
+
+      mockBrightDataClient.googleSearchWithFallback.resolves({
+        results: [{ link: 'https://example.com/suggested', title: 'Suggested' }],
+        query: 'site:example.com keywords',
+        keywords: 'keywords',
+      });
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+      });
+
+      const mockSuggestion = {
+        getId: () => 'test-suggestion-1',
+        getData: () => ({
+          urlFrom: 'https://example.com/from',
+          urlTo: 'https://example.com/broken',
+        }),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([mockSuggestion]);
+      context.dataAccess.Suggestion.findById = sinon.stub().resolves(mockSuggestion);
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+      const result = await mockedHandler.opportunityAndSuggestionsStep(context);
+
+      expect(result.status).to.equal('complete');
+      // Verify BrightData was called with site.getBaseURL() fallback
+      expect(mockBrightDataClient.googleSearchWithFallback).to.have.been.calledWith(
+        'https://example.com', // from site.getBaseURL()
+        sinon.match.any,
+        sinon.match.any,
+        sinon.match.any,
+      );
+    });
   });
 
   it('should batch brokenLinks into multiple SQS messages when exceeding batch size', async () => {
