@@ -106,6 +106,8 @@ import wikipediaAnalysis from './wikipedia-analysis/handler.js';
 import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
 import frescopaDataGeneration from './frescopa-data-generation/handler.js';
 import ptrSelector from './ptr-selector/handler.js';
+import semanticValueVisibility from './semantic-value-visibility/handler.js';
+import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -206,6 +208,8 @@ const HANDLERS = {
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
   'frescopa-data-generation': frescopaDataGeneration,
   'ptr-selector': ptrSelector,
+  'semantic-value-visibility': semanticValueVisibility,
+  'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   dummy: (message) => ok(message),
 };
 
