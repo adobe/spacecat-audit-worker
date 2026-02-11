@@ -17,7 +17,7 @@ import {
 } from './guidance-opportunity-mapper.js';
 import { createPaidLogger } from '../paid/paid-log.js';
 
-const GUIDANCE_TYPE = 'paid-keyword-optimizer';
+const GUIDANCE_TYPE = 'ad-intent-mismatch';
 
 /**
  * Handler for ad intent mismatch guidance responses from mystique.
