@@ -530,7 +530,7 @@ describe('Sitemap Audit', () => {
     it('should return success when sitemap.xml is found', async () => {
       nock(url).get('/robots.txt').reply(200, 'Allow: /');
       nock(url).head('/sitemap.xml').reply(200);
-      nock(url).head('/sitemap_index.xml').reply(200);
+      nock(url).head('/sitemap_index.xml').reply(404);
       nock(url)
         .get('/sitemap.xml')
         .reply(
@@ -553,6 +553,7 @@ describe('Sitemap Audit', () => {
 
       const result = await findSitemap('https://some-domain.adobe', {
         info: () => {},
+        debug: () => {},
       });
       expect(result.success).to.equal(true);
     });

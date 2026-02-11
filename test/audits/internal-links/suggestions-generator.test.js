@@ -1241,6 +1241,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     expect(callArgs.statusToSetForOutdated).to.equal(SuggestionDataAccess.STATUSES.FIXED);
     expect(callArgs.buildKey(brokenInternalLinks[0])).to.equal('https://example.com/from1-https://example.com/to1-link');
 
+
     const mappedSuggestion = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
     expect(mappedSuggestion).to.deep.equal({
       opportunityId: 'oppty-id-1',

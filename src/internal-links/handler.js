@@ -415,7 +415,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
       await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
       const suggestions = await opportunity.getSuggestions();
       if (isNonEmptyArray(suggestions)) {
-        await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.FIXED);
+        await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
       }
       opportunity.setUpdatedBy('system');
       await opportunity.save();

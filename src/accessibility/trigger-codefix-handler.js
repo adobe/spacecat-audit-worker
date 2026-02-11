@@ -34,7 +34,9 @@ const VALID_OPPORTUNITY_STATUSES = [
  *   siteId: string,
  *   data: {
  *     opportunityId: string,
- *     opportunityType: string
+ *     opportunityType: string,
+ *     aggregationKey: string (optional) - If provided, only suggestions matching
+ *                                         this aggregation key will be processed
  *   },
  *   auditContext: {
  *     slackContext: { channelId, threadTs }
@@ -50,9 +52,10 @@ export default async function handler(message, context) {
     log, dataAccess, sqs, env,
   } = context;
   const { siteId, data = {}, auditContext = {} } = message;
-  const { opportunityId, opportunityType } = data;
+  const { opportunityId, opportunityType, aggregationKey } = data;
 
-  log.info(`[A11yCodefix] Received trigger for site ${siteId}, opportunity ${opportunityId} (${opportunityType})`);
+  const aggregationKeyInfo = aggregationKey ? `, aggregationKey: ${aggregationKey}` : '';
+  log.info(`[A11yCodefix] Received trigger for site ${siteId}, opportunity ${opportunityId} (${opportunityType})${aggregationKeyInfo}`);
 
   if (!siteId) {
     log.error('[A11yCodefix] Missing siteId in message');
@@ -104,7 +107,7 @@ export default async function handler(message, context) {
     const result = await sendOpportunitySuggestionsToMystique(
       opportunityId,
       enhancedContext,
-      { skipMystiqueEnabledCheck: true },
+      { skipMystiqueEnabledCheck: true, aggregationKey },
     );
 
     if (!result.success) {
