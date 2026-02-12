@@ -64,7 +64,7 @@ describe('Agentic Traffic Mapper', () => {
       site_id: 'site-123',
       traffic_date: '2026-02-11',
       host: 'www.a.com',
-      platform: 'chatgpt',
+      platform: 'ChatGPT',
       agent_type: 'Bot',
       user_agent: 'ChatGPT',
       http_status: 200,
@@ -169,7 +169,7 @@ describe('Agentic Traffic Mapper', () => {
     const mapped = await mapToAgenticTrafficRows(rows, site, context, '2026-02-11');
 
     expect(mapped).to.have.length(1);
-    expect(mapped[0].platform).to.equal('chatgpt');
+    expect(mapped[0].platform).to.equal('ChatGPT');
     expect(mapped[0].content_type).to.equal('PDF');
   });
 
@@ -186,7 +186,7 @@ describe('Agentic Traffic Mapper', () => {
     const mapped = await mapToAgenticTrafficRows(rows, site, context, '2026-02-11');
 
     expect(mapped).to.have.length(1);
-    expect(mapped[0].platform).to.equal('claude');
+    expect(mapped[0].platform).to.equal('Claude');
     expect(mapped[0].content_type).to.equal('OTHER');
   });
 
