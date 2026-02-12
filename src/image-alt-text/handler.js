@@ -61,6 +61,8 @@ export async function processAltTextWithMystique(context) {
       (oppty) => oppty.getType() === AUDIT_TYPE,
     );
 
+    let imageUrlsWithAltText = [];
+
     if (altTextOppty) {
       log.info(`[${AUDIT_TYPE}]: Updating opportunity for new audit run`);
 
@@ -102,6 +104,15 @@ export async function processAltTextWithMystique(context) {
         await Suggestion.bulkUpdateStatus(suggestionsToOutdate, SuggestionModel.STATUSES.OUTDATED);
         log.info(`[${AUDIT_TYPE}]: Marked ${suggestionsToOutdate.length} suggestions as OUTDATED`);
       }
+
+      // Step 4: Collect image URLs from remaining NEW suggestions (excluding just-outdated ones)
+      const outdatedSet = new Set(suggestionsToOutdate);
+      imageUrlsWithAltText = [...new Set(
+        existingSuggestions
+          .filter((s) => s.getStatus() === SuggestionModel.STATUSES.NEW && !outdatedSet.has(s))
+          .map((s) => s.getData()?.recommendations?.[0]?.imageUrl)
+          .filter(Boolean),
+      )];
 
       // Reset only Mystique-related data, keep existing metrics
       const existingData = altTextOppty.getData() || {};
@@ -160,6 +171,7 @@ export async function processAltTextWithMystique(context) {
       site.getId(),
       audit.getId(),
       context,
+      imageUrlsWithAltText,
     );
 
     log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
