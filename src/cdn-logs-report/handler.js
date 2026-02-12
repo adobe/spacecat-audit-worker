@@ -26,6 +26,71 @@ import { wwwUrlResolver } from '../common/base-audit.js';
 import { createLLMOSharepointClient, bulkPublishToAdminHlx } from '../utils/report-uploader.js';
 import { getConfigs } from './constants/report-configs.js';
 import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
+import { weeklyBreakdownQueries } from './utils/query-builder.js';
+import { mapToAgenticTrafficRows } from './utils/agentic-traffic-mapper.js';
+
+const AGENTIC_DAILY_SITE_IDS = new Set(['9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3']);
+
+function uploadAgenticTrafficToS3() {
+  return { status: 'todo', key: null };
+}
+
+function sendAgenticTrafficSqsMessage() {
+  return { status: 'todo', queue: null, messageId: null };
+}
+
+function getYesterdayUtcDate() {
+  const yesterday = new Date();
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  yesterday.setUTCHours(0, 0, 0, 0);
+  return yesterday;
+}
+
+async function runDailyAgenticExport({
+  athenaClient,
+  s3Config,
+  site,
+  context,
+}) {
+  const { log } = context;
+  const yesterday = getYesterdayUtcDate();
+  const trafficDate = yesterday.toISOString().split('T')[0];
+  const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
+  await athenaClient.execute(sqlDb, s3Config.databaseName, `[Athena Query] Create database ${s3Config.databaseName}`);
+  const query = await weeklyBreakdownQueries.createAgenticDailyReportQuery({
+    trafficDate: yesterday,
+    databaseName: s3Config.databaseName,
+    tableName: `aggregated_logs_${s3Config.customerDomain}_consolidated`,
+    site,
+  });
+
+  const rawRows = await athenaClient.query(
+    query,
+    s3Config.databaseName,
+    '[Athena Query] agentic_daily_flat_data',
+  );
+
+  const mappedRows = await mapToAgenticTrafficRows(rawRows, site, context, trafficDate);
+  const delivery = {
+    s3Upload: uploadAgenticTrafficToS3(mappedRows),
+    sqsDispatch: sendAgenticTrafficSqsMessage({
+      siteId: site.getId(),
+      trafficDate,
+      rowCount: mappedRows.length,
+    }),
+  };
+
+  log.info(`[cdn-logs-report] Daily agentic export prepared for ${site.getId()} on ${trafficDate}. Rows: ${mappedRows.length}`);
+
+  return {
+    enabled: true,
+    success: true,
+    siteId: site.getId(),
+    trafficDate,
+    rowCount: mappedRows.length,
+    delivery,
+  };
+}
 
 async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
@@ -42,6 +107,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   });
   const siteId = site.getId();
   const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain, siteId);
+  let dailyAgenticExport;
 
   const results = [];
   const reportsToPublish = [];
@@ -135,8 +201,35 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
   }
 
+  if (AGENTIC_DAILY_SITE_IDS.has(siteId)) {
+    try {
+      dailyAgenticExport = await runDailyAgenticExport({
+        athenaClient,
+        s3Config,
+        site,
+        context,
+      });
+    } catch (error) {
+      log.error(`Failed daily agentic export for site ${siteId}: ${error.message}`);
+      const trafficDate = getYesterdayUtcDate().toISOString().split('T')[0];
+      dailyAgenticExport = {
+        enabled: true,
+        success: false,
+        siteId,
+        trafficDate,
+        rowCount: 0,
+        delivery: {
+          s3Upload: { status: 'todo', key: null },
+          sqsDispatch: { status: 'todo', queue: null, messageId: null },
+        },
+        error: error.message,
+      };
+    }
+  }
+
   return {
     auditResult: results,
+    dailyAgenticExport,
     fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}`,
   };
 }
