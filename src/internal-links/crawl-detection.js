@@ -18,6 +18,13 @@ import { isLinkInaccessible } from './helpers.js';
 
 const AUDIT_TYPE = 'broken-internal-links';
 
+/**
+ * Default traffic value for crawl-detected broken links (no RUM data).
+ * Override via env BROKEN_LINKS_CRAWL_TRAFFIC_DOMAIN (e.g. 1–100).
+ * RUM links keep their traffic_domain (e.g. 200, 400).
+ */
+const CRAWL_DEFAULT_TRAFFIC = Number(process.env.BROKEN_LINKS_CRAWL_TRAFFIC_DOMAIN) || 1;
+
 // Optimized for speed while respecting target server
 const SCRAPE_FETCH_DELAY_MS = 50;
 const LINK_CHECK_BATCH_SIZE = 10;
@@ -241,7 +248,7 @@ async function validateLinksWithCache(
           anchorText: link.anchorText,
           /* c8 ignore next - Fallback tested via link detection */
           itemType: link.type || 'link',
-          trafficDomain: 0,
+          trafficDomain: CRAWL_DEFAULT_TRAFFIC,
         };
       }
 
@@ -259,7 +266,7 @@ async function validateLinksWithCache(
           anchorText: link.anchorText,
           /* c8 ignore next - Fallback tested via link detection */
           itemType: link.type || 'link',
-          trafficDomain: 0,
+          trafficDomain: CRAWL_DEFAULT_TRAFFIC,
         };
       }
       workingUrlsCache.add(link.url);
@@ -449,7 +456,7 @@ export async function detectBrokenLinksFromCrawlBatch({
 /**
  * Merges crawl-detected and RUM-detected broken links.
  * RUM links take priority as they have traffic data.
- * @param {Array} crawlLinks - Links from crawl (trafficDomain: 0)
+ * @param {Array} crawlLinks - Links from crawl (trafficDomain: CRAWL_DEFAULT_TRAFFIC)
  * @param {Array} rumLinks - Links from RUM (have trafficDomain)
  * @param {Object} log - Logger instance
  * @returns {Array} - Merged and deduplicated array
