@@ -1044,7 +1044,7 @@ describe('Step-based Audit Tests', () => {
 
       // Verify [BOT-BLOCKED] info log was called (line 129-134)
       expect(context.log.info).to.have.been.calledWithMatch(
-        /\[BOT-BLOCKED\] Some URLs blocked \(3\/10\), but continuing audit processing for cwv audit on https:\/\/space\.cat as 7 URLs were successfully scraped, jobId=partial-block-job, Blocked URLs: \[.*\]/,
+        /\[BOT-BLOCKED\] Some URLs blocked \(3\/10\), but continuing audit processing for cwv audit on https:\/\/space\.cat as 7 URLs were not blocked by bot protection \(may have failed for other reasons\), jobId=partial-block-job, Blocked URLs: \[.*\]/,
       );
 
       // Verify the blocked URLs list is included (line 128 creates this list)

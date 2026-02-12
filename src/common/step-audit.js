@@ -126,10 +126,11 @@ export class StepAudit extends BaseAudit {
           }
           // Some URLs blocked but not all - continue audit processing
           const blockedUrlsList = blockedUrls?.map((u) => (typeof u === 'string' ? u : u.url)).filter(Boolean).join(', ') || 'none';
+          const nonBlockedCount = totalUrlsCount - blockedUrlsCount;
           log.info(
             `[BOT-BLOCKED] Some URLs blocked (${blockedUrlsCount}/${totalUrlsCount}), `
             + `but continuing audit processing for ${type} audit on ${site.getBaseURL()} `
-            + `as ${totalUrlsCount - blockedUrlsCount} URLs were successfully scraped, jobId=${jobId}, `
+            + `as ${nonBlockedCount} URLs were not blocked by bot protection (may have failed for other reasons), jobId=${jobId}, `
             + `Blocked URLs: [${blockedUrlsList}]`,
           );
         }
