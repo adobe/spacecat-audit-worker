@@ -115,20 +115,22 @@ export class StepAudit extends BaseAudit {
 
       // Check if scrape job was aborted
       if (abort) {
-        const { blockedUrlsCount, totalUrlsCount } = abort.details || {};
+        const { blockedUrlsCount, totalUrlsCount, blockedUrls } = abort.details || {};
         if (blockedUrlsCount && totalUrlsCount) {
           // Only abort if ALL URLs are blocked
           if (blockedUrlsCount === totalUrlsCount) {
             log.warn(
-              `[BOT-BLOCKED] All URLs blocked (${blockedUrlsCount}/${totalUrlsCount}), aborting audit`,
+              `[BOT-BLOCKED] All URLs blocked (${blockedUrlsCount}/${totalUrlsCount}), aborting audit for jobId=${jobId}`,
             );
             return handleAbort(abort, jobId, type, site, siteId, log);
           }
           // Some URLs blocked but not all - continue audit processing
+          const blockedUrlsList = blockedUrls?.map((u) => (typeof u === 'string' ? u : u.url)).filter(Boolean).join(', ') || 'none';
           log.info(
             `[BOT-BLOCKED] Some URLs blocked (${blockedUrlsCount}/${totalUrlsCount}), `
             + `but continuing audit processing for ${type} audit on ${site.getBaseURL()} `
-            + `as ${totalUrlsCount - blockedUrlsCount} URLs were successfully scraped`,
+            + `as ${totalUrlsCount - blockedUrlsCount} URLs were successfully scraped, jobId=${jobId}, `
+            + `Blocked URLs: [${blockedUrlsList}]`,
           );
         }
       }

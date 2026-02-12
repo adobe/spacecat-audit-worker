@@ -990,5 +990,192 @@ describe('Step-based Audit Tests', () => {
       expect(logCall).to.include('Blocker Types: []');
       expect(logCall).to.include('Bot Protected URLs: [none]');
     });
+
+    it('continues audit processing when some URLs are blocked (covers line 128)', async () => {
+      // Mock site URL
+      nock('https://space.cat')
+        .get('/')
+        .reply(200);
+
+      // Mock audit creation for normal flow (audit should continue)
+      const createdAudit = {
+        getId: () => 'audit-partial-123',
+        getAuditType: () => 'cwv',
+        getFullAuditRef: () => 's3://test/partial',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      // Create a simple audit for testing partial block (should continue processing)
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('initial', async () => ({
+          status: 'complete',
+          findings: ['test'],
+        }))
+        .build();
+
+      const messageWithPartialBlock = {
+        type: 'cwv',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        jobId: 'partial-block-job',
+        abort: {
+          reason: 'bot-protection',
+          details: {
+            blockedUrlsCount: 3,
+            totalUrlsCount: 10,
+            blockedUrls: [
+              { url: 'https://example.com/page1', blockerType: 'cloudflare', httpStatus: 403 },
+              { url: 'https://example.com/page2', blockerType: 'imperva', httpStatus: 403 },
+              { url: 'https://example.com/page3', blockerType: 'akamai', httpStatus: 403 },
+            ],
+            byBlockerType: { cloudflare: 1, imperva: 1, akamai: 1 },
+            byHttpStatus: { 403: 3 },
+            auditType: 'cwv',
+            siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+            siteUrl: 'https://example.com',
+          },
+        },
+        auditContext: {},
+      };
+
+      const result = await scrapeResultAudit.run(messageWithPartialBlock, context);
+
+      // Should continue processing (not abort) since only 3/10 URLs blocked
+      expect(result.status).to.equal(200);
+
+      // Verify [BOT-BLOCKED] info log was called (line 129-134)
+      expect(context.log.info).to.have.been.calledWithMatch(
+        /\[BOT-BLOCKED\] Some URLs blocked \(3\/10\), but continuing audit processing for cwv audit on https:\/\/space\.cat as 7 URLs were successfully scraped, jobId=partial-block-job, Blocked URLs: \[.*\]/,
+      );
+
+      // Verify the blocked URLs list is included (line 128 creates this list)
+      const infoCall = context.log.info.args.find(
+        (call) => call && call[0] && call[0].includes('Some URLs blocked (3/10)'),
+      );
+      expect(infoCall).to.exist;
+      const infoLog = infoCall[0];
+      expect(infoLog).to.include('https://example.com/page1');
+      expect(infoLog).to.include('https://example.com/page2');
+      expect(infoLog).to.include('https://example.com/page3');
+
+      // Verify no abort was triggered (no warn log for abort)
+      expect(context.log.warn).to.not.have.been.calledWithMatch(/All URLs blocked/);
+    });
+
+    it('handles partial block with string URLs in blockedUrls array (covers line 128)', async () => {
+      // Mock site URL
+      nock('https://space.cat')
+        .get('/')
+        .reply(200);
+
+      // Mock audit creation for normal flow
+      const createdAudit = {
+        getId: () => 'audit-string-urls-123',
+        getAuditType: () => 'meta-tags',
+        getFullAuditRef: () => 's3://test/string-urls',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      // Create a simple audit for testing string URLs
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('initial', async () => ({
+          status: 'complete',
+          findings: ['test'],
+        }))
+        .build();
+
+      const messageWithStringUrls = {
+        type: 'meta-tags',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        jobId: 'string-urls-job',
+        abort: {
+          reason: 'bot-protection',
+          details: {
+            blockedUrlsCount: 2,
+            totalUrlsCount: 5,
+            // blockedUrls as strings instead of objects
+            blockedUrls: [
+              'https://example.com/page1',
+              'https://example.com/page2',
+            ],
+            byBlockerType: { cloudflare: 2 },
+            byHttpStatus: { 403: 2 },
+            auditType: 'meta-tags',
+            siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+            siteUrl: 'https://example.com',
+          },
+        },
+        auditContext: {},
+      };
+
+      const result = await scrapeResultAudit.run(messageWithStringUrls, context);
+
+      // Should continue processing
+      expect(result.status).to.equal(200);
+
+      // Verify info log includes the string URLs (line 128 handles both string and object URLs)
+      const infoCall = context.log.info.args.find(
+        (call) => call && call[0] && call[0].includes('Some URLs blocked (2/5)'),
+      );
+      expect(infoCall).to.exist;
+      const infoLog = infoCall[0];
+      expect(infoLog).to.include('https://example.com/page1');
+      expect(infoLog).to.include('https://example.com/page2');
+    });
+
+    it('handles partial block with empty blockedUrls array (covers line 128 fallback)', async () => {
+      // Mock site URL
+      nock('https://space.cat')
+        .get('/')
+        .reply(200);
+
+      // Mock audit creation for normal flow
+      const createdAudit = {
+        getId: () => 'audit-empty-urls-123',
+        getAuditType: () => 'broken-backlinks',
+        getFullAuditRef: () => 's3://test/empty-urls',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      // Create a simple audit for testing empty URLs
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('initial', async () => ({
+          status: 'complete',
+          findings: ['test'],
+        }))
+        .build();
+
+      const messageWithEmptyUrls = {
+        type: 'broken-backlinks',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        jobId: 'empty-urls-job',
+        abort: {
+          reason: 'bot-protection',
+          details: {
+            blockedUrlsCount: 2,
+            totalUrlsCount: 5,
+            blockedUrls: [], // Empty array
+            byBlockerType: { cloudflare: 2 },
+            byHttpStatus: { 403: 2 },
+            auditType: 'broken-backlinks',
+            siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+            siteUrl: 'https://example.com',
+          },
+        },
+        auditContext: {},
+      };
+
+      const result = await scrapeResultAudit.run(messageWithEmptyUrls, context);
+
+      // Should continue processing
+      expect(result.status).to.equal(200);
+
+      // Verify info log includes 'none' for empty blockedUrls (line 128 fallback)
+      const infoCall = context.log.info.args.find(
+        (call) => call && call[0] && call[0].includes('Some URLs blocked (2/5)'),
+      );
+      expect(infoCall).to.exist;
+      const infoLog = infoCall[0];
+      expect(infoLog).to.include('Blocked URLs: [none]');
+    });
   });
 });
