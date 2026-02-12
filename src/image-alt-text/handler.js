@@ -113,6 +113,7 @@ export async function processAltTextWithMystique(context) {
           .map((s) => s.getData()?.recommendations?.[0]?.imageUrl)
           .filter(Boolean),
       )];
+      log.debug(`[${AUDIT_TYPE}]: Found ${imageUrlsWithAltText.length} existing image URLs with alt text`);
 
       // Reset only Mystique-related data, keep existing metrics
       const existingData = altTextOppty.getData() || {};
