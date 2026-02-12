@@ -172,4 +172,62 @@ describe('Agentic Traffic Mapper', () => {
     expect(mapped[0].platform).to.equal('chatgpt');
     expect(mapped[0].content_type).to.equal('PDF');
   });
+
+  it('returns OTHER content_type for unsupported file extension', async () => {
+    const rows = [{
+      agent_type: 'Bot',
+      user_agent_display: 'Claude-User',
+      status: 200,
+      number_of_hits: 1,
+      country_code: 'US',
+      url: '/files/archive.bin',
+    }];
+
+    const mapped = await mapToAgenticTrafficRows(rows, site, context, '2026-02-11');
+
+    expect(mapped).to.have.length(1);
+    expect(mapped[0].platform).to.equal('claude');
+    expect(mapped[0].content_type).to.equal('OTHER');
+  });
+
+  it('returns empty array for invalid inputs', async () => {
+    expect(await mapToAgenticTrafficRows(null, site, context, '2026-02-11')).to.deep.equal([]);
+    expect(await mapToAgenticTrafficRows([], null, context, '2026-02-11')).to.deep.equal([]);
+    expect(await mapToAgenticTrafficRows([], site, context, null)).to.deep.equal([]);
+  });
+
+  it('handles missing PageCitability accessor safely', async () => {
+    const rows = [{
+      agent_type: 'Bot',
+      user_agent_display: 'GPTBot',
+      status: 200,
+      number_of_hits: 1,
+      country_code: 'US',
+      url: '/a',
+    }];
+    const contextWithoutCitability = { log: { warn: sandbox.stub() }, dataAccess: {} };
+
+    const mapped = await mapToAgenticTrafficRows(rows, site, contextWithoutCitability, '2026-02-11');
+
+    expect(mapped).to.have.length(1);
+  });
+
+  it('handles PageCitability fetch errors and logs warning', async () => {
+    context.dataAccess.PageCitability.allBySiteId.rejects(new Error('db fail'));
+    const rows = [{
+      agent_type: 'Bot',
+      user_agent_display: 'GPTBot',
+      status: 200,
+      number_of_hits: 1,
+      country_code: 'US',
+      url: '/a',
+    }];
+
+    const mapped = await mapToAgenticTrafficRows(rows, site, context, '2026-02-11');
+
+    expect(mapped).to.have.length(1);
+    expect(context.log.warn).to.have.been.calledWith(
+      sinon.match('Failed to fetch citability scores for agentic mapping: db fail'),
+    );
+  });
 });
