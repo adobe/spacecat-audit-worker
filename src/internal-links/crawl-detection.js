@@ -30,7 +30,7 @@ const SCRAPE_FETCH_DELAY_MS = 50;
 const LINK_CHECK_BATCH_SIZE = 10;
 const LINK_CHECK_DELAY_MS = 300;
 
-export const PAGES_PER_BATCH = 40;
+export const PAGES_PER_BATCH = 10;
 
 const sleep = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
