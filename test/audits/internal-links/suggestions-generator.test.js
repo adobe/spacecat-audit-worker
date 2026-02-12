@@ -1336,10 +1336,11 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     expect(mappedSuggestion.data.aiRationale).to.equal('');
   });
 
-  it('should use default trafficDomain (1) when entry.trafficDomain is null or undefined', async () => {
+  it('should use trafficDomain 1 (never 0) when entry.trafficDomain is null, undefined, or 0', async () => {
     const brokenInternalLinks = [
       { urlFrom: 'https://example.com/from1', urlTo: 'https://example.com/to1' },
       { urlFrom: 'https://example.com/from2', urlTo: 'https://example.com/to2', trafficDomain: null },
+      { urlFrom: 'https://example.com/from3', urlTo: 'https://example.com/to3', trafficDomain: 0 },
     ];
 
     await syncBrokenInternalLinksSuggestions({
@@ -1352,11 +1353,14 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     const callArgs = mockSyncSuggestions.getCall(0).args[0];
     const noTraffic = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
     const nullTraffic = callArgs.mapNewSuggestion(brokenInternalLinks[1]);
+    const zeroTraffic = callArgs.mapNewSuggestion(brokenInternalLinks[2]);
 
     expect(noTraffic.rank).to.equal(1);
     expect(noTraffic.data.trafficDomain).to.equal(1);
     expect(nullTraffic.rank).to.equal(1);
     expect(nullTraffic.data.trafficDomain).to.equal(1);
+    expect(zeroTraffic.rank).to.equal(1);
+    expect(zeroTraffic.data.trafficDomain).to.equal(1);
   });
 
   it('should preserve urlEdited when isEdited is true', async () => {

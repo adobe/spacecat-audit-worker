@@ -288,7 +288,10 @@ export async function syncBrokenInternalLinksSuggestions({
     mergeDataFunction,
     mapNewSuggestion: (entry) => {
       const itemType = entry.itemType || 'link';
-      const trafficDomain = entry.trafficDomain ?? 1;
+      // Internal-links must never set trafficDomain to 0 (use 1 when missing or 0)
+      const trafficDomain = (entry.trafficDomain === 0 || entry.trafficDomain == null)
+        ? 1
+        : entry.trafficDomain;
 
       return {
         opportunityId,
