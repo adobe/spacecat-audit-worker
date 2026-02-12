@@ -148,7 +148,7 @@ const HANDLERS = {
   'geo-brand-presence-paid': geoBrandPresence,
   // Splits of geo-brand-presence-free for staggered execution (max 40 sites each)
   ...Object.fromEntries(
-    Array.from({ length: 18 }, (_, i) => [`geo-brand-presence-free-${i + 1}`, geoBrandPresence]),
+    Array.from({ length: 23 }, (_, i) => [`geo-brand-presence-free-${i + 1}`, geoBrandPresence]),
   ),
   'category:geo-brand-presence': handleCategorizationResponseHandler,
   'detect:geo-brand-presence': detectGeoBrandPresence,
