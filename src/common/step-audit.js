@@ -116,7 +116,9 @@ export class StepAudit extends BaseAudit {
       // Check if scrape job was aborted
       if (abort) {
         const { blockedUrlsCount, totalUrlsCount, blockedUrls } = abort.details || {};
-        if (blockedUrlsCount && totalUrlsCount) {
+        // Only proceed if we have a valid total count (needed for arithmetic and comparison)
+        // If abortInfo exists, blockedUrlsCount should be >= 1 (at least one URL was blocked)
+        if (totalUrlsCount > 0) {
           // Only abort if ALL URLs are blocked
           if (blockedUrlsCount === totalUrlsCount) {
             log.warn(
@@ -125,14 +127,17 @@ export class StepAudit extends BaseAudit {
             return handleAbort(abort, jobId, type, site, siteId, log);
           }
           // Some URLs blocked but not all - continue audit processing
-          const blockedUrlsList = blockedUrls?.map((u) => (typeof u === 'string' ? u : u.url)).filter(Boolean).join(', ') || 'none';
-          const nonBlockedCount = totalUrlsCount - blockedUrlsCount;
-          log.info(
-            `[BOT-BLOCKED] Some URLs blocked (${blockedUrlsCount}/${totalUrlsCount}), `
-            + `but continuing audit processing for ${type} audit on ${site.getBaseURL()} `
-            + `as ${nonBlockedCount} URLs were not blocked by bot protection (may have failed for other reasons), jobId=${jobId}, `
-            + `Blocked URLs: [${blockedUrlsList}]`,
-          );
+          // blockedUrlsCount should be >= 1 if abortInfo exists, but check for safety
+          if (blockedUrlsCount > 0) {
+            const blockedUrlsList = blockedUrls?.map((u) => (typeof u === 'string' ? u : u.url)).filter(Boolean).join(', ') || 'none';
+            const nonBlockedCount = totalUrlsCount - blockedUrlsCount;
+            log.info(
+              `[BOT-BLOCKED] Some URLs blocked (${blockedUrlsCount}/${totalUrlsCount}), `
+              + `but continuing audit processing for ${type} audit on ${site.getBaseURL()} `
+              + `as ${nonBlockedCount} URLs were not blocked by bot protection, jobId=${jobId}, `
+              + `Blocked URLs: [${blockedUrlsList}]`,
+            );
+          }
         }
       }
 
