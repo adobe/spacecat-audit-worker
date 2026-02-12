@@ -23,9 +23,9 @@ set -euo pipefail
 # Defaults
 LAMBDA_ALIAS="latest"
 AWS_PROFILE="spacecat-dev"
-LAMBDA_FUNCTION="spacecat-services-audit-worker"
-SITE_ID=""
-AUDIT_ID=""
+LAMBDA_FUNCTION="spacecat-services--audit-worker"
+SITE_ID="b520b4cf-dc73-49de-8573-0eb44b123e0d"  # okta.com (dev)
+AUDIT_ID="4b765bbc-d9cb-463a-9ee1-06bd7da4a277"  # okta.com ad-intent-mismatch (dev)
 
 usage() {
   cat <<EOF

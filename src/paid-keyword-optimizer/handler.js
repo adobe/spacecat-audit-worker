@@ -406,11 +406,19 @@ export async function runPaidKeywordAnalysisStep(context) {
   // Run the actual analysis
   const result = await paidKeywordOptimizerRunner(finalUrl, context, site);
 
-  // Update the audit with real results
-  audit.setAuditResult(result.auditResult);
-  await audit.save();
+  // Persist the real audit results (Audit model does not allow updates,
+  // so we create a new audit entry with the final results)
+  const { Audit: AuditModel } = context.dataAccess;
+  await AuditModel.create({
+    siteId,
+    isLive: site.getIsLive(),
+    auditedAt: new Date().toISOString(),
+    auditType: audit.getAuditType(),
+    auditResult: result.auditResult,
+    fullAuditRef: audit.getFullAuditRef(),
+  });
 
-  log.debug(`[ad-intent-mismatch] [Site: ${finalUrl}] Audit updated with analysis results`);
+  log.debug(`[ad-intent-mismatch] [Site: ${finalUrl}] Audit persisted with analysis results`);
 
   // Send qualifying pages to Mystique
   const { auditResult } = result;
