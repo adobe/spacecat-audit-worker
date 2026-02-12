@@ -103,11 +103,25 @@ export default async function handler(message, context) {
       aiRationale = '';
     }
 
+    const existingData = suggestion.getData();
+    // Crawl links created before default traffic fix may have trafficDomain: 0; correct on update
+    const isLink = existingData?.itemType === 'link' || !existingData?.itemType;
+    const trafficDomain = (isLink
+      && (existingData?.trafficDomain === 0 || existingData?.trafficDomain == null))
+      ? 1
+      : existingData?.trafficDomain;
+
     suggestion.setData({
-      ...suggestion.getData(),
+      ...existingData,
       urlsSuggested: filteredSuggestedUrls,
       aiRationale,
+      trafficDomain,
     });
+
+    // Fix rank for links that were stored as 0 (crawl links before default traffic fix)
+    if (isLink && (suggestion.getRank?.() === 0 || suggestion.getRank?.() == null)) {
+      suggestion.setRank(1);
+    }
 
     return suggestion.save();
   }));

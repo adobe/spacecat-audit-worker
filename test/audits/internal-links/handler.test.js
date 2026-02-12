@@ -493,13 +493,13 @@ describe('Broken internal links audit', () => {
     expect(result.urls.length).to.equal(0);
   }).timeout(10000);
 
-  it('submitForScraping should cap URLs at MAX_URLS_TO_PROCESS (1000)', async () => {
-    // Create >1000 total URLs to test capping logic
-    const manyAhrefsPages = Array.from({ length: 800 }, (_, i) => ({
+  it('submitForScraping should cap URLs at MAX_URLS_TO_PROCESS (100)', async () => {
+    // Create >100 total URLs to test capping logic
+    const manyAhrefsPages = Array.from({ length: 80 }, (_, i) => ({
       getUrl: () => `https://example.com/ahrefs-page-${i}`,
     }));
 
-    const manyIncludedUrls = Array.from({ length: 400 }, (_, i) => `https://example.com/manual-page-${i}`);
+    const manyIncludedUrls = Array.from({ length: 40 }, (_, i) => `https://example.com/manual-page-${i}`);
 
     const mockSiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(manyAhrefsPages),
@@ -532,10 +532,10 @@ describe('Broken internal links audit', () => {
 
     const result = await submitForScraping(testContext);
 
-    // Should be capped at 1000
-    expect(result.urls).to.have.lengthOf(1000);
+    // Should be capped at 100 (80 + 40 = 120 unique, cap to MAX_URLS_TO_PROCESS)
+    expect(result.urls).to.have.lengthOf(100);
     expect(testContext.log.warn).to.have.been.calledWith(
-      sinon.match(/Capping URLs from 1200 to 1000/),
+      sinon.match(/Capping URLs from 120 to 100/),
     );
   }).timeout(10000);
   it('submitForScraping should handle empty top pages from database', async () => {
@@ -1812,14 +1812,14 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       getId: () => 'suggestion-1',
     }];
 
-    // Create 800 Ahrefs pages + 400 includedURLs = 1200 total (exceeds 1000)
-    const manyTopPages = Array.from({ length: 800 }, (_, i) => ({
+    // Create 80 Ahrefs pages + 40 includedURLs = 120 total (exceeds MAX_URLS_TO_PROCESS 100)
+    const manyTopPages = Array.from({ length: 80 }, (_, i) => ({
       getUrl: () => `https://example.com/en/page${i}`,
     }));
 
-    // Update includedURLs to have 400 URLs
+    // Update includedURLs to have 40 URLs
     context.site.getConfig = () => ({
-      getIncludedURLs: () => Array.from({ length: 400 }, (_, i) => `https://example.com/en/included${i}`),
+      getIncludedURLs: () => Array.from({ length: 40 }, (_, i) => `https://example.com/en/included${i}`),
     });
 
     if (!context.dataAccess.Suggestion) {
@@ -1832,9 +1832,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     await handler.opportunityAndSuggestionsStep(context);
 
-    // Verify warning was logged for capping URLs (1200 > 1000)
+    // Verify warning was logged for capping URLs (120 > 100)
     expect(context.log.warn).to.have.been.calledWith(
-      sinon.match(/Capping URLs from 1200 to 1000/),
+      sinon.match(/Capping URLs from 120 to 100/),
     );
   }).timeout(10000);
 
