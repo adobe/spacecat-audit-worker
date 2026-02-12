@@ -115,19 +115,19 @@ describe('User Agent Patterns', () => {
     it('maps known providers correctly', () => {
       const { inferProviderFromUserAgent } = userAgentPatterns;
 
-      expect(inferProviderFromUserAgent('ChatGPT-User')).to.equal('chatgpt');
-      expect(inferProviderFromUserAgent('PerplexityBot')).to.equal('perplexity');
-      expect(inferProviderFromUserAgent('Claude-User')).to.equal('claude');
-      expect(inferProviderFromUserAgent('GoogleAgent-Chrome')).to.equal('google');
-      expect(inferProviderFromUserAgent('Copilot')).to.equal('copilot');
-      expect(inferProviderFromUserAgent('Bingbot')).to.equal('bing');
-      expect(inferProviderFromUserAgent('MistralAI-User')).to.equal('mistralai');
-      expect(inferProviderFromUserAgent('Amzn-User')).to.equal('amazon');
+      expect(inferProviderFromUserAgent('ChatGPT-User')).to.equal('ChatGPT');
+      expect(inferProviderFromUserAgent('PerplexityBot')).to.equal('Perplexity');
+      expect(inferProviderFromUserAgent('Claude-User')).to.equal('Claude');
+      expect(inferProviderFromUserAgent('GoogleAgent-Chrome')).to.equal('Google');
+      expect(inferProviderFromUserAgent('Copilot')).to.equal('Copilot');
+      expect(inferProviderFromUserAgent('Bingbot')).to.equal('Bing');
+      expect(inferProviderFromUserAgent('MistralAI-User')).to.equal('MistralAI');
+      expect(inferProviderFromUserAgent('Amzn-User')).to.equal('Amazon');
     });
 
     it('returns other for unknown user agents', () => {
       const { inferProviderFromUserAgent } = userAgentPatterns;
-      expect(inferProviderFromUserAgent('SomeUnknownAgent')).to.equal('other');
+      expect(inferProviderFromUserAgent('SomeUnknownAgent')).to.equal('Other');
     });
   });
 });
