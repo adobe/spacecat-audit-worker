@@ -160,6 +160,7 @@ const HANDLERS = {
   'codefix:accessibility': accessibilityCodeFix,
   'guidance:paid-cookie-consent': paidConsentGuidance,
   'paid-keyword-optimizer': paidKeywordOptimizer,
+  'ad-intent-mismatch': paidKeywordOptimizer,
   'guidance:paid-ad-intent-gap': paidKeywordOptimizerGuidance,
   'guidance:no-cta-above-the-fold': noCTAAboveTheFoldGuidance,
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
