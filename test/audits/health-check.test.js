@@ -20,6 +20,9 @@ import esmock from 'esmock';
 import healthCheckHandler, {
   requestScrape,
   analyzeScrapeResult,
+  checkAhrefsTopPagesImport,
+  checkEffectiveUrlNoRedirect,
+  getEffectiveBaseURL,
 } from '../../src/health-check/handler.js';
 import {
   checkSpacecatUserAgentAccess,
@@ -384,6 +387,312 @@ describe('Health Check Audit', () => {
     });
   });
 
+  describe('getEffectiveBaseURL', () => {
+    it('returns overrideBaseURL when valid', () => {
+      const site = {
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getFetchConfig: () => ({
+            overrideBaseURL: 'https://override.example.com',
+          }),
+        }),
+      };
+
+      const result = getEffectiveBaseURL(site);
+      expect(result).to.equal('https://override.example.com');
+    });
+
+    it('falls back to baseURL when overrideBaseURL is invalid', () => {
+      const site = {
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getFetchConfig: () => ({
+            overrideBaseURL: 'not-a-valid-url',
+          }),
+        }),
+      };
+
+      const result = getEffectiveBaseURL(site);
+      expect(result).to.equal('https://example.com');
+    });
+  });
+
+  describe('checkAhrefsTopPagesImport', () => {
+    let ahrefsContext;
+
+    beforeEach(() => {
+      ahrefsContext = {
+        site: {
+          getId: () => 'site-123',
+        },
+        dataAccess: {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sandbox.stub(),
+          },
+        },
+        log: context.log,
+      };
+    });
+
+    it('returns ok when top-pages import is within freshness window', async () => {
+      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+        data: [{ getImportedAt: () => '2026-02-03T10:00:00.000Z' }],
+      });
+
+      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+
+      expect(result.status).to.equal('ok');
+      expect(result).to.not.have.property('latestImportedAt');
+      expect(result.freshnessDays).to.equal(8);
+      expect(result.reason).to.be.null;
+      expect(ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
+      expect(ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
+        'site-123',
+        'ahrefs',
+        'global',
+      );
+    });
+
+    it('returns error when top-pages import is stale', async () => {
+      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+        data: [{ getImportedAt: () => '2026-01-20T10:00:00.000Z' }],
+      });
+
+      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+
+      expect(result.status).to.equal('error');
+      expect(result).to.not.have.property('latestImportedAt');
+      expect(result.reason).to.include('last 8 days');
+    });
+
+    it('returns stale result when all valid records are older than freshness window', async () => {
+      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+        data: [
+          { getImportedAt: () => '2026-01-20T10:00:00.000Z' },
+          { getImportedAt: () => '2026-01-15T10:00:00.000Z' },
+        ],
+      });
+
+      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+
+      expect(result.status).to.equal('error');
+      expect(result.reason).to.include('last 8 days');
+    });
+
+    it('returns error when no top-pages records exist', async () => {
+      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+        data: [],
+      });
+
+      const result = await checkAhrefsTopPagesImport(ahrefsContext);
+
+      expect(result.status).to.equal('error');
+      expect(result.reason).to.equal('No Ahrefs top-pages import records found');
+    });
+
+    it('returns error when SiteTopPage data access is unavailable', async () => {
+      const result = await checkAhrefsTopPagesImport({
+        site: ahrefsContext.site,
+        dataAccess: {},
+        log: ahrefsContext.log,
+      });
+
+      expect(result.status).to.equal('error');
+      expect(result.reason).to.equal('SiteTopPage data access is unavailable');
+    });
+
+    it('returns error when top-pages record has no importedAt', async () => {
+      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+        data: [{ getImportedAt: () => null }],
+      });
+
+      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+
+      expect(result.status).to.equal('error');
+      expect(result.reason).to.equal('No valid Ahrefs top-pages importedAt timestamp found');
+    });
+
+    it('returns error when top-pages record has invalid importedAt', async () => {
+      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+        data: [{ getImportedAt: () => 'not-a-date' }],
+      });
+
+      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+
+      expect(result.status).to.equal('error');
+      expect(result.reason).to.equal('No valid Ahrefs top-pages importedAt timestamp found');
+    });
+
+    it('returns ok when a valid fresh timestamp exists in unsorted records', async () => {
+      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+        data: [
+          { getImportedAt: () => '2026-01-20T10:00:00.000Z' },
+          { getImportedAt: () => '2026-02-09T10:00:00.000Z' },
+          { getImportedAt: () => null },
+        ],
+      });
+
+      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+
+      expect(result.status).to.equal('ok');
+      expect(ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
+    });
+
+    it('returns ok when any valid record is within freshness window', async () => {
+      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+        data: [
+          { getImportedAt: () => '2026-02-03T10:00:00.000Z' },
+          { getImportedAt: () => '2026-02-09T10:00:00.000Z' },
+        ],
+      });
+
+      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+
+      expect(result.status).to.equal('ok');
+      expect(result).to.not.have.property('latestImportedAt');
+    });
+
+    it('supports array page result shape from data access', async () => {
+      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+        { getImportedAt: () => '2026-02-09T10:00:00.000Z' },
+      ]);
+
+      const result = await checkAhrefsTopPagesImport(ahrefsContext, new Date('2026-02-10T12:00:00.000Z'));
+
+      expect(result.status).to.equal('ok');
+    });
+
+    it('handles object page results without data field', async () => {
+      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves({
+      });
+
+      const result = await checkAhrefsTopPagesImport(ahrefsContext);
+
+      expect(result.status).to.equal('error');
+      expect(result.reason).to.equal('No Ahrefs top-pages import records found');
+    });
+
+    it('returns error when data access throws', async () => {
+      ahrefsContext.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.rejects(new Error('DB unavailable'));
+
+      const result = await checkAhrefsTopPagesImport(ahrefsContext);
+
+      expect(result.status).to.equal('error');
+      expect(result.reason).to.include('Ahrefs check failed: DB unavailable');
+      expect(ahrefsContext.log.error).to.have.been.called;
+    });
+  });
+
+  describe('checkEffectiveUrlNoRedirect', () => {
+    it('returns ok when effective URL responds without redirect', async () => {
+      nock('https://example.com')
+        .get('/')
+        .reply(200, 'ok');
+
+      const result = await checkEffectiveUrlNoRedirect({
+        site: {
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getFetchConfig: () => ({}) }),
+        },
+        log: context.log,
+      });
+
+      expect(result.status).to.equal('ok');
+      expect(result.statusCode).to.equal(200);
+      expect(result.reason).to.be.null;
+    });
+
+    it('returns error when effective URL responds with 3xx', async () => {
+      nock('https://example.com')
+        .get('/')
+        .reply(301, undefined, { location: 'https://www.example.com' });
+
+      const result = await checkEffectiveUrlNoRedirect({
+        site: {
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getFetchConfig: () => ({}) }),
+        },
+        log: context.log,
+      });
+
+      expect(result.status).to.equal('error');
+      expect(result.statusCode).to.equal(301);
+      expect(result.reason).to.include('Received redirect status 301');
+    });
+
+    it('returns error message without target when redirect has no location header', async () => {
+      nock('https://example.com')
+        .get('/')
+        .reply(302);
+
+      const result = await checkEffectiveUrlNoRedirect({
+        site: {
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getFetchConfig: () => ({}) }),
+        },
+        log: context.log,
+      });
+
+      expect(result.status).to.equal('error');
+      expect(result.statusCode).to.equal(302);
+      expect(result.reason).to.equal('Received redirect status 302');
+    });
+
+    it('returns error when effective URL responds with non-redirect non-success status', async () => {
+      nock('https://example.com')
+        .get('/')
+        .reply(500, 'error');
+
+      const result = await checkEffectiveUrlNoRedirect({
+        site: {
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getFetchConfig: () => ({}) }),
+        },
+        log: context.log,
+      });
+
+      expect(result.status).to.equal('error');
+      expect(result.statusCode).to.equal(500);
+      expect(result.reason).to.include('Received non-success status 500 without redirect');
+    });
+
+    it('uses overrideBaseURL as effective URL when present', async () => {
+      nock('https://override.example.com')
+        .get('/')
+        .reply(200, 'ok');
+
+      const result = await checkEffectiveUrlNoRedirect({
+        site: {
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getFetchConfig: () => ({ overrideBaseURL: 'https://override.example.com' }) }),
+        },
+        log: context.log,
+      });
+
+      expect(result.status).to.equal('ok');
+      expect(result.checkedUrl).to.equal('https://override.example.com');
+    });
+
+    it('returns error when request fails', async () => {
+      nock('https://example.com')
+        .get('/')
+        .replyWithError('Connection failed');
+
+      const result = await checkEffectiveUrlNoRedirect({
+        site: {
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getFetchConfig: () => ({}) }),
+        },
+        log: context.log,
+      });
+
+      expect(result.status).to.equal('error');
+      expect(result.statusCode).to.be.null;
+      expect(result.reason).to.include('Request failed: Connection failed');
+      expect(context.log.error).to.have.been.called;
+    });
+  });
+
   describe('healthCheckHandler', () => {
     it('should export a valid audit handler', () => {
       expect(healthCheckHandler).to.be.an('object');
@@ -450,9 +759,22 @@ describe('Health Check Audit', () => {
           LatestAudit: {
             findBySiteIdAndAuditType: sandbox.stub().resolves(null),
           },
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves({
+              data: [{
+                getImportedAt: () => new Date().toISOString(),
+              }],
+              cursor: null,
+            }),
+          },
         },
         sqs: {},
       };
+
+      nock('https://example.com')
+        .persist()
+        .get('/')
+        .reply(200, 'ok');
     });
 
     it('should return error when no scrape results found', async () => {
@@ -475,6 +797,30 @@ describe('Health Check Audit', () => {
       expect(result.auditResult.spacecatUserAgentAccess.statusCode).to.be.null;
       expect(result.auditResult.spacecatUserAgentAccess.reason).to.equal('No scrape results received from scraper');
       expect(result.auditResult.spacecatUserAgentAccess.scrapedAt).to.be.null;
+      expect(result.auditResult.ahrefsTopPagesImport.status).to.equal('ok');
+      expect(result.auditResult.effectiveUrlNoRedirect.status).to.equal('ok');
+    });
+
+    it('should still return all three checks when scrape client throws', async () => {
+      mockScrapeClient.getScrapeJobUrlResults.rejects(new Error('Scrape service unavailable'));
+
+      const { analyzeScrapeResult: mockedAnalyze } = await esmock(
+        '../../src/health-check/handler.js',
+        {
+          '@adobe/spacecat-shared-scrape-client': {
+            ScrapeClient: {
+              createFrom: () => mockScrapeClient,
+            },
+          },
+        },
+      );
+
+      const result = await mockedAnalyze(stepContext);
+
+      expect(result.auditResult.spacecatUserAgentAccess.status).to.equal('error');
+      expect(result.auditResult.spacecatUserAgentAccess.reason).to.include('Scrape service unavailable');
+      expect(result.auditResult.ahrefsTopPagesImport.status).to.equal('ok');
+      expect(result.auditResult.effectiveUrlNoRedirect.status).to.equal('ok');
     });
 
     it('should return error when scrape failed at network level', async () => {
@@ -570,6 +916,8 @@ describe('Health Check Audit', () => {
       expect(result.auditResult.spacecatUserAgentAccess.statusCode).to.equal(200);
       expect(result.auditResult.spacecatUserAgentAccess.reason).to.be.null;
       expect(result.auditResult.spacecatUserAgentAccess.scrapedAt).to.equal(1733311800000);
+      expect(result.auditResult.ahrefsTopPagesImport.status).to.equal('ok');
+      expect(result.auditResult.effectiveUrlNoRedirect.status).to.equal('ok');
     });
 
     it('should return blocked status when site is blocking', async () => {
@@ -659,7 +1007,9 @@ describe('Health Check Audit', () => {
       const result = await mockedAnalyze(stepContext);
 
       // Should return the cached result without re-analyzing
-      expect(result.auditResult).to.deep.equal(cachedAuditResult);
+      expect(result.auditResult.spacecatUserAgentAccess).to.deep.equal(cachedAuditResult.spacecatUserAgentAccess);
+      expect(result.auditResult.ahrefsTopPagesImport.status).to.equal('ok');
+      expect(result.auditResult.effectiveUrlNoRedirect.status).to.equal('ok');
       expect(result.fullAuditRef).to.equal('https://example.com');
     });
 

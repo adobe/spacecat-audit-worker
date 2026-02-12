@@ -32,30 +32,23 @@ export async function importTopPages(context) {
     site, finalUrl, log, data,
   } = context;
 
-  log.info(`${LOG_PREFIX} Step 1: Received data parameter - value: ${JSON.stringify(data)}, type: ${typeof data}`);
+  log.debug(`${LOG_PREFIX} Step 1: input:`, { siteId: site.getId(), finalUrl, data });
 
   // Parse data if it's a string (from Slack bot), or use as-is if it's an object
   let parsedData = {};
   if (typeof data === 'string' && data.length > 0) {
     try {
       parsedData = JSON.parse(data);
-      log.info(`${LOG_PREFIX} Step 1: Successfully parsed data as JSON: ${JSON.stringify(parsedData)}`);
     } catch (e) {
-      log.warn(`${LOG_PREFIX} Could not parse data as JSON: ${data}. Error: ${e.message}`);
+      log.warn(`${LOG_PREFIX} Step 1: Could not parse data as JSON: ${e.message}`);
     }
   } else if (data && typeof data === 'object') {
     parsedData = data;
-    log.info(`${LOG_PREFIX} Step 1: Data is already an object: ${JSON.stringify(parsedData)}`);
-  } else {
-    log.info(`${LOG_PREFIX} Step 1: No data provided or data is empty`);
   }
 
-  // Use provided limit or fall back to default
   const limit = parsedData.limit ? Number(parsedData.limit) : DEFAULT_LIMIT;
-  const limitInfo = ` with limit: ${limit}${!parsedData.limit ? ' (default)' : ''}`;
 
-  log.info(`${LOG_PREFIX} Step 1: importTopPages started for site: ${site.getId()}${limitInfo}`);
-  log.info(`${LOG_PREFIX} Final URL: ${finalUrl}`);
+  log.info(`${LOG_PREFIX} Step 1: importTopPages for site: ${site.getId()}, url: ${finalUrl}, limit: ${limit}`);
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
   const result = {
@@ -67,7 +60,7 @@ export async function importTopPages(context) {
     auditContext: { limit },
   };
 
-  log.info(`${LOG_PREFIX} Step 1: importTopPages completed, returning:`, result);
+  log.debug(`${LOG_PREFIX} Step 1: result:`, result);
   return result;
 }
 
@@ -83,37 +76,27 @@ export async function submitForScraping(context) {
     site,
     dataAccess,
     log,
-    data,
     auditContext,
   } = context;
 
-  log.info(`${LOG_PREFIX} Step 2: Received auditContext: ${JSON.stringify(auditContext)}`);
-  log.info(`${LOG_PREFIX} Step 2: Received data parameter (ignored for limit): ${JSON.stringify(data)}`);
+  log.debug(`${LOG_PREFIX} Step 2: input:`, { siteId: site.getId(), auditContext });
 
-  // Read limit from auditContext (for step chaining) or data (for initial call)
   const limit = auditContext?.limit || DEFAULT_LIMIT;
-  const limitInfo = ` with limit: ${limit}${!auditContext?.limit ? ' (default)' : ''}`;
 
-  log.info(`${LOG_PREFIX} Step 2: submitForScraping started for site: ${site.getId()}${limitInfo}`);
+  log.info(`${LOG_PREFIX} Step 2: submitForScraping for site: ${site.getId()}, limit: ${limit}`);
 
   const { SiteTopPage } = dataAccess;
   const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
   const topPages = allTopPages.slice(0, limit);
-  log.info(`${LOG_PREFIX} Limited to ${topPages.length} top pages for scraping (limit: ${limit}) out of ${allTopPages.length} total top pages.`);
-
   const topPagesUrls = topPages.map((page) => page.getUrl());
-  log.info(`${LOG_PREFIX} Reading site config: ${JSON.stringify(site?.getConfig())}`);
 
-  // Combine includedURLs and topPages URLs to scrape
   const auditType = 'commerce-product-enrichments';
   const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
-  log.info(`${LOG_PREFIX} Retrieved ${includedURLs.length} included URLs from site config`);
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-  log.info(`${LOG_PREFIX} Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
 
   if (finalUrls.length === 0) {
-    log.error(`${LOG_PREFIX} No URLs found for site ${site.getId()} - neither top pages nor included URLs`);
+    log.error(`${LOG_PREFIX} Step 2: No URLs found for site ${site.getId()} - neither top pages nor included URLs`);
     throw new Error('No URLs found for site neither top pages nor included URLs');
   }
 
@@ -129,13 +112,13 @@ export async function submitForScraping(context) {
 
   const filteredUrls = finalUrls.filter((url) => {
     if (isPdfUrl(url)) {
-      log.info(`${LOG_PREFIX} Skipping PDF file from scraping: ${url}`);
+      log.debug(`${LOG_PREFIX} Step 2: Skipping PDF: ${url}`);
       return false;
     }
     return true;
   });
 
-  log.info(`${LOG_PREFIX} Filtered ${finalUrls.length - filteredUrls.length} PDF files from ${finalUrls.length} URLs`);
+  log.info(`${LOG_PREFIX} Step 2: submitting ${filteredUrls.length} URLs (topPages: ${topPages.length}/${allTopPages.length}, includedURLs: ${includedURLs.length}, pdfsFiltered: ${finalUrls.length - filteredUrls.length})`);
 
   const result = {
     urls: filteredUrls.map((url) => ({ url })),
@@ -152,8 +135,51 @@ export async function submitForScraping(context) {
     maxScrapeAge: 0,
   };
 
-  log.info(`${LOG_PREFIX} Step 2: submitForScraping completed, returning ${result.urls.length} URLs for scraping`);
+  log.debug(`${LOG_PREFIX} Step 2: output:`, result);
   return result;
+}
+
+async function sendEnrichment(productPages, commerceConfig, site, env, log) {
+  if (productPages.length === 0 || !commerceConfig) {
+    return null;
+  }
+
+  const enrichmentEndpoint = env.CATALOG_ENRICHMENT_ENDPOINT;
+  if (!enrichmentEndpoint) {
+    log.warn(`${LOG_PREFIX} Step 3: CATALOG_ENRICHMENT_ENDPOINT not configured, skipping enrichment`);
+    return null;
+  }
+
+  const enrichmentPayload = {
+    siteId: site.getId(),
+    environmentId: commerceConfig.headers['Magento-Environment-Id'],
+    websiteCode: commerceConfig.headers['Magento-Website-Code'],
+    storeCode: commerceConfig.headers['Magento-Store-Code'],
+    storeViewCode: commerceConfig.headers['Magento-Store-View-Code'],
+    scrapes: productPages.map((page) => ({
+      sku: page.sku,
+      path: page.location,
+    })),
+  };
+
+  log.info(`${LOG_PREFIX} Step 3: Sending enrichment to ${enrichmentEndpoint} with ${enrichmentPayload.scrapes.length} scrapes`);
+  log.debug(`${LOG_PREFIX} Step 3: Enrichment payload:`, JSON.stringify(enrichmentPayload));
+
+  const response = await fetch(enrichmentEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(enrichmentPayload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    log.error(`${LOG_PREFIX} Step 3: Enrichment API failed with status ${response.status}: ${errorText}`);
+    return { error: `HTTP ${response.status}`, details: errorText };
+  }
+
+  const responseData = await response.json();
+  log.debug(`${LOG_PREFIX} Step 3: Enrichment API response:`, responseData);
+  return responseData;
 }
 
 /**
@@ -166,105 +192,67 @@ export async function submitForScraping(context) {
  */
 export async function runAuditAndProcessResults(context) {
   const {
-    site, audit, finalUrl, log, scrapeResultPaths, s3Client, env, auditContext,
+    site, audit, finalUrl, log, scrapeResultPaths, s3Client, env,
   } = context;
 
-  log.info(`${LOG_PREFIX} Step 3: runAuditAndProcessResults started`);
-
-  // Debug logging to understand what context we're receiving
-  /* c8 ignore start */
-  log.info(`${LOG_PREFIX} Full auditContext:`, JSON.stringify(auditContext));
-  log.info(`${LOG_PREFIX} scrapeJobId from auditContext:`, auditContext?.scrapeJobId);
-  log.info(`${LOG_PREFIX} Context:`, {
+  log.debug(`${LOG_PREFIX} Step 3: input:`, {
     siteId: site.getId(),
     auditId: audit.getId(),
     finalUrl,
     scrapeResultPathsSize: scrapeResultPaths?.size || 0,
-    hasScrapeResultPaths: !!scrapeResultPaths,
-    scrapeResultPathsType: typeof scrapeResultPaths,
-    scrapeResultPathsIsMap: scrapeResultPaths instanceof Map,
+    envKeys: Object.keys(env),
   });
-  /* c8 ignore stop */
+  log.info(`${LOG_PREFIX} Step 3: processing site: ${site.getId()}, audit: ${audit.getId()}, scrapeResults: ${scrapeResultPaths?.size || 0}`);
 
   if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
-    /* c8 ignore start */
-    let scrapeResultPathsState = 'empty';
-    if (scrapeResultPaths === undefined) {
-      scrapeResultPathsState = 'undefined';
-    } else if (scrapeResultPaths === null) {
-      scrapeResultPathsState = 'null';
-    }
-    log.info(`${LOG_PREFIX} No scraped pages found - scrapeResultPaths is ${scrapeResultPathsState}`);
-    log.info(`${LOG_PREFIX} DEBUG: This might indicate scrapeJobId wasn't found or getScrapeResultPaths() returned empty`);
-    /* c8 ignore stop */
-    return {
+    log.warn(`${LOG_PREFIX} Step 3: No scrape results found for site ${site.getId()}`);
+    const earlyResult = {
       auditResult: {
         status: 'NO_OPPORTUNITIES',
         message: 'No scraped content found',
       },
       fullAuditRef: finalUrl,
     };
+    log.debug(`${LOG_PREFIX} Step 3: output:`, earlyResult);
+    return earlyResult;
   }
 
-  // Log the actual scrape result paths for debugging
-  /* c8 ignore next */
-  log.info(`${LOG_PREFIX} scrapeResultPaths entries:`, Array.from(scrapeResultPaths.entries()).slice(0, 5));
-
-  // Get S3 bucket configuration
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   if (!bucketName) {
-    const errorMsg = 'Missing S3 bucket configuration for commerce audit';
-    log.error(`${LOG_PREFIX} ERROR: ${errorMsg}`);
-    return {
+    log.error(`${LOG_PREFIX} Step 3: S3_SCRAPER_BUCKET_NAME not configured`);
+    const earlyResult = {
       auditResult: {
         status: 'PROCESSING_FAILED',
-        error: errorMsg,
+        error: 'S3_SCRAPER_BUCKET_NAME not configured',
       },
       fullAuditRef: finalUrl,
     };
+    log.debug(`${LOG_PREFIX} Step 3: output:`, earlyResult);
+    return earlyResult;
   }
 
-  log.info(`${LOG_PREFIX} Processing ${scrapeResultPaths.size} scrape results from S3 bucket: ${bucketName}`);
-
-  // Extract and log commerce configuration (for future use)
-  log.info(`${LOG_PREFIX} ============================================`);
-  log.info(`${LOG_PREFIX} Extracting Commerce Configuration`);
-  log.info(`${LOG_PREFIX} ============================================`);
-
+  let commerceConfig = null;
   try {
-    const commerceConfig = await getCommerceConfig(site, AUDIT_TYPE, finalUrl, log);
-    log.info(`${LOG_PREFIX} Commerce config extracted successfully`);
-    log.info(`${LOG_PREFIX} Commerce endpoint URL: ${commerceConfig.url}`);
-    log.info(`${LOG_PREFIX} Commerce headers:`, JSON.stringify(commerceConfig.headers, null, 2));
-
-    // Log individual header values for debugging
-    if (commerceConfig?.headers) {
-      const { headers } = commerceConfig;
-      log.info(`${LOG_PREFIX} - Magento-Environment-Id: ${headers['Magento-Environment-Id']}`);
-      log.info(`${LOG_PREFIX} - Magento-Store-Code: ${headers['Magento-Store-Code'] || 'not set'}`);
-      log.info(`${LOG_PREFIX} - Magento-Store-View-Code: ${headers['Magento-Store-View-Code'] || 'not set'}`);
-      log.info(`${LOG_PREFIX} - Magento-Website-Code: ${headers['Magento-Website-Code'] || 'not set'}`);
-      log.info(`${LOG_PREFIX} - Magento-Customer-Group: ${headers['Magento-Customer-Group'] || 'not set'}`);
-      log.info(`${LOG_PREFIX} - x-api-key: ${headers['x-api-key'] ? '[REDACTED]' : 'not set'}`);
-      log.info(`${LOG_PREFIX} - AC-View-ID: ${headers['AC-View-ID'] || 'not set'}`);
+    commerceConfig = await getCommerceConfig(site, AUDIT_TYPE, finalUrl, log);
+    const redactedHeaders = { ...commerceConfig.headers };
+    if (redactedHeaders['x-api-key']) {
+      redactedHeaders['x-api-key'] = '[REDACTED]';
     }
+    log.debug(`${LOG_PREFIX} Step 3: Commerce config:`, { url: commerceConfig.url, headers: redactedHeaders });
   } catch (configError) {
-    log.warn(`${LOG_PREFIX} Failed to extract commerce config: ${configError.message}`);
-    log.warn(`${LOG_PREFIX} This is expected if the site does not have commerce configuration`);
+    log.warn(`${LOG_PREFIX} Step 3: Failed to extract commerce config: ${configError.message}`);
   }
-
-  log.info(`${LOG_PREFIX} ============================================`);
 
   // Process each scraped result in parallel
   const processResults = await Promise.all(
     [...scrapeResultPaths].map(async ([url, s3Path]) => {
       try {
         // Read the scrape.json file from S3
-        log.debug(`${LOG_PREFIX} Reading scrape data from S3: ${s3Path}`);
+        log.debug(`${LOG_PREFIX} Step 3: Reading scrape data from S3: ${s3Path}`);
         const scrapeData = await getObjectFromKey(s3Client, bucketName, s3Path, log);
 
         if (!scrapeData) {
-          log.warn(`${LOG_PREFIX} No scrape data found for: ${url}`);
+          log.warn(`${LOG_PREFIX} Step 3: No scrape data found for: ${url}`);
           return {
             success: false,
             url,
@@ -277,15 +265,20 @@ export async function runAuditAndProcessResults(context) {
         // Check for JSON-LD Product structure with SKU (follows product-metatags pattern)
         let isProductPage = false;
         let skuCount = 0;
+        let sku = null;
 
         const Product = scrapeData?.scrapeResult?.structuredData?.jsonld?.Product;
         if (Array.isArray(Product) && Product.length > 0) {
           // Count products with SKU
           skuCount = Product.filter((product) => product.sku).length;
           isProductPage = skuCount === 1;
+          // Extract the actual SKU value
+          if (isProductPage) {
+            sku = Product.find((p) => p.sku)?.sku;
+          }
         }
 
-        log.debug(`${LOG_PREFIX} Processed page: ${url} (isProductPage: ${isProductPage})`);
+        log.debug(`${LOG_PREFIX} Step 3: Processed page: ${url} (isProductPage: ${isProductPage})`);
 
         return {
           success: true,
@@ -293,9 +286,10 @@ export async function runAuditAndProcessResults(context) {
           location: s3Path,
           isProductPage,
           skuCount,
+          sku,
         };
       } catch (error) {
-        log.error(`${LOG_PREFIX} Error processing scrape result for ${url}: ${error.message}`, error);
+        log.error(`${LOG_PREFIX} Step 3: Error processing scrape result for ${url}: ${error.message}`, error);
         return {
           success: false,
           url,
@@ -313,18 +307,22 @@ export async function runAuditAndProcessResults(context) {
   // Filter for product pages only
   const productPages = processedPages.filter((page) => page.isProductPage);
 
-  log.info(`${LOG_PREFIX} ============================================`);
-  log.info(`${LOG_PREFIX} Audit Processing Complete`);
-  log.info(`${LOG_PREFIX} Total scraped pages: ${scrapeResultPaths.size}`);
-  log.info(`${LOG_PREFIX} Successfully processed: ${processedPages.length}`);
-  log.info(`${LOG_PREFIX} Failed/Skipped: ${failedPages.length}`);
-  log.info(`${LOG_PREFIX} Product pages found: ${productPages.length}`);
-  log.info(`${LOG_PREFIX} Site ID: ${site.getId()}`);
-  log.info(`${LOG_PREFIX} Audit ID: ${audit.getId()}`);
-  log.info(`${LOG_PREFIX} ============================================`);
+  let enrichmentResponse = null;
+  try {
+    enrichmentResponse = await sendEnrichment(productPages, commerceConfig, site, env, log);
+  } catch (enrichmentError) {
+    log.error(`${LOG_PREFIX} Step 3: Enrichment API call failed: ${enrichmentError.message}`);
+    enrichmentResponse = { error: enrichmentError.message };
+  }
 
-  // Return audit results
-  return {
+  log.info(`${LOG_PREFIX} Step 3: completed`, {
+    totalScraped: scrapeResultPaths.size,
+    processed: processedPages.length,
+    failed: failedPages.length,
+    productPages: productPages.length,
+  });
+
+  const result = {
     status: 'complete',
     auditResult: {
       status: productPages.length > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
@@ -333,9 +331,13 @@ export async function runAuditAndProcessResults(context) {
       processedPages: processedPages.length,
       failedPages: failedPages.length,
       productPages: productPages.length,
+      enrichmentResponse,
     },
     fullAuditRef: finalUrl,
   };
+
+  log.debug(`${LOG_PREFIX} Step 3: output:`, result);
+  return result;
 }
 
 export default new AuditBuilder()

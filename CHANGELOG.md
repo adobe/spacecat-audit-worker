@@ -1,3 +1,53 @@
+# [1.313.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.312.2...v1.313.0) (2026-02-12)
+
+
+### Features
+
+* handle validation errors in broke internal link audit ([#1974](https://github.com/adobe/spacecat-audit-worker/issues/1974)) ([8ae9069](https://github.com/adobe/spacecat-audit-worker/commit/8ae90695ea25c9dd02ad852dc916eea7fb838315))
+
+## [1.312.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.312.1...v1.312.2) (2026-02-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.94.0 ([#1972](https://github.com/adobe/spacecat-audit-worker/issues/1972)) ([3d06aff](https://github.com/adobe/spacecat-audit-worker/commit/3d06aff82ba8b9df960ca70427c73b5464533fcd))
+
+## [1.312.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.312.0...v1.312.1) (2026-02-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.106.0 ([#1969](https://github.com/adobe/spacecat-audit-worker/issues/1969)) ([34aa360](https://github.com/adobe/spacecat-audit-worker/commit/34aa360ceaf85694a7ba50bc0cb3a9c15c839af2))
+
+# [1.312.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.311.1...v1.312.0) (2026-02-11)
+
+
+### Features
+
+* add batching for internal links crawl detection to prevent Lamb… ([#1874](https://github.com/adobe/spacecat-audit-worker/issues/1874)) ([45d53dc](https://github.com/adobe/spacecat-audit-worker/commit/45d53dc6649e8065353bc7707cdaf19895c8e7ee))
+
+## [1.311.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.311.0...v1.311.1) (2026-02-10)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1965](https://github.com/adobe/spacecat-audit-worker/issues/1965)) ([48af3bf](https://github.com/adobe/spacecat-audit-worker/commit/48af3bfbd5dcb3d774586fec93208b2e658870d6))
+* Empty security redundant opportunities created ([#1948](https://github.com/adobe/spacecat-audit-worker/issues/1948)) ([990f302](https://github.com/adobe/spacecat-audit-worker/commit/990f3027fa026446e87f34fbf81618a3904cee68))
+
+# [1.311.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.310.0...v1.311.0) (2026-02-10)
+
+
+### Features
+
+* **AGENTCOM-279:** add enrichment API call and clean up logging in commerce audit ([#1958](https://github.com/adobe/spacecat-audit-worker/issues/1958)) ([e39bf31](https://github.com/adobe/spacecat-audit-worker/commit/e39bf31d3d4fe54b6744ae6fbed2e69a8744a692))
+
+# [1.310.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.309.0...v1.310.0) (2026-02-10)
+
+
+### Features
+
+* **health-check:** add Ahrefs and base URL resolution checks ([#1959](https://github.com/adobe/spacecat-audit-worker/issues/1959)) ([4c9f895](https://github.com/adobe/spacecat-audit-worker/commit/4c9f895d4b0503a7fd2134e5314b9fb7ddcf6817))
+
 # [1.309.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.308.0...v1.309.0) (2026-02-10)
 
 
