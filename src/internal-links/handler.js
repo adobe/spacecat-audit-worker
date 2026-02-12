@@ -43,7 +43,7 @@ import { sleep } from '../support/utils.js';
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
-const MAX_URLS_TO_PROCESS = 1000;
+const MAX_URLS_TO_PROCESS = 100;
 const MAX_BROKEN_LINKS = 100;
 
 const BRIGHT_DATA_VALIDATE_URLS = 'BRIGHT_DATA_VALIDATE_URLS';
@@ -684,7 +684,7 @@ export async function finalizeCrawlDetection(context, { skipCrawlDetection = fal
   const {
     log: baseLog, site, audit, dataAccess,
   } = context;
-  const log = createAuditLogger(baseLog, site.getId(), audit.getId());
+  const log = createAuditLogger(baseLog, AUDIT_TYPE, site.getId(), audit.getId());
 
   const auditId = audit.getId();
   const shouldCleanup = !skipCrawlDetection;
@@ -761,7 +761,7 @@ export async function runCrawlDetectionBatch(context) {
   const {
     log: baseLog, site, audit, auditContext, sqs, env,
   } = context;
-  const log = createAuditLogger(baseLog, site.getId(), audit.getId());
+  const log = createAuditLogger(baseLog, AUDIT_TYPE, site.getId(), audit.getId());
 
   const scrapeResultPaths = context.scrapeResultPaths ?? new Map();
   const scrapeJobId = context.scrapeJobId || 'N/A';

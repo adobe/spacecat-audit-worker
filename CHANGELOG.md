@@ -1,3 +1,31 @@
+## [1.313.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.313.1...v1.313.2) (2026-02-12)
+
+
+### Bug Fixes
+
+* align ad-intent-mismatch handler with GuidanceWithBody SQS format ([#1970](https://github.com/adobe/spacecat-audit-worker/issues/1970)) ([7518f05](https://github.com/adobe/spacecat-audit-worker/commit/7518f053267c75758ad220ffd266b9c7e773c329))
+
+## [1.313.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.313.0...v1.313.1) (2026-02-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.95.0 ([#1976](https://github.com/adobe/spacecat-audit-worker/issues/1976)) ([ab77986](https://github.com/adobe/spacecat-audit-worker/commit/ab7798653731a429cec30037654d61357a2f2933))
+
+# [1.313.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.312.2...v1.313.0) (2026-02-12)
+
+
+### Features
+
+* handle validation errors in broke internal link audit ([#1974](https://github.com/adobe/spacecat-audit-worker/issues/1974)) ([8ae9069](https://github.com/adobe/spacecat-audit-worker/commit/8ae90695ea25c9dd02ad852dc916eea7fb838315))
+
+## [1.312.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.312.1...v1.312.2) (2026-02-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.94.0 ([#1972](https://github.com/adobe/spacecat-audit-worker/issues/1972)) ([3d06aff](https://github.com/adobe/spacecat-audit-worker/commit/3d06aff82ba8b9df960ca70427c73b5464533fcd))
+
 ## [1.312.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.312.0...v1.312.1) (2026-02-11)
 
 

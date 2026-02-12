@@ -288,21 +288,24 @@ export async function syncBrokenInternalLinksSuggestions({
     mergeDataFunction,
     mapNewSuggestion: (entry) => {
       const itemType = entry.itemType || 'link';
-      const isAsset = itemType !== 'link';
+      // Internal-links must never set trafficDomain to 0 (use 1 when missing or 0)
+      const trafficDomain = (entry.trafficDomain === 0 || entry.trafficDomain == null)
+        ? 1
+        : entry.trafficDomain;
 
       return {
         opportunityId,
-        type: isAsset ? 'ASSET_FIX' : 'CONTENT_UPDATE',
-        rank: isAsset ? 0 : entry.trafficDomain, // Assets don't have traffic domain
+        type: 'CONTENT_UPDATE',
+        rank: trafficDomain,
         data: {
           title: entry.title,
           urlFrom: entry.urlFrom,
           urlTo: entry.urlTo,
           itemType,
-          priority: isAsset ? 'medium' : 'high',
-          urlsSuggested: isAsset ? [] : (entry.urlsSuggested || []),
+          priority: entry.priority || 'high',
+          urlsSuggested: entry.urlsSuggested || [],
           aiRationale: entry.aiRationale || '',
-          trafficDomain: entry.trafficDomain,
+          trafficDomain,
         },
       };
     },

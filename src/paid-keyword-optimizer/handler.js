@@ -30,7 +30,7 @@ const PAGE_VIEW_THRESHOLD = 1000;
 const IMPORT_AHREF_PAID_PAGES = 'ahref-paid-pages';
 
 const AUDIT_CONSTANTS = {
-  GUIDANCE_TYPE: 'guidance:paid-keyword-optimizer',
+  GUIDANCE_TYPE: 'guidance:paid-ad-intent-gap',
   OBSERVATION: 'Low-performing paid search pages detected with high bounce rates',
 };
 
@@ -264,17 +264,17 @@ export async function paidKeywordOptimizerRunner(auditUrl, context, site) {
   const baseURL = site.getBaseURL();
 
   log.debug(
-    `[paid-keyword-optimizer] [Site: ${auditUrl}] Querying Athena metrics for low-performing paid pages (siteId: ${siteId})`,
+    `[ad-intent-mismatch] [Site: ${auditUrl}] Querying Athena metrics for low-performing paid pages (siteId: ${siteId})`,
   );
 
   // Get temporal parameters (4 weeks back from current week)
   const { week, year } = getWeekInfo();
   const temporalCondition = getTemporalCondition({ week, year, numSeries: 4 });
 
-  const athenaClient = AWSAthenaClient.fromContext(context, `${config.athenaTemp}/paid-keyword-optimizer/${siteId}-${Date.now()}`);
+  const athenaClient = AWSAthenaClient.fromContext(context, `${config.athenaTemp}/ad-intent-mismatch/${siteId}-${Date.now()}`);
 
   try {
-    log.debug(`[paid-keyword-optimizer] [Site: ${auditUrl}] Executing Athena query for paid traffic analysis`);
+    log.debug(`[ad-intent-mismatch] [Site: ${auditUrl}] Executing Athena query for paid traffic analysis`);
 
     // Execute query with dimensions: trf_type, path, trf_channel
     const lowPerformingPages = await executeLowPerformingPaidPagesQuery(
@@ -289,7 +289,7 @@ export async function paidKeywordOptimizerRunner(auditUrl, context, site) {
       baseURL,
     );
 
-    log.debug(`[paid-keyword-optimizer] [Site: ${auditUrl}] Query returned ${lowPerformingPages.length} rows`);
+    log.debug(`[ad-intent-mismatch] [Site: ${auditUrl}] Query returned ${lowPerformingPages.length} rows`);
 
     // Build traffic map by path
     const pathTrafficMap = buildPathTrafficMap(lowPerformingPages);
@@ -298,7 +298,7 @@ export async function paidKeywordOptimizerRunner(auditUrl, context, site) {
     const predominantlyPaidPaths = Array.from(pathTrafficMap.keys())
       .filter((path) => isPredominantlyPaid(pathTrafficMap, path));
 
-    log.debug(`[paid-keyword-optimizer] [Site: ${auditUrl}] Found ${predominantlyPaidPaths.length} predominantly paid paths`);
+    log.debug(`[ad-intent-mismatch] [Site: ${auditUrl}] Found ${predominantlyPaidPaths.length} predominantly paid paths`);
 
     // Get paid traffic rows for predominantly paid paths
     const predominantlyPaidPages = predominantlyPaidPaths
@@ -321,14 +321,14 @@ export async function paidKeywordOptimizerRunner(auditUrl, context, site) {
       temporalCondition,
     };
 
-    log.info(`[paid-keyword-optimizer] [Site: ${auditUrl}] Audit result:`, JSON.stringify(auditResult, null, 2));
+    log.info(`[ad-intent-mismatch] [Site: ${auditUrl}] Audit result:`, JSON.stringify(auditResult, null, 2));
 
     return {
       auditResult,
       fullAuditRef: auditUrl,
     };
   } catch (error) {
-    log.error(`[paid-keyword-optimizer] [Site: ${auditUrl}] Athena query failed: ${error.message}`);
+    log.error(`[ad-intent-mismatch] [Site: ${auditUrl}] Athena query failed: ${error.message}`);
     throw error;
   }
 }
@@ -343,7 +343,7 @@ export async function triggerPaidPagesImportStep(context) {
   const { site, log, finalUrl } = context;
   const siteId = site.getId();
 
-  log.info(`[paid-keyword-optimizer] [Site: ${finalUrl}] Step 1: Triggering ${IMPORT_AHREF_PAID_PAGES} import`);
+  log.info(`[ad-intent-mismatch] [Site: ${finalUrl}] Step 1: Triggering ${IMPORT_AHREF_PAID_PAGES} import`);
 
   // Check if import is enabled and toggle if needed
   let importWasEnabled = false;
@@ -351,7 +351,7 @@ export async function triggerPaidPagesImportStep(context) {
   const imports = siteConfig?.getImports() || [];
 
   if (!isImportEnabled(IMPORT_AHREF_PAID_PAGES, imports)) {
-    log.debug(`[paid-keyword-optimizer] [Site: ${finalUrl}] Enabling ${IMPORT_AHREF_PAID_PAGES} import for site ${siteId}`);
+    log.debug(`[ad-intent-mismatch] [Site: ${finalUrl}] Enabling ${IMPORT_AHREF_PAID_PAGES} import for site ${siteId}`);
     await toggleImport(site, IMPORT_AHREF_PAID_PAGES, true, log);
     importWasEnabled = true;
   }
@@ -391,15 +391,15 @@ export async function runPaidKeywordAnalysisStep(context) {
   const siteId = site.getId();
   const auditId = audit.getId();
 
-  log.info(`[paid-keyword-optimizer] [Site: ${finalUrl}] Step 2: Running paid keyword analysis`);
+  log.info(`[ad-intent-mismatch] [Site: ${finalUrl}] Step 2: Running paid keyword analysis`);
 
   // Disable import if we enabled it in step 1 (cleanup - don't fail audit if this fails)
   if (auditContext?.importWasEnabled) {
-    log.debug(`[paid-keyword-optimizer] [Site: ${finalUrl}] Disabling ${IMPORT_AHREF_PAID_PAGES} import for site ${siteId}`);
+    log.debug(`[ad-intent-mismatch] [Site: ${finalUrl}] Disabling ${IMPORT_AHREF_PAID_PAGES} import for site ${siteId}`);
     try {
       await toggleImport(site, IMPORT_AHREF_PAID_PAGES, false, log);
     } catch (error) {
-      log.error(`[paid-keyword-optimizer] [Site: ${finalUrl}] Failed to disable import (cleanup): ${error.message}`);
+      log.error(`[ad-intent-mismatch] [Site: ${finalUrl}] Failed to disable import (cleanup): ${error.message}`);
     }
   }
 
@@ -410,7 +410,7 @@ export async function runPaidKeywordAnalysisStep(context) {
   audit.setAuditResult(result.auditResult);
   await audit.save();
 
-  log.debug(`[paid-keyword-optimizer] [Site: ${finalUrl}] Audit updated with analysis results`);
+  log.debug(`[ad-intent-mismatch] [Site: ${finalUrl}] Audit updated with analysis results`);
 
   // Send qualifying pages to Mystique
   const { auditResult } = result;
@@ -420,26 +420,26 @@ export async function runPaidKeywordAnalysisStep(context) {
 
   if (qualifyingPages.length === 0) {
     log.info(
-      `[paid-keyword-optimizer] [Site: ${finalUrl}] No pages with bounce rate >= ${CUT_OFF_BOUNCE_RATE} found; skipping mystique`,
+      `[ad-intent-mismatch] [Site: ${finalUrl}] No pages with bounce rate >= ${CUT_OFF_BOUNCE_RATE} found; skipping mystique`,
     );
     return {};
   }
 
   log.info(
-    `[paid-keyword-optimizer] [Site: ${finalUrl}] Found ${qualifyingPages.length} pages with high bounce rate`,
+    `[ad-intent-mismatch] [Site: ${finalUrl}] Found ${qualifyingPages.length} pages with high bounce rate`,
   );
 
   // Send one message per qualifying page
   await Promise.all(qualifyingPages.map((page) => {
     const mystiqueMessage = buildMystiqueMessage(site, auditId, page);
-    log.debug(
-      `[paid-keyword-optimizer] [Site: ${finalUrl}] Sending message for ${page.url} to mystique: `
+    log.info(
+      `[ad-intent-mismatch] [Site: ${finalUrl}] Sending message for ${page.url} to mystique: `
       + `${JSON.stringify(mystiqueMessage, null, 2)}`,
     );
     return sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
   }));
 
-  log.debug(`[paid-keyword-optimizer] [Site: ${finalUrl}] Step 2 complete - sent ${qualifyingPages.length} messages`);
+  log.info(`[ad-intent-mismatch] [Site: ${finalUrl}] Step 2 complete - sent ${qualifyingPages.length} messages`);
 
   return {};
 }
@@ -455,26 +455,26 @@ export async function sendToMystique(auditUrl, auditData, context, site) {
 
   if (qualifyingPages.length === 0) {
     log.info(
-      `[paid-keyword-optimizer] [Site: ${auditUrl}] No pages with bounce rate >= ${CUT_OFF_BOUNCE_RATE} found; skipping mystique`,
+      `[ad-intent-mismatch] [Site: ${auditUrl}] No pages with bounce rate >= ${CUT_OFF_BOUNCE_RATE} found; skipping mystique`,
     );
     return;
   }
 
   log.info(
-    `[paid-keyword-optimizer] [Site: ${auditUrl}] Found ${qualifyingPages.length} pages with high bounce rate`,
+    `[ad-intent-mismatch] [Site: ${auditUrl}] Found ${qualifyingPages.length} pages with high bounce rate`,
   );
 
   // Send one message per qualifying page
   await Promise.all(qualifyingPages.map((page) => {
     const mystiqueMessage = buildMystiqueMessage(site, id, page);
-    log.debug(
-      `[paid-keyword-optimizer] [Site: ${auditUrl}] Sending message for ${page.url} to mystique: `
+    log.info(
+      `[ad-intent-mismatch] [Site: ${auditUrl}] Sending message for ${page.url} to mystique: `
       + `${JSON.stringify(mystiqueMessage, null, 2)}`,
     );
     return sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
   }));
 
-  log.debug(`[paid-keyword-optimizer] [Site: ${auditUrl}] Completed mystique evaluation step - sent ${qualifyingPages.length} messages`);
+  log.info(`[ad-intent-mismatch] [Site: ${auditUrl}] Completed mystique evaluation step - sent ${qualifyingPages.length} messages`);
 }
 
 export default new AuditBuilder()
