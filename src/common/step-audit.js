@@ -114,7 +114,12 @@ export class StepAudit extends BaseAudit {
       }
 
       // Check if scrape job was aborted
-      if (abort) {
+      // Skip abort info validation if jobId was not created by SCRAPE_CLIENT
+      // (i.e., if jobId === siteId, it's from CONTENT_SCRAPER
+      // which does not create jobId in DynamoDB)
+      const isJobIdFromScrapeClient = jobId && jobId !== siteId;
+
+      if (abort && isJobIdFromScrapeClient) {
         const { blockedUrlsCount, totalUrlsCount, blockedUrls } = abort.details || {};
         // Only proceed if we have a valid total count (needed for arithmetic and comparison)
         // If abortInfo exists, blockedUrlsCount should be >= 1 (at least one URL was blocked)
