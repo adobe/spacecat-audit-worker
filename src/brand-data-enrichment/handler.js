@@ -36,7 +36,7 @@
 import { ok, notFound, internalServerError } from '@adobe/spacecat-shared-http-utils';
 import {
   URL_ENRICHMENT_BATCH_SIZE,
-  URL_ENRICHMENT_TYPE,
+  BRAND_DATA_ENRICHMENT_TYPE,
   loadEnrichmentMetadata,
   loadEnrichmentJson,
   saveEnrichmentJson,
@@ -47,8 +47,6 @@ import {
   transformWebSearchProviderForMystique,
 } from './util.js';
 import { getPresignedUrl } from '../utils/getPresignedUrl.js';
-
-const AUDIT_NAME = 'GEO_BRAND_PRESENCE_JSON_ENRICHMENT';
 
 /**
  * Uploads prompts to S3 and returns a presigned URL.
@@ -91,7 +89,7 @@ async function sendToMystique(prompts, metadata, context, log) {
   if (!s3Client) {
     log.error(
       '%s: Cannot send to Mystique - s3Client is undefined in context for auditId: %s',
-      AUDIT_NAME,
+      BRAND_DATA_ENRICHMENT_TYPE,
       metadata.auditId,
     );
     throw new Error('s3Client is not available in context');
@@ -135,7 +133,7 @@ async function sendToMystique(prompts, metadata, context, log) {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.debug(
       '%s: Detection message sent to Mystique for site %s with provider %s',
-      AUDIT_NAME,
+      BRAND_DATA_ENRICHMENT_TYPE,
       siteId,
       webSearchProvider,
     );
@@ -145,7 +143,7 @@ async function sendToMystique(prompts, metadata, context, log) {
 
   log.info(
     '%s: Sent %d detection messages to Mystique for site %s',
-    AUDIT_NAME,
+    BRAND_DATA_ENRICHMENT_TYPE,
     providersToUse.length,
     siteId,
   );
@@ -161,7 +159,7 @@ async function sendToMystique(prompts, metadata, context, log) {
 async function sendFallbackToMystique(metadata, prompts, context, log) {
   log.warn(
     '%s: Sending fallback (possibly partial) prompts to Mystique for auditId: %s',
-    AUDIT_NAME,
+    BRAND_DATA_ENRICHMENT_TYPE,
     metadata.auditId,
   );
 
@@ -170,7 +168,7 @@ async function sendFallbackToMystique(metadata, prompts, context, log) {
   if (!context.sqs || !context.env) {
     log.error(
       '%s: Cannot send fallback - missing required context properties (sqs: %s, env: %s) for auditId: %s',
-      AUDIT_NAME,
+      BRAND_DATA_ENRICHMENT_TYPE,
       !!context.sqs,
       !!context.env,
       metadata.auditId,
@@ -184,7 +182,7 @@ async function sendFallbackToMystique(metadata, prompts, context, log) {
   } catch (error) {
     log.error(
       '%s: Failed to send fallback to Mystique for auditId: %s: %s',
-      AUDIT_NAME,
+      BRAND_DATA_ENRICHMENT_TYPE,
       metadata.auditId,
       error.message,
     );
@@ -224,7 +222,7 @@ export default async function handleJsonEnrichment(message, context) {
   if (!s3Client || !env || !sqs || !dataAccess) {
     log.error(
       '%s: Missing required context properties (s3Client: %s, env: %s, sqs: %s, dataAccess: %s) for auditId: %s',
-      AUDIT_NAME,
+      BRAND_DATA_ENRICHMENT_TYPE,
       !!s3Client,
       !!env,
       !!sqs,
@@ -239,7 +237,7 @@ export default async function handleJsonEnrichment(message, context) {
 
   log.info(
     '%s: Processing batch starting at %d for auditId: %s, siteId: %s',
-    AUDIT_NAME,
+    BRAND_DATA_ENRICHMENT_TYPE,
     batchStart,
     auditId,
     siteId,
@@ -252,22 +250,22 @@ export default async function handleJsonEnrichment(message, context) {
   try {
     const site = await Site.findById(siteId);
     if (!site) {
-      log.error('%s: Site not found for siteId: %s', AUDIT_NAME, siteId);
+      log.error('%s: Site not found for siteId: %s', BRAND_DATA_ENRICHMENT_TYPE, siteId);
       return notFound('Site not found');
     }
 
-    log.debug('%s: Loading metadata from S3 for auditId: %s', AUDIT_NAME, auditId);
+    log.debug('%s: Loading metadata from S3 for auditId: %s', BRAND_DATA_ENRICHMENT_TYPE, auditId);
     metadata = await loadEnrichmentMetadata(s3Client, bucket, auditId);
 
     if (!metadata || !metadata.indicesToEnrich) {
-      log.error('%s: Invalid metadata for auditId: %s', AUDIT_NAME, auditId);
+      log.error('%s: Invalid metadata for auditId: %s', BRAND_DATA_ENRICHMENT_TYPE, auditId);
       return notFound('Enrichment metadata not found');
     }
 
     if (isEnrichmentTimedOut(metadata)) {
       log.warn(
         '%s: Enrichment timed out for auditId: %s (started: %s) - sending partial to Mystique',
-        AUDIT_NAME,
+        BRAND_DATA_ENRICHMENT_TYPE,
         auditId,
         metadata.createdAt,
       );
@@ -293,7 +291,7 @@ export default async function handleJsonEnrichment(message, context) {
     if (conflictCheck.hasConflict) {
       log.warn(
         '%s: Conflict detected for auditId: %s - reason: %s, newer audit: %s',
-        AUDIT_NAME,
+        BRAND_DATA_ENRICHMENT_TYPE,
         auditId,
         conflictCheck.reason,
         conflictCheck.newerAuditId || 'unknown',
@@ -307,11 +305,11 @@ export default async function handleJsonEnrichment(message, context) {
       });
     }
 
-    log.debug('%s: Loading prompts from S3 for auditId: %s', AUDIT_NAME, auditId);
+    log.debug('%s: Loading prompts from S3 for auditId: %s', BRAND_DATA_ENRICHMENT_TYPE, auditId);
     prompts = await loadEnrichmentJson(s3Client, bucket, auditId);
 
     if (!Array.isArray(prompts)) {
-      log.error('%s: Invalid prompts data for auditId: %s', AUDIT_NAME, auditId);
+      log.error('%s: Invalid prompts data for auditId: %s', BRAND_DATA_ENRICHMENT_TYPE, auditId);
       return internalServerError('Invalid prompts data');
     }
 
@@ -323,7 +321,7 @@ export default async function handleJsonEnrichment(message, context) {
 
     log.info(
       '%s: Processing batch %d/%d (%d prompts) for auditId: %s',
-      AUDIT_NAME,
+      BRAND_DATA_ENRICHMENT_TYPE,
       currentBatch,
       totalBatches,
       batchIndices.length,
@@ -340,7 +338,7 @@ export default async function handleJsonEnrichment(message, context) {
 
     log.info(
       '%s: Batch %d/%d complete - enriched %d/%d prompts for auditId: %s',
-      AUDIT_NAME,
+      BRAND_DATA_ENRICHMENT_TYPE,
       currentBatch,
       totalBatches,
       enrichedCount,
@@ -349,14 +347,14 @@ export default async function handleJsonEnrichment(message, context) {
     );
 
     await saveEnrichmentJson(s3Client, bucket, auditId, prompts);
-    log.debug('%s: Saved updated prompts to S3 for auditId: %s', AUDIT_NAME, auditId);
+    log.debug('%s: Saved updated prompts to S3 for auditId: %s', BRAND_DATA_ENRICHMENT_TYPE, auditId);
 
     const remaining = indicesToEnrich.length - batchEnd;
 
     if (remaining > 0) {
       log.info(
         '%s: %d prompts remaining, sending continuation message for auditId: %s',
-        AUDIT_NAME,
+        BRAND_DATA_ENRICHMENT_TYPE,
         remaining,
         auditId,
       );
@@ -366,17 +364,17 @@ export default async function handleJsonEnrichment(message, context) {
       const auditQueue = configuration.getQueues().audits;
 
       // TODO: Remove diagnostic logging after debugging
-      log.info('%s: Sending continuation to queue: %s, batchStart: %d', AUDIT_NAME, auditQueue, batchEnd);
+      log.info('%s: Sending continuation to queue: %s, batchStart: %d', BRAND_DATA_ENRICHMENT_TYPE, auditQueue, batchEnd);
 
       await sqs.sendMessage(auditQueue, {
-        type: URL_ENRICHMENT_TYPE,
+        type: BRAND_DATA_ENRICHMENT_TYPE,
         auditId,
         siteId,
         batchStart: batchEnd,
       });
 
       // TODO: Remove diagnostic logging after debugging
-      log.info('%s: Continuation message sent successfully for auditId: %s', AUDIT_NAME, auditId);
+      log.info('%s: Continuation message sent successfully for auditId: %s', BRAND_DATA_ENRICHMENT_TYPE, auditId);
 
       return ok({
         status: 'processing',
@@ -388,7 +386,7 @@ export default async function handleJsonEnrichment(message, context) {
 
     log.info(
       '%s: All batches complete for auditId: %s, performing final conflict check',
-      AUDIT_NAME,
+      BRAND_DATA_ENRICHMENT_TYPE,
       auditId,
     );
 
@@ -403,7 +401,7 @@ export default async function handleJsonEnrichment(message, context) {
     if (finalConflictCheck.hasConflict) {
       log.warn(
         '%s: Final conflict detected for auditId: %s - aborting',
-        AUDIT_NAME,
+        BRAND_DATA_ENRICHMENT_TYPE,
         auditId,
       );
       return ok({
@@ -413,14 +411,14 @@ export default async function handleJsonEnrichment(message, context) {
       });
     }
 
-    log.info('%s: Sending enriched prompts to Mystique for auditId: %s', AUDIT_NAME, auditId);
+    log.info('%s: Sending enriched prompts to Mystique for auditId: %s', BRAND_DATA_ENRICHMENT_TYPE, auditId);
     await sendToMystique(prompts, metadata, context, log);
 
     await releaseEnrichmentLock(s3Client, bucket, siteId, metadata.lockId, log);
 
     log.info(
       '%s: Successfully completed JSON enrichment for auditId: %s, sent to Mystique',
-      AUDIT_NAME,
+      BRAND_DATA_ENRICHMENT_TYPE,
       auditId,
     );
 
@@ -433,7 +431,7 @@ export default async function handleJsonEnrichment(message, context) {
   } catch (error) {
     log.error(
       '%s: Error processing JSON enrichment for auditId: %s: %s',
-      AUDIT_NAME,
+      BRAND_DATA_ENRICHMENT_TYPE,
       auditId,
       error.message,
     );

@@ -662,7 +662,7 @@ describe('Geo Brand Presence Handler', () => {
 
       expect(sqs.sendMessage).to.not.have.been.called;
       expect(log.warn).to.have.been.calledWith(
-        'GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping',
+        'GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique',
         site.getId(),
         site.getBaseURL(),
       );

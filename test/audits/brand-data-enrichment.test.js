@@ -31,8 +31,8 @@ import {
   urlEnrichmentJsonS3Key,
   ENRICHMENT_TIMEOUT_MS,
   URL_ENRICHMENT_BATCH_SIZE,
-  URL_ENRICHMENT_TYPE,
-} from '../../src/geo-brand-presence/util.js';
+  BRAND_DATA_ENRICHMENT_TYPE,
+} from '../../src/brand-data-enrichment/util.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -504,7 +504,7 @@ describe('JSON Enrichment Utilities', () => {
     });
 
     it('should have correct enrichment type', () => {
-      expect(URL_ENRICHMENT_TYPE).to.equal('enrich:geo-brand-presence-json');
+      expect(BRAND_DATA_ENRICHMENT_TYPE).to.equal('enrich:brand-data');
     });
 
     it('should have correct timeout (10 minutes)', () => {
@@ -548,7 +548,7 @@ describe('JSON Enrichment Handler', () => {
 
   const createMockUtils = (overrides = {}) => ({
     URL_ENRICHMENT_BATCH_SIZE: 10,
-    URL_ENRICHMENT_TYPE: 'enrich:geo-brand-presence-json',
+    BRAND_DATA_ENRICHMENT_TYPE: 'enrich:brand-data',
     loadEnrichmentMetadata: sinon.stub().resolves(createMetadata()),
     loadEnrichmentJson: sinon.stub().resolves(createPrompts()),
     saveEnrichmentJson: sinon.stub().resolves(),
@@ -562,8 +562,8 @@ describe('JSON Enrichment Handler', () => {
 
   const createHandler = async (mockUtilsOverrides = {}) => {
     const mockUtils = createMockUtils(mockUtilsOverrides);
-    const handler = await esmock('../../src/geo-brand-presence/json-enrichment-handler.js', {
-      '../../src/geo-brand-presence/util.js': mockUtils,
+    const handler = await esmock('../../src/brand-data-enrichment/handler.js', {
+      '../../src/brand-data-enrichment/util.js': mockUtils,
       '../../src/utils/getPresignedUrl.js': {
         getPresignedUrl: sinon.stub().resolves('https://presigned-url.com'),
       },
@@ -827,7 +827,7 @@ describe('JSON Enrichment Handler', () => {
       expect(sqs.sendMessage).to.have.been.calledWith(
         'audit-queue',
         sinon.match({
-          type: 'enrich:geo-brand-presence-json',
+          type: 'enrich:brand-data',
           auditId,
           siteId,
           batchStart: 10,
