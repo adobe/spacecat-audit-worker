@@ -413,8 +413,8 @@ describe('Paid Keyword Optimizer Audit', () => {
       const message1 = context.sqs.sendMessage.getCall(0).args[1];
       const message2 = context.sqs.sendMessage.getCall(1).args[1];
 
-      expect(message1.type).to.equal('guidance:paid-keyword-optimizer');
-      expect(message2.type).to.equal('guidance:paid-keyword-optimizer');
+      expect(message1.type).to.equal('guidance:paid-ad-intent-gap');
+      expect(message2.type).to.equal('guidance:paid-ad-intent-gap');
 
       // Each message should have a single url and page-specific data
       expect(message1.url).to.equal('https://example.com/page1');
@@ -764,12 +764,12 @@ describe('Paid Keyword Optimizer Audit', () => {
       const message1 = context.sqs.sendMessage.getCall(0).args[1];
       const message2 = context.sqs.sendMessage.getCall(1).args[1];
 
-      expect(message1.type).to.equal('guidance:paid-keyword-optimizer');
+      expect(message1.type).to.equal('guidance:paid-ad-intent-gap');
       expect(message1.url).to.equal('https://example.com/page1');
       expect(message1.data.bounceRate).to.equal(0.5);
       expect(message1.data.pageViews).to.equal(1000);
 
-      expect(message2.type).to.equal('guidance:paid-keyword-optimizer');
+      expect(message2.type).to.equal('guidance:paid-ad-intent-gap');
       expect(message2.url).to.equal('https://example.com/page2');
       expect(message2.data.bounceRate).to.equal(0.4);
       expect(message2.data.pageViews).to.equal(800);
@@ -896,7 +896,7 @@ describe('Paid Keyword Optimizer Audit', () => {
       await sendToMystique(auditUrl, auditData, context, site);
 
       const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
-      expect(sentMessage.type).to.equal('guidance:paid-keyword-optimizer');
+      expect(sentMessage.type).to.equal('guidance:paid-ad-intent-gap');
       expect(sentMessage.observation).to.equal('Low-performing paid search pages detected with high bounce rates');
       expect(sentMessage.siteId).to.equal('test-site-id');
       expect(sentMessage.url).to.equal('https://example.com/page1');
@@ -907,7 +907,7 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(sentMessage.data).to.have.property('trafficLoss', 500);
     });
 
-    it('should log debug message when sending to mystique', async () => {
+    it('should log info message when sending to mystique', async () => {
       const auditData = {
         id: 'test-audit-id',
         auditResult: {
@@ -925,8 +925,8 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       await sendToMystique(auditUrl, auditData, context, site);
 
-      expect(logStub.debug).to.have.been.calledWithMatch(/Sending message for/);
-      expect(logStub.debug).to.have.been.calledWithMatch(/Completed mystique evaluation step/);
+      expect(logStub.info).to.have.been.calledWithMatch(/Sending message for/);
+      expect(logStub.info).to.have.been.calledWithMatch(/Completed mystique evaluation step/);
     });
 
     it('should handle pages with bounce rate exactly at threshold', async () => {

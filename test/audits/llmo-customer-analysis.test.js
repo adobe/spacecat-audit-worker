@@ -51,6 +51,7 @@ describe('LLMO Customer Analysis Handler', () => {
       }),
       enableHandlerForSite: sandbox.stub(),
       isHandlerEnabledForSite: sandbox.stub().returns(false),
+      getEnabledSiteIdsForHandler: sandbox.stub().returns([]),
       save: sandbox.stub().resolves(),
       setConfig: sandbox.stub().resolves(),
     };
@@ -1433,7 +1434,7 @@ describe('LLMO Customer Analysis Handler', () => {
         'readability',
         'wikipedia-analysis',
         'geo-brand-presence',
-        'geo-brand-presence-free',
+        'geo-brand-presence-free-1',
       ];
 
       for (const audit of expectedAudits) {

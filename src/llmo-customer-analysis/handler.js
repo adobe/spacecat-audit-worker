@@ -30,6 +30,33 @@ import { ContentAIClient } from '../utils/content-ai.js';
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
 
+const GEO_FREE_SPLIT_COUNT = 18;
+const GEO_FREE_SPLITS = Array.from(
+  { length: GEO_FREE_SPLIT_COUNT },
+  (_, i) => `geo-brand-presence-free-${i + 1}`,
+);
+
+/**
+ * Finds the geo-brand-presence-free split with the fewest enabled sites.
+ * @param {object} configuration - Configuration instance
+ * @returns {string} The split audit type to assign
+ */
+function findBestFreeSplit(configuration) {
+  let bestSplit = GEO_FREE_SPLITS[0];
+  let minCount = Infinity;
+
+  for (const split of GEO_FREE_SPLITS) {
+    const count = configuration.getEnabledSiteIdsForHandler(split).length;
+    if (count < minCount) {
+      minCount = count;
+      bestSplit = split;
+      if (count === 0) break;
+    }
+  }
+
+  return bestSplit;
+}
+
 /* c8 ignore start */
 /* this is actually running during tests. verified manually on 2025-12-10. */
 /**
@@ -311,7 +338,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       auditsToEnable.push('geo-brand-presence');
       // only enable free geo brand presence if paid is not already enabled
       if (!isPaidEnabled) {
-        auditsToEnable.push('geo-brand-presence-free');
+        const targetSplit = findBestFreeSplit(configuration);
+        auditsToEnable.push(targetSplit);
       }
     }
 

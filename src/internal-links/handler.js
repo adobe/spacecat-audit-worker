@@ -41,7 +41,7 @@ import { createAuditLogger } from '../common/context-logger.js';
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
-const MAX_URLS_TO_PROCESS = 1000;
+const MAX_URLS_TO_PROCESS = 100;
 const MAX_BROKEN_LINKS = 100;
 
 /**
