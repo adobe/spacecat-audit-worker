@@ -119,7 +119,8 @@ export default async function handler(message, context) {
     });
 
     // Fix rank for links that were stored as 0 (crawl links before default traffic fix)
-    if (isLink && (suggestion.getRank?.() === 0 || suggestion.getRank?.() == null)) {
+    if (isLink && (suggestion.getRank?.() === 0 || suggestion.getRank?.() == null)
+      && typeof suggestion.setRank === 'function') {
       suggestion.setRank(1);
     }
 

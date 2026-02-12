@@ -89,6 +89,7 @@ describe('guidance-broken-links-remediation handler', () => {
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: mockMessage.data.brokenLinks[0].suggestedUrls,
       aiRationale: mockMessage.data.brokenLinks[0].aiRationale,
+      trafficDomain: 1,
     });
   });
 
@@ -218,6 +219,7 @@ describe('guidance-broken-links-remediation handler', () => {
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: [],
       aiRationale: '', // Should be cleared
+      trafficDomain: 1,
     });
     expect(mockContext.log.info).to.have.been.calledWith(
       sinon.match(/All .* suggested URLs were filtered out/),
@@ -269,6 +271,7 @@ describe('guidance-broken-links-remediation handler', () => {
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: [],
       aiRationale: '', // Should be cleared
+      trafficDomain: 1,
     });
     expect(mockContext.log.info).to.have.been.calledWith(
       sinon.match(/No suggested URLs provided by Mystique/),
@@ -397,6 +400,7 @@ describe('guidance-broken-links-remediation handler', () => {
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: [],
       aiRationale: '', // Rationale cleared because no valid URLs provided
+      trafficDomain: 1,
     });
   });
 
@@ -445,6 +449,7 @@ describe('guidance-broken-links-remediation handler', () => {
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: [],
       aiRationale: '', // Rationale cleared because no URLs provided
+      trafficDomain: 1,
     });
   });
 
@@ -496,6 +501,7 @@ describe('guidance-broken-links-remediation handler', () => {
       url_from: 'https://foo.com/redirects-throws-error',
       urlsSuggested: ['https://foo.com/redirects-throws-error-1'],
       aiRationale: '', // Empty string when neither field exists
+      trafficDomain: 1,
     });
   });
 
@@ -548,6 +554,7 @@ describe('guidance-broken-links-remediation handler', () => {
       url_from: 'https://qualcomm.com/broken',
       urlsSuggested: ['https://qualcomm.com/fixed'],
       aiRationale: 'This URL works',
+      trafficDomain: 1,
     });
   });
 });
