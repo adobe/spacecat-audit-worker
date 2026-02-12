@@ -41,8 +41,34 @@ import { createAuditLogger } from '../common/context-logger.js';
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
-const MAX_URLS_TO_PROCESS = 100;
+const MAX_URLS_TO_PROCESS = 100; // default; overridable via site delivery config maxUrlsToProcess
+const MAX_URLS_CAP = 500; // upper bound from config to avoid runaway jobs
 const MAX_BROKEN_LINKS = 100;
+
+/**
+ * Max URLs to process for broken-internal-links (scraping + alternatives).
+ * Reads from site delivery config maxUrlsToProcess; defaults to MAX_URLS_TO_PROCESS (100).
+ * Edge cases: null/undefined site or config, missing getDeliveryConfig, non-numeric/invalid values,
+ * floats (floored), strings coerced to number, and values above MAX_URLS_CAP are clamped.
+ * @param {Object} [site] - Site with optional getDeliveryConfig()
+ * @returns {number} Positive integer in [1, MAX_URLS_CAP] (validated)
+ */
+export function getMaxUrlsToProcess(site) {
+  if (site == null) return MAX_URLS_TO_PROCESS;
+  let raw;
+  try {
+    raw = typeof site.getDeliveryConfig === 'function'
+      ? site.getDeliveryConfig()?.maxUrlsToProcess
+      : undefined;
+  } catch {
+    return MAX_URLS_TO_PROCESS;
+  }
+  if (raw == null) return MAX_URLS_TO_PROCESS;
+  const n = Number(raw);
+  if (Number.isNaN(n) || !Number.isFinite(n) || n < 1) return MAX_URLS_TO_PROCESS;
+  const capped = Math.min(Math.floor(n), MAX_URLS_CAP);
+  return capped;
+}
 
 /**
  * Updates the audit result with prioritized broken internal links.
@@ -322,9 +348,10 @@ export async function submitForScraping(context) {
   finalUrls = finalUrls.filter((url) => isWithinAuditScope(url, baseURL));
   log.info(`After audit scope filtering: ${finalUrls.length} URLs`);
 
-  if (finalUrls.length > MAX_URLS_TO_PROCESS) {
-    log.warn(`Capping URLs from ${finalUrls.length} to ${MAX_URLS_TO_PROCESS}`);
-    finalUrls = finalUrls.slice(0, MAX_URLS_TO_PROCESS);
+  const maxUrls = getMaxUrlsToProcess(site);
+  if (finalUrls.length > maxUrls) {
+    log.warn(`Capping URLs from ${finalUrls.length} to ${maxUrls}`);
+    finalUrls = finalUrls.slice(0, maxUrls);
   }
 
   const beforeFilter = finalUrls.length;
@@ -459,10 +486,11 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const includedTopPages = includedURLs.map((url) => ({ getUrl: () => url }));
   let topPages = [...ahrefsTopPages, ...includedTopPages];
 
-  // Limit total pages
-  if (topPages.length > MAX_URLS_TO_PROCESS) {
-    log.warn(`Capping URLs from ${topPages.length} to ${MAX_URLS_TO_PROCESS}`);
-    topPages = topPages.slice(0, MAX_URLS_TO_PROCESS);
+  // Limit total pages (cap from site delivery config or default)
+  const maxUrls = getMaxUrlsToProcess(site);
+  if (topPages.length > maxUrls) {
+    log.warn(`Capping URLs from ${topPages.length} to ${maxUrls}`);
+    topPages = topPages.slice(0, maxUrls);
   }
 
   // Filter by audit scope

@@ -28,6 +28,7 @@ import {
   runCrawlDetectionBatch,
   updateAuditResult,
   finalizeCrawlDetection,
+  getMaxUrlsToProcess,
 } from '../../../src/internal-links/handler.js';
 import {
   internalLinksData,
@@ -538,6 +539,129 @@ describe('Broken internal links audit', () => {
       sinon.match(/Capping URLs from 120 to 100/),
     );
   }).timeout(10000);
+
+  it('submitForScraping should use delivery config maxUrlsToProcess when set', async () => {
+    const manyAhrefsPages = Array.from({ length: 80 }, (_, i) => ({
+      getUrl: () => `https://example.com/ahrefs-page-${i}`,
+    }));
+    const manyIncludedUrls = Array.from({ length: 40 }, (_, i) => `https://example.com/manual-page-${i}`);
+
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getIncludedURLs: () => manyIncludedUrls,
+        getFetchConfig: () => ({}),
+      }),
+      getDeliveryConfig: () => ({ maxUrlsToProcess: 50 }),
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+      audit: { getId: () => 'audit-123', getAuditResult: () => ({ success: true }), getFullAuditRef: () => 'www.example.com' },
+      dataAccess: { ...context.dataAccess, SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(manyAhrefsPages) } },
+    };
+
+    const result = await submitForScraping(testContext);
+    expect(result.urls).to.have.lengthOf(50);
+    expect(testContext.log.warn).to.have.been.calledWith(
+      sinon.match(/Capping URLs from 120 to 50/),
+    );
+  }).timeout(10000);
+
+  it('submitForScraping should fall back to default 100 for invalid maxUrlsToProcess', async () => {
+    const manyAhrefsPages = Array.from({ length: 80 }, (_, i) => ({
+      getUrl: () => `https://example.com/ahrefs-page-${i}`,
+    }));
+    const manyIncludedUrls = Array.from({ length: 40 }, (_, i) => `https://example.com/manual-page-${i}`);
+
+    for (const invalid of [0, -1, null, undefined, 'x', NaN, Infinity, 50.3]) {
+      const mockSite = {
+        ...site,
+        getConfig: () => ({
+          getIncludedURLs: () => manyIncludedUrls,
+          getFetchConfig: () => ({}),
+        }),
+        getDeliveryConfig: () => ({ maxUrlsToProcess: invalid }),
+      };
+      const testContext = {
+        ...context,
+        site: mockSite,
+        audit: { getId: () => 'audit-123', getAuditResult: () => ({ success: true }), getFullAuditRef: () => 'www.example.com' },
+        dataAccess: { ...context.dataAccess, SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(manyAhrefsPages) } },
+      };
+      const result = await submitForScraping(testContext);
+      // 50.3 is floored to 50; others fall back to 100
+      const expectedCap = invalid === 50.3 ? 50 : 100;
+      expect(result.urls).to.have.lengthOf(expectedCap, `expected cap ${expectedCap} for maxUrlsToProcess=${invalid}`);
+    }
+  }).timeout(10000);
+
+  it('submitForScraping should use default 100 when getDeliveryConfig throws', async () => {
+    const manyAhrefsPages = Array.from({ length: 80 }, (_, i) => ({
+      getUrl: () => `https://example.com/ahrefs-page-${i}`,
+    }));
+    const manyIncludedUrls = Array.from({ length: 40 }, (_, i) => `https://example.com/manual-page-${i}`);
+
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getIncludedURLs: () => manyIncludedUrls,
+        getFetchConfig: () => ({}),
+      }),
+      getDeliveryConfig: () => { throw new Error('config error'); },
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+      audit: { getId: () => 'audit-123', getAuditResult: () => ({ success: true }), getFullAuditRef: () => 'www.example.com' },
+      dataAccess: { ...context.dataAccess, SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(manyAhrefsPages) } },
+    };
+
+    const result = await submitForScraping(testContext);
+    expect(result.urls).to.have.lengthOf(100);
+    expect(testContext.log.warn).to.have.been.calledWith(
+      sinon.match(/Capping URLs from 120 to 100/),
+    );
+  }).timeout(10000);
+
+  it('submitForScraping should accept numeric string and clamp config above MAX_URLS_CAP (500)', async () => {
+    const manyAhrefsPages = Array.from({ length: 12000 }, (_, i) => ({
+      getUrl: () => `https://example.com/ahrefs-page-${i}`,
+    }));
+    const manyIncludedUrls = Array.from({ length: 5000 }, (_, i) => `https://example.com/manual-page-${i}`);
+
+    const mockSite = {
+      ...site,
+      getConfig: () => ({
+        getIncludedURLs: () => manyIncludedUrls,
+        getFetchConfig: () => ({}),
+      }),
+      getDeliveryConfig: () => ({ maxUrlsToProcess: '15000' }),
+    };
+
+    const testContext = {
+      ...context,
+      site: mockSite,
+      audit: { getId: () => 'audit-123', getAuditResult: () => ({ success: true }), getFullAuditRef: () => 'www.example.com' },
+      dataAccess: { ...context.dataAccess, SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(manyAhrefsPages) } },
+    };
+
+    const result = await submitForScraping(testContext);
+    expect(result.urls).to.have.lengthOf(500);
+    expect(testContext.log.warn).to.have.been.calledWith(
+      sinon.match(/Capping URLs from \d+ to 500/),
+    );
+  }).timeout(10000);
+
+  describe('getMaxUrlsToProcess', () => {
+    it('should return default 100 when site is null or undefined', () => {
+      expect(getMaxUrlsToProcess(null)).to.equal(100);
+      expect(getMaxUrlsToProcess(undefined)).to.equal(100);
+    });
+  });
+
   it('submitForScraping should handle empty top pages from database', async () => {
     // Mock database to return empty array
     const mockSiteTopPage = {
