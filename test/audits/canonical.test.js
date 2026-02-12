@@ -3132,6 +3132,194 @@ describe('Canonical URL Tests', () => {
         expect(outsideHeadIssue.affectedUrls).to.have.length.greaterThan(0);
       });
 
+      it('should pass self-reference check when canonical has different domain but same path', async () => {
+        const scrapedContent = {
+          url: 'https://www.example.com/stores/locator',
+          finalUrl: 'https://www.example.com/stores/locator',
+          isPreview: false,
+          scrapeResult: {
+            canonical: {
+              exists: true,
+              count: 1,
+              href: 'https://v.example.com/stores/locator',
+              inHead: true,
+            },
+            rawBody: '<html><head><link rel="canonical" href="https://v.example.com/stores/locator"></head></html>',
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://www.example.com/stores/locator', 'scrapes/job-id/stores-locator/scrape.json'],
+          ]),
+          audit: {
+            getId: () => 'test-audit-id',
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteId: sinon.stub().resolves([]),
+              allBySiteIdAndStatus: sinon.stub().resolves([]),
+            },
+            Suggestion: {
+              allByOpportunityId: sinon.stub().resolves([]),
+            },
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result).to.have.property('auditResult');
+        // Self-reference check should pass (same path), but domain check should fail
+        if (Array.isArray(result.auditResult)) {
+          const selfRefIssue = result.auditResult.find((r) => r.type === 'canonical-self-referenced');
+          expect(selfRefIssue).to.not.exist; // Should not have self-reference issue
+          const domainIssue = result.auditResult.find((r) => r.type === 'canonical-url-same-domain');
+          expect(domainIssue).to.exist; // Should have domain issue
+        } else {
+          expect(result.auditResult).to.have.property('status');
+        }
+      });
+
+      it('should pass self-reference check when URL has query parameters but canonical does not', async () => {
+        const scrapedContent = {
+          url: 'https://www.metrobyt-mobile.com/stores/locator/?page=1',
+          finalUrl: 'https://www.metrobyt-mobile.com/stores/locator/?page=1',
+          isPreview: false,
+          scrapeResult: {
+            canonical: {
+              exists: true,
+              count: 1,
+              href: 'https://www.metrobyt-mobile.com/stores/locator/',
+              inHead: true,
+            },
+            rawBody: '<html><head><link rel="canonical" href="https://www.metrobyt-mobile.com/stores/locator/"></head></html>',
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://www.metrobyt-mobile.com/stores/locator/?page=1', 'scrapes/job-id/stores-locator/scrape.json'],
+          ]),
+          audit: {
+            getId: () => 'test-audit-id',
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteId: sinon.stub().resolves([]),
+              allBySiteIdAndStatus: sinon.stub().resolves([]),
+            },
+            Suggestion: {
+              allByOpportunityId: sinon.stub().resolves([]),
+            },
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result).to.have.property('auditResult');
+        // Self-reference check should pass (same path, query params ignored)
+        if (Array.isArray(result.auditResult)) {
+          const selfRefIssue = result.auditResult.find((r) => r.type === 'canonical-self-referenced');
+          expect(selfRefIssue).to.not.exist; // Should not have self-reference issue
+        } else {
+          expect(result.auditResult).to.deep.equal({
+            status: 'success',
+            message: 'No canonical issues detected',
+          });
+        }
+      });
+
+      it('should pass self-reference check when URL has hash fragment but canonical does not', async () => {
+        const scrapedContent = {
+          url: 'https://example.com/page#section',
+          finalUrl: 'https://example.com/page#section',
+          isPreview: false,
+          scrapeResult: {
+            canonical: {
+              exists: true,
+              count: 1,
+              href: 'https://example.com/page',
+              inHead: true,
+            },
+            rawBody: '<html><head><link rel="canonical" href="https://example.com/page"></head></html>',
+          },
+        };
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page#section', 'scrapes/job-id/page/scrape.json'],
+          ]),
+          audit: {
+            getId: () => 'test-audit-id',
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteId: sinon.stub().resolves([]),
+              allBySiteIdAndStatus: sinon.stub().resolves([]),
+            },
+            Suggestion: {
+              allByOpportunityId: sinon.stub().resolves([]),
+            },
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': {
+              getObjectFromKey: mockGetObjectFromKey,
+            },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result).to.have.property('auditResult');
+        // Self-reference check should pass (same path, hash ignored)
+        if (Array.isArray(result.auditResult)) {
+          const selfRefIssue = result.auditResult.find((r) => r.type === 'canonical-self-referenced');
+          expect(selfRefIssue).to.not.exist; // Should not have self-reference issue
+        } else {
+          expect(result.auditResult).to.deep.equal({
+            status: 'success',
+            message: 'No canonical issues detected',
+          });
+        }
+      });
+
       it('should handle missing S3 bucket configuration', async () => {
         const testContext = {
           ...context,

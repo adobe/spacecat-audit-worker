@@ -478,12 +478,12 @@ export async function processScrapedContent(context) {
           });
         }
 
-        // Check if canonical is self-referenced (ignoring protocol and case)
+        // Check if canonical is self-referenced (ignoring protocol, domain, query, hash, case)
         const normalizeUrl = (u) => {
           try {
             const urlObj = new URL(u);
-            // Remove protocol, lowercase everything, keep host and path
-            return `${urlObj.host}${urlObj.pathname}${urlObj.search}${urlObj.hash}`.toLowerCase();
+            // Remove protocol, domain, query params, and hash; lowercase; keep only pathname
+            return urlObj.pathname.toLowerCase();
           } catch {
             return u.toLowerCase();
           }
@@ -491,7 +491,7 @@ export async function processScrapedContent(context) {
         const normalizedCanonical = normalizeUrl(canonicalUrl);
         const normalizedFinal = normalizeUrl(finalUrl);
 
-        // Canonical should match the final URL (what was actually served)
+        // Canonical should match the final URL path (what was actually served)
         const isSelfReferenced = normalizedCanonical === normalizedFinal;
         if (isSelfReferenced) {
           canonicalTagChecks.push({
