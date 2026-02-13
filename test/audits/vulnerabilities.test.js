@@ -194,8 +194,8 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(result.auditResult.vulnerabilityReport).to.deep.equal(mockVulnerabilityReport);
       expect(result.auditResult.finalUrl).to.equal('https://example.com');
 
-      // Verify that the debug log was called for default IMS org
-      expect(context.log.debug).to.have.been.calledWithMatch(/site is configured with default IMS org/);
+      // Verify that the info log was called for default IMS org
+      expect(context.log.info).to.have.been.calledWithMatch(/site is configured with default IMS org/);
     });
 
     it('should handle missing programId in delivery config', async () => {
@@ -263,8 +263,8 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('fetch successful, but report was empty / null');
       expect(result.auditResult.finalUrl).to.equal('https://example.com');
-      expect(context.log.debug).to.have.been.calledWithMatch(/vulnerability report not found/);
-      expect(context.log.debug).to.have.been.calledWithMatch(/fetch successful, but report was empty \/ null/);
+      expect(context.log.info).to.have.been.calledWithMatch(/vulnerability report not found/);
+      expect(context.log.info).to.have.been.calledWithMatch(/fetch successful, but report was empty \/ null/);
     });
 
     it('should handle fetch error and throw generic error message', async () => {
