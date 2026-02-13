@@ -29,6 +29,7 @@
 import { ok, notFound, internalServerError } from '@adobe/spacecat-shared-http-utils';
 import { llmoConfig } from '@adobe/spacecat-shared-utils';
 import { randomUUID } from 'node:crypto';
+import { validateContentAI } from '../faqs/utils.js';
 import {
   URL_ENRICHMENT_BATCH_SIZE,
   BRAND_DATA_ENRICHMENT_TYPE,
@@ -74,7 +75,7 @@ export default async function handleBrandDataEnrichment(message, context) {
   }
 
   const { Site } = dataAccess;
-  const { siteId, batchStart = 0 } = message;
+  const { siteId, batchStart = 0, indexName: indexNameFromMessage } = message;
   let { auditId } = message;
   const bucket = env.S3_IMPORTER_BUCKET_NAME;
 
@@ -89,6 +90,7 @@ export default async function handleBrandDataEnrichment(message, context) {
 
     // --- First invocation ---
     if (batchStart === 0) {
+      const batchStartTime = Date.now();
       auditId = auditId || randomUUID();
 
       const { config } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
@@ -98,6 +100,20 @@ export default async function handleBrandDataEnrichment(message, context) {
         log.info('%s: No prompts found in config for siteId: %s, skipping', BRAND_DATA_ENRICHMENT_TYPE, siteId);
         return ok({ status: 'skipped', reason: 'no-prompts' });
       }
+
+      // Validate ContentAI configuration and get indexName
+      const validation = await validateContentAI(site, context);
+      if (!validation.isWorking || !validation.indexName) {
+        log.error(
+          '%s: ContentAI is not working or index not found for siteId: %s',
+          BRAND_DATA_ENRICHMENT_TYPE,
+          siteId,
+        );
+        return ok({ status: 'skipped', reason: 'contentai-not-working' });
+      }
+
+      const { indexName } = validation;
+      log.info('%s: Using ContentAI index: %s', BRAND_DATA_ENRICHMENT_TYPE, indexName);
 
       const lockResult = await acquireEnrichmentLock(
         s3Client,
@@ -119,6 +135,7 @@ export default async function handleBrandDataEnrichment(message, context) {
         siteId,
         lockId: LOCK_ID,
         totalPrompts,
+        indexName,
         createdAt: new Date().toISOString(),
       };
 
@@ -143,6 +160,15 @@ export default async function handleBrandDataEnrichment(message, context) {
         site,
         context,
         log,
+        indexName,
+      );
+
+      const batchDuration = Date.now() - batchStartTime;
+      log.info(
+        '%s: Batch 1 took %dms (%ds)',
+        BRAND_DATA_ENRICHMENT_TYPE,
+        batchDuration,
+        Math.round(batchDuration / 1000),
       );
 
       // Save config (flatPrompts mutated by reference → config is updated)
@@ -168,6 +194,7 @@ export default async function handleBrandDataEnrichment(message, context) {
           siteId,
           auditId,
           batchStart: batchEnd,
+          indexName,
         });
 
         return ok({
@@ -209,6 +236,8 @@ export default async function handleBrandDataEnrichment(message, context) {
     }
 
     // --- Continuation (batchStart > 0) ---
+    const batchStartTime = Date.now();
+
     log.info(
       '%s: Continuation batch at %d for auditId: %s, siteId: %s',
       BRAND_DATA_ENRICHMENT_TYPE,
@@ -222,6 +251,13 @@ export default async function handleBrandDataEnrichment(message, context) {
     if (!metadata) {
       log.error('%s: Metadata not found for auditId: %s', BRAND_DATA_ENRICHMENT_TYPE, auditId);
       return notFound('Enrichment metadata not found');
+    }
+
+    // Get indexName from message or metadata
+    const indexName = indexNameFromMessage || metadata.indexName;
+    if (!indexName) {
+      log.error('%s: indexName not found for auditId: %s', BRAND_DATA_ENRICHMENT_TYPE, auditId);
+      return internalServerError('indexName not found');
     }
 
     if (isEnrichmentTimedOut(metadata)) {
@@ -273,16 +309,20 @@ export default async function handleBrandDataEnrichment(message, context) {
       site,
       context,
       log,
+      indexName,
     );
 
     await saveEnrichmentConfig(s3Client, bucket, auditId, config);
 
+    const batchDuration = Date.now() - batchStartTime;
     log.info(
-      '%s: Batch complete - enriched %d/%d prompts for auditId: %s',
+      '%s: Batch complete - enriched %d/%d prompts for auditId: %s (took %dms / %ds)',
       BRAND_DATA_ENRICHMENT_TYPE,
       enrichedCount,
       batchIndices.length,
       auditId,
+      batchDuration,
+      Math.round(batchDuration / 1000),
     );
 
     const remaining = totalPrompts - batchEnd;
@@ -297,6 +337,7 @@ export default async function handleBrandDataEnrichment(message, context) {
         siteId,
         auditId,
         batchStart: batchEnd,
+        indexName,
       });
 
       return ok({

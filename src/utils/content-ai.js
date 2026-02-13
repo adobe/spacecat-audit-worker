@@ -45,6 +45,7 @@ export class ContentAIClient {
     this.log = context.log;
     this.tokenResponse = null;
     this.siteConfigCache = null;
+    this.siteConfigFetchPromise = null;
   }
 
   /**
@@ -58,11 +59,13 @@ export class ContentAIClient {
         ...this.env,
         IMS_HOST: this.env.CONTENTAI_IMS_HOST,
         IMS_CLIENT_ID: this.env.CONTENTAI_CLIENT_ID,
+        IMS_CLIENT_CODE: this.env.CONTENTAI_CLIENT_CODE,
         IMS_CLIENT_SECRET: this.env.CONTENTAI_CLIENT_SECRET,
         IMS_SCOPE: this.env.CONTENTAI_CLIENT_SCOPE,
       },
     });
     this.tokenResponse = await imsClient.getServiceAccessTokenV3();
+    this.log?.info(`ContentAI token obtained: ${this.tokenResponse.access_token?.substring(0, 20)}...`);
     return this;
   }
 
@@ -85,22 +88,25 @@ export class ContentAIClient {
     let allItems = [];
     let cursor = null;
 
+    this.log?.info('Getting configurations from ContentAI');
     do {
       const url = cursor
         ? `${this.env.CONTENTAI_ENDPOINT}/configurations?cursor=${cursor}`
         : `${this.env.CONTENTAI_ENDPOINT}/configurations`;
 
+      const headers = {
+        Accept: 'application/json',
+        Authorization: this.getAuthHeader(),
+        'x-api-key': this.env.CONTENTAI_CLIENT_ID,
+      };
+
       // eslint-disable-next-line no-await-in-loop
       const response = await fetch(url, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: this.getAuthHeader(),
-          // https://wiki.corp.adobe.com/pages/viewpage.action?pageId=3537471430
-          'x-api-key': this.env.CONTENTAI_CLIENT_ID,
-        },
+        headers,
       });
 
       if (!response.ok) {
+        // eslint-disable-next-line no-await-in-loop
         throw new Error(`Failed to get configurations from ContentAI: ${response.status} ${response.statusText}`);
       }
 
@@ -110,6 +116,12 @@ export class ContentAIClient {
         allItems = allItems.concat(json.items);
       }
       cursor = json.cursor;
+
+      // Add small delay between pagination requests to avoid overwhelming the API
+      if (cursor) {
+        // eslint-disable-next-line no-await-in-loop, max-statements-per-line
+        await new Promise((resolve) => { setTimeout(resolve, 50); });
+      }
     } while (cursor);
 
     return allItems;
@@ -152,6 +164,7 @@ export class ContentAIClient {
     const searchResponse = await fetch(`${this.env.CONTENTAI_ENDPOINT}/search`, {
       method: 'POST',
       headers: {
+        Accept: 'application/json',
         'Content-Type': 'application/json',
         Authorization: this.getAuthHeader(),
         'x-api-key': this.env.CONTENTAI_CLIENT_ID,
@@ -182,12 +195,17 @@ export class ContentAIClient {
     const searchResponse = await fetch(`${this.env.CONTENTAI_ENDPOINT}/gensearch`, {
       method: 'POST',
       headers: {
+        Accept: 'application/json',
         'Content-Type': 'application/json',
         Authorization: this.getAuthHeader(),
         'x-api-key': this.env.CONTENTAI_CLIENT_ID,
       },
       body: JSON.stringify(requestBody),
     });
+
+    if (!searchResponse.ok) {
+      throw new Error(`Failed to run generative search for site ${site.getId()}: ${searchResponse.status} ${searchResponse.statusText}`);
+    }
 
     return searchResponse;
   }
@@ -205,25 +223,53 @@ export class ContentAIClient {
       return this.siteConfigCache.config;
     }
 
-    const configurations = await this.getConfigurations();
+    // If already fetching configurations, wait for that promise to avoid parallel fetches
+    if (this.siteConfigFetchPromise) {
+      const cached = await this.siteConfigFetchPromise;
+      return cached.config;
+    }
 
-    const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
-    const baseURL = site.getBaseURL();
+    // Start fetching (only one concurrent fetch per client instance)
+    this.siteConfigFetchPromise = (async () => {
+      const configurations = await this.getConfigurations();
 
-    const existingConf = configurations.find(
-      (conf) => conf.steps?.find(
-        (step) => step.baseUrl === baseURL
-          || (!!overrideBaseURL && step.baseUrl === overrideBaseURL),
-      ),
-    );
+      const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+      const baseURL = site.getBaseURL();
 
-    // Cache the result as an immutable object
-    this.siteConfigCache = Object.freeze({
-      siteId,
-      config: existingConf || null,
-    });
+      // Normalize URLs by removing www. subdomain for comparison
+      const normalizeUrl = (url) => url?.replace(/^(https?:\/\/)(www\.)?/, '$1');
+      const normalizedBaseURL = normalizeUrl(baseURL);
+      const normalizedOverrideURL = normalizeUrl(overrideBaseURL);
+      this.log?.info(`Found ${configurations.length} total ContentAI configurations`);
 
-    return this.siteConfigCache.config;
+      const existingConf = configurations.find(
+        (conf) => conf.steps?.find(
+          (step) => {
+            const normalizedStepUrl = normalizeUrl(step.baseUrl);
+            return normalizedStepUrl === normalizedBaseURL
+              || (!!normalizedOverrideURL && normalizedStepUrl === normalizedOverrideURL);
+          },
+        ),
+      );
+
+      if (!existingConf) {
+        this.log?.warn(`No ContentAI configuration found for site ${siteId} with baseURL ${baseURL}`);
+      } else {
+        this.log?.info(`Found ContentAI configuration for site ${siteId}: ${existingConf.uid}`);
+      }
+
+      // Cache the result as an immutable object
+      this.siteConfigCache = Object.freeze({
+        siteId,
+        config: existingConf || null,
+      });
+
+      this.siteConfigFetchPromise = null;
+      return this.siteConfigCache;
+    })();
+
+    const cached = await this.siteConfigFetchPromise;
+    return cached.config;
   }
 
   /**
@@ -290,9 +336,10 @@ export class ContentAIClient {
       method: 'POST',
       body: JSON.stringify(contentAiData),
       headers: {
+        Accept: 'application/json',
         'Content-Type': 'application/json',
         Authorization: this.getAuthHeader(),
-        'x-api-key': this.env.CONTENTAI_CLIENT_ID,
+        'User-Agent': 'PostmanRuntime/7.51.1',
       },
     });
 

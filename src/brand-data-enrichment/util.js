@@ -22,26 +22,50 @@ export { transformWebSearchProviderForMystique } from '../geo-brand-presence/uti
  */
 
 /**
- * Gets the URLs by prompt from Content AI
+ * Gets the URLs by prompt from Content AI using semantic search
  * @param {string} prompt - The prompt to search
- * @param {Object} site - The site object
+ * @param {string} indexName - The ContentAI index name to search
  * @param {Object} context - The context object
  * @param {ContentAIClient} [contentAIClient] - Optional pre-initialized client for reuse
  * @returns {Promise<string[]>} The URLs
  */
 // eslint-disable-next-line no-unused-vars
-export async function promptToLinks(prompt, site, context, contentAIClient = null) {
+export async function promptToLinks(prompt, indexName, context, contentAIClient = null) {
+  const { log } = context;
+
   let client = contentAIClient;
   if (!client) {
     client = new ContentAIClient(context);
     await client.initialize();
   }
-  const response = await client.runGenerativeSearch(prompt, site);
-  if (response.status !== 200) {
-    throw new Error(`Error calling ContentAI - ${response.statusText}`);
+
+  // Use semantic search with vector type
+  const searchOptions = {
+    numCandidates: 5,
+    boost: 1,
+  };
+
+  const response = await client.runSemanticSearch(prompt, 'vector', indexName, searchOptions, 1);
+
+  if (!response.ok) {
+    throw new Error(`Error calling ContentAI search: ${response.status} ${response.statusText}`);
   }
-  const res = await response.json();
-  return res?.data?.urls || [];
+
+  const data = await response.json();
+
+  // Extract URL from first search result
+  // ContentAI search response format: { results: [{ data: { source: "url" } }] }
+  const firstResult = data?.results?.[0];
+  const url = firstResult?.data?.source;
+
+  if (!url) {
+    log.debug(`ContentAI search for "${prompt}" returned no results`);
+    return [];
+  }
+
+  log.debug(`ContentAI search for "${prompt}" returned URL: ${url}`);
+
+  return [url];
 }
 
 export const URL_ENRICHMENT_BATCH_SIZE = 10;
@@ -338,13 +362,13 @@ export async function loadEnrichmentConfig(s3Client, bucket, auditId) {
  * Enriches a single prompt object with a Related URL using promptToLinks
  * @param {Object} prompt - The prompt object (will be mutated)
  * @param {number} index - The index in the original array
- * @param {Object} site - The site object
+ * @param {string} indexName - The ContentAI index name
  * @param {Object} context - The context object
  * @param {Object} log - Logger instance
  * @param {ContentAIClient} contentAIClient - Pre-initialized ContentAI client for reuse
  * @returns {Promise<boolean>} True if enriched successfully
  */
-async function enrichPromptWithRelatedUrl(prompt, index, site, context, log, contentAIClient) {
+async function enrichPromptWithRelatedUrl(prompt, index, indexName, context, log, contentAIClient) {
   const promptText = prompt.prompt?.trim() || '';
 
   if (!promptText) {
@@ -352,7 +376,7 @@ async function enrichPromptWithRelatedUrl(prompt, index, site, context, log, con
   }
 
   try {
-    const urls = await promptToLinks(promptText, site, context, contentAIClient);
+    const urls = await promptToLinks(promptText, indexName, context, contentAIClient);
     if (urls && urls.length > 0) {
       const [firstUrl] = urls;
       // first returned URL is the most relevant
@@ -379,14 +403,16 @@ async function enrichPromptWithRelatedUrl(prompt, index, site, context, log, con
  * @param {Object} site - The site object
  * @param {Object} context - The context object
  * @param {Object} log - Logger instance
+ * @param {string} indexName - The ContentAI index name
  * @returns {Promise<number>} Number of successfully enriched prompts
  */
 export async function processJsonEnrichmentBatch(
   prompts,
   indicesToProcess,
-  site,
+  _site,
   context,
   log,
+  indexName,
 ) {
   // Create and initialize ContentAI client ONCE for the entire batch
   const contentAIClient = new ContentAIClient(context);
@@ -396,7 +422,7 @@ export async function processJsonEnrichmentBatch(
     indicesToProcess.map((index) => enrichPromptWithRelatedUrl(
       prompts[index],
       index,
-      site,
+      indexName,
       context,
       log,
       contentAIClient,
