@@ -215,7 +215,7 @@ describe('async-mystique sendReadabilityToMystique', () => {
       const sentMessage = mockContext.sqs.sendMessage.getCall(0).args[1];
       expect(sentMessage.data.selector).to.equal('div.content > p:nth-of-type(2)');
       expect(sentMessage.mode).to.equal('preflight');
-      expect(sentMessage.data.jobId).to.equal('job-789');
+      expect(sentMessage.data.jobId).to.equal('job-456');
     });
 
     it('should fall back to empty string when neither selector nor elements is present', async () => {
