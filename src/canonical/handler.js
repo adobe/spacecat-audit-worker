@@ -385,6 +385,12 @@ export async function processScrapedContent(context) {
     try {
       const scrapedObject = await getObjectFromKey(s3Client, bucketName, key, log);
 
+      // If the scrape result is empty, skip the page for canonical audit
+      if (scrapedObject?.scrapeResult?.rawBody?.length < 300) {
+        log.warn(`[canonical] Scrape result is empty for ${key} (rawBody length: ${scrapedObject?.scrapeResult?.rawBody?.length || 0})`);
+        return null;
+      }
+
       if (!scrapedObject?.scrapeResult?.canonical) {
         log.warn(`[canonical] No canonical metadata in S3 object: ${key}`);
         return null;
