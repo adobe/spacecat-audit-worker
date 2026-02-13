@@ -44,7 +44,10 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 const MAX_URLS_TO_PROCESS = 100;
+/** Max broken links per Mystique batch (batching only) */
 const MAX_BROKEN_LINKS = 100;
+/** Max broken links to report in audit result and suggestions (backoffice/export limit) */
+export const MAX_BROKEN_LINKS_REPORTED = 500;
 
 const BRIGHT_DATA_VALIDATE_URLS = 'BRIGHT_DATA_VALIDATE_URLS';
 const BRIGHT_DATA_MAX_RESULTS = 'BRIGHT_DATA_MAX_RESULTS';
@@ -231,7 +234,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     // 6. Prioritize links
     const prioritizedLinks = calculatePriority(inaccessibleLinks);
 
-    // 7. Build and return audit result
+    // 7. Build and return audit result (cap applied later in opportunityAndSuggestionsStep)
     return {
       auditResult: {
         brokenInternalLinks: prioritizedLinks,
@@ -410,7 +413,23 @@ export const opportunityAndSuggestionsStep = async (context) => {
     (link) => !isCanonicalOrHreflangLink(link),
   );
 
-  if (!isNonEmptyArray(brokenInternalLinksFiltered)) {
+  // Cap here (before suggestions + Mystique); persist for audit/backoffice limit
+  const reportedLinks = brokenInternalLinksFiltered.length > MAX_BROKEN_LINKS_REPORTED
+    ? brokenInternalLinksFiltered.slice(0, MAX_BROKEN_LINKS_REPORTED)
+    : brokenInternalLinksFiltered;
+  if (brokenInternalLinksFiltered.length > MAX_BROKEN_LINKS_REPORTED) {
+    log.warn(`Capping reported broken links from ${brokenInternalLinksFiltered.length} to ${MAX_BROKEN_LINKS_REPORTED} (priority order)`);
+    await updateAuditResult(
+      audit,
+      auditResultToUse,
+      reportedLinks,
+      dataAccess,
+      baseLog,
+      site.getId(),
+    );
+  }
+
+  if (!isNonEmptyArray(reportedLinks)) {
     // no broken internal links found
     // fetch opportunity
     const { Opportunity } = dataAccess;
@@ -439,7 +458,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
     return { status: 'complete' };
   }
 
-  const kpiDeltas = calculateKpiDeltasForAudit(brokenInternalLinksFiltered);
+  const kpiDeltas = calculateKpiDeltasForAudit(reportedLinks);
 
   const opportunity = await convertToOpportunity(
     finalUrl,
@@ -452,7 +471,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   await syncBrokenInternalLinksSuggestions({
     opportunity,
-    brokenInternalLinks: brokenInternalLinksFiltered,
+    brokenInternalLinks: reportedLinks,
     context,
     opportunityId: opportunity.getId(),
     log,
@@ -711,7 +730,7 @@ export async function finalizeCrawlDetection(context, { skipCrawlDetection = fal
       log.info('No crawl results to merge, using RUM-only results');
     }
 
-    // Calculate priority for all links
+    // Calculate priority for all links (already sorted by traffic; high → medium → low)
     const prioritizedLinks = calculatePriority(finalLinks);
 
     // Count by priority
@@ -720,7 +739,7 @@ export async function finalizeCrawlDetection(context, { skipCrawlDetection = fal
     const lowPriority = prioritizedLinks.filter((link) => link.priority === 'low').length;
     log.info(`Priority: ${highPriority} high, ${mediumPriority} medium, ${lowPriority} low`);
 
-    // Update audit result with prioritized links
+    // Update audit result with full list; cap applied in opportunityAndSuggestionsStep
     const updatedAuditResult = await updateAuditResult(
       audit,
       auditResult,
@@ -732,7 +751,7 @@ export async function finalizeCrawlDetection(context, { skipCrawlDetection = fal
 
     log.info('=====================================================');
 
-    // Generate opportunities and suggestions
+    // Generate opportunities and suggestions (cap applied inside step)
     return opportunityAndSuggestionsStep({ ...context, updatedAuditResult });
   } finally {
     // Always cleanup S3 state file, even if an error occurred

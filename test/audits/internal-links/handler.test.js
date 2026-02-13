@@ -28,6 +28,7 @@ import {
   runCrawlDetectionBatch,
   updateAuditResult,
   finalizeCrawlDetection,
+  MAX_BROKEN_LINKS_REPORTED,
 } from '../../../src/internal-links/handler.js';
 import {
   internalLinksData,
@@ -3083,6 +3084,91 @@ describe('runCrawlDetectionBatch - Coverage Tests', () => {
 
     // Verify lines 556-563: cleanup failure logged
     expect(mockLog.warn).to.have.been.calledWith(sinon.match(/Failed to.*: Cleanup error/));
+  });
+
+  it('should cap reported broken links to MAX_BROKEN_LINKS_REPORTED when merge yields more than limit', async function () {
+    this.timeout(15000);
+
+    const mockLog = {
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+      error: sandbox.stub(),
+      debug: sandbox.stub(),
+    };
+
+    const overLimit = MAX_BROKEN_LINKS_REPORTED + 1;
+    const manyCrawlResults = Array.from({ length: overLimit }, (_, i) => ({
+      urlFrom: `https://example.com/p${i}`,
+      urlTo: 'https://example.com/broken',
+      anchorText: 'link',
+      trafficDomain: 100 - i,
+    }));
+
+    const setAuditResultStub = sandbox.stub();
+    const mockContext = {
+      log: mockLog,
+      site: {
+        getId: () => 'site-cap',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({ getIncludedURLs: () => [] }),
+      },
+      audit: {
+        getId: () => 'audit-cap',
+        getAuditType: () => AUDIT_TYPE,
+        getFullAuditRef: () => 'site/audit-cap',
+        getAuditResult: () => ({ brokenInternalLinks: [], success: true }),
+        setAuditResult: setAuditResultStub,
+        save: sandbox.stub().resolves(),
+      },
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sandbox.stub()
+          .onCall(0).resolves({
+            Body: {
+              transformToString: async () => JSON.stringify({
+                results: manyCrawlResults,
+                brokenUrlsCache: [],
+                workingUrlsCache: [],
+              }),
+            },
+          })
+          .onCall(1).resolves(),
+      },
+      dataAccess: {
+        Audit: {
+          findById: sandbox.stub().resolves({
+            getId: () => 'audit-cap',
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        },
+        Opportunity: {
+          allByAuditId: sandbox.stub().resolves([]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([]),
+          create: sandbox.stub().resolves({
+            getId: () => 'opp-cap',
+            getSuggestions: sandbox.stub().resolves([]),
+            addSuggestions: sandbox.stub().resolves({ length: 0, createdItems: [], errorItems: [] }),
+          }),
+        },
+        Suggestion: {
+          allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      },
+    };
+
+    await finalizeCrawlDetection(mockContext, { skipCrawlDetection: false });
+
+    // Cap is applied in opportunityAndSuggestionsStep (single place); last update is the capped one
+    const expectedMsg = new RegExp(`Capping reported broken links from ${overLimit} to ${MAX_BROKEN_LINKS_REPORTED} \\(priority order\\)`);
+    expect(mockLog.warn).to.have.been.calledWith(sinon.match(expectedMsg));
+    const updatedResult = setAuditResultStub.lastCall.args[0];
+    expect(updatedResult.brokenInternalLinks).to.have.lengthOf(MAX_BROKEN_LINKS_REPORTED);
   });
 
   it('should skip batch processing when batchStartIndex >= totalPages', async () => {
