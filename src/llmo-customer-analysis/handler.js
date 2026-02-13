@@ -30,7 +30,7 @@ import { ContentAIClient } from '../utils/content-ai.js';
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
 
-const GEO_FREE_SPLIT_COUNT = 18;
+const GEO_FREE_SPLIT_COUNT = 23;
 const GEO_FREE_SPLITS = Array.from(
   { length: GEO_FREE_SPLIT_COUNT },
   (_, i) => `geo-brand-presence-free-${i + 1}`,

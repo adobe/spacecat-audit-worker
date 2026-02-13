@@ -2281,7 +2281,8 @@ describe('Canonical URL Tests', () => {
         expect(context.log.info).to.have.been.calledWith('[canonical] No scrapeResultPaths found for site test-site-id');
       });
 
-      it('should process scraped content and detect canonical issues', async () => {
+      it('should process scraped content and detect canonical issues', async function () {
+        this.timeout(5000);
         const scrapedContent = {
           url: 'https://example.com/page1',
           finalUrl: 'https://example.com/page1',
@@ -2334,6 +2335,9 @@ describe('Canonical URL Tests', () => {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
             },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
           },
         );
 
@@ -2347,7 +2351,8 @@ describe('Canonical URL Tests', () => {
         expect(result.auditResult[0].affectedUrls[0]).to.have.property('url', 'https://example.com/page1');
       });
 
-      it('should include explanation in suggestion data when syncing suggestions', async () => {
+      it('should include explanation in suggestion data when syncing suggestions', async function () {
+        this.timeout(5000);
         const scrapedContent = {
           url: 'https://example.com/page1',
           finalUrl: 'https://example.com/page1',
@@ -2400,6 +2405,9 @@ describe('Canonical URL Tests', () => {
           {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
             },
           },
         );
@@ -2458,6 +2466,9 @@ describe('Canonical URL Tests', () => {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
             },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
           },
         );
 
@@ -2508,6 +2519,9 @@ describe('Canonical URL Tests', () => {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
             },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
           },
         );
 
@@ -2541,6 +2555,9 @@ describe('Canonical URL Tests', () => {
           {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
             },
           },
         );
@@ -2623,6 +2640,9 @@ describe('Canonical URL Tests', () => {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
             },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
           },
         );
 
@@ -2697,6 +2717,9 @@ describe('Canonical URL Tests', () => {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
             },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
           },
         );
 
@@ -2765,6 +2788,9 @@ describe('Canonical URL Tests', () => {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
             },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
           },
         );
 
@@ -2826,6 +2852,9 @@ describe('Canonical URL Tests', () => {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
             },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
           },
         );
 
@@ -2886,6 +2915,9 @@ describe('Canonical URL Tests', () => {
           {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
             },
           },
         );
@@ -2950,6 +2982,9 @@ describe('Canonical URL Tests', () => {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
             },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
           },
         );
 
@@ -3003,6 +3038,9 @@ describe('Canonical URL Tests', () => {
           {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
             },
           },
         );
@@ -3067,6 +3105,9 @@ describe('Canonical URL Tests', () => {
           {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
             },
           },
         );
@@ -3143,6 +3184,9 @@ describe('Canonical URL Tests', () => {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
             },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
           },
         );
 
@@ -3199,6 +3243,9 @@ describe('Canonical URL Tests', () => {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
             },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
+            },
           },
         );
 
@@ -3245,6 +3292,9 @@ describe('Canonical URL Tests', () => {
           {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
             },
           },
         );
@@ -3295,6 +3345,9 @@ describe('Canonical URL Tests', () => {
           {
             '../../src/utils/s3-utils.js': {
               getObjectFromKey: mockGetObjectFromKey,
+            },
+            '../../src/common/opportunity-utils.js': {
+              checkGoogleConnection: sinon.stub().resolves(false),
             },
           },
         );

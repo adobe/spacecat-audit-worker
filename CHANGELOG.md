@@ -1,3 +1,38 @@
+# [1.318.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.317.0...v1.318.0) (2026-02-13)
+
+
+### Features
+
+* extend geo-brand-presence-free splits from 18 to 23 ([#1981](https://github.com/adobe/spacecat-audit-worker/issues/1981)) ([befc44b](https://github.com/adobe/spacecat-audit-worker/commit/befc44b57ee329b4ff10fb3f7849368b7f01eb4a))
+
+# [1.317.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.316.0...v1.317.0) (2026-02-13)
+
+
+### Features
+
+* limiting no of links reported which are broken ([#1983](https://github.com/adobe/spacecat-audit-worker/issues/1983)) ([12ed61f](https://github.com/adobe/spacecat-audit-worker/commit/12ed61fd5beeb59243879f4a35eb4e8685fcc3cf))
+
+# [1.316.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.315.0...v1.316.0) (2026-02-13)
+
+
+### Features
+
+* handle bot protection ([#1887](https://github.com/adobe/spacecat-audit-worker/issues/1887)) ([c7aba11](https://github.com/adobe/spacecat-audit-worker/commit/c7aba118334409adc09c6f8aa97817df4328b6da))
+
+# [1.315.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.314.1...v1.315.0) (2026-02-13)
+
+
+### Features
+
+* added bright data usage to broken internal links ([#1971](https://github.com/adobe/spacecat-audit-worker/issues/1971)) ([0d975d0](https://github.com/adobe/spacecat-audit-worker/commit/0d975d0f92073717938b91afbfc3a23aa9fd6140))
+
+## [1.314.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.314.0...v1.314.1) (2026-02-12)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1980](https://github.com/adobe/spacecat-audit-worker/issues/1980)) ([771d880](https://github.com/adobe/spacecat-audit-worker/commit/771d880cb0616b9f68a78de72f731d2ecf80f4bd))
+
 # [1.314.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.313.3...v1.314.0) (2026-02-12)
 
 
