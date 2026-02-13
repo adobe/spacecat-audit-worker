@@ -26,10 +26,11 @@ WHERE year  = '{{year}}'
   -- match known LLM-related user-agents
   AND REGEXP_LIKE(ua, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|GoogleAgent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
 
-  -- only count text/html responses with robots.txt and sitemaps
+  -- only count HTML/PDF responses, plus .md paths, robots.txt and sitemaps
   AND (
-    rspContentType LIKE 'text/html%'
-    OR rspContentType LIKE 'application/pdf%'
+    lower(rspContentType) LIKE 'text/html%'
+    OR lower(rspContentType) LIKE 'application/pdf%'
+    OR REGEXP_LIKE(lower(reqPath), '\.md(\?.*)?$')
     OR reqPath LIKE '%robots.txt'
     OR reqPath LIKE '%sitemap%'
   )

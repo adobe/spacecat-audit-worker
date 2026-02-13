@@ -24,10 +24,11 @@ WHERE year  = '{{year}}'
    -- match known LLM-related user-agents
   AND REGEXP_LIKE(request_user_agent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|GoogleAgent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
 
-  -- only count text/html responses with robots.txt and sitemaps
+  -- only count HTML/PDF responses, plus .md paths, robots.txt and sitemaps
   AND (
-    response_content_type LIKE 'text/html%'
-    OR response_content_type LIKE 'application/pdf%'
+    lower(response_content_type) LIKE 'text/html%'
+    OR lower(response_content_type) LIKE 'application/pdf%'
+    OR REGEXP_LIKE(lower(url), '\.md(\?.*)?$')
     OR url LIKE '%robots.txt' 
     OR url LIKE '%sitemap%'
   )
