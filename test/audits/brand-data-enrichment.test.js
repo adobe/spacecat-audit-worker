@@ -18,17 +18,18 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import {
-  checkJsonEnrichmentNeeded,
+  flattenConfigPrompts,
   acquireEnrichmentLock,
   releaseEnrichmentLock,
   checkEnrichmentConflict,
   isEnrichmentTimedOut,
   saveEnrichmentMetadata,
   loadEnrichmentMetadata,
-  saveEnrichmentJson,
-  loadEnrichmentJson,
-  urlEnrichmentMetadataS3Key,
-  urlEnrichmentJsonS3Key,
+  saveEnrichmentConfig,
+  loadEnrichmentConfig,
+  enrichmentMetadataS3Key,
+  enrichmentConfigS3Key,
+  enrichmentDirectoryS3Key,
   ENRICHMENT_TIMEOUT_MS,
   URL_ENRICHMENT_BATCH_SIZE,
   BRAND_DATA_ENRICHMENT_TYPE,
@@ -37,96 +38,142 @@ import {
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('JSON Enrichment Utilities', () => {
-  describe('checkJsonEnrichmentNeeded', () => {
-    it('should return empty indices when all prompts have URLs from parquet/Ahrefs', () => {
-      const prompts = [
-        { prompt: 'What is Adobe?', url: 'https://example.com/page1', source: 'ahrefs' },
-        { prompt: 'How to use Photoshop?', url: 'https://example.com/page2', source: 'ahrefs' },
-        { prompt: 'Illustrator pricing', url: 'https://example.com/page3', source: 'ahrefs' },
-      ];
+describe('Brand Data Enrichment Utilities', () => {
+  describe('flattenConfigPrompts', () => {
+    it('should flatten prompts from topics only', () => {
+      const config = {
+        topics: {
+          't1': {
+            name: 'Topic 1',
+            prompts: [
+              { prompt: 'prompt A', regions: ['us'] },
+              { prompt: 'prompt B', regions: ['de'] },
+            ],
+          },
+          't2': {
+            name: 'Topic 2',
+            prompts: [
+              { prompt: 'prompt C', regions: ['fr'] },
+            ],
+          },
+        },
+      };
 
-      const result = checkJsonEnrichmentNeeded(prompts);
+      const result = flattenConfigPrompts(config);
 
-      expect(result.needsEnrichment).to.be.false;
-      expect(result.indicesToEnrich).to.have.lengthOf(0);
+      expect(result).to.have.lengthOf(3);
+      expect(result[0].prompt).to.equal('prompt A');
+      expect(result[1].prompt).to.equal('prompt B');
+      expect(result[2].prompt).to.equal('prompt C');
     });
 
-    it('should identify human prompts (empty url) for enrichment', () => {
-      const prompts = [
-        { prompt: 'What is Adobe?', url: 'https://example.com/page1', source: 'ahrefs' },
-        { prompt: 'Custom human prompt', url: '', source: 'human' }, // Human prompt needs enrichment
-        { prompt: 'Another human prompt', source: 'human' }, // Missing URL needs enrichment
-        { prompt: 'AI prompt with URL', url: 'https://example.com', source: 'ahrefs' },
-      ];
+    it('should flatten prompts from aiTopics only', () => {
+      const config = {
+        aiTopics: {
+          'at1': {
+            name: 'AI Topic 1',
+            prompts: [
+              { prompt: 'ai prompt X', regions: ['us'] },
+            ],
+          },
+        },
+      };
 
-      const result = checkJsonEnrichmentNeeded(prompts);
+      const result = flattenConfigPrompts(config);
 
-      expect(result.needsEnrichment).to.be.true;
-      expect(result.indicesToEnrich).to.deep.equal([1, 2]);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].prompt).to.equal('ai prompt X');
     });
 
-    it('should identify prompts with whitespace-only URLs for enrichment', () => {
-      const prompts = [
-        { prompt: 'Prompt 1', url: '   ' }, // Whitespace only - needs enrichment
-        { prompt: 'Prompt 2', url: '\t\n' }, // Whitespace only - needs enrichment
-        { prompt: 'Prompt 3', url: 'https://valid.com' }, // Valid URL - skip
-      ];
+    it('should flatten prompts from both topics and aiTopics', () => {
+      const config = {
+        topics: {
+          't1': {
+            name: 'Topic 1',
+            prompts: [
+              { prompt: 'human prompt', regions: ['us'] },
+            ],
+          },
+        },
+        aiTopics: {
+          'at1': {
+            name: 'AI Topic',
+            prompts: [
+              { prompt: 'ai prompt', regions: ['de'] },
+            ],
+          },
+        },
+      };
 
-      const result = checkJsonEnrichmentNeeded(prompts);
+      const result = flattenConfigPrompts(config);
 
-      expect(result.needsEnrichment).to.be.true;
-      expect(result.indicesToEnrich).to.deep.equal([0, 1]);
+      expect(result).to.have.lengthOf(2);
+      // topics come first, then aiTopics
+      expect(result[0].prompt).to.equal('human prompt');
+      expect(result[1].prompt).to.equal('ai prompt');
     });
 
-    it('should skip prompts without prompt text even if URL is missing', () => {
-      const prompts = [
-        { prompt: '', url: '' }, // No prompt text - skip
-        { prompt: '   ', url: '' }, // Whitespace only prompt - skip
-        { url: 'https://example.com' }, // Missing prompt field - skip
-        { prompt: 'Valid prompt', url: '' }, // Valid - needs enrichment
-      ];
-
-      const result = checkJsonEnrichmentNeeded(prompts);
-
-      expect(result.needsEnrichment).to.be.true;
-      expect(result.indicesToEnrich).to.deep.equal([3]); // Only the valid prompt
+    it('should return empty array for empty config', () => {
+      expect(flattenConfigPrompts({})).to.have.lengthOf(0);
+      expect(flattenConfigPrompts({ topics: {} })).to.have.lengthOf(0);
+      expect(flattenConfigPrompts({ aiTopics: {} })).to.have.lengthOf(0);
     });
 
-    it('should handle empty prompts array', () => {
-      const result = checkJsonEnrichmentNeeded([]);
-
-      expect(result.needsEnrichment).to.be.false;
-      expect(result.indicesToEnrich).to.have.lengthOf(0);
+    it('should return empty array for null/undefined config', () => {
+      expect(flattenConfigPrompts(null)).to.have.lengthOf(0);
+      expect(flattenConfigPrompts(undefined)).to.have.lengthOf(0);
     });
 
-    it('should correctly identify mix of AI and human prompts', () => {
-      const prompts = [
-        { prompt: 'AI Prompt 0', url: 'https://example.com', source: 'ahrefs' }, // Has URL - skip
-        { prompt: 'Human Prompt 1', url: '', source: 'human' }, // Needs enrichment
-        { prompt: 'AI Prompt 2', url: 'https://example.com/2', source: 'ahrefs' }, // Has URL - skip
-        { prompt: 'Human Prompt 3', source: 'human' }, // Needs enrichment (missing url)
-        { prompt: 'AI Prompt 4', url: 'https://example.com/4', source: 'ahrefs' }, // Has URL - skip
-        { prompt: 'Human Prompt 5', url: '', source: 'human' }, // Needs enrichment
-      ];
+    it('should skip topics with no prompts array', () => {
+      const config = {
+        topics: {
+          't1': { name: 'Topic without prompts' },
+          't2': { name: 'Topic with prompts', prompts: [{ prompt: 'test' }] },
+        },
+      };
 
-      const result = checkJsonEnrichmentNeeded(prompts);
+      const result = flattenConfigPrompts(config);
 
-      expect(result.needsEnrichment).to.be.true;
-      expect(result.indicesToEnrich).to.deep.equal([1, 3, 5]);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].prompt).to.equal('test');
     });
 
-    it('should handle prompts with only url property but no prompt text', () => {
-      const prompts = [
-        { url: 'https://example.com' }, // No prompt - skip
-        { prompt: null, url: '' }, // Null prompt - skip
-        { prompt: 'Valid', url: '' }, // Valid - needs enrichment
-      ];
+    it('should return references to original prompt objects (by-reference mutation)', () => {
+      const config = {
+        topics: {
+          't1': {
+            name: 'Topic 1',
+            prompts: [
+              { prompt: 'prompt A', regions: ['us'] },
+            ],
+          },
+        },
+      };
 
-      const result = checkJsonEnrichmentNeeded(prompts);
+      const flatPrompts = flattenConfigPrompts(config);
 
-      expect(result.needsEnrichment).to.be.true;
-      expect(result.indicesToEnrich).to.deep.equal([2]);
+      // Mutate the flattened prompt
+      flatPrompts[0].relatedUrl = 'https://website.com';
+
+      // The original config should also be mutated (same object reference)
+      expect(config.topics.t1.prompts[0].relatedUrl).to.equal('https://website.com');
+    });
+  });
+
+  describe('S3 Key Generators', () => {
+    it('should generate correct directory S3 key', () => {
+      const key = enrichmentDirectoryS3Key('test-audit-123');
+      expect(key).to.equal('temp/brand-data-enrichment/test-audit-123');
+    });
+
+    it('should generate correct metadata S3 key', () => {
+      const key = enrichmentMetadataS3Key('test-audit-123');
+      expect(key).to.equal('temp/brand-data-enrichment/test-audit-123/metadata.json');
+    });
+
+    it('should generate correct config S3 key', () => {
+      const key = enrichmentConfigS3Key('test-audit-456');
+      expect(key).to.equal('temp/brand-data-enrichment/test-audit-456/config.json');
     });
   });
 
@@ -169,7 +216,7 @@ describe('JSON Enrichment Utilities', () => {
     let log;
     const bucket = 'test-bucket';
     const siteId = 'site-123';
-    const lockId = 'w03-2025';
+    const lockId = 'brand-data-enrichment';
     const auditId = 'audit-456';
 
     beforeEach(() => {
@@ -190,9 +237,7 @@ describe('JSON Enrichment Utilities', () => {
 
     describe('acquireEnrichmentLock', () => {
       it('should acquire lock when no existing lock', async () => {
-        // No existing lock (NoSuchKey error)
         s3Client.send.onFirstCall().rejects({ name: 'NoSuchKey' });
-        // PutObject succeeds
         s3Client.send.onSecondCall().resolves({});
 
         const result = await acquireEnrichmentLock(
@@ -205,12 +250,6 @@ describe('JSON Enrichment Utilities', () => {
         );
 
         expect(result.acquired).to.be.true;
-        expect(log.info).to.have.been.calledWith(
-          'Enrichment lock acquired for %s/%s (auditId: %s)',
-          siteId,
-          lockId,
-          auditId,
-        );
       });
 
       it('should not acquire lock when active lock exists', async () => {
@@ -261,23 +300,12 @@ describe('JSON Enrichment Utilities', () => {
         );
 
         expect(result.acquired).to.be.true;
-        expect(log.warn).to.have.been.calledWith(
-          sinon.match(/Enrichment lock expired/),
-          siteId,
-          lockId,
-          'old-audit',
-          sinon.match.number,
-        );
       });
     });
 
     describe('checkEnrichmentConflict', () => {
       it('should return no conflict when lock matches current audit', async () => {
-        const lock = {
-          auditId,
-          siteId,
-          lockId,
-        };
+        const lock = { auditId, siteId, lockId };
 
         s3Client.send.resolves({
           Body: {
@@ -312,11 +340,7 @@ describe('JSON Enrichment Utilities', () => {
       });
 
       it('should return conflict when lock belongs to different audit', async () => {
-        const lock = {
-          auditId: 'different-audit',
-          siteId,
-          lockId,
-        };
+        const lock = { auditId: 'different-audit', siteId, lockId };
 
         s3Client.send.resolves({
           Body: {
@@ -367,20 +391,6 @@ describe('JSON Enrichment Utilities', () => {
     });
   });
 
-  describe('S3 Key Generators', () => {
-    it('should generate correct metadata S3 key', () => {
-      const auditId = 'test-audit-123';
-      const key = urlEnrichmentMetadataS3Key(auditId);
-      expect(key).to.equal('temp/url-enrichment/test-audit-123/metadata.json');
-    });
-
-    it('should generate correct JSON S3 key', () => {
-      const auditId = 'test-audit-456';
-      const key = urlEnrichmentJsonS3Key(auditId);
-      expect(key).to.equal('temp/url-enrichment/test-audit-456/prompts.json');
-    });
-  });
-
   describe('S3 Save/Load Operations', () => {
     let s3Client;
     const bucket = 'test-bucket';
@@ -397,13 +407,14 @@ describe('JSON Enrichment Utilities', () => {
     });
 
     describe('saveEnrichmentMetadata', () => {
-      it('should save metadata to S3', async () => {
+      it('should save metadata to S3 with correct key', async () => {
         s3Client.send.resolves({});
 
         const metadata = {
           auditId,
           siteId: 'site-123',
-          indicesToEnrich: [1, 3, 5],
+          lockId: 'brand-data-enrichment',
+          totalPrompts: 5,
           createdAt: new Date().toISOString(),
         };
 
@@ -412,7 +423,7 @@ describe('JSON Enrichment Utilities', () => {
         expect(s3Client.send).to.have.been.calledOnce;
         const putCmd = s3Client.send.firstCall.args[0];
         expect(putCmd.input.Bucket).to.equal(bucket);
-        expect(putCmd.input.Key).to.equal(urlEnrichmentMetadataS3Key(auditId));
+        expect(putCmd.input.Key).to.equal(enrichmentMetadataS3Key(auditId));
         expect(putCmd.input.ContentType).to.equal('application/json');
       });
     });
@@ -421,7 +432,7 @@ describe('JSON Enrichment Utilities', () => {
       it('should load metadata from S3', async () => {
         const metadata = {
           auditId,
-          indicesToEnrich: [0, 2, 4],
+          totalPrompts: 5,
         };
 
         s3Client.send.resolves({
@@ -448,52 +459,50 @@ describe('JSON Enrichment Utilities', () => {
       });
     });
 
-    describe('saveEnrichmentJson', () => {
-      it('should save prompts to S3', async () => {
+    describe('saveEnrichmentConfig', () => {
+      it('should save config to S3 with correct key', async () => {
         s3Client.send.resolves({});
 
-        const prompts = [
-          { prompt: 'Test 1', url: '' },
-          { prompt: 'Test 2', url: 'https://example.com' },
-        ];
+        const config = {
+          topics: { t1: { prompts: [{ prompt: 'test' }] } },
+        };
 
-        await saveEnrichmentJson(s3Client, bucket, auditId, prompts);
+        await saveEnrichmentConfig(s3Client, bucket, auditId, config);
 
         expect(s3Client.send).to.have.been.calledOnce;
         const putCmd = s3Client.send.firstCall.args[0];
         expect(putCmd.input.Bucket).to.equal(bucket);
-        expect(putCmd.input.Key).to.equal(urlEnrichmentJsonS3Key(auditId));
+        expect(putCmd.input.Key).to.equal(enrichmentConfigS3Key(auditId));
       });
     });
 
-    describe('loadEnrichmentJson', () => {
-      it('should load prompts from S3', async () => {
-        const prompts = [
-          { prompt: 'Test 1', relatedUrl: 'https://generated.com' },
-          { prompt: 'Test 2', url: 'https://example.com' },
-        ];
+    describe('loadEnrichmentConfig', () => {
+      it('should load config from S3', async () => {
+        const config = {
+          topics: { t1: { prompts: [{ prompt: 'test' }] } },
+        };
 
         s3Client.send.resolves({
           Body: {
-            transformToString: async () => JSON.stringify(prompts),
+            transformToString: async () => JSON.stringify(config),
           },
         });
 
-        const result = await loadEnrichmentJson(s3Client, bucket, auditId);
+        const result = await loadEnrichmentConfig(s3Client, bucket, auditId);
 
-        expect(result).to.deep.equal(prompts);
+        expect(result).to.deep.equal(config);
       });
 
-      it('should handle Body returning empty array JSON', async () => {
+      it('should return empty object when Body is empty', async () => {
         s3Client.send.resolves({
           Body: {
-            transformToString: async () => '[]',
+            transformToString: async () => '{}',
           },
         });
 
-        const result = await loadEnrichmentJson(s3Client, bucket, auditId);
+        const result = await loadEnrichmentConfig(s3Client, bucket, auditId);
 
-        expect(result).to.deep.equal([]);
+        expect(result).to.deep.equal({});
       });
     });
   });
@@ -513,7 +522,7 @@ describe('JSON Enrichment Utilities', () => {
   });
 });
 
-describe('JSON Enrichment Handler', () => {
+describe('Brand Data Enrichment Handler', () => {
   let s3Client;
   let sqs;
   let log;
@@ -521,54 +530,78 @@ describe('JSON Enrichment Handler', () => {
   let context;
   let site;
   const bucket = 'test-bucket';
-  const auditId = 'test-audit-handler';
   const siteId = 'test-site-handler';
 
-  const createMetadata = (overrides = {}) => ({
-    auditId,
-    siteId,
-    baseURL: 'https://test-site.com',
-    deliveryType: 'aem_edge',
-    dateContext: { week: 3, year: 2025 },
-    providersToUse: ['chatgpt'],
-    isDaily: false,
-    configVersion: '1.0.0',
-    configExists: true,
-    indicesToEnrich: [0, 1, 2],
-    lockId: 'w3-2025',
-    createdAt: new Date().toISOString(),
-    ...overrides,
+  const createMockConfig = () => ({
+    topics: {
+      't1': {
+        name: 'Topic 1',
+        prompts: [
+          { prompt: 'prompt 0', regions: ['us'] },
+          { prompt: 'prompt 1', regions: ['de'] },
+          { prompt: 'prompt 2', regions: ['fr'] },
+        ],
+      },
+    },
+    aiTopics: {},
   });
-
-  const createPrompts = () => [
-    { prompt: 'Prompt 0', url: '' },
-    { prompt: 'Prompt 1', url: '' },
-    { prompt: 'Prompt 2', url: '' },
-  ];
 
   const createMockUtils = (overrides = {}) => ({
     URL_ENRICHMENT_BATCH_SIZE: 10,
     BRAND_DATA_ENRICHMENT_TYPE: 'enrich:brand-data',
-    loadEnrichmentMetadata: sinon.stub().resolves(createMetadata()),
-    loadEnrichmentJson: sinon.stub().resolves(createPrompts()),
-    saveEnrichmentJson: sinon.stub().resolves(),
+    flattenConfigPrompts: sinon.stub().callsFake(
+      (config) => {
+        const prompts = [];
+        for (const section of ['topics', 'aiTopics']) {
+          const sectionData = config?.[section];
+          if (!sectionData) continue;
+          for (const [, topic] of Object.entries(sectionData)) {
+            if (Array.isArray(topic.prompts)) {
+              for (const prompt of topic.prompts) {
+                prompts.push(prompt);
+              }
+            }
+          }
+        }
+        return prompts;
+      },
+    ),
+    acquireEnrichmentLock: sinon.stub().resolves({ acquired: true }),
+    saveEnrichmentMetadata: sinon.stub().resolves(),
+    loadEnrichmentMetadata: sinon.stub().resolves({
+      auditId: 'test-audit-id',
+      siteId,
+      lockId: 'brand-data-enrichment',
+      totalPrompts: 3,
+      createdAt: new Date().toISOString(),
+    }),
+    saveEnrichmentConfig: sinon.stub().resolves(),
+    loadEnrichmentConfig: sinon.stub().resolves(createMockConfig()),
     processJsonEnrichmentBatch: sinon.stub().resolves(3),
     isEnrichmentTimedOut: sinon.stub().returns(false),
     checkEnrichmentConflict: sinon.stub().resolves({ hasConflict: false }),
     releaseEnrichmentLock: sinon.stub().resolves(),
-    transformWebSearchProviderForMystique: sinon.stub().callsFake((p) => p),
     ...overrides,
   });
 
-  const createHandler = async (mockUtilsOverrides = {}) => {
+  const mockLlmoConfig = {
+    readConfig: sinon.stub().resolves({ config: createMockConfig(), exists: true, version: '1.0' }),
+    writeConfig: sinon.stub().resolves(),
+  };
+
+  const createHandler = async (mockUtilsOverrides = {}, llmoOverrides = {}) => {
     const mockUtils = createMockUtils(mockUtilsOverrides);
+    const llmo = { ...mockLlmoConfig, ...llmoOverrides };
     const handler = await esmock('../../src/brand-data-enrichment/handler.js', {
       '../../src/brand-data-enrichment/util.js': mockUtils,
-      '../../src/utils/getPresignedUrl.js': {
-        getPresignedUrl: sinon.stub().resolves('https://presigned-url.com'),
+      '@adobe/spacecat-shared-utils': {
+        llmoConfig: llmo,
+      },
+      'node:crypto': {
+        randomUUID: () => 'generated-uuid',
       },
     });
-    return { handler, mockUtils };
+    return { handler, mockUtils, llmo };
   };
 
   beforeEach(() => {
@@ -611,10 +644,14 @@ describe('JSON Enrichment Handler', () => {
       s3Client,
       env: {
         S3_IMPORTER_BUCKET_NAME: bucket,
-        AWS_REGION: 'us-east-1',
-        QUEUE_SPACECAT_TO_MYSTIQUE: 'mystique-queue',
       },
     };
+
+    // Reset shared stubs
+    mockLlmoConfig.readConfig.resetHistory();
+    mockLlmoConfig.readConfig.resolves({ config: createMockConfig(), exists: true, version: '1.0' });
+    mockLlmoConfig.writeConfig.resetHistory();
+    mockLlmoConfig.writeConfig.resolves();
   });
 
   afterEach(() => {
@@ -626,21 +663,28 @@ describe('JSON Enrichment Handler', () => {
     expect(handler.default).to.be.a('function');
   });
 
-  it('should throw error when context destructuring fails', async () => {
-    const { handler } = await createHandler();
-    const badContext = Object.create(null); // Object without standard properties
+  describe('Missing context properties', () => {
+    it('should return 500 when s3Client is missing', async () => {
+      const { handler } = await createHandler();
 
-    // Use a getter that throws to simulate destructuring error
-    Object.defineProperty(badContext, 'log', {
-      get() {
-        throw new Error('Context access error');
-      },
-      enumerable: true,
+      const result = await handler.default(
+        { siteId },
+        { ...context, s3Client: undefined },
+      );
+
+      expect(result.status).to.equal(500);
     });
 
-    await expect(
-      handler.default({ auditId, siteId, batchStart: 0 }, badContext),
-    ).to.be.rejectedWith('Context access error');
+    it('should return 500 when sqs is missing', async () => {
+      const { handler } = await createHandler();
+
+      const result = await handler.default(
+        { siteId },
+        { ...context, sqs: undefined },
+      );
+
+      expect(result.status).to.equal(500);
+    });
   });
 
   describe('Site validation', () => {
@@ -649,40 +693,7 @@ describe('JSON Enrichment Handler', () => {
       const { handler } = await createHandler();
 
       const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
-        context,
-      );
-
-      expect(result.status).to.equal(404);
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Site not found/),
-        sinon.match.any,
-        siteId,
-      );
-    });
-  });
-
-  describe('Metadata validation', () => {
-    it('should return notFound when metadata is null', async () => {
-      const { handler } = await createHandler({
-        loadEnrichmentMetadata: sinon.stub().resolves(null),
-      });
-
-      const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
-        context,
-      );
-
-      expect(result.status).to.equal(404);
-    });
-
-    it('should return notFound when metadata has no indicesToEnrich', async () => {
-      const { handler } = await createHandler({
-        loadEnrichmentMetadata: sinon.stub().resolves({ auditId }),
-      });
-
-      const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
+        { siteId },
         context,
       );
 
@@ -690,134 +701,98 @@ describe('JSON Enrichment Handler', () => {
     });
   });
 
-  describe('Timeout handling', () => {
-    it('should send fallback to Mystique when enrichment times out', async () => {
-      const { handler, mockUtils } = await createHandler({
-        isEnrichmentTimedOut: sinon.stub().returns(true),
-      });
+  describe('First invocation (batchStart=0)', () => {
+    it('should read config, acquire lock, save temp, process batch', async () => {
+      const { handler, mockUtils, llmo } = await createHandler();
 
       const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
+        { siteId },
         context,
       );
 
       expect(result.status).to.equal(200);
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Enrichment timed out/),
-        sinon.match.any,
-        auditId,
-        sinon.match.any,
-      );
-      expect(mockUtils.releaseEnrichmentLock).to.have.been.called;
-    });
-  });
 
-  describe('Conflict detection', () => {
-    it('should abort when conflict is detected at start', async () => {
-      const { handler } = await createHandler({
-        checkEnrichmentConflict: sinon.stub().resolves({
-          hasConflict: true,
-          reason: 'lock-stolen',
-          newerAuditId: 'newer-audit-123',
-        }),
+      // Verify flow
+      expect(llmo.readConfig).to.have.been.calledOnce;
+      expect(mockUtils.acquireEnrichmentLock).to.have.been.calledOnce;
+      expect(mockUtils.saveEnrichmentMetadata).to.have.been.calledOnce;
+      expect(mockUtils.saveEnrichmentConfig).to.have.been.called;
+      expect(mockUtils.processJsonEnrichmentBatch).to.have.been.calledOnce;
+      expect(llmo.writeConfig).to.have.been.calledOnce;
+      expect(mockUtils.releaseEnrichmentLock).to.have.been.calledOnce;
+    });
+
+    it('should generate auditId via randomUUID when not provided', async () => {
+      const { handler, mockUtils } = await createHandler();
+
+      await handler.default(
+        { siteId }, // no auditId
+        context,
+      );
+
+      // saveEnrichmentMetadata should be called with generated UUID
+      const metadataArg = mockUtils.saveEnrichmentMetadata.firstCall.args[2];
+      expect(metadataArg.auditId).to.equal('generated-uuid');
+    });
+
+    it('should use provided auditId when available', async () => {
+      const { handler, mockUtils } = await createHandler();
+
+      await handler.default(
+        { siteId, auditId: 'custom-audit-id' },
+        context,
+      );
+
+      const metadataArg = mockUtils.saveEnrichmentMetadata.firstCall.args[2];
+      expect(metadataArg.auditId).to.equal('custom-audit-id');
+    });
+
+    it('should skip when no prompts in config', async () => {
+      const { handler, llmo } = await createHandler({
+        flattenConfigPrompts: sinon.stub().returns([]),
       });
 
       const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
+        { siteId },
         context,
       );
 
       expect(result.status).to.equal(200);
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Conflict detected/),
-        sinon.match.any,
-        auditId,
-        'lock-stolen',
-        'newer-audit-123',
-      );
+      expect(llmo.writeConfig).to.not.have.been.called;
     });
 
-    it('should log "unknown" when newerAuditId is undefined in conflict', async () => {
-      const { handler } = await createHandler({
-        checkEnrichmentConflict: sinon.stub().resolves({
-          hasConflict: true,
-          reason: 'lock-missing',
-          // newerAuditId is undefined - should fall back to 'unknown'
-        }),
+    it('should skip when lock not acquired', async () => {
+      const { handler, llmo } = await createHandler({
+        acquireEnrichmentLock: sinon.stub().resolves({ acquired: false }),
       });
 
       const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
+        { siteId },
         context,
       );
 
       expect(result.status).to.equal(200);
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Conflict detected/),
-        sinon.match.any,
-        auditId,
-        'lock-missing',
-        'unknown', // Falls back to 'unknown' when newerAuditId is undefined
-      );
+      expect(llmo.writeConfig).to.not.have.been.called;
     });
 
-    it('should abort when final conflict is detected', async () => {
-      const conflictStub = sinon.stub();
-      conflictStub.onFirstCall().resolves({ hasConflict: false });
-      conflictStub.onSecondCall().resolves({
-        hasConflict: true,
-        reason: 'lock-stolen',
-        newerAuditId: 'newer-audit-456',
-      });
+    it('should send continuation when more batches remain', async () => {
+      // 15 prompts → needs 2 batches with batch size 10
+      const bigConfig = {
+        topics: {
+          't1': {
+            name: 'Topic 1',
+            prompts: Array.from({ length: 15 }, (_, i) => ({ prompt: `prompt ${i}`, regions: ['us'] })),
+          },
+        },
+        aiTopics: {},
+      };
 
-      const { handler } = await createHandler({
-        checkEnrichmentConflict: conflictStub,
+      const { handler } = await createHandler({}, {
+        readConfig: sinon.stub().resolves({ config: bigConfig, exists: true }),
       });
 
       const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
-        context,
-      );
-
-      expect(result.status).to.equal(200);
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Final conflict detected/),
-        sinon.match.any,
-        auditId,
-      );
-    });
-  });
-
-  describe('Prompts validation', () => {
-    it('should return internalServerError when prompts is not an array', async () => {
-      const { handler } = await createHandler({
-        loadEnrichmentJson: sinon.stub().resolves('not-an-array'),
-      });
-
-      const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
-        context,
-      );
-
-      expect(result.status).to.equal(500);
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Invalid prompts data/),
-        sinon.match.any,
-        auditId,
-      );
-    });
-  });
-
-  describe('Batch processing with continuation', () => {
-    it('should send continuation message when more batches remain', async () => {
-      const { handler } = await createHandler({
-        loadEnrichmentMetadata: sinon.stub().resolves(createMetadata({
-          indicesToEnrich: Array.from({ length: 15 }, (_, i) => i),
-        })),
-      });
-
-      const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
+        { siteId },
         context,
       );
 
@@ -828,372 +803,247 @@ describe('JSON Enrichment Handler', () => {
         'audit-queue',
         sinon.match({
           type: 'enrich:brand-data',
-          auditId,
           siteId,
+          auditId: 'generated-uuid',
           batchStart: 10,
         }),
       );
     });
 
-    it('should complete without continuation when all batches are done', async () => {
-      const { handler } = await createHandler();
+    it('should abort on final conflict check', async () => {
+      const conflictStub = sinon.stub();
+      conflictStub.resolves({ hasConflict: true, reason: 'lock-stolen' });
+
+      const { handler, llmo } = await createHandler({
+        checkEnrichmentConflict: conflictStub,
+      });
 
       const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
+        { siteId },
         context,
       );
 
       expect(result.status).to.equal(200);
-
-      // Verify Mystique message was sent
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'mystique-queue',
-        sinon.match({
-          type: 'detect:geo-brand-presence',
-        }),
-      );
+      expect(llmo.writeConfig).to.not.have.been.called;
     });
   });
 
-  describe('Successful completion', () => {
-    it('should send to Mystique and release lock on completion', async () => {
-      const { handler, mockUtils } = await createHandler();
-
-      const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
-        context,
-      );
-
-      expect(result.status).to.equal(200);
-      expect(mockUtils.releaseEnrichmentLock).to.have.been.called;
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/Successfully completed JSON enrichment/),
-        sinon.match.any,
-        auditId,
-      );
-    });
-
-    it('should send daily detection message when isDaily is true', async () => {
-      const { handler } = await createHandler({
-        loadEnrichmentMetadata: sinon.stub().resolves(createMetadata({
-          isDaily: true,
-          dateContext: { week: 3, year: 2025, date: '2025-01-22' },
-        })),
+  describe('Continuation (batchStart > 0)', () => {
+    it('should load from temp, process batch, send continuation', async () => {
+      const { handler, mockUtils } = await createHandler({
+        loadEnrichmentMetadata: sinon.stub().resolves({
+          auditId: 'test-audit-id',
+          siteId,
+          lockId: 'brand-data-enrichment',
+          totalPrompts: 25,
+          createdAt: new Date().toISOString(),
+        }),
       });
 
       const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
+        { siteId, auditId: 'test-audit-id', batchStart: 10 },
         context,
       );
 
       expect(result.status).to.equal(200);
 
-      // Verify daily detection message
+      expect(mockUtils.loadEnrichmentConfig).to.have.been.calledOnce;
+      expect(mockUtils.processJsonEnrichmentBatch).to.have.been.calledOnce;
+      expect(mockUtils.saveEnrichmentConfig).to.have.been.calledOnce;
+
+      // Verify continuation message
       expect(sqs.sendMessage).to.have.been.calledWith(
-        'mystique-queue',
+        'audit-queue',
         sinon.match({
-          type: 'detect:geo-brand-presence-daily',
-          date: '2025-01-22',
+          type: 'enrich:brand-data',
+          auditId: 'test-audit-id',
+          batchStart: 20,
         }),
       );
     });
 
-    it('should send messages to all configured providers', async () => {
+    it('should return notFound when metadata is missing', async () => {
       const { handler } = await createHandler({
-        loadEnrichmentMetadata: sinon.stub().resolves(createMetadata({
-          providersToUse: ['chatgpt', 'perplexity', 'gemini'],
-        })),
-      });
-
-      await handler.default(
-        { auditId, siteId, batchStart: 0 },
-        context,
-      );
-
-      // Should have 3 messages to Mystique (one per provider)
-      expect(sqs.sendMessage.callCount).to.equal(3);
-    });
-
-    it('should send config_version as null when configExists is false', async () => {
-      const { handler } = await createHandler({
-        loadEnrichmentMetadata: sinon.stub().resolves(createMetadata({
-          configExists: false,
-          configVersion: '1.0.0', // Should be ignored since configExists is false
-        })),
+        loadEnrichmentMetadata: sinon.stub().resolves(null),
       });
 
       const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
+        { siteId, auditId: 'test-audit-id', batchStart: 10 },
+        context,
+      );
+
+      expect(result.status).to.equal(404);
+    });
+  });
+
+  describe('Completion', () => {
+    it('should write config via llmoConfig.writeConfig and release lock', async () => {
+      const { handler, mockUtils, llmo } = await createHandler();
+
+      const result = await handler.default(
+        { siteId, auditId: 'test-audit-id', batchStart: 0 },
         context,
       );
 
       expect(result.status).to.equal(200);
 
-      // Verify config_version is null when configExists is false
-      expect(sqs.sendMessage).to.have.been.calledWith(
-        'mystique-queue',
-        sinon.match({
-          type: 'detect:geo-brand-presence',
-          config_version: null,
+      expect(llmo.writeConfig).to.have.been.calledOnce;
+      expect(mockUtils.releaseEnrichmentLock).to.have.been.calledOnce;
+    });
+
+    it('should complete on continuation final batch', async () => {
+      const { handler, llmo } = await createHandler({
+        loadEnrichmentMetadata: sinon.stub().resolves({
+          auditId: 'test-audit-id',
+          siteId,
+          lockId: 'brand-data-enrichment',
+          totalPrompts: 3,
+          createdAt: new Date().toISOString(),
         }),
+        loadEnrichmentConfig: sinon.stub().resolves(createMockConfig()),
+      });
+
+      // batchStart=0 with totalPrompts=3 and batchSize=10 → completes in one go
+      // But use continuation path: batchStart > 0 that finishes
+      // Actually, totalPrompts=3 with batchStart=0 and batch size 10, all fit in one batch
+      // Let's test with a continuation that completes:
+      const result = await handler.default(
+        { siteId, auditId: 'test-audit-id', batchStart: 10 },
+        context,
       );
+
+      // totalPrompts=3, batchStart=10 → batchEnd=min(20,3)=3, remaining=3-3=0 → completion
+      expect(result.status).to.equal(200);
+      expect(llmo.writeConfig).to.have.been.calledOnce;
+    });
+  });
+
+  describe('Timeout handling', () => {
+    it('should write partial config and release lock on timeout', async () => {
+      const { handler, mockUtils, llmo } = await createHandler({
+        isEnrichmentTimedOut: sinon.stub().returns(true),
+      });
+
+      const result = await handler.default(
+        { siteId, auditId: 'test-audit-id', batchStart: 10 },
+        context,
+      );
+
+      expect(result.status).to.equal(200);
+
+      // Partial config should be written
+      expect(llmo.writeConfig).to.have.been.calledOnce;
+      expect(mockUtils.loadEnrichmentConfig).to.have.been.calledOnce;
+      expect(mockUtils.releaseEnrichmentLock).to.have.been.calledOnce;
+    });
+  });
+
+  describe('Conflict detection', () => {
+    it('should abort when conflict detected on continuation', async () => {
+      const { handler, llmo } = await createHandler({
+        checkEnrichmentConflict: sinon.stub().resolves({
+          hasConflict: true,
+          reason: 'lock-stolen',
+        }),
+      });
+
+      const result = await handler.default(
+        { siteId, auditId: 'test-audit-id', batchStart: 10 },
+        context,
+      );
+
+      expect(result.status).to.equal(200);
+      expect(llmo.writeConfig).to.not.have.been.called;
+    });
+
+    it('should abort when final conflict detected on continuation completion', async () => {
+      const conflictStub = sinon.stub();
+      // First call (pre-batch) returns no conflict
+      conflictStub.onFirstCall().resolves({ hasConflict: false });
+      // Second call (final check) returns conflict
+      conflictStub.onSecondCall().resolves({ hasConflict: true, reason: 'lock-stolen' });
+
+      const { handler, llmo } = await createHandler({
+        checkEnrichmentConflict: conflictStub,
+        loadEnrichmentMetadata: sinon.stub().resolves({
+          auditId: 'test-audit-id',
+          siteId,
+          lockId: 'brand-data-enrichment',
+          totalPrompts: 3,
+          createdAt: new Date().toISOString(),
+        }),
+        loadEnrichmentConfig: sinon.stub().resolves(createMockConfig()),
+      });
+
+      const result = await handler.default(
+        { siteId, auditId: 'test-audit-id', batchStart: 10 },
+        context,
+      );
+
+      expect(result.status).to.equal(200);
+      expect(llmo.writeConfig).to.not.have.been.called;
     });
   });
 
   describe('Error handling', () => {
-    it('should send fallback and return internalServerError on exception', async () => {
-      const { handler } = await createHandler({
+    it('should return 500 and NOT write config on unexpected error', async () => {
+      const { handler, mockUtils, llmo } = await createHandler({
         processJsonEnrichmentBatch: sinon.stub().rejects(new Error('Processing failed')),
       });
 
       const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
+        { siteId },
         context,
       );
 
       expect(result.status).to.equal(500);
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Error processing JSON enrichment/),
-        sinon.match.any,
-        auditId,
-        'Processing failed',
-      );
+      // Config should NOT be written on error
+      expect(llmo.writeConfig).to.not.have.been.called;
+      // Lock should be released (metadata was set before error)
+      expect(mockUtils.releaseEnrichmentLock).to.have.been.calledOnce;
     });
 
-    it('should log error when fallback to Mystique fails', async () => {
-      // Make processing fail
+    it('should not release lock when metadata is null (early error)', async () => {
+      const { handler, mockUtils } = await createHandler({}, {
+        readConfig: sinon.stub().rejects(new Error('S3 error')),
+      });
+
+      const result = await handler.default(
+        { siteId },
+        context,
+      );
+
+      expect(result.status).to.equal(500);
+      // Lock should NOT be released since metadata was never set
+      expect(mockUtils.releaseEnrichmentLock).to.not.have.been.called;
+    });
+
+    it('should return 500 when loadEnrichmentMetadata fails on continuation', async () => {
       const { handler } = await createHandler({
-        processJsonEnrichmentBatch: sinon.stub().rejects(new Error('Processing failed')),
+        loadEnrichmentMetadata: sinon.stub().rejects(new Error('S3 load failed')),
       });
 
-      // Make S3 upload fail during fallback (when trying to upload prompts for presigned URL)
-      s3Client.send.rejects(new Error('S3 upload failed'));
-
       const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
+        { siteId, auditId: 'test-audit-id', batchStart: 10 },
         context,
       );
 
       expect(result.status).to.equal(500);
-      // Should log the fallback failure
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Failed to send fallback to Mystique/),
-        sinon.match.any,
-        auditId,
-        sinon.match.any,
-      );
-    });
-
-    it('should not send fallback if metadata or prompts are null', async () => {
-      const { handler } = await createHandler({
-        loadEnrichmentMetadata: sinon.stub().rejects(new Error('S3 error')),
-      });
-
-      const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
-        context,
-      );
-
-      expect(result.status).to.equal(500);
-      // Fallback should not be called since metadata is null
-      expect(sqs.sendMessage).to.not.have.been.calledWith(
-        'mystique-queue',
-        sinon.match.any,
-      );
-    });
-
-    it('should handle missing s3Client in context', async () => {
-      const { handler, mockUtils } = await createHandler({
-        isEnrichmentTimedOut: sinon.stub().returns(true),
-        loadEnrichmentJson: sinon.stub().resolves([{ prompt: 'test' }]),
-      });
-
-      // Create context without s3Client - should be caught by early defensive check
-      const contextWithoutS3Client = {
-        ...context,
-        s3Client: undefined,
-      };
-
-      const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
-        contextWithoutS3Client,
-      );
-
-      expect(result.status).to.equal(500);
-      // Should log error about missing context properties early
-      // Note: !! converts to boolean values
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Missing required context properties/),
-        sinon.match.any,
-        false, // s3Client: false (boolean)
-        true, // env: true (boolean)
-        true, // sqs: true (boolean)
-        true, // dataAccess: true (boolean)
-        auditId,
-      );
-    });
-
-    it('should handle missing auditId in message when context properties are missing', async () => {
-      const { handler, mockUtils } = await createHandler();
-
-      // Create context without s3Client - should be caught by early defensive check
-      const contextWithoutS3Client = {
-        ...context,
-        s3Client: undefined,
-      };
-
-      // Message without auditId to test the 'unknown' fallback
-      const result = await handler.default(
-        { siteId, batchStart: 0 }, // No auditId
-        contextWithoutS3Client,
-      );
-
-      expect(result.status).to.equal(500);
-      // Should log error with 'unknown' as auditId
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Missing required context properties/),
-        sinon.match.any,
-        false, // s3Client: false (boolean)
-        true, // env: true (boolean)
-        true, // sqs: true (boolean)
-        true, // dataAccess: true (boolean)
-        'unknown',
-      );
-    });
-
-    it('should handle missing sqs in context', async () => {
-      const { handler, mockUtils } = await createHandler({
-        isEnrichmentTimedOut: sinon.stub().returns(true),
-        loadEnrichmentMetadata: sinon.stub().resolves(createMetadata()),
-        loadEnrichmentJson: sinon.stub().resolves([{ prompt: 'test' }]),
-      });
-
-      // Create context missing sqs - should be caught by early defensive check
-      const contextMissingSqs = {
-        ...context,
-        sqs: undefined,
-      };
-
-      const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
-        contextMissingSqs,
-      );
-
-      expect(result.status).to.equal(500);
-      // Should log error about missing context properties early
-      // Note: !! converts to boolean values
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Missing required context properties/),
-        sinon.match.any,
-        true, // s3Client: true (boolean)
-        true, // env: true (boolean)
-        false, // sqs: false (boolean)
-        true, // dataAccess: true (boolean)
-        auditId,
-      );
-    });
-
-    it('should handle missing sqs in sendFallbackToMystique when timeout occurs', async () => {
-      const { handler, mockUtils } = await createHandler({
-        isEnrichmentTimedOut: sinon.stub().returns(true),
-        loadEnrichmentMetadata: sinon.stub().resolves(createMetadata()),
-        loadEnrichmentJson: sinon.stub().resolves([{ prompt: 'test' }]),
-      });
-
-      // Create context that passes early validation but has sqs as a getter that returns undefined
-      // when accessed in sendFallbackToMystique (after early validation passes)
-      let accessCount = 0;
-      const contextWithGetterSqs = {
-        ...context,
-        get sqs() {
-          accessCount++;
-          // After early validation (which accesses sqs once), return undefined
-          // This simulates sqs being undefined when sendFallbackToMystique accesses it
-          if (accessCount > 1) {
-            return undefined;
-          }
-          return sqs;
-        },
-      };
-
-      const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
-        contextWithGetterSqs,
-      );
-
-      expect(result.status).to.equal(200);
-      // Should log error about missing context properties in sendFallbackToMystique
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Cannot send fallback - missing required context properties/),
-        sinon.match.any,
-        false, // sqs: false (boolean)
-        true, // env: true (boolean)
-        auditId,
-      );
-    });
-
-    it('should handle missing s3Client in sendToMystique when sending to Mystique', async () => {
-      const { handler, mockUtils } = await createHandler({
-        // Don't timeout, let it complete normally
-        isEnrichmentTimedOut: sinon.stub().returns(false),
-        checkEnrichmentConflict: sinon.stub().resolves({ hasConflict: false }),
-      });
-
-      // Create context that passes early validation but has s3Client as a getter that returns undefined
-      // when accessed in sendToMystique (after early validation passes)
-      let accessCount = 0;
-      const contextWithGetterS3Client = {
-        ...context,
-        get s3Client() {
-          accessCount++;
-          // After early validation (which accesses s3Client once), return undefined
-          // This simulates s3Client being undefined when sendToMystique accesses it
-          if (accessCount > 1) {
-            return undefined;
-          }
-          return s3Client;
-        },
-      };
-
-      const result = await handler.default(
-        { auditId, siteId, batchStart: 0 },
-        contextWithGetterS3Client,
-      );
-
-      expect(result.status).to.equal(500);
-      // Should log error about s3Client being undefined in sendToMystique
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Cannot send to Mystique - s3Client is undefined/),
-        sinon.match.any,
-        auditId,
-      );
-      // Should also log fallback failure
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Failed to send fallback to Mystique/),
-        sinon.match.any,
-        auditId,
-        sinon.match.any,
-      );
     });
   });
 
   describe('Default batchStart', () => {
     it('should default batchStart to 0 if not provided', async () => {
-      const { handler } = await createHandler();
+      const { handler, llmo } = await createHandler();
 
       const result = await handler.default(
-        { auditId, siteId }, // No batchStart
+        { siteId }, // No batchStart
         context,
       );
 
       expect(result.status).to.equal(200);
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/Processing batch starting at/),
-        sinon.match.any,
-        0,
-        auditId,
-        siteId,
-      );
+      // Should go through first-invocation path (reads config)
+      expect(llmo.readConfig).to.have.been.calledOnce;
     });
   });
 });

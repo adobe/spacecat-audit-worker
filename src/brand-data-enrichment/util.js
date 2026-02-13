@@ -50,6 +50,34 @@ export const ENRICHMENT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 export const ENRICHMENT_LOCK_PREFIX = 'temp/url-enrichment-locks';
 
 /**
+ * Flattens all prompt objects from a config's topics and ai_topics into a single array.
+ * Returns references to the original prompt objects, so mutating the returned array
+ * elements also mutates the prompts inside the config tree.
+ * Iterates topics then aiTopics, using Object.entries for deterministic order.
+ * @param {Object} config - The LLMO config object
+ * @returns {Array<Object>} Flat array of prompt object references
+ */
+export function flattenConfigPrompts(config) {
+  const prompts = [];
+
+  for (const section of ['topics', 'aiTopics']) {
+    const sectionData = config?.[section];
+    // eslint-disable-next-line no-continue
+    if (!sectionData) continue;
+
+    for (const [, topic] of Object.entries(sectionData)) {
+      if (Array.isArray(topic.prompts)) {
+        for (const prompt of topic.prompts) {
+          prompts.push(prompt);
+        }
+      }
+    }
+  }
+
+  return prompts;
+}
+
+/**
  * Gets the S3 key for the enrichment lock file.
  * Lock is keyed by siteId + lockId to prevent concurrent enrichments.
  * @param {string} siteId - The site ID
@@ -213,61 +241,34 @@ export async function checkEnrichmentConflict(s3Client, bucket, siteId, lockId, 
 }
 
 /**
- * Gets the S3 key for URL enrichment directory
+ * Gets the S3 key for enrichment temp directory
  * @param {string} auditId - The audit ID
  * @returns {string} The S3 directory key
  */
-export function urlEnrichmentDirectoryS3Key(auditId) {
-  return `temp/url-enrichment/${auditId}`;
+export function enrichmentDirectoryS3Key(auditId) {
+  return `temp/brand-data-enrichment/${auditId}`;
 }
 
 /**
- * Gets the S3 key for URL enrichment metadata file
+ * Gets the S3 key for enrichment metadata file
  * @param {string} auditId - The audit ID
  * @returns {string} The S3 key for metadata.json
  */
-export function urlEnrichmentMetadataS3Key(auditId) {
-  return `${urlEnrichmentDirectoryS3Key(auditId)}/metadata.json`;
+export function enrichmentMetadataS3Key(auditId) {
+  return `${enrichmentDirectoryS3Key(auditId)}/metadata.json`;
 }
 
 /**
- * Gets the S3 key for the JSON prompts file being enriched
+ * Gets the S3 key for the enrichment config file
  * @param {string} auditId - The audit ID
- * @returns {string} The S3 key for the JSON file
+ * @returns {string} The S3 key for config.json
  */
-export function urlEnrichmentJsonS3Key(auditId) {
-  return `${urlEnrichmentDirectoryS3Key(auditId)}/prompts.json`;
+export function enrichmentConfigS3Key(auditId) {
+  return `${enrichmentDirectoryS3Key(auditId)}/config.json`;
 }
 
 /**
- * Checks which prompts in the array need URL enrichment.
- * A prompt needs enrichment if it has a 'prompt' field but no 'url' (or empty).
- * The 'url' field comes from parquet/Ahrefs data for AI prompts, or is empty for human prompts.
- * When enrichment is needed, promptToLinks will be called to generate a 'relatedUrl'.
- * @param {Array<Object>} prompts - Array of prompt objects
- * @returns {{ needsEnrichment: boolean, indicesToEnrich: number[] }}
- */
-export function checkJsonEnrichmentNeeded(prompts) {
-  const indicesToEnrich = [];
-
-  for (let i = 0; i < prompts.length; i += 1) {
-    const prompt = prompts[i];
-    const hasPrompt = prompt.prompt && prompt.prompt.trim() !== '';
-    const hasUrl = prompt.url && prompt.url.trim() !== '';
-
-    if (hasPrompt && !hasUrl) {
-      indicesToEnrich.push(i);
-    }
-  }
-
-  return {
-    needsEnrichment: indicesToEnrich.length > 0,
-    indicesToEnrich,
-  };
-}
-
-/**
- * Saves URL enrichment metadata to S3
+ * Saves enrichment metadata to S3
  * @param {S3Client} s3Client - The S3 client
  * @param {string} bucket - The S3 bucket name
  * @param {Object} metadata - The metadata object to save
@@ -276,14 +277,14 @@ export function checkJsonEnrichmentNeeded(prompts) {
 export async function saveEnrichmentMetadata(s3Client, bucket, metadata) {
   await s3Client.send(new PutObjectCommand({
     Bucket: bucket,
-    Key: urlEnrichmentMetadataS3Key(metadata.auditId),
+    Key: enrichmentMetadataS3Key(metadata.auditId),
     Body: JSON.stringify(metadata, null, 2),
     ContentType: 'application/json',
   }));
 }
 
 /**
- * Loads URL enrichment metadata from S3
+ * Loads enrichment metadata from S3
  * @param {S3Client} s3Client - The S3 client
  * @param {string} bucket - The S3 bucket name
  * @param {string} auditId - The audit ID
@@ -292,7 +293,7 @@ export async function saveEnrichmentMetadata(s3Client, bucket, metadata) {
 export async function loadEnrichmentMetadata(s3Client, bucket, auditId) {
   const result = await s3Client.send(new GetObjectCommand({
     Bucket: bucket,
-    Key: urlEnrichmentMetadataS3Key(auditId),
+    Key: enrichmentMetadataS3Key(auditId),
   }));
 
   const text = await result.Body?.transformToString() ?? '{}';
@@ -300,36 +301,36 @@ export async function loadEnrichmentMetadata(s3Client, bucket, auditId) {
 }
 
 /**
- * Saves JSON prompts to S3 for enrichment processing
+ * Saves the full LLMO config to S3 temp for enrichment processing
  * @param {S3Client} s3Client - The S3 client
  * @param {string} bucket - The S3 bucket name
  * @param {string} auditId - The audit ID
- * @param {Array<Object>} prompts - Array of prompt objects
+ * @param {Object} config - The LLMO config object
  * @returns {Promise<void>}
  */
-export async function saveEnrichmentJson(s3Client, bucket, auditId, prompts) {
+export async function saveEnrichmentConfig(s3Client, bucket, auditId, config) {
   await s3Client.send(new PutObjectCommand({
     Bucket: bucket,
-    Key: urlEnrichmentJsonS3Key(auditId),
-    Body: JSON.stringify(prompts),
+    Key: enrichmentConfigS3Key(auditId),
+    Body: JSON.stringify(config),
     ContentType: 'application/json',
   }));
 }
 
 /**
- * Loads JSON prompts from S3 for enrichment processing
+ * Loads the LLMO config from S3 temp during enrichment processing
  * @param {S3Client} s3Client - The S3 client
  * @param {string} bucket - The S3 bucket name
  * @param {string} auditId - The audit ID
- * @returns {Promise<Array<Object>>} Array of prompt objects
+ * @returns {Promise<Object>} The LLMO config object
  */
-export async function loadEnrichmentJson(s3Client, bucket, auditId) {
+export async function loadEnrichmentConfig(s3Client, bucket, auditId) {
   const result = await s3Client.send(new GetObjectCommand({
     Bucket: bucket,
-    Key: urlEnrichmentJsonS3Key(auditId),
+    Key: enrichmentConfigS3Key(auditId),
   }));
 
-  const text = await result.Body?.transformToString() ?? '[]';
+  const text = await result.Body?.transformToString() ?? '{}';
   return JSON.parse(text);
 }
 
