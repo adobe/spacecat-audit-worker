@@ -1,3 +1,10 @@
+## [1.318.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.318.2...v1.318.3) (2026-02-13)
+
+
+### Bug Fixes
+
+* [SITES-40465] canonical - Add rawBody check for scraped results ([#1973](https://github.com/adobe/spacecat-audit-worker/issues/1973)) ([6c24fb2](https://github.com/adobe/spacecat-audit-worker/commit/6c24fb2c421174cc1d6a47d742681cc1b8ac6016))
+
 ## [1.318.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.318.1...v1.318.2) (2026-02-13)
 
 
