@@ -65,7 +65,6 @@ export class ContentAIClient {
       },
     });
     this.tokenResponse = await imsClient.getServiceAccessTokenV3();
-    this.log?.info(`ContentAI token obtained: ${this.tokenResponse.access_token?.substring(0, 20)}...`);
     return this;
   }
 
