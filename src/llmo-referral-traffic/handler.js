@@ -68,6 +68,20 @@ async function createWorkbook(results) {
   return workbook;
 }
 
+async function enablePageIntentAudit(site, context, log) {
+  const { Configuration } = context.dataAccess;
+  const configuration = await Configuration.findLatest();
+
+  if (configuration.isHandlerEnabledForSite('page-intent', site)) {
+    log.debug(`[llmo-referral-traffic] page-intent is already enabled for site ${site.getId()}`);
+    return;
+  }
+
+  configuration.enableHandlerForSite('page-intent', site);
+  await configuration.save();
+  log.info(`[llmo-referral-traffic] Enabled page-intent audit for site ${site.getId()}`);
+}
+
 export async function triggerTrafficAnalysisImport(context) {
   const {
     site, finalUrl, log, auditContext = {},
@@ -151,6 +165,12 @@ export async function referralTrafficRunner(context) {
       },
       fullAuditRef: `No OpTel Data Found for ${baseURL}`,
     };
+  }
+
+  try {
+    await enablePageIntentAudit(site, context, log);
+  } catch (error) {
+    log.warn(`[llmo-referral-traffic] Failed to enable page-intent audit for site ${siteId}: ${error.message}`);
   }
 
   log.info('[llmo-referral-traffic] Enriching data with page intents and region information');
