@@ -83,19 +83,25 @@ function isTimeoutError(error) {
 }
 
 /**
- * Checks if an error is a transient HTTP/2 stream error (e.g. REFUSED_STREAM).
- * Servers/CDNs sometimes refuse HTTP/2 streams under load or for Range requests
- * while the resource is actually available; treat as accessible to avoid false positives.
+ * Checks if an error is transient (network/HTTP glitch) rather than a truly broken link.
+ * Servers/CDNs under load, proxies mangling headers, or brief connection resets can cause
+ * these while the resource is actually available; treat as accessible to avoid false positives.
  * @param {Error} error - The error to check
- * @returns {boolean} True if it's a transient HTTP/2 stream error
+ * @returns {boolean} True if it's a transient error
  */
-function isTransientOrHttp2Error(error) {
+function isTransientNetworkError(error) {
   const message = error?.message || '';
   const code = (error?.code || '').toLowerCase();
-  return code === 'err_http2_stream_error'
+  return (
+    code === 'err_http2_stream_error'
     || message.includes('NGHTTP2_REFUSED_STREAM')
     || message.includes('NGHTTP2_INTERNAL_ERROR')
-    || message.includes('NGHTTP2_CONNECT_ERROR');
+    || message.includes('NGHTTP2_CONNECT_ERROR')
+    || code === 'econnreset'
+    || code === 'hpe_invalid_header_token'
+    || message.includes('HPE_INVALID_HEADER_TOKEN')
+    || message.includes('Invalid header token')
+  );
 }
 
 /**
@@ -190,7 +196,7 @@ async function checkLinkWithGet(url, isAsset, log) {
       return false;
     }
 
-    if (isTransientOrHttp2Error(getError)) {
+    if (isTransientNetworkError(getError)) {
       log.info(`⏱ TRANSIENT: ${url} (${getError.code || getError.message}, assuming accessible)`);
       return false;
     }
