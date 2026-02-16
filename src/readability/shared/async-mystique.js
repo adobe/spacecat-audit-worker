@@ -111,7 +111,7 @@ export async function sendReadabilityToMystique(
           target_flesch_score: TARGET_READABILITY_SCORE,
           current_flesch_score: issue.fleschReadingEase,
           pageUrl: issue.pageUrl,
-          selector: issue.selector,
+          selector: issue.selector || issue.elements?.[0]?.selector || '',
           issue_id: `readability-${Date.now()}-${index}`,
         },
       };

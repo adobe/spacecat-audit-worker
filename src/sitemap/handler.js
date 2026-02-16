@@ -34,8 +34,17 @@ const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
  */
 export async function findSitemap(inputUrl, log) {
   // Extract and validate pages from sitemaps
-  const siteMapUrlsResult = await getSitemapUrls(inputUrl);
-  if (!siteMapUrlsResult.success) return siteMapUrlsResult;
+  const siteMapUrlsResult = await getSitemapUrls(inputUrl, log);
+  if (!siteMapUrlsResult.success) {
+    /* c8 ignore start */
+    const reasons = siteMapUrlsResult.reasons || [];
+    log?.error(`Sitemap: getSitemapUrls failed for ${inputUrl}: ${reasons.length} reason(s)`);
+    reasons.forEach((r, i) => {
+      log?.error(`  reason ${i + 1}: error=${r.error ?? '(none)'}, value=${r.value ?? '(none)'}`);
+    });
+    /* c8 ignore end */
+    return siteMapUrlsResult;
+  }
   const extractedPaths = siteMapUrlsResult.details?.extractedPaths || {};
   const filteredSitemapUrls = siteMapUrlsResult.details?.filteredSitemapUrls || [];
   const notOkPagesFromSitemap = {};
@@ -170,6 +179,8 @@ export function generateSuggestions(auditUrl, auditData, context) {
     : reasons.map(({ error }) => ({ type: 'error', error }));
 
   const pagesWithIssues = getPagesWithIssues(auditData);
+  /* c8 ignore next */
+  log.info(`Sitemap: Found ${pagesWithIssues.length} pages with issues in sitemaps for ${auditUrl}`);
   const suggestions = [...response, ...pagesWithIssues]
     .filter(Boolean)
     .map((issue) => ({
@@ -180,7 +191,7 @@ export function generateSuggestions(auditUrl, auditData, context) {
     }));
 
   /* c8 ignore next */
-  log.info(`Generated ${suggestions.length} suggestions for ${auditUrl}`);
+  log.info(`Sitemap audit generated ${suggestions.length} suggestions for ${auditUrl}`);
   return { ...auditData, suggestions };
 }
 
@@ -188,12 +199,19 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
   if (auditData.auditResult.success === false) {
-    log.debug('Sitemap audit failed, skipping opportunity and suggestions creation');
+    log.error('Sitemap audit failed, skipping opportunity and suggestions creation');
+    /* c8 ignore start */
+    const wouldCreate = auditData.suggestions ?? [];
+    log.info(`  Sitemap audit: ${wouldCreate.length} suggestion(s) would have been created for ${auditUrl}`);
+    wouldCreate.forEach((s, i) => {
+      log.info(`    Sitemap audit suggestion ${i + 1}/${wouldCreate.length}: type=${s.type ?? 'unknown'}, ${s.type === 'error' ? `error=${s.error}` : `sitemapUrl=${s.sitemapUrl}, pageUrl=${s.pageUrl}, statusCode=${s.statusCode}`}`);
+    });
+    /* c8 ignore end */
     return { ...auditData };
   }
 
   if (!auditData.suggestions?.length) {
-    log.debug('No sitemap issues found, skipping opportunity creation');
+    log.info('No sitemap issues found, skipping opportunity creation');
     return { ...auditData };
   }
 

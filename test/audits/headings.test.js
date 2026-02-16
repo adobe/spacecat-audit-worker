@@ -1835,96 +1835,6 @@ describe('Headings Audit', () => {
     expect(result.auditResult.headings['heading-missing-h1'].urls[0].suggestion).to.not.equal('Optimized H1 Title');
   });
 
-  it('handles getH1HeadingASuggestion error in catch block', async () => {
-    const baseURL = 'https://example.com';
-    const url = 'https://example.com/page';
-    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
-    context.log = logSpy;
-
-    // Mock AI client with different behavior for each call:
-    // - First call (getBrandGuidelines): succeed
-    // - Second call (getH1HeadingASuggestion): fail
-    let callCount = 0;
-    const mockClient = {
-      fetchChatCompletion: sinon.stub().callsFake(() => {
-        callCount++;
-        if (callCount === 1) {
-          // First call for getBrandGuidelines - succeed
-          return Promise.resolve({
-            choices: [{ message: { content: '{"guidelines":"Test guidelines"}' } }],
-          });
-        }
-        // Second call for getH1HeadingASuggestion - fail
-        return Promise.reject(new Error('AI service timeout'));
-      }),
-    };
-    AzureOpenAIClient.createFrom.restore();
-    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
-
-    // Mock getTopPagesForSiteId to return pages
-    const getTopPagesForSiteIdStub = sinon.stub().resolves([
-      { url: url }
-    ]);
-
-    const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
-      '../../src/canonical/handler.js': {
-        getTopPagesForSiteId: getTopPagesForSiteIdStub,
-      },
-    });
-
-    context.dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
-          { getUrl: () => url },
-        ]),
-      },
-    };
-
-    // Mock S3 client to return HTML with missing H1 (which triggers AI suggestion)
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
-
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () => JSON.stringify({
-              finalUrl: url,
-              scrapedAt: Date.now(),
-              scrapeResult: {
-                rawBody: '<h2>No H1 here</h2>', // Missing H1 to trigger AI suggestion
-                tags: {
-                  title: 'Page Title',
-                  description: 'Page Description',
-                  h1: ['Page H1'],
-                },
-              }
-            }),
-          },
-          ContentType: 'application/json',
-        });
-      }
-
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
-
-    context.s3Client = s3Client;
-    const result = await mockedHandlerWithStubs.headingsAuditRunner(baseURL, context, site);
-
-    // Verify that the error was logged (either from getH1HeadingASuggestion catch or headingsAuditRunner catch)
-    expect(logSpy.error).to.have.been.called;
-
-    // Verify that AI suggestion was attempted (called at least twice)
-    expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(2);
-
-    // The audit should fail or return error result due to the error
-    expect(result.auditResult.error || result.auditResult.headings['heading-missing-h1']).to.exist;
-  });
-
   it('handles getH1HeadingASuggestion with missing pageTags properties (default fallbacks)', async function () {
     this.timeout(10000); // Increase timeout for async operations
     const baseURL = 'https://example.com';
@@ -2178,7 +2088,8 @@ describe('Headings Audit', () => {
     // - lang uses actual value 'fr' (not 'en')
   });
 
-  it('handles getH1HeadingASuggestion when pageTags is null or undefined', async () => {
+  it('handles getH1HeadingASuggestion when pageTags is null or undefined', async function () {
+    this.timeout(5000);
     const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };

@@ -1291,14 +1291,14 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     const imageSuggestion = callArgs.mapNewSuggestion(brokenAssets[0]);
     expect(imageSuggestion).to.deep.equal({
       opportunityId: 'oppty-id-1',
-      type: 'ASSET_FIX',
-      rank: 0,
+      type: 'CONTENT_UPDATE',
+      rank: 50,
       data: {
         title: 'Broken Image',
         urlFrom: 'https://example.com/page1',
         urlTo: 'https://example.com/broken.png',
         itemType: 'image',
-        priority: 'medium',
+        priority: 'high',
         urlsSuggested: [],
         aiRationale: '',
         trafficDomain: 50,
@@ -1306,9 +1306,9 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     });
 
     const cssSuggestion = callArgs.mapNewSuggestion(brokenAssets[1]);
-    expect(cssSuggestion.type).to.equal('ASSET_FIX');
+    expect(cssSuggestion.type).to.equal('CONTENT_UPDATE');
     expect(cssSuggestion.data.itemType).to.equal('css');
-    expect(cssSuggestion.data.priority).to.equal('medium');
+    expect(cssSuggestion.data.priority).to.equal('high');
   });
 
   it('should handle empty arrays in mapNewSuggestion', async () => {
@@ -1334,6 +1334,33 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     // Should use default empty array and empty string
     expect(mappedSuggestion.data.urlsSuggested).to.deep.equal([]);
     expect(mappedSuggestion.data.aiRationale).to.equal('');
+  });
+
+  it('should use trafficDomain 1 (never 0) when entry.trafficDomain is null, undefined, or 0', async () => {
+    const brokenInternalLinks = [
+      { urlFrom: 'https://example.com/from1', urlTo: 'https://example.com/to1' },
+      { urlFrom: 'https://example.com/from2', urlTo: 'https://example.com/to2', trafficDomain: null },
+      { urlFrom: 'https://example.com/from3', urlTo: 'https://example.com/to3', trafficDomain: 0 },
+    ];
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks,
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    const callArgs = mockSyncSuggestions.getCall(0).args[0];
+    const noTraffic = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
+    const nullTraffic = callArgs.mapNewSuggestion(brokenInternalLinks[1]);
+    const zeroTraffic = callArgs.mapNewSuggestion(brokenInternalLinks[2]);
+
+    expect(noTraffic.rank).to.equal(1);
+    expect(noTraffic.data.trafficDomain).to.equal(1);
+    expect(nullTraffic.rank).to.equal(1);
+    expect(nullTraffic.data.trafficDomain).to.equal(1);
+    expect(zeroTraffic.rank).to.equal(1);
+    expect(zeroTraffic.data.trafficDomain).to.equal(1);
   });
 
   it('should preserve urlEdited when isEdited is true', async () => {

@@ -146,6 +146,10 @@ const HANDLERS = {
   'geo-brand-presence': geoBrandPresence,
   'geo-brand-presence-free': geoBrandPresence,
   'geo-brand-presence-paid': geoBrandPresence,
+  // Splits of geo-brand-presence-free for staggered execution (max 40 sites each)
+  ...Object.fromEntries(
+    Array.from({ length: 23 }, (_, i) => [`geo-brand-presence-free-${i + 1}`, geoBrandPresence]),
+  ),
   'category:geo-brand-presence': handleCategorizationResponseHandler,
   'detect:geo-brand-presence': detectGeoBrandPresence,
   'refresh:geo-brand-presence': detectGeoBrandPresence,
@@ -219,9 +223,14 @@ function getElapsedSeconds(startTime) {
  */
 async function run(message, context) {
   const { log } = context;
-  const { type, siteId } = message;
+  const {
+    type, siteId, jobId,
+  } = message;
 
-  log.info(`Received ${type} audit request for: ${siteId}. Message:`, message);
+  log.info(
+    `Received ${type} audit request for siteId=${siteId}, jobId=${jobId || 'none'}`,
+    message,
+  );
 
   const handler = HANDLERS[type];
   if (!handler) {

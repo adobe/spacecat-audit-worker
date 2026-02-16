@@ -418,7 +418,7 @@ export async function runPaidKeywordAnalysisStep(context) {
   });
   const newAuditId = newAudit.getId();
 
-  log.debug(`[ad-intent-mismatch] [Site: ${finalUrl}] Audit persisted with analysis results`);
+  log.debug(`[ad-intent-mismatch] [Site: ${finalUrl}] Audit updated with analysis results`);
 
   // Send qualifying pages to Mystique
   const { auditResult } = result;
