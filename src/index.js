@@ -104,6 +104,8 @@ import pageCitability from './page-citability/handler.js';
 import healthCheck from './health-check/handler.js';
 import wikipediaAnalysis from './wikipedia-analysis/handler.js';
 import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
+import redditAnalysis from './reddit-analysis/handler.js';
+import redditAnalysisGuidance from './reddit-analysis/guidance-handler.js';
 import frescopaDataGeneration from './frescopa-data-generation/handler.js';
 import ptrSelector from './ptr-selector/handler.js';
 
@@ -204,6 +206,8 @@ const HANDLERS = {
   'health-check': healthCheck,
   'wikipedia-analysis': wikipediaAnalysis,
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
+  'reddit-analysis': redditAnalysis,
+  'guidance:reddit-analysis': redditAnalysisGuidance,
   'frescopa-data-generation': frescopaDataGeneration,
   'ptr-selector': ptrSelector,
   dummy: (message) => ok(message),
