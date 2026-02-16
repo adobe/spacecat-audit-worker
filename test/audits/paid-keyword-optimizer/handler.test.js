@@ -426,6 +426,40 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(message2.url).to.equal('https://example.com/page2');
       expect(message2.data).to.have.property('bounceRate');
       expect(message2.data).to.have.property('pageViews');
+
+      // Messages must use the NEW audit ID (from AuditModel.create), not the step-1 audit ID
+      expect(message1.auditId).to.equal('new-audit-id');
+      expect(message2.auditId).to.equal('new-audit-id');
+    });
+
+    it('should use the new audit ID (not step-1 audit ID) in mystique messages', async () => {
+      const step1AuditId = 'step-1-stale-audit-id';
+      const newAuditId = 'new-audit-with-results-id';
+
+      context.dataAccess.Audit.create.resolves({ getId: () => newAuditId });
+
+      const mockAudit = {
+        getId: () => step1AuditId,
+        getAuditType: () => 'ad-intent-mismatch',
+        getFullAuditRef: () => 'www.test.com',
+      };
+
+      const stepContext = {
+        ...context,
+        site,
+        finalUrl: auditUrl,
+        audit: mockAudit,
+        auditContext: {},
+      };
+
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      // Verify every SQS message uses the new audit ID, not the step-1 ID
+      for (let i = 0; i < context.sqs.sendMessage.callCount; i += 1) {
+        const message = context.sqs.sendMessage.getCall(i).args[1];
+        expect(message.auditId).to.equal(newAuditId);
+        expect(message.auditId).to.not.equal(step1AuditId);
+      }
     });
 
     it('should not send to mystique when no qualifying pages', async () => {
