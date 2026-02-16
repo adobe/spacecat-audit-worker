@@ -59,7 +59,7 @@ export class ContentAIClient {
         ...this.env,
         IMS_HOST: this.env.CONTENTAI_IMS_HOST,
         IMS_CLIENT_ID: this.env.CONTENTAI_CLIENT_ID,
-        IMS_CLIENT_CODE: this.env.CONTENTAI_CLIENT_CODE,
+        IMS_CLIENT_CODE: this.env.CONTENTAI_CLIENT_CODE || this.env.IMS_CLIENT_CODE,
         IMS_CLIENT_SECRET: this.env.CONTENTAI_CLIENT_SECRET,
         IMS_SCOPE: this.env.CONTENTAI_CLIENT_SCOPE,
       },
