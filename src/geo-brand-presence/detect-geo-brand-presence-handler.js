@@ -90,11 +90,9 @@ export default async function handler(message, context) {
 
   // TODO: does data.config_version exist?
   const configVersion = data.config_version;
-  const llmoDataFolder = site.getConfig()?.getLlmoDataFolder?.();
-
   const mainOutputLocation = context.getOutputLocation
     ? context.getOutputLocation(site)
-    : `${llmoDataFolder}/brand-presence`;
+    : `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
   const outputLocations = [mainOutputLocation, `${mainOutputLocation}/config_${configVersion || 'absent'}`];
 
   log.info(
@@ -132,10 +130,6 @@ export default async function handler(message, context) {
   log.info(`%s: Sheet fetched successfully for auditId: ${auditId}, siteId: ${siteId} (${sheetSize} bytes in ${fetchDuration}ms)`, AUDIT_NAME);
 
   const xlsxName = extractXlsxName(presignedURL);
-
-  // Note: URL enrichment now happens BEFORE Mystique (in handler.js via JSON enrichment)
-  // The Excel sheet we receive already has Related URLs populated
-
   // upload to sharepoint & publish via hlx admin api
   log.info(`%s: Creating SharePoint client for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
   const sharepointClient = await createLLMOSharepointClient(context);
