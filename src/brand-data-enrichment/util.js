@@ -39,13 +39,15 @@ export async function promptToLinks(prompt, indexName, context, contentAIClient 
     await client.initialize();
   }
 
-  // Use semantic search with vector type
   const searchOptions = {
-    numCandidates: 5,
-    boost: 1,
+    numCandidates: 100,
+    similarity: 0.45,
+    vectorSpaceSelection: {
+      space: 'semantic-vector',
+    },
   };
 
-  const response = await client.runSemanticSearch(prompt, 'vector', indexName, searchOptions, 1);
+  const response = await client.runSemanticSearch(prompt, 'vector', indexName, searchOptions, 3);
 
   if (!response.ok) {
     throw new Error(`Error calling ContentAI search: ${response.status} ${response.statusText}`);
@@ -53,24 +55,26 @@ export async function promptToLinks(prompt, indexName, context, contentAIClient 
 
   const data = await response.json();
 
-  // Extract URL from first search result
-  // ContentAI search response format: { results: [{ data: { source: "url" } }] }
-  const firstResult = data?.results?.[0];
-  const url = firstResult?.data?.source;
+  const results = data?.results || [];
+  const urls = results
+    .filter((result) => result.data?.source)
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    .map((result) => result.data.source);
 
-  if (!url) {
+  if (urls.length === 0) {
     log.debug(`ContentAI search for "${prompt}" returned no results`);
     return [];
   }
 
-  log.debug(`ContentAI search for "${prompt}" returned URL: ${url}`);
+  log.debug(`ContentAI search for "${prompt}" returned ${urls.length} URL(s), top: ${urls[0]}`);
 
-  return [url];
+  return urls;
 }
 
 export const URL_ENRICHMENT_BATCH_SIZE = 10;
+export const BATCHES_PER_INVOCATION = 100;
 export const BRAND_DATA_ENRICHMENT_TYPE = 'enrich:brand-data';
-export const ENRICHMENT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+export const ENRICHMENT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 export const ENRICHMENT_LOCK_PREFIX = 'temp/url-enrichment-locks';
 
 /**
@@ -136,23 +140,11 @@ export async function acquireEnrichmentLock(s3Client, bucket, siteId, lockId, au
       const isExpired = lockAge > ENRICHMENT_TIMEOUT_MS;
 
       if (!isExpired) {
-        log.info(
-          'Enrichment lock exists for %s/%s (auditId: %s, age: %dms), skipping',
-          siteId,
-          lockId,
-          existingLock.auditId,
-          lockAge,
-        );
+        log.info(`Enrichment lock exists for ${siteId}/${lockId} (auditId: ${existingLock.auditId}, age: ${lockAge}ms), skipping`);
         return { acquired: false, existingLock };
       }
 
-      log.warn(
-        'Enrichment lock expired for %s/%s (auditId: %s, age: %dms), taking over',
-        siteId,
-        lockId,
-        existingLock.auditId,
-        lockAge,
-      );
+      log.warn(`Enrichment lock expired for ${siteId}/${lockId} (auditId: ${existingLock.auditId}, age: ${lockAge}ms), taking over`);
     }
 
     // Create/overwrite lock
@@ -170,10 +162,10 @@ export async function acquireEnrichmentLock(s3Client, bucket, siteId, lockId, au
       ContentType: 'application/json',
     }));
 
-    log.info('Enrichment lock acquired for %s/%s (auditId: %s)', siteId, lockId, auditId);
+    log.info(`Enrichment lock acquired for ${siteId}/${lockId} (auditId: ${auditId})`);
     return { acquired: true };
   } catch (error) {
-    log.error('Failed to acquire enrichment lock for %s/%s: %s', siteId, lockId, error.message);
+    log.error(`Failed to acquire enrichment lock for ${siteId}/${lockId}: ${error.message}`);
     return { acquired: false };
   }
 }
@@ -221,9 +213,9 @@ export async function releaseEnrichmentLock(s3Client, bucket, siteId, lockId, lo
       Bucket: bucket,
       Key: lockKey,
     }));
-    log.info('Enrichment lock released for %s/%s', siteId, lockId);
+    log.info(`Enrichment lock released for ${siteId}/${lockId}`);
   } catch (error) {
-    log.warn('Failed to release enrichment lock for %s/%s: %s', siteId, lockId, error.message);
+    log.warn(`Failed to release enrichment lock for ${siteId}/${lockId}: ${error.message}`);
   }
 }
 
@@ -359,7 +351,7 @@ export async function loadEnrichmentConfig(s3Client, bucket, auditId) {
 }
 
 /**
- * Enriches a single prompt object with a Related URL using promptToLinks
+ * Enriches a single prompt object with related URLs using promptToLinks
  * @param {Object} prompt - The prompt object (will be mutated)
  * @param {number} index - The index in the original array
  * @param {string} indexName - The ContentAI index name
@@ -378,20 +370,17 @@ async function enrichPromptWithRelatedUrl(prompt, index, indexName, context, log
   try {
     const urls = await promptToLinks(promptText, indexName, context, contentAIClient);
     if (urls && urls.length > 0) {
-      const [firstUrl] = urls;
-      // first returned URL is the most relevant
-      // being its content the one semantically
-      // closest to the input prompt
       // eslint-disable-next-line no-param-reassign
-      prompt.relatedUrl = firstUrl;
+      prompt.relatedUrls = urls;
       return true;
     }
+    // No URLs found — set empty array so the field is always present
+    // eslint-disable-next-line no-param-reassign
+    prompt.relatedUrls = [];
   } catch (error) {
-    log.debug(
-      'GEO BRAND PRESENCE JSON ENRICHMENT: Failed to enrich prompt at index %d: %s',
-      index,
-      error.message,
-    );
+    log.debug(`GEO BRAND PRESENCE JSON ENRICHMENT: Failed to enrich prompt at index ${index}: ${error.message}`);
+    // eslint-disable-next-line no-param-reassign
+    prompt.relatedUrls = null;
   }
   return false;
 }

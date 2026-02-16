@@ -127,7 +127,9 @@ describe('Content AI Utils', () => {
         },
         log: {
           info: sandbox.stub(),
+          warn: sandbox.stub(),
           error: sandbox.stub(),
+          debug: sandbox.stub(),
         },
       };
     });
@@ -301,7 +303,12 @@ describe('Content AI Utils', () => {
 
         const client = new ContentAIClient(context);
         await client.initialize();
-        await client.createConfiguration(site);
+
+        // Start the async operation but don't await yet
+        const promise = client.createConfiguration(site);
+        // Advance fake timers to fire the pagination delay setTimeout(resolve, 50)
+        await clock.tickAsync(100);
+        await promise;
 
         // Should call configurations twice (pagination), but not create
         expect(mockFetch).to.have.been.calledTwice;
@@ -514,6 +521,36 @@ describe('Content AI Utils', () => {
         expect(config).to.be.null;
       });
 
+      it('should deduplicate concurrent getConfigurationForSite calls via siteConfigFetchPromise', async () => {
+        mockFetch.onFirstCall().resolves({
+          ok: true,
+          json: sandbox.stub().resolves({
+            items: [{
+              uid: 'config-concurrent',
+              steps: [{
+                baseUrl: 'https://example.com',
+                type: 'generative',
+              }],
+            }],
+          }),
+        });
+
+        const client = new ContentAIClient(context);
+        await client.initialize();
+
+        // Fire two concurrent calls — the second should hit the siteConfigFetchPromise branch
+        const [config1, config2] = await Promise.all([
+          client.getConfigurationForSite(site),
+          client.getConfigurationForSite(site),
+        ]);
+
+        // Both should return the same configuration
+        expect(config1.uid).to.equal('config-concurrent');
+        expect(config2.uid).to.equal('config-concurrent');
+        // Only one fetch should have been made
+        expect(mockFetch).to.have.been.calledOnce;
+      });
+
       it('should return cached configuration on subsequent calls for the same site', async () => {
         mockFetch.onFirstCall().resolves({
           ok: true,
@@ -683,7 +720,7 @@ describe('Content AI Utils', () => {
           .to.be.rejectedWith('ContentAI configuration not found');
       });
 
-      it('should handle generative search request failure', async () => {
+      it('should throw error when generative search request fails', async () => {
         // Mock getConfigurations - return a matching configuration
         mockFetch.onFirstCall().resolves({
           ok: true,
@@ -708,10 +745,8 @@ describe('Content AI Utils', () => {
         const client = new ContentAIClient(context);
         await client.initialize();
 
-        const response = await client.runGenerativeSearch('What is the product?', site);
-
-        expect(response.ok).to.be.false;
-        expect(response.status).to.equal(500);
+        await expect(client.runGenerativeSearch('What is the product?', site))
+          .to.be.rejectedWith('Failed to run generative search for site site-123: 500 Internal Server Error');
       });
 
       it('should use overrideBaseURL to find configuration', async () => {

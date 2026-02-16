@@ -133,14 +133,14 @@ export class ContentAIClient {
    * @param {string} type - The query type (e.g., 'vector')
    * @param {string} indexName - The index name to search
    * @param {Object} options - Optional search parameters
-   * @param {number} options.limit - Number of results to return (default: 1)
    * @param {number} options.numCandidates - Number of candidates for vector search (default: 3)
    * @param {number} options.boost - Boost factor for the query (default: 1)
    * @param {string} options.vectorSpace - Vector space selection (default: 'semantic')
    * @param {string} options.lexicalSpace - Lexical space selection (default: 'fulltext')
+   * @param {number} limit - The number of results to return (default: 1)
    * @returns {Promise<Response>} The fetch response object
    */
-  async runSemanticSearch(text, type, indexName, options = {}, pageLimit = 1) {
+  async runSemanticSearch(text, type, indexName, options = {}, limit = 1) {
     const requestBody = {
       searchIndexConfig: {
         indexes: [
@@ -156,7 +156,7 @@ export class ContentAIClient {
       },
       queryOptions: {
         pagination: {
-          limit: pageLimit,
+          limit,
         },
       },
     };

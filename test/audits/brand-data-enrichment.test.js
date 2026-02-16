@@ -153,10 +153,10 @@ describe('Brand Data Enrichment Utilities', () => {
       const flatPrompts = flattenConfigPrompts(config);
 
       // Mutate the flattened prompt
-      flatPrompts[0].relatedUrl = 'https://website.com';
+      flatPrompts[0].relatedUrls = ['https://website.com'];
 
       // The original config should also be mutated (same object reference)
-      expect(config.topics.t1.prompts[0].relatedUrl).to.equal('https://website.com');
+      expect(config.topics.t1.prompts[0].relatedUrls).to.deep.equal(['https://website.com']);
     });
   });
 
@@ -370,9 +370,7 @@ describe('Brand Data Enrichment Utilities', () => {
 
         expect(s3Client.send).to.have.been.calledOnce;
         expect(log.info).to.have.been.calledWith(
-          'Enrichment lock released for %s/%s',
-          siteId,
-          lockId,
+          `Enrichment lock released for ${siteId}/${lockId}`,
         );
       });
 
@@ -382,10 +380,7 @@ describe('Brand Data Enrichment Utilities', () => {
         await releaseEnrichmentLock(s3Client, bucket, siteId, lockId, log);
 
         expect(log.warn).to.have.been.calledWith(
-          'Failed to release enrichment lock for %s/%s: %s',
-          siteId,
-          lockId,
-          'Delete failed',
+          `Failed to release enrichment lock for ${siteId}/${lockId}: Delete failed`,
         );
       });
     });
@@ -516,8 +511,8 @@ describe('Brand Data Enrichment Utilities', () => {
       expect(BRAND_DATA_ENRICHMENT_TYPE).to.equal('enrich:brand-data');
     });
 
-    it('should have correct timeout (10 minutes)', () => {
-      expect(ENRICHMENT_TIMEOUT_MS).to.equal(10 * 60 * 1000);
+    it('should have correct timeout (2 hours)', () => {
+      expect(ENRICHMENT_TIMEOUT_MS).to.equal(2 * 60 * 60 * 1000);
     });
   });
 });
@@ -548,6 +543,7 @@ describe('Brand Data Enrichment Handler', () => {
 
   const createMockUtils = (overrides = {}) => ({
     URL_ENRICHMENT_BATCH_SIZE: 10,
+    BATCHES_PER_INVOCATION: 1,
     BRAND_DATA_ENRICHMENT_TYPE: 'enrich:brand-data',
     flattenConfigPrompts: sinon.stub().callsFake(
       (config) => {
@@ -573,6 +569,7 @@ describe('Brand Data Enrichment Handler', () => {
       siteId,
       lockId: 'brand-data-enrichment',
       totalPrompts: 3,
+      indexName: 'test-index',
       createdAt: new Date().toISOString(),
     }),
     saveEnrichmentConfig: sinon.stub().resolves(),
@@ -594,6 +591,9 @@ describe('Brand Data Enrichment Handler', () => {
     const llmo = { ...mockLlmoConfig, ...llmoOverrides };
     const handler = await esmock('../../src/brand-data-enrichment/handler.js', {
       '../../src/brand-data-enrichment/util.js': mockUtils,
+      '../../src/faqs/utils.js': {
+        validateContentAI: sinon.stub().resolves({ isWorking: true, indexName: 'test-index' }),
+      },
       '@adobe/spacecat-shared-utils': {
         llmoConfig: llmo,
       },
@@ -761,6 +761,27 @@ describe('Brand Data Enrichment Handler', () => {
       expect(llmo.writeConfig).to.not.have.been.called;
     });
 
+    it('should skip when ContentAI is not working', async () => {
+      const handler = await esmock('../../src/brand-data-enrichment/handler.js', {
+        '../../src/brand-data-enrichment/util.js': createMockUtils(),
+        '../../src/faqs/utils.js': {
+          validateContentAI: sinon.stub().resolves({ isWorking: false, indexName: null }),
+        },
+        '@adobe/spacecat-shared-utils': { llmoConfig: mockLlmoConfig },
+        'node:crypto': { randomUUID: () => 'generated-uuid' },
+      });
+
+      const result = await handler.default(
+        { siteId },
+        context,
+      );
+
+      expect(result.status).to.equal(200);
+      expect(log.error).to.have.been.calledWith(
+        sinon.match('ContentAI is not working or index not found'),
+      );
+    });
+
     it('should skip when lock not acquired', async () => {
       const { handler, llmo } = await createHandler({
         acquireEnrichmentLock: sinon.stub().resolves({ acquired: false }),
@@ -836,6 +857,7 @@ describe('Brand Data Enrichment Handler', () => {
           siteId,
           lockId: 'brand-data-enrichment',
           totalPrompts: 25,
+          indexName: 'test-index',
           createdAt: new Date().toISOString(),
         }),
       });
@@ -859,6 +881,29 @@ describe('Brand Data Enrichment Handler', () => {
           auditId: 'test-audit-id',
           batchStart: 20,
         }),
+      );
+    });
+
+    it('should return 500 when indexName is missing from message and metadata', async () => {
+      const { handler } = await createHandler({
+        loadEnrichmentMetadata: sinon.stub().resolves({
+          auditId: 'test-audit-id',
+          siteId,
+          lockId: 'brand-data-enrichment',
+          totalPrompts: 3,
+          // no indexName
+          createdAt: new Date().toISOString(),
+        }),
+      });
+
+      const result = await handler.default(
+        { siteId, auditId: 'test-audit-id', batchStart: 10 }, // no indexName in message
+        context,
+      );
+
+      expect(result.status).to.equal(500);
+      expect(log.error).to.have.been.calledWith(
+        sinon.match('indexName not found'),
       );
     });
 
@@ -898,6 +943,7 @@ describe('Brand Data Enrichment Handler', () => {
           siteId,
           lockId: 'brand-data-enrichment',
           totalPrompts: 3,
+          indexName: 'test-index',
           createdAt: new Date().toISOString(),
         }),
         loadEnrichmentConfig: sinon.stub().resolves(createMockConfig()),
@@ -970,6 +1016,7 @@ describe('Brand Data Enrichment Handler', () => {
           siteId,
           lockId: 'brand-data-enrichment',
           totalPrompts: 3,
+          indexName: 'test-index',
           createdAt: new Date().toISOString(),
         }),
         loadEnrichmentConfig: sinon.stub().resolves(createMockConfig()),

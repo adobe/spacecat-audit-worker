@@ -14,7 +14,7 @@
  * Brand Data Enrichment Handler
  *
  * Reads the LLMO config for a site, flattens all prompts from topics and aiTopics,
- * enriches every prompt with a relatedUrl via ContentAI's promptToLinks,
+ * enriches every prompt with relatedUrls via ContentAI's promptToLinks,
  * then writes the enriched config back via llmoConfig.writeConfig.
  *
  * Uses SQS self-continuation pattern to handle long-running batch operations.
@@ -32,6 +32,7 @@ import { randomUUID } from 'node:crypto';
 import { validateContentAI } from '../faqs/utils.js';
 import {
   URL_ENRICHMENT_BATCH_SIZE,
+  BATCHES_PER_INVOCATION,
   BRAND_DATA_ENRICHMENT_TYPE,
   flattenConfigPrompts,
   acquireEnrichmentLock,
@@ -63,14 +64,7 @@ export default async function handleBrandDataEnrichment(message, context) {
   } = context;
 
   if (!s3Client || !env || !sqs || !dataAccess) {
-    log.error(
-      '%s: Missing required context properties (s3Client: %s, env: %s, sqs: %s, dataAccess: %s)',
-      BRAND_DATA_ENRICHMENT_TYPE,
-      !!s3Client,
-      !!env,
-      !!sqs,
-      !!dataAccess,
-    );
+    log.error(`${BRAND_DATA_ENRICHMENT_TYPE}: Missing required context properties (s3Client: ${!!s3Client}, env: ${!!env}, sqs: ${!!sqs}, dataAccess: ${!!dataAccess})`);
     return internalServerError('Missing required context properties');
   }
 
@@ -84,36 +78,32 @@ export default async function handleBrandDataEnrichment(message, context) {
   try {
     const site = await Site.findById(siteId);
     if (!site) {
-      log.error('%s: Site not found for siteId: %s', BRAND_DATA_ENRICHMENT_TYPE, siteId);
+      log.error(`${BRAND_DATA_ENRICHMENT_TYPE}: Site not found for siteId: ${siteId}`);
       return notFound('Site not found');
     }
 
     // --- First invocation ---
     if (batchStart === 0) {
-      const batchStartTime = Date.now();
+      const invocationStartTime = Date.now();
       auditId = auditId || randomUUID();
 
       const { config } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
       const flatPrompts = flattenConfigPrompts(config);
 
       if (flatPrompts.length === 0) {
-        log.info('%s: No prompts found in config for siteId: %s, skipping', BRAND_DATA_ENRICHMENT_TYPE, siteId);
+        log.info(`${BRAND_DATA_ENRICHMENT_TYPE}: No prompts found in config for siteId: ${siteId}, skipping`);
         return ok({ status: 'skipped', reason: 'no-prompts' });
       }
 
       // Validate ContentAI configuration and get indexName
       const validation = await validateContentAI(site, context);
       if (!validation.isWorking || !validation.indexName) {
-        log.error(
-          '%s: ContentAI is not working or index not found for siteId: %s',
-          BRAND_DATA_ENRICHMENT_TYPE,
-          siteId,
-        );
+        log.error(`${BRAND_DATA_ENRICHMENT_TYPE}: ContentAI is not working or index not found for siteId: ${siteId}`);
         return ok({ status: 'skipped', reason: 'contentai-not-working' });
       }
 
       const { indexName } = validation;
-      log.info('%s: Using ContentAI index: %s', BRAND_DATA_ENRICHMENT_TYPE, indexName);
+      log.info(`${BRAND_DATA_ENRICHMENT_TYPE}: Using ContentAI index: ${indexName}`);
 
       const lockResult = await acquireEnrichmentLock(
         s3Client,
@@ -125,7 +115,7 @@ export default async function handleBrandDataEnrichment(message, context) {
       );
 
       if (!lockResult.acquired) {
-        log.info('%s: Lock not acquired for siteId: %s, skipping', BRAND_DATA_ENRICHMENT_TYPE, siteId);
+        log.info(`${BRAND_DATA_ENRICHMENT_TYPE}: Lock not acquired for siteId: ${siteId}, skipping`);
         return ok({ status: 'skipped', reason: 'lock-not-acquired' });
       }
 
@@ -142,47 +132,61 @@ export default async function handleBrandDataEnrichment(message, context) {
       await saveEnrichmentMetadata(s3Client, bucket, metadata);
       await saveEnrichmentConfig(s3Client, bucket, auditId, config);
 
-      const allIndices = Array.from({ length: totalPrompts }, (_, i) => i);
-      const batchEnd = Math.min(URL_ENRICHMENT_BATCH_SIZE, totalPrompts);
-      const batchIndices = allIndices.slice(0, batchEnd);
+      log.info(`${BRAND_DATA_ENRICHMENT_TYPE}: Starting enrichment for siteId: ${siteId}, auditId: ${auditId}, totalPrompts: ${totalPrompts}`);
 
-      log.info(
-        '%s: Starting enrichment for siteId: %s, auditId: %s, totalPrompts: %d',
-        BRAND_DATA_ENRICHMENT_TYPE,
-        siteId,
-        auditId,
+      // Process multiple batches sequentially per invocation
+      let currentPromptIndex = 0;
+      let totalEnrichedCount = 0;
+      let batchNumber = 0;
+
+      const maxPromptsThisInvocation = Math.min(
+        BATCHES_PER_INVOCATION * URL_ENRICHMENT_BATCH_SIZE,
         totalPrompts,
       );
 
-      const enrichedCount = await processJsonEnrichmentBatch(
-        flatPrompts,
-        batchIndices,
-        site,
-        context,
-        log,
-        indexName,
-      );
+      // eslint-disable-next-line no-await-in-loop
+      while (currentPromptIndex < maxPromptsThisInvocation) {
+        batchNumber += 1;
+        const batchStartTime = Date.now();
 
-      const batchDuration = Date.now() - batchStartTime;
-      log.info(
-        '%s: Batch 1 took %dms (%ds)',
-        BRAND_DATA_ENRICHMENT_TYPE,
-        batchDuration,
-        Math.round(batchDuration / 1000),
-      );
+        const batchEnd = Math.min(
+          currentPromptIndex + URL_ENRICHMENT_BATCH_SIZE,
+          totalPrompts,
+        );
+        const batchSize = batchEnd - currentPromptIndex;
+        const batchIndices = [];
+        for (let i = 0; i < batchSize; i += 1) {
+          batchIndices.push(currentPromptIndex + i);
+        }
 
-      // Save config (flatPrompts mutated by reference → config is updated)
-      await saveEnrichmentConfig(s3Client, bucket, auditId, config);
+        // eslint-disable-next-line no-await-in-loop
+        const enrichedCount = await processJsonEnrichmentBatch(
+          flatPrompts,
+          batchIndices,
+          site,
+          context,
+          log,
+          indexName,
+        );
 
-      log.info(
-        '%s: Batch 1 complete - enriched %d/%d prompts for auditId: %s',
-        BRAND_DATA_ENRICHMENT_TYPE,
-        enrichedCount,
-        batchIndices.length,
-        auditId,
-      );
+        totalEnrichedCount += enrichedCount;
+        const batchDuration = Date.now() - batchStartTime;
 
-      const remaining = totalPrompts - batchEnd;
+        log.info(`${BRAND_DATA_ENRICHMENT_TYPE}: Batch ${batchNumber} complete - enriched ${enrichedCount}/${batchIndices.length} prompts (took ${batchDuration}ms)`);
+
+        currentPromptIndex = batchEnd;
+
+        // Save config periodically (every 10 batches or at end)
+        if (batchNumber % 10 === 0 || currentPromptIndex >= maxPromptsThisInvocation) {
+          // eslint-disable-next-line no-await-in-loop
+          await saveEnrichmentConfig(s3Client, bucket, auditId, config);
+        }
+      }
+
+      const invocationDuration = Date.now() - invocationStartTime;
+      log.info(`${BRAND_DATA_ENRICHMENT_TYPE}: Invocation complete - processed ${batchNumber} batches (${currentPromptIndex} prompts) in ${invocationDuration}ms (${Math.round(invocationDuration / 1000)}s)`);
+
+      const remaining = totalPrompts - currentPromptIndex;
 
       if (remaining > 0) {
         const { Configuration } = dataAccess;
@@ -193,17 +197,18 @@ export default async function handleBrandDataEnrichment(message, context) {
           type: BRAND_DATA_ENRICHMENT_TYPE,
           siteId,
           auditId,
-          batchStart: batchEnd,
+          batchStart: currentPromptIndex,
           indexName,
         });
 
         return ok({
           status: 'processing',
           remaining,
+          processedPrompts: currentPromptIndex,
         });
       }
 
-      // All done in a single batch
+      // All done - no more prompts remaining
       const finalConflictCheck = await checkEnrichmentConflict(
         s3Client,
         bucket,
@@ -213,60 +218,43 @@ export default async function handleBrandDataEnrichment(message, context) {
       );
 
       if (finalConflictCheck.hasConflict) {
-        log.warn('%s: Final conflict detected for auditId: %s', BRAND_DATA_ENRICHMENT_TYPE, auditId);
+        log.warn(`${BRAND_DATA_ENRICHMENT_TYPE}: Final conflict detected for auditId: ${auditId}`);
         return ok({ status: 'aborted', reason: finalConflictCheck.reason });
       }
 
       await llmoConfig.writeConfig(siteId, config, s3Client, { s3Bucket: bucket });
       await releaseEnrichmentLock(s3Client, bucket, siteId, LOCK_ID, log);
 
-      log.info(
-        '%s: Completed enrichment for auditId: %s, totalPrompts: %d, enrichedCount: %d',
-        BRAND_DATA_ENRICHMENT_TYPE,
-        auditId,
-        totalPrompts,
-        enrichedCount,
-      );
+      log.info(`${BRAND_DATA_ENRICHMENT_TYPE}: Completed enrichment for auditId: ${auditId}, totalPrompts: ${totalPrompts}, enrichedCount: ${totalEnrichedCount}`);
 
       return ok({
         status: 'completed',
         totalPrompts,
-        enrichedCount,
+        enrichedCount: totalEnrichedCount,
       });
     }
 
     // --- Continuation (batchStart > 0) ---
-    const batchStartTime = Date.now();
+    const invocationStartTime = Date.now();
 
-    log.info(
-      '%s: Continuation batch at %d for auditId: %s, siteId: %s',
-      BRAND_DATA_ENRICHMENT_TYPE,
-      batchStart,
-      auditId,
-      siteId,
-    );
+    log.info(`${BRAND_DATA_ENRICHMENT_TYPE}: Continuation starting at prompt ${batchStart} for auditId: ${auditId}, siteId: ${siteId}`);
 
     metadata = await loadEnrichmentMetadata(s3Client, bucket, auditId);
 
     if (!metadata) {
-      log.error('%s: Metadata not found for auditId: %s', BRAND_DATA_ENRICHMENT_TYPE, auditId);
+      log.error(`${BRAND_DATA_ENRICHMENT_TYPE}: Metadata not found for auditId: ${auditId}`);
       return notFound('Enrichment metadata not found');
     }
 
     // Get indexName from message or metadata
     const indexName = indexNameFromMessage || metadata.indexName;
     if (!indexName) {
-      log.error('%s: indexName not found for auditId: %s', BRAND_DATA_ENRICHMENT_TYPE, auditId);
+      log.error(`${BRAND_DATA_ENRICHMENT_TYPE}: indexName not found for auditId: ${auditId}`);
       return internalServerError('indexName not found');
     }
 
     if (isEnrichmentTimedOut(metadata)) {
-      log.warn(
-        '%s: Enrichment timed out for auditId: %s (started: %s)',
-        BRAND_DATA_ENRICHMENT_TYPE,
-        auditId,
-        metadata.createdAt,
-      );
+      log.warn(`${BRAND_DATA_ENRICHMENT_TYPE}: Enrichment timed out for auditId: ${auditId} (started: ${metadata.createdAt})`);
 
       const config = await loadEnrichmentConfig(s3Client, bucket, auditId);
       await llmoConfig.writeConfig(siteId, config, s3Client, { s3Bucket: bucket });
@@ -284,12 +272,7 @@ export default async function handleBrandDataEnrichment(message, context) {
     );
 
     if (conflictCheck.hasConflict) {
-      log.warn(
-        '%s: Conflict detected for auditId: %s - reason: %s',
-        BRAND_DATA_ENRICHMENT_TYPE,
-        auditId,
-        conflictCheck.reason,
-      );
+      log.warn(`${BRAND_DATA_ENRICHMENT_TYPE}: Conflict detected for auditId: ${auditId} - reason: ${conflictCheck.reason}`);
       return ok({ status: 'aborted', reason: conflictCheck.reason });
     }
 
@@ -297,35 +280,59 @@ export default async function handleBrandDataEnrichment(message, context) {
     const flatPrompts = flattenConfigPrompts(config);
     const { totalPrompts } = metadata;
 
-    const batchEnd = Math.min(batchStart + URL_ENRICHMENT_BATCH_SIZE, totalPrompts);
-    const batchIndices = Array.from(
-      { length: batchEnd - batchStart },
-      (_, i) => batchStart + i,
+    // Process multiple batches sequentially per invocation
+    let currentPromptIndex = batchStart;
+    let totalEnrichedCount = 0;
+    let batchNumber = 0;
+
+    const maxPromptsThisInvocation = Math.min(
+      batchStart + (BATCHES_PER_INVOCATION * URL_ENRICHMENT_BATCH_SIZE),
+      totalPrompts,
     );
 
-    const enrichedCount = await processJsonEnrichmentBatch(
-      flatPrompts,
-      batchIndices,
-      site,
-      context,
-      log,
-      indexName,
-    );
+    // eslint-disable-next-line no-await-in-loop
+    while (currentPromptIndex < maxPromptsThisInvocation) {
+      batchNumber += 1;
+      const batchStartTime = Date.now();
 
-    await saveEnrichmentConfig(s3Client, bucket, auditId, config);
+      const batchEnd = Math.min(
+        currentPromptIndex + URL_ENRICHMENT_BATCH_SIZE,
+        totalPrompts,
+      );
+      const batchSize = batchEnd - currentPromptIndex;
+      const batchIndices = [];
+      for (let i = 0; i < batchSize; i += 1) {
+        batchIndices.push(currentPromptIndex + i);
+      }
 
-    const batchDuration = Date.now() - batchStartTime;
-    log.info(
-      '%s: Batch complete - enriched %d/%d prompts for auditId: %s (took %dms / %ds)',
-      BRAND_DATA_ENRICHMENT_TYPE,
-      enrichedCount,
-      batchIndices.length,
-      auditId,
-      batchDuration,
-      Math.round(batchDuration / 1000),
-    );
+      // eslint-disable-next-line no-await-in-loop
+      const enrichedCount = await processJsonEnrichmentBatch(
+        flatPrompts,
+        batchIndices,
+        site,
+        context,
+        log,
+        indexName,
+      );
 
-    const remaining = totalPrompts - batchEnd;
+      totalEnrichedCount += enrichedCount;
+      const batchDuration = Date.now() - batchStartTime;
+
+      log.info(`${BRAND_DATA_ENRICHMENT_TYPE}: Batch ${batchNumber} complete - enriched ${enrichedCount}/${batchIndices.length} prompts (took ${batchDuration}ms)`);
+
+      currentPromptIndex = batchEnd;
+
+      // Save config periodically (every 10 batches or at end)
+      if (batchNumber % 10 === 0 || currentPromptIndex >= maxPromptsThisInvocation) {
+        // eslint-disable-next-line no-await-in-loop
+        await saveEnrichmentConfig(s3Client, bucket, auditId, config);
+      }
+    }
+
+    const invocationDuration = Date.now() - invocationStartTime;
+    log.info(`${BRAND_DATA_ENRICHMENT_TYPE}: Invocation complete - processed ${batchNumber} batches (${currentPromptIndex - batchStart} prompts) in ${invocationDuration}ms (${Math.round(invocationDuration / 1000)}s)`);
+
+    const remaining = totalPrompts - currentPromptIndex;
 
     if (remaining > 0) {
       const { Configuration } = dataAccess;
@@ -336,13 +343,14 @@ export default async function handleBrandDataEnrichment(message, context) {
         type: BRAND_DATA_ENRICHMENT_TYPE,
         siteId,
         auditId,
-        batchStart: batchEnd,
+        batchStart: currentPromptIndex,
         indexName,
       });
 
       return ok({
         status: 'processing',
         remaining,
+        processedPrompts: currentPromptIndex,
       });
     }
 
@@ -356,32 +364,22 @@ export default async function handleBrandDataEnrichment(message, context) {
     );
 
     if (finalConflictCheck.hasConflict) {
-      log.warn('%s: Final conflict detected for auditId: %s', BRAND_DATA_ENRICHMENT_TYPE, auditId);
+      log.warn(`${BRAND_DATA_ENRICHMENT_TYPE}: Final conflict detected for auditId: ${auditId}`);
       return ok({ status: 'aborted', reason: finalConflictCheck.reason });
     }
 
     await llmoConfig.writeConfig(siteId, config, s3Client, { s3Bucket: bucket });
     await releaseEnrichmentLock(s3Client, bucket, siteId, LOCK_ID, log);
 
-    log.info(
-      '%s: Completed enrichment for auditId: %s, totalPrompts: %d',
-      BRAND_DATA_ENRICHMENT_TYPE,
-      auditId,
-      totalPrompts,
-    );
+    log.info(`${BRAND_DATA_ENRICHMENT_TYPE}: Completed enrichment for auditId: ${auditId}, totalPrompts: ${totalPrompts}, enrichedCount: ${totalEnrichedCount}`);
 
     return ok({
       status: 'completed',
       totalPrompts,
-      enrichedCount,
+      enrichedCount: totalEnrichedCount,
     });
   } catch (error) {
-    log.error(
-      '%s: Error during enrichment for auditId: %s: %s',
-      BRAND_DATA_ENRICHMENT_TYPE,
-      auditId,
-      error.message,
-    );
+    log.error(`${BRAND_DATA_ENRICHMENT_TYPE}: Error during enrichment for auditId: ${auditId}: ${error.message}`);
 
     if (metadata) {
       await releaseEnrichmentLock(s3Client, bucket, siteId, LOCK_ID, log);
