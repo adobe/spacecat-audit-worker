@@ -17,14 +17,21 @@ import {
 } from './guidance-opportunity-mapper.js';
 import { createPaidLogger } from '../paid/paid-log.js';
 
-const GUIDANCE_TYPE = 'paid-keyword-optimizer';
+const GUIDANCE_TYPE = 'ad-intent-mismatch';
 
 /**
- * Handler for paid keyword optimizer guidance responses from mystique
- * Message format:
+ * Handler for ad intent mismatch guidance responses from mystique.
+ *
+ * Message format (GuidanceWithBody pattern):
  * {
- *   auditId, siteId, insight, rationale, recommendation,
- *   body: { issueSeverity, data: { url, suggestions, cpc, sum_traffic } }
+ *   auditId, siteId,
+ *   data: {
+ *     url, guidance: [{
+ *       insight, rationale, recommendation, type,
+ *       body: { issueSeverity, suggestions, cpc, sumTraffic, url }
+ *     }],
+ *     suggestions: []
+ *   }
  * }
  * @param {Object} message - Message from mystique
  * @param {Object} context - Execution context
@@ -33,8 +40,10 @@ const GUIDANCE_TYPE = 'paid-keyword-optimizer';
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Opportunity, Suggestion } = dataAccess;
-  const { auditId, siteId, body } = message;
-  const url = body?.data?.url;
+  const { auditId, siteId, data } = message;
+  const { guidance } = data;
+  const guidanceBody = guidance?.[0]?.body;
+  const url = guidanceBody?.url || data?.url;
   const paidLog = createPaidLogger(log, GUIDANCE_TYPE);
 
   paidLog.received(siteId, url, auditId);
@@ -45,9 +54,9 @@ export default async function handler(message, context) {
     return notFound();
   }
 
-  // Check for low severity and skip if so
-  if (isLowSeverityGuidanceBody(body)) {
-    paidLog.skipping('low issue severity', siteId, url, auditId);
+  // Check for empty guidance or low severity and skip if so
+  if (!guidance || guidance.length === 0 || isLowSeverityGuidanceBody(guidanceBody)) {
+    paidLog.skipping('low issue severity or empty guidance', siteId, url, auditId);
     return ok();
   }
 

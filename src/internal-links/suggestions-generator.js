@@ -256,7 +256,8 @@ export async function syncBrokenInternalLinksSuggestions({
   context,
   opportunityId,
 }) {
-  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
+  // Include itemType in key to distinguish between links and assets pointing to same URL
+  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}-${item.itemType || 'link'}`;
 
   // Custom merge function to preserve user-edited fields
   const mergeDataFunction = (existingData, newData) => {
@@ -283,20 +284,30 @@ export async function syncBrokenInternalLinksSuggestions({
     newData: brokenInternalLinks,
     context,
     buildKey,
-    statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
+    statusToSetForOutdated: SuggestionDataAccess.STATUSES.NEW,
     mergeDataFunction,
-    mapNewSuggestion: (entry) => ({
-      opportunityId,
-      type: 'CONTENT_UPDATE',
-      rank: entry.trafficDomain,
-      data: {
-        title: entry.title,
-        urlFrom: entry.urlFrom,
-        urlTo: entry.urlTo,
-        urlsSuggested: entry.urlsSuggested || [],
-        aiRationale: entry.aiRationale || '',
-        trafficDomain: entry.trafficDomain,
-      },
-    }),
+    mapNewSuggestion: (entry) => {
+      const itemType = entry.itemType || 'link';
+      // Internal-links must never set trafficDomain to 0 (use 1 when missing or 0)
+      const trafficDomain = (entry.trafficDomain === 0 || entry.trafficDomain == null)
+        ? 1
+        : entry.trafficDomain;
+
+      return {
+        opportunityId,
+        type: 'CONTENT_UPDATE',
+        rank: trafficDomain,
+        data: {
+          title: entry.title,
+          urlFrom: entry.urlFrom,
+          urlTo: entry.urlTo,
+          itemType,
+          priority: entry.priority || 'high',
+          urlsSuggested: entry.urlsSuggested || [],
+          aiRationale: entry.aiRationale || '',
+          trafficDomain,
+        },
+      };
+    },
   });
 }

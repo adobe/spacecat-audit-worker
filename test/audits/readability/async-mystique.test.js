@@ -192,6 +192,54 @@ describe('async-mystique sendReadabilityToMystique', () => {
       expect(sentMessage.data.jobId).to.equal('job-456');
       expect(sentMessage.data.auditId).to.be.undefined;
     });
+
+    it('should extract selector from elements array for preflight mode', async () => {
+      const readabilityIssues = [
+        {
+          textContent: 'Test paragraph content.',
+          fleschReadingEase: 22,
+          pageUrl: 'https://example.com/page1',
+          elements: [{ selector: 'div.content > p:nth-of-type(2)' }],
+        },
+      ];
+
+      await sendReadabilityToMystique(
+        'https://example.com',
+        readabilityIssues,
+        'site-123',
+        'job-456',
+        mockContext,
+        'preflight',
+      );
+
+      const sentMessage = mockContext.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.selector).to.equal('div.content > p:nth-of-type(2)');
+      expect(sentMessage.mode).to.equal('preflight');
+      expect(sentMessage.data.jobId).to.equal('job-456');
+    });
+
+    it('should fall back to empty string when neither selector nor elements is present', async () => {
+      const readabilityIssues = [
+        {
+          textContent: 'Paragraph without any selector info.',
+          fleschReadingEase: 18,
+          pageUrl: 'https://example.com/page1',
+        },
+      ];
+
+      await sendReadabilityToMystique(
+        'https://example.com',
+        readabilityIssues,
+        'site-123',
+        'job-no-selector',
+        mockContext,
+        'preflight',
+      );
+
+      const sentMessage = mockContext.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.selector).to.equal('');
+      expect(sentMessage.mode).to.equal('preflight');
+    });
   });
 
   describe('default mode', () => {

@@ -1,0 +1,957 @@
+{
+  "url": "https://www.krisshop.com/en",
+  "opportunityType": "semantic-value-visibility",
+  "suggestions": [
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0226_Spark-Miles_NTR_1534x864?fmt=webp&wid=600",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0226_Spark-Miles_NTR_1534x864?fmt=webp&wid=600\">\n  <span>5 - 28 FEB</span>\n  <h2>Feel the Spark with More Miles</h2>\n  <p>Earn more KrisFlyer miles when you splurge on gifts for your loved ones</p>\n  <span>520</span>\n  <span>1,200</span>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "5 _ 28 FEB",
+          "Feel the Spark",
+          "with More Miles",
+          "Earn more KrisFlyer miles when you",
+          "splurge on gifts for your loved ones",
+          "520",
+          "1,200",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/0226_Spark-Miles_NTR_1534x864?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/NTR_ThePerfectMatch_1534x864?fmt=webp&wid=600",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/NTR_ThePerfectMatch_1534x864?fmt=webp&wid=600\">\n  <span>1 \u2013 14 FEB</span>\n  <h2>The Perfect Match</h2>\n  <p>Buy 2 items and enjoy up to</p>\n  <span>30% OFF</span>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "1 _ 14 FEB",
+          "The Perfect Match",
+          "Buy 2 items and enjoy up to",
+          "30% OFF",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/NTR_ThePerfectMatch_1534x864?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0226-Electronic-Home-Flash_1534x864?fmt=webp&wid=600",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0226-Electronic-Home-Flash_1534x864?fmt=webp&wid=600\">\n  <span>10 - 15 FEB</span>\n  <h2>Electronics & Home Limited Time Deals</h2>\n  <span>Your favourite gadgets up to 80% off</span>\n  <button>Shop Now</button>\n  <small>Terms and Conditions apply</small>\n</section>",
+        "detectedText": [
+          "10",
+          "15 FEB",
+          "Electronics & Home",
+          "Limited Time Deals",
+          "Your favourite gadgets up to 80% off",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/0226-Electronic-Home-Flash_1534x864?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0226-Tumi-MSA_Homepage_1534x864?fmt=webp&wid=600",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0226-Tumi-MSA_Homepage_1534x864?fmt=webp&wid=600\">\n  <span>TUMI</span>\n  <h2>THE NEXT GENERATION</h2>\n  <h3>TUMI ALPHA</h3>\n  <p>Featuring Lando Norris Formula 1 Driver</p>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "TUM",
+          "THE NEXT GENERATION",
+          "TUMI ALPHA",
+          "Featuring Lando Norris Formula 1 Driver",
+          "Shop",
+          "Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/0226-Tumi-MSA_Homepage_1534x864?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0126-Refresh-Space-Rest-v2_1534x864?fmt=webp&wid=600",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0126-Refresh-Space-Rest-v2_1534x864?fmt=webp&wid=600\">\n  <span>5 \u2014 14 FEB</span>\n  <h2>Refresh Your Space: Rest &amp; Relax</h2>\n  <p>Enjoy S$18 off with every S$388 spent on wellness products</p>\n  <span>atome</span>\n  <span>Use code KR180 at Atome app checkout for an additional S$60 off</span>\n  <button>Shop Now</button>\n  <small>Terms &amp; conditions apply.</small>\n</section>",
+        "detectedText": [
+          "5 _ 14 FEB",
+          "Refresh Your Space:",
+          "Rest & Relax",
+          "Enjoy SS18 off with every SS388",
+          "spent on wellness products",
+          "Usc code KRISIO",
+          "atome",
+          "additional SSIO off",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/0126-Refresh-Space-Rest-v2_1534x864?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0226_ProsperousBatik_1534X864?fmt=webp&wid=600",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0226_ProsperousBatik_1534X864?fmt=webp&wid=600\">\n  <span>BATIK LABEL</span>\n  <span>31 JAN</span>\n  <span>15 FEB</span>\n  <h2>Get Prosperous\nwith Batik</h2>\n  <span>BUY 2</span>\n  <span>GET 25% OFF</span>\n  <span>BUY 3</span>\n  <button>SHOP NOW</button>\n</section>",
+        "detectedText": [
+          "BATIK LABEL",
+          "31 JAN",
+          "15 FEB",
+          "Get Prosperous",
+          "with Batik",
+          "BUY 2",
+          "E GET 25% OFF",
+          "BUY 3",
+          "SHOP NOW"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/0226_ProsperousBatik_1534X864?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0126_Atome_1534x864?fmt=webp&wid=600",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0126_Atome_1534x864?fmt=webp&wid=600\">\n  <span>atome</span>\n  <span>16 JAN - 14 FEB</span>\n  <h2>Enjoy SSIO off*</h2>\n  <span>with SS350 minimum spend</span>\n  <button>Use Code: KRISIO</button>\n</section>",
+        "detectedText": [
+          "atome A",
+          "16 JAN - 14 FEB",
+          "Enjoy SSIO off*",
+          "with SS350 minimum spend",
+          "Use Code: KRISIO"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/0126_Atome_1534x864?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/Corp_ThePerfectMatch_1534x864?fmt=webp&wid=600",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/Corp_ThePerfectMatch_1534x864?fmt=webp&wid=600\">\n  <span>1 \u2014 14 FEB</span>\n  <h2>The Perfect Match</h2>\n  <p>Curated gifts for that special someone</p>\n  <span>BUY 2 GET 30% OFF</span>\n  <span>BUY 3 GET 40% OFF</span>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "1 _ 14 FEB",
+          "The Perfect Match",
+          "Curated gifts for that special someone",
+          "BUY 2 GET",
+          "BUY 3 GET",
+          "30% OFF",
+          "40% OFF",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/Corp_ThePerfectMatch_1534x864?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/Corp_toffee_bundle_1534x864?fmt=webp&wid=600",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/Corp_toffee_bundle_1534x864?fmt=webp&wid=600\">\n  <span>Staff-Exclusive</span>\n  <h2>3 FOR S$38</h2>\n  <p>Purchase the Little Toffee Autumn Edition bundle (U.P. S$53 for 1) while stocks last.</p>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "Staff-Exclusive",
+          "3 FOR SS38",
+          "Purchase the Little Toffee Autumn Edition",
+          "bundle (U.P SS33 for 1) while stocks last:",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/Corp_toffee_bundle_1534x864?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0226_ProsperousBatik_2400X480?fmt=webp",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0226_ProsperousBatik_2400X480?fmt=webp\">\n  <span>BATIK LABEL by KRISSHOP</span>\n  <h2>Get Prosperous with Batik</h2>\n  <span>31 JAN - 15 FEB</span>\n  <span>BUY 2 GET 25% OFF</span>\n  <span>BUY 3 GET 35% OFF</span>\n  <button>SHOP NOW</button>\n  <small>Terms and Conditions Apply</small>\n</section>",
+        "detectedText": [
+          "BATIK LABEL",
+          "31 JAN",
+          "15 FEB",
+          "by KRISSHOPE",
+          "BUY 2",
+          "BUY 3",
+          "Get Prosperous",
+          "GET 25% OFF",
+          "GET 35% OFF",
+          "with Batik",
+          "SHOP NOW",
+          "Terms",
+          "Conditions apply:",
+          "and"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/0226_ProsperousBatik_2400X480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/PHS_GWP_2400x480?fmt=webp",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/PHS_GWP_2400x480?fmt=webp\">\n  <span>PHS HAIRSCIENCE+</span>\n  <span>For a limited time, receive a</span>\n  <h2>Complimentary</h2>\n  <p>RES Dual-Action Repair Regimen Set</p>\n  <span>with the purchase of Nutri Repair Hair Serum 50ml.</span>\n  <small>Set worth $96</small>\n</section>",
+        "detectedText": [
+          "PHS HAIRSCIENCEs",
+          "Set worth S6;",
+          "PHS",
+          "a limited time, receive a",
+          "R E $",
+          "Complimentary",
+          "PHS",
+          "R E $",
+          "REPAIR",
+          "RES Dual-Action Repair Regimen Set",
+          "SHAMPOO",
+          "with the purchase of Nutri Repair Hair Serum 5oml.",
+          "REP",
+          "For"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/PHS_GWP_2400x480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/Little_Toffee_Winter_PWP_NMS_2400x480?fmt=webp",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/Little_Toffee_Winter_PWP_NMS_2400x480?fmt=webp\">\n  <h2>A Cosy Winter With Little Toffee</h2>\n  <p>Take home this charming charm for just S$19 with any purchase no minimum spend</p>\n  <button>Shop Now</button>\n  <small>Terms and Conditions apply</small>\n</section>",
+        "detectedText": [
+          "A",
+          "Cosy Winter With",
+          "Little Toffee",
+          "Take home this charming",
+          "charm for just S$19",
+          "with any purchase",
+          "no minimum",
+          "spend",
+          "TALL AT",
+          "2",
+          "Shop Now",
+          "Terms and Conditions apply:",
+          "TOFFEE _",
+          "TTLE",
+          "bag"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/Little_Toffee_Winter_PWP_NMS_2400x480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/Bacha-2400x480-wCTA?fmt=webp",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/Bacha-2400x480-wCTA?fmt=webp\">\n  <span>KRISSHOP Corporate Portal</span>\n  <h2>BACHA COFFEE x SINGAPORE AIRLINES</h2>\n  <span>Extra 10% OFF with purchase of 2 or more</span>\n  <button>Shop Now</button>\n  <small>Terms & Conditions apply</small>\n</section>",
+        "detectedText": [
+          "KRISSHOP",
+          "Corporate Portal",
+          "KRISSHOP 1",
+          "BACHA",
+          "CCIFEE",
+          "BACHA COFFEE x SINGAPORE AIRLINES",
+          "COFFEE ESCAPE",
+          "Extra IO% OFF with purchase of 2 or more",
+          "3",
+          "ESCAPE",
+          "Shop Now",
+          "Terms & Conditions apply"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/Bacha-2400x480-wCTA?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/Promotion8_2400x480?fmt=webp",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/Promotion8_2400x480?fmt=webp\">\n  <h2>Every Day</h2>\n  <p>Staff discount prompted at checkout</p>\n  <span>Day,</span>\n</section>",
+        "detectedText": [
+          "Every Day",
+          "Staff discount prompted at checkout",
+          "Day,"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/Promotion8_2400x480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0625_2400x480_CorporateBestsellers?fmt=webp",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0625_2400x480_CorporateBestsellers?fmt=webp\">\n  <h2>Bestsellers</h2>\n  <span>We Love:</span>\n  <span>Staff Picks</span>\n</section>",
+        "detectedText": [
+          "Bestsellers",
+          "We",
+          "Love:",
+          "Staff Picks"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/0625_2400x480_CorporateBestsellers?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/NoPromo_Paddington_2400X480?fmt=webp",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/NoPromo_Paddington_2400X480?fmt=webp\">\n  <h2>PADDINGTON\u2122</h2>\n  <span>SINGAPORE AIRLINES</span>\n  <small>\u00a9 P&Co. Ltd./SC 2023</small>\n</section>",
+        "detectedText": [
+          "I",
+          "PADDiNGTON",
+          "X",
+          "P&Co: Ltd /SC 2025"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/NoPromo_Paddington_2400X480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0625_Corporate_DPLiquor_2400x480?fmt=webp",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0625_Corporate_DPLiquor_2400x480?fmt=webp\">\n  <h2>Sip and Savour</h2>\n  <span>Year-Round Staff Savings</span>\n  <small>T&Cs apply</small>\n</section>",
+        "detectedText": [
+          "Sip",
+          "Savour",
+          "18",
+          "Year-Round Staff Savings",
+          "'SOLIST",
+          "DALMORE",
+          "T&Cs apply:",
+          "and",
+          "2"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/0625_Corporate_DPLiquor_2400x480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0825_FanFavouriteAircraft_2400X480?fmt=webp",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0825_FanFavouriteAircraft_2400X480?fmt=webp\">\n  <h2>Fan-Favourite Aircraft</h2>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "Fan-Favourite Aircraft",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/0825_FanFavouriteAircraft_2400X480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0825-NewArrivals_2400x480?fmt=webp",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0825-NewArrivals_2400x480?fmt=webp\">\n  <h2>New Arrivals</h2>\n  <small>Terms and Conditions apply.</small>\n</section>",
+        "detectedText": [
+          "New Arrivals",
+          "Terms and Conditions apply:"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/0825-NewArrivals_2400x480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/Evergreen_K-Beauty%20Secrets-800x800?fmt=webp",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/Evergreen_K-Beauty%20Secrets-800x800?fmt=webp\">\n  <h2>Unlock K-Beauty Secrets</h2>\n</section>",
+        "detectedText": [
+          "Unlock",
+          "K-Beauty",
+          "Secrets",
+          "AINO",
+          "ALL",
+          "CLEANSING",
+          "Milk",
+          "Torriden",
+          "Terms & Conditions apply:"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/Evergreen_K-Beauty%20Secrets-800x800?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/corp_luxurybeauty_800x800?fmt=webp",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/corp_luxurybeauty_800x800?fmt=webp\">\n  <h2>Luxury Beauty</h2>\n  <small>Terms and Conditions apply</small>\n</section>",
+        "detectedText": [
+          "Luxury Beauty",
+          "SKI",
+          "Terms and Conditions apply:"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/corp_luxurybeauty_800x800?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/1025_TokiDoki_800X800?fmt=webp",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/1025_TokiDoki_800X800?fmt=webp\">\n  <span>tokidoki</span>\n  <span>SINGAPORE AIRLINES</span>\n  <small>tokidoki, LLC. Designed by Simone Legno</small>\n</section>",
+        "detectedText": [
+          "AUST",
+          "tokidoki",
+          "X",
+          "sinGAPORE",
+          "AIRLINES",
+          "@TOKIDOKI; LLC_",
+          "Designed by Simone Legno"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/1025_TokiDoki_800X800?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0226-Electronic-Home-Flash_2400x480?fmt=webp",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0226-Electronic-Home-Flash_2400x480?fmt=webp\">\n  <span>10 \u2013 15 FEB</span>\n  <h2>Electronics & Home Limited Time Deals</h2>\n  <button>Shop Now</button>\n  <small>Terms and Conditions apply</small>\n</section>",
+        "detectedText": [
+          "10",
+          "15 FEB",
+          "Electronics & Home",
+          "Limited Time Deals",
+          "Shop Now",
+          "Terms and Conditions apply."
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/0226-Electronic-Home-Flash_2400x480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0226_Spark-Miles_NTR_2400x480?fmt=webp",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0226_Spark-Miles_NTR_2400x480?fmt=webp\">\n  <span>5 - 28 FEB</span>\n  <h2>Feel the Spark with More Miles</h2>\n  <span>520 BONUS KRISFLYER MILES Min. spend S$520</span>\n  <span>1,200 BONUS KRISFLYER MILES Min. spend S$1,520</span>\n  <button>Shop Now</button>\n  <small>Terms and conditions apply.</small>\n</section>",
+        "detectedText": [
+          "5",
+          "28 FEB",
+          "BONUS",
+          "Feel the Spark",
+          "520",
+          "KRLSELYER",
+          "Min. spend S$260",
+          "NINIA",
+          "with More Miles",
+          "BONUS",
+          "1,200",
+          "KRLSELYER",
+          "Shop Now",
+          "Min. spend SS520",
+          "Terms and Conditions apply:"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/0226_Spark-Miles_NTR_2400x480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/NTR_ThePerfectMatch_1536x700?fmt=webp&wid=600",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/NTR_ThePerfectMatch_1536x700?fmt=webp&wid=600\">\n  <span>1 \u2014 14 FEB</span>\n  <h2>The Perfect Match</h2>\n  <p>Buy 2 items and enjoy up to</p>\n  <span>30% OFF</span>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "1 _ 14 FEB",
+          "The Perfect Match",
+          "2 items and enjoy up to",
+          "5S100 OFF",
+          "30% OFF",
+          "'Shop Now",
+          "Buy"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/NTR_ThePerfectMatch_1536x700?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/NTR_VdayCover_3200x1200?fmt=webp&wid=600",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/NTR_VdayCover_3200x1200?fmt=webp&wid=600\">\n  <span>14 FEB</span>\n  <h2>The Sweet Spot</h2>\n  <p>Curated gifts and special deals to make hearts skip a beat</p>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "14 FEB",
+          "The Sweet Spot",
+          "Curated gifts and special deals",
+          "to make hearts skipa beat",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/NTR_VdayCover_3200x1200?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/NTR_LNY_Jan26_2400x480?fmt=webp",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/NTR_LNY_Jan26_2400x480?fmt=webp\">\n  <span>8 JAN \u2013 19 FEB</span>\n  <h2>Prosperous Deals</h2>\n  <p>Begin the Lunar New Year festivities with these special deals</p>\n  <button>Shop Now</button>\n  <small>Terms & Conditions apply.</small>\n</section>",
+        "detectedText": [
+          "8 JAN",
+          "19",
+          "FEB",
+          "Prosperous",
+          "Begin the Lunar New Year",
+          "festivities with these special deals",
+          "Deals",
+          "Now",
+          "Terms and Coriditions apply:",
+          "Shop"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/NTR_LNY_Jan26_2400x480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0126-Refresh-Space-Rest-v2_1536x700?fmt=webp&wid=600",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0126-Refresh-Space-Rest-v2_1536x700?fmt=webp&wid=600\">\n  <h2>Refresh Your Space: Rest Relax</h2>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "Refresh Your Space:",
+          "Rest",
+          "Relax",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/0126-Refresh-Space-Rest-v2_1536x700?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0126-Refresh-Space-Host_1536x700?fmt=webp&wid=600",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0126-Refresh-Space-Host_1536x700?fmt=webp&wid=600\">\n  <span>26 JAN - 14 FEB</span>\n  <h2>Refresh Your Space: Hosting Must-Haves</h2>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "26 JAN - 14 FEB",
+          "Refresh Your Space:",
+          "Hosting Must-Haves",
+          "OLED",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/0126-Refresh-Space-Host_1536x700?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0126-Refresh-Space-Cleaning_1536x700?fmt=webp&wid=600",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0126-Refresh-Space-Cleaning_1536x700?fmt=webp&wid=600\">\n  <span>16 JAN = 14 FEB</span>\n  <h2>Refresh Your Space:</h2>\n  <h3>Spring Cleaning</h3>\n  <p>Enjoy SS18 off with every SS388 spent on home and living</p>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "16 JAN = 14 FEB",
+          "Refresh Your Space:",
+          "Spring Cleaning",
+          "Enjoy SS18 off with every SS388",
+          "spent on home and living",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/0126-Refresh-Space-Cleaning_1536x700?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0226-Tumi-MSA_Lean_2400x480?fmt=webp",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0226-Tumi-MSA_Lean_2400x480?fmt=webp\">\n  <h2>THE NEXT GENERATION</h2>\n  <h2>TUMI ALPHA</h2>\n  <button>Shop Now</button>\n  <span>Featuring Lando Norris Formula 1 Driver</span>\n  <span>TUMI</span>\n</section>",
+        "detectedText": [
+          "THE",
+          "NEXT",
+          "GENERATION",
+          "TUMI",
+          "ALPHA",
+          "Shop Now",
+          "Featuring Lando Norris Formula",
+          "Driver"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/0226-Tumi-MSA_Lean_2400x480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0126_Airbot_LNY_2400x480?fmt=webp",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0126_Airbot_LNY_2400x480?fmt=webp\">\n  <span>16 Jan to 14 Feb 2026</span>\n  <h2>Up to 80% Off + Vouchers Worth Up to S$180</h2>\n  <span>Free gift with purchase worth up to S$599.90</span>\n  <button>SHOP NOW</button>\n</section>",
+        "detectedText": [
+          "16 Jan to 14 Feb 2026",
+          "Oviu",
+          "Up to 80% Off",
+          "Vouchers",
+          "Worth Up to SS180",
+          "NETFLIX",
+          "Youlube",
+          "Free gift with purchase worth up to 5$99.90",
+          "SHOP NOW",
+          "\"Terms and Condltions apply- Whlle stocks last:"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/0126_Airbot_LNY_2400x480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/RemyMartin-KrisShop_DigitalBanners_LeanBanner_Desktop_Set2?fmt=webp",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/RemyMartin-KrisShop_DigitalBanners_LeanBanner_Desktop_Set2?fmt=webp\">\n  <span>R\u00c9MY MARTIN</span>\n  <h2>THE CENTAUR WELCOMES THE YEAR OF THE HORSE</h2>\n  <small>9 - 15 FEB</small>\n</section>",
+        "detectedText": [
+          "REMY MARTIN",
+          "REMY MARTIN\"",
+          "THE CENTAUR WELCOMES THE YEAR OF THE HORSE",
+          "ReMy MARTIN\"",
+          "XO",
+          "Remy MARTIN\"'",
+          "REMY MARTIN\"",
+          "CLU B",
+          "VS.O.Pa",
+          "CLU B",
+          "TERMS",
+          "CONDITIONS APPLY,"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/RemyMartin-KrisShop_DigitalBanners_LeanBanner_Desktop_Set2?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/KS-Dalmore-Lean-Banner-2400x480?fmt=webp",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/KS-Dalmore-Lean-Banner-2400x480?fmt=webp\">\n  <h2>LIMITED EDITION</h2>\n  <h3>THE DALMORE MAHJONG SET</h3>\n  <p>GET AN EXCLUSIVE THE DALMORE MAHJONG SET</p>\n  <p>WORTH S$300 WHEN YOU SPEND S$1,288 ON THE DALMORE RANGE:</p>\n  <span>15</span>\n  <span>Now</span>\n  <small>Post-Flight &amp; Home Delivery within Singapore only: Whilst stocks last Terms and Conditions apply</small>\n  <button>Shop</button>\n</section>",
+        "detectedText": [
+          "LIMITED EDITION",
+          "DALMORE",
+          "THE DALMORE MAHJONG SET",
+          "GET AN EXCLUSIVE THE DALMORE MAHJONG SET",
+          "WORTH SS300 WHEN YOU SPEND SS1,288 ON THE DALMORE RANGE:",
+          "DALMORE",
+          "15",
+          "Now",
+          "Post-Flight & Horre Delivery within Singapore only:Whilst stocks last Terms and Conditions apply",
+          "Shop"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/KS-Dalmore-Lean-Banner-2400x480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0126_Travel_2400x480?fmt=webp",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0126_Travel_2400x480?fmt=webp\">\n  <span>28 JAN \u2014 14 FEB</span>\n  <h2>Ready For Reunion Travel</h2>\n  <button>Shop Now</button>\n  <small>Terms and Conditions apply.</small>\n</section>",
+        "detectedText": [
+          "28 JAN",
+          "14 FEB",
+          "Ready For",
+          "Reunion Ttavel",
+          "Shop Now",
+          "Terms and Conditions apply:"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/0126_Travel_2400x480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0126_Atome_2400x480?fmt=webp",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0126_Atome_2400x480?fmt=webp\">\n  <span>atome A</span>\n  <span>16 JAN 14 FEB</span>\n  <h2>Enjoy SS1O off*</h2>\n  <span>with SS350 minimum</span>\n  <span>Pay-in-3 with O% interest</span>\n  <small>Limited redemptions. TSCs apply:</small>\n  <small>spend</small>\n</section>",
+        "detectedText": [
+          "atome A",
+          "16 JAN",
+          "14",
+          "FEB",
+          "Enjoy SS1O off*",
+          "with SS350 minimum",
+          "Pay-in-3 with O% interest",
+          "Limited redemptions. TSCs apply:",
+          "spend"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/0126_Atome_2400x480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0226_ProsperousBatik_1536X700?fmt=webp&wid=600",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0226_ProsperousBatik_1536X700?fmt=webp&wid=600\">\n  <span>BATIK LABEL</span>\n  <span>31 JAN</span>\n  <span>15 FEB</span>\n  <h2>Get Prosperous with Batik</h2>\n  <span>BUY 2</span>\n  <span>BUY 3</span>\n  <span>GET 25% OFF</span>\n  <span>GET 35% OFF</span>\n  <button>SHOP NOW</button>\n</section>",
+        "detectedText": [
+          "BATIK LABEL",
+          "31 JAN",
+          "15 FEB",
+          "Get Prosperous",
+          "with Batik",
+          "BUY 2",
+          "BUY }",
+          "GEI 2596 OHT",
+          "GEI 3596 OFF",
+          "SHOPNOW"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/0226_ProsperousBatik_1536X700?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/1025_Tokidoki_1536X700_No-Promo?fmt=webp&wid=600",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/1025_Tokidoki_1536X700_No-Promo?fmt=webp&wid=600\">\n  <h2>tokidoki</h2>\n  <button>SHOP NOW</button>\n</section>",
+        "detectedText": [
+          "tokidoki",
+          "SHOP NOW"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/1025_Tokidoki_1536X700_No-Promo?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/Destination_England_1536X700?fmt=webp&wid=600",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/Destination_England_1536X700?fmt=webp&wid=600\">\n  <span>BATIK LABEL</span>\n  <span>by KRISSHOP</span>\n  <h2>England Hdventures</h2>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "BATIK LABEL",
+          "by KRISSHOP",
+          "'England",
+          "Hdventures",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/Destination_England_1536X700?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/SG60_Heritage_Collection-1536x700?fmt=webp&wid=600",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/SG60_Heritage_Collection-1536x700?fmt=webp&wid=600\">\n  <h2>Celebrating Singapore</h2>\n  <h3>HERITAGE COLLECTION</h3>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "Celebrating",
+          "\"Singapore",
+          "HERITAGE",
+          "COLLECTION",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/SG60_Heritage_Collection-1536x700?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0825_Fan-Favourite-Aircraft_1536X700?fmt=webp&wid=600",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0825_Fan-Favourite-Aircraft_1536X700?fmt=webp&wid=600\">\n  <h2>Fan-Favourite Aircraft</h2>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "Fan-Favourite",
+          "Aircraft",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/0825_Fan-Favourite-Aircraft_1536X700?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/0825_Batik_Home_1536X700?fmt=webp&wid=600",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/0825_Batik_Home_1536X700?fmt=webp&wid=600\">\n  <h2>Batk For Your Hlome</h2>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "Batk For Your Hlome",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/0825_Batik_Home_1536X700?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/NTR_Feb_2400x480?fmt=webp",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/NTR_Feb_2400x480?fmt=webp\">\n  <span>23 JAN \u2013 22 FEB</span>\n  <h2>KrisShopper Exclusive</h2>\n  <p>Shop liquor this Lunar New Year and receive a S$38 prosperity voucher for your next purchase in March</p>\n  <button>Shop Now</button>\n  <small>Terms and Conditions apply.</small>\n</section>",
+        "detectedText": [
+          "23 JAN",
+          "22 FEB",
+          "KrisShopper Exclusive",
+          "MACALLAN",
+          "Shop liquor this Lunar New Year and receive",
+          "a",
+          "SS38 prosperity voucher for your next purchase in March",
+          "HIBIKI",
+          "Hennessy",
+          "SAPPORO",
+          "PARAD",
+          "YEBISU",
+          "Shop Now",
+          "Terms and Conditions apply:"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/NTR_Feb_2400x480?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/KSP-Perks_2400x800?fmt=webp",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/KSP-Perks_2400x800?fmt=webp\">\n  <span>KRISSHOPPER PERKS</span>\n  <h2>ADDITIONAL REWARDS TAILORED FOR YOU</h2>\n  <small>Terms and Conditions apply.</small>\n</section>",
+        "detectedText": [
+          "KRISSHOPPER PERKS",
+          "ADDITIONAL REWARDS",
+          "TAILORED FOR YOU",
+          "Terms and Conditions apply:"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/KSP-Perks_2400x800?fmt=webp\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/Krislite_evergreen2025_1536x700?fmt=webp&wid=600",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/Krislite_evergreen2025_1536x700?fmt=webp&wid=600\">\n  <h2>Shop KrisShop on the Kris+ mobile app and earn up to 8 miles for every S$2 spent as a KrisShopper</h2>\n  <button>App Store</button>\n  <button>Google Play</button>\n  <small>Terms and Conditions apply</small>\n</section>",
+        "detectedText": [
+          "Shop KrisShop on the KriS+",
+          "mobile app and earn up to",
+          "8 miles for every SS2 spent as",
+          "KrisShopper",
+          "App Store",
+          "Google",
+          "Ploy"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/Krislite_evergreen2025_1536x700?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/BATIK-LABEL_JUN24_CAMPAIGN_WEBSITE_1536X700?fmt=webp&wid=600",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/BATIK-LABEL_JUN24_CAMPAIGN_WEBSITE_1536X700?fmt=webp&wid=600\">\n  <h2>BATIK LABEL</h2>\n  <p>Shop and earn 500 Bonus KrisFlyer miles on your first purchase in Batik Label Store</p>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "BATIK LABEL",
+          "Shop and earn 500 Bonus",
+          "KrisFlyer miles on your first",
+          "purchase in Batik Label Store",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://s7ap1.scene7.com/is/image/krisshop/BATIK-LABEL_JUN24_CAMPAIGN_WEBSITE_1536X700?fmt=webp&wid=600\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://s7ap1.scene7.com/is/image/krisshop/Programmatic_Luxury-1536x700?fmt=webp&wid=600",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://s7ap1.scene7.com/is/image/krisshop/Programmatic_Luxury-1536x700?fmt=webp&wid=600\">\n  <h2>Shop and</h2>\n  <span>500 Bonus KrisFlyer miles</span>\n  <p>on your first purchase in Refined Luxury Store</p>\n  <button>Shop Now</button>\n  <small>earn</small>\n</section>",
+        "detectedText": [
+          "Shop and",
+          "500 Bonus",
+          "KrisFlyer miles",
+          "on your first purchase in Refined Luxury Store",
+          "Shop Now",
+          "earn"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://s7ap1.scene7.com/is/image/krisshop/Programmatic_Luxury-1536x700?fmt=webp&wid=600\"]"
+        }
+      }
+    }
+  ],
+  "stats": {
+    "totalImages": 47,
+    "successfulSuggestions": 47,
+    "noGuidanceNeeded": 0
+  }
+}
