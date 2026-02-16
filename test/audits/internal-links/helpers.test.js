@@ -373,6 +373,38 @@ describe('isLinkInaccessible', () => {
       sinon.match(/\[siteId=test-site-id\].*⏱ TIMEOUT.*GET request timed out/),
     )).to.be.true;
   });
+
+  it('should treat HTTP/2 stream error (NGHTTP2_REFUSED_STREAM) as accessible', async function call() {
+    this.timeout(15000);
+    const http2Error = new Error('Stream closed with error code NGHTTP2_REFUSED_STREAM');
+    http2Error.code = 'ERR_HTTP2_STREAM_ERROR';
+    http2Error.type = 'system';
+
+    nock('https://example.com')
+      .get('/image.jpg')
+      .replyWithError(http2Error);
+
+    const result = await isLinkInaccessible('https://example.com/image.jpg', mockLog, 'test-site-id');
+    expect(result).to.be.false;
+    expect(mockLog.info.calledWith(
+      sinon.match(/\[siteId=test-site-id\].*⏱ TRANSIENT.*assuming accessible/),
+    )).to.be.true;
+  });
+
+  it('should treat GET error with NGHTTP2_REFUSED_STREAM in message as accessible', async function call() {
+    this.timeout(15000);
+    const http2Error = new Error('Stream closed with error code NGHTTP2_REFUSED_STREAM');
+
+    nock('https://example.com')
+      .get('/asset.png')
+      .replyWithError(http2Error);
+
+    const result = await isLinkInaccessible('https://example.com/asset.png', mockLog, 'test-site-id');
+    expect(result).to.be.false;
+    expect(mockLog.info.calledWith(
+      sinon.match(/⏱ TRANSIENT.*assuming accessible/),
+    )).to.be.true;
+  });
 });
 
 describe('calculatePriority', () => {

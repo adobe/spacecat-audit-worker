@@ -83,6 +83,22 @@ function isTimeoutError(error) {
 }
 
 /**
+ * Checks if an error is a transient HTTP/2 stream error (e.g. REFUSED_STREAM).
+ * Servers/CDNs sometimes refuse HTTP/2 streams under load or for Range requests
+ * while the resource is actually available; treat as accessible to avoid false positives.
+ * @param {Error} error - The error to check
+ * @returns {boolean} True if it's a transient HTTP/2 stream error
+ */
+function isTransientOrHttp2Error(error) {
+  const message = error?.message || '';
+  const code = (error?.code || '').toLowerCase();
+  return code === 'err_http2_stream_error'
+    || message.includes('NGHTTP2_REFUSED_STREAM')
+    || message.includes('NGHTTP2_INTERNAL_ERROR')
+    || message.includes('NGHTTP2_CONNECT_ERROR');
+}
+
+/**
  * Checks if a URL points to a static asset
  * @param {string} url - The URL to check
  * @returns {boolean} True if it's a static asset (image, SVG, CSS, JS, etc.)
@@ -171,6 +187,11 @@ async function checkLinkWithGet(url, isAsset, log) {
   } catch (getError) {
     if (isTimeoutError(getError)) {
       log.info(`⏱ TIMEOUT: ${url} (GET request timed out after ${LINK_TIMEOUT}ms, assuming accessible)`);
+      return false;
+    }
+
+    if (isTransientOrHttp2Error(getError)) {
+      log.info(`⏱ TRANSIENT: ${url} (${getError.code || getError.message}, assuming accessible)`);
       return false;
     }
 
