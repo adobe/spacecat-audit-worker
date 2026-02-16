@@ -120,6 +120,16 @@ describe('StoreClient', () => {
       expect(client).to.be.instanceOf(StoreClient);
       expect(client.apiKey).to.be.undefined;
     });
+
+    it('should create StoreClient when context.env is missing', () => {
+      const context = { log: mockLog };
+
+      const client = StoreClient.createFrom(context);
+
+      expect(client).to.be.instanceOf(StoreClient);
+      expect(client.apiBaseUrl).to.be.undefined;
+      expect(client.apiKey).to.be.undefined;
+    });
   });
 
   describe('getUrls', () => {
@@ -272,6 +282,32 @@ describe('StoreClient', () => {
       expect(mockLog.info).to.have.been.calledWith(
         sinon.match(/2 topics and 1 guidelines/),
       );
+    });
+
+    it('should build URL without query string when audit param is undefined', async () => {
+      mockFetch.resolves({
+        ok: true,
+        json: sandbox.stub().resolves({
+          topics: [],
+          guidelines: [{ guidelineId: '1', name: 'Guideline 1' }],
+        }),
+      });
+
+      await storeClient.getGuidelines(siteId, undefined);
+
+      const url = mockFetch.firstCall.args[0];
+      expect(url).to.include(`/sites/${siteId}/sentiment/config`);
+      expect(url).to.not.include('?');
+    });
+
+    it('should handle null response body in getGuidelines', async () => {
+      mockFetch.resolves({
+        ok: true,
+        json: sandbox.stub().resolves(null),
+      });
+
+      await expect(storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS))
+        .to.be.rejectedWith(StoreEmptyError);
     });
   });
 });
