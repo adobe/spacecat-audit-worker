@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { ok, notFound, badRequest } from '@adobe/spacecat-shared-http-utils';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
@@ -29,16 +29,39 @@ import { OPPORTUNITY_TYPE } from './constants.js';
  */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Opportunity } = dataAccess;
+  const { Opportunity, Site } = dataAccess;
   const { siteId, auditId, data } = message;
+
+  // Validate siteId
+  const site = await Site.findById(siteId);
+  if (!site) {
+    log.error(`[semantic-value-visibility] Site not found for siteId: ${siteId}`);
+    return notFound('Site not found');
+  }
 
   const suggestions = data?.suggestions || [];
   const url = data?.url || message.url;
 
-  log.info(`[semantic-value-visibility] Guidance handler received ${suggestions.length} suggestions for siteId: ${siteId}`);
+  // Validate suggestions structure
+  // Note: semanticHtml contains untrusted LLM-generated content from Mystique.
+  // Downstream consumers must sanitize before rendering.
+  if (!Array.isArray(suggestions)) {
+    log.error(`[semantic-value-visibility] Invalid suggestions format for siteId: ${siteId}`);
+    return badRequest('Suggestions must be an array');
+  }
 
-  // No suggestions — handle stale opportunity
-  if (suggestions.length === 0) {
+  const validSuggestions = suggestions.filter((s) => {
+    const hasRequiredFields = s?.data?.imageUrl && s?.data?.semanticHtml;
+    if (!hasRequiredFields) {
+      log.warn('[semantic-value-visibility] Skipping suggestion with missing imageUrl or semanticHtml');
+    }
+    return hasRequiredFields;
+  });
+
+  log.info(`[semantic-value-visibility] Guidance handler received ${validSuggestions.length} valid suggestions for siteId: ${siteId}`);
+
+  // No valid suggestions — handle stale opportunity
+  if (validSuggestions.length === 0) {
     log.info(`[semantic-value-visibility] No marketing images found for siteId: ${siteId}`);
 
     // Check if there's an existing opportunity to clean up
@@ -70,7 +93,7 @@ export default async function handler(message, context) {
 
   if (!opportunity) {
     log.error(`[semantic-value-visibility] Failed to create opportunity for siteId: ${siteId}`);
-    return notFound();
+    return badRequest('Failed to create opportunity');
   }
 
   log.info(`[semantic-value-visibility] Opportunity ${opportunity.getId()} ready for siteId: ${siteId}`);
@@ -78,7 +101,7 @@ export default async function handler(message, context) {
   // Sync suggestions — adds new ones, marks outdated ones
   await syncSuggestions({
     opportunity,
-    newData: suggestions.map((s) => s.data),
+    newData: validSuggestions.map((s) => s.data),
     buildKey: (suggestionData) => suggestionData.imageUrl,
     mapNewSuggestion: (suggestionData) => ({
       opportunityId: opportunity.getId(),
@@ -89,7 +112,7 @@ export default async function handler(message, context) {
     context,
   });
 
-  log.info(`[semantic-value-visibility] Synced ${suggestions.length} suggestions for opportunity ${opportunity.getId()}`);
+  log.info(`[semantic-value-visibility] Synced ${validSuggestions.length} suggestions for opportunity ${opportunity.getId()}`);
 
   return ok();
 }
