@@ -1,3 +1,10 @@
+## [1.318.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.318.5...v1.318.6) (2026-02-16)
+
+
+### Bug Fixes
+
+* ad-intent-mismatch opportunity metrics (bounce rate, page views) ([#1992](https://github.com/adobe/spacecat-audit-worker/issues/1992)) ([40863cf](https://github.com/adobe/spacecat-audit-worker/commit/40863cf5867326cf4b142525a5fcbf9c7574d53a))
+
 ## [1.318.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.318.4...v1.318.5) (2026-02-13)
 
 
