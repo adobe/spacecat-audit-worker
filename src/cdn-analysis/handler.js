@@ -12,6 +12,7 @@
 /* eslint-disable object-curly-newline */
 import { getStaticContent, isInteger, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
+import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
   resolveCdnBucketName,
@@ -31,6 +32,22 @@ import { wwwUrlResolver } from '../common/base-audit.js';
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
 const pad2 = (n) => String(n).padStart(2, '0');
+
+/**
+ * Logs the AWS caller identity (role/ARN) being used for Athena queries.
+ */
+/* c8 ignore start */
+async function logAwsCallerIdentity(log, region = 'us-east-1') {
+  try {
+    const stsClient = new STSClient({ region });
+    const command = new GetCallerIdentityCommand({});
+    const response = await stsClient.send(command);
+    log.info(`[cdn-analysis] AWS Caller Identity - ARN: ${response.Arn}, Account: ${response.Account}, UserId: ${response.UserId}`);
+  } catch (error) {
+    log.warn(`[cdn-analysis] Failed to get AWS caller identity: ${error.message}`);
+  }
+}
+/* c8 ignore end */
 
 function isValidAuditContext(auditContext) {
   if (!isNonEmptyObject(auditContext)) return false;
@@ -111,6 +128,11 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
     : providers;
 
   log.debug(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
+
+  // Log the AWS role/ARN being used for Athena queries
+  const region = context.env?.AWS_REGION || 'us-east-1';
+  /* c8 ignore next */
+  await logAwsCallerIdentity(log, region);
 
   const database = `cdn_logs_${customerDomain}`;
   const { aggregatedTable, aggregatedReferralTable } = getAggregatedTableNames(
