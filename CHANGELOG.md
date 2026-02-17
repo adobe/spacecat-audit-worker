@@ -1,3 +1,10 @@
+## [1.318.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.318.6...v1.318.7) (2026-02-17)
+
+
+### Bug Fixes
+
+* suggestions with empty summary ([#1968](https://github.com/adobe/spacecat-audit-worker/issues/1968)) ([c2b3466](https://github.com/adobe/spacecat-audit-worker/commit/c2b346637308263c618fc7340ac3c0a15f6aab86))
+
 ## [1.318.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.318.5...v1.318.6) (2026-02-16)
 
 
