@@ -3140,15 +3140,27 @@ describe('Product MetaTags', () => {
     it('should handle missing site config', async function () {
       this.timeout(5000);
       // Mock site to have getBaseURL but null config
+      // getConfig returns null, which should be handled gracefully by optional chaining
       const mockSiteWithNullConfig = {
         getId: sinon.stub().returns('site123'),
         getBaseURL: sinon.stub().returns('https://example.com'),
         getConfig: sinon.stub().returns(null),
+        getDeliveryConfig: sinon.stub().returns({ useHostnameOnly: false }),
+      };
+
+      // Add Site.findById mock to dataAccess for opportunityAndSuggestions
+      const mockDataAccessWithNullConfig = {
+        ...mockDataAccess,
+        Site: {
+          findById: sinon.stub().resolves(mockSiteWithNullConfig),
+        },
       };
 
       const mockContextWithNullConfig = {
         ...mockContext,
         site: mockSiteWithNullConfig,
+        dataAccess: mockDataAccessWithNullConfig,
+        scrapeResultPaths: new Map([['https://example.com', 's3://bucket/path.json']]),
       };
 
       const mockAutoDetectResult = {
@@ -3158,13 +3170,36 @@ describe('Product MetaTags', () => {
       };
 
       const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
-        '../../src/product-metatags/handler.js': {
-          productMetatagsAutoDetect: sinon.stub().resolves(mockAutoDetectResult),
-          calculateProjectedTraffic: sinon.stub().resolves({}),
-          opportunityAndSuggestions: sinon.stub().resolves(),
+        '../../src/canonical/handler.js': {
+          getTopPagesForSiteId: sinon.stub().resolves([]),
         },
         '../../src/product-metatags/product-metatags-auto-suggest.js': {
           default: sinon.stub().resolves({}),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves({ errorItems: [], createdItems: [] }),
+        },
+        '../../src/utils/saas.js': {
+          getCommerceConfig: sinon.stub().resolves({}),
+        },
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({
+            getId: () => 'opportunity123',
+            getSiteId: () => 'site123',
+          }),
+        },
+        '@adobe/spacecat-shared-rum-api-client': {
+          default: {
+            createFrom: () => ({
+              query: sinon.stub().resolves([]),
+            }),
+          },
+        },
+        '../../src/support/utils.js': {
+          calculateCPCValue: sinon.stub().resolves(2.5),
+        },
+        '../../src/common/index.js': {
+          wwwUrlResolver: sinon.stub().resolves('https://example.com'),
         },
       });
 
@@ -3175,6 +3210,9 @@ describe('Product MetaTags', () => {
       expect(result).to.deep.equal({ status: 'complete' });
       // Verify the function executed successfully with null config handling
       expect(logStub.info).to.have.been.called;
+      // Note: Even if an error is logged during site config loading, the function should
+      // complete successfully as errors are caught and handled gracefully
+      // The important thing is that the function returns 'complete' status
     });
 
     it('should log detailed context information', async function () {
@@ -4106,7 +4144,7 @@ describe('Product MetaTags', () => {
       );
     });
 
-    it('should cover line 513 branch when scrapeResultPaths is undefined', async () => {
+    it('should cover line 700 branch when scrapeResultPaths is undefined', async () => {
       const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
         '../../src/product-metatags/handler.js': {
           productMetatagsAutoDetect: sinon.stub().resolves({
@@ -4158,7 +4196,7 @@ describe('Product MetaTags', () => {
       expect(logStub.info.getCalls().some((call) => call.args[1]?.scrapeResultPathsSize === 0)).to.be.true;
     });
 
-    it('should cover line 513 branch when scrapeResultPaths has a size', async () => {
+    it('should cover line 700 branch when scrapeResultPaths has a size', async () => {
       const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
         '../../src/product-metatags/handler.js': {
           productMetatagsAutoDetect: sinon.stub().resolves({
@@ -4209,6 +4247,59 @@ describe('Product MetaTags', () => {
 
       // Verify log was called with scrapeResultPathsSize: 2 (the actual size branch)
       expect(logStub.info.getCalls().some((call) => call.args[1]?.scrapeResultPathsSize === 2)).to.be.true;
+    });
+
+    it('should cover line 700 || 0 fallback branch when scrapeResultPaths size is 0', async () => {
+      const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
+        '../../src/product-metatags/handler.js': {
+          productMetatagsAutoDetect: sinon.stub().resolves({
+            seoChecks: { getFewHealthyTags: sinon.stub().returns({}) },
+            detectedTags: {},
+            extractedTags: {},
+          }),
+          calculateProjectedTraffic: sinon.stub().resolves({
+            projectedTrafficLost: 0,
+            projectedTrafficValue: 0,
+          }),
+        },
+        '../../src/product-metatags/product-metatags-auto-suggest.js': {
+          default: sinon.stub().resolves({}),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves({ errorItems: [], createdItems: [] }),
+        },
+      });
+
+      const { runAuditAndGenerateSuggestions: mockedRunAudit } = await mockRunAudit;
+
+      // Call with context that has scrapeResultPaths with size 0 (empty Set)
+      const scrapeResultPaths = new Set(); // Empty set - size is 0
+      const contextWithEmptyPaths = {
+        ...mockContext,
+        site: mockSite,
+        audit: {
+          getId: () => 'audit123',
+        },
+        finalUrl: 'https://example.com',
+        scrapeResultPaths, // Has a size of 0
+        dataAccess: {
+          Configuration: {
+            findLatest: sinon.stub().resolves({ isHandlerEnabledForSite: () => false }),
+          },
+          Site: {
+            findById: sinon.stub().resolves({ getDeliveryConfig: () => ({}) }),
+          },
+          Opportunity: {
+            allBySiteIdAndStatus: sinon.stub().resolves([]),
+            create: sinon.stub().resolves({ getId: () => 'opp-id', getSiteId: () => 'site123' }),
+          },
+        },
+      };
+
+      await mockedRunAudit(contextWithEmptyPaths);
+
+      // Verify log was called with scrapeResultPathsSize: 0 (the || 0 fallback branch)
+      expect(logStub.info.getCalls().some((call) => call.args[1]?.scrapeResultPathsSize === 0)).to.be.true;
     });
 
     it('should cover lines 561-562 branch when projected traffic values are falsy', async () => {

@@ -200,3 +200,48 @@ export function joinBaseAndPath(baseURL, path) {
 
   return `${normalizedBase}${normalizedPath}`;
 }
+
+/**
+ * Strips query string from a URL, keeping only the origin and path.
+ * @param {string} url - The URL to strip.
+ * @returns {string} - URL without query string.
+ */
+export function stripQueryString(url) {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Normalizes a URL for comparison (lowercase, strip trailing slashes).
+ * @param {string} url - The URL to normalize.
+ * @returns {string} - Normalized URL.
+ */
+export function normalizeUrlForComparison(url) {
+  try {
+    return url?.toLowerCase().replace(/\/+$/, '');
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Checks if two URLs match (with or without query strings).
+ * Compares normalized URLs and also tries without query strings.
+ * @param {string} url1 - First URL.
+ * @param {string} url2 - Second URL.
+ * @returns {boolean} - True if URLs match.
+ */
+export function urlsMatch(url1, url2) {
+  const norm1 = normalizeUrlForComparison(url1);
+  const norm2 = normalizeUrlForComparison(url2);
+  if (norm1 === norm2) return true;
+
+  // Also try without query strings
+  const stripped1 = normalizeUrlForComparison(stripQueryString(url1));
+  const stripped2 = normalizeUrlForComparison(stripQueryString(url2));
+  return stripped1 === stripped2;
+}

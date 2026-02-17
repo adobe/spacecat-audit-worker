@@ -347,8 +347,11 @@ describe('sendAltTextOpportunityToMystique', () => {
     const pageUrls = ['https://example.com/page1', 'https://example.com/page2'];
     const siteId = 'site-id';
     const auditId = 'audit-id';
+    const imageUrlsWithAltText = ['https://example.com/img1.jpg'];
 
-    await sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context);
+    await sendAltTextOpportunityToMystique(
+      auditUrl, pageUrls, siteId, auditId, context, imageUrlsWithAltText,
+    );
 
     expect(sqsStub.sendMessage).to.have.been.calledOnce;
     expect(sqsStub.sendMessage).to.have.been.calledWith(
@@ -362,6 +365,7 @@ describe('sendAltTextOpportunityToMystique', () => {
         observation: 'Missing alt text on images',
         data: {
           pageUrls: ['https://example.com/page1', 'https://example.com/page2'],
+          imageUrlsWithAltText: ['https://example.com/img1.jpg'],
         },
       }),
     );
@@ -380,19 +384,24 @@ describe('sendAltTextOpportunityToMystique', () => {
     const pageUrls = Array.from({ length: 15 }, (_, i) => `https://example.com/page${i + 1}`);
     const siteId = 'site-id';
     const auditId = 'audit-id';
+    const imageUrlsWithAltText = ['https://example.com/img1.jpg'];
 
-    await sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context);
+    await sendAltTextOpportunityToMystique(
+      auditUrl, pageUrls, siteId, auditId, context, imageUrlsWithAltText,
+    );
 
     // Should send 2 batches (10 + 5)
     expect(sqsStub.sendMessage).to.have.been.calledTwice;
 
-    // First batch should have 10 URLs
+    // First batch should have 10 URLs and full imageUrlsWithAltText
     const firstCall = sqsStub.sendMessage.getCall(0);
     expect(firstCall.args[1].data.pageUrls).to.have.lengthOf(10);
+    expect(firstCall.args[1].data.imageUrlsWithAltText).to.deep.equal(['https://example.com/img1.jpg']);
 
-    // Second batch should have 5 URLs
+    // Second batch should have 5 URLs and full imageUrlsWithAltText
     const secondCall = sqsStub.sendMessage.getCall(1);
     expect(secondCall.args[1].data.pageUrls).to.have.lengthOf(5);
+    expect(secondCall.args[1].data.imageUrlsWithAltText).to.deep.equal(['https://example.com/img1.jpg']);
 
     expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Sending 15 URLs to Mystique in 2 batch(es)',
@@ -411,7 +420,7 @@ describe('sendAltTextOpportunityToMystique', () => {
     const error = new Error('SQS send failed');
     sqsStub.sendMessage.rejects(error);
 
-    await expect(sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context))
+    await expect(sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context, []))
       .to.be.rejectedWith('SQS send failed');
 
     expect(logStub.error).to.have.been.calledWith(
@@ -428,11 +437,31 @@ describe('sendAltTextOpportunityToMystique', () => {
     const error = new Error('Site not found');
     dataAccessStub.Site.findById.rejects(error);
 
-    await expect(sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context))
+    await expect(sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context, []))
       .to.be.rejectedWith('Site not found');
 
     expect(logStub.error).to.have.been.calledWith(
       '[alt-text]: Failed to send alt-text opportunity to Mystique: Site not found',
+    );
+  });
+
+  it('should default imageUrlsWithAltText to empty array when not provided', async () => {
+    const auditUrl = 'https://example.com';
+    const pageUrls = ['https://example.com/page1'];
+    const siteId = 'site-id';
+    const auditId = 'audit-id';
+
+    await sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context);
+
+    expect(sqsStub.sendMessage).to.have.been.calledOnce;
+    expect(sqsStub.sendMessage).to.have.been.calledWith(
+      'test-queue',
+      sinon.match({
+        data: {
+          pageUrls: ['https://example.com/page1'],
+          imageUrlsWithAltText: [],
+        },
+      }),
     );
   });
 });

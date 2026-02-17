@@ -12,18 +12,41 @@
 
 import { tracingFetch as fetch, prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import {
+  Audit,
+  Suggestion as SuggestionModel,
+  FixEntity as FixEntityModel,
+} from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestions } from '../utils/data-access.js';
+import { syncSuggestionsWithPublishDetection } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
-import { isUnscrapeable } from '../utils/url-utils.js';
+import {
+  filterBrokenSuggestedUrls,
+  isUnscrapeable,
+  urlsMatch,
+} from '../utils/url-utils.js';
+import BrightDataClient from '../support/bright-data-client.js';
+import { sleep } from '../support/utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 const TIMEOUT = 3000;
+const BRIGHT_DATA_VALIDATE_URLS = 'BRIGHT_DATA_VALIDATE_URLS';
+const BRIGHT_DATA_MAX_RESULTS = 'BRIGHT_DATA_MAX_RESULTS';
+const BRIGHT_DATA_REQUEST_DELAY_MS = 'BRIGHT_DATA_REQUEST_DELAY_MS';
+
+function getEnvBool(env, key, defaultValue) {
+  if (env?.[key] === undefined) return defaultValue;
+  return String(env[key]).toLowerCase() === 'true';
+}
+
+function getEnvInt(env, key, defaultValue) {
+  const value = Number.parseInt(env?.[key], 10);
+  return Number.isFinite(value) ? value : defaultValue;
+}
 
 async function filterOutValidBacklinks(backlinks, log) {
   const fetchWithTimeout = async (url, timeout) => {
@@ -58,6 +81,81 @@ async function filterOutValidBacklinks(backlinks, log) {
 
   // const backlinkStatuses = await Promise.all(backlinks.map(isStillBrokenBacklink));
   return backlinks.filter((_, index) => backlinkStatuses[index]);
+}
+
+/**
+ * Checks if a broken backlink issue was fixed using our AI suggestion.
+ * Verifies if the broken URL now redirects to one of the suggested targets.
+ *
+ * @param {Object} suggestion - The suggestion object.
+ * @param {Object} log - Logger instance.
+ * @returns {Promise<boolean>} - True if the issue was fixed with our suggestion.
+ */
+export async function checkIfBacklinkFixedWithSuggestion(suggestion, log) {
+  const data = suggestion?.getData?.();
+  const urlTo = data?.url_to;
+  const suggestedTargets = Array.isArray(data?.urlsSuggested) ? data.urlsSuggested : [];
+  const targets = data?.urlEdited
+    ? [data.urlEdited, ...suggestedTargets]
+    : suggestedTargets;
+  if (!urlTo || targets.length === 0) return false;
+  try {
+    const resp = await fetch(urlTo, {
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Spacecat/1.0)',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    const finalResolvedUrl = resp?.url || urlTo;
+    return targets.some((t) => urlsMatch(t, finalResolvedUrl));
+  } catch (e) {
+    log.debug(`[checkIfBacklinkFixedWithSuggestion] fetch ${urlTo} failed: ${e.message}`);
+    return false;
+  }
+}
+
+/**
+ * Builds a fix entity payload for a resolved backlink suggestion.
+ *
+ * @param {Object} suggestion - The suggestion object.
+ * @param {Object} opportunity - The opportunity object.
+ * @param {boolean} isAuthorOnly - Whether this is an author-only fix.
+ * @param {Object} site - The site object.
+ * @returns {Object} - The fix entity payload.
+ */
+export function buildBacklinkFixEntityPayload(suggestion, opportunity, isAuthorOnly, site) {
+  const data = suggestion?.getData?.();
+  return {
+    opportunityId: opportunity.getId(),
+    status: isAuthorOnly
+      ? FixEntityModel.STATUSES.DEPLOYED
+      : FixEntityModel.STATUSES.PUBLISHED,
+    type: suggestion?.getType?.(),
+    executedAt: new Date().toISOString(),
+    changeDetails: {
+      system: site.getDeliveryType(),
+      pagePath: data?.url_from,
+      oldValue: data?.url_to || '',
+      updatedValue: data?.urlEdited || data?.urlsSuggested?.[0] || '',
+    },
+    suggestions: [suggestion?.getId?.()],
+  };
+}
+
+/**
+ * Checks if a backlink issue is resolved on production.
+ * The issue is resolved if the URL is no longer broken.
+ *
+ * @param {Object} suggestion - The suggestion object.
+ * @param {Object} log - Logger instance.
+ * @returns {Promise<boolean>} - True if the issue is resolved on production.
+ */
+export async function checkIfBacklinkResolvedOnProduction(suggestion, log) {
+  const url = suggestion?.getData?.()?.url_to;
+  if (!url) return false;
+  const stillBrokenItems = await filterOutValidBacklinks([{ url_to: url }], log);
+  return stillBrokenItems.length === 0; // resolved if NO items are still broken
 }
 
 export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
@@ -219,7 +317,7 @@ export const generateSuggestionData = async (context) => {
     return merged;
   };
 
-  await syncSuggestions({
+  await syncSuggestionsWithPublishDetection({
     opportunity,
     newData: auditResult?.brokenBacklinks,
     buildKey,
@@ -236,6 +334,21 @@ export const generateSuggestionData = async (context) => {
         traffic_domain: backlink.traffic_domain,
       },
     }),
+    // Use extracted functions for testability
+    isIssueFixedWithAISuggestion: (suggestion) => checkIfBacklinkFixedWithSuggestion(
+      suggestion,
+      log,
+    ),
+    buildFixEntityPayload: (suggestion, opp, isAuthorOnly) => buildBacklinkFixEntityPayload(
+      suggestion,
+      opp,
+      isAuthorOnly,
+      site,
+    ),
+    isIssueResolvedOnProduction: (suggestion) => checkIfBacklinkResolvedOnProduction(
+      suggestion,
+      log,
+    ),
   });
   const suggestions = await Suggestion.allByOpportunityIdAndStatus(
     opportunity.getId(),
@@ -251,6 +364,93 @@ export const generateSuggestionData = async (context) => {
     }))
     .filter((link) => link.urlFrom && link.urlTo && link.suggestionId); // Filter invalid entries
 
+  // Check if all suggestions were filtered out as invalid
+  if (brokenLinks.length === 0 && suggestions.length > 0) {
+    log.warn('No valid broken links to send to Mystique. Skipping message.');
+    return {
+      status: 'complete',
+    };
+  }
+
+  // Bright Data: resolve suggestions first, then fallback to Mystique
+  const useBrightData = Boolean(env.BRIGHT_DATA_API_KEY && env.BRIGHT_DATA_ZONE);
+  const validateBrightDataUrls = getEnvBool(env, BRIGHT_DATA_VALIDATE_URLS, false);
+  const brightDataMaxResults = getEnvInt(env, BRIGHT_DATA_MAX_RESULTS, 1);
+  const brightDataRequestDelayMs = getEnvInt(env, BRIGHT_DATA_REQUEST_DELAY_MS, 500);
+
+  const resolvedByBrightData = new Set();
+  if (useBrightData && brokenLinks.length > 0) {
+    log.info(`Bright Data enabled. Resolving ${brokenLinks.length} broken links (maxResults=${brightDataMaxResults}).`);
+    const brightDataClient = BrightDataClient.createFrom(context);
+
+    const processBrokenLink = async (brokenLink) => {
+      const {
+        results, keywords,
+      } = await brightDataClient.googleSearchWithFallback(
+        prependSchema(finalUrl || site.getBaseURL()),
+        brokenLink.urlTo,
+        brightDataMaxResults,
+        {
+          // Keep common prefixes like "blog" by default (do not strip)
+          stripCommonPrefixes: false,
+        },
+      );
+
+      if (!results || results.length === 0) {
+        return;
+      }
+
+      const best = results[0];
+      if (!best?.link) {
+        return;
+      }
+
+      let urlsSuggested = [best.link];
+      if (validateBrightDataUrls) {
+        const validated = await filterBrokenSuggestedUrls(urlsSuggested, site.getBaseURL());
+        if (validated.length === 0) {
+          return;
+        }
+        urlsSuggested = validated;
+      }
+
+      const suggestion = await Suggestion.findById(brokenLink.suggestionId);
+      if (!suggestion) {
+        log.warn(`Bright Data: suggestion not found for ${brokenLink.suggestionId}`);
+        return;
+      }
+
+      suggestion.setData({
+        ...suggestion.getData(),
+        urlsSuggested,
+        aiRationale: `The suggested URL is chosen based on top search results for closely matching keywords from the broken URL. Keywords used: "${keywords}".`,
+      });
+
+      await suggestion.save();
+      resolvedByBrightData.add(brokenLink.suggestionId);
+    };
+
+    const batchSize = 10;
+    for (let i = 0; i < brokenLinks.length; i += batchSize) {
+      const batch = brokenLinks.slice(i, i + batchSize);
+      // eslint-disable-next-line no-await-in-loop
+      await Promise.allSettled(batch.map((brokenLink) => processBrokenLink(brokenLink)
+        .catch((error) => {
+          log.warn(`Bright Data failed for ${brokenLink.urlTo}:`, error);
+        })));
+      if (i + batchSize < brokenLinks.length
+        && Number.isFinite(brightDataRequestDelayMs)
+        && brightDataRequestDelayMs > 0) {
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(brightDataRequestDelayMs);
+      }
+    }
+  }
+
+  const brokenLinksForMystique = brokenLinks.filter(
+    (link) => !resolvedByBrightData.has(link.suggestionId),
+  );
+
   // Get top pages and filter by audit scope
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
   const baseURL = site.getBaseURL();
@@ -262,7 +462,7 @@ export const generateSuggestionData = async (context) => {
 
   // Extract unique locales/subpaths from broken links
   const brokenLinkLocales = new Set();
-  brokenLinks.forEach((link) => {
+  brokenLinksForMystique.forEach((link) => {
     const locale = extractPathPrefix(link.urlTo);
     if (locale) {
       brokenLinkLocales.add(locale);
@@ -292,8 +492,8 @@ export const generateSuggestionData = async (context) => {
   }
 
   // Validate before sending to Mystique
-  if (brokenLinks.length === 0) {
-    log.warn('No valid broken links to send to Mystique. Skipping message.');
+  if (brokenLinksForMystique.length === 0) {
+    log.info('All broken links resolved via Bright Data. Skipping Mystique.');
     return {
       status: 'complete',
     };
@@ -315,7 +515,7 @@ export const generateSuggestionData = async (context) => {
     data: {
       alternativeUrls,
       opportunityId: opportunity?.getId(),
-      brokenLinks,
+      brokenLinks: brokenLinksForMystique,
     },
   };
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);

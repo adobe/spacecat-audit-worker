@@ -9,9 +9,9 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { sendAltTextOpportunityToMystique, chunkArray, cleanupOutdatedSuggestions } from './opportunityHandler.js';
+import { sendAltTextOpportunityToMystique, chunkArray } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { MYSTIQUE_BATCH_SIZE } from './constants.js';
 
@@ -39,7 +39,7 @@ export async function processAltTextWithMystique(context) {
   log.debug(`[${AUDIT_TYPE}]: Processing alt-text with Mystique for site ${site.getId()}`);
 
   try {
-    const { Opportunity } = dataAccess;
+    const { Opportunity, Suggestion } = dataAccess;
     const siteId = site.getId();
 
     // Get top pages and included URLs
@@ -61,8 +61,59 @@ export async function processAltTextWithMystique(context) {
       (oppty) => oppty.getType() === AUDIT_TYPE,
     );
 
+    let imageUrlsWithAltText = [];
+
     if (altTextOppty) {
       log.info(`[${AUDIT_TYPE}]: Updating opportunity for new audit run`);
+
+      // Step 1: Get existing suggestions from the opportunity
+      const existingSuggestions = await altTextOppty.getSuggestions();
+      log.debug(`[${AUDIT_TYPE}]: Found ${existingSuggestions.length} existing suggestions`);
+
+      // Step 2: Filter suggestions with URLs not in current pageUrls
+      const pageUrlSet = new Set(pageUrls);
+      const IGNORED_STATUSES = ['SKIPPED', 'FIXED', 'OUTDATED'];
+
+      const suggestionsToOutdate = existingSuggestions.filter((suggestion) => {
+        const rec = suggestion.getData()?.recommendations?.[0];
+        const suggestionPageUrl = rec?.pageUrl;
+
+        // Skip if no page URL
+        if (!suggestionPageUrl) {
+          return false;
+        }
+
+        // Never mark manually edited suggestions as outdated
+        if (rec?.isManuallyEdited === true) {
+          return false;
+        }
+
+        // Skip if already in an ignored status
+        if (IGNORED_STATUSES.includes(suggestion.getStatus())) {
+          return false;
+        }
+
+        // Mark as outdated if URL is NOT in current pageUrls
+        return !pageUrlSet.has(suggestionPageUrl);
+      });
+
+      log.debug(`[${AUDIT_TYPE}]: Found ${suggestionsToOutdate.length} suggestions to mark as OUTDATED (URLs no longer in top pages)`);
+
+      // Step 3: Mark filtered suggestions as OUTDATED
+      if (suggestionsToOutdate.length > 0) {
+        await Suggestion.bulkUpdateStatus(suggestionsToOutdate, SuggestionModel.STATUSES.OUTDATED);
+        log.info(`[${AUDIT_TYPE}]: Marked ${suggestionsToOutdate.length} suggestions as OUTDATED`);
+      }
+
+      // Step 4: Collect image URLs from remaining NEW suggestions (excluding just-outdated ones)
+      const outdatedSet = new Set(suggestionsToOutdate);
+      imageUrlsWithAltText = [...new Set(
+        existingSuggestions
+          .filter((s) => s.getStatus() === SuggestionModel.STATUSES.NEW && !outdatedSet.has(s))
+          .map((s) => s.getData()?.recommendations?.[0]?.imageUrl)
+          .filter(Boolean),
+      )];
+      log.debug(`[${AUDIT_TYPE}]: Found ${imageUrlsWithAltText.length} existing image URLs with alt text`);
 
       // Reset only Mystique-related data, keep existing metrics
       const existingData = altTextOppty.getData() || {};
@@ -121,16 +172,18 @@ export async function processAltTextWithMystique(context) {
       site.getId(),
       audit.getId(),
       context,
+      imageUrlsWithAltText,
     );
 
     log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
 
     // Clean up outdated suggestions
     // Small delay to ensure no concurrent operations
-    await new Promise((resolve) => {
-      setTimeout(resolve, 1000);
-    });
-    await cleanupOutdatedSuggestions(altTextOppty, log);
+    // comment for now to avoid having empty optty in case M blows up
+    // await new Promise((resolve) => {
+    //   setTimeout(resolve, 1000);
+    // });
+    // await cleanupOutdatedSuggestions(altTextOppty, log);
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to process with Mystique: ${error.message}`);
     throw error;

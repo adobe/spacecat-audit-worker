@@ -30,7 +30,6 @@ describe('summarization utils', () => {
           keyPoints: {
             formatted_items: ['Key point 1', 'Key point 2'],
           },
-          sectionSummaries: [],
         },
       ];
 
@@ -58,7 +57,7 @@ describe('summarization utils', () => {
       expect(result[1].title).to.equal('Test Page');
     });
 
-    it('should use default value when insertion_method is not provided for section summary', () => {
+    it('should use default value when insertion_method is not provided', () => {
       const suggestions = [
         {
           pageUrl: 'https://example.com/page1',
@@ -71,21 +70,13 @@ describe('summarization utils', () => {
           keyPoints: {
             formatted_items: ['Key point 1', 'Key point 2'],
           },
-          sectionSummaries: [
-            {
-              title: 'Section 1',
-              formatted_summary: 'Section summary',
-              heading_selector: 'h2',
-              // insertion_method is missing
-            },
-          ],
         },
       ];
 
       const result = getJsonSummarySuggestion(suggestions);
 
       expect(result).to.be.an('array');
-      expect(result).to.have.length(3); // page summary + key points + section summary
+      expect(result).to.have.length(2); // page summary + key points (section summaries not used)
       
       // Check page-level suggestion
       expect(result[0].transformRules.selector).to.equal('h1');
@@ -97,18 +88,9 @@ describe('summarization utils', () => {
       expect(result[1].transformRules.action).to.equal('insertAfter');
       expect(result[1].keyPoints).to.be.true;
       expect(result[1].summarizationText).to.equal('  * Key point 1\n  * Key point 2');
-      
-      // Check section-level suggestion uses default
-      expect(result[2].transformRules.selector).to.equal('h2');
-      expect(result[2].transformRules.action).to.equal('insertAfter'); // default value
-      expect(result[2].summarizationText).to.equal('Section summary');
-      expect(result[2].fullPage).to.be.false;
-      expect(result[2].keyPoints).to.be.false;
-      expect(result[2].url).to.equal('https://example.com/page1');
-      expect(result[2].title).to.equal('Section 1');
     });
 
-    it('should handle suggestions with all properties provided', () => {
+    it('should handle suggestions with all properties provided (page + key points only)', () => {
       const suggestions = [
         {
           pageUrl: 'https://example.com/page1',
@@ -121,21 +103,13 @@ describe('summarization utils', () => {
           keyPoints: {
             formatted_items: ['Key point A', 'Key point B', 'Key point C'],
           },
-          sectionSummaries: [
-            {
-              title: 'Section 1',
-              formatted_summary: 'Section summary',
-              heading_selector: 'h2',
-              insertion_method: 'appendChild',
-            },
-          ],
         },
       ];
 
       const result = getJsonSummarySuggestion(suggestions);
 
       expect(result).to.be.an('array');
-      expect(result).to.have.length(3); // page summary + key points + section summary
+      expect(result).to.have.length(2); // page summary + key points
       
       // Check all values are used as provided for page summary
       expect(result[0].transformRules.selector).to.equal('h1');
@@ -147,11 +121,6 @@ describe('summarization utils', () => {
       expect(result[1].transformRules.action).to.equal('insertBefore');
       expect(result[1].keyPoints).to.be.true;
       expect(result[1].summarizationText).to.equal('  * Key point A\n  * Key point B\n  * Key point C');
-      
-      // Check section summary
-      expect(result[2].transformRules.selector).to.equal('h2');
-      expect(result[2].transformRules.action).to.equal('appendChild');
-      expect(result[2].keyPoints).to.be.false;
     });
 
     it('should handle empty suggestions array', () => {
@@ -173,7 +142,6 @@ describe('summarization utils', () => {
           keyPoints: {
             formatted_items: ['Point 1'],
           },
-          sectionSummaries: [],
         },
         {
           pageUrl: 'https://example.com/page2',
@@ -186,20 +154,12 @@ describe('summarization utils', () => {
           keyPoints: {
             formatted_items: ['Point A', 'Point B'],
           },
-          sectionSummaries: [
-            {
-              title: 'Section A',
-              formatted_summary: 'Section A summary',
-              heading_selector: 'h3',
-              // No insertion_method
-            },
-          ],
         },
       ];
 
       const result = getJsonSummarySuggestion(suggestions);
 
-      expect(result).to.have.length(5); // page1 summary + page1 keypoints + page2 summary + page2 keypoints + section
+      expect(result).to.have.length(4); // page1 summary + page1 keypoints + page2 summary + page2 keypoints
       
       // First page summary uses defaults
       expect(result[0].transformRules.selector).to.equal('body');
@@ -222,11 +182,6 @@ describe('summarization utils', () => {
       expect(result[3].transformRules.action).to.equal('insertAfter');
       expect(result[3].keyPoints).to.be.true;
       expect(result[3].summarizationText).to.equal('  * Point A\n  * Point B');
-      
-      // Section uses default for insertion_method
-      expect(result[4].transformRules.selector).to.equal('h3');
-      expect(result[4].transformRules.action).to.equal('insertAfter');
-      expect(result[4].keyPoints).to.be.false;
     });
 
     it('should use provided scrapedAt timestamp when available', () => {
@@ -244,31 +199,20 @@ describe('summarization utils', () => {
           keyPoints: {
             formatted_items: ['Key 1', 'Key 2'],
           },
-          sectionSummaries: [
-            {
-              title: 'Section 1',
-              formatted_summary: 'Section summary',
-              heading_selector: 'h2',
-              insertion_method: 'insertAfter',
-            },
-          ],
         },
       ];
 
       const result = getJsonSummarySuggestion(suggestions);
 
-      expect(result).to.have.length(3); // page summary + key points + section
-      // All should have the same scrapedAt
+      expect(result).to.have.length(2); // page summary + key points
       expect(result[0].scrapedAt).to.equal(testTimestamp);
       expect(result[1].scrapedAt).to.equal(testTimestamp);
-      expect(result[2].scrapedAt).to.equal(testTimestamp);
     });
 
     it('should generate current timestamp when scrapedAt is missing', () => {
       const suggestions = [
         {
           pageUrl: 'https://example.com/page1',
-          // No scrapedAt property
           pageSummary: {
             title: 'Test Page',
             formatted_summary: 'Test summary',
@@ -278,14 +222,6 @@ describe('summarization utils', () => {
           keyPoints: {
             formatted_items: ['Key 1', 'Key 2'],
           },
-          sectionSummaries: [
-            {
-              title: 'Section 1',
-              formatted_summary: 'Section summary',
-              heading_selector: 'h2',
-              insertion_method: 'insertAfter',
-            },
-          ],
         },
       ];
 
@@ -293,27 +229,15 @@ describe('summarization utils', () => {
       const result = getJsonSummarySuggestion(suggestions);
       const afterTime = new Date().toISOString();
 
-      expect(result).to.have.length(3); // page summary + key points + section
+      expect(result).to.have.length(2); // page summary + key points
 
-      // All should have scrapedAt timestamps
       expect(result[0].scrapedAt).to.be.a('string');
       expect(result[0].scrapedAt).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
       expect(result[1].scrapedAt).to.be.a('string');
       expect(result[1].scrapedAt).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-      expect(result[2].scrapedAt).to.be.a('string');
-      expect(result[2].scrapedAt).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-
-      // All should have the same timestamp (captured once per suggestion)
       expect(result[0].scrapedAt).to.equal(result[1].scrapedAt);
-      expect(result[1].scrapedAt).to.equal(result[2].scrapedAt);
-
-      // Timestamp should be within expected time range
       expect(result[0].scrapedAt >= beforeTime).to.be.true;
       expect(result[0].scrapedAt <= afterTime).to.be.true;
-      expect(result[1].scrapedAt >= beforeTime).to.be.true;
-      expect(result[1].scrapedAt <= afterTime).to.be.true;
-      expect(result[2].scrapedAt >= beforeTime).to.be.true;
-      expect(result[2].scrapedAt <= afterTime).to.be.true;
     });
 
     it('should correctly format key points with bullet points', () => {
@@ -333,7 +257,6 @@ describe('summarization utils', () => {
               'Third important point',
             ],
           },
-          sectionSummaries: [],
         },
       ];
 
@@ -349,7 +272,7 @@ describe('summarization utils', () => {
       );
     });
 
-    it('should handle empty key points array', () => {
+    it('should handle empty key points array (exclude from result)', () => {
       const suggestions = [
         {
           pageUrl: 'https://example.com/page1',
@@ -362,18 +285,15 @@ describe('summarization utils', () => {
           keyPoints: {
             formatted_items: [],
           },
-          sectionSummaries: [],
         },
       ];
 
       const result = getJsonSummarySuggestion(suggestions);
 
-      expect(result).to.have.length(2); // page summary + key points
-      
-      // Verify empty key points
-      const keyPointsSuggestion = result[1];
-      expect(keyPointsSuggestion.keyPoints).to.be.true;
-      expect(keyPointsSuggestion.summarizationText).to.equal('');
+      // Only page summary is included; key points with empty text are excluded
+      expect(result).to.have.length(1);
+      expect(result[0].keyPoints).to.be.false;
+      expect(result[0].summarizationText).to.equal('Test summary');
     });
 
     it('should handle single key point', () => {
@@ -389,7 +309,6 @@ describe('summarization utils', () => {
           keyPoints: {
             formatted_items: ['Single key point'],
           },
-          sectionSummaries: [],
         },
       ];
 
@@ -401,6 +320,30 @@ describe('summarization utils', () => {
       const keyPointsSuggestion = result[1];
       expect(keyPointsSuggestion.keyPoints).to.be.true;
       expect(keyPointsSuggestion.summarizationText).to.equal('  * Single key point');
+    });
+
+    it('should handle keyPoints.formatted_items as non-array (exclude key points)', () => {
+      const suggestions = [
+        {
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
+          },
+          keyPoints: {
+            formatted_items: null, // not an array
+          },
+        },
+      ];
+
+      const result = getJsonSummarySuggestion(suggestions);
+
+      // Only page summary; key points skipped when formatted_items is not an array
+      expect(result).to.have.length(1);
+      expect(result[0].summarizationText).to.equal('Test summary');
+      expect(result[0].keyPoints).to.be.false;
     });
   });
 });

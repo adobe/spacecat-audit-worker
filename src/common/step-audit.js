@@ -20,6 +20,7 @@ import {
   loadExistingAudit,
   sendContinuationMessage,
 } from './audit-utils.js';
+import { handleAbort } from './bot-detection.js';
 
 const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
@@ -73,7 +74,6 @@ export class StepAudit extends BaseAudit {
       auditId: audit.getId(),
       auditType: audit.getAuditType(),
       fullAuditRef: audit.getFullAuditRef(),
-      scrapeJobId: context.scrapeJobId,
     };
 
     const auditContext = isNonEmptyObject(stepResult.auditContext)
@@ -102,7 +102,7 @@ export class StepAudit extends BaseAudit {
     const { stepNames } = this;
     const { log } = context;
     const {
-      type, data, siteId, auditContext = {},
+      type, data, siteId, auditContext = {}, abort, jobId,
     } = message;
 
     try {
@@ -111,6 +111,39 @@ export class StepAudit extends BaseAudit {
       if (!(await isAuditEnabledForSite(type, site, context))) {
         log.warn(`${type} audits disabled for site ${siteId}, skipping...`);
         return ok();
+      }
+
+      // Check if scrape job was aborted
+      // Skip abort info validation if jobId was not created by SCRAPE_CLIENT
+      // (i.e., if jobId === siteId, it's from CONTENT_SCRAPER
+      // which does not create jobId in DynamoDB)
+      const isJobIdFromScrapeClient = jobId && jobId !== siteId;
+
+      if (abort && isJobIdFromScrapeClient) {
+        const { blockedUrlsCount, totalUrlsCount, blockedUrls } = abort.details || {};
+        // Only proceed if we have a valid total count (needed for arithmetic and comparison)
+        // If abortInfo exists, blockedUrlsCount should be >= 1 (at least one URL was blocked)
+        if (totalUrlsCount > 0) {
+          // Only abort if ALL URLs are blocked
+          if (blockedUrlsCount === totalUrlsCount) {
+            log.warn(
+              `[BOT-BLOCKED] All URLs blocked (${blockedUrlsCount}/${totalUrlsCount}), aborting audit for jobId=${jobId}`,
+            );
+            return handleAbort(abort, jobId, type, site, siteId, log);
+          }
+          // Some URLs blocked but not all - continue audit processing
+          // blockedUrlsCount should be >= 1 if abortInfo exists, but check for safety
+          if (blockedUrlsCount > 0) {
+            const blockedUrlsList = blockedUrls?.map((u) => (typeof u === 'string' ? u : u.url)).filter(Boolean).join(', ') || 'none';
+            const nonBlockedCount = totalUrlsCount - blockedUrlsCount;
+            log.info(
+              `[BOT-BLOCKED] Some URLs blocked (${blockedUrlsCount}/${totalUrlsCount}), `
+              + `but continuing audit processing for ${type} audit on ${site.getBaseURL()} `
+              + `as ${nonBlockedCount} URLs were not blocked by bot protection, jobId=${jobId}, `
+              + `Blocked URLs: [${blockedUrlsList}]`,
+            );
+          }
+        }
       }
 
       // Determine which step to run

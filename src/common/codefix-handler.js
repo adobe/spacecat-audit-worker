@@ -165,7 +165,7 @@ async function updateSuggestionsWithCodeChange(
         const updatedData = {
           ...suggestionData,
           patchContent: reportData.diff,
-          isCodeChangeAvailable: true,
+          isCodeChangeAvailable: false,
         };
 
         suggestion.setData(updatedData);
