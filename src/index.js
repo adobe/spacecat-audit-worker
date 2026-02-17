@@ -108,6 +108,7 @@ import frescopaDataGeneration from './frescopa-data-generation/handler.js';
 import ptrSelector from './ptr-selector/handler.js';
 import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
+import offsiteBrandPresence from './offsite-brand-presence/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -210,6 +211,7 @@ const HANDLERS = {
   'ptr-selector': ptrSelector,
   'semantic-value-visibility': semanticValueVisibility,
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
+  'offsite-brand-presence': offsiteBrandPresence,
   dummy: (message) => ok(message),
 };
 
