@@ -490,6 +490,14 @@ describe('BrightDataClient', () => {
       expect(extractLocaleFromUrl(123)).to.be.null;
     });
 
+    it('returns null for URLs with empty path segments', () => {
+      expect(extractLocaleFromUrl('https://example.com//')).to.be.null;
+    });
+
+    it('returns null for malformed URLs that throw in URL constructor', () => {
+      expect(extractLocaleFromUrl('http://[')).to.be.null;
+    });
+
     it('handles URLs without scheme', () => {
       expect(extractLocaleFromUrl('example.com/dk/page')).to.equal('dk');
       expect(extractLocaleFromUrl('example.com/blog/page')).to.be.null;
