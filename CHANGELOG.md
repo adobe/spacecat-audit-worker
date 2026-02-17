@@ -1,3 +1,10 @@
+## [1.319.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.319.0...v1.319.1) (2026-02-17)
+
+
+### Bug Fixes
+
+* updating toc title ([#2000](https://github.com/adobe/spacecat-audit-worker/issues/2000)) ([25bdd42](https://github.com/adobe/spacecat-audit-worker/commit/25bdd4293a4d842add68dd42dce52a8357f462aa))
+
 # [1.319.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.318.7...v1.319.0) (2026-02-17)
 
 
