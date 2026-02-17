@@ -11,7 +11,7 @@
  */
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { sendAltTextOpportunityToMystique, chunkArray, cleanupOutdatedSuggestions } from './opportunityHandler.js';
+import { sendAltTextOpportunityToMystique, chunkArray } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { MYSTIQUE_BATCH_SIZE } from './constants.js';
 
@@ -61,6 +61,8 @@ export async function processAltTextWithMystique(context) {
       (oppty) => oppty.getType() === AUDIT_TYPE,
     );
 
+    let imageUrlsWithAltText = [];
+
     if (altTextOppty) {
       log.info(`[${AUDIT_TYPE}]: Updating opportunity for new audit run`);
 
@@ -102,6 +104,16 @@ export async function processAltTextWithMystique(context) {
         await Suggestion.bulkUpdateStatus(suggestionsToOutdate, SuggestionModel.STATUSES.OUTDATED);
         log.info(`[${AUDIT_TYPE}]: Marked ${suggestionsToOutdate.length} suggestions as OUTDATED`);
       }
+
+      // Step 4: Collect image URLs from remaining NEW suggestions (excluding just-outdated ones)
+      const outdatedSet = new Set(suggestionsToOutdate);
+      imageUrlsWithAltText = [...new Set(
+        existingSuggestions
+          .filter((s) => s.getStatus() === SuggestionModel.STATUSES.NEW && !outdatedSet.has(s))
+          .map((s) => s.getData()?.recommendations?.[0]?.imageUrl)
+          .filter(Boolean),
+      )];
+      log.debug(`[${AUDIT_TYPE}]: Found ${imageUrlsWithAltText.length} existing image URLs with alt text`);
 
       // Reset only Mystique-related data, keep existing metrics
       const existingData = altTextOppty.getData() || {};
@@ -160,16 +172,18 @@ export async function processAltTextWithMystique(context) {
       site.getId(),
       audit.getId(),
       context,
+      imageUrlsWithAltText,
     );
 
     log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
 
     // Clean up outdated suggestions
     // Small delay to ensure no concurrent operations
-    await new Promise((resolve) => {
-      setTimeout(resolve, 1000);
-    });
-    await cleanupOutdatedSuggestions(altTextOppty, log);
+    // comment for now to avoid having empty optty in case M blows up
+    // await new Promise((resolve) => {
+    //   setTimeout(resolve, 1000);
+    // });
+    // await cleanupOutdatedSuggestions(altTextOppty, log);
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to process with Mystique: ${error.message}`);
     throw error;
