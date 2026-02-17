@@ -309,6 +309,8 @@ export const defaultMergeStatusFunction = (existing, newDataItem, context) => {
  * @param {Function} [params.mergeStatusFunction] - Function to determine the status of
  *   existing suggestions.
  * @param {string} [params.statusToSetForOutdated] - Status to set for outdated suggestions.
+ * @param {Array} [params.existingSuggestions] - Pre-fetched suggestions to avoid duplicate
+ *   DB query. If not provided, will be fetched from opportunity.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
 export async function syncSuggestions({
@@ -321,13 +323,15 @@ export async function syncSuggestions({
   mergeStatusFunction = defaultMergeStatusFunction,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
+  existingSuggestions: prefetchedSuggestions = null,
 }) {
   if (!context) {
     return;
   }
   const { log } = context;
   const newDataKeys = new Set(newData.map(buildKey));
-  const existingSuggestions = await opportunity.getSuggestions();
+  // Use pre-fetched suggestions if provided, otherwise fetch from DB
+  const existingSuggestions = prefetchedSuggestions ?? await opportunity.getSuggestions();
 
   // Pre-compute Maps for O(1) lookups instead of O(N*M)
   const newDataByKey = new Map(newData.map((data) => [buildKey(data), data]));
@@ -705,7 +709,7 @@ export async function syncSuggestionsWithPublishDetection({
     });
   }
 
-  // Step 3: Delegate to base syncSuggestions
+  // Step 3: Delegate to base syncSuggestions, passing pre-fetched suggestions to avoid double query
   await syncSuggestions({
     context,
     opportunity,
@@ -716,5 +720,6 @@ export async function syncSuggestionsWithPublishDetection({
     mergeStatusFunction,
     statusToSetForOutdated,
     scrapedUrlsSet,
+    existingSuggestions,
   });
 }

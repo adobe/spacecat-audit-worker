@@ -1611,6 +1611,36 @@ describe('data-access', () => {
         expect(e.message).to.include('Sample error: Unknown error');
       }
     });
+
+    it('should use pre-fetched suggestions when provided to avoid double DB query', async () => {
+      const suggestionsData = [{ key: '1', title: 'existing' }];
+      const prefetchedSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        getData: sinon.stub().returns(suggestionsData[0]),
+        setData: sinon.stub(),
+        save: sinon.stub(),
+        getStatus: sinon.stub().returns('NEW'),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      }];
+      const newData = [{ key: '1', title: 'updated' }];
+
+      // Pass existingSuggestions directly - getSuggestions should NOT be called
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        existingSuggestions: prefetchedSuggestions,
+      });
+
+      // Verify getSuggestions was NOT called since we provided pre-fetched suggestions
+      expect(mockOpportunity.getSuggestions).to.not.have.been.called;
+      // Verify the pre-fetched suggestions were used
+      expect(prefetchedSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
+      expect(prefetchedSuggestions[0].save).to.have.been.calledOnce;
+    });
   });
 
   describe('getImsOrgId', () => {
@@ -2377,6 +2407,31 @@ describe('data-access', () => {
 
       // Should not have called any methods on opportunity
       expect(mockOpportunity.getSuggestions).to.not.have.been.called;
+    });
+
+    it('should only call getSuggestions once to avoid duplicate DB queries', async () => {
+      const existingSuggestion = {
+        id: '1',
+        getData: sinon.stub().returns({ key: '1' }),
+        getStatus: sinon.stub().returns('NEW'),
+        setData: sinon.stub(),
+        save: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+      };
+      mockOpportunity.getSuggestions.resolves([existingSuggestion]);
+      mockOpportunity.getType.returns('broken-backlinks');
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData: [{ key: '1', title: 'updated' }],
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Verify getSuggestions is only called ONCE, not twice
+      // (once in wrapper, passed to syncSuggestions to avoid double query)
+      expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
     });
   });
 });
