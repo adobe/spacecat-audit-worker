@@ -12,14 +12,22 @@
 
 import { tracingFetch as fetch, prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
 import AhrefsAPIClient from '@adobe/spacecat-shared-ahrefs-client';
-import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import {
+  Audit,
+  Suggestion as SuggestionModel,
+  FixEntity as FixEntityModel,
+} from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import calculateKpiMetrics from './kpi-metrics.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestions } from '../utils/data-access.js';
+import { syncSuggestionsWithPublishDetection } from '../utils/data-access.js';
 import { filterByAuditScope, extractPathPrefix } from '../internal-links/subpath-filter.js';
-import { filterBrokenSuggestedUrls, isUnscrapeable } from '../utils/url-utils.js';
+import {
+  filterBrokenSuggestedUrls,
+  isUnscrapeable,
+  urlsMatch,
+} from '../utils/url-utils.js';
 import BrightDataClient from '../support/bright-data-client.js';
 import { sleep } from '../support/utils.js';
 
@@ -73,6 +81,81 @@ async function filterOutValidBacklinks(backlinks, log) {
 
   // const backlinkStatuses = await Promise.all(backlinks.map(isStillBrokenBacklink));
   return backlinks.filter((_, index) => backlinkStatuses[index]);
+}
+
+/**
+ * Checks if a broken backlink issue was fixed using our AI suggestion.
+ * Verifies if the broken URL now redirects to one of the suggested targets.
+ *
+ * @param {Object} suggestion - The suggestion object.
+ * @param {Object} log - Logger instance.
+ * @returns {Promise<boolean>} - True if the issue was fixed with our suggestion.
+ */
+export async function checkIfBacklinkFixedWithSuggestion(suggestion, log) {
+  const data = suggestion?.getData?.();
+  const urlTo = data?.url_to;
+  const suggestedTargets = Array.isArray(data?.urlsSuggested) ? data.urlsSuggested : [];
+  const targets = data?.urlEdited
+    ? [data.urlEdited, ...suggestedTargets]
+    : suggestedTargets;
+  if (!urlTo || targets.length === 0) return false;
+  try {
+    const resp = await fetch(urlTo, {
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Spacecat/1.0)',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    const finalResolvedUrl = resp?.url || urlTo;
+    return targets.some((t) => urlsMatch(t, finalResolvedUrl));
+  } catch (e) {
+    log.debug(`[checkIfBacklinkFixedWithSuggestion] fetch ${urlTo} failed: ${e.message}`);
+    return false;
+  }
+}
+
+/**
+ * Builds a fix entity payload for a resolved backlink suggestion.
+ *
+ * @param {Object} suggestion - The suggestion object.
+ * @param {Object} opportunity - The opportunity object.
+ * @param {boolean} isAuthorOnly - Whether this is an author-only fix.
+ * @param {Object} site - The site object.
+ * @returns {Object} - The fix entity payload.
+ */
+export function buildBacklinkFixEntityPayload(suggestion, opportunity, isAuthorOnly, site) {
+  const data = suggestion?.getData?.();
+  return {
+    opportunityId: opportunity.getId(),
+    status: isAuthorOnly
+      ? FixEntityModel.STATUSES.DEPLOYED
+      : FixEntityModel.STATUSES.PUBLISHED,
+    type: suggestion?.getType?.(),
+    executedAt: new Date().toISOString(),
+    changeDetails: {
+      system: site.getDeliveryType(),
+      pagePath: data?.url_from,
+      oldValue: data?.url_to || '',
+      updatedValue: data?.urlEdited || data?.urlsSuggested?.[0] || '',
+    },
+    suggestions: [suggestion?.getId?.()],
+  };
+}
+
+/**
+ * Checks if a backlink issue is resolved on production.
+ * The issue is resolved if the URL is no longer broken.
+ *
+ * @param {Object} suggestion - The suggestion object.
+ * @param {Object} log - Logger instance.
+ * @returns {Promise<boolean>} - True if the issue is resolved on production.
+ */
+export async function checkIfBacklinkResolvedOnProduction(suggestion, log) {
+  const url = suggestion?.getData?.()?.url_to;
+  if (!url) return false;
+  const stillBrokenItems = await filterOutValidBacklinks([{ url_to: url }], log);
+  return stillBrokenItems.length === 0; // resolved if NO items are still broken
 }
 
 export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
@@ -234,7 +317,7 @@ export const generateSuggestionData = async (context) => {
     return merged;
   };
 
-  await syncSuggestions({
+  await syncSuggestionsWithPublishDetection({
     opportunity,
     newData: auditResult?.brokenBacklinks,
     buildKey,
@@ -251,6 +334,21 @@ export const generateSuggestionData = async (context) => {
         traffic_domain: backlink.traffic_domain,
       },
     }),
+    // Use extracted functions for testability
+    isIssueFixedWithAISuggestion: (suggestion) => checkIfBacklinkFixedWithSuggestion(
+      suggestion,
+      log,
+    ),
+    buildFixEntityPayload: (suggestion, opp, isAuthorOnly) => buildBacklinkFixEntityPayload(
+      suggestion,
+      opp,
+      isAuthorOnly,
+      site,
+    ),
+    isIssueResolvedOnProduction: (suggestion) => checkIfBacklinkResolvedOnProduction(
+      suggestion,
+      log,
+    ),
   });
   const suggestions = await Suggestion.allByOpportunityIdAndStatus(
     opportunity.getId(),
