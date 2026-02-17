@@ -11,6 +11,7 @@
  */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { LOG_PREFIX, AUDIT_TYPE } from './constants.js';
@@ -19,6 +20,7 @@ import { getCommerceConfig } from '../utils/saas.js';
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 const DEFAULT_LIMIT = 20;
+const MAX_EXCLUDED_URLS = 500;
 
 /**
  * Step 1: Import Top Pages
@@ -92,8 +94,10 @@ export async function submitForScraping(context) {
 
   const auditType = 'commerce-product-enrichments';
   const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
+  const excludedURLs = site?.getConfig()?.getExcludedURLs?.(auditType) || [];
 
-  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
+  const topPagesFiltered = topPagesUrls.filter((url) => !excludedURLs.includes(url));
+  const finalUrls = [...new Set([...topPagesFiltered, ...includedURLs])];
 
   if (finalUrls.length === 0) {
     log.error(`${LOG_PREFIX} Step 2: No URLs found for site ${site.getId()} - neither top pages nor included URLs`);
@@ -118,7 +122,7 @@ export async function submitForScraping(context) {
     return true;
   });
 
-  log.info(`${LOG_PREFIX} Step 2: submitting ${filteredUrls.length} URLs (topPages: ${topPages.length}/${allTopPages.length}, includedURLs: ${includedURLs.length}, pdfsFiltered: ${finalUrls.length - filteredUrls.length})`);
+  log.info(`${LOG_PREFIX} Step 2: submitting ${filteredUrls.length} URLs (topPages: ${topPages.length}/${allTopPages.length}, excludedURLs: ${excludedURLs.length}, includedURLs: ${includedURLs.length}, pdfsFiltered: ${finalUrls.length - filteredUrls.length})`);
 
   const result = {
     urls: filteredUrls.map((url) => ({ url })),
@@ -313,6 +317,26 @@ export async function runAuditAndProcessResults(context) {
   } catch (enrichmentError) {
     log.error(`${LOG_PREFIX} Step 3: Enrichment API call failed: ${enrichmentError.message}`);
     enrichmentResponse = { error: enrichmentError.message };
+  }
+
+  // Persist non-product URLs as excluded for future runs
+  const nonProductUrls = processedPages
+    .filter((page) => !page.isProductPage)
+    .map((page) => page.url);
+
+  if (nonProductUrls.length > 0) {
+    try {
+      const siteConfig = site.getConfig();
+      const existingExcluded = siteConfig.getExcludedURLs?.(AUDIT_TYPE) || [];
+      const mergedExcluded = [...new Set([...existingExcluded, ...nonProductUrls])]
+        .slice(0, MAX_EXCLUDED_URLS);
+      siteConfig.updateExcludedURLs(AUDIT_TYPE, mergedExcluded);
+      site.setConfig(Config.toDynamoItem(siteConfig));
+      await site.save();
+      log.info(`${LOG_PREFIX} Step 3: Updated excludedURLs with ${nonProductUrls.length} non-product URLs (total: ${mergedExcluded.length})`);
+    } catch (e) {
+      log.error(`${LOG_PREFIX} Step 3: Failed to persist excludedURLs: ${e.message}`);
+    }
   }
 
   log.info(`${LOG_PREFIX} Step 3: completed`, {
