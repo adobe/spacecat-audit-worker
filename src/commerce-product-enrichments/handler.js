@@ -158,7 +158,7 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log) {
     storeViewCode: commerceConfig.headers['Magento-Store-View-Code'],
     scrapes: productPages.map((page) => ({
       sku: page.sku,
-      path: page.location,
+      key: page.location,
     })),
   };
 

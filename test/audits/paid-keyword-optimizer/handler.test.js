@@ -56,6 +56,7 @@ function getSite(sandbox, overrides = {}) {
     getSiteId: () => 'test-site-id',
     getDeliveryType: () => 'aem-edge',
     getBaseURL: () => 'https://example.com',
+    getIsLive: () => false,
     getConfig: () => mockConfig,
     setConfig: sandbox.stub(),
     save: sandbox.stub().resolves(),
@@ -155,9 +156,11 @@ describe('Paid Keyword Optimizer Audit', () => {
       dataAccess: {
         Audit: {
           findById: sandbox.stub().resolves({
-            setAuditResult: sandbox.stub(),
-            save: sandbox.stub().resolves(),
+            getId: () => 'test-audit-id',
+            getAuditType: () => 'ad-intent-mismatch',
+            getFullAuditRef: () => 'www.test.com',
           }),
+          create: sandbox.stub().resolves({ getId: () => 'new-audit-id' }),
         },
       },
     };
@@ -268,11 +271,11 @@ describe('Paid Keyword Optimizer Audit', () => {
   });
 
   describe('runPaidKeywordAnalysisStep', () => {
-    it('should run analysis and update audit', async () => {
+    it('should run analysis and persist audit', async () => {
       const mockAudit = {
         getId: () => 'test-audit-id',
-        setAuditResult: sandbox.stub(),
-        save: sandbox.stub().resolves(),
+        getAuditType: () => 'ad-intent-mismatch',
+        getFullAuditRef: () => 'www.test.com',
       };
 
       const stepContext = {
@@ -286,15 +289,14 @@ describe('Paid Keyword Optimizer Audit', () => {
       const result = await runPaidKeywordAnalysisStep(stepContext);
 
       expect(result).to.deep.equal({});
-      expect(mockAudit.setAuditResult).to.have.been.called;
-      expect(mockAudit.save).to.have.been.called;
+      expect(context.dataAccess.Audit.create).to.have.been.called;
     });
 
     it('should disable import if it was enabled in step 1', async () => {
       const mockAudit = {
         getId: () => 'test-audit-id',
-        setAuditResult: sandbox.stub(),
-        save: sandbox.stub().resolves(),
+        getAuditType: () => 'ad-intent-mismatch',
+        getFullAuditRef: () => 'www.test.com',
       };
 
       const stepContext = {
@@ -322,8 +324,8 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       const mockAudit = {
         getId: () => 'test-audit-id',
-        setAuditResult: sandbox.stub(),
-        save: sandbox.stub().resolves(),
+        getAuditType: () => 'ad-intent-mismatch',
+        getFullAuditRef: () => 'www.test.com',
       };
 
       const stepContext = {
@@ -340,15 +342,15 @@ describe('Paid Keyword Optimizer Audit', () => {
       const result = await runPaidKeywordAnalysisStep(stepContext);
 
       expect(result).to.deep.equal({});
-      expect(mockAudit.setAuditResult).to.have.been.called;
+      expect(context.dataAccess.Audit.create).to.have.been.called;
       expect(logStub.error).to.have.been.calledWithMatch(/Failed to disable import \(cleanup\)/);
     });
 
     it('should not disable import if it was not enabled in step 1', async () => {
       const mockAudit = {
         getId: () => 'test-audit-id',
-        setAuditResult: sandbox.stub(),
-        save: sandbox.stub().resolves(),
+        getAuditType: () => 'ad-intent-mismatch',
+        getFullAuditRef: () => 'www.test.com',
       };
 
       const stepContext = {
@@ -366,11 +368,11 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(site.getConfig().disableImport).to.not.have.been.called;
     });
 
-    it('should update audit with analysis results', async () => {
+    it('should persist audit with analysis results', async () => {
       const mockAudit = {
         getId: () => 'test-audit-id',
-        setAuditResult: sandbox.stub(),
-        save: sandbox.stub().resolves(),
+        getAuditType: () => 'ad-intent-mismatch',
+        getFullAuditRef: () => 'www.test.com',
       };
 
       const stepContext = {
@@ -383,18 +385,18 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       await runPaidKeywordAnalysisStep(stepContext);
 
-      const savedResult = mockAudit.setAuditResult.getCall(0).args[0];
-      expect(savedResult).to.have.property('totalPageViews');
-      expect(savedResult).to.have.property('averageBounceRate');
-      expect(savedResult).to.have.property('predominantlyPaidPages');
-      expect(savedResult).to.have.property('predominantlyPaidCount');
+      const createCall = context.dataAccess.Audit.create.getCall(0).args[0];
+      expect(createCall.auditResult).to.have.property('totalPageViews');
+      expect(createCall.auditResult).to.have.property('averageBounceRate');
+      expect(createCall.auditResult).to.have.property('predominantlyPaidPages');
+      expect(createCall.auditResult).to.have.property('predominantlyPaidCount');
     });
 
     it('should send one message per qualifying page to mystique', async () => {
       const mockAudit = {
         getId: () => 'test-audit-id',
-        setAuditResult: sandbox.stub(),
-        save: sandbox.stub().resolves(),
+        getAuditType: () => 'ad-intent-mismatch',
+        getFullAuditRef: () => 'www.test.com',
       };
 
       const stepContext = {
@@ -424,6 +426,40 @@ describe('Paid Keyword Optimizer Audit', () => {
       expect(message2.url).to.equal('https://example.com/page2');
       expect(message2.data).to.have.property('bounceRate');
       expect(message2.data).to.have.property('pageViews');
+
+      // Messages must use the NEW audit ID (from AuditModel.create), not the step-1 audit ID
+      expect(message1.auditId).to.equal('new-audit-id');
+      expect(message2.auditId).to.equal('new-audit-id');
+    });
+
+    it('should use the new audit ID (not step-1 audit ID) in mystique messages', async () => {
+      const step1AuditId = 'step-1-stale-audit-id';
+      const newAuditId = 'new-audit-with-results-id';
+
+      context.dataAccess.Audit.create.resolves({ getId: () => newAuditId });
+
+      const mockAudit = {
+        getId: () => step1AuditId,
+        getAuditType: () => 'ad-intent-mismatch',
+        getFullAuditRef: () => 'www.test.com',
+      };
+
+      const stepContext = {
+        ...context,
+        site,
+        finalUrl: auditUrl,
+        audit: mockAudit,
+        auditContext: {},
+      };
+
+      await runPaidKeywordAnalysisStep(stepContext);
+
+      // Verify every SQS message uses the new audit ID, not the step-1 ID
+      for (let i = 0; i < context.sqs.sendMessage.callCount; i += 1) {
+        const message = context.sqs.sendMessage.getCall(i).args[1];
+        expect(message.auditId).to.equal(newAuditId);
+        expect(message.auditId).to.not.equal(step1AuditId);
+      }
     });
 
     it('should not send to mystique when no qualifying pages', async () => {
@@ -440,8 +476,8 @@ describe('Paid Keyword Optimizer Audit', () => {
 
       const mockAudit = {
         getId: () => 'test-audit-id',
-        setAuditResult: sandbox.stub(),
-        save: sandbox.stub().resolves(),
+        getAuditType: () => 'ad-intent-mismatch',
+        getFullAuditRef: () => 'www.test.com',
       };
 
       const stepContext = {

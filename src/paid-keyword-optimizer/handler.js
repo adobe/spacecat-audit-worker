@@ -389,7 +389,6 @@ export async function runPaidKeywordAnalysisStep(context) {
     site, finalUrl, audit, log, auditContext, sqs, env,
   } = context;
   const siteId = site.getId();
-  const auditId = audit.getId();
 
   log.info(`[ad-intent-mismatch] [Site: ${finalUrl}] Step 2: Running paid keyword analysis`);
 
@@ -406,9 +405,18 @@ export async function runPaidKeywordAnalysisStep(context) {
   // Run the actual analysis
   const result = await paidKeywordOptimizerRunner(finalUrl, context, site);
 
-  // Update the audit with real results
-  audit.setAuditResult(result.auditResult);
-  await audit.save();
+  // Persist the real audit results (Audit model does not allow updates,
+  // so we create a new audit entry with the final results)
+  const { Audit: AuditModel } = context.dataAccess;
+  const newAudit = await AuditModel.create({
+    siteId,
+    isLive: site.getIsLive(),
+    auditedAt: new Date().toISOString(),
+    auditType: audit.getAuditType(),
+    auditResult: result.auditResult,
+    fullAuditRef: audit.getFullAuditRef(),
+  });
+  const newAuditId = newAudit.getId();
 
   log.debug(`[ad-intent-mismatch] [Site: ${finalUrl}] Audit updated with analysis results`);
 
@@ -431,7 +439,7 @@ export async function runPaidKeywordAnalysisStep(context) {
 
   // Send one message per qualifying page
   await Promise.all(qualifyingPages.map((page) => {
-    const mystiqueMessage = buildMystiqueMessage(site, auditId, page);
+    const mystiqueMessage = buildMystiqueMessage(site, newAuditId, page);
     log.info(
       `[ad-intent-mismatch] [Site: ${finalUrl}] Sending message for ${page.url} to mystique: `
       + `${JSON.stringify(mystiqueMessage, null, 2)}`,
