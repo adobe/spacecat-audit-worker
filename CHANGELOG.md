@@ -1,3 +1,10 @@
+# [1.321.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.320.0...v1.321.0) (2026-02-17)
+
+
+### Features
+
+* enable SQS fair queuing via MessageGroupId ([#2001](https://github.com/adobe/spacecat-audit-worker/issues/2001)) ([063d852](https://github.com/adobe/spacecat-audit-worker/commit/063d85238475c81920ab8458528e6cd7a39c3e27))
+
 # [1.320.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.319.1...v1.320.0) (2026-02-17)
 
 
