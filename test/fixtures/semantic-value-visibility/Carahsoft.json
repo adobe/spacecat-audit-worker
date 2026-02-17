@@ -1,0 +1,202 @@
+{
+  "url": "https://carahsoft.com/",
+  "opportunityType": "semantic-value-visibility",
+  "suggestions": [
+    {
+      "data": {
+        "imageUrl": "https://static.carahsoft.com/concrete/files/6617/6522/3539/WEST-2026_Homepage-Banner-Updated.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://static.carahsoft.com/concrete/files/6617/6522/3539/WEST-2026_Homepage-Banner-Updated.jpg\">\n  <span>carahsoft</span>\n  <h2>Carahsoft and Partners at WEST 2026</h2>\n  <span>February 10 - 12, 2026 \u2022 San Diego, CA</span>\n  <button>Learn More</button>\n</section>",
+        "detectedText": [
+          "carahsoft ",
+          "Carahsoft and Partners",
+          "at WEST 2026",
+          "February 10",
+          "12, 2026",
+          "San Diego, CA",
+          "Learn More "
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://static.carahsoft.com/concrete/files/6617/6522/3539/WEST-2026_Homepage-Banner-Updated.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://static.carahsoft.com/concrete/files/2317/6979/1365/Carahsoft_GovExec_GovExperience_Summit_2026_1140x325.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://static.carahsoft.com/concrete/files/2317/6979/1365/Carahsoft_GovExec_GovExperience_Summit_2026_1140x325.jpg\">\n  <span>carahsoft</span>\n  <span>GovExec</span>\n  <h2>GovExperience SUMMIT</h2>\n  <p>Advancing Government Service Delivery &amp; CX</p>\n  <button>Register Now</button>\n  <span>June 2, 2026</span>\n  <span>Reston, VA</span>\n</section>",
+        "detectedText": [
+          "carahsoft",
+          "powered by",
+          "GovExec",
+          "Gov Experience",
+          "SUMMIT",
+          "Advancing Government",
+          "Service Delivery & CX",
+          "Register Now",
+          "June 2,2026",
+          "Reston; VA"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://static.carahsoft.com/concrete/files/2317/6979/1365/Carahsoft_GovExec_GovExperience_Summit_2026_1140x325.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://static.carahsoft.com/concrete/files/1417/7022/0984/OneGov-Graphics-2026-Homepage-Banner.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://static.carahsoft.com/concrete/files/1417/7022/0984/OneGov-Graphics-2026-Homepage-Banner.jpg\">\n  <span>OneGov Offerings Available Now</span>\n  <h2>Cost-Saving Technology Solutions for Government</h2>\n  <button>View Special Offers</button>\n  <span>carahsoft</span>\n</section>",
+        "detectedText": [
+          "OneGov",
+          "Offerings Available Now",
+          "Cost-Saving Technology",
+          "Solutions for Government",
+          "View Special Offers",
+          "carahsoft"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://static.carahsoft.com/concrete/files/1417/7022/0984/OneGov-Graphics-2026-Homepage-Banner.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://static.carahsoft.com/concrete/files/6017/3990/9507/SGT-Home-page-Banner.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://static.carahsoft.com/concrete/files/6017/3990/9507/SGT-Home-page-Banner.jpg\">\n  <span>carahsoft.</span>\n  <h2>Explore all our Self-Guided Tours for Government</h2>\n  <button>Tour Our Solutions</button>\n</section>",
+        "detectedText": [
+          "carahsoft",
+          "Explore all our Self-Guided",
+          "Tours for Government",
+          "Tour Our Solutions"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://static.carahsoft.com/concrete/files/6017/3990/9507/SGT-Home-page-Banner.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://static.carahsoft.com/concrete/files/1517/4076/7653/Buyers-Guide-Hub-Banners_Homepage-Banner.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://static.carahsoft.com/concrete/files/1517/4076/7653/Buyers-Guide-Hub-Banners_Homepage-Banner.jpg\">\n  <span>carahsoft</span>\n  <h2>Explore Carahsoft\u2019s Buyer\u2019s Guides for Government</h2>\n  <button>View our Buyer\u2019s Guides</button>\n</section>",
+        "detectedText": [
+          "carahsoft",
+          "40",
+          "Explore Carahsoft'$ Buyer's Guides",
+          "for Government",
+          "View our Buyer's Guides",
+          "Govet",
+          "OSINT"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://static.carahsoft.com/concrete/files/1517/4076/7653/Buyers-Guide-Hub-Banners_Homepage-Banner.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://static.carahsoft.com/concrete/files/6117/6997/1583/SF-AppExchange-Self-Guided-Tour--home-page.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://static.carahsoft.com/concrete/files/6117/6997/1583/SF-AppExchange-Self-Guided-Tour--home-page.jpg\">\n  <span>carahsoft</span>\n  <h2>Explore Our Salesforce AppExchange Self-Guided Tours</h2>\n  <button>Discover Public Sector Solutions</button>\n</section>",
+        "detectedText": [
+          "carahsoft",
+          "Explore Our Salesforce",
+          "AppExchange Self-Guided Tours",
+          "Discover Public Sector Solutions"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://static.carahsoft.com/concrete/files/6117/6997/1583/SF-AppExchange-Self-Guided-Tour--home-page.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://static.carahsoft.com/concrete/files/1617/6997/1435/Carahsoft-Public-Sector-Partners.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://static.carahsoft.com/concrete/files/1617/6997/1435/Carahsoft-Public-Sector-Partners.jpg\">\n  <span>carahsoft</span>\n  <h2>Explore Our Salesforce Partner Program Self-Guided Tours</h2>\n  <button>Discover Public Sector Solutions</button>\n</section>",
+        "detectedText": [
+          "carahsoft",
+          "Explore Our Salesforce",
+          "Partner Program Self-Guided Tours",
+          "Discover Public Sector Solutions"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://static.carahsoft.com/concrete/files/1617/6997/1435/Carahsoft-Public-Sector-Partners.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://static.carahsoft.com/concrete/files/6317/4480/9746/NextGovFCW_IIG_Report_April_The_Essential_Elements_of_IT_Modernization_homepage.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://static.carahsoft.com/concrete/files/6317/4480/9746/NextGovFCW_IIG_Report_April_The_Essential_Elements_of_IT_Modernization_homepage.jpg\">\n  <span>Innovation in Government</span>\n  <span>carahsoft</span>\n  <h2>The Essential Elements of</h2>\n  <span>IN PARTNERSHIP WITH:</span>\n  <span>Dell Technologies</span>\n  <button>READ THE REPORT HERE</button>\n</section>",
+        "detectedText": [
+          "Innovation",
+          "in Government",
+          "carahsoft",
+          "The Essential Elements of",
+          "IN PARTNERSHIP WITH:",
+          "DALTechnologies",
+          "READ THE REPORT HERE"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://static.carahsoft.com/concrete/files/6317/4480/9746/NextGovFCW_IIG_Report_April_The_Essential_Elements_of_IT_Modernization_homepage.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://static.carahsoft.com/concrete/files/4217/4481/0167/FCW_Sept_Oct_homepage.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://static.carahsoft.com/concrete/files/4217/4481/0167/FCW_Sept_Oct_homepage.jpg\">\n  <span>INNOVATION IN GOVERNMENT</span>\n  <span>NEXTGOV FCW</span>\n  <h2>Delving Deeper into Open-Source Intelligence</h2>\n  <button>READ THE REPORT HERE</button>\n</section>",
+        "detectedText": [
+          "INNOVATION IN GOVERNMENT",
+          "NEXTCOVI",
+          "FCW",
+          "Delving Deeper into",
+          "Open-Source Intelligence",
+          "READ THE REPORT HERE"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://static.carahsoft.com/concrete/files/4217/4481/0167/FCW_Sept_Oct_homepage.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://static.carahsoft.com/concrete/files/7017/4481/0098/FCW_AI_homepage.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://static.carahsoft.com/concrete/files/7017/4481/0098/FCW_AI_homepage.jpg\">\n  <span>Innovation in Government</span>\n  <span>IN PARTNERSHIP WITH: carahsoft</span>\n  <h2>COLLABORATING FOR</h2>\n  <h2>Responsible AI in National Security</h2>\n  <button>READ THE REPORT HERE</button>\n</section>",
+        "detectedText": [
+          "Innovation",
+          "IN PARTNERSHIP WITH: carahsoft",
+          "in Government\"",
+          "Responsible AI in",
+          "National Security",
+          "READ THE REPORT HERE"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://static.carahsoft.com/concrete/files/7017/4481/0098/FCW_AI_homepage.jpg\"]"
+        }
+      }
+    }
+  ],
+  "stats": {
+    "totalImages": 10,
+    "successfulSuggestions": 10,
+    "noGuidanceNeeded": 0
+  }
+}

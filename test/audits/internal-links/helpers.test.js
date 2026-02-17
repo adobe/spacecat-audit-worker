@@ -128,7 +128,7 @@ describe('isLinkInaccessible', () => {
     expect(result).to.be.true;
   });
 
-  it('should return true and log warning for non-404 client errors', async function call() {
+  it('should return false and log warning for non-404 client errors (only 404 reported as broken)', async function call() {
     this.timeout(6000);
     nock('https://example.com')
       .head('/forbidden')
@@ -137,9 +137,9 @@ describe('isLinkInaccessible', () => {
       .reply(403);
 
     const result = await isLinkInaccessible('https://example.com/forbidden', mockLog, 'test-site-id');
-    expect(result).to.be.true;
+    expect(result).to.be.false;
     expect(mockLog.warn.calledWith(
-      '[auditType=broken-internal-links] [siteId=test-site-id] ⚠ WARNING: https://example.com/forbidden returned client error 403',
+      sinon.match(/⚠ WARNING: https:\/\/example\.com\/forbidden returned client error 403/),
     )).to.be.true;
   });
 

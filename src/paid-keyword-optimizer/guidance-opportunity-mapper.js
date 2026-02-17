@@ -31,12 +31,12 @@ function formatNumberWithK(num) {
 
 /**
  * Checks if the guidance body indicates a low severity issue
- * @param {Object} body - The guidance body object
+ * @param {Object} guidanceBody - The guidance body object (guidance[0].body)
  * @returns {boolean} True if severity is low or none
  */
-export function isLowSeverityGuidanceBody(body) {
-  if (body && body.issueSeverity) {
-    const sev = body.issueSeverity.toLowerCase();
+export function isLowSeverityGuidanceBody(guidanceBody) {
+  if (guidanceBody && guidanceBody.issueSeverity) {
+    const sev = guidanceBody.issueSeverity.toLowerCase();
     return sev.includes('none') || sev.includes('low');
   }
 
@@ -44,21 +44,27 @@ export function isLowSeverityGuidanceBody(body) {
 }
 
 /**
- * Maps audit data to a paid keyword optimizer opportunity entity
+ * Maps audit data to an ad-intent-mismatch opportunity entity.
+ *
+ * Reads guidance data from message.data.guidance[0] (GuidanceWithBody pattern).
+ * The guidance entry contains insight/rationale/recommendation at top level,
+ * and cpc/sumTraffic/url/issueSeverity in its body dict.
+ *
  * @param {string} siteId - The site ID
  * @param {Object} audit - The audit object
- * @param {Object} message - The message from Mystique with insight, rationale,
- *   recommendation, and body
+ * @param {Object} message - The SQS message from mystique
  * @returns {Object} Opportunity entity
  */
 export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
   const stats = audit.getAuditResult();
+  const { guidance } = message.data;
+  const guidanceEntry = guidance?.[0] || {};
   const {
     insight, rationale, recommendation, body,
-  } = message;
-  const url = body?.data?.url;
-  const cpc = body?.data?.cpc;
-  const sumTraffic = body?.data?.sum_traffic;
+  } = guidanceEntry;
+  const url = body?.url;
+  const cpc = body?.cpc;
+  const sumTraffic = body?.sumTraffic;
 
   // Look up per-page data from predominantlyPaidPages
   const paidPages = stats.predominantlyPaidPages || [];
@@ -120,10 +126,13 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
 }
 
 /**
- * Maps guidance data to a paid keyword optimizer suggestion entity
+ * Maps guidance data to an ad-intent-mismatch suggestion entity.
+ *
+ * Reads variation data from message.data.guidance[0].body.suggestions.
+ *
  * @param {Object} context - The execution context
  * @param {string} opportunityId - The opportunity ID
- * @param {Object} message - The message from Mystique with body.data.suggestions
+ * @param {Object} message - The SQS message from mystique
  * @returns {Object} Suggestion entity
  */
 export function mapToKeywordOptimizerSuggestion(
@@ -131,7 +140,8 @@ export function mapToKeywordOptimizerSuggestion(
   opportunityId,
   message = {},
 ) {
-  const variations = message.body?.data?.suggestions || [];
+  const { guidance } = message.data || {};
+  const variations = guidance?.[0]?.body?.suggestions || [];
 
   return {
     opportunityId,

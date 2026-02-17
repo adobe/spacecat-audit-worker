@@ -1,0 +1,555 @@
+{
+  "url": "https://veseris.com/default/",
+  "opportunityType": "semantic-value-visibility",
+  "suggestions": [
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/desktop-feb-equip.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/desktop-feb-equip.png\">\n  <h2>ENJOY 5% OFF SELECT BRANDS AND PRODUCTS</h2>\n  <p>Now is an ideal time to update your gear</p>\n  <button>Learn More</button>\n</section>",
+        "detectedText": [
+          "ENJOY 5% OFF SELECT",
+          "BRANDS AND PRODUCTS",
+          "Now is an ideal time to update your gear",
+          "Learn More"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/desktop-feb-equip.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/desktop-Dust_Devil.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/desktop-Dust_Devil.png\">\n  <span>VESERIS EXCLUSIVE</span>\n  <h2>DUST DEVIL</h2>\n  <span>Tidal Professional Products</span>\n  <span>$20.00 OFF</span>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "VESERIS EXCLUSIVE",
+          "DUST DEVIL",
+          "S20.00 OFF",
+          "Tidal Professional Products",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/desktop-Dust_Devil.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/desktop-MosquitoCon.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/desktop-MosquitoCon.png\">\n  <h2>MOSQUITOCON\u00ae</h2>\n  <span>WATER-HOLDING RECEPTACLE</span>\n  <p>Your Partner in Year Round Mosquito Management</p>\n  <button>Shop Now</button>\n  <span>MOSQUITOCON\u00ae BY VM</span>\n  <span>VM</span>\n</section>",
+        "detectedText": [
+          "WATER-HOLDING RECEPTACLE",
+          "Your Partner in Year Round Mosquito Management",
+          "Shop Now",
+          "MOSQUITOC",
+          "N",
+          "BY VM",
+          "VM",
+          "PRODUCTS"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/desktop-MosquitoCon.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/desktop-Ridesco_1.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/desktop-Ridesco_1.png\">\n  <h2>RIDESCO WG</h2>\n  <span>Introducing the Rapid Response Heavy Hitters</span>\n  <button>Shop Now</button>\n  <span>BASF We create chemistry</span>\n</section>",
+        "detectedText": [
+          "RIDESCO WG",
+          "Ridesco WG",
+          "Ridesco\" WG",
+          "Inseclicide",
+          "Introducing the Rapid Response Heavy Hitters",
+          "CAUTONPRECAUCION",
+          "Shop Now",
+          "BASF",
+          "We create chemistry"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/desktop-Ridesco_1.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/desktop-Cadet_Blox.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/desktop-Cadet_Blox.png\">\n  <h2>CADET BLOX\u2122</h2>\n  <p>Palatable vitamin D3 bait for sensitive accounts</p>\n  <button>Shop Now</button>\n  <span>Bell</span>\n</section>",
+        "detectedText": [
+          "TM",
+          "NEW",
+          "Bell",
+          "BLOX",
+          "CADET BLOX",
+          "CADET",
+          "ALL-WEATHER BLOX",
+          "KILLS RATS, HOUSE MICE & MEADOWVOLES",
+          "Palatable vitamin D3 bait for sensitive accounts",
+          "NET WT:",
+          "Bell",
+          "Shop Now",
+          "TN"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/desktop-Cadet_Blox.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/desktop-Truwear.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/desktop-Truwear.png\">\n  <h2>TRUWEAR SERVICES</h2>\n  <p>VESERIS IS PROUD TO PARTNER WITH TRUWEAR TO PROVIDE PREMIUM UNIFORMING, SWAG, AND MARKETING MATERIALS FOR ALL VESERIS CLIENTS.</p>\n  <p>Through this partnership, clients receive exclusive access to TruWear's high-quality products and services at a special partner's discount.</p>\n  <button>Go to Store</button>\n</section>",
+        "detectedText": [
+          "TRUWEAR SERVICES",
+          "YOUR",
+          "Your",
+          "NAME",
+          "Logo",
+          "VESERIS [S PROUD TO PARTNER WITH TRUWEAR TO PROVIDE",
+          "Your",
+          "NAME",
+          "Logo",
+          "PREMIUM UNIFORMING, SWAG, AND MARKETING MATERIALS",
+          "FOR AlL VESERIS CLIENTS.",
+          "Through this partnership, clients receive exclusive access to Truwear's",
+          "high-quality products and services at a special partnership discount",
+          "Learn More"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/desktop-Truwear.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/desktop-in2care.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/desktop-in2care.png\">\n  <h2>Put Mosquitoes To Work For You</h2>\n  <p>Always-on mosquito control that protects customers and offers new ways to earn.</p>\n  <button>Learn More</button>\n  <span>IN2CARE</span>\n</section>",
+        "detectedText": [
+          "Put Mosquitoes To Work For You",
+          "Always-on mosquito control that protects",
+          "customers and offers new ways to earn:_",
+          "Learn More",
+          "INZCARE",
+          "Mosquito Station"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/desktop-in2care.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/desktop-Syngentapp365_1920x550_HPBA.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/desktop-Syngentapp365_1920x550_HPBA.png\">\n  <span>Syngenta</span>\n  <span>PestPartners365</span>\n  <h2>HEROIC SAVINGS, ASSEMBLED!</h2>\n  <p>The Industry\u2019s Only Yearlong Rebate Program</p>\n  <button>Join Now</button>\n</section>",
+        "detectedText": [
+          "syngenta:",
+          "PestPartners365",
+          "HEROIC SAVINGS,",
+          "The Industrys Only Yearlong Rebate Program",
+          "Learn More",
+          "U"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/desktop-Syngentapp365_1920x550_HPBA.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/category-reodents-wildlife-3_2.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/category-reodents-wildlife-3_2.png\">\n  <h2>RODENTS WILDLIFE</h2>\n  <span>CONTRA</span>\n</section>",
+        "detectedText": [
+          "RODENTS",
+          "WILDLIFE",
+          "[CONTRA"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/category-reodents-wildlife-3_2.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/category-safety-anitizers-3.2_4.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/category-safety-anitizers-3.2_4.png\">\n  <h2>SAFETY, ODOR & SANITIZERS</h2>\n</section>",
+        "detectedText": [
+          "SAFETY, ODOR",
+          "SANITIZERS"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/category-safety-anitizers-3.2_4.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/category-turf-ornamental-4.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/category-turf-ornamental-4.png\">\n  <h2>VEGETATION</h2>\n  <span>Roundup</span>\n</section>",
+        "detectedText": [
+          "VEGETATION",
+          "Roundup"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/category-turf-ornamental-4.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/category-promotions-3_2.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/category-promotions-3_2.png\">\n  <h2>PROMOTIONS</h2>\n  <span>ON SALE</span>\n</section>",
+        "detectedText": [
+          "PROMOTIONS",
+          "ON",
+          "SALE"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/category-promotions-3_2.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/ridesco_HPBA.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/ridesco_HPBA.png\">\n  <span>BASF</span>\n  <span>We create chemistry</span>\n  <h2>RIDESCO</h2>\n  <p>Introducing the Rapid Response Heavy Hitters</p>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "BASF",
+          "We create chemistry",
+          "RIDESCO",
+          "Introducing the Rapid",
+          "Response Heavy Hitters",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/ridesco_HPBA.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/24_7iQ_HPBA__1_.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/24_7iQ_HPBA__1_.png\">\n  <span>POWERED BY Bell SENSING TECHNOLOGY</span>\n  <h2>24/7 iQ</h2>\n  <p>Multiple Catch Sensing Trap</p>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "ROWERED BY",
+          "Bell",
+          "SENSING TECHNCIOGIES\"",
+          "24/7",
+          "Multiple Catch Sensing Trap",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/24_7iQ_HPBA__1_.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/FUSE_HPBA_.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/FUSE_HPBA_.png\">\n  <span>Control Solutions Inc.</span>\n  <span>A member of the ADAMA Group</span>\n  <h2>FUSE COCKROACH GEL BAIT</h2>\n  <p>Dual action delivers dependable, next-level cockroach control for up to six months.</p>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "Control",
+          "Solutions Inc.",
+          "fthe ADAMA",
+          "FUSE COCKROACH",
+          "GEL BAIT",
+          "Dual action delivers dependable;",
+          "next-level cockroach control for",
+          "Shop Now",
+          "up to six months_",
+          "Goud"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/FUSE_HPBA_.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/Suspend-Poly_HPBA.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/Suspend-Poly_HPBA.png\">\n  <span>envu</span>\n  <h2>SUSPEND POLYZONE INSECTICIDE</h2>\n  <p>Power that delivers. Complete coverage that lasts.</p>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "SUSPEND POLYZONE",
+          "INSECTICIDE",
+          "Power that delivers_",
+          "Complete coverage that lasts",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/Suspend-Poly_HPBA.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/pp365_HPBA_1_.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/pp365_HPBA_1_.png\">\n  <span>Syngenta</span>\n  <span>PestPartners 365</span>\n  <h2>THE 2026 PESTPARTNERS 365 PROGRAM</h2>\n  <p>The industry's only yearlong rebate program fit for pest control superheroes like you!</p>\n  <button>Learn More</button>\n</section>",
+        "detectedText": [
+          "syngenta",
+          "PestPartners 365",
+          "THE 2026",
+          "PESTPARTNERS 365",
+          "PROGRAM",
+          "The industry's only yearlong",
+          "rebate program fit for pest",
+          "Learn More",
+          "control superheroes like you?"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/pp365_HPBA_1_.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/ez-secured_HPBA_copy_1_.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/ez-secured_HPBA_copy_1_.png\">\n  <h2>EZ SECURED</h2>\n  <p>The Original Weighted Rodent Bait Station</p>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "ZSECURED'",
+          "The Original Weighted",
+          "Rodent Bait Station",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/ez-secured_HPBA_copy_1_.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-BASF.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-BASF.png\">\n  <span>BASF</span>\n  <span>We create chemistry</span>\n  <h2>FENDONA CS</h2>\n  <p>Advanced encapsulation technology for fast, effective perimeter pest control.</p>\n  <button>Save Now</button>\n</section>",
+        "detectedText": [
+          "BASF",
+          "We create chemistry",
+          "FENDONA \u20acS",
+          "Advanced encapsulation",
+          "technology for fast;",
+          "effective perimeter",
+          "Save Now",
+          "pest control:"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-BASF.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-BELL.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-BELL.png\">\n  <span>Bell</span>\n  <span>TNC</span>\n  <h2>EXPRESS IQ</h2>\n  <p>revolutionary bait station tray with sensor:</p>\n  <p>Combines durability with smart technology:</p>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "Bell",
+          "TNC",
+          "EXPRESS IQ",
+          "revolutionary bait",
+          "station tray with sensor:",
+          "Combines durability",
+          "with smart technology:",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-BELL.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-CSI.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-CSI.png\">\n  <span>Control Solutions Inc.</span>\n  <span>A member of the ADAMA Group</span>\n  <h2>DURAFLEX ZC</h2>\n  <p>The first microencapsulated concentrate that combines Bifenthrin with Novaluron and Pyriproxyfen.</p>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "Control",
+          "Solutions Inc.",
+          "mernber",
+          "ADAMA Group",
+          "The first microencapsulated",
+          "concentrate that combines",
+          "Bifenthrin with Novaluron",
+          "and Pyriproxyfen:",
+          "Shop Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-CSI.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-ENVU_1.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-ENVU_1.png\">\n  <h2>SCION INSECTICIDE</h2>\n  <p>Comes with a 75-day no-retreatment assurance for mosquitoes.</p>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "SCION",
+          "INSECTICIDE",
+          "Comes with a 75-day",
+          "no-retreatment assurance",
+          "Shop Now",
+          "for mosquitoes."
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-ENVU_1.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/Block_Ad-April-Syngenta.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/Block_Ad-April-Syngenta.png\">\n  <span>syngenta</span>\n  <h2>DEMAND CS</h2>\n  <p>Offers up to 90 days of control of more than 30 pests, including mosquitoes, ticks, fleas, ants and cockroaches.</p>\n  <button>Shop Now</button>\n</section>",
+        "detectedText": [
+          "syngenta:",
+          "DEMAND CS",
+          "Offers up to 90 days of",
+          "control of more than 30",
+          "pests, including",
+          "mosquitoes, ticks, fleas,",
+          "Shop Now",
+          "ants and cockroaches_"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/Block_Ad-April-Syngenta.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-VM.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-VM.png\">\n  <span>VM PRODUCTS</span>\n  <h2>MOSQUITOCON</h2>\n  <p>The next innovation in backyard mosquito management.</p>\n  <button>Shop Now</button>\n  <small>Sold exclusively at Veseris.</small>\n</section>",
+        "detectedText": [
+          "PRODUCTS",
+          "MOSQUITOCON",
+          "The next innovation",
+          "in backyard mosquito",
+          "management:",
+          "Shop Now",
+          "Sold exclusively at Veseris.",
+          "VM"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/MAY-home-page-block-ads-VM.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/protrain-erin.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/protrain-erin.png\">\n  <span>VESERIS | ProTraining</span>\n  <h2>FREE TECHNICAL WEBINAR</h2>\n  <span>15 JANUARY 2026 11 AM CENTRAL</span>\n  <h3>HOW TO PICK THE RIGHT SAFETY EQUIPMENT</h3>\n  <p>Equip your team with confidence. This webinar breaks down how to select the best personal protective equipment for every job \u2014 from ear protection to respirators and more.</p>\n  <span>VESERIS</span>\n</section>",
+        "detectedText": [
+          "VESERIS",
+          "ProTraining",
+          "WEBINAR",
+          "FREE TECHNICAL",
+          "15 JANUARY 2026",
+          "11AM CENTRAL",
+          "WEBINAR",
+          "HOW TO PICK THE RIGHT",
+          "SAFETY EQUIPMENT",
+          "VESERIS",
+          "Equip your team with confidence; This webinar breaks down how to",
+          "select the best personal protective equipment for every job",
+          "from",
+          "Cye protection t0 rcspirators and morc:"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/protrain-erin.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/catalog/product/P/I/PIF16849_31CA7C70-5056-B42F-DD18AA178711467A.png?width=480&height=600&canvas=480,600&quality=80&bg-color=255,255,255&fit=bounds",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/catalog/product/P/I/PIF16849_31CA7C70-5056-B42F-DD18AA178711467A.png?width=480&height=600&canvas=480,600&quality=80&bg-color=255,255,255&fit=bounds\">\n  <h2>DEADLINE</h2>\n  <span>MPs</span>\n</section>",
+        "detectedText": [
+          "DEADLINE",
+          "MPs"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://veseris.com/media/catalog/product/P/I/PIF16849_31CA7C70-5056-B42F-DD18AA178711467A.png?width=480&height=600&canvas=480,600&quality=80&bg-color=255,255,255&fit=bounds\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://veseris.com/media/wysiwyg/ProTraining-Tech-Webinar-Nisus-May-22-Feature-Box-Thumb-800-x-400-v2.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://veseris.com/media/wysiwyg/ProTraining-Tech-Webinar-Nisus-May-22-Feature-Box-Thumb-800-x-400-v2.png\">\n  <span>VESERIS</span>\n  <span>ProTraining</span>\n  <span>LIVE</span>\n  <span>WEBINAR</span>\n  <h2>POWER PLAYS FOR PEST CONTROL: MASTERING COMMERCHAL KITCHENS & BARS</h2>\n  <span>NISUS</span>\n  <span>22 MAY 2025</span>\n  <span>11AM CENTRAL</span>\n  <small>NEWI</small>\n  <button>Register Now</button>\n  <small>JAMEL SANDIDGE, PHD</small>\n  <small>Naticnal Director Technic</small>\n</section>",
+        "detectedText": [
+          "LIVE",
+          "VESERIS",
+          "ProTraining",
+          "WEBINAR",
+          "POWER PLAYS FOR PEST CONTROL:",
+          "MASTERING COMMERCHAL KITCHENS & BARS",
+          "NISUS",
+          "22 MAY 2025",
+          "11AM CENTRAL",
+          "NEWI",
+          "Register Now",
+          "JAMEL SANDIDGE, PHD",
+          "Naticnal",
+          "Director",
+          "Technic"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://veseris.com/media/wysiwyg/ProTraining-Tech-Webinar-Nisus-May-22-Feature-Box-Thumb-800-x-400-v2.png\"]"
+        }
+      }
+    }
+  ],
+  "stats": {
+    "totalImages": 27,
+    "successfulSuggestions": 27,
+    "noGuidanceNeeded": 0
+  }
+}

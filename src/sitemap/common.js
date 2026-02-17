@@ -168,12 +168,12 @@ export async function filterValidUrls(urls, log) {
 
       // Handle successful responses
       if (response.status === 200) {
-        log?.debug(`Valid URL found: ${url}`);
+        log?.debug(`Sitemap: Valid URL found: ${url}`);
         return { type: 'ok', url };
       }
 
       /* c8 ignore next */
-      log?.debug(`URL check for ${url} returned status: ${response.status}`);
+      log?.debug(`Sitemap: URL check for ${url} returned status: ${response.status}`);
 
       // Handle redirects
       if (response.status === 301 || response.status === 302) {
@@ -411,9 +411,11 @@ export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls) {
   return pagesBySitemap;
 }
 
-export async function getSitemapUrls(inputUrl) {
+export async function getSitemapUrls(inputUrl, log) {
   const parsedUrl = extractDomainAndProtocol(inputUrl);
   if (!parsedUrl) {
+    /* c8 ignore next */
+    log?.error(`Sitemap: Invalid URL provided: ${inputUrl}`);
     return {
       success: false,
       reasons: [{ value: inputUrl, error: ERROR_CODES.INVALID_URL }],
@@ -431,6 +433,8 @@ export async function getSitemapUrls(inputUrl) {
       sitemapUrls.ok = robotsResult.paths;
     }
   } catch (error) {
+    /* c8 ignore next */
+    log?.error(`Sitemap: Error checking robots.txt for ${inputUrl}: ${error.message}`);
     // If robots.txt fails, return error immediately (to match test expectations)
     return {
       success: false,

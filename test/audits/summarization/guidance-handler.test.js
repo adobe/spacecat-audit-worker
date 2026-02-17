@@ -364,9 +364,9 @@ describe('summarization guidance handler', () => {
     const syncCall = syncSuggestionsStub.getCall(0);
     const syncArgs = syncCall.args[0];
 
-    // Verify newData structure contains page, key points, and section suggestions
+    // Verify newData structure contains page and key points suggestions (no section summaries)
     expect(syncArgs.newData).to.be.an('array');
-    expect(syncArgs.newData).to.have.length(3); // page + key points + section
+    expect(syncArgs.newData).to.have.length(2); // page + key points
 
     // Test the mapNewSuggestion function
     const testData = {
@@ -551,9 +551,9 @@ describe('summarization guidance handler', () => {
     const syncCall = syncSuggestionsStub.getCall(0);
     const syncArgs = syncCall.args[0];
     
-    // Verify the newData structure (from getJsonSummarySuggestion)
+    // Verify the newData structure (from getJsonSummarySuggestion) - page + key points only
     expect(syncArgs.newData).to.be.an('array');
-    expect(syncArgs.newData).to.have.length(3); // page summary + key points + section summary
+    expect(syncArgs.newData).to.have.length(2); // page summary + key points
     
     // Test the first suggestion (page-level)
     const pageLevelSuggestion = syncArgs.newData[0];
@@ -572,15 +572,6 @@ describe('summarization guidance handler', () => {
     expect(keyPointsSuggestion).to.have.property('url', 'https://adobe.com/page1');
     expect(keyPointsSuggestion).to.have.nested.property('transformRules.selector', 'h1');
     expect(keyPointsSuggestion).to.have.nested.property('transformRules.action', 'insertAfter');
-    
-    // Test the third suggestion (section-level)
-    const sectionLevelSuggestion = syncArgs.newData[2];
-    expect(sectionLevelSuggestion).to.have.property('summarizationText', 'Section summary 1');
-    expect(sectionLevelSuggestion).to.have.property('fullPage', false);
-    expect(sectionLevelSuggestion).to.have.property('keyPoints', false);
-    expect(sectionLevelSuggestion).to.have.property('url', 'https://adobe.com/page1');
-    expect(sectionLevelSuggestion).to.have.nested.property('transformRules.selector', 'h2.section-heading');
-    expect(sectionLevelSuggestion).to.have.nested.property('transformRules.action', 'insertAfter');
     
     // Test the mapNewSuggestion function
     const testSuggestionData = {

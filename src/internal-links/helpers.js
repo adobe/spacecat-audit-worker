@@ -112,7 +112,7 @@ async function checkLinkWithHead(url, log) {
       return false;
     }
 
-    if (status === 404 || status >= 500) {
+    if (status === 404) {
       log.info(`✗ BROKEN LINK FOUND: ${url} (HEAD ${status})`);
       return true;
     }
@@ -163,7 +163,7 @@ async function checkLinkWithGet(url, isAsset, log) {
       log.warn(`⚠ WARNING: ${url} returned client error ${status}`);
     }
 
-    const isBroken = status >= 400;
+    const isBroken = status === 404;
     if (isBroken) {
       log.info(`✗ BROKEN LINK FOUND: ${url} (GET ${status})`);
     }
@@ -193,7 +193,8 @@ async function checkLinkWithGet(url, isAsset, log) {
 
 /**
  * Checks if a URL is inaccessible by attempting to fetch it.
- * Returns true if fetch fails, times out, or status >= 400.
+ * Returns true only when statusCode is 404 or GET request throws (network/other error).
+ * Other 4xx (401, 403, 410) and 5xx are not reported as broken; timeouts are treated as accessible.
  *
  * Strategy: HEAD first (faster), fallback to GET if inconclusive.
  * Static assets skip HEAD (often fail) and use GET with Range header.
