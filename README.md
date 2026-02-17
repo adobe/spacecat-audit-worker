@@ -492,6 +492,69 @@ export function createOpportunityData(parameters) {
 ```
 
 
+### Auto-Detection of Publish and Regression Detection
+
+The `syncSuggestionsWithPublishDetection` function extends `syncSuggestions` with automatic detection of when fixes are published and regression detection.
+
+#### Features
+
+1. **Reconcile Disappeared Suggestions**: When a suggestion disappears from audit data (e.g., a broken backlink is fixed), the system can automatically:
+   - Check if the issue was fixed using the AI-suggested fix (`isIssueFixedWithAISuggestion` callback)
+   - Mark the suggestion as `FIXED`
+   - Create a `FixEntity` to track the fix
+
+2. **Publish Deployed Fix Entities**: After reconciliation, the system verifies deployed fixes on production:
+   - Calls `isIssueResolvedOnProduction` callback for each deployed fix
+   - Moves `FixEntity` from `DEPLOYED` to `PUBLISHED` status when verified
+
+3. **Regression Detection**: When a previously `FIXED` suggestion reappears in audit data:
+   - Checks if all fix entities are fully published
+   - If so, logs a warning about potential regression
+
+#### Usage
+
+```js
+import { syncSuggestionsWithPublishDetection } from '../utils/data-access.js';
+
+await syncSuggestionsWithPublishDetection({
+  context,
+  opportunity,
+  newData: auditResult.items,
+  buildKey: (item) => item.uniqueKey,
+  mapNewSuggestion: (item) => ({ type: 'FIX', data: item }),
+  // Optional: Check if disappeared suggestion was fixed using AI suggestion
+  isIssueFixedWithAISuggestion: async (suggestion) => {
+    // Return true if the issue was fixed using the suggested fix
+    return checkIfFixedWithSuggestion(suggestion);
+  },
+  // Optional: Build fix entity payload when issue is fixed
+  buildFixEntityPayload: (suggestion, opportunity, isAuthorOnly) => ({
+    opportunityId: opportunity.getId(),
+    status: isAuthorOnly ? 'DEPLOYED' : 'PUBLISHED',
+    suggestions: [suggestion.getId()],
+  }),
+  // Optional: Verify if issue is resolved on production
+  isIssueResolvedOnProduction: async (suggestion) => {
+    // Return true if the issue is verified fixed on production
+    return verifyFixOnProduction(suggestion);
+  },
+});
+```
+
+#### Author-Only Opportunity Types
+
+Some opportunity types represent changes that only affect the authoring environment (no publish step required). For these types:
+
+- Fix entities are created with `DEPLOYED` status instead of `PUBLISHED`
+- The publish verification step is skipped
+- Regression detection checks for `DEPLOYED` fix entities instead of `PUBLISHED`
+
+Currently defined author-only types:
+- `security-permissions-redundant`
+- `security-permissions`
+
+To add a new author-only type, add it to the `AUTHOR_ONLY_OPPORTUNITY_TYPES` array in `src/utils/data-access.js`.
+
 ### How to add auto-suggest to an audit
 A new auto-suggest feature can be added as a post processor step to the existing audit.
 

@@ -997,7 +997,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(payload.scrapes).to.have.lengthOf(1);
     expect(payload.scrapes[0]).to.deep.equal({
       sku: 'TEST-SKU-123',
-      path: 'scrapes/site-1/product-1/scrape.json',
+      key: 'scrapes/site-1/product-1/scrape.json',
     });
 
     // Verify logging
@@ -1436,11 +1436,11 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(payload.scrapes).to.have.lengthOf(2);
     expect(payload.scrapes[0]).to.deep.equal({
       sku: 'SKU-001',
-      path: 'scrapes/site-1/product-1/scrape.json',
+      key: 'scrapes/site-1/product-1/scrape.json',
     });
     expect(payload.scrapes[1]).to.deep.equal({
       sku: 'SKU-002',
-      path: 'scrapes/site-1/product-2/scrape.json',
+      key: 'scrapes/site-1/product-2/scrape.json',
     });
 
     // Verify audit result shows 2 product pages

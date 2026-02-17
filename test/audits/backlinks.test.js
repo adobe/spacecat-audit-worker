@@ -23,7 +23,11 @@ import {
   brokenBacklinksAuditRunner, generateSuggestionData,
   runAuditAndImportTopPages,
   submitForScraping,
+  checkIfBacklinkFixedWithSuggestion,
+  buildBacklinkFixEntityPayload,
+  checkIfBacklinkResolvedOnProduction,
 } from '../../src/backlinks/handler.js';
+import { FixEntity as FixEntityModel } from '@adobe/spacecat-shared-data-access';
 import { MockContextBuilder } from '../shared.js';
 import {
   brokenBacklinkWithTimeout,
@@ -1253,7 +1257,7 @@ describe('Backlinks Tests', function () {
           convertToOpportunity: mockConvertToOpportunity,
         },
         '../../src/utils/data-access.js': {
-          syncSuggestions: mockSyncSuggestions,
+          syncSuggestionsWithPublishDetection: mockSyncSuggestions,
         },
       });
 
@@ -1346,7 +1350,7 @@ describe('Backlinks Tests', function () {
           convertToOpportunity: mockConvertToOpportunity,
         },
         '../../src/utils/data-access.js': {
-          syncSuggestions: mockSyncSuggestions,
+          syncSuggestionsWithPublishDetection: mockSyncSuggestions,
         },
       });
 
@@ -1434,7 +1438,7 @@ describe('Backlinks Tests', function () {
           convertToOpportunity: mockConvertToOpportunity,
         },
         '../../src/utils/data-access.js': {
-          syncSuggestions: mockSyncSuggestions,
+          syncSuggestionsWithPublishDetection: mockSyncSuggestions,
         },
       });
 
@@ -1520,7 +1524,7 @@ describe('Backlinks Tests', function () {
           convertToOpportunity: mockConvertToOpportunity,
         },
         '../../src/utils/data-access.js': {
-          syncSuggestions: mockSyncSuggestions,
+          syncSuggestionsWithPublishDetection: mockSyncSuggestions,
         },
       });
 
@@ -1579,7 +1583,7 @@ describe('Backlinks Tests', function () {
           convertToOpportunity: mockConvertToOpportunity,
         },
         '../../src/utils/data-access.js': {
-          syncSuggestions: mockSyncSuggestions,
+          syncSuggestionsWithPublishDetection: mockSyncSuggestions,
         },
       });
 
@@ -1625,6 +1629,325 @@ describe('Backlinks Tests', function () {
       // Should not preserve null urlEdited
       expect(result.urlEdited).to.be.undefined;
       expect(result.title).to.equal('New Title');
+    });
+
+    it('should pass callback wrappers to syncSuggestionsWithPublishDetection', async () => {
+      const mockSyncSuggestions = sinon.stub().resolves();
+      const mockConvertToOpportunity = sinon.stub().resolves({
+        getId: () => 'opportunity-id',
+      });
+
+      const esmock = (await import('esmock')).default;
+      const mockedHandler = await esmock('../../src/backlinks/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: mockConvertToOpportunity,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestionsWithPublishDetection: mockSyncSuggestions,
+        },
+      });
+
+      const mockAuditResult = {
+        success: true,
+        brokenBacklinks: [{
+          url_from: 'https://example.com/page1',
+          url_to: 'https://example.com/broken',
+          title: 'Test',
+          traffic_domain: 1000,
+        }],
+      };
+
+      const mockSite = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getDeliveryType: () => 'aem_edge',
+      };
+
+      const mockContext = {
+        site: mockSite,
+        audit: { getId: () => 'audit-id', getAuditResult: () => mockAuditResult },
+        finalUrl: 'https://example.com',
+        log: context.log,
+        dataAccess: {
+          Configuration: {
+            findLatest: sinon.stub().resolves({
+              isHandlerEnabledForSite: sinon.stub().returns(true),
+            }),
+          },
+          Suggestion: { allByOpportunityIdAndStatus: sinon.stub().resolves([]) },
+          SiteTopPage: {
+            allBySiteIdAndSource: sinon.stub().resolves([]),
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+          },
+        },
+        sqs: context.sqs,
+        env: context.env,
+      };
+
+      await mockedHandler.generateSuggestionData(mockContext);
+
+      const syncCall = mockSyncSuggestions.getCall(0).args[0];
+
+      // Verify callbacks are functions
+      expect(syncCall.isIssueFixedWithAISuggestion).to.be.a('function');
+      expect(syncCall.buildFixEntityPayload).to.be.a('function');
+      expect(syncCall.isIssueResolvedOnProduction).to.be.a('function');
+
+      // Call the wrapper functions to cover the wrapper lines
+      const mockSuggestion = {
+        getData: () => ({ url_to: 'https://example.com/broken' }),
+        getId: () => 'sugg-1',
+        getType: () => 'REDIRECT_UPDATE',
+      };
+      const mockOpp = { getId: () => 'opp-1' };
+
+      // Call isIssueFixedWithAISuggestion wrapper (will return false due to no targets)
+      const fixedResult = await syncCall.isIssueFixedWithAISuggestion(mockSuggestion);
+      expect(fixedResult).to.be.false;
+
+      // Call buildFixEntityPayload wrapper
+      const payload = syncCall.buildFixEntityPayload(mockSuggestion, mockOpp, false);
+      expect(payload.opportunityId).to.equal('opp-1');
+      expect(payload.changeDetails.system).to.equal('aem_edge');
+
+      // Call isIssueResolvedOnProduction wrapper (will return false due to missing url)
+      const resolvedResult = await syncCall.isIssueResolvedOnProduction({
+        getData: () => ({}),
+      });
+      expect(resolvedResult).to.be.false;
+    });
+  });
+
+  describe('checkIfBacklinkFixedWithSuggestion', () => {
+    let mockLog;
+
+    beforeEach(() => {
+      mockLog = {
+        debug: sinon.stub(),
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        error: sinon.stub(),
+      };
+    });
+
+    afterEach(() => {
+      nock.cleanAll();
+    });
+
+    it('should return false when suggestion has no data', async () => {
+      const suggestion = { getData: () => null };
+      const result = await checkIfBacklinkFixedWithSuggestion(suggestion, mockLog);
+      expect(result).to.be.false;
+    });
+
+    it('should return false when url_to is missing', async () => {
+      const suggestion = { getData: () => ({ urlsSuggested: ['https://example.com/fix'] }) };
+      const result = await checkIfBacklinkFixedWithSuggestion(suggestion, mockLog);
+      expect(result).to.be.false;
+    });
+
+    it('should return false when no suggested targets', async () => {
+      const suggestion = { getData: () => ({ url_to: 'https://example.com/broken' }) };
+      const result = await checkIfBacklinkFixedWithSuggestion(suggestion, mockLog);
+      expect(result).to.be.false;
+    });
+
+    it('should return true when URL redirects to suggested target', async () => {
+      nock('https://example.com')
+        .get('/broken')
+        .reply(301, '', { Location: 'https://example.com/fixed' });
+      nock('https://example.com')
+        .get('/fixed')
+        .reply(200);
+
+      const suggestion = {
+        getData: () => ({
+          url_to: 'https://example.com/broken',
+          urlsSuggested: ['https://example.com/fixed'],
+        }),
+      };
+      const result = await checkIfBacklinkFixedWithSuggestion(suggestion, mockLog);
+      expect(result).to.be.true;
+    });
+
+    it('should return true when URL redirects to urlEdited', async () => {
+      nock('https://example.com')
+        .get('/broken')
+        .reply(301, '', { Location: 'https://example.com/custom-fix' });
+      nock('https://example.com')
+        .get('/custom-fix')
+        .reply(200);
+
+      const suggestion = {
+        getData: () => ({
+          url_to: 'https://example.com/broken',
+          urlEdited: 'https://example.com/custom-fix',
+          urlsSuggested: ['https://example.com/other'],
+        }),
+      };
+      const result = await checkIfBacklinkFixedWithSuggestion(suggestion, mockLog);
+      expect(result).to.be.true;
+    });
+
+    it('should return false when fetch fails', async () => {
+      nock('https://example.com')
+        .get('/broken')
+        .replyWithError('Network error');
+
+      const suggestion = {
+        getData: () => ({
+          url_to: 'https://example.com/broken',
+          urlsSuggested: ['https://example.com/fixed'],
+        }),
+      };
+      const result = await checkIfBacklinkFixedWithSuggestion(suggestion, mockLog);
+      expect(result).to.be.false;
+      expect(mockLog.debug).to.have.been.called;
+    });
+
+    it('should return false when URL does not redirect to suggested target', async () => {
+      nock('https://example.com')
+        .get('/broken')
+        .reply(200);
+
+      const suggestion = {
+        getData: () => ({
+          url_to: 'https://example.com/broken',
+          urlsSuggested: ['https://example.com/fixed'],
+        }),
+      };
+      const result = await checkIfBacklinkFixedWithSuggestion(suggestion, mockLog);
+      expect(result).to.be.false;
+    });
+
+    it('should use urlTo as fallback when response has no url property', async () => {
+      // Use esmock to mock fetch with a response that has no url property
+      const esmock = (await import('esmock')).default;
+      const mockedHandler = await esmock('../../src/backlinks/handler.js', {
+        '@adobe/spacecat-shared-utils': {
+          tracingFetch: sinon.stub().resolves({
+            ok: true,
+            status: 200,
+            url: undefined, // No url property - triggers fallback
+          }),
+          prependSchema: (url) => url,
+          stripWWW: (host) => host,
+        },
+      });
+
+      const suggestion = {
+        getData: () => ({
+          url_to: 'https://example.com/broken',
+          urlsSuggested: ['https://example.com/broken'], // Target matches urlTo fallback
+        }),
+      };
+      const result = await mockedHandler.checkIfBacklinkFixedWithSuggestion(suggestion, mockLog);
+      // Since resp.url is undefined, fallback to urlTo which matches target
+      expect(result).to.be.true;
+    });
+  });
+
+  describe('buildBacklinkFixEntityPayload', () => {
+    it('should build payload with PUBLISHED status when not author-only', () => {
+      const suggestion = {
+        getId: () => 'sugg-1',
+        getType: () => 'REDIRECT_UPDATE',
+        getData: () => ({
+          url_from: 'https://referring.com/page',
+          url_to: 'https://example.com/broken',
+          urlEdited: 'https://example.com/fixed',
+        }),
+      };
+      const opportunity = { getId: () => 'opp-1' };
+      const site = { getDeliveryType: () => 'aem_edge' };
+
+      const result = buildBacklinkFixEntityPayload(suggestion, opportunity, false, site);
+
+      expect(result.opportunityId).to.equal('opp-1');
+      expect(result.status).to.equal(FixEntityModel.STATUSES.PUBLISHED);
+      expect(result.type).to.equal('REDIRECT_UPDATE');
+      expect(result.changeDetails.system).to.equal('aem_edge');
+      expect(result.changeDetails.pagePath).to.equal('https://referring.com/page');
+      expect(result.changeDetails.oldValue).to.equal('https://example.com/broken');
+      expect(result.changeDetails.updatedValue).to.equal('https://example.com/fixed');
+      expect(result.suggestions).to.deep.equal(['sugg-1']);
+    });
+
+    it('should build payload with DEPLOYED status when author-only', () => {
+      const suggestion = {
+        getId: () => 'sugg-2',
+        getType: () => 'REDIRECT_UPDATE',
+        getData: () => ({
+          url_from: 'https://referring.com/page',
+          url_to: 'https://example.com/broken',
+          urlsSuggested: ['https://example.com/ai-fix'],
+        }),
+      };
+      const opportunity = { getId: () => 'opp-2' };
+      const site = { getDeliveryType: () => 'aem_cs' };
+
+      const result = buildBacklinkFixEntityPayload(suggestion, opportunity, true, site);
+
+      expect(result.status).to.equal(FixEntityModel.STATUSES.DEPLOYED);
+      expect(result.changeDetails.updatedValue).to.equal('https://example.com/ai-fix');
+    });
+
+    it('should handle missing data gracefully', () => {
+      const suggestion = {
+        getId: () => null,
+        getType: () => null,
+        getData: () => null,
+      };
+      const opportunity = { getId: () => 'opp-3' };
+      const site = { getDeliveryType: () => 'other' };
+
+      const result = buildBacklinkFixEntityPayload(suggestion, opportunity, false, site);
+
+      expect(result.changeDetails.oldValue).to.equal('');
+      expect(result.changeDetails.updatedValue).to.equal('');
+    });
+  });
+
+  describe('checkIfBacklinkResolvedOnProduction', () => {
+    let mockLog;
+
+    beforeEach(() => {
+      mockLog = {
+        debug: sinon.stub(),
+        info: sinon.stub(),
+        warn: sinon.stub(),
+        error: sinon.stub(),
+      };
+    });
+
+    afterEach(() => {
+      nock.cleanAll();
+    });
+
+    it('should return false when suggestion has no url_to', async () => {
+      const suggestion = { getData: () => ({}) };
+      const result = await checkIfBacklinkResolvedOnProduction(suggestion, mockLog);
+      expect(result).to.be.false;
+    });
+
+    it('should return true when URL is no longer broken (returns 200)', async () => {
+      nock('https://example.com')
+        .get('/was-broken')
+        .reply(200);
+
+      const suggestion = { getData: () => ({ url_to: 'https://example.com/was-broken' }) };
+      const result = await checkIfBacklinkResolvedOnProduction(suggestion, mockLog);
+      expect(result).to.be.true;
+    });
+
+    it('should return false when URL is still broken (returns 404)', async () => {
+      nock('https://example.com')
+        .get('/still-broken')
+        .reply(404);
+
+      const suggestion = { getData: () => ({ url_to: 'https://example.com/still-broken' }) };
+      const result = await checkIfBacklinkResolvedOnProduction(suggestion, mockLog);
+      expect(result).to.be.false;
     });
   });
 });

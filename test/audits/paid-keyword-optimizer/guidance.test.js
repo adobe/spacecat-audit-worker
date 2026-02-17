@@ -26,27 +26,33 @@ use(chaiAsPromised);
 
 const TEST_URL = 'https://example-page/page1';
 
-// Helper to create a new message in the expected format
-function createMessage(overrides = {}) {
+// Helper to create a message in the GuidanceWithBody format
+function createMessage({ bodyOverrides, guidanceOverrides } = {}) {
   return {
     auditId: 'auditId',
     siteId: 'site',
-    insight: 'test insight',
-    rationale: 'test rationale',
-    recommendation: 'test recommendation',
-    body: {
-      issueSeverity: 'medium',
-      data: {
-        url: TEST_URL,
-        suggestions: [
-          { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
-          { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
-        ],
-        cpc: 0.075,
-        sum_traffic: 23423.5,
-      },
+    data: {
+      url: TEST_URL,
+      guidance: [{
+        insight: 'test insight',
+        rationale: 'test rationale',
+        recommendation: 'test recommendation',
+        type: 'guidance',
+        ...guidanceOverrides,
+        body: {
+          issueSeverity: 'medium',
+          url: TEST_URL,
+          suggestions: [
+            { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
+            { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
+          ],
+          cpc: 0.075,
+          sumTraffic: 23423.5,
+          ...bodyOverrides,
+        },
+      }],
+      suggestions: [],
     },
-    ...overrides,
   };
 }
 
@@ -267,39 +273,19 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
 
   it('should skip opportunity creation and log for low severity', async () => {
     Opportunity.allBySiteId.resolves([]);
-    const message = createMessage({
-      body: {
-        issueSeverity: 'low',
-        data: {
-          url: TEST_URL,
-          suggestions: [],
-          cpc: 0.05,
-          sum_traffic: 1000,
-        },
-      },
-    });
+    const message = createMessage({ bodyOverrides: { issueSeverity: 'low' } });
 
     const result = await handler(message, context);
 
     expect(Opportunity.create).not.to.have.been.called;
     expect(Suggestion.create).not.to.have.been.called;
-    expect(logStub.info).to.have.been.calledWithMatch(/\[paid-audit\] Skipping paid-keyword-optimizer: low issue severity/);
+    expect(logStub.info).to.have.been.calledWithMatch(/\[paid-audit\] Skipping ad-intent-mismatch: low issue severity/);
     expect(result.status).to.equal(ok().status);
   });
 
   it('should skip opportunity creation for none severity', async () => {
     Opportunity.allBySiteId.resolves([]);
-    const message = createMessage({
-      body: {
-        issueSeverity: 'none',
-        data: {
-          url: TEST_URL,
-          suggestions: [],
-          cpc: 0.05,
-          sum_traffic: 1000,
-        },
-      },
-    });
+    const message = createMessage({ bodyOverrides: { issueSeverity: 'none' } });
 
     const result = await handler(message, context);
 
@@ -310,17 +296,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
   it('should create opportunity if severity is medium', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
-    const message = createMessage({
-      body: {
-        issueSeverity: 'Medium',
-        data: {
-          url: TEST_URL,
-          suggestions: [],
-          cpc: 0.05,
-          sum_traffic: 1000,
-        },
-      },
-    });
+    const message = createMessage({ bodyOverrides: { issueSeverity: 'Medium' } });
 
     const result = await handler(message, context);
 
@@ -332,17 +308,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
   it('should create opportunity if severity is high', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
-    const message = createMessage({
-      body: {
-        issueSeverity: 'high',
-        data: {
-          url: TEST_URL,
-          suggestions: [],
-          cpc: 0.05,
-          sum_traffic: 1000,
-        },
-      },
-    });
+    const message = createMessage({ bodyOverrides: { issueSeverity: 'high' } });
 
     const result = await handler(message, context);
 
@@ -394,22 +360,40 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     expect(result.status).to.equal(ok().status);
   });
 
-  it('should handle message with missing body gracefully', async () => {
+  it('should skip opportunity creation when guidance is empty', async () => {
     Opportunity.allBySiteId.resolves([]);
-    Opportunity.create.resolves(opportunityInstance);
     const message = {
       auditId: 'auditId',
       siteId: 'site',
-      insight: 'test insight',
-      rationale: 'test rationale',
-      recommendation: 'test recommendation',
-      // body is undefined
+      data: {
+        url: TEST_URL,
+        guidance: [],
+        suggestions: [],
+      },
     };
 
     const result = await handler(message, context);
 
-    // Should create opportunity (body is undefined, so isLowSeverity returns false)
-    expect(Opportunity.create).to.have.been.called;
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should skip opportunity creation when guidance is missing', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const message = {
+      auditId: 'auditId',
+      siteId: 'site',
+      data: {
+        url: TEST_URL,
+        suggestions: [],
+      },
+    };
+
+    const result = await handler(message, context);
+
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
     expect(result.status).to.equal(ok().status);
   });
 
@@ -420,17 +404,7 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
       { id: 'original', name: 'Original', screenshotUrl: 'https://example.com/original.png' },
       { id: 'variation-0', name: 'Variation 0', screenshotUrl: 'https://example.com/var0.png' },
     ];
-    const message = createMessage({
-      body: {
-        issueSeverity: 'medium',
-        data: {
-          url: TEST_URL,
-          suggestions,
-          cpc: 0.075,
-          sum_traffic: 23423.5,
-        },
-      },
-    });
+    const message = createMessage({ bodyOverrides: { suggestions } });
 
     await handler(message, context);
 
@@ -458,9 +432,11 @@ describe('Paid Keyword Optimizer Guidance Handler', () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
     const message = createMessage({
-      insight: 'custom insight',
-      rationale: 'custom rationale',
-      recommendation: 'custom recommendation',
+      guidanceOverrides: {
+        insight: 'custom insight',
+        rationale: 'custom rationale',
+        recommendation: 'custom recommendation',
+      },
     });
 
     await handler(message, context);

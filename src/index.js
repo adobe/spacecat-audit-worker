@@ -106,6 +106,8 @@ import wikipediaAnalysis from './wikipedia-analysis/handler.js';
 import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
 import frescopaDataGeneration from './frescopa-data-generation/handler.js';
 import ptrSelector from './ptr-selector/handler.js';
+import semanticValueVisibility from './semantic-value-visibility/handler.js';
+import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -146,6 +148,10 @@ const HANDLERS = {
   'geo-brand-presence': geoBrandPresence,
   'geo-brand-presence-free': geoBrandPresence,
   'geo-brand-presence-paid': geoBrandPresence,
+  // Splits of geo-brand-presence-free for staggered execution (max 40 sites each)
+  ...Object.fromEntries(
+    Array.from({ length: 23 }, (_, i) => [`geo-brand-presence-free-${i + 1}`, geoBrandPresence]),
+  ),
   'category:geo-brand-presence': handleCategorizationResponseHandler,
   'detect:geo-brand-presence': detectGeoBrandPresence,
   'refresh:geo-brand-presence': detectGeoBrandPresence,
@@ -160,7 +166,8 @@ const HANDLERS = {
   'codefix:accessibility': accessibilityCodeFix,
   'guidance:paid-cookie-consent': paidConsentGuidance,
   'paid-keyword-optimizer': paidKeywordOptimizer,
-  'guidance:paid-keyword-optimizer': paidKeywordOptimizerGuidance,
+  'ad-intent-mismatch': paidKeywordOptimizer,
+  'guidance:paid-ad-intent-gap': paidKeywordOptimizerGuidance,
   'guidance:no-cta-above-the-fold': noCTAAboveTheFoldGuidance,
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
   'detect:page-types': pageTypeGuidance,
@@ -201,6 +208,8 @@ const HANDLERS = {
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
   'frescopa-data-generation': frescopaDataGeneration,
   'ptr-selector': ptrSelector,
+  'semantic-value-visibility': semanticValueVisibility,
+  'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   dummy: (message) => ok(message),
 };
 
@@ -218,9 +227,14 @@ function getElapsedSeconds(startTime) {
  */
 async function run(message, context) {
   const { log } = context;
-  const { type, siteId } = message;
+  const {
+    type, siteId, jobId,
+  } = message;
 
-  log.info(`Received ${type} audit request for: ${siteId}. Message:`, message);
+  log.info(
+    `Received ${type} audit request for siteId=${siteId}, jobId=${jobId || 'none'}`,
+    message,
+  );
 
   const handler = HANDLERS[type];
   if (!handler) {

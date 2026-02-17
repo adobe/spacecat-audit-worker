@@ -1,0 +1,684 @@
+{
+  "url": "https://www.vuse.com/ch/en",
+  "opportunityType": "semantic-value-visibility",
+  "suggestions": [
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/wysiwyg/starter_kit_page_banner_mobile_EN.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/wysiwyg/starter_kit_page_banner_mobile_EN.png\">\n  <h2>Ultra. by Vuse</h2>\n  <h3>WELCOME KIT</h3>\n  <p>Device + 4 Ultra Pods</p>\n  <span>29 CHF</span>\n  <button>DISCOVER ULTRA</button>\n  <small>Vapor and product pods contain nicotine. Nicotine is an addictive chemical.</small>\n</section>",
+        "detectedText": [
+          "se",
+          "Ultra.",
+          "by",
+          "WELCOME KIT",
+          "Device + 4 Ultra Pods",
+          "29 CHF",
+          "DISCOVER ULTRA",
+          "Based on third-party market data for vapour pods and pre-filled devices",
+          "0f032025"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/wysiwyg/starter_kit_page_banner_mobile_EN.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/c/ecomm_desktop_1500x420_kv2_en.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/c/ecomm_desktop_1500x420_kv2_en.png\">\n  <h2>REGISTER TO ENJOY YOUR WELCOME KIT</h2>\n  <button>REGISTER NOW</button>\n  <small>Based on independent third-party ~filled devices covering 6903 Df tota Switzerlandas 03 2024. Bran</small>\n</section>",
+        "detectedText": [
+          "REGISTER TO ENJOY",
+          "YOUR WELCOME KIT",
+          "8",
+          "8",
+          "REGISTER NOW",
+          "Based on independent third-party",
+          "~filled devices",
+          "covering 6903 Df tota",
+          "Switzerlandas",
+          "03 2024.",
+          "Bran"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/c/ecomm_desktop_1500x420_kv2_en.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/s/t/starter_kit_page_banner_desktop_en.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/s/t/starter_kit_page_banner_desktop_en.png\">\n  <h2>Ultra.</h2>\n  <span>WELCOME KIT</span>\n  <span>Device + 4 Ultra Pods</span>\n  <span>29 CHF</span>\n  <button>DISCOVER ULTRA</button>\n  <span>by Vuse</span>\n</section>",
+        "detectedText": [
+          "#",
+          "se",
+          "PEACH ICE",
+          "MINt ICE",
+          "Ultra.",
+          "WELCOME KIT",
+          "by",
+          "Device + 4 Ultra Pods",
+          "ukt kann Ihre",
+          "Jkt kann",
+          "Fhadigen und",
+          "chidigen und",
+          "29",
+          "abhangig-",
+          "abhangig:",
+          "CHF",
+          "nuire",
+          "vatre",
+          "votre",
+          "une forte",
+          "dance",
+          "nuocero",
+          "nuocere",
+          "provoca",
+          "DISCOVER ULTRA",
+          "Switzerland as 0f 032025",
+          "BRAND",
+          "Hance",
+          "puo",
+          "puo"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/s/t/starter_kit_page_banner_desktop_en.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/n/en_kv_1_desktop_1500x420.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/n/en_kv_1_desktop_1500x420.jpg\">\n  <h2>NEW Ultra. by vuse</h2>\n  <p>Discover our most innovative vaping device yet! It comes with Ultra Pods.</p>\n  <button>DISCOVER ULTRA</button>\n  <span>vuse</span>\n</section>",
+        "detectedText": [
+          "ULTRA",
+          "7",
+          "NEW",
+          "Ultra.",
+          "GOLDEN TOBACCO",
+          "APING BRAND IN SWITZERLAND",
+          "Produkt kann Ihre",
+          "Discover our most innovative vaping device",
+          "hheit schadigen und",
+          "stark abhangig:",
+          "It comes with Ultra Pods:",
+          "lit peut nuire a votre",
+          "et cree une forte",
+          "20",
+          "Irodotto puo nuocere",
+          "momi",
+          "salute e provoca",
+          "DISCOVER ULTRA",
+          "vata dipendenza",
+          "Based on third-party market data for vapour pods and pre-filled devices,",
+          "covering 64% of total in market sales in Switzerland as of Q3 2025_",
+          "JAPING",
+          "BRAND",
+          "yetl"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/n/en_kv_1_desktop_1500x420.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/n/en_kv_2_desktop_1500x420.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/n/en_kv_2_desktop_1500x420.jpg\">\n  <h2>NEW Ultra. by</h2>\n  <span>vuse</span>\n  <p>Discover the ultimate flavour experience with our new Ultra Pods.</p>\n  <button>DISCOVER ULTRA</button>\n</section>",
+        "detectedText": [
+          "ULTRA",
+          "7",
+          "ULTRA",
+          "REEN",
+          "Use",
+          "APPLE",
+          "NEW",
+          "Ultra.",
+          "ULTRA",
+          "1US",
+          "PEACH ICE",
+          "BLUEBERRY",
+          "by",
+          "2pod",
+          "BRAND IN SWITzERLAND",
+          "#1 VAPING BRAND",
+          "Produkt kann Ihre",
+          "2",
+          "dheit schadigen und",
+          "Iht stark abhangig",
+          "VAPING BRAND IN SWIT",
+          "Dieses Produkt kann Ihre",
+          "Gesundheit schadigen und",
+          "Discover the ultimate flavour experience",
+          "macht stark abhangig:",
+          "dependance",
+          "Gesundheit schadic",
+          "Ce produit peut nuire a votre",
+          "prodotto",
+          "nuocere",
+          "with our new Ultra Pods.",
+          "macht stark abha",
+          "sante et cree une forte",
+          "ua salute",
+          "provoca",
+          "Ce produit peut nuir",
+          "dependance.",
+          "evata dipendenza",
+          "sante et cree une",
+          "Questo prodotto puo nuocere",
+          "dependance",
+          "alla tua salute",
+          "provoca",
+          "Questo prodotto",
+          "un'elevata dipendenza:",
+          "alla tua salute",
+          "provoca",
+          "DISCOVER ULTRA",
+          "un'elevata dipendenza:",
+          "Based on third-party market data for vapour pods and pre-filled devices,",
+          "covering 64% of total in market sales in Switzerland as of Q3 2025_",
+          "JAPING",
+          "BRAND",
+          "puo"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/n/en_kv_2_desktop_1500x420.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/v/u/vuse_abo_desktop_en_banners.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/v/u/vuse_abo_desktop_en_banners.png\">\n  <h2>Simply Amplified.</h2>\n  <span>by vuse</span>\n  <p>SIMPLIFY YOUR ORDER WITH YOUR VUSE SUBSCRIPTION</p>\n  <button>SUBSCRIBE NOW</button>\n  <small>Based on independent laboratory testing of Vuse Alto vs. the competition, Vuse tops every major category of product quality. Source: Full deails available upon request. R.J. Reynolds Vapor Co. 2022.</small>\n</section>",
+        "detectedText": [
+          "7",
+          "INTENSE",
+          "TENSE",
+          "INTENSE",
+          "PEPPERMINT ICE",
+          "SimplyAmplified:",
+          "WATERMELON ICE",
+          "BLUEBERRY ICE",
+          "2000",
+          "20\"",
+          "LIQUIDS",
+          "MADE",
+          "THE",
+          "PACK*",
+          "IQUIDS MADE",
+          "THE",
+          "USA",
+          "kann",
+          "Dieses Produkt",
+          "Ihre",
+          "PACK",
+          "20}",
+          "Gesundheit schadigen und",
+          "Liquids",
+          "MADE",
+          "USA",
+          "Dieses Produkt kann Ihre",
+          "macht stark abhangig_",
+          "Gesundheit schadigen und",
+          "produit peut nuire",
+          "votre",
+          "Dieses Produkt kann Ihre",
+          "macht stark abhangig_",
+          "sante",
+          "cree une forte",
+          "Gesundheit schadigen un",
+          "Ce produit peut nuire",
+          "votre",
+          "dependance",
+          "macht stark.",
+          "abhangig:",
+          "sante et cree une forte",
+          "uesto prodotto puo nuocere",
+          "Ce produit peut nuire",
+          "vot",
+          "dependance:",
+          "alla tua salute",
+          "provoca",
+          "sante et cree une forte",
+          "Questo prodotto pud nuocere",
+          "Un",
+          "'elevata dipendenza_",
+          "SIMPLIFY YOUR ORDER WITH",
+          "dependance:",
+          "alla tua salute",
+          "provoca",
+          "Questo prodotto",
+          "nuoce",
+          "un'elevata dipendenza",
+          "alla tua salute",
+          "provoca",
+          "un'elevata dipendenza",
+          "YOUR VUSE SUBSCRIPTION",
+          "SUBSCRIBE NOW",
+          "Based on",
+          "independent third-party market data for vapour pods and",
+          "~filled devices, covering 69% of total measured retail; in Switzerland as of Q3 2024.",
+          "JAPING",
+          "BRAND",
+          "puo"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/v/u/vuse_abo_desktop_en_banners.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/c/ecomm_desktop_1500x420_kv5_en.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/c/ecomm_desktop_1500x420_kv5_en.jpg\">\n  <h2>InstantReady</h2>\n  <p>Intense flavour. Ready to use. Anytime, anywhere.</p>\n  <button>BUY NOW</button>\n  <span>VUSE GO 1000</span>\n</section>",
+        "detectedText": [
+          "7",
+          "InstantReady",
+          "by",
+          "Iuse",
+          "Intense flavour: Ready to use.",
+          "Anytime, anywhere:",
+          "VUSE GO 1000",
+          "BUY NOW",
+          "JAPING",
+          "BRAND"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/c/ecomm_desktop_1500x420_kv5_en.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/m/o/mobile_en.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/m/o/mobile_en.png\">\n  <h2>REGISTER TO ENJOY YOUR WELCOME KIT!</h2>\n  <button>REGISTER NOW</button>\n  <small>*Report in independent third-party market data for vapour sales in open 7/2022-6/2023, covering 8K+ or more measured units of manufacturers only, total.</small>\n</section>",
+        "detectedText": [
+          "REGISTER",
+          "TO ENJOY YOUR",
+          "WELCOME KIT !",
+          "REGISTER NOW",
+          "Basedon independent third party Iarket data forvapour pods",
+          "and pre filled devices",
+          "032024."
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/m/o/mobile_en.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/s/t/starter_kit_page_banner_mobile_en.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/s/t/starter_kit_page_banner_mobile_en.png\">\n  <span>Ultra by Vuse.</span>\n  <h2>WELCOME KIT</h2>\n  <p>Device + 4 Ultra Pods</p>\n  <span>29 CHF</span>\n  <button>DISCOVER ULTRA</button>\n  <small>Vaping products contain nicotine and are addictive. For adult smokers and existing vapers only. Terms and conditions apply.</small>\n</section>",
+        "detectedText": [
+          "se",
+          "Ultra.",
+          "by",
+          "WELCOME KIT",
+          "Device + 4 Ultra Pods",
+          "29 CHF",
+          "DISCOVER ULTRA",
+          "Based on third-party market data for vapour pods and pre-filled devices",
+          "0f032025"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/s/t/starter_kit_page_banner_mobile_en.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/n/en_kv_1_mobile_375x655.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/n/en_kv_1_mobile_375x655.jpg\">\n  <h2>NEW Ultra.</h2>\n  <span>by vuse</span>\n  <p>Discover our most innovative vaping device yet. It comes with Ultra Pods.</p>\n  <button>EXPLORE ULTRA</button>\n  <small>Nicotine is highly addictive. Use only as directed.</small>\n</section>",
+        "detectedText": [
+          "#",
+          "ULTRA",
+          "GOLDEN TOBAccO",
+          "Produkt kann Ihre",
+          "heit schadigen und",
+          "stark abhangig",
+          "votre",
+          "cree unc forte",
+          "ependance",
+          "rodotto",
+          "puo nuocere",
+          "salute",
+          "provoca",
+          "Ivata dipendenza_",
+          "NEw Ultra.",
+          "Discover our most",
+          "innovative vaping device yetl",
+          "It comes with Ultra Pods.",
+          "DISCOVER ULTRA",
+          "Based on third-party market data for vapour pods and pre-filled devices,",
+          "covering 64% of total in market sales in Switzerland as of Q3 2025.",
+          "JAPINg",
+          "BRAND"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/n/en_kv_1_mobile_375x655.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/n/en_kv_2_mobile_375x655.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/n/en_kv_2_mobile_375x655.jpg\">\n  <h2>NEW Ultra.</h2>\n  <span>by Vuse</span>\n  <p>Discover the ultimate flavour experience with our new Ultra Pods.</p>\n  <button>DISCOVER ULTRA</button>\n  <small>Nicotine strength increased to 1.5% (18mg/ml) in Ultra Pods. Products contain nicotine and are addictive. This product is not risk-free.</small>\n</section>",
+        "detectedText": [
+          "Use",
+          "PeacH ICE",
+          "BLUEBERRY",
+          "Produklkann Inre",
+          "201120\"",
+          "dheit schadigen und",
+          "Dieses Produktkann Inro",
+          "schadigen und",
+          "macht stark abnanqio",
+          "prodolto puo nuocere",
+          "ganle",
+          "cree une forto",
+          "produit peut nuir",
+          "dependance",
+          "sante et cree unc",
+          "provoca",
+          "dependance",
+          "Questo prodotto puO",
+          "NEW",
+          "Ultra.",
+          "by",
+          "Iuse",
+          "Discover the ultimate",
+          "flavour experience",
+          "with our new Ultra Pods:",
+          "DISCOVER ULTRA",
+          "Based on third-party market data for vapour pods and pre-filled devices,",
+          "covering 64% of total in market sales in Switzerland as of Q3 2025.",
+          "JAPINg",
+          "BRAND"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/e/n/en_kv_2_mobile_375x655.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/v/u/vuse_abo_mobile_en_banners.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/v/u/vuse_abo_mobile_en_banners.png\">\n  <h2>Simply Amplified.</h2>\n  <span>by</span>\n  <span>Vuse</span>\n  <p>SIMPLIFY YOUR ORDER WITH YOUR VUSE SUBSCRIPTION</p>\n  <button>SUBSCRIBE NOW</button>\n  <small>Receive a replacement Vuse ePod every month, enjoy a sample of a new flavour, and a discount of 15% of your VusePod order in subsequent delivery cycles.</small>\n</section>",
+        "detectedText": [
+          "7",
+          "INTENSE",
+          "INTENSE",
+          "INTENSE",
+          "WATERMELON ICE",
+          "BLUEBERRY ICE",
+          "2000",
+          "Liquids MADE IN",
+          "THE USA",
+          "2",
+          "PACK\"",
+          "LIquids MADE",
+          "N THE USA",
+          "Dieses Produkt kann Ihre",
+          "201",
+          "Gesundheit schadigen und",
+          "LiqUids MADE IN",
+          "USA",
+          "Dieses Produkt kann Ihre",
+          "macht stark abhangig",
+          "Gesundheit schadigen und",
+          "produit peut nuire a votre",
+          "Dieses Produkt kann Ihre",
+          "macht stark abhangig:",
+          "sante et cree une forte",
+          "Gesundheit schadigen un",
+          "Ce produit peut nuire a votre",
+          "dependance:",
+          "macht stark abhangig:",
+          "sante et cree une forte",
+          "uesto",
+          "prodotto pud nuocere",
+          "Ce produit peut nuire a vot",
+          "dependance:",
+          "alla tua salute",
+          "provoca",
+          "sante et cree une forte",
+          "Questo prodotto puo nuocere",
+          "un'elevata dipendenza",
+          "dependance",
+          "alla tua salute e provoca",
+          "Questo prodotto puo nuoce",
+          "un'elevata dipendenza_",
+          "alla tua salute e provoca",
+          "un'elevata dipendenza:",
+          "Simply",
+          "Amplified:",
+          "by",
+          "SIMPLIFY YOUR ORDER WITH",
+          "YOUR VUSE SUBSCRIPTION",
+          "SUBSCRIBE NOW",
+          "Based on independent third-party market data for vapour pods",
+          "and pre-filled devices, covering 69% of total measured retail,",
+          "in Switzerland as of Q3 2024_",
+          "JAPING",
+          "BRAND"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/v/u/vuse_abo_mobile_en_banners.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/v/u/vuse_go_1000_mobile_popup_en1.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/v/u/vuse_go_1000_mobile_popup_en1.jpg\">\n  <h2>Instant Ready by vuse</h2>\n  <p>Discover flavours Ready to use anytime, anywhere.</p>\n  <button>BUY NOW</button>\n  <small>Pods are readily filled with liquid and contain nicotine which may be dangerous to your health. Age restricted product. Keep out of reach of children.</small>\n</section>",
+        "detectedText": [
+          "#",
+          "0",
+          "8",
+          "Instant",
+          "Ready:",
+          "by",
+          "Iuse",
+          "Intense flavour: Ready to use_",
+          "Anytime, anywhere:",
+          "VUSE GO 1000",
+          "BUY NOW",
+          "Based on independent third-party market data for vapour pods",
+          "and pre-filled devices, covering 69% of total measured retail,",
+          "in Switzerland as of Q3 2024.",
+          "BRAND",
+          "9",
+          "SWITZERY"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/magestore/bannerslider/images/v/u/vuse_go_1000_mobile_popup_en1.jpg\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/wysiwyg/KV_1_desktop_en.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/wysiwyg/KV_1_desktop_en.png\">\n  <h2>ULTRA DEVICE.</h2>\n  <p>Our most advanced vaping device.</p>\n  <button>SHOP NOW</button>\n</section>",
+        "detectedText": [
+          "ULTRA",
+          "DEVICE:",
+          "Our most advanced",
+          "vaping device:",
+          "SHOP NOw"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/wysiwyg/KV_1_desktop_en.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/wysiwyg/KV_2_desktop_en.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/wysiwyg/KV_2_desktop_en.png\">\n  <h2>ULTRA FLAVOUR.</h2>\n  <p>Ultra Pods with FlavourMax\u2122 technology.</p>\n  <button>SHOP NOW</button>\n  <span>vuse</span>\n</section>",
+        "detectedText": [
+          "'Use",
+          "ULTRA",
+          "VUS",
+          "FLAVOUR:",
+          "Ultra Pods",
+          "dcpcndincc_",
+          "with FlavourMax\" technology:",
+          "SHOP NOw"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/wysiwyg/KV_2_desktop_en.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/wysiwyg/tile_3_desktop.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/wysiwyg/tile_3_desktop.png\">\n  <h2>WELCOME KIT</h2>\n  <p>Device + 4 Ultra Pods</p>\n  <span>29 CHF</span>\n  <button>SHOP NOW</button>\n</section>",
+        "detectedText": [
+          "se",
+          "WELCOME KIT",
+          "Device + 4 Ultra Pods",
+          "203123",
+          "SHOP Now"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/wysiwyg/tile_3_desktop.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/wysiwyg/tile_1_mobile.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/wysiwyg/tile_1_mobile.png\">\n  <h2>ULTRA DEVICE.</h2>\n  <p>Our most advanced vaping device.</p>\n  <button>SHOP NOW</button>\n</section>",
+        "detectedText": [
+          "ULTRA",
+          "DEVICE:",
+          "Our most advanced",
+          "vaping device:",
+          "SHOP NOw"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/wysiwyg/tile_1_mobile.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/wysiwyg/tile_2_mobile.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/wysiwyg/tile_2_mobile.png\">\n  <h2>ULTRA FLAVOUR.</h2>\n  <p>Ultra Pods with FlavourMax\u2122 technology.</p>\n  <span>VUSE</span>\n  <button>SHOP NOW</button>\n</section>",
+        "detectedText": [
+          "'Use",
+          "ULTRA",
+          "VUS",
+          "FLAVOUR:",
+          "Ultra Pods",
+          "dcpcndincc_",
+          "with FlavourMax\" technology:",
+          "SHOP NOw"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/wysiwyg/tile_2_mobile.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/wysiwyg/tile_3_mobile.png",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/wysiwyg/tile_3_mobile.png\">\n  <h2>WELCOME KIT</h2>\n  <p>Device + 4 Ultra Pods</p>\n  <span>29 CHF</span>\n  <button>SHOP NOW</button>\n</section>",
+        "detectedText": [
+          "se",
+          "WELCOME KIT",
+          "PEACHICE",
+          "Device + 4 Ultra Pods",
+          "Fhadigen und",
+          "chadiden und",
+          "nuirc",
+          "votrc",
+          "29 CHF",
+          "une lorte",
+          "puo nuocerc",
+          "provoce",
+          "pendenzil",
+          "SHOP NOw"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/wysiwyg/tile_3_mobile.png\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.vuse.com/ch/pub/media/blog/vuse-ultra-flavour-features_1.jpg",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.vuse.com/ch/pub/media/blog/vuse-ultra-flavour-features_1.jpg\">\n  <h2>ULTRA</h2>\n  <span>PEPPERMINT ICE</span>\n  <small>Dieses Produkt kann Ihre Gesundheit sch\u00e4digen und macht stark abh\u00e4ngig. Ce produit peut nuire \u00e0 votre sant\u00e9 et cr\u00e9e une forte d\u00e9pendance. Questo prodotto pu\u00f2 nuocere alla tua salute e provoca un\u2019elevata dipendenza.</small>\n</section>",
+        "detectedText": [
+          "ULTRA",
+          "PEPPERMINT ICE",
+          "g",
+          "2",
+          "eses Produkt kann Ihre",
+          "undheit schadigen und",
+          "acht stark abhangig-",
+          "roduit peut nuire",
+          "votre",
+          "Inte et cree une forte",
+          "dependance:",
+          "20",
+          "prodotto",
+          "nuocere",
+          "tua salute",
+          "provoca",
+          "p'elevata dipendenza",
+          "puo"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.vuse.com/ch/pub/media/blog/vuse-ultra-flavour-features_1.jpg\"]"
+        }
+      }
+    }
+  ],
+  "stats": {
+    "totalImages": 20,
+    "successfulSuggestions": 20,
+    "noGuidanceNeeded": 0
+  }
+}
