@@ -1,3 +1,10 @@
+# [1.320.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.319.1...v1.320.0) (2026-02-17)
+
+
+### Features
+
+* send existing suggestions image urls to mystique for alt-text audit ([#1975](https://github.com/adobe/spacecat-audit-worker/issues/1975)) ([9cea9ea](https://github.com/adobe/spacecat-audit-worker/commit/9cea9ea97e47574c909255b450d7d1d49cc4a646))
+
 ## [1.319.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.319.0...v1.319.1) (2026-02-17)
 
 
