@@ -105,7 +105,7 @@ describe('Readability Opportunities Guidance Handler', () => {
       log: logStub,
       s3Client: mockS3Client,
       env: {
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        S3_IMPORTER_BUCKET_NAME: 'test-bucket',
       },
       dataAccess: {
         Site: {
@@ -269,8 +269,8 @@ describe('Readability Opportunities Guidance Handler', () => {
       expect(mockSuggestion.setData).to.have.been.called;
     });
 
-    it('should handle missing S3_SCRAPER_BUCKET_NAME', async () => {
-      mockContext.env.S3_SCRAPER_BUCKET_NAME = null;
+    it('should handle missing S3_IMPORTER_BUCKET_NAME', async () => {
+      mockContext.env.S3_IMPORTER_BUCKET_NAME = null;
 
       const message = {
         auditId: 'audit-123',
@@ -280,7 +280,7 @@ describe('Readability Opportunities Guidance Handler', () => {
 
       const result = await handler.default(message, mockContext);
       expect(result).to.deep.equal({ ok: true });
-      expect(logStub.error).to.have.been.calledWithMatch('Missing S3_SCRAPER_BUCKET_NAME');
+      expect(logStub.error).to.have.been.calledWithMatch('Missing S3_IMPORTER_BUCKET_NAME');
     });
   });
 

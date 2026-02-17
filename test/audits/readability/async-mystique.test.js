@@ -52,7 +52,7 @@ describe('async-mystique sendReadabilityToMystique', () => {
       },
       env: {
         QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.example.com/mystique-queue',
-        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        S3_IMPORTER_BUCKET_NAME: 'test-bucket',
       },
       s3Client: {
         send: sinon.stub().resolves(),
@@ -161,8 +161,8 @@ describe('async-mystique sendReadabilityToMystique', () => {
       expect(mockContext.sqs.sendMessage).to.have.been.calledOnce;
     });
 
-    it('should throw when S3_SCRAPER_BUCKET_NAME is missing', async () => {
-      mockContext.env.S3_SCRAPER_BUCKET_NAME = null;
+    it('should throw when S3_IMPORTER_BUCKET_NAME is missing', async () => {
+      mockContext.env.S3_IMPORTER_BUCKET_NAME = null;
 
       await expect(
         sendReadabilityToMystique(
@@ -173,7 +173,7 @@ describe('async-mystique sendReadabilityToMystique', () => {
           mockContext,
           'opportunity',
         ),
-      ).to.be.rejectedWith('Missing S3_SCRAPER_BUCKET_NAME for readability batch');
+      ).to.be.rejectedWith('Missing S3_IMPORTER_BUCKET_NAME for readability batch');
     });
 
     it('should extract selector from elements array', async () => {
