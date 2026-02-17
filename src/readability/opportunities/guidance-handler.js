@@ -11,15 +11,10 @@
  */
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 /**
- * Enriches suggestion data with fileds required for auto-optimize.
- *
- * Adds the URL and transform rules required for auto-optimize
- * based on the suggestion's properties.
- *
- * @param {Object} data - The suggestion data object.
- * @returns {Object} The enriched data with auto-optimize fields.
+ * Enriches suggestion data with fields required for auto-optimize.
  */
 function enrichSuggestionDataForAutoOptimize(data) {
   return {
@@ -37,44 +32,68 @@ function enrichSuggestionDataForAutoOptimize(data) {
 }
 
 /**
- * Maps Mystique readability suggestions to opportunity format
- * @param {Array} mystiquesuggestions - Array of suggestions from Mystique
- * @returns {Array} Array of suggestions for opportunity
+ * Downloads and parses the batch results JSON from S3.
  */
-function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
-  return mystiquesuggestions
-    .map((suggestion, index) => {
-      const suggestionId = `readability-opportunity-${suggestion.pageUrl || 'unknown'}-${index}`;
+async function fetchBatchResults(s3Client, bucketName, s3ResultsPath, log) {
+  const response = await s3Client.send(new GetObjectCommand({
+    Bucket: bucketName,
+    Key: s3ResultsPath,
+  }));
+  const body = await response.Body.transformToString();
+  const results = JSON.parse(body);
+  log.info(`[readability-opportunity guidance]: Fetched ${results.length} results from S3: ${s3ResultsPath}`);
+  return results;
+}
 
-      return {
-        id: suggestionId,
-        pageUrl: suggestion.pageUrl,
-        originalText: suggestion.original_paragraph,
-        improvedText: suggestion.improved_paragraph,
-        selector: suggestion.selector,
-        originalFleschScore: suggestion.current_flesch_score,
-        improvedFleschScore: suggestion.improved_flesch_score,
-        seoRecommendation: suggestion.seo_recommendation,
-        aiRationale: suggestion.ai_rationale,
-        targetFleschScore: suggestion.target_flesch_score,
-        type: 'READABILITY_IMPROVEMENT',
-      };
-    });
+/**
+ * Deletes the response file from S3 after consuming it.
+ */
+async function deleteResponseFile(s3Client, bucketName, s3ResultsPath, log) {
+  try {
+    await s3Client.send(new DeleteObjectCommand({
+      Bucket: bucketName,
+      Key: s3ResultsPath,
+    }));
+    log.info(`[readability-opportunity guidance]: Deleted S3 response file: ${s3ResultsPath}`);
+  } catch (error) {
+    log.warn(`[readability-opportunity guidance]: Failed to delete S3 response file ${s3ResultsPath}: ${error.message}`);
+  }
+}
+
+/**
+ * Maps a single Mystique batch result item to the internal suggestion format.
+ * Batch results use camelCase field names.
+ */
+function mapBatchResultToSuggestion(item, index) {
+  if (item.status !== 'success' || !item.data) {
+    return null;
+  }
+  const { data } = item;
+  return {
+    id: `readability-opportunity-${data.pageUrl || 'unknown'}-${index}`,
+    pageUrl: data.pageUrl,
+    originalText: data.originalParagraph,
+    improvedText: data.improvedParagraph,
+    selector: item.selector,
+    originalFleschScore: data.currentFleschScore,
+    improvedFleschScore: data.improvedFleschScore,
+    seoRecommendation: data.seoRecommendation,
+    aiRationale: data.aiRationale,
+    type: 'READABILITY_IMPROVEMENT',
+  };
 }
 
 export default async function handler(message, context) {
-  const { log, dataAccess } = context;
+  const { log, dataAccess, s3Client } = context;
   const {
     Site, Opportunity,
   } = dataAccess;
   const {
-    auditId, siteId, data, id: messageId,
+    auditId, siteId, data,
   } = message;
-  const { suggestions } = data || {};
 
   log.info(`[readability-opportunity guidance]: Received Mystique guidance for readability opportunities: ${JSON.stringify(message, null, 2)}`);
 
-  // For opportunity audits, auditId is an actual Audit entity ID
   log.info(`[readability-opportunity guidance]: Processing guidance for auditId: ${auditId}, siteId: ${siteId}`);
 
   const site = await Site.findById(siteId);
@@ -82,11 +101,7 @@ export default async function handler(message, context) {
     log.error(`[readability-opportunity guidance]: Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
-  const auditUrl = site.getBaseURL();
 
-  log.info(`[readability-opportunity guidance]: Processing suggestions for ${siteId} and auditUrl: ${auditUrl}`);
-
-  // Validate that the audit exists
   const audit = await dataAccess.Audit.findById(auditId);
   if (!audit) {
     log.error(`[readability-opportunity guidance]: Audit not found for auditId: ${auditId}`);
@@ -107,32 +122,38 @@ export default async function handler(message, context) {
     return notFound('Readability opportunity not found');
   }
 
-  // Process different response formats from Mystique
-  let mappedSuggestions = [];
+  // New batch flow: read results from S3
+  const { s3ResultsPath } = data || {};
+  if (!s3ResultsPath) {
+    log.warn('[readability-opportunity guidance]: No s3ResultsPath in message data, nothing to process');
+    return ok();
+  }
 
-  // Check if we have direct improved paragraph data (single response)
-  if (data?.improved_paragraph && data?.improved_flesch_score) {
-    mappedSuggestions.push({
-      id: `readability-opportunity-${auditId}-${messageId}`,
-      pageUrl: data.pageUrl || auditUrl,
-      originalText: data.original_paragraph,
-      improvedText: data.improved_paragraph,
-      selector: data.selector,
-      originalFleschScore: data.current_flesch_score,
-      improvedFleschScore: data.improved_flesch_score,
-      seoRecommendation: data.seo_recommendation,
-      aiRationale: data.ai_rationale,
-      targetFleschScore: data.target_flesch_score,
-      type: 'READABILITY_IMPROVEMENT',
-    });
-    log.info('[readability-opportunity guidance]: Processed single Mystique response with improved text');
-  } else if (suggestions && Array.isArray(suggestions)) {
-    // Handle batch response format
-    mappedSuggestions = mapMystiqueSuggestionsToOpportunityFormat(suggestions);
-    log.info(`[readability-opportunity guidance]: Processed ${suggestions.length} suggestions from batch response`);
-  } else {
-    log.warn(`[readability-opportunity guidance]: Unknown Mystique response format: ${JSON.stringify(data, null, 2)}`);
-    return ok(); // Don't fail for unexpected format
+  const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
+  if (!bucketName) {
+    log.error('[readability-opportunity guidance]: Missing S3_SCRAPER_BUCKET_NAME');
+    return ok();
+  }
+
+  let batchResults;
+  try {
+    batchResults = await fetchBatchResults(s3Client, bucketName, s3ResultsPath, log);
+  } catch (error) {
+    log.error(`[readability-opportunity guidance]: Failed to fetch batch results from S3: ${error.message}`);
+    return ok();
+  }
+
+  // Delete the S3 response file after reading
+  await deleteResponseFile(s3Client, bucketName, s3ResultsPath, log);
+
+  // Map batch results to suggestions, filtering out failed items
+  const mappedSuggestions = batchResults
+    .map((item, index) => mapBatchResultToSuggestion(item, index))
+    .filter(Boolean);
+
+  const failedCount = batchResults.filter((item) => item.status === 'failed').length;
+  if (failedCount > 0) {
+    log.warn(`[readability-opportunity guidance]: ${failedCount} items failed in batch results`);
   }
 
   if (mappedSuggestions.length === 0) {
@@ -140,15 +161,19 @@ export default async function handler(message, context) {
     return ok();
   }
 
+  log.info(`[readability-opportunity guidance]: Processing ${mappedSuggestions.length} suggestions from batch results`);
+
   // Update existing suggestions with AI improvements
   const existingSuggestions = await readabilityOpportunity.getSuggestions();
 
-  // Prepare update operations
   const updateOperations = mappedSuggestions.map((mystiquesuggestion) => {
-    // Find matching suggestion by text preview (first 500 chars)
+    // Match by selector first, fall back to text preview
     const matchingSuggestion = existingSuggestions.find(
       (existing) => {
         const existingData = existing.getData();
+        if (mystiquesuggestion.selector && existingData?.selector === mystiquesuggestion.selector) {
+          return true;
+        }
         const mystiqueTextTruncated = mystiquesuggestion.originalText?.substring(0, 500);
         return existingData?.textPreview === mystiqueTextTruncated;
       },
@@ -157,14 +182,12 @@ export default async function handler(message, context) {
     if (matchingSuggestion) {
       return async () => {
         try {
-          // If improvedText is empty or null, remove the suggestion instead of updating
           if (!mystiquesuggestion.improvedText || mystiquesuggestion.improvedText.trim() === '') {
             await matchingSuggestion.remove();
             log.warn(`[readability-opportunity guidance]: Removed suggestion ${matchingSuggestion.getId()} because Mystique 'improvedText' is empty`);
             return true;
           }
 
-          // Update the existing suggestion with AI improvements
           const currentData = matchingSuggestion.getData();
           const updatedData = {
             ...currentData,
@@ -178,7 +201,6 @@ export default async function handler(message, context) {
             mystiqueProcessingCompleted: new Date().toISOString(),
           };
 
-          // Enrich with auto-optimize data only after validating improvedText
           const enrichedData = enrichSuggestionDataForAutoOptimize(updatedData);
 
           await matchingSuggestion.setData(enrichedData);
@@ -197,7 +219,6 @@ export default async function handler(message, context) {
     return null;
   }).filter(Boolean);
 
-  // Execute all updates in parallel
   const updateResults = await Promise.all(updateOperations.map((op) => op()));
   const updatedCount = updateResults.filter(Boolean).length;
 

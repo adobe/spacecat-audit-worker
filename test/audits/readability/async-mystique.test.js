@@ -52,6 +52,10 @@ describe('async-mystique sendReadabilityToMystique', () => {
       },
       env: {
         QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.example.com/mystique-queue',
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
+      s3Client: {
+        send: sinon.stub().resolves(),
       },
       dataAccess: {
         Site: {
@@ -68,8 +72,8 @@ describe('async-mystique sendReadabilityToMystique', () => {
     sinon.restore();
   });
 
-  describe('opportunity mode (non-preflight)', () => {
-    it('should send readability issues in opportunity mode without storing metadata in AsyncJob', async () => {
+  describe('opportunity mode (S3 batch)', () => {
+    it('should write batch to S3 and send single SQS message', async () => {
       const readabilityIssues = [
         {
           textContent: 'This is a test paragraph with complex language.',
@@ -88,25 +92,36 @@ describe('async-mystique sendReadabilityToMystique', () => {
         'opportunity',
       );
 
-      // Should log the opportunity mode message (lines 92-94)
-      expect(log.debug).to.have.been.calledWith(
-        '[readability-suggest async] Sending 1 readability issues for opportunity audit audit-456',
-      );
+      // Should write to S3
+      expect(mockContext.s3Client.send).to.have.been.calledOnce;
+      const putCommand = mockContext.s3Client.send.getCall(0).args[0];
+      expect(putCommand.input.Bucket).to.equal('test-bucket');
+      expect(putCommand.input.Key).to.equal('readability/batch-requests/site-123/audit-456.json');
+      expect(putCommand.input.ContentType).to.equal('application/json');
 
-      // Should NOT interact with AsyncJob for metadata storage
-      expect(mockContext.dataAccess.AsyncJob.findById).to.not.have.been.called;
+      // Verify S3 payload uses camelCase
+      const s3Payload = JSON.parse(putCommand.input.Body);
+      expect(s3Payload).to.have.lengthOf(1);
+      expect(s3Payload[0].originalParagraph).to.equal('This is a test paragraph with complex language.');
+      expect(s3Payload[0].currentFleschScore).to.equal(25);
+      expect(s3Payload[0].targetFleschScore).to.equal(30);
+      expect(s3Payload[0].pageUrl).to.equal('https://example.com/page1');
+      expect(s3Payload[0].selector).to.equal('p.content');
 
-      // Should still send messages to Mystique
+      // Should send single SQS message with s3BatchPath
       expect(mockContext.sqs.sendMessage).to.have.been.calledOnce;
-
-      // Verify message structure includes opportunity mode fields
       const sentMessage = mockContext.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.type).to.equal('guidance:readability');
+      expect(sentMessage.siteId).to.equal('site-123');
+      expect(sentMessage.auditId).to.equal('audit-456');
       expect(sentMessage.mode).to.equal('opportunity');
-      expect(sentMessage.data.auditId).to.equal('audit-456');
-      expect(sentMessage.data.jobId).to.be.undefined; // jobId should NOT be present in opportunity mode
+      expect(sentMessage.data.s3BatchPath).to.equal('readability/batch-requests/site-123/audit-456.json');
+
+      // Should NOT interact with AsyncJob
+      expect(mockContext.dataAccess.AsyncJob.findById).to.not.have.been.called;
     });
 
-    it('should send multiple readability issues in opportunity mode', async () => {
+    it('should write multiple issues to S3 batch', async () => {
       const readabilityIssues = [
         {
           textContent: 'First paragraph.',
@@ -137,20 +152,75 @@ describe('async-mystique sendReadabilityToMystique', () => {
         'opportunity',
       );
 
-      // Should log the correct count
-      expect(log.debug).to.have.been.calledWith(
-        '[readability-suggest async] Sending 3 readability issues for opportunity audit audit-789',
+      // Should write all 3 issues to S3
+      const putCommand = mockContext.s3Client.send.getCall(0).args[0];
+      const s3Payload = JSON.parse(putCommand.input.Body);
+      expect(s3Payload).to.have.lengthOf(3);
+
+      // Should send only 1 SQS message
+      expect(mockContext.sqs.sendMessage).to.have.been.calledOnce;
+    });
+
+    it('should throw when S3_SCRAPER_BUCKET_NAME is missing', async () => {
+      mockContext.env.S3_SCRAPER_BUCKET_NAME = null;
+
+      await expect(
+        sendReadabilityToMystique(
+          'https://example.com',
+          [{ textContent: 'test', fleschReadingEase: 20, pageUrl: 'url', selector: 'p' }],
+          'site-123',
+          'audit-456',
+          mockContext,
+          'opportunity',
+        ),
+      ).to.be.rejectedWith('Missing S3_SCRAPER_BUCKET_NAME for readability batch');
+    });
+
+    it('should extract selector from elements array', async () => {
+      const readabilityIssues = [
+        {
+          textContent: 'Test paragraph content.',
+          fleschReadingEase: 22,
+          pageUrl: 'https://example.com/page1',
+          elements: [{ selector: 'div.content > p:nth-of-type(2)' }],
+        },
+      ];
+
+      await sendReadabilityToMystique(
+        'https://example.com',
+        readabilityIssues,
+        'site-123',
+        'audit-456',
+        mockContext,
+        'opportunity',
       );
 
-      // Should send 3 messages
-      expect(mockContext.sqs.sendMessage).to.have.been.calledThrice;
+      const putCommand = mockContext.s3Client.send.getCall(0).args[0];
+      const s3Payload = JSON.parse(putCommand.input.Body);
+      expect(s3Payload[0].selector).to.equal('div.content > p:nth-of-type(2)');
+    });
 
-      // All messages should be in opportunity mode
-      for (let i = 0; i < 3; i += 1) {
-        const sentMessage = mockContext.sqs.sendMessage.getCall(i).args[1];
-        expect(sentMessage.mode).to.equal('opportunity');
-        expect(sentMessage.data.auditId).to.equal('audit-789');
-      }
+    it('should fall back to empty string when neither selector nor elements is present', async () => {
+      const readabilityIssues = [
+        {
+          textContent: 'Paragraph without selector.',
+          fleschReadingEase: 18,
+          pageUrl: 'https://example.com/page1',
+        },
+      ];
+
+      await sendReadabilityToMystique(
+        'https://example.com',
+        readabilityIssues,
+        'site-123',
+        'audit-456',
+        mockContext,
+        'opportunity',
+      );
+
+      const putCommand = mockContext.s3Client.send.getCall(0).args[0];
+      const s3Payload = JSON.parse(putCommand.input.Body);
+      expect(s3Payload[0].selector).to.equal('');
     });
   });
 
@@ -174,7 +244,7 @@ describe('async-mystique sendReadabilityToMystique', () => {
         'preflight',
       );
 
-      // Should interact with AsyncJob for metadata storage in preflight mode
+      // Should interact with AsyncJob for metadata storage
       expect(mockContext.dataAccess.AsyncJob.findById).to.have.been.calledWith('job-456');
       expect(mockJobEntity.setMetadata).to.have.been.called;
       expect(mockJobEntity.save).to.have.been.called;
@@ -183,14 +253,42 @@ describe('async-mystique sendReadabilityToMystique', () => {
       const setMetadataCall = mockJobEntity.setMetadata.getCall(0).args[0];
       expect(setMetadataCall.payload.readabilityMetadata).to.exist;
       expect(setMetadataCall.payload.readabilityMetadata.mystiqueResponsesExpected).to.equal(1);
-      expect(setMetadataCall.payload.readabilityMetadata.totalReadabilityIssues).to.equal(1);
       expect(setMetadataCall.payload.readabilityMetadata.originalOrderMapping).to.have.lengthOf(1);
 
-      // Verify message has jobId instead of auditId
+      // Should NOT write to S3
+      expect(mockContext.s3Client.send).to.not.have.been.called;
+    });
+
+    it('should send readability issues in preflight mode with original message format', async () => {
+      const readabilityIssues = [
+        {
+          textContent: 'Test paragraph content.',
+          fleschReadingEase: 28,
+          pageUrl: 'https://example.com/page1',
+          selector: 'p.content',
+        },
+      ];
+
+      await sendReadabilityToMystique(
+        'https://example.com',
+        readabilityIssues,
+        'site-123',
+        'job-456',
+        mockContext,
+        'preflight',
+      );
+
+      // Verify message uses original type and snake_case fields
       const sentMessage = mockContext.sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.type).to.equal('guidance:readability');
       expect(sentMessage.mode).to.equal('preflight');
       expect(sentMessage.data.jobId).to.equal('job-456');
-      expect(sentMessage.data.auditId).to.be.undefined;
+      expect(sentMessage.data.original_paragraph).to.equal('Test paragraph content.');
+      expect(sentMessage.data.target_flesch_score).to.equal(30);
+      expect(sentMessage.data.current_flesch_score).to.equal(28);
+      expect(sentMessage.data.pageUrl).to.equal('https://example.com/page1');
+      expect(sentMessage.data.selector).to.equal('p.content');
+      expect(sentMessage.data.issue_id).to.match(/^readability-\d+-0$/);
     });
 
     it('should extract selector from elements array for preflight mode', async () => {
@@ -214,8 +312,6 @@ describe('async-mystique sendReadabilityToMystique', () => {
 
       const sentMessage = mockContext.sqs.sendMessage.getCall(0).args[1];
       expect(sentMessage.data.selector).to.equal('div.content > p:nth-of-type(2)');
-      expect(sentMessage.mode).to.equal('preflight');
-      expect(sentMessage.data.jobId).to.equal('job-456');
     });
 
     it('should fall back to empty string when neither selector nor elements is present', async () => {
@@ -238,7 +334,49 @@ describe('async-mystique sendReadabilityToMystique', () => {
 
       const sentMessage = mockContext.sqs.sendMessage.getCall(0).args[1];
       expect(sentMessage.data.selector).to.equal('');
-      expect(sentMessage.mode).to.equal('preflight');
+    });
+
+    it('should handle metadata without payload property', async () => {
+      mockJobEntity.getMetadata.returns({}); // no payload property
+
+      const readabilityIssues = [
+        {
+          textContent: 'Test paragraph.',
+          fleschReadingEase: 25,
+          pageUrl: 'https://example.com/page1',
+          selector: 'p.test',
+        },
+      ];
+
+      await sendReadabilityToMystique(
+        'https://example.com',
+        readabilityIssues,
+        'site-123',
+        'job-no-payload',
+        mockContext,
+        'preflight',
+      );
+
+      const setMetadataCall = mockJobEntity.setMetadata.getCall(0).args[0];
+      expect(setMetadataCall.payload.readabilityMetadata.mystiqueResponsesExpected).to.equal(1);
+    });
+
+    it('should send multiple readability issues in preflight mode', async () => {
+      const readabilityIssues = [
+        { textContent: 'First', fleschReadingEase: 20, pageUrl: 'url1', selector: 'p1' },
+        { textContent: 'Second', fleschReadingEase: 22, pageUrl: 'url2', selector: 'p2' },
+      ];
+
+      await sendReadabilityToMystique(
+        'https://example.com',
+        readabilityIssues,
+        'site-123',
+        'job-456',
+        mockContext,
+        'preflight',
+      );
+
+      expect(mockContext.sqs.sendMessage).to.have.been.calledTwice;
     });
   });
 
@@ -303,7 +441,7 @@ describe('async-mystique sendReadabilityToMystique', () => {
       ).to.be.rejectedWith('Missing SQS context or queue configuration');
     });
 
-    it('should throw error when some messages fail to send', async () => {
+    it('should throw error when some preflight messages fail to send', async () => {
       mockContext.sqs.sendMessage
         .onFirstCall().resolves()
         .onSecondCall().rejects(new Error('SQS error'));
@@ -318,9 +456,9 @@ describe('async-mystique sendReadabilityToMystique', () => {
           'https://example.com',
           readabilityIssues,
           'site-123',
-          'audit-456',
+          'job-456',
           mockContext,
-          'opportunity',
+          'preflight',
         ),
       ).to.be.rejectedWith('Failed to send 1 out of 2 messages to Mystique');
     });
@@ -330,7 +468,7 @@ describe('async-mystique sendReadabilityToMystique', () => {
     it('should construct correct Mystique message for opportunity mode', async () => {
       const readabilityIssues = [
         {
-          textContent: 'Complex paragraph needing simplification.',
+          textContent: 'Complex paragraph.',
           fleschReadingEase: 15,
           pageUrl: 'https://example.com/article',
           selector: 'div.content p',
@@ -347,11 +485,38 @@ describe('async-mystique sendReadabilityToMystique', () => {
       );
 
       const sentMessage = mockContext.sqs.sendMessage.getCall(0).args[1];
-
       expect(sentMessage.type).to.equal('guidance:readability');
       expect(sentMessage.siteId).to.equal('site-abc');
       expect(sentMessage.auditId).to.equal('audit-xyz');
       expect(sentMessage.mode).to.equal('opportunity');
+      expect(sentMessage.data.s3BatchPath).to.equal('readability/batch-requests/site-abc/audit-xyz.json');
+    });
+
+    it('should construct correct Mystique message for preflight mode', async () => {
+      const readabilityIssues = [
+        {
+          textContent: 'Complex paragraph needing simplification.',
+          fleschReadingEase: 15,
+          pageUrl: 'https://example.com/article',
+          selector: 'div.content p',
+        },
+      ];
+
+      await sendReadabilityToMystique(
+        'https://example.com',
+        readabilityIssues,
+        'site-abc',
+        'job-xyz',
+        mockContext,
+        'preflight',
+      );
+
+      const sentMessage = mockContext.sqs.sendMessage.getCall(0).args[1];
+
+      expect(sentMessage.type).to.equal('guidance:readability');
+      expect(sentMessage.siteId).to.equal('site-abc');
+      expect(sentMessage.auditId).to.equal('job-xyz');
+      expect(sentMessage.mode).to.equal('preflight');
       expect(sentMessage.deliveryType).to.equal('aem_edge');
       expect(sentMessage.url).to.equal('https://example.com');
       expect(sentMessage.observation).to.equal('Content readability needs improvement');
@@ -360,8 +525,6 @@ describe('async-mystique sendReadabilityToMystique', () => {
       expect(sentMessage.data.target_flesch_score).to.equal(30);
       expect(sentMessage.data.pageUrl).to.equal('https://example.com/article');
       expect(sentMessage.data.selector).to.equal('div.content p');
-      expect(sentMessage.data.issue_id).to.match(/^readability-\d+-0$/);
     });
   });
 });
-

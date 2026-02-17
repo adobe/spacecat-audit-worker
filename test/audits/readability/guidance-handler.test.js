@@ -16,33 +16,61 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
-import handler from '../../../src/readability/opportunities/guidance-handler.js';
+import esmock from 'esmock';
 
 use(sinonChai);
 use(chaiAsPromised);
 
 describe('Readability Opportunities Guidance Handler', () => {
-  let mockContext;
-  let mockSite;
-  let mockAudit;
-  let mockOpportunity;
+  let handler;
+  let logStub;
   let mockSuggestion;
-  let log;
+  let mockOpportunity;
+  let mockContext;
+  let mockS3Client;
+
+  const S3_RESULTS = [
+    {
+      status: 'success',
+      selector: '#content p:nth-child(1)',
+      data: {
+        success: true,
+        originalParagraph: 'Original complex text with many words.',
+        currentFleschScore: 25.3,
+        improvedParagraph: 'Simple clear text.',
+        improvedFleschScore: 75.5,
+        seoRecommendation: 'Simplify language',
+        aiRationale: 'Use shorter sentences',
+        pageUrl: 'https://example.com/page1',
+      },
+    },
+  ];
+
+  before(async function setupMocks() {
+    this.timeout(5000);
+
+    handler = await esmock('../../../src/readability/opportunities/guidance-handler.js', {
+      '@adobe/spacecat-shared-http-utils': {
+        ok: sinon.stub().returns({ ok: true }),
+        notFound: sinon.stub().returns({ notFound: true }),
+      },
+    });
+  });
 
   beforeEach(() => {
-    log = {
+    logStub = {
       info: sinon.stub(),
-      warn: sinon.stub(),
       error: sinon.stub(),
+      warn: sinon.stub(),
       debug: sinon.stub(),
     };
 
     mockSuggestion = {
       getId: sinon.stub().returns('suggestion-1'),
       getData: sinon.stub().returns({
-        textPreview: 'This is a test paragraph that needs improvement.',
+        textPreview: 'Original complex text with many words.',
+        selector: '#content p:nth-child(1)',
         pageUrl: 'https://example.com/page1',
-        selector: 'p.content',
         scrapedAt: '2025-01-01T00:00:00.000Z',
       }),
       setData: sinon.stub(),
@@ -51,26 +79,46 @@ describe('Readability Opportunities Guidance Handler', () => {
     };
 
     mockOpportunity = {
+      getId: sinon.stub().returns('opp-1'),
       getAuditId: sinon.stub().returns('audit-123'),
       getSuggestions: sinon.stub().resolves([mockSuggestion]),
     };
 
-    mockSite = {
-      getBaseURL: sinon.stub().returns('https://example.com'),
+    mockS3Client = {
+      send: sinon.stub(),
     };
 
-    mockAudit = {
-      getAuditType: sinon.stub().returns('readability-opportunity'),
-    };
+    // Default: S3 GetObject returns batch results, DeleteObject succeeds
+    mockS3Client.send.callsFake((command) => {
+      if (command.constructor.name === 'GetObjectCommand' || command.input?.Key?.includes('results')) {
+        return Promise.resolve({
+          Body: {
+            transformToString: sinon.stub().resolves(JSON.stringify(S3_RESULTS)),
+          },
+        });
+      }
+      // DeleteObjectCommand
+      return Promise.resolve();
+    });
 
     mockContext = {
-      log,
+      log: logStub,
+      s3Client: mockS3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      },
       dataAccess: {
         Site: {
-          findById: sinon.stub().resolves(mockSite),
+          findById: sinon.stub().resolves({
+            getId: sinon.stub().returns('site-1'),
+            getBaseURL: sinon.stub().returns('https://example.com'),
+          }),
         },
         Audit: {
-          findById: sinon.stub().resolves(mockAudit),
+          findById: sinon.stub().resolves({
+            getId: sinon.stub().returns('audit-123'),
+            getAuditType: sinon.stub().returns('readability'),
+          }),
         },
         Opportunity: {
           allBySiteId: sinon.stub().resolves([mockOpportunity]),
@@ -89,15 +137,12 @@ describe('Readability Opportunities Guidance Handler', () => {
 
       const message = {
         auditId: 'audit-123',
-        siteId: 'site-456',
-        data: {},
-        id: 'message-1',
+        siteId: 'missing-site',
+        data: { s3ResultsPath: 'results/path.json' },
       };
 
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(404);
-      expect(log.error).to.have.been.calledWith('[readability-opportunity guidance]: Site not found for siteId: site-456');
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ notFound: true });
     });
   });
 
@@ -106,534 +151,427 @@ describe('Readability Opportunities Guidance Handler', () => {
       mockContext.dataAccess.Audit.findById.resolves(null);
 
       const message = {
-        auditId: 'audit-123',
-        siteId: 'site-456',
-        data: {},
-        id: 'message-1',
+        auditId: 'missing-audit',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
       };
 
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(404);
-      expect(log.error).to.have.been.calledWith('[readability-opportunity guidance]: Audit not found for auditId: audit-123');
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ notFound: true });
     });
   });
 
   describe('Opportunity not found', () => {
     it('should return notFound when no matching opportunity is found', async () => {
-      mockContext.dataAccess.Opportunity.allBySiteId.resolves([]);
+      mockOpportunity.getAuditId.returns('different-audit');
 
       const message = {
         auditId: 'audit-123',
-        siteId: 'site-456',
-        data: {},
-        id: 'message-1',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
       };
 
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(404);
-      expect(log.error).to.have.been.calledWith(
-        '[readability-opportunity guidance]: No readability opportunity found for siteId: site-456, auditId: audit-123',
-      );
-    });
-
-    it('should return notFound when opportunity audit ID does not match', async () => {
-      mockOpportunity.getAuditId.returns('different-audit-id');
-
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-456',
-        data: {},
-        id: 'message-1',
-      };
-
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(404);
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ notFound: true });
     });
   });
 
-  describe('Single response format (direct improved paragraph)', () => {
-    it('should process single Mystique response with improved text', async () => {
+  describe('S3 batch flow', () => {
+    it('should fetch results from S3, process, and delete the response file', async () => {
       const message = {
         auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          improved_paragraph: 'This is the improved paragraph.',
-          improved_flesch_score: 75,
-          original_paragraph: 'This is a test paragraph that needs improvement.',
-          current_flesch_score: 55,
-          selector: 'p.content',
-          seo_recommendation: 'Simplify sentences',
-          ai_rationale: 'The original text was complex',
-          target_flesch_score: 70,
-          pageUrl: 'https://example.com/page1',
-        },
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'readability/batch-results/site-1/audit-123.json' },
       };
 
-      const result = await handler(message, mockContext);
+      const result = await handler.default(message, mockContext);
 
-      expect(result.status).to.equal(200);
-      expect(log.info).to.have.been.calledWith('[readability-opportunity guidance]: Processed single Mystique response with improved text');
+      expect(result).to.deep.equal({ ok: true });
+
+      // S3 should be called twice: GetObject + DeleteObject
+      expect(mockS3Client.send).to.have.been.calledTwice;
+
+      // Should update the suggestion with AI improvements
       expect(mockSuggestion.setData).to.have.been.called;
       expect(mockSuggestion.save).to.have.been.called;
+
+      const updatedData = mockSuggestion.setData.getCall(0).args[0];
+      expect(updatedData.improvedText).to.equal('Simple clear text.');
+      expect(updatedData.improvedFleschScore).to.equal(75.5);
+      expect(updatedData.aiSuggestion).to.equal('Simplify language');
+      expect(updatedData.aiRationale).to.equal('Use shorter sentences');
+      expect(updatedData.suggestionStatus).to.equal('completed');
     });
 
-    it('should use auditUrl as pageUrl when not provided in data', async () => {
+    it('should handle missing s3ResultsPath gracefully', async () => {
       const message = {
         auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 75,
-          original_paragraph: 'This is a test paragraph that needs improvement.',
-          current_flesch_score: 55,
-        },
+        siteId: 'site-1',
+        data: {},
       };
 
-      mockSuggestion.getData.returns({
-        textPreview: 'This is a test paragraph that needs improvement.',
-      });
-
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-    });
-  });
-
-  describe('Batch response format (suggestions array)', () => {
-    it('should process batch response with multiple suggestions', async () => {
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          suggestions: [
-            {
-              pageUrl: 'https://example.com/page1',
-              original_paragraph: 'This is a test paragraph that needs improvement.',
-              improved_paragraph: 'This is an improved paragraph.',
-              selector: 'p.content',
-              current_flesch_score: 55,
-              improved_flesch_score: 75,
-              seo_recommendation: 'Simplify text',
-              ai_rationale: 'Too complex',
-              target_flesch_score: 70,
-            },
-          ],
-        },
-      };
-
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      expect(log.info).to.have.been.calledWith('[readability-opportunity guidance]: Processed 1 suggestions from batch response');
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.warn).to.have.been.calledWithMatch('No s3ResultsPath in message data');
     });
 
-    it('should handle batch response with multiple suggestions mapping correctly', async () => {
+    it('should handle null data gracefully', async () => {
       const message = {
         auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          suggestions: [
-            {
-              pageUrl: 'https://example.com/page1',
-              original_paragraph: 'First paragraph text.',
-              improved_paragraph: 'First improved text.',
-              selector: 'p.first',
-              current_flesch_score: 50,
-              improved_flesch_score: 70,
-              seo_recommendation: 'Rec 1',
-              ai_rationale: 'Rationale 1',
-              target_flesch_score: 65,
-            },
-            {
-              pageUrl: 'https://example.com/page2',
-              original_paragraph: 'Second paragraph text.',
-              improved_paragraph: 'Second improved text.',
-              selector: 'p.second',
-              current_flesch_score: 45,
-              improved_flesch_score: 68,
-              seo_recommendation: 'Rec 2',
-              ai_rationale: 'Rationale 2',
-              target_flesch_score: 60,
-            },
-          ],
-        },
-      };
-
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      expect(log.info).to.have.been.calledWith('[readability-opportunity guidance]: Processed 2 suggestions from batch response');
-    });
-
-    it('should handle suggestion with missing pageUrl in mapping', async () => {
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          suggestions: [
-            {
-              original_paragraph: 'Test text.',
-              improved_paragraph: 'Improved test.',
-            },
-          ],
-        },
-      };
-
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      // The suggestion ID should contain 'unknown' when pageUrl is missing
-      expect(log.info).to.have.been.calledWith('[readability-opportunity guidance]: Processed 1 suggestions from batch response');
-    });
-  });
-
-  describe('Unknown response format', () => {
-    it('should return ok and log warning for unknown format', async () => {
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          someUnknownField: 'value',
-        },
-      };
-
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      expect(log.warn).to.have.been.calledWithMatch(/Unknown Mystique response format/);
-    });
-
-    it('should return ok for null data', async () => {
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
+        siteId: 'site-1',
         data: null,
       };
 
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.warn).to.have.been.calledWithMatch('No s3ResultsPath in message data');
     });
-  });
 
-  describe('No valid suggestions to process', () => {
-    it('should return ok when mappedSuggestions is empty', async () => {
+    it('should handle S3 fetch error gracefully', async () => {
+      mockS3Client.send.rejects(new Error('S3 read error'));
+
       const message = {
         auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          suggestions: [],
-        },
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
       };
 
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      expect(log.info).to.have.been.calledWith('[readability-opportunity guidance]: No valid suggestions to process');
-    });
-  });
-
-  describe('Suggestion matching and update', () => {
-    it('should update matching suggestion with AI improvements', async () => {
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          improved_paragraph: 'This is the improved paragraph.',
-          improved_flesch_score: 75,
-          original_paragraph: 'This is a test paragraph that needs improvement.',
-          current_flesch_score: 55,
-          selector: 'p.content',
-          seo_recommendation: 'Simplify sentences',
-          ai_rationale: 'The original text was complex',
-          target_flesch_score: 70,
-          pageUrl: 'https://example.com/page1',
-        },
-      };
-
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      expect(mockSuggestion.setData).to.have.been.called;
-      expect(mockSuggestion.save).to.have.been.called;
-
-      const setDataCall = mockSuggestion.setData.getCall(0);
-      const enrichedData = setDataCall.args[0];
-      expect(enrichedData.improvedText).to.equal('This is the improved paragraph.');
-      expect(enrichedData.improvedFleschScore).to.equal(75);
-      expect(enrichedData.readabilityImprovement).to.equal(20); // 75 - 55
-      expect(enrichedData.aiSuggestion).to.equal('Simplify sentences');
-      expect(enrichedData.aiRationale).to.equal('The original text was complex');
-      expect(enrichedData.suggestionStatus).to.equal('completed');
-      expect(enrichedData.mystiqueProcessingCompleted).to.exist;
-      expect(enrichedData.transformRules).to.exist;
-      expect(enrichedData.transformRules.op).to.equal('replace');
-      expect(enrichedData.transformRules.target).to.equal('ai-bots');
-      expect(enrichedData.transformRules.prerenderRequired).to.equal(true);
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.error).to.have.been.calledWithMatch('Failed to fetch batch results from S3');
     });
 
-    it('should handle empty improved_paragraph by treating as unknown format', async () => {
-      // When improved_paragraph is empty string (falsy), the condition
-      // `data?.improved_paragraph && data?.improved_flesch_score` fails
-      // and the code treats it as unknown format
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          improved_paragraph: '',
-          improved_flesch_score: 75,
-          original_paragraph: 'This is a test paragraph that needs improvement.',
-          current_flesch_score: 55,
-        },
-      };
-
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      // Empty string is falsy, so it's treated as unknown format
-      expect(log.warn).to.have.been.calledWithMatch(/Unknown Mystique response format/);
-    });
-
-    it('should remove suggestion when improvedText is whitespace only', async () => {
-      // Whitespace-only string is truthy, so it passes the initial check
-      // but then gets caught by the trim() === '' check
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          improved_paragraph: '   ',
-          improved_flesch_score: 75,
-          original_paragraph: 'This is a test paragraph that needs improvement.',
-          current_flesch_score: 55,
-        },
-      };
-
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      expect(mockSuggestion.remove).to.have.been.called;
-      expect(log.warn).to.have.been.calledWithMatch(/Removed suggestion .* because Mystique 'improvedText' is empty/);
-    });
-
-    it('should handle null improved_paragraph by treating as unknown format', async () => {
-      // When improved_paragraph is null (falsy), the condition fails
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          improved_paragraph: null,
-          improved_flesch_score: 75,
-          original_paragraph: 'This is a test paragraph that needs improvement.',
-          current_flesch_score: 55,
-        },
-      };
-
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      // null is falsy, so it's treated as unknown format
-      expect(log.warn).to.have.been.calledWithMatch(/Unknown Mystique response format/);
-    });
-
-    it('should log warning when no matching suggestion found', async () => {
-      mockSuggestion.getData.returns({
-        textPreview: 'Completely different text that does not match.',
+    it('should handle S3 delete failure gracefully', async () => {
+      let callCount = 0;
+      mockS3Client.send.callsFake(() => {
+        callCount += 1;
+        if (callCount === 1) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(S3_RESULTS)),
+            },
+          });
+        }
+        // Second call is delete - should fail
+        return Promise.reject(new Error('Delete failed'));
       });
 
       const message = {
         auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 75,
-          original_paragraph: 'This is a test paragraph that needs improvement.',
-          current_flesch_score: 55,
-        },
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
       };
 
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      expect(log.warn).to.have.been.calledWithMatch(/No matching suggestion found for text/);
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.warn).to.have.been.calledWithMatch('Failed to delete S3 response file');
+      // Should still process suggestions even if delete fails
+      expect(mockSuggestion.setData).to.have.been.called;
     });
 
-    it('should handle error during suggestion update', async () => {
+    it('should handle missing S3_SCRAPER_BUCKET_NAME', async () => {
+      mockContext.env.S3_SCRAPER_BUCKET_NAME = null;
+
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.error).to.have.been.calledWithMatch('Missing S3_SCRAPER_BUCKET_NAME');
+    });
+  });
+
+  describe('batch result processing', () => {
+    it('should skip failed items and log warning', async () => {
+      const mixedResults = [
+        {
+          status: 'success',
+          selector: '#content p:nth-child(1)',
+          data: {
+            originalParagraph: 'Original complex text with many words.',
+            currentFleschScore: 25.3,
+            improvedParagraph: 'Simple text.',
+            improvedFleschScore: 75.5,
+            seoRecommendation: 'Simplify',
+            aiRationale: 'Shorter sentences',
+            pageUrl: 'https://example.com/page1',
+          },
+        },
+        {
+          status: 'failed',
+          selector: '#content p:nth-child(2)',
+          data: { error: 'timeout' },
+        },
+      ];
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(mixedResults)),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.warn).to.have.been.calledWithMatch('1 items failed in batch results');
+    });
+
+    it('should handle all items failed', async () => {
+      const allFailedResults = [
+        {
+          status: 'failed',
+          selector: '#p1',
+          data: { error: 'timeout' },
+        },
+        {
+          status: 'failed',
+          selector: '#p2',
+          data: { error: 'internal error' },
+        },
+      ];
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(allFailedResults)),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.info).to.have.been.calledWithMatch('No valid suggestions to process');
+    });
+
+    it('should match by text preview when selector does not match', async () => {
+      const results = [
+        {
+          status: 'success',
+          selector: 'different-selector',
+          data: {
+            originalParagraph: 'Original complex text with many words.',
+            currentFleschScore: 25.3,
+            improvedParagraph: 'Improved text.',
+            improvedFleschScore: 70,
+            seoRecommendation: 'Simplify',
+            aiRationale: 'Shorten',
+            pageUrl: 'https://example.com/page1',
+          },
+        },
+      ];
+
+      mockSuggestion.getData.returns({
+        textPreview: 'Original complex text with many words.',
+        selector: 'some-other-selector',
+        pageUrl: 'https://example.com/page1',
+        scrapedAt: '2025-01-01T00:00:00.000Z',
+      });
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(results)),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+      expect(mockSuggestion.setData).to.have.been.called;
+    });
+
+    it('should log warning when no matching suggestion found', async () => {
+      const results = [
+        {
+          status: 'success',
+          selector: 'unmatched-selector',
+          data: {
+            originalParagraph: 'Text that does not match anything.',
+            currentFleschScore: 20,
+            improvedParagraph: 'Better text.',
+            improvedFleschScore: 70,
+            seoRecommendation: 'Simplify',
+            aiRationale: 'Shorten',
+            pageUrl: 'https://example.com/page1',
+          },
+        },
+      ];
+
+      mockSuggestion.getData.returns({
+        textPreview: 'Completely different text.',
+        selector: 'different-selector',
+        pageUrl: 'https://example.com/page1',
+        scrapedAt: '2025-01-01T00:00:00.000Z',
+      });
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(results)),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.warn).to.have.been.calledWithMatch('No matching suggestion found');
+    });
+
+    it('should remove suggestion when improvedText is empty', async () => {
+      const results = [
+        {
+          status: 'success',
+          selector: '#content p:nth-child(1)',
+          data: {
+            originalParagraph: 'Original complex text with many words.',
+            currentFleschScore: 25.3,
+            improvedParagraph: '',
+            improvedFleschScore: 0,
+            seoRecommendation: '',
+            aiRationale: '',
+            pageUrl: 'https://example.com/page1',
+          },
+        },
+      ];
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(results)),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+      expect(mockSuggestion.remove).to.have.been.called;
+    });
+
+    it('should handle suggestion update error gracefully', async () => {
       mockSuggestion.save.rejects(new Error('Database error'));
 
       const message = {
         auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 75,
-          original_paragraph: 'This is a test paragraph that needs improvement.',
-          current_flesch_score: 55,
-        },
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
       };
 
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      expect(log.error).to.have.been.calledWithMatch(/Error updating suggestion .* Database error/);
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.error).to.have.been.calledWithMatch('Error updating suggestion');
     });
-  });
 
-  describe('enrichSuggestionDataForAutoOptimize function', () => {
-    it('should correctly enrich data with transform rules', async () => {
+    it('should enrich suggestion data with auto-optimize transform rules', async () => {
       const message = {
         auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          improved_paragraph: 'Improved text content',
-          improved_flesch_score: 80,
-          original_paragraph: 'This is a test paragraph that needs improvement.',
-          current_flesch_score: 50,
-          selector: 'div.main-content p',
-          pageUrl: 'https://example.com/article',
-        },
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
       };
 
-      mockSuggestion.getData.returns({
-        textPreview: 'This is a test paragraph that needs improvement.',
-        pageUrl: 'https://example.com/article',
-        selector: 'div.main-content p',
-        scrapedAt: '2025-06-01T12:00:00.000Z',
-      });
+      await handler.default(message, mockContext);
 
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-
-      const setDataCall = mockSuggestion.setData.getCall(0);
-      const enrichedData = setDataCall.args[0];
-
-      expect(enrichedData.url).to.equal('https://example.com/article');
-      expect(enrichedData.scrapedAt).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-      expect(enrichedData.transformRules).to.deep.include({
-        value: 'Improved text content',
-        op: 'replace',
-        selector: 'div.main-content p',
-        target: 'ai-bots',
-        prerenderRequired: true,
-      });
+      const updatedData = mockSuggestion.setData.getCall(0).args[0];
+      expect(updatedData.url).to.equal('https://example.com/page1');
+      expect(updatedData.transformRules).to.exist;
+      expect(updatedData.transformRules.value).to.equal('Simple clear text.');
+      expect(updatedData.transformRules.op).to.equal('replace');
+      expect(updatedData.transformRules.selector).to.equal('#content p:nth-child(1)');
+      expect(updatedData.transformRules.target).to.equal('ai-bots');
+      expect(updatedData.transformRules.prerenderRequired).to.equal(true);
     });
-  });
 
-  describe('mapMystiqueSuggestionsToOpportunityFormat function', () => {
-    it('should map all fields correctly in batch format', async () => {
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          suggestions: [
-            {
-              pageUrl: 'https://example.com/test-page',
-              original_paragraph: 'Original text content here.',
-              improved_paragraph: 'Improved text content here.',
-              selector: 'article p.intro',
-              current_flesch_score: 42,
-              improved_flesch_score: 68,
-              seo_recommendation: 'Use shorter sentences',
-              ai_rationale: 'Paragraph contains run-on sentences',
-              target_flesch_score: 60,
+    it('should use "unknown" fallback when pageUrl is missing in batch result', async () => {
+      const resultsNoPageUrl = [
+        {
+          status: 'success',
+          selector: '#content p:nth-child(1)',
+          data: {
+            originalParagraph: 'Original complex text with many words.',
+            currentFleschScore: 25.3,
+            improvedParagraph: 'Simple clear text.',
+            improvedFleschScore: 75.5,
+            seoRecommendation: 'Simplify language',
+            aiRationale: 'Use shorter sentences',
+            // pageUrl deliberately omitted
+          },
+        },
+      ];
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(resultsNoPageUrl)),
             },
-          ],
-        },
-      };
-
-      mockSuggestion.getData.returns({
-        textPreview: 'Original text content here.',
+          });
+        }
+        return Promise.resolve();
       });
 
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      expect(log.info).to.have.been.calledWith('[readability-opportunity guidance]: Processed 1 suggestions from batch response');
-    });
-  });
-
-  describe('Update count logging', () => {
-    it('should log correct update count for successful updates', async () => {
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 75,
-          original_paragraph: 'This is a test paragraph that needs improvement.',
-          current_flesch_score: 55,
-        },
-      };
-
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      expect(log.info).to.have.been.calledWithMatch(/Successfully updated 1 readability suggestions with AI improvements/);
-    });
-
-    it('should log zero updates when no matching suggestions found', async () => {
+      // Update suggestion to match by text preview since pageUrl-based selector won't match
       mockSuggestion.getData.returns({
-        textPreview: 'No matching text here',
+        textPreview: 'Original complex text with many words.',
+        selector: '#content p:nth-child(1)',
+        scrapedAt: '2025-01-01T00:00:00.000Z',
       });
 
       const message = {
         auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 75,
-          original_paragraph: 'Completely different original text.',
-          current_flesch_score: 55,
-        },
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
       };
 
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      expect(log.info).to.have.been.calledWithMatch(/Successfully updated 0 readability suggestions/);
-    });
-
-    it('should count failed updates correctly', async () => {
-      mockSuggestion.save.rejects(new Error('Save failed'));
-
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-456',
-        id: 'message-1',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 75,
-          original_paragraph: 'This is a test paragraph that needs improvement.',
-          current_flesch_score: 55,
-        },
-      };
-
-      const result = await handler(message, mockContext);
-
-      expect(result.status).to.equal(200);
-      expect(log.info).to.have.been.calledWithMatch(/Successfully updated 0 readability suggestions/);
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
     });
   });
 });
-
