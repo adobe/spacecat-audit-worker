@@ -19,10 +19,7 @@
  * - URL Store: GET /sites/{siteId}/url-store/by-audit/{auditType}
  * - Sentiment Config: GET /sites/{siteId}/sentiment/config?audit={auditType}
  *
- * Note: Content Store is called directly by Mystique (not from audit worker)
- * because content can exceed SQS message size limits (256KB).
- *
- * The stores provide:
+ * Provides:
  * - urlStore: URLs discovered during brand presence analysis (Wikipedia, Reddit, YouTube, etc.)
  * - guidelinesStore: Analysis guidelines and topics for different audit types
  */
@@ -64,7 +61,7 @@ export const GUIDELINE_TYPES = {
 };
 
 /**
- * Store Client class for accessing URL, Content, and Guidelines stores
+ * Store Client class for accessing URL Store and Guidelines Store
  * Uses spacecat-api-service endpoints
  */
 export default class StoreClient {
