@@ -219,10 +219,11 @@ export default async function identifyRedirects(message, context) {
     const response = item.value || {};
     const splunkResults = Array.isArray(response.results) ? response.results : [];
     const totalCount = splunkResults.reduce((sum, r) => sum + asNumber(r.count), 0);
-    const examples = splunkResults
+    const examplesList = splunkResults
       .map((r) => r[pathField])
       .filter((v) => typeof v === 'string' && v.length > 0)
       .slice(0, 8);
+    const examples = examplesList.length > 0 ? examplesList : null;
 
     const score = scorePattern({ totalCount, confidence: q.confidence });
     return {
