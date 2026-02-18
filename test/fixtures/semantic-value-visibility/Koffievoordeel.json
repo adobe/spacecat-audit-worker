@@ -1,0 +1,112 @@
+{
+  "url": "https://koffievoordeel.nl/",
+  "opportunityType": "semantic-value-visibility",
+  "suggestions": [
+    {
+      "data": {
+        "imageUrl": "https://www.koffievoordeel.nl/media/wysiwyg/gmi_sample_doos_7-99_kvdnl_kvd_web_hero_desk.jpg?quality=85&fit=bounds",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.koffievoordeel.nl/media/wysiwyg/gmi_sample_doos_7-99_kvdnl_kvd_web_hero_desk.jpg?quality=85&fit=bounds\">\n  <span>Gran Maestro Italiano</span>\n  <h2>Probeerpakket</h2>\n  <span>Nu slechts 7,99</span>\n</section>",
+        "detectedText": [
+          "Gran Maestro Italiano",
+          "Probeerpakket",
+          "Nu slechts",
+          "99",
+          "GRAN",
+          "MAESTRO",
+          "tatiano"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.koffievoordeel.nl/media/wysiwyg/gmi_sample_doos_7-99_kvdnl_kvd_web_hero_desk.jpg?quality=85&fit=bounds\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.koffievoordeel.nl/media/wysiwyg/D6417_abonnementen_resfresh_web_hero_desk.jpg?quality=85&fit=bounds",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.koffievoordeel.nl/media/wysiwyg/D6417_abonnementen_resfresh_web_hero_desk.jpg?quality=85&fit=bounds\">\n  <h2>Koffie abonnementen</h2>\n  <span>Tot 20% extra korting + gratis bezorging</span>\n  <span>L\u2019OR</span>\n</section>",
+        "detectedText": [
+          "Koffie",
+          "abonnementen",
+          "DORO",
+          "ORC",
+          "gratis bezorging",
+          "illy"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.koffievoordeel.nl/media/wysiwyg/D6417_abonnementen_resfresh_web_hero_desk.jpg?quality=85&fit=bounds\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.koffievoordeel.nl/media/wysiwyg/D6360_voordeelpakketen_gmi_web_hero_desk_kvdnl_2.jpg?quality=85&fit=bounds",
+        "urlAttribute": "src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.koffievoordeel.nl/media/wysiwyg/D6360_voordeelpakketen_gmi_web_hero_desk_kvdnl_2.jpg?quality=85&fit=bounds\">\n  <h2>Voordeelpakketten:</h2>\n  <span>Nu n\u00f3g voordeliger!</span>\n  <button>Extra voordeel</button>\n</section>",
+        "detectedText": [
+          "Voordeelpakketten:",
+          "Nu nog voordeliger!",
+          "voordeel",
+          "tatiano",
+          "aliano",
+          "00"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[src=\"https://www.koffievoordeel.nl/media/wysiwyg/D6360_voordeelpakketen_gmi_web_hero_desk_kvdnl_2.jpg?quality=85&fit=bounds\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.koffievoordeel.nl/media/wysiwyg/D6927_coffee_finder_winter_web_hero_desk_kvdxx_1.png?quality=85&fit=bounds",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.koffievoordeel.nl/media/wysiwyg/D6927_coffee_finder_winter_web_hero_desk_kvdxx_1.png?quality=85&fit=bounds\">\n  <h2>Coffee Finder</h2>\n  <p>Voor hetzelfde geld betere koffie?</p>\n  <button>Doe de test \u2192</button>\n</section>",
+        "detectedText": [
+          "Coffee",
+          "Finder",
+          "Voor hetzelfde geld",
+          "betere koffie?",
+          "Doe de test"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://www.koffievoordeel.nl/media/wysiwyg/D6927_coffee_finder_winter_web_hero_desk_kvdxx_1.png?quality=85&fit=bounds\"]"
+        }
+      }
+    },
+    {
+      "data": {
+        "imageUrl": "https://www.koffievoordeel.nl/media/wysiwyg/kk_Algemeen_EB_KVDNL_kvd_web_hero_desk_7.jpg?quality=85&fit=bounds",
+        "urlAttribute": "data-src",
+        "semanticHtml": "<section data-llm-context=\"image\" data-llm-shadow=\"image-text\" data-image-id=\"https://www.koffievoordeel.nl/media/wysiwyg/kk_Algemeen_EB_KVDNL_kvd_web_hero_desk_7.jpg?quality=85&fit=bounds\">\n  <h2>Deze week: \u20ac10 koffie</h2>\n  <span>GRAN MAESTRO</span>\n  <span>SLOW ROAST</span>\n  <span>cadeaul</span>\n  <span>ESPRESSO</span>\n  <span>ORIGINALE</span>\n  <span>DOKO</span>\n  <span>Bean?</span>\n  <span>CELESTE</span>\n</section>",
+        "detectedText": [
+          "Deze week:",
+          "\u20ac10 koffie",
+          "GRAN",
+          "MAESTRO",
+          "SLOW",
+          "ROAST",
+          "cadeaul",
+          "ESPRESSO",
+          "ORIGINALE",
+          "DOKO",
+          "Bean?",
+          "CELESTE"
+        ],
+        "transformRules": {
+          "action": "insertAfter",
+          "selector": "img[data-src=\"https://www.koffievoordeel.nl/media/wysiwyg/kk_Algemeen_EB_KVDNL_kvd_web_hero_desk_7.jpg?quality=85&fit=bounds\"]"
+        }
+      }
+    }
+  ],
+  "stats": {
+    "totalImages": 5,
+    "successfulSuggestions": 5,
+    "noGuidanceNeeded": 0
+  }
+}

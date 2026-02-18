@@ -14,7 +14,7 @@ import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { load as cheerioLoad } from 'cheerio';
 import SeoChecks from '../metatags/seo-checks.js';
-import { getTopPagesForSiteId } from '../canonical/handler.js';
+import { getTopPagesForSiteId } from '../utils/data-access.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import {
   getHeadingLevel,

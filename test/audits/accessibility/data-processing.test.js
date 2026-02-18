@@ -37,6 +37,7 @@ import {
   getAuditPrefixes,
   sendCodeFixMessagesToMystique,
   mergeAccessibilityData,
+  getCodeInfo,
 } from '../../../src/accessibility/utils/data-processing.js';
 
 use(sinonChai);
@@ -7165,6 +7166,220 @@ describe('data-processing utility functions', () => {
       // Verify no last week file log since there's only one file (length < 2)
       expect(mockLog.debug).to.not.have.been.calledWith(sinon.match(/Last week file key:/));
       expect(result.finalResultFiles.lastWeek).to.be.null;
+    });
+  });
+
+  describe('getCodeInfo', () => {
+    let mockSite;
+    let mockContext;
+    let mockConfiguration;
+
+    beforeEach(() => {
+      mockSite = {
+        getId: () => 'site-123',
+        getDeliveryType: () => 'aem_edge',
+        getCode: () => null, // No code config for simpler AEMY testing
+        getBaseURL: () => 'https://example.com',
+      };
+
+      mockConfiguration = {
+        getHandlers: sinon.stub().returns({
+          'a11y-aemy-code-injection': { enabled: true },
+        }),
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+      };
+
+      mockContext = {
+        log: mockLog,
+        s3Client: mockS3Client,
+        env: {
+          S3_IMPORTER_BUCKET_NAME: 'importer-bucket',
+          S3_MYSTIQUE_BUCKET_NAME: 'mystique-bucket',
+        },
+        dataAccess: {
+          Configuration: {
+            findLatest: sinon.stub().resolves(mockConfiguration),
+          },
+        },
+      };
+    });
+
+    describe('AEMY enabled (default flow)', () => {
+      it('should use AEMY flow when feature flag is enabled for accessibility', async () => {
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(mockContext.dataAccess.Configuration.findLatest).to.have.been.calledOnce;
+        expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('a11y-aemy-code-injection', mockSite);
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: '',
+        });
+      });
+
+      it('should use AEMY flow for CWV audit without checking feature flag', async () => {
+        const result = await getCodeInfo(mockSite, 'cwv', mockContext);
+
+        expect(mockContext.dataAccess.Configuration.findLatest).to.not.have.been.called;
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: '',
+        });
+      });
+
+      it('should default to AEMY when Configuration is missing', async () => {
+        delete mockContext.dataAccess.Configuration;
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: '',
+        });
+      });
+
+      it('should default to AEMY when feature flag check throws error', async () => {
+        mockContext.dataAccess.Configuration.findLatest.rejects(new Error('Database error'));
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(mockLog.warn).to.have.been.calledWith(
+          sinon.match(/Could not check feature flag, defaulting to AEMY enabled/),
+        );
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: '',
+        });
+      });
+    });
+
+    describe('AEMY disabled (manual flow)', () => {
+      beforeEach(() => {
+        mockConfiguration.isHandlerEnabledForSite.returns(false);
+      });
+
+      it('should use manual flow when AEMY is disabled for accessibility', async () => {
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(mockContext.dataAccess.Configuration.findLatest).to.have.been.calledOnce;
+        expect(result).to.deep.equal({
+          codeBucket: 'mystique-bucket',
+          codePath: 'tmp/codefix/source/example.tar.gz',
+        });
+        expect(mockLog.info).to.have.been.calledWith(
+          sinon.match(/Using manual code archive.*example\.tar\.gz/),
+        );
+      });
+
+      it('should extract main domain name correctly', async () => {
+        mockSite.getBaseURL = () => 'https://www.example.co.uk';
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(result.codePath).to.equal('tmp/codefix/source/example.tar.gz');
+      });
+
+      it('should extract domain name from www subdomain', async () => {
+        mockSite.getBaseURL = () => 'https://www.sunstargum.com';
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(result.codePath).to.equal('tmp/codefix/source/sunstargum.tar.gz');
+      });
+
+      it('should handle base URL without protocol', async () => {
+        mockSite.getBaseURL = () => 'example.com';
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(result.codePath).to.equal('tmp/codefix/source/example.tar.gz');
+      });
+
+      it('should return null when base URL is missing', async () => {
+        mockSite.getBaseURL = () => null;
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(result).to.be.null;
+        expect(mockLog.warn).to.have.been.calledWith(
+          sinon.match(/No base URL for manual code path/),
+        );
+      });
+
+      it('should return null when base URL is invalid', async () => {
+        mockSite.getBaseURL = () => 'not a valid url';
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(result).to.be.null;
+        expect(mockLog.warn).to.have.been.calledWith(
+          sinon.match(/Invalid base URL/),
+        );
+      });
+
+      it('should throw error when S3_MYSTIQUE_BUCKET_NAME is not configured', async () => {
+        delete mockContext.env.S3_MYSTIQUE_BUCKET_NAME;
+
+        try {
+          await getCodeInfo(mockSite, 'accessibility', mockContext);
+          expect.fail('Should have thrown error');
+        } catch (error) {
+          expect(error.message).to.equal('S3_MYSTIQUE_BUCKET_NAME not configured');
+          expect(mockLog.error).to.have.been.calledWith(
+            sinon.match(/S3_MYSTIQUE_BUCKET_NAME not configured/),
+          );
+        }
+      });
+
+      it('should not validate S3 bucket for non-accessibility audits in manual flow', async () => {
+        // This shouldn't happen in practice (CWV always uses AEMY), but tests the conditional
+        delete mockContext.env.S3_MYSTIQUE_BUCKET_NAME;
+        mockConfiguration.isHandlerEnabledForSite.returns(false);
+
+        const result = await getCodeInfo(mockSite, 'cwv', mockContext);
+
+        // For CWV, feature flag is never checked, so it uses AEMY flow
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: '',
+        });
+      });
+    });
+
+    describe('Feature flag edge cases', () => {
+      it('should use AEMY when handler config exists but is not enabled for site', async () => {
+        mockConfiguration.getHandlers.returns({
+          'a11y-aemy-code-injection': { enabled: true },
+        });
+        mockConfiguration.isHandlerEnabledForSite.returns(false);
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        // Should use manual flow (handler config exists but disabled for site)
+        expect(result.codePath).to.include('tmp/codefix/source/');
+      });
+
+      it('should use AEMY when handler is missing from configuration', async () => {
+        mockConfiguration.getHandlers.returns({});
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        // Handler undefined, so defaults to AEMY
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: '',
+        });
+      });
+
+      it('should use AEMY when getHandlers returns null', async () => {
+        mockConfiguration.getHandlers.returns(null);
+
+        const result = await getCodeInfo(mockSite, 'accessibility', mockContext);
+
+        expect(result).to.deep.equal({
+          codeBucket: 'importer-bucket',
+          codePath: '',
+        });
+      });
     });
   });
 });

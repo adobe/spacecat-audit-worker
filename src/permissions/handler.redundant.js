@@ -21,7 +21,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import {
   createAdminOpportunityData, createAdminMetrics,
 } from './opportunity-data-mapper.js';
-import { mapAdminSuggestion } from './suggestion-data-mapper.js';
+import { mapAdminSuggestion, mergeSuggestionStatus } from './suggestion-data-mapper.js';
 import { fetchPermissionsReport, markOpportunityAsFixed } from './common.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { noopUrlResolver } from '../common/index.js';
@@ -148,10 +148,19 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
 
   // Flatten adminChecks arrays by principal and path and privileges
   const flattenedPermissions = permissionsReport.adminChecks
+    .filter((ac) => isNonEmptyArray(ac.details))
     // eslint-disable-next-line max-len
     .flatMap(({ principal, details }) => details.map((d) => ({
       principal, path: d.path, permissions: d.privileges, ...d,
     })));
+
+  if (flattenedPermissions.length === 0) {
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no redundant permissions issues found, skipping opportunity / suggestions generation`);
+    await Promise.all(
+      adminOpportunities.map((o) => markOpportunityAsFixed(AUDIT_TYPE, o, site, context)),
+    );
+    return { status: 'complete' };
+  }
 
   // Check if there are existing opportunity or need to create a new one
   // eslint-disable-next-line max-len
@@ -175,6 +184,7 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
     opportunity: adminOpt,
     newData: flattenedPermissions,
     buildKey: buildAdminSuggestionKey,
+    mergeStatusFunction: mergeSuggestionStatus,
     mapNewSuggestion: (entry) => mapAdminSuggestion(adminOpt, entry),
   });
 

@@ -395,6 +395,7 @@ describe('Page Citability Handler', () => {
         setWordDifference: sandbox.stub(),
         setBotWords: sandbox.stub(),
         setNormalWords: sandbox.stub(),
+        setIsDeployedAtEdge: sandbox.stub(),
         save: sandbox.stub().resolves(),
       };
 
@@ -411,6 +412,7 @@ describe('Page Citability Handler', () => {
       expect(mockExistingRecord.setWordDifference).to.have.been.calledOnce;
       expect(mockExistingRecord.setBotWords).to.have.been.calledOnce;
       expect(mockExistingRecord.setNormalWords).to.have.been.calledOnce;
+      expect(mockExistingRecord.setIsDeployedAtEdge).to.have.been.calledOnce;
       expect(mockExistingRecord.save).to.have.been.calledOnce;
       expect(mockPageCitability.create).to.not.have.been.called;
     });

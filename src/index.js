@@ -30,6 +30,8 @@ import sitemap from './sitemap/handler.js';
 import sitemapProductCoverage from './sitemap-product-coverage/handler.js';
 import redirectChains from './redirect-chains/handler.js';
 import paid from './paid-cookie-consent/handler.js';
+import paidKeywordOptimizer from './paid-keyword-optimizer/handler.js';
+import paidKeywordOptimizerGuidance from './paid-keyword-optimizer/guidance-handler.js';
 import noCTAAboveTheFold from './no-cta-above-the-fold/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
@@ -89,6 +91,7 @@ import vulnerabilitiesCodeFix from './vulnerabilities-code-fix/handler.js';
 import prerender from './prerender/handler.js';
 import prerenderGuidance from './prerender/guidance-handler.js';
 import productMetatags from './product-metatags/handler.js';
+import commerceProductEnrichments from './commerce-product-enrichments/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
@@ -101,6 +104,10 @@ import pageCitability from './page-citability/handler.js';
 import healthCheck from './health-check/handler.js';
 import wikipediaAnalysis from './wikipedia-analysis/handler.js';
 import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
+import frescopaDataGeneration from './frescopa-data-generation/handler.js';
+import ptrSelector from './ptr-selector/handler.js';
+import semanticValueVisibility from './semantic-value-visibility/handler.js';
+import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -141,6 +148,10 @@ const HANDLERS = {
   'geo-brand-presence': geoBrandPresence,
   'geo-brand-presence-free': geoBrandPresence,
   'geo-brand-presence-paid': geoBrandPresence,
+  // Splits of geo-brand-presence-free for staggered execution (max 40 sites each)
+  ...Object.fromEntries(
+    Array.from({ length: 23 }, (_, i) => [`geo-brand-presence-free-${i + 1}`, geoBrandPresence]),
+  ),
   'category:geo-brand-presence': handleCategorizationResponseHandler,
   'detect:geo-brand-presence': detectGeoBrandPresence,
   'refresh:geo-brand-presence': detectGeoBrandPresence,
@@ -154,6 +165,9 @@ const HANDLERS = {
   'trigger:a11y-codefix': triggerA11yCodefix,
   'codefix:accessibility': accessibilityCodeFix,
   'guidance:paid-cookie-consent': paidConsentGuidance,
+  'paid-keyword-optimizer': paidKeywordOptimizer,
+  'ad-intent-mismatch': paidKeywordOptimizer,
+  'guidance:paid-ad-intent-gap': paidKeywordOptimizerGuidance,
   'guidance:no-cta-above-the-fold': noCTAAboveTheFoldGuidance,
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
   'detect:page-types': pageTypeGuidance,
@@ -180,6 +194,7 @@ const HANDLERS = {
   prerender,
   'guidance:prerender': prerenderGuidance,
   'product-metatags': productMetatags,
+  'commerce-product-enrichments': commerceProductEnrichments,
   'security-vulnerabilities': vulnerabilities,
   'codefix:security-vulnerabilities': vulnerabilitiesCodeFix,
   'codefix:form-accessibility': accessibilityCodeFixHandler,
@@ -191,6 +206,10 @@ const HANDLERS = {
   'health-check': healthCheck,
   'wikipedia-analysis': wikipediaAnalysis,
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
+  'frescopa-data-generation': frescopaDataGeneration,
+  'ptr-selector': ptrSelector,
+  'semantic-value-visibility': semanticValueVisibility,
+  'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   dummy: (message) => ok(message),
 };
 
@@ -208,9 +227,14 @@ function getElapsedSeconds(startTime) {
  */
 async function run(message, context) {
   const { log } = context;
-  const { type, siteId } = message;
+  const {
+    type, siteId, jobId,
+  } = message;
 
-  log.info(`Received ${type} audit request for: ${siteId}. Message:`, message);
+  log.info(
+    `Received ${type} audit request for siteId=${siteId}, jobId=${jobId || 'none'}`,
+    message,
+  );
 
   const handler = HANDLERS[type];
   if (!handler) {

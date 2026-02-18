@@ -10,6 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import { defaultMergeStatusFunction } from '../utils/data-access.js';
+
 /**
  * @typedef {import('./permission-report.js').TooStrongPermission} TooStrongPermission
  * @typedef {import('./permission-report.js').PermissionsReport} PermissionsReport
@@ -67,4 +70,27 @@ export function mapAdminSuggestion(opportunity, adminPermission) {
       rationale: 'Defining access control policies for the administrators group in AEM is redundant, as members inherently possess full privileges, rendering explicit permissions unnecessary and adding avoidable complexity to the authorization configuration.',
     },
   };
+}
+
+/**
+ * When the existing suggestion is in FIXED status, it will be
+ * transitioned to PENDING_VALIDATION or NEW depending on site configuration.
+ * @param existing Suggestion previously stored in DB
+ * @param newDataItem New suggestion data item
+ * @param ctx Context object
+ * @returns {string|null} New status or fallback to default merge function
+ */
+export function mergeSuggestionStatus(existing, newDataItem, ctx) {
+  const { log, site } = ctx;
+  const currentStatus = existing.getStatus();
+
+  if (currentStatus === SuggestionDataAccess.STATUSES.FIXED) {
+    log.warn('Resolved suggestion found in audit. Possible regression.');
+    const requiresValidation = Boolean(site?.requiresValidation);
+    return requiresValidation
+      ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+      : SuggestionDataAccess.STATUSES.NEW;
+  }
+
+  return defaultMergeStatusFunction(existing, newDataItem, ctx);
 }

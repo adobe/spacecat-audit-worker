@@ -396,5 +396,47 @@ describe('agentic-urls', () => {
       // Should keep absolute URLs but filter out relative paths
       expect(result).to.deep.equal(['https://example.com/page1']);
     });
+
+    it('should pass excludedUrlSuffixes to query builder for database-level filtering', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([
+        { url: '/page1' },
+        { url: '/page2' },
+      ]);
+
+      await getTopAgenticUrlsFromAthena(site, context);
+
+      // Verify the query builder was called with excludedUrlSuffixes
+      // The actual filtering happens at the database level via the SQL query
+      expect(mockWeeklyBreakdownQueries.createTopUrlsQueryWithLimit).to.have.been.calledWith(
+        sinon.match({
+          excludedUrlSuffixes: sinon.match.array,
+        }),
+      );
+    });
+
+    it('should pass correct excluded URL suffixes including common file types', async () => {
+      const site = createMockSite();
+      const context = createMockContext();
+
+      mockAthenaClient.query.resolves([]);
+
+      await getTopAgenticUrlsFromAthena(site, context);
+
+      // Get the actual call arguments
+      const callArgs = mockWeeklyBreakdownQueries.createTopUrlsQueryWithLimit.getCall(0).args[0];
+      const { excludedUrlSuffixes } = callArgs;
+
+      // Verify key suffixes are included
+      expect(excludedUrlSuffixes).to.include('/robots.txt');
+      expect(excludedUrlSuffixes).to.include('/sitemap.xml');
+      expect(excludedUrlSuffixes).to.include('.pdf');
+      expect(excludedUrlSuffixes).to.include('.xlsx');
+      expect(excludedUrlSuffixes).to.include('.docx');
+      expect(excludedUrlSuffixes).to.include('.pptx');
+      expect(excludedUrlSuffixes).to.include('.ico');
+    });
   });
 });

@@ -95,22 +95,28 @@ describe('CWV Auto-Suggest', () => {
       expect(message.auditId).to.equal('audit-456');
       expect(message.deliveryType).to.equal('aem_cs');
 
+      expect(message.data.type).to.equal('cwv');
       expect(message.data.url).to.equal('https://example.com/page1');
       expect(message.data.opportunityId).to.equal('oppty-789');
       expect(message.data.suggestionId).to.equal('sugg-001');
       expect(message.data.device_type).to.equal('mobile');
     });
 
-    it('should include codeBucket and codePath when available', async () => {
+    it('should include codeBucket and codePath when auto-fix is enabled', async () => {
       // Create a new instance with mocked getCodeInfo
       const getCodeInfoStub = sandbox.stub().resolves({
         codeBucket: 'test-bucket',
         codePath: 'code/test-site-id/github/test-owner/test-repo/main/repository.zip',
       });
 
+      // Mock isAuditEnabledForSite to return true for both auto-suggest and auto-fix
+      const isAuditEnabledStub = sandbox.stub();
+      isAuditEnabledStub.onFirstCall().resolves(true); // auto-suggest enabled
+      isAuditEnabledStub.onSecondCall().resolves(true); // auto-fix enabled
+
       const { processAutoSuggest: processWithCode } = await esmock('../../../src/cwv/auto-suggest.js', {
         '../../../src/common/index.js': {
-          isAuditEnabledForSite,
+          isAuditEnabledForSite: isAuditEnabledStub,
         },
         '../../../src/accessibility/utils/data-processing.js': {
           getCodeInfo: getCodeInfoStub,
@@ -150,8 +156,70 @@ describe('CWV Auto-Suggest', () => {
       expect(sqsStub.calledOnce).to.be.true;
       const message = sqsStub.firstCall.args[1];
 
+      expect(message.data.type).to.equal('cwv');
       expect(message.data.codeBucket).to.equal('test-bucket');
       expect(message.data.codePath).to.equal('code/test-site-id/github/test-owner/test-repo/main/repository.zip');
+    });
+
+    it('should NOT include codeBucket and codePath when auto-fix is disabled', async () => {
+      // Create a new instance with mocked getCodeInfo
+      const getCodeInfoStub = sandbox.stub().resolves({
+        codeBucket: 'test-bucket',
+        codePath: 'code/test-site-id/github/test-owner/test-repo/main/repository.zip',
+      });
+
+      // Mock isAuditEnabledForSite: auto-suggest enabled, auto-fix disabled
+      const isAuditEnabledStub = sandbox.stub();
+      isAuditEnabledStub.onFirstCall().resolves(true); // auto-suggest enabled
+      isAuditEnabledStub.onSecondCall().resolves(false); // auto-fix disabled
+
+      const { processAutoSuggest: processWithoutAutoFix } = await esmock('../../../src/cwv/auto-suggest.js', {
+        '../../../src/common/index.js': {
+          isAuditEnabledForSite: isAuditEnabledStub,
+        },
+        '../../../src/accessibility/utils/data-processing.js': {
+          getCodeInfo: getCodeInfoStub,
+        },
+      });
+
+      const siteWithCode = {
+        getId: () => 'test-site-id',
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+        getDeliveryType: sandbox.stub().returns('aem_cs'),
+        getCode: sandbox.stub().returns({
+          source: 'github',
+          owner: 'test-owner',
+          repo: 'test-repo',
+          ref: 'main',
+        }),
+      };
+
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile' }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await processWithoutAutoFix(context, opportunity, siteWithCode);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      const message = sqsStub.firstCall.args[1];
+
+      expect(message.data.type).to.equal('cwv');
+      expect(message.data.codeBucket).to.be.undefined;
+      expect(message.data.codePath).to.be.undefined;
+      // getCodeInfo should not be called when auto-fix is disabled
+      expect(getCodeInfoStub.called).to.be.false;
     });
 
     it('should skip group-type suggestions and only send URL-type suggestions', async () => {

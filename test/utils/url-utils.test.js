@@ -335,3 +335,113 @@ describe('joinBaseAndPath', () => {
     expect(utils.joinBaseAndPath('https://example.com/base/', 'page')).to.equal('https://example.com/base/page');
   });
 });
+
+describe('stripQueryString', () => {
+  it('should remove query string from URL', () => {
+    expect(utils.stripQueryString('https://example.com/page?foo=bar'))
+      .to.equal('https://example.com/page');
+  });
+
+  it('should remove multiple query parameters', () => {
+    expect(utils.stripQueryString('https://example.com/page?foo=bar&baz=qux'))
+      .to.equal('https://example.com/page');
+  });
+
+  it('should handle URLs without query strings', () => {
+    expect(utils.stripQueryString('https://example.com/page'))
+      .to.equal('https://example.com/page');
+  });
+
+  it('should handle root URLs', () => {
+    expect(utils.stripQueryString('https://example.com/'))
+      .to.equal('https://example.com/');
+  });
+
+  it('should return original value for invalid URLs', () => {
+    expect(utils.stripQueryString('not-a-url')).to.equal('not-a-url');
+    expect(utils.stripQueryString('')).to.equal('');
+  });
+});
+
+describe('normalizeUrlForComparison', () => {
+  it('should lowercase URL', () => {
+    expect(utils.normalizeUrlForComparison('HTTPS://EXAMPLE.COM/Page'))
+      .to.equal('https://example.com/page');
+  });
+
+  it('should strip trailing slashes', () => {
+    expect(utils.normalizeUrlForComparison('https://example.com/page/'))
+      .to.equal('https://example.com/page');
+  });
+
+  it('should strip multiple trailing slashes', () => {
+    expect(utils.normalizeUrlForComparison('https://example.com/page///'))
+      .to.equal('https://example.com/page');
+  });
+
+  it('should handle undefined', () => {
+    expect(utils.normalizeUrlForComparison(undefined)).to.be.undefined;
+  });
+
+  it('should handle null', () => {
+    expect(utils.normalizeUrlForComparison(null)).to.be.undefined;
+  });
+
+  it('should return original value when toLowerCase throws', () => {
+    const badUrl = {
+      toLowerCase: () => { throw new Error('Cannot lowercase'); },
+    };
+    expect(utils.normalizeUrlForComparison(badUrl)).to.equal(badUrl);
+  });
+});
+
+describe('urlsMatch', () => {
+  it('should match identical URLs', () => {
+    expect(utils.urlsMatch(
+      'https://example.com/page',
+      'https://example.com/page',
+    )).to.be.true;
+  });
+
+  it('should match URLs with different cases', () => {
+    expect(utils.urlsMatch(
+      'https://example.com/Page',
+      'https://example.com/page',
+    )).to.be.true;
+  });
+
+  it('should match URLs with/without trailing slash', () => {
+    expect(utils.urlsMatch(
+      'https://example.com/page/',
+      'https://example.com/page',
+    )).to.be.true;
+  });
+
+  it('should match URLs ignoring query strings', () => {
+    expect(utils.urlsMatch(
+      'https://example.com/page?foo=bar',
+      'https://example.com/page',
+    )).to.be.true;
+  });
+
+  it('should match URLs with different query strings', () => {
+    expect(utils.urlsMatch(
+      'https://example.com/page?foo=bar',
+      'https://example.com/page?baz=qux',
+    )).to.be.true;
+  });
+
+  it('should not match different URLs', () => {
+    expect(utils.urlsMatch(
+      'https://example.com/page1',
+      'https://example.com/page2',
+    )).to.be.false;
+  });
+
+  it('should not match URLs with different hosts', () => {
+    expect(utils.urlsMatch(
+      'https://example.com/page',
+      'https://other.com/page',
+    )).to.be.false;
+  });
+});

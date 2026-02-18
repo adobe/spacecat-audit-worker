@@ -319,8 +319,81 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     await handler(message, context);
 
+    // Only week-based old1 should be ignored (new opportunity has week=2)
     expect(old1.setStatus).to.have.been.calledWith('IGNORED');
+    expect(old2.setStatus).to.not.have.been.called;
+  });
+
+  it('ignores only month-based previous opportunities when new opportunity is monthly', async () => {
+    const old1 = {
+      getType: () => 'paid-traffic',
+      getStatus: () => 'NEW',
+      getId: () => 'old-1',
+      setStatus: sandbox.stub().resolves(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getData: () => ({ week: 1 }),
+      getTitle: () => 'Old Weekly PT Oppty',
+    };
+    const old2 = {
+      getType: () => 'paid-traffic',
+      getStatus: () => 'NEW',
+      getId: () => 'old-2',
+      setStatus: sandbox.stub().resolves(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getData: () => ({ month: 11 }),
+      getTitle: () => 'Old Monthly PT Oppty',
+    };
+    Opportunity.allBySiteId.resolves([old1, old2]);
+
+    // Monthly opportunity (no week)
+    dummyAudit.getAuditResult = () => ({
+      siteId, month: 12, year: 2024, temporalCondition: 'year=2024 AND month=12',
+    });
+    const message = {
+      auditId,
+      siteId,
+      data: {
+        url: 'https://example.com', guidance: guidancePayload,
+      },
+    };
+
+    await handler(message, context);
+
+    // Only month-based old2 should be ignored
+    expect(old1.setStatus).to.not.have.been.called;
     expect(old2.setStatus).to.have.been.calledWith('IGNORED');
+  });
+
+  it('does not ignore any opportunities when period has neither week nor month', async () => {
+    const old1 = {
+      getType: () => 'paid-traffic',
+      getStatus: () => 'NEW',
+      getId: () => 'old-1',
+      setStatus: sandbox.stub().resolves(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getData: () => null,
+      getTitle: () => 'Old Weekly',
+    };
+    Opportunity.allBySiteId.resolves([old1]);
+
+    // Period with neither week nor month
+    dummyAudit.getAuditResult = () => ({
+      siteId, year: 2025, temporalCondition: 'year=2025',
+    });
+    const message = {
+      auditId,
+      siteId,
+      data: {
+        url: 'https://example.com', guidance: guidancePayload,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(old1.setStatus).to.not.have.been.called;
   });
 
   it('does not ignore previous if suggestion creation fails', async () => {

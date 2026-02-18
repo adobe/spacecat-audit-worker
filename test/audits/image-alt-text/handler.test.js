@@ -11,11 +11,16 @@
  */
 
 /* eslint-env mocha */
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
+
+use(sinonChai);
+use(chaiAsPromised);
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
@@ -144,6 +149,7 @@ describe('Image Alt Text Handler', () => {
         'site-id',
         'audit-id',
         context,
+        [],
       );
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Processing alt-text with Mystique for site site-id',
@@ -191,6 +197,7 @@ describe('Image Alt Text Handler', () => {
         getData: () => ({ existingData: 'value' }), // Return some existing data
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([]),
       };
 
       // Override the default empty array with our mock opportunity
@@ -227,6 +234,7 @@ describe('Image Alt Text Handler', () => {
         getData: () => null,
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([]),
       };
 
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
@@ -281,6 +289,7 @@ describe('Image Alt Text Handler', () => {
         'site-id',
         'audit-id',
         context,
+        [],
       );
     });
 
@@ -299,6 +308,7 @@ describe('Image Alt Text Handler', () => {
         'site-id',
         'audit-id',
         context,
+        [],
       );
     });
 
@@ -317,6 +327,7 @@ describe('Image Alt Text Handler', () => {
         'site-id',
         'audit-id',
         context,
+        [],
       );
     });
 
@@ -337,6 +348,7 @@ describe('Image Alt Text Handler', () => {
         'site-id',
         'audit-id',
         context,
+        [],
       );
     });
 
@@ -352,6 +364,369 @@ describe('Image Alt Text Handler', () => {
 
       await expect(handlerModule.processAltTextWithMystique(context))
         .to.be.rejectedWith('No top pages found for site site-id');
+    });
+
+    describe('outdating suggestions for URLs no longer in top pages', () => {
+      let bulkUpdateStatusStub;
+
+      beforeEach(() => {
+        bulkUpdateStatusStub = sandbox.stub().resolves();
+        context.dataAccess.Suggestion = {
+          bulkUpdateStatus: bulkUpdateStatusStub,
+        };
+      });
+
+      it('should mark suggestions as OUTDATED when their URL is not in current pageUrls', async () => {
+        const existingSuggestions = [
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/old-page', // NOT in current pageUrls
+                imageUrl: 'https://example.com/image1.jpg',
+              }],
+            }),
+            getStatus: () => 'NEW',
+          },
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/page1', // IN current pageUrls
+                imageUrl: 'https://example.com/image2.jpg',
+              }],
+            }),
+            getStatus: () => 'NEW',
+          },
+        ];
+
+        const mockOpportunity = {
+          getType: () => AUDIT_TYPE,
+          getId: () => 'opportunity-id',
+          getData: () => ({}),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves(existingSuggestions),
+        };
+
+        context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+        context.site = {
+          getId: () => 'site-id',
+          getBaseURL: () => 'https://example.com',
+        };
+
+        await handlerModule.processAltTextWithMystique(context);
+
+        // Only the suggestion with old-page URL should be marked as OUTDATED
+        expect(bulkUpdateStatusStub).to.have.been.calledWith(
+          [existingSuggestions[0]],
+          'OUTDATED',
+        );
+        expect(context.log.info).to.have.been.calledWith(
+          '[alt-text]: Marked 1 suggestions as OUTDATED',
+        );
+      });
+
+      it('should skip suggestions without a pageUrl', async () => {
+        const existingSuggestions = [
+          {
+            // Suggestion with no pageUrl - should be skipped
+            getData: () => ({
+              recommendations: [{
+                imageUrl: 'https://example.com/image1.jpg',
+                // no pageUrl
+              }],
+            }),
+            getStatus: () => 'NEW',
+          },
+          {
+            // Suggestion with null recommendations - should be skipped
+            getData: () => ({}),
+            getStatus: () => 'NEW',
+          },
+          {
+            // Suggestion with empty recommendations array - should be skipped
+            getData: () => ({
+              recommendations: [],
+            }),
+            getStatus: () => 'NEW',
+          },
+          {
+            // Valid suggestion with outdated URL - should be marked
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/old-page',
+                imageUrl: 'https://example.com/image2.jpg',
+              }],
+            }),
+            getStatus: () => 'NEW',
+          },
+        ];
+
+        const mockOpportunity = {
+          getType: () => AUDIT_TYPE,
+          getId: () => 'opportunity-id',
+          getData: () => ({}),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves(existingSuggestions),
+        };
+
+        context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+        context.site = {
+          getId: () => 'site-id',
+          getBaseURL: () => 'https://example.com',
+        };
+
+        await handlerModule.processAltTextWithMystique(context);
+
+        // Only the last suggestion (with valid outdated URL) should be marked
+        expect(bulkUpdateStatusStub).to.have.been.calledWith(
+          [existingSuggestions[3]],
+          'OUTDATED',
+        );
+      });
+
+      it('should NOT mark manually edited suggestions as OUTDATED', async () => {
+        const existingSuggestions = [
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/old-page', // NOT in current pageUrls
+                imageUrl: 'https://example.com/image1.jpg',
+                isManuallyEdited: true, // Should NOT be outdated
+              }],
+            }),
+            getStatus: () => 'NEW',
+          },
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/another-old-page', // NOT in current pageUrls
+                imageUrl: 'https://example.com/image2.jpg',
+                isManuallyEdited: false,
+              }],
+            }),
+            getStatus: () => 'NEW',
+          },
+        ];
+
+        const mockOpportunity = {
+          getType: () => AUDIT_TYPE,
+          getId: () => 'opportunity-id',
+          getData: () => ({}),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves(existingSuggestions),
+        };
+
+        context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+        context.site = {
+          getId: () => 'site-id',
+          getBaseURL: () => 'https://example.com',
+        };
+
+        await handlerModule.processAltTextWithMystique(context);
+
+        // Only the non-manually-edited suggestion should be marked as OUTDATED
+        expect(bulkUpdateStatusStub).to.have.been.calledWith(
+          [existingSuggestions[1]],
+          'OUTDATED',
+        );
+      });
+
+      it('should NOT re-process suggestions already in SKIPPED, FIXED, or OUTDATED status', async () => {
+        const existingSuggestions = [
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/old-page',
+                imageUrl: 'https://example.com/image1.jpg',
+              }],
+            }),
+            getStatus: () => 'SKIPPED',
+          },
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/another-old-page',
+                imageUrl: 'https://example.com/image2.jpg',
+              }],
+            }),
+            getStatus: () => 'FIXED',
+          },
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/third-old-page',
+                imageUrl: 'https://example.com/image3.jpg',
+              }],
+            }),
+            getStatus: () => 'OUTDATED',
+          },
+        ];
+
+        const mockOpportunity = {
+          getType: () => AUDIT_TYPE,
+          getId: () => 'opportunity-id',
+          getData: () => ({}),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves(existingSuggestions),
+        };
+
+        context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+        context.site = {
+          getId: () => 'site-id',
+          getBaseURL: () => 'https://example.com',
+        };
+
+        await handlerModule.processAltTextWithMystique(context);
+
+        // bulkUpdateStatus should NOT be called since all suggestions are in ignored statuses
+        expect(bulkUpdateStatusStub).to.not.have.been.called;
+      });
+
+      it('should pass imageUrlsWithAltText from existing NEW suggestions to Mystique', async () => {
+        const existingSuggestions = [
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/page1',
+                imageUrl: 'https://example.com/image1.jpg',
+              }],
+            }),
+            getStatus: () => 'NEW',
+          },
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/page2',
+                imageUrl: 'https://example.com/image2.jpg',
+              }],
+            }),
+            getStatus: () => 'SKIPPED', // Not NEW, should be excluded
+          },
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/page1',
+                imageUrl: 'https://example.com/image3.jpg',
+              }],
+            }),
+            getStatus: () => 'NEW',
+          },
+        ];
+
+        const mockOpportunity = {
+          getType: () => AUDIT_TYPE,
+          getId: () => 'opportunity-id',
+          getData: () => ({}),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves(existingSuggestions),
+        };
+
+        context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+        context.site = {
+          getId: () => 'site-id',
+          getBaseURL: () => 'https://example.com',
+        };
+
+        await handlerModule.processAltTextWithMystique(context);
+
+        expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+          'https://example.com',
+          sinon.match.array,
+          'site-id',
+          'audit-id',
+          context,
+          ['https://example.com/image1.jpg', 'https://example.com/image3.jpg'],
+        );
+      });
+
+      it('should exclude just-outdated suggestions from imageUrlsWithAltText', async () => {
+        const existingSuggestions = [
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/old-page', // NOT in current pageUrls, will be outdated
+                imageUrl: 'https://example.com/image1.jpg',
+              }],
+            }),
+            getStatus: () => 'NEW',
+          },
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/page1', // IN current pageUrls
+                imageUrl: 'https://example.com/image2.jpg',
+              }],
+            }),
+            getStatus: () => 'NEW',
+          },
+        ];
+
+        const mockOpportunity = {
+          getType: () => AUDIT_TYPE,
+          getId: () => 'opportunity-id',
+          getData: () => ({}),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves(existingSuggestions),
+        };
+
+        context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+        context.site = {
+          getId: () => 'site-id',
+          getBaseURL: () => 'https://example.com',
+        };
+
+        await handlerModule.processAltTextWithMystique(context);
+
+        // image1.jpg should be excluded because its suggestion was just marked OUTDATED
+        // image2.jpg should be included because it's a NEW suggestion on a current page
+        expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+          'https://example.com',
+          sinon.match.array,
+          'site-id',
+          'audit-id',
+          context,
+          ['https://example.com/image2.jpg'],
+        );
+      });
+
+      it('should not call bulkUpdateStatus when no suggestions need to be outdated', async () => {
+        const existingSuggestions = [
+          {
+            getData: () => ({
+              recommendations: [{
+                pageUrl: 'https://example.com/page1', // IN current pageUrls
+                imageUrl: 'https://example.com/image1.jpg',
+              }],
+            }),
+            getStatus: () => 'NEW',
+          },
+        ];
+
+        const mockOpportunity = {
+          getType: () => AUDIT_TYPE,
+          getId: () => 'opportunity-id',
+          getData: () => ({}),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+          getSuggestions: sandbox.stub().resolves(existingSuggestions),
+        };
+
+        context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+        context.site = {
+          getId: () => 'site-id',
+          getBaseURL: () => 'https://example.com',
+        };
+
+        await handlerModule.processAltTextWithMystique(context);
+
+        // bulkUpdateStatus should NOT be called since all URLs are in current pageUrls
+        expect(bulkUpdateStatusStub).to.not.have.been.called;
+      });
     });
   });
 });

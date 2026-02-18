@@ -14,7 +14,7 @@
 
 import { expect } from 'chai';
 import { describe } from 'mocha';
-import { getPaidTrafficAnalysisTemplate, getTop3PagesWithTrafficLostTemplate } from '../../../src/paid-cookie-consent/queries.js';
+import { getPaidTrafficAnalysisTemplate, getTop3PagesWithTrafficLostTemplate, getBounceGapMetricsTemplate } from '../../../src/paid-cookie-consent/queries.js';
 
 describe('Paid Cookie Consent Queries', () => {
   const defaultParams = {
@@ -148,6 +148,67 @@ describe('Paid Cookie Consent Queries', () => {
     it('should be properly formatted with trimmed output', () => {
       const query = getTop3PagesWithTrafficLostTemplate(top3Params);
       expect(query.trim()).to.equal(query);
+    });
+  });
+
+  describe('getBounceGapMetricsTemplate', () => {
+    const bounceGapParams = {
+      siteId: 'test-site',
+      tableName: 'rum_metrics.compact_metrics',
+      temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+    };
+
+    it('should generate valid SQL with required components', () => {
+      const query = getBounceGapMetricsTemplate(bounceGapParams);
+
+      expect(query).to.be.a('string');
+      expect(query.length).to.be.greaterThan(100);
+      expect(query).to.include('WITH raw AS');
+      expect(query).to.include('agg AS');
+    });
+
+    it('should use provided parameters', () => {
+      const params = { ...bounceGapParams, siteId: 'custom-site-123' };
+      const query = getBounceGapMetricsTemplate(params);
+
+      expect(query).to.include('custom-site-123');
+      expect(query).to.include('rum_metrics.compact_metrics');
+      expect(query).to.include('(year=2025 AND week IN (1,2,3,4))');
+    });
+
+    it('should filter by consent IN (show, hidden)', () => {
+      const query = getBounceGapMetricsTemplate(bounceGapParams);
+      expect(query).to.include("consent IN ('show', 'hidden')");
+    });
+
+    it('should group by trf_type and consent', () => {
+      const query = getBounceGapMetricsTemplate(bounceGapParams);
+      expect(query).to.include('GROUP BY trf_type, consent');
+    });
+
+    it('should calculate bounce rate correctly', () => {
+      const query = getBounceGapMetricsTemplate(bounceGapParams);
+      expect(query).to.include('1 - CAST(engagements AS DOUBLE) / NULLIF(row_count, 0) AS bounce_rate');
+    });
+
+    it('should order by trf_type and consent', () => {
+      const query = getBounceGapMetricsTemplate(bounceGapParams);
+      expect(query).to.include('ORDER BY trf_type, consent');
+    });
+
+    it('should be properly formatted', () => {
+      const query = getBounceGapMetricsTemplate(bounceGapParams);
+      expect(query.trim()).to.equal(query);
+      expect(query).to.match(/ORDER BY trf_type, consent$/);
+    });
+
+    it('should handle different temporal conditions', () => {
+      const params = {
+        ...bounceGapParams,
+        temporalCondition: '(year=2024 AND month=12)',
+      };
+      const query = getBounceGapMetricsTemplate(params);
+      expect(query).to.include('(year=2024 AND month=12)');
     });
   });
 });

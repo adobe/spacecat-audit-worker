@@ -169,6 +169,8 @@ async function fetchScrapedData(s3Path, context) {
 }
 
 async function processUrl(url, scrapeResult, context, existingRecordsMap) {
+  const { log } = context;
+
   try {
     /* c8 ignore next 3 */
     if (!scrapeResult?.location) {
@@ -182,7 +184,7 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
       return { url, success: false, error: 'Missing bot or human view data' };
     }
 
-    const { rawPage: botHtml } = scrapeData.botView;
+    const { rawPage: botHtml, isDeployedAtEdge } = scrapeData.botView;
     const { rawPage: humanHtml } = scrapeData.humanView;
 
     /* c8 ignore next 3 */
@@ -198,15 +200,14 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
     const existingRecord = existingRecordsMap.get(url);
 
     if (existingRecord) {
-      // Update existing record
       existingRecord.setCitabilityScore(scores.citabilityScore);
       existingRecord.setContentRatio(scores.contentRatio);
       existingRecord.setWordDifference(scores.wordDifference);
       existingRecord.setBotWords(scores.botWords);
       existingRecord.setNormalWords(scores.normalWords);
+      existingRecord.setIsDeployedAtEdge(isDeployedAtEdge);
       await existingRecord.save();
     } else {
-      // Create new record
       await PageCitability.create({
         siteId,
         url,
@@ -215,13 +216,19 @@ async function processUrl(url, scrapeResult, context, existingRecordsMap) {
         wordDifference: scores.wordDifference,
         botWords: scores.botWords,
         normalWords: scores.normalWords,
+        isDeployedAtEdge,
       });
     }
 
-    return { url, success: true, ...scores };
-    /* c8 ignore next 3 */
+    return {
+      url, success: true, ...scores, isDeployedAtEdge,
+    };
+    /* c8 ignore next 6 */
   } catch (error) {
-    return { url, success: false, error: error.message };
+    log.error(`${LOG_PREFIX} Error processing ${url}: ${error.message}`);
+    return {
+      url, success: false, error: error.message,
+    };
   }
 }
 
@@ -260,10 +267,15 @@ export async function analyzeCitability(context) {
   }
 
   const successful = results.filter((r) => r.success).length;
-  log.info(`${LOG_PREFIX} Completed: ${successful}/${results.length} successful`);
+  const deployedAtEdge = results.filter((r) => r.isDeployedAtEdge).length;
+  log.info(`${LOG_PREFIX} Completed: ${successful}/${results.length} successful (${deployedAtEdge} deployed at edge)`);
 
   return {
-    auditResult: { successfulPages: successful, failedPages: results.length - successful },
+    auditResult: {
+      successfulPages: successful,
+      failedPages: results.length - successful,
+      deployedAtEdge,
+    },
     fullAuditRef: audit.getFullAuditRef(),
   };
 }

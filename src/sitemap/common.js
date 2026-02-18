@@ -12,7 +12,7 @@
 
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import {
-  isLoginPage,
+  isAuthUrl,
   toggleWWW,
   getBaseUrlPagesFromSitemapContents,
   getSitemapUrlsFromSitemapIndex,
@@ -149,7 +149,7 @@ export async function fetchContent(targetUrl) {
 /**
  * Simplified URL validation with better performance and rate limiting
  */
-export async function filterValidUrls(urls) {
+export async function filterValidUrls(urls, log) {
   if (!urls.length) {
     return {
       ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
@@ -168,8 +168,12 @@ export async function filterValidUrls(urls) {
 
       // Handle successful responses
       if (response.status === 200) {
+        log?.debug(`Sitemap: Valid URL found: ${url}`);
         return { type: 'ok', url };
       }
+
+      /* c8 ignore next */
+      log?.debug(`Sitemap: URL check for ${url} returned status: ${response.status}`);
 
       // Handle redirects
       if (response.status === 301 || response.status === 302) {
@@ -177,7 +181,7 @@ export async function filterValidUrls(urls) {
         const finalUrl = redirectUrl ? new URL(redirectUrl, url).href : null;
 
         // Check if redirect leads to login page (treat as valid)
-        if (finalUrl && isLoginPage(finalUrl)) {
+        if (finalUrl && isAuthUrl(finalUrl)) {
           return { type: 'ok', url };
         }
 
@@ -407,9 +411,11 @@ export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls) {
   return pagesBySitemap;
 }
 
-export async function getSitemapUrls(inputUrl) {
+export async function getSitemapUrls(inputUrl, log) {
   const parsedUrl = extractDomainAndProtocol(inputUrl);
   if (!parsedUrl) {
+    /* c8 ignore next */
+    log?.error(`Sitemap: Invalid URL provided: ${inputUrl}`);
     return {
       success: false,
       reasons: [{ value: inputUrl, error: ERROR_CODES.INVALID_URL }],
@@ -427,6 +433,8 @@ export async function getSitemapUrls(inputUrl) {
       sitemapUrls.ok = robotsResult.paths;
     }
   } catch (error) {
+    /* c8 ignore next */
+    log?.error(`Sitemap: Error checking robots.txt for ${inputUrl}: ${error.message}`);
     // If robots.txt fails, return error immediately (to match test expectations)
     return {
       success: false,

@@ -17,18 +17,53 @@ import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { describe } from 'mocha';
 
-import { paidAuditRunner, paidConsentBannerCheck } from '../../../src/paid-cookie-consent/handler.js';
+import {
+  paidAuditRunner,
+  paidConsentBannerCheck,
+  calculateBounceGapLoss,
+  calculateSitewideBounceDelta,
+  importWeekStep0,
+  importWeekStep1,
+  importWeekStep2,
+  importWeekStep3,
+  runPaidConsentAnalysisStep,
+} from '../../../src/paid-cookie-consent/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
 const auditUrl = 'www.spacecat.com';
 
+function createMockConfig(sandbox, overrides = {}) {
+  return {
+    getImports: () => [],
+    enableImport: sandbox.stub(),
+    disableImport: sandbox.stub(),
+    getSlackConfig: sandbox.stub(),
+    getHandlers: sandbox.stub(),
+    getContentAiConfig: sandbox.stub(),
+    getFetchConfig: sandbox.stub(),
+    getBrandConfig: sandbox.stub(),
+    getCdnLogsConfig: sandbox.stub(),
+    getLlmoConfig: sandbox.stub(),
+    getTokowakaConfig: sandbox.stub(),
+    getEdgeOptimizeConfig: sandbox.stub(),
+    getBrandProfile: sandbox.stub().returns(null),
+    ...overrides,
+  };
+}
+
 function getSite(sandbox, overrides = {}) {
+  const mockConfig = createMockConfig(sandbox);
+
   return {
     getId: () => 'test-site-id',
     getSiteId: () => 'test-site-id',
     getDeliveryType: () => 'aem-edge',
     getBaseURL: () => 'https://example.com',
+    getIsLive: () => true,
+    getConfig: () => mockConfig,
+    setConfig: sandbox.stub(),
+    save: sandbox.stub().resolves(),
     ...overrides,
   };
 }
@@ -68,16 +103,51 @@ describe('Paid Cookie Consent Audit', () => {
       getAuditId: () => 'test-audit-id',
     };
 
-    // Mock AWSAthenaClient
+    // Mock AWSAthenaClient with different responses for each query
+    const queryStub = sandbox.stub();
+
+    // First call: executeBounceGapMetricsQuery - returns bounce gap data by trf_type and consent
+    queryStub.onCall(0).resolves([
+      {
+        trf_type: 'paid', consent: 'show', page_views: 1000, bounce_rate: 0.8,
+      },
+      {
+        trf_type: 'paid', consent: 'hidden', page_views: 800, bounce_rate: 0.6,
+      },
+    ]);
+
+    // Second call: executeTop3TrafficLostPagesQuery with ['device'] - device summary
+    queryStub.onCall(1).resolves([
+      {
+        device: 'mobile', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800,
+      },
+      {
+        device: 'desktop', pageviews: 500, bounce_rate: 0.7, traffic_loss: 350,
+      },
+    ]);
+
+    // Third call: executeTop3TrafficLostPagesQuery with ['path'] - top 3 pages
+    queryStub.onCall(2).resolves([
+      {
+        path: '/page1', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800, utm_source: 'google', click_rate: 0.1, engagement_rate: 0.2, engaged_scroll_rate: 0.15, referrer: 'google.com',
+      },
+      {
+        path: '/page2', pageviews: 500, bounce_rate: 0.7, traffic_loss: 350, utm_source: 'facebook', click_rate: 0.15, engagement_rate: 0.3, engaged_scroll_rate: 0.25, referrer: 'facebook.com',
+      },
+    ]);
+
+    // Fourth call: executeTop3TrafficLostPagesQuery with ['path', 'device'] - pages by device
+    queryStub.onCall(3).resolves([
+      {
+        path: '/page1', device: 'mobile', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800, utm_source: 'google', click_rate: 0.1, engagement_rate: 0.2, engaged_scroll_rate: 0.15, referrer: 'google.com',
+      },
+      {
+        path: '/page2', device: 'desktop', pageviews: 500, bounce_rate: 0.7, traffic_loss: 350, utm_source: 'facebook', click_rate: 0.15, engagement_rate: 0.3, engaged_scroll_rate: 0.25, referrer: 'facebook.com',
+      },
+    ]);
+
     const mockAthenaClient = {
-      query: sandbox.stub().resolves([
-        {
-          path: '/page1', device: 'mobile', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800, utm_source: 'google', click_rate: 0.1, engagement_rate: 0.2, engaged_scroll_rate: 0.15, referrer: 'google.com',
-        },
-        {
-          path: '/page2', device: 'desktop', pageviews: 500, bounce_rate: 0.7, traffic_loss: 350, utm_source: 'facebook', click_rate: 0.15, engagement_rate: 0.3, engaged_scroll_rate: 0.25, referrer: 'facebook.com',
-        },
-      ]),
+      query: queryStub,
     };
 
     context = {
@@ -129,43 +199,58 @@ describe('Paid Cookie Consent Audit', () => {
     expect(result.auditResult.top3Pages).to.be.an('array');
   });
 
-  it('should submit expected result to mistique with bounce rate >= 0.3 filtering', async () => {
-    const auditData = {
-      fullAuditRef: 'https://example.com',
-      id: 'test-audit-id',
-      auditResult: {
-        totalPageViews: 10000,
-        totalAverageBounceRate: 0.8,
-        projectedTrafficLost: 8000,
-        projectedTrafficValue: 6400,
-        top3Pages: [
-          {
-            path: '/page2',
-            url: 'https://example.com/page2',
-            pageViews: 5000,
-            bounceRate: 0.9, // Above 0.3 threshold - highest traffic loss
-            trafficLoss: 4500,
+  it('should include Ahrefs CPC data when available from S3', async () => {
+    const ahrefsData = {
+      organicTraffic: 10000,
+      organicCost: 1910,
+      paidTraffic: 5000,
+      paidCost: 1560,
+    };
+    const contextWithAhrefs = {
+      ...context,
+      s3Client: {
+        send: sandbox.stub().resolves({
+          Body: {
+            transformToString: () => JSON.stringify(ahrefsData),
           },
-          {
-            path: '/page3',
-            url: 'https://example.com/page3',
-            pageViews: 3000,
-            bounceRate: 0.8, // Above 0.3 threshold
-            trafficLoss: 2400,
-          },
-          {
-            path: '/page1',
-            url: 'https://example.com/page1',
-            pageViews: 2000,
-            bounceRate: 0.2, // Below 0.3 threshold - would be skipped if first
-            trafficLoss: 400,
-          },
-        ],
-        averagePageViewsTop3: 3333,
-        averageTrafficLostTop3: 2433,
-        averageBounceRateMobileTop3: 0.85,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
+        }),
       },
+    };
+    const result = await paidAuditRunner(auditUrl, contextWithAhrefs, site);
+    expect(result.auditResult).to.have.property('cpcSource', 'ahrefs');
+    expect(result.auditResult).to.have.property('ahrefsOrganicCPC', 0.191);
+    expect(result.auditResult).to.have.property('ahrefsPaidCPC', 0.312);
+    expect(result.auditResult).to.have.property('appliedCPC', 0.312);
+    expect(result.auditResult).to.have.property('defaultCPC', 0.80);
+  });
+
+  it('should submit expected result to mistique with bounce rate >= 0.3 filtering', async () => {
+    // New structure: top3Pages at root level, not nested in auditResult
+    const auditData = {
+      id: 'test-audit-id',
+      top3Pages: [
+        {
+          path: '/page2',
+          url: 'https://example.com/page2',
+          pageViews: 5000,
+          bounceRate: 0.9, // Above 0.3 threshold - highest traffic loss
+          trafficLoss: 4500,
+        },
+        {
+          path: '/page3',
+          url: 'https://example.com/page3',
+          pageViews: 3000,
+          bounceRate: 0.8, // Above 0.3 threshold
+          trafficLoss: 2400,
+        },
+        {
+          path: '/page1',
+          url: 'https://example.com/page1',
+          pageViews: 2000,
+          bounceRate: 0.2, // Below 0.3 threshold - would be skipped if first
+          trafficLoss: 400,
+        },
+      ],
     };
 
     const expectedSubmitedMsg = {
@@ -177,6 +262,11 @@ describe('Paid Cookie Consent Audit', () => {
       deliveryType: 'aem-edge',
       data: {
         url: 'https://example.com/page2',
+        top3PageUrls: [
+          'https://example.com/page2',
+          'https://example.com/page3',
+          'https://example.com/page1',
+        ],
       },
     };
 
@@ -211,72 +301,52 @@ describe('Paid Cookie Consent Audit', () => {
   });
 
   it('should warn and not send when first page has bounce rate < 0.3', async () => {
+    // New structure: top3Pages at root level
     const auditData = {
-      fullAuditRef: 'https://example.com',
       id: 'test-audit-id',
-      auditResult: {
-        totalPageViews: 5000,
-        totalAverageBounceRate: 0.2,
-        projectedTrafficLost: 1000,
-        projectedTrafficValue: 800,
-        top3Pages: [
-          {
-            url: '/page1',
-            pageViews: 5000,
-            bounceRate: 0.2, // Below 0.3 threshold
-            trafficLoss: 1000,
-          },
-        ],
-        averagePageViewsTop3: 5000,
-        averageTrafficLostTop3: 1000,
-        averageBounceRateMobileTop3: 0.25,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      },
+      top3Pages: [
+        {
+          url: '/page1',
+          pageViews: 5000,
+          bounceRate: 0.2, // Below 0.3 threshold
+          trafficLoss: 1000,
+        },
+      ],
     };
 
     await paidConsentBannerCheck(auditUrl, auditData, context, site);
 
     expect(context.sqs.sendMessage.called).to.be.false;
-    expect(context.log.debug).to.have.been.calledWithMatch(/Skipping mystique evaluation step for page/);
+    expect(context.log.info).to.have.been.calledWithMatch(/Skipping mystique evaluation step for page/);
   });
 
   it('should select first page from top3Pages (highest traffic loss)', async () => {
+    // New structure: top3Pages at root level
     const auditData = {
-      fullAuditRef: 'https://example.com',
       id: 'test-audit-id',
-      auditResult: {
-        totalPageViews: 10000,
-        totalAverageBounceRate: 0.8,
-        projectedTrafficLost: 8000,
-        projectedTrafficValue: 6400,
-        top3Pages: [
-          {
-            path: '/winner',
-            url: 'https://example.com/winner',
-            pageViews: 5000,
-            bounceRate: 1.0, // Highest traffic loss - should be first
-            trafficLoss: 5000,
-          },
-          {
-            path: '/p90',
-            url: 'https://example.com/p90',
-            pageViews: 3000,
-            bounceRate: 0.9,
-            trafficLoss: 2700,
-          },
-          {
-            path: '/p80',
-            url: 'https://example.com/p80',
-            pageViews: 2000,
-            bounceRate: 0.8,
-            trafficLoss: 1600,
-          },
-        ],
-        averagePageViewsTop3: 3333,
-        averageTrafficLostTop3: 3100,
-        averageBounceRateMobileTop3: 0.9,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      },
+      top3Pages: [
+        {
+          path: '/winner',
+          url: 'https://example.com/winner',
+          pageViews: 5000,
+          bounceRate: 1.0, // Highest traffic loss - should be first
+          trafficLoss: 5000,
+        },
+        {
+          path: '/p90',
+          url: 'https://example.com/p90',
+          pageViews: 3000,
+          bounceRate: 0.9,
+          trafficLoss: 2700,
+        },
+        {
+          path: '/p80',
+          url: 'https://example.com/p80',
+          pageViews: 2000,
+          bounceRate: 0.8,
+          trafficLoss: 1600,
+        },
+      ],
     };
 
     await paidConsentBannerCheck(auditUrl, auditData, context, site);
@@ -287,28 +357,18 @@ describe('Paid Cookie Consent Audit', () => {
   });
 
   it('should handle fewer than 3 pages without error', async () => {
+    // New structure: top3Pages at root level
     const auditData = {
-      fullAuditRef: 'https://example.com',
       id: 'test-audit-id',
-      auditResult: {
-        totalPageViews: 1000,
-        totalAverageBounceRate: 0.9,
-        projectedTrafficLost: 900,
-        projectedTrafficValue: 720,
-        top3Pages: [
-          {
-            path: '/high',
-            url: 'https://example.com/high',
-            pageViews: 1000,
-            bounceRate: 0.9, // Above 0.3 threshold
-            trafficLoss: 900,
-          },
-        ],
-        averagePageViewsTop3: 1000,
-        averageTrafficLostTop3: 900,
-        averageBounceRateMobileTop3: 0.95,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      },
+      top3Pages: [
+        {
+          path: '/high',
+          url: 'https://example.com/high',
+          pageViews: 1000,
+          bounceRate: 0.9, // Above 0.3 threshold
+          trafficLoss: 900,
+        },
+      ],
     };
 
     await paidConsentBannerCheck(auditUrl, auditData, context, site);
@@ -319,35 +379,25 @@ describe('Paid Cookie Consent Audit', () => {
   });
 
   it('should send message when first page has bounce rate >= 0.3', async () => {
+    // New structure: top3Pages at root level
     const auditData = {
-      fullAuditRef: 'https://example.com',
       id: 'test-audit-id',
-      auditResult: {
-        totalPageViews: 5000,
-        totalAverageBounceRate: 0.8,
-        projectedTrafficLost: 4000,
-        projectedTrafficValue: 3200,
-        top3Pages: [
-          {
-            path: '/winner',
-            url: 'https://example.com/winner',
-            pageViews: 3000,
-            bounceRate: 0.8, // Above 0.3 - should send
-            trafficLoss: 2400,
-          },
-          {
-            path: '/low-bounce',
-            url: 'https://example.com/low-bounce',
-            pageViews: 2000,
-            bounceRate: 0.2, // Below 0.3 but not first
-            trafficLoss: 400,
-          },
-        ],
-        averagePageViewsTop3: 2500,
-        averageTrafficLostTop3: 1400,
-        averageBounceRateMobileTop3: 0.5,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      },
+      top3Pages: [
+        {
+          path: '/winner',
+          url: 'https://example.com/winner',
+          pageViews: 3000,
+          bounceRate: 0.8, // Above 0.3 - should send
+          trafficLoss: 2400,
+        },
+        {
+          path: '/low-bounce',
+          url: 'https://example.com/low-bounce',
+          pageViews: 2000,
+          bounceRate: 0.2, // Below 0.3 but not first
+          trafficLoss: 400,
+        },
+      ],
     };
 
     await paidConsentBannerCheck(auditUrl, auditData, context, site);
@@ -384,8 +434,8 @@ describe('Paid Cookie Consent Audit', () => {
     // Should still work with default values
     expect(result.auditResult).to.be.an('object');
     expect(result.auditResult).to.have.property('top3Pages');
-    // Should call athena query 3 times (lostTrafficSummary, top3PagesTrafficLost, top3PagesTrafficLostByDevice)
-    expect(context.athenaClient.query).to.have.been.calledThrice;
+    // Should call athena query 4 times (bounceGapMetrics, lostTrafficSummary, top3PagesTrafficLost, top3PagesTrafficLostByDevice)
+    expect(context.athenaClient.query).to.have.callCount(4);
   });
 
   it('should handle query results with missing fields', async () => {
@@ -404,10 +454,20 @@ describe('Paid Cookie Consent Audit', () => {
       },
     ];
 
+    // Create stub that returns bounce gap data first, then incomplete data for subsequent queries
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show', page_views: 100, bounce_rate: 0.5 },
+      { trf_type: 'paid', consent: 'hidden', page_views: 80, bounce_rate: 0.3 },
+    ]);
+    customQueryStub.onCall(1).resolves(incompleteData);
+    customQueryStub.onCall(2).resolves(incompleteData);
+    customQueryStub.onCall(3).resolves(incompleteData);
+
     const contextWithIncompleteData = {
       ...context,
       athenaClient: {
-        query: sandbox.stub().resolves(incompleteData),
+        query: customQueryStub,
       },
     };
 
@@ -486,10 +546,20 @@ describe('Paid Cookie Consent Audit', () => {
       { path: '/page3', device: 'mobile', pageviews: 3000, bounce_rate: 0.7, traffic_loss: 2100, utm_source: 'twitter', click_rate: 0.2, engagement_rate: 0.3, engaged_scroll_rate: 0.35, referrer: 'twitter.com' },
     ];
 
+    // Create stub that returns bounce gap data first, then mockData for subsequent queries
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show', page_views: 6000, bounce_rate: 0.8 },
+      { trf_type: 'paid', consent: 'hidden', page_views: 4000, bounce_rate: 0.5 },
+    ]);
+    customQueryStub.onCall(1).resolves(mockData);
+    customQueryStub.onCall(2).resolves(mockData);
+    customQueryStub.onCall(3).resolves(mockData);
+
     const customContext = {
       ...context,
       athenaClient: {
-        query: sandbox.stub().resolves(mockData),
+        query: customQueryStub,
       },
     };
 
@@ -501,28 +571,18 @@ describe('Paid Cookie Consent Audit', () => {
   });
 
   it('should include time field in mystique message', async () => {
+    // New structure: top3Pages at root level
     const auditData = {
-      fullAuditRef: 'https://example.com',
       id: 'test-audit-id',
-      auditResult: {
-        totalPageViews: 10000,
-        totalAverageBounceRate: 0.8,
-        projectedTrafficLost: 8000,
-        projectedTrafficValue: 6400,
-        top3Pages: [
-          {
-            path: '/page1',
-            url: 'https://example.com/page1',
-            pageViews: 5000,
-            bounceRate: 0.9,
-            trafficLoss: 4500,
-          },
-        ],
-        averagePageViewsTop3: 5000,
-        averageTrafficLostTop3: 4500,
-        averageBounceRateMobileTop3: 0.95,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      },
+      top3Pages: [
+        {
+          path: '/page1',
+          url: 'https://example.com/page1',
+          pageViews: 5000,
+          bounceRate: 0.9,
+          trafficLoss: 4500,
+        },
+      ],
     };
 
     await paidConsentBannerCheck(auditUrl, auditData, context, site);
@@ -534,33 +594,23 @@ describe('Paid Cookie Consent Audit', () => {
   });
 
   it('should log debug message with projected traffic loss', async () => {
+    // New structure: top3Pages at root level
     const auditData = {
-      fullAuditRef: 'https://example.com',
       id: 'test-audit-id',
-      auditResult: {
-        totalPageViews: 10000,
-        totalAverageBounceRate: 0.8,
-        projectedTrafficLost: 8000,
-        projectedTrafficValue: 6400,
-        top3Pages: [
-          {
-            url: 'https://example.com/page1',
-            pageViews: 5000,
-            bounceRate: 0.9,
-            trafficLoss: 4500,
-          },
-        ],
-        averagePageViewsTop3: 5000,
-        averageTrafficLostTop3: 4500,
-        averageBounceRateMobileTop3: 0.95,
-        temporalCondition: '(year=2025 AND week IN (1,2,3,4))',
-      },
+      top3Pages: [
+        {
+          url: 'https://example.com/page1',
+          pageViews: 5000,
+          bounceRate: 0.9,
+          trafficLoss: 4500,
+        },
+      ],
     };
 
     await paidConsentBannerCheck(auditUrl, auditData, context, site);
 
-    expect(context.log.debug).to.have.been.calledWithMatch(/projectedTrafficLoss: 4500/);
-    expect(context.log.debug).to.have.been.calledWithMatch(/Completed mystique evaluation step/);
+    expect(context.log.info).to.have.been.calledWithMatch(/projectedTrafficLoss.*4500/);
+    expect(context.log.info).to.have.been.calledWithMatch(/Completed mystique evaluation step/);
   });
 
   it('should handle zero totalPageViews and calculate totalAverageBounceRate as 0', async () => {
@@ -568,10 +618,20 @@ describe('Paid Cookie Consent Audit', () => {
       { path: '/page1', device: 'mobile', pageviews: 0, bounce_rate: 0, traffic_loss: 0, utm_source: 'google', click_rate: 0, engagement_rate: 0, engaged_scroll_rate: 0, referrer: '' },
     ];
 
+    // Create stub that returns bounce gap data with zero values, then mockData for subsequent queries
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show', page_views: 0, bounce_rate: 0 },
+      { trf_type: 'paid', consent: 'hidden', page_views: 0, bounce_rate: 0 },
+    ]);
+    customQueryStub.onCall(1).resolves(mockData);
+    customQueryStub.onCall(2).resolves(mockData);
+    customQueryStub.onCall(3).resolves(mockData);
+
     const customContext = {
       ...context,
       athenaClient: {
-        query: sandbox.stub().resolves(mockData),
+        query: customQueryStub,
       },
     };
 
@@ -589,10 +649,20 @@ describe('Paid Cookie Consent Audit', () => {
       { device: 'desktop', pageviews: 500, bounce_rate: 0.7, traffic_loss: 350, utm_source: 'facebook', click_rate: 0.15, engagement_rate: 0.3, engaged_scroll_rate: 0.25, referrer: 'facebook.com' }, // path is undefined
     ];
 
+    // Create stub that returns bounce gap data first, then mockData for subsequent queries
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves([
+      { trf_type: 'paid', consent: 'show', page_views: 1500, bounce_rate: 0.75 },
+      { trf_type: 'paid', consent: 'hidden', page_views: 1000, bounce_rate: 0.5 },
+    ]);
+    customQueryStub.onCall(1).resolves(mockData);
+    customQueryStub.onCall(2).resolves(mockData);
+    customQueryStub.onCall(3).resolves(mockData);
+
     const customContext = {
       ...context,
       athenaClient: {
-        query: sandbox.stub().resolves(mockData),
+        query: customQueryStub,
       },
     };
 
@@ -608,5 +678,543 @@ describe('Paid Cookie Consent Audit', () => {
 
     expect(itemWithNullPath.url).to.be.undefined;
     expect(itemWithUndefinedPath.url).to.be.undefined;
+  });
+
+  it('should return null auditResult and abort when no show consent data is available', async () => {
+    // Create stub that returns only hidden consent data (no show data)
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves([
+      // Only hidden data, no show data
+      { trf_type: 'paid', consent: 'hidden', page_views: 800, bounce_rate: 0.6 },
+      { trf_type: 'earned', consent: 'hidden', page_views: 400, bounce_rate: 0.5 },
+    ]);
+
+    const customContext = {
+      ...context,
+      athenaClient: {
+        query: customQueryStub,
+      },
+    };
+
+    const result = await paidAuditRunner(auditUrl, customContext, site);
+
+    expect(result.auditResult).to.be.null;
+    expect(result.fullAuditRef).to.equal(auditUrl);
+    expect(logStub.warn).to.have.been.calledWithMatch(/No show consent data available/);
+    // Should only call the bounce gap query, not the subsequent queries
+    expect(customQueryStub).to.have.been.calledOnce;
+  });
+
+  it('should return null auditResult and abort when no hidden consent data is available', async () => {
+    // Create stub that returns only show consent data (no hidden data)
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves([
+      // Only show data, no hidden data
+      { trf_type: 'paid', consent: 'show', page_views: 1000, bounce_rate: 0.8 },
+      { trf_type: 'earned', consent: 'show', page_views: 500, bounce_rate: 0.7 },
+    ]);
+
+    const customContext = {
+      ...context,
+      athenaClient: {
+        query: customQueryStub,
+      },
+    };
+
+    const result = await paidAuditRunner(auditUrl, customContext, site);
+
+    expect(result.auditResult).to.be.null;
+    expect(result.fullAuditRef).to.equal(auditUrl);
+    expect(logStub.warn).to.have.been.calledWithMatch(/No hidden consent data available/);
+    // Should only call the bounce gap query, not the subsequent queries
+    expect(customQueryStub).to.have.been.calledOnce;
+  });
+});
+
+describe('calculateBounceGapLoss', () => {
+  let mockLog;
+
+  beforeEach(() => {
+    mockLog = {
+      warn: sinon.stub(),
+      debug: sinon.stub(),
+    };
+  });
+
+  it('should calculate loss for single traffic source with positive delta', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+    ];
+
+    const result = calculateBounceGapLoss(data, mockLog);
+
+    // Expected: 1000 × (0.8 - 0.6) = 200
+    expect(result.projectedTrafficLost).to.be.closeTo(200, 0.01);
+    expect(result.hasShowData).to.be.true;
+    expect(result.hasHiddenData).to.be.true;
+  });
+
+  it('should floor negative deltas at 0', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.5 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.7 },
+    ];
+
+    const result = calculateBounceGapLoss(data, mockLog);
+
+    // Delta is negative (0.5 - 0.7 = -0.2), should floor at 0
+    expect(result.projectedTrafficLost).to.equal(0);
+  });
+
+  it('should calculate loss across multiple traffic sources', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+      { trfType: 'earned', consent: 'show', pageViews: 500, bounceRate: 0.7 },
+      { trfType: 'earned', consent: 'hidden', pageViews: 400, bounceRate: 0.5 },
+    ];
+
+    const result = calculateBounceGapLoss(data, mockLog);
+
+    // Expected: Paid: 200 + Earned: 100 = 300
+    expect(result.projectedTrafficLost).to.equal(300);
+  });
+
+  it('should return 0 and flag when no show data exists', () => {
+    const data = [
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+    ];
+
+    const result = calculateBounceGapLoss(data, mockLog);
+
+    expect(result.projectedTrafficLost).to.equal(0);
+    expect(result.hasShowData).to.be.false;
+    expect(result.hasHiddenData).to.be.true;
+  });
+
+  it('should return 0 and flag when no hidden data exists', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+    ];
+
+    const result = calculateBounceGapLoss(data, mockLog);
+
+    expect(result.projectedTrafficLost).to.equal(0);
+    expect(result.hasShowData).to.be.true;
+    expect(result.hasHiddenData).to.be.false;
+  });
+
+  it('should skip traffic sources with incomplete data', () => {
+    const data = [
+      // Paid has both show and hidden
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+      // Earned only has show (missing hidden)
+      { trfType: 'earned', consent: 'show', pageViews: 500, bounceRate: 0.7 },
+    ];
+
+    const result = calculateBounceGapLoss(data, mockLog);
+
+    // Should only calculate for 'paid': 1000 × (0.8 - 0.6) = 200
+    expect(result.projectedTrafficLost).to.be.closeTo(200, 0.01);
+  });
+
+  it('should log and skip traffic source with missing show data when hasShowData is true overall', () => {
+    const data = [
+      // Paid has both show and hidden
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+      // Earned only has hidden (missing show) - should trigger skip
+      { trfType: 'earned', consent: 'hidden', pageViews: 400, bounceRate: 0.5 },
+    ];
+
+    const result = calculateBounceGapLoss(data, mockLog);
+
+    // Should only calculate for 'paid': 1000 × (0.8 - 0.6) = 200
+    expect(result.projectedTrafficLost).to.be.closeTo(200, 0.01);
+    expect(result.hasShowData).to.be.true;
+    expect(result.hasHiddenData).to.be.true;
+    // Should log summary with skipped count
+    expect(mockLog.debug).to.have.been.calledWithMatch(/skipped=1/);
+  });
+});
+
+describe('calculateSitewideBounceDelta', () => {
+  it('should calculate weighted sitewide bounce delta correctly', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+    ];
+
+    const result = calculateSitewideBounceDelta(data);
+
+    // HAND CALCULATION (independent of code):
+    // Sitewide show: 1000 * 0.8 / 1000 = 0.8
+    // Sitewide hidden: 800 * 0.6 / 800 = 0.6
+    // Delta: 0.8 - 0.6 = 0.2 (20pp)
+    expect(result).to.be.closeTo(0.2, 0.01);
+  });
+
+  it('should floor negative deltas at 0', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.5 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.7 },
+    ];
+
+    const result = calculateSitewideBounceDelta(data);
+
+    // HAND CALCULATION:
+    // Delta is negative (0.5 - 0.7 = -0.2), should floor at 0
+    expect(result).to.equal(0);
+  });
+
+  it('should calculate across multiple traffic sources', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+      { trfType: 'earned', consent: 'show', pageViews: 500, bounceRate: 0.6 },
+      { trfType: 'earned', consent: 'hidden', pageViews: 400, bounceRate: 0.4 },
+    ];
+
+    const result = calculateSitewideBounceDelta(data);
+
+    // HAND CALCULATION:
+    // Show: (1000*0.8 + 500*0.6) / 1500 = 1100/1500 = 0.7333...
+    // Hidden: (800*0.6 + 400*0.4) / 1200 = 640/1200 = 0.5333...
+    // Delta: 0.7333 - 0.5333 = 0.2
+    expect(result).to.be.closeTo(0.2, 0.01);
+  });
+
+  it('should return delta when only show data exists', () => {
+    const data = [
+      { trfType: 'paid', consent: 'show', pageViews: 1000, bounceRate: 0.8 },
+    ];
+
+    const result = calculateSitewideBounceDelta(data);
+
+    // HAND CALCULATION:
+    // Show BR: 0.8, Hidden BR: 0 (no data)
+    // Delta: 0.8 - 0 = 0.8
+    expect(result).to.be.closeTo(0.8, 0.01);
+  });
+
+  it('should return 0 when only hidden data exists', () => {
+    const data = [
+      { trfType: 'paid', consent: 'hidden', pageViews: 800, bounceRate: 0.6 },
+    ];
+
+    const result = calculateSitewideBounceDelta(data);
+
+    // HAND CALCULATION:
+    // Show BR: 0 (no data), Hidden BR: 0.6
+    // Delta: 0 - 0.6 = -0.6, floored to 0
+    expect(result).to.equal(0);
+  });
+
+  it('should handle empty data', () => {
+    const data = [];
+
+    const result = calculateSitewideBounceDelta(data);
+
+    // HAND CALCULATION:
+    // No data at all, both BRs = 0, delta = 0
+    expect(result).to.equal(0);
+  });
+});
+
+describe('importWeekStep0 (first import step)', () => {
+  let sandbox;
+  let logStub;
+  let site;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    logStub = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    site = getSite(sandbox);
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should return correct structure for import worker', async () => {
+    const stepContext = {
+      site,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    const result = await importWeekStep0(stepContext);
+
+    expect(result).to.have.property('auditResult');
+    // auditResult is a placeholder - real results stored in new audit in step 5
+    expect(result.auditResult).to.have.property('status', 'processing');
+    expect(result).to.have.property('fullAuditRef', auditUrl);
+    expect(result).to.have.property('type', 'traffic-analysis');
+    expect(result).to.have.property('siteId', 'test-site-id');
+    expect(result).to.have.property('allowCache', true);
+    expect(result).to.have.property('auditContext');
+    expect(result.auditContext).to.have.property('week');
+    expect(result.auditContext).to.have.property('year');
+  });
+
+  it('should enable import when not already enabled', async () => {
+    const stepContext = {
+      site,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    await importWeekStep0(stepContext);
+
+    expect(site.getConfig().enableImport).to.have.been.calledWith('traffic-analysis');
+  });
+
+  it('should not enable import when already enabled', async () => {
+    const mockConfigWithImport = createMockConfig(sandbox, {
+      getImports: () => [{ type: 'traffic-analysis', enabled: true }],
+    });
+    const siteWithImport = getSite(sandbox, {
+      getConfig: () => mockConfigWithImport,
+    });
+
+    const stepContext = {
+      site: siteWithImport,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    await importWeekStep0(stepContext);
+
+    expect(mockConfigWithImport.enableImport).to.not.have.been.called;
+  });
+
+  it('should throw error when site config is null', async () => {
+    const siteWithNullConfig = getSite(sandbox, {
+      getConfig: () => null,
+    });
+
+    const stepContext = {
+      site: siteWithNullConfig,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    await expect(importWeekStep0(stepContext))
+      .to.be.rejectedWith(/site config is null/);
+  });
+});
+
+describe('importWeekStep1/2/3 (subsequent import steps)', () => {
+  let sandbox;
+  let logStub;
+  let site;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    logStub = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    site = getSite(sandbox);
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should not call enableImport (only step 0 does that)', async () => {
+    const stepContext = {
+      site,
+      log: logStub,
+      finalUrl: auditUrl,
+      auditContext: {},
+    };
+
+    await importWeekStep1(stepContext);
+    await importWeekStep2({ ...stepContext });
+    await importWeekStep3({ ...stepContext });
+
+    expect(site.getConfig().enableImport).to.not.have.been.called;
+  });
+
+  it('should return correct structure with week/year', async () => {
+    const stepContext = {
+      site,
+      log: logStub,
+      finalUrl: auditUrl,
+      auditContext: {},
+    };
+
+    const result = await importWeekStep3(stepContext);
+
+    expect(result).to.have.property('type', 'traffic-analysis');
+    expect(result).to.have.property('siteId', 'test-site-id');
+    expect(result).to.have.property('allowCache', true);
+    expect(result.auditContext).to.have.property('week');
+    expect(result.auditContext).to.have.property('year');
+  });
+});
+
+describe('runPaidConsentAnalysisStep', () => {
+  let sandbox;
+  let logStub;
+  let site;
+  let context;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    logStub = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    site = getSite(sandbox, {
+      getBaseURL: () => 'https://example.com',
+    });
+
+    // Mock AWSAthenaClient - new flow only queries top3Pages (1 query)
+    const queryStub = sandbox.stub();
+
+    // Single query: top3PagesTrafficLost with ['path'] grouping
+    queryStub.onCall(0).resolves([
+      {
+        path: '/page1', pageviews: 1000, bounce_rate: 0.8, traffic_loss: 800, utm_source: 'google', click_rate: 0.1, engagement_rate: 0.2, engaged_scroll_rate: 0.15, referrer: 'google.com',
+      },
+    ]);
+
+    context = {
+      runtime: { name: 'aws-lambda', region: 'us-east-1' },
+      func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+      athenaClient: { query: queryStub },
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+        S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        ATHENA_S3_BUCKET: 'test-athena-bucket',
+        RUM_METRICS_DATABASE: 'rum_metrics',
+        RUM_METRICS_COMPACT_TABLE: 'compact_metrics',
+      },
+      site,
+      log: logStub,
+      s3Client: {},
+      sqs: {
+        sendMessage: sandbox.stub().resolves(),
+      },
+    };
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should run analysis and send results to mystique', async () => {
+    const mockAudit = {
+      getId: () => 'test-audit-id',
+    };
+
+    const stepContext = {
+      ...context,
+      finalUrl: auditUrl,
+      audit: mockAudit,
+      auditContext: { auditId: 'test-audit-id' },
+    };
+
+    const result = await runPaidConsentAnalysisStep(stepContext);
+
+    expect(result).to.deep.equal({});
+    // Results are sent to Mystique, not stored in audit
+    expect(context.sqs.sendMessage).to.have.been.called;
+  });
+
+  it('should send to mystique when page has bounce rate >= 0.3', async () => {
+    const mockAudit = {
+      getId: () => 'test-audit-id',
+    };
+
+    const stepContext = {
+      ...context,
+      finalUrl: auditUrl,
+      audit: mockAudit,
+      auditContext: { auditId: 'test-audit-id' },
+    };
+
+    await runPaidConsentAnalysisStep(stepContext);
+
+    expect(context.sqs.sendMessage).to.have.been.called;
+  });
+
+  it('should use auditContext.auditId when audit is not in context', async () => {
+    const stepContext = {
+      ...context,
+      finalUrl: auditUrl,
+      audit: null,
+      auditContext: { auditId: 'fallback-audit-id' },
+    };
+
+    const result = await runPaidConsentAnalysisStep(stepContext);
+
+    expect(result).to.deep.equal({});
+    // Should send to mystique using fallback auditId
+    expect(context.sqs.sendMessage).to.have.been.called;
+    // Verify the auditId is passed in the mystique message
+    const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
+    expect(sentMessage.auditId).to.equal('fallback-audit-id');
+  });
+
+  it('should return {} and not send to mystique when no top3Pages data available', async () => {
+    // Override to return empty top3Pages
+    const customQueryStub = sandbox.stub();
+    customQueryStub.onCall(0).resolves([]);
+
+    const mockAudit = {
+      getId: () => 'test-audit-id',
+    };
+
+    const stepContext = {
+      ...context,
+      athenaClient: { query: customQueryStub },
+      finalUrl: auditUrl,
+      audit: mockAudit,
+      auditContext: { auditId: 'test-audit-id' },
+    };
+
+    const result = await runPaidConsentAnalysisStep(stepContext);
+
+    expect(result).to.deep.equal({});
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+    expect(logStub.warn).to.have.been.calledWithMatch(/No top3Pages data available/);
+  });
+
+  it('should succeed and log error when paidConsentBannerCheck throws', async () => {
+    // Override sqs to throw when sending to mystique
+    const failingSqs = {
+      sendMessage: sandbox.stub().rejects(new Error('SQS send failed')),
+    };
+
+    const mockAudit = {
+      getId: () => 'test-audit-id',
+    };
+
+    const stepContext = {
+      ...context,
+      sqs: failingSqs,
+      finalUrl: auditUrl,
+      audit: mockAudit,
+      auditContext: { auditId: 'test-audit-id' },
+    };
+
+    const result = await runPaidConsentAnalysisStep(stepContext);
+
+    expect(result).to.deep.equal({});
+    expect(logStub.error).to.have.been.calledWithMatch(/Step 5 failed/);
   });
 });

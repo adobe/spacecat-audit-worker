@@ -74,12 +74,33 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
       });
     });
 
+  // Custom merge function to preserve user-edited fields
+  const mergeDataFunction = (existingData, newData) => {
+    const merged = {
+      ...existingData,
+      ...newData,
+    };
+
+    // Preserve editedSuggestion and is_edited flag if user has made a selection (AI or custom)
+    // eslint-disable-next-line max-len
+    if (existingData.editedSuggestion !== undefined && existingData.editedSuggestion !== null && existingData.is_edited !== null) {
+      merged.editedSuggestion = existingData.editedSuggestion;
+      merged.is_edited = existingData.is_edited;
+    } else {
+      // Explicitly remove editedSuggestion if not present or flag is null
+      delete merged.editedSuggestion;
+    }
+
+    return merged;
+  };
+
   // Sync the suggestions from new audit with old ones
   await syncSuggestions({
     opportunity,
     newData: suggestions,
     context,
     buildKey,
+    mergeDataFunction,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: 'METADATA_UPDATE',
@@ -339,12 +360,33 @@ export async function runAuditAndGenerateSuggestions(context) {
 
   log.info(`[metatags] Built ${suggestionsList.length} suggestions for Mystique`);
 
+  // Custom merge function to preserve user-edited fields
+  const mergeDataFunction = (existingData, newData) => {
+    const merged = {
+      ...existingData,
+      ...newData,
+    };
+
+    // Preserve editedSuggestion and is_edited flag if user has made a selection (AI or custom)
+    // eslint-disable-next-line max-len
+    if (existingData.editedSuggestion !== undefined && existingData.editedSuggestion !== null && existingData.is_edited !== null) {
+      merged.editedSuggestion = existingData.editedSuggestion;
+      merged.is_edited = existingData.is_edited;
+    } else {
+      // Explicitly remove editedSuggestion if not present or flag is null
+      delete merged.editedSuggestion;
+    }
+
+    return merged;
+  };
+
   // Sync ALL suggestions to database first (before chunking)
   await syncSuggestions({
     opportunity,
     newData: suggestionsList,
     context,
     buildKey,
+    mergeDataFunction,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: 'METADATA_UPDATE',

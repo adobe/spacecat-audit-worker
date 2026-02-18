@@ -407,13 +407,44 @@ describe('TriggerA11yCodefixHandler', () => {
       await handler.default(message, context);
 
       expect(sendOpportunitySuggestionsToMystiqueStub).to.have.been.calledOnce;
-      const [opportunityId, enhancedContext] = sendOpportunitySuggestionsToMystiqueStub.firstCall.args;
+      const [opportunityId, enhancedContext, options] = sendOpportunitySuggestionsToMystiqueStub.firstCall.args;
 
       expect(opportunityId).to.equal('opportunity-123');
       expect(enhancedContext.site).to.equal(mockSite);
       expect(enhancedContext.sqs).to.equal(mockSqs);
       expect(enhancedContext.env).to.equal(mockEnv);
       expect(enhancedContext.auditContext).to.equal(mockAuditContext);
+      expect(options.skipMystiqueEnabledCheck).to.equal(true);
+      expect(options.aggregationKey).to.be.undefined;
+    });
+
+    it('should pass aggregationKey to sendOpportunitySuggestionsToMystique when provided', async () => {
+      mockDataAccess.Site.findById.resolves(mockSite);
+      mockDataAccess.Opportunity.findById.resolves(mockOpportunity);
+
+      const message = {
+        type: 'trigger:a11y-codefix',
+        siteId: 'site-123',
+        data: {
+          opportunityId: 'opportunity-123',
+          opportunityType: 'a11y-assistive',
+          aggregationKey: 'agg-key-123',
+        },
+      };
+
+      const context = {
+        log: mockLog,
+        dataAccess: mockDataAccess,
+        sqs: { sendMessage: sandbox.stub().resolves() },
+        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'mystique-queue' },
+      };
+
+      await handler.default(message, context);
+
+      expect(sendOpportunitySuggestionsToMystiqueStub).to.have.been.calledOnce;
+      const [, , options] = sendOpportunitySuggestionsToMystiqueStub.firstCall.args;
+
+      expect(options.aggregationKey).to.equal('agg-key-123');
     });
   });
 });

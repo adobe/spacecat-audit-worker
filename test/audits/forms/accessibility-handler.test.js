@@ -18,7 +18,7 @@ import nock from 'nock';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
-import mystiqueDetectedFormAccessibilityHandler from '../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js';
+import mystiqueDetectedFormAccessibilityHandler, { extractFormAccessibilityData } from '../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -58,11 +58,15 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             form: 'https://example.com/form1',
             formSource: '#form1',
             a11yIssues: [{
-              issue: 'Missing alt text',
-              level: 'error',
-              successCriterias: ['1.1.1'],
-              htmlWithIssues: '<img src="test.jpg">',
-              recommendation: 'Add alt text to image',
+              type: 'image-alt',
+              description: 'Images must have alternative text',
+              wcagRule: 'wcag111',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'img' },
+              ],
+              failureSummary: 'Add alt text to image',
             }],
           }],
         },
@@ -2212,12 +2216,57 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
       
-      // Opportunity should be created even with empty a11y data
-      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      // Opportunity should NOT be created when no a11y issues are found
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       
-      // Should log that no individual suggestions were created
+      // Should log that no issues were found from Mystique
       expect(context.log.info).to.have.been.calledWith(
-        '[FormMystiqueSuggestions] No individual form accessibility suggestions to create from Mystique data',
+        `[Form Opportunity] [Site Id: ${siteId}] No accessibility issues found from Mystique, skipping opportunity creation`,
+      );
+      
+      // Should not send code-fix messages when no issues found
+      expect(sendCodeFixMessagesToMystiqueStub).to.not.have.been.called;
+    });
+
+    it('should not create opportunity when a11y data has no valid issues', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          opportunityId: null,
+          a11y: [
+            {
+              form: 'https://example.com/form1',
+              formSource: '#form1',
+              a11yIssues: [], // Empty issues
+            },
+            {
+              form: 'https://example.com/form2',
+              formSource: '#form2',
+              a11yIssues: [
+                {
+                  type: 'label',
+                  description: 'Form elements must have labels',
+                  wcagRule: 'wcag412',
+                  wcagLevel: 'A',
+                  severity: 'critical',
+                  htmlWithIssues: [], // Empty htmlWithIssues
+                  failureSummary: 'Fix any of the following...',
+                },
+              ],
+            },
+          ],
+        },
+      };
+
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
+      
+      // Opportunity should NOT be created when no valid issues are found
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+      
+      // Should log that no issues were found from Mystique
+      expect(context.log.info).to.have.been.calledWith(
+        `[Form Opportunity] [Site Id: ${siteId}] No accessibility issues found from Mystique, skipping opportunity creation`,
       );
       
       // Should not send code-fix messages when no issues found
@@ -2878,6 +2927,312 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       // understandingUrl should be populated from getSuccessCriteriaDetails
       expect(issue.understandingUrl).to.be.a('string');
+    });
+  });
+
+  describe('extractFormAccessibilityData', () => {
+    let context;
+
+    beforeEach(() => {
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          log: {
+            info: sinon.stub(),
+            error: sinon.stub(),
+          },
+        })
+        .build();
+    });
+
+    it('should extract form accessibility data with valid issues', async () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'input[type="text"]' },
+              ],
+              failureSummary: 'Fix any of the following...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.deep.include({
+        type: 'url',
+        url: 'https://example.com/form1',
+        source: 'aem',
+      });
+      expect(result[0].issues).to.have.lengthOf(1);
+      expect(result[0].issues[0]).to.include({
+        type: 'label',
+        description: 'Form elements must have labels',
+        wcagRule: 'wcag412',
+        wcagLevel: 'A',
+        severity: 'critical',
+        occurrences: 1,
+        failureSummary: 'Fix any of the following...',
+      });
+    });
+
+    it('should handle null a11yData', () => {
+      const result = extractFormAccessibilityData(null, context.log);
+      expect(result).to.be.an('array');
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should handle undefined a11yData', () => {
+      const result = extractFormAccessibilityData(undefined, context.log);
+      expect(result).to.be.an('array');
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should handle non-array a11yData', () => {
+      const result = extractFormAccessibilityData('not-an-array', context.log);
+      expect(result).to.be.an('array');
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should filter out forms without a11yIssues', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [],
+        },
+        {
+          form: 'https://example.com/form2',
+          formSource: 'contact',
+          // No a11yIssues
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should handle forms without formSource', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'input' },
+              ],
+              failureSummary: 'Fix...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.not.have.property('source');
+    });
+
+    it('should handle issues with aiGenerated flag', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'input' },
+              ],
+              failureSummary: 'Fix...',
+              aiGenerated: true,
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.have.property('aiGenerated', true);
+    });
+
+    it('should create one suggestion per htmlWithIssues item', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'input#name' },
+                { target_selector: 'input#email' },
+                { target_selector: 'input#phone' },
+              ],
+              failureSummary: 'Fix...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      // Should create 3 suggestions (one per htmlWithIssues)
+      expect(result).to.have.lengthOf(3);
+    });
+
+    it('should handle issues without htmlWithIssues', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: null,
+              failureSummary: 'Fix...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should handle issues with empty htmlWithIssues array', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [],
+              failureSummary: 'Fix...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should handle error from getSuccessCriteriaDetails gracefully', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'invalid-rule',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'input' },
+              ],
+              failureSummary: 'Fix...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      
+      // Should log error for invalid wcagRule
+      expect(context.log.error).to.have.been.called;
+      
+      // Should skip the issue with invalid wcagRule
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should handle multiple forms with multiple issues', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'input#name' },
+              ],
+              failureSummary: 'Fix...',
+            },
+            {
+              type: 'color-contrast',
+              description: 'Elements must meet color contrast',
+              wcagRule: 'wcag143',
+              wcagLevel: 'AA',
+              severity: 'serious',
+              htmlWithIssues: [
+                { target_selector: 'button' },
+              ],
+              failureSummary: 'Improve...',
+            },
+          ],
+        },
+        {
+          form: 'https://example.com/form2',
+          formSource: 'contact',
+          a11yIssues: [
+            {
+              type: 'alt-text',
+              description: 'Images must have alt text',
+              wcagRule: 'wcag111',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'img' },
+              ],
+              failureSummary: 'Add alt...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+      // Should create 3 suggestions (1 + 1 + 1)
+      expect(result).to.have.lengthOf(3);
+      expect(result[0].url).to.equal('https://example.com/form1');
+      expect(result[1].url).to.equal('https://example.com/form1');
+      expect(result[2].url).to.equal('https://example.com/form2');
     });
   });
 

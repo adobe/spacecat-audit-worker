@@ -144,7 +144,7 @@ describe('AccessibilityCodeFixHandler', () => {
           }],
         }],
         patchContent: 'mock diff content',
-        isCodeChangeAvailable: true,
+        isCodeChangeAvailable: false,
       });
       expect(mockSuggestion.save).to.have.been.called;
     });
@@ -543,7 +543,6 @@ describe('AccessibilityCodeFixHandler', () => {
 
     // Note: Lines 270-272 and 312-314 in codefix-handler.js are defensive error checks
     // that cannot be reached with current implementation because defaultBucketName
-    // always has a fallback value ('spacecat-prod-mystique-assets').
     // These lines are kept for defensive programming and future-proofing.
 
     it('should work without source parameter', async () => {
@@ -956,7 +955,7 @@ describe('AccessibilityCodeFixHandler', () => {
           }],
         }],
         patchContent: mockDiffContent,
-        isCodeChangeAvailable: true,
+        isCodeChangeAvailable: false,
       });
       expect(mockSuggestion.save).to.have.been.called;
     });
@@ -1045,7 +1044,7 @@ describe('AccessibilityCodeFixHandler', () => {
           }],
         }],
         patchContent: 'mock diff content for aria-prohibited-attr',
-        isCodeChangeAvailable: true,
+        isCodeChangeAvailable: false,
       });
       expect(mockSuggestion2.setData).to.have.been.calledWith({
         url: 'https://example.com/page2',
@@ -1057,7 +1056,7 @@ describe('AccessibilityCodeFixHandler', () => {
           }],
         }],
         patchContent: 'mock diff content for aria-prohibited-attr',
-        isCodeChangeAvailable: true,
+        isCodeChangeAvailable: false,
       });
       expect(mockSuggestion.save).to.have.been.called;
       expect(mockSuggestion2.save).to.have.been.called;

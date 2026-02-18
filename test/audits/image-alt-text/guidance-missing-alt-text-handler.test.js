@@ -92,6 +92,7 @@ describe('Missing Alt Text Guidance Handler', () => {
             isAppropriate: true,
             isDecorative: false,
             language: 'en',
+            hasAltAttribute: false,
           },
         ],
         pageUrls: ['https://example.com/page1'],
@@ -207,6 +208,7 @@ describe('Missing Alt Text Guidance Handler', () => {
             isAppropriate: true,
             isDecorative: true,
             language: 'en',
+            hasAltAttribute: true,
           },
           {
             pageUrl: 'https://example.com/page2',
@@ -216,6 +218,7 @@ describe('Missing Alt Text Guidance Handler', () => {
             isAppropriate: true,
             isDecorative: false,
             language: 'en',
+            hasAltAttribute: false,
           },
         ],
         pageUrls: ['https://example.com/page1', 'https://example.com/page2'],
@@ -258,6 +261,7 @@ describe('Missing Alt Text Guidance Handler', () => {
             isAppropriate: true,
             isDecorative: true,
             language: 'en',
+            hasAltAttribute: true,
           },
         ],
         pageUrls: ['https://example.com/page2'],
@@ -299,6 +303,7 @@ describe('Missing Alt Text Guidance Handler', () => {
             isAppropriate: true,
             isDecorative: false,
             language: 'en',
+            hasAltAttribute: false,
           },
         ],
         pageUrls: ['https://example.com/page3'],
@@ -473,5 +478,44 @@ describe('Missing Alt Text Guidance Handler', () => {
 
     expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
     expect(getProjectedMetricsStub).to.have.been.called;
+  });
+
+  it('should not delete manually edited suggestions even when in pageUrlSet', async () => {
+    // Set up existing suggestions - one manually edited, one not
+    const existingSuggestions = [
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'manually-edited-suggestion',
+            pageUrl: 'https://example.com/page1', // In pageUrlSet
+            imageUrl: 'https://example.com/image1.jpg',
+            isManuallyEdited: true, // Should NOT be deleted
+          }],
+        }),
+        getStatus: () => 'NEW',
+      },
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'regular-suggestion',
+            pageUrl: 'https://example.com/page1', // In pageUrlSet
+            imageUrl: 'https://example.com/image2.jpg',
+            isManuallyEdited: false,
+          }],
+        }),
+        getStatus: () => 'NEW',
+      },
+    ];
+
+    mockOpportunity.getSuggestions.returns(existingSuggestions);
+
+    const result = await guidanceHandler(mockMessage, context);
+
+    expect(result.status).to.equal(200);
+    // Only the non-manually-edited suggestion should be marked as OUTDATED
+    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
+      [existingSuggestions[1]],
+      'OUTDATED',
+    );
   });
 });

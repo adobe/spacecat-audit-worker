@@ -178,36 +178,36 @@ export async function extractCodeBucket(context) {
   };
 }
 
-export const dataContainsCode = (data) => {
+export const extractCodeInfo = (data) => {
   if (!data || typeof data !== 'object') {
-    return false;
+    return null;
   }
 
   // Navigate the nested structure
   const { importResults } = data;
   if (!Array.isArray(importResults) || importResults.length === 0) {
-    return false;
+    return null;
   }
 
   const firstImportResult = importResults[0];
   if (!firstImportResult || typeof firstImportResult !== 'object') {
-    return false;
+    return null;
   }
 
   const results = firstImportResult.result;
   if (!Array.isArray(results) || results.length === 0) {
-    return false;
+    return null;
   }
 
   const codeInfo = results[0];
-  return !!(
+  return (
     codeInfo
     && typeof codeInfo === 'object'
     && typeof codeInfo.codeBucket === 'string'
     && codeInfo.codeBucket.trim() !== ''
     && typeof codeInfo.codePath === 'string'
     && codeInfo.codePath.trim() !== ''
-  );
+  ) ? codeInfo : null;
 };
 
 /**
@@ -291,31 +291,46 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
   const configuration = await Configuration.findLatest();
   const generateSuggestions = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-suggest', site);
-
-  if (generateSuggestions && dataContainsCode(data)) {
-    // TODO => only add new suggestions to the payload
-    // TODO => optimize payload to reduce size use s3 instead of data as transport medium
-
-    const message = {
-      type: 'codefix:security-vulnerabilities',
-      siteId: site.getId(),
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      data: {
-        suggestions: await opportunity.getSuggestions(),
-        importResults: data.importResults,
-      },
-    };
-
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to Mystique for code fix generation`);
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-  } else {
+  if (!generateSuggestions) {
     log.debug(
       `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with mystique, because 
-      'security-vulnerabilities-auto-suggest' not configured or import worker could not get code.`,
+      'security-vulnerabilities-auto-suggest' not configured.`,
     );
+    return { status: 'complete' };
   }
+
+  const codeInfo = extractCodeInfo(data);
+  if (!codeInfo) {
+    log.debug(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping code generation with mystique, because
+      import worker could not get code.`,
+    );
+    return { status: 'complete' };
+  }
+
+  const refreshedOpportunity = await dataAccess.Opportunity.findById?.(opportunity.getId());
+  const suggestions = await (refreshedOpportunity || opportunity).getSuggestions();
+  const newSuggestions = suggestions.filter((s) => [
+    SuggestionDataAccess.STATUSES.NEW,
+    SuggestionDataAccess.STATUSES.PENDING_VALIDATION,
+  ].includes(s.getStatus()));
+  const suggestionIds = newSuggestions.map((s) => s.getId());
+  const message = {
+    type: 'codefix:security-vulnerabilities',
+    siteId: site.getId(),
+    auditId: audit.getId(),
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      opportunityId: opportunity.getId(),
+      suggestionIds,
+      codeBucket: codeInfo.codeBucket,
+      codePath: codeInfo.codePath,
+    },
+  };
+
+  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] sending message to Mystique for code fix generation: ${JSON.stringify(message)}`);
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
   return { status: 'complete' };
 };
 

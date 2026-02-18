@@ -12,6 +12,7 @@ aggregated AS (
   FROM filtered
   WHERE url IS NOT NULL
     AND url <> 'Other'
+    {{excludedUrlSuffixesFilter}}
   GROUP BY url
 )
 SELECT

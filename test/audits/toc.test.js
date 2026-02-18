@@ -668,6 +668,11 @@ describe('TOC (Table of Contents) Audit', () => {
       // Value should be transformed to HAST
       expect(mappedSuggestion.data.transformRules.value).to.have.property('type', 'root');
       expect(mappedSuggestion.data.transformRules.value).to.have.property('children');
+
+      const buildKeyFn = syncCall.args[0].buildKey;
+      expect(buildKeyFn).to.be.a('function');
+      expect(buildKeyFn(auditData.suggestions.toc[0]))
+        .to.equal('toc|https://example.com/page1');
     });
 
     it('skips TOC opportunity creation when no TOC issues', async () => {
@@ -1223,7 +1228,7 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(opportunityData).to.be.an('object');
       expect(opportunityData).to.have.property('runbook', '');
       expect(opportunityData).to.have.property('origin', 'AUTOMATION');
-      expect(opportunityData).to.have.property('title', 'Add Table of Content');
+      expect(opportunityData).to.have.property('title', '[Beta] Add Table of Content');
       expect(opportunityData).to.have.property('description');
       expect(opportunityData.description).to.include('table of contents');
     });
