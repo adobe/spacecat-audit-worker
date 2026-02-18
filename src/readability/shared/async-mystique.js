@@ -140,9 +140,9 @@ async function sendOpportunityBatch(
     sqs, env, log, s3Client,
   } = context;
 
-  const bucketName = env.S3_IMPORTER_BUCKET_NAME;
+  const bucketName = env.S3_MYSTIQUE_BUCKET_NAME;
   if (!bucketName) {
-    throw new Error('Missing S3_IMPORTER_BUCKET_NAME for readability batch');
+    throw new Error('Missing S3_MYSTIQUE_BUCKET_NAME for readability batch');
   }
 
   log.debug(`[readability-suggest async] Sending ${readabilityIssues.length} readability issues for opportunity audit ${jobId}`);

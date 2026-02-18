@@ -129,9 +129,9 @@ export default async function handler(message, context) {
     return ok();
   }
 
-  const bucketName = context.env.S3_IMPORTER_BUCKET_NAME;
+  const bucketName = context.env.S3_MYSTIQUE_BUCKET_NAME;
   if (!bucketName) {
-    log.error('[readability-opportunity guidance]: Missing S3_IMPORTER_BUCKET_NAME');
+    log.error('[readability-opportunity guidance]: Missing S3_MYSTIQUE_BUCKET_NAME');
     return ok();
   }
 

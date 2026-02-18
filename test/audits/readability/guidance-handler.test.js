@@ -105,7 +105,7 @@ describe('Readability Opportunities Guidance Handler', () => {
       log: logStub,
       s3Client: mockS3Client,
       env: {
-        S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        S3_MYSTIQUE_BUCKET_NAME: 'test-bucket',
       },
       dataAccess: {
         Site: {
@@ -227,6 +227,20 @@ describe('Readability Opportunities Guidance Handler', () => {
       expect(logStub.warn).to.have.been.calledWithMatch('No s3ResultsPath in message data');
     });
 
+    it('should handle missing S3_MYSTIQUE_BUCKET_NAME', async () => {
+      mockContext.env.S3_MYSTIQUE_BUCKET_NAME = null;
+
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.error).to.have.been.calledWithMatch('Missing S3_MYSTIQUE_BUCKET_NAME');
+    });
+
     it('should handle S3 fetch error gracefully', async () => {
       mockS3Client.send.rejects(new Error('S3 read error'));
 
@@ -269,19 +283,6 @@ describe('Readability Opportunities Guidance Handler', () => {
       expect(mockSuggestion.setData).to.have.been.called;
     });
 
-    it('should handle missing S3_IMPORTER_BUCKET_NAME', async () => {
-      mockContext.env.S3_IMPORTER_BUCKET_NAME = null;
-
-      const message = {
-        auditId: 'audit-123',
-        siteId: 'site-1',
-        data: { s3ResultsPath: 'results/path.json' },
-      };
-
-      const result = await handler.default(message, mockContext);
-      expect(result).to.deep.equal({ ok: true });
-      expect(logStub.error).to.have.been.calledWithMatch('Missing S3_IMPORTER_BUCKET_NAME');
-    });
   });
 
   describe('batch result processing', () => {

@@ -52,7 +52,7 @@ describe('async-mystique sendReadabilityToMystique', () => {
       },
       env: {
         QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.example.com/mystique-queue',
-        S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+        S3_MYSTIQUE_BUCKET_NAME: 'test-bucket',
       },
       s3Client: {
         send: sinon.stub().resolves(),
@@ -108,7 +108,7 @@ describe('async-mystique sendReadabilityToMystique', () => {
       expect(s3Payload[0].pageUrl).to.equal('https://example.com/page1');
       expect(s3Payload[0].selector).to.equal('p.content');
 
-      // Should send single SQS message with s3BatchPath
+      // Should send single SQS message with full s3Path
       expect(mockContext.sqs.sendMessage).to.have.been.calledOnce;
       const sentMessage = mockContext.sqs.sendMessage.getCall(0).args[1];
       expect(sentMessage.type).to.equal('guidance:readability');
@@ -161,8 +161,8 @@ describe('async-mystique sendReadabilityToMystique', () => {
       expect(mockContext.sqs.sendMessage).to.have.been.calledOnce;
     });
 
-    it('should throw when S3_IMPORTER_BUCKET_NAME is missing', async () => {
-      mockContext.env.S3_IMPORTER_BUCKET_NAME = null;
+    it('should throw when S3_MYSTIQUE_BUCKET_NAME is missing', async () => {
+      mockContext.env.S3_MYSTIQUE_BUCKET_NAME = null;
 
       await expect(
         sendReadabilityToMystique(
@@ -173,7 +173,7 @@ describe('async-mystique sendReadabilityToMystique', () => {
           mockContext,
           'opportunity',
         ),
-      ).to.be.rejectedWith('Missing S3_IMPORTER_BUCKET_NAME for readability batch');
+      ).to.be.rejectedWith('Missing S3_MYSTIQUE_BUCKET_NAME for readability batch');
     });
 
     it('should extract selector from elements array', async () => {
