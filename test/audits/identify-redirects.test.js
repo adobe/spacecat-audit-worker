@@ -314,5 +314,199 @@ describe('identify-redirects handler', () => {
     const text = loaded.postMessageSafe.secondCall.args[2];
     expect(text).to.include('*Winner*: `redirectmapTxt`');
   });
+
+  it('falls back to compat oneshot search when oneshotSearch is missing', async () => {
+    const login = sinon.stub().callsFake(async function loginFake() {
+      // mimic <=1.0.30 behavior: sets loginObj on the instance
+      // eslint-disable-next-line no-invalid-this
+      this.loginObj = { sessionId: 's', cookie: 'c' };
+      // eslint-disable-next-line no-invalid-this
+      return this.loginObj;
+    });
+    const fetchAPI = sinon.stub().resolves({
+      status: 200,
+      json: async () => ({
+        results: [{ url: '/etc/acs-commons/redirect-maps/map', count: '1' }],
+      }),
+    });
+
+    const splunkClient = {
+      apiBaseUrl: 'https://splunk.example.test',
+      fetchAPI,
+      loginObj: null,
+      login,
+    };
+
+    const SplunkAPIClient = {
+      createFrom: sinon.stub().returns(splunkClient),
+    };
+    const postMessageSafe = sinon.stub().resolves({ success: true });
+
+    const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
+      '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
+      '../../src/utils/slack-utils.js': { postMessageSafe },
+    })).default;
+
+    await identifyRedirects({
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      slackContext: { channelId: 'C1', threadTs: '123.456' },
+    }, context);
+
+    expect(fetchAPI).to.have.been.called;
+    expect(postMessageSafe).to.have.been.calledTwice;
+    const finalText = postMessageSafe.secondCall.args[2];
+    expect(finalText).to.include('*Winner*:');
+  });
+
+  it('compat path re-logins when loginObj is not set', async () => {
+    const login = sinon.stub();
+    // first login call (from handler) returns success but does not set loginObj
+    login.onCall(0).resolves({ sessionId: 's', cookie: 'c' });
+    // second login call (from compat) sets loginObj (mimic older client behavior)
+    login.onCall(1).callsFake(async function loginFake() {
+      // eslint-disable-next-line no-invalid-this
+      this.loginObj = { sessionId: 's', cookie: 'c' };
+      // eslint-disable-next-line no-invalid-this
+      return this.loginObj;
+    });
+
+    const fetchAPI = sinon.stub().resolves({
+      status: 200,
+      json: async () => ({ results: [] }),
+    });
+
+    const splunkClient = {
+      apiBaseUrl: 'https://splunk.example.test',
+      fetchAPI,
+      loginObj: null,
+      login,
+    };
+
+    const SplunkAPIClient = {
+      createFrom: sinon.stub().returns(splunkClient),
+    };
+    const postMessageSafe = sinon.stub().resolves({ success: true });
+
+    const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
+      '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
+      '../../src/utils/slack-utils.js': { postMessageSafe },
+    })).default;
+
+    await identifyRedirects({
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      slackContext: { channelId: 'C1', threadTs: '123.456' },
+    }, context);
+
+    expect(login.callCount).to.equal(2);
+    expect(fetchAPI).to.have.been.called;
+  });
+
+  it('compat path surfaces non-Error login errors', async () => {
+    const login = sinon.stub().resolves({ error: 'Login failed' });
+
+    const splunkClient = {
+      apiBaseUrl: 'https://splunk.example.test',
+      fetchAPI: sinon.stub(),
+      loginObj: null,
+      login,
+    };
+
+    const SplunkAPIClient = {
+      createFrom: sinon.stub().returns(splunkClient),
+    };
+    const postMessageSafe = sinon.stub().resolves({ success: true });
+
+    const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
+      '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
+      '../../src/utils/slack-utils.js': { postMessageSafe },
+    })).default;
+
+    await identifyRedirects({
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      slackContext: { channelId: 'C1', threadTs: '123.456' },
+    }, context);
+
+    expect(postMessageSafe).to.have.been.calledTwice;
+    expect(postMessageSafe.secondCall.args[2]).to.include('Login failed');
+  });
+
+  it('compat path surfaces Error login errors', async () => {
+    const login = sinon.stub().resolves({ error: new Error('Login failed') });
+
+    const splunkClient = {
+      apiBaseUrl: 'https://splunk.example.test',
+      fetchAPI: sinon.stub(),
+      loginObj: null,
+      login,
+    };
+
+    const SplunkAPIClient = {
+      createFrom: sinon.stub().returns(splunkClient),
+    };
+    const postMessageSafe = sinon.stub().resolves({ success: true });
+
+    const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
+      '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
+      '../../src/utils/slack-utils.js': { postMessageSafe },
+    })).default;
+
+    await identifyRedirects({
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      slackContext: { channelId: 'C1', threadTs: '123.456' },
+    }, context);
+
+    expect(postMessageSafe).to.have.been.calledTwice;
+    expect(postMessageSafe.secondCall.args[2]).to.include('Login failed');
+  });
+
+  it('compat path includes non-200 response body in error', async () => {
+    const login = sinon.stub().callsFake(async function loginFake() {
+      // eslint-disable-next-line no-invalid-this
+      this.loginObj = { sessionId: 's', cookie: 'c' };
+      // eslint-disable-next-line no-invalid-this
+      return this.loginObj;
+    });
+
+    const fetchAPI = sinon.stub().resolves({
+      status: 400,
+      text: async () => 'bad_request',
+    });
+
+    const splunkClient = {
+      apiBaseUrl: 'https://splunk.example.test',
+      fetchAPI,
+      loginObj: null,
+      login,
+    };
+
+    const SplunkAPIClient = {
+      createFrom: sinon.stub().returns(splunkClient),
+    };
+    const postMessageSafe = sinon.stub().resolves({ success: true });
+
+    const identifyRedirects = (await esmock('../../src/identify-redirects/handler.js', {
+      '@adobe/spacecat-shared-splunk-client': { default: SplunkAPIClient },
+      '../../src/utils/slack-utils.js': { postMessageSafe },
+    })).default;
+
+    await identifyRedirects({
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      slackContext: { channelId: 'C1', threadTs: '123.456' },
+    }, context);
+
+    expect(postMessageSafe).to.have.been.calledTwice;
+    expect(postMessageSafe.secondCall.args[2]).to.include('Status: 400');
+    expect(postMessageSafe.secondCall.args[2]).to.include('bad_request');
+  });
 });
 

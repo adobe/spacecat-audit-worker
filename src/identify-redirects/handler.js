@@ -31,6 +31,50 @@ const CONFIDENCE = {
   damredirectmgr: 0.85,
 };
 
+async function oneshotSearchCompat(client, searchString) {
+  if (typeof client?.oneshotSearch === 'function') {
+    return client.oneshotSearch(searchString);
+  }
+
+  /* c8 ignore next 3 */
+  if (typeof searchString !== 'string' || searchString.trim().length === 0) {
+    throw new Error('Missing searchString');
+  }
+
+  // Compatibility path for @adobe/spacecat-shared-splunk-client@<=1.0.30
+  // which does not expose oneshotSearch().
+  const loginObj = client.loginObj || await client.login();
+  if (loginObj?.error) {
+    const err = loginObj.error;
+    throw (err instanceof Error ? err : new Error(String(err)));
+  }
+
+  const queryBody = new URLSearchParams({
+    search: searchString,
+    adhoc_search_level: 'fast',
+    exec_mode: 'oneshot',
+    output_mode: 'json',
+  });
+
+  const url = `${client.apiBaseUrl}/servicesNS/admin/search/search/jobs`;
+  const response = await client.fetchAPI(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Splunk ${loginObj.sessionId}`,
+      Cookie: loginObj.cookie,
+    },
+    body: queryBody,
+  });
+
+  if (response.status !== 200) {
+    const body = await response.text();
+    throw new Error(`Splunk oneshot search failed. Status: ${response.status}. Body: ${body}`);
+  }
+
+  return response.json();
+}
+
 function asNumber(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -203,7 +247,7 @@ export default async function identifyRedirects(message, context) {
   try {
     // Ensure a single login, then run queries in parallel.
     await client.login();
-    settled = await Promise.allSettled(queries.map((q) => client.oneshotSearch(q.search)));
+    settled = await Promise.allSettled(queries.map((q) => oneshotSearchCompat(client, q.search)));
   } catch (e) {
     const text = `:x: Failed to query Splunk for redirect patterns for *${baseURL}*: ${e.message}`;
     await postMessageSafe(context, channelId, text, {
