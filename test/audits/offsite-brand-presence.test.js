@@ -346,6 +346,21 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result).to.have.lengthOf(1);
     });
 
+    it('should skip files in brand-presence/ that do not match the filename pattern', () => {
+      const qi = {
+        data: [
+          { path: '/adobe/agentic-traffic/agentictraffic-w07-2026.json' },
+          { path: '/adobe/brand-presence/w7/summary-report-w7.json' },
+          { path: '/adobe/brand-presence/w7/brandpresence-chatgpt-w7-2026-010126.csv' },
+          { path: '/adobe/brand-presence/w7/' },
+          { path: '/adobe/brand-presence/w7/brandpresence-chatgpt-w7-2026-010126.json' },
+        ],
+      };
+      const result = filterBrandPresenceFiles(qi, 7);
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.include('chatgpt');
+    });
+
     it('should return empty array when query-index has no data', () => {
       expect(filterBrandPresenceFiles({}, 7)).to.deep.equal([]);
       expect(filterBrandPresenceFiles({ data: [] }, 7)).to.deep.equal([]);
@@ -594,6 +609,28 @@ describe('Offsite Brand Presence Handler', () => {
 
     it('should ignore invalid URLs without crashing', async () => {
       const sources = 'not-a-url;https://youtube.com/v1;;  ;ftp://weird';
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData([sources]);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({
+        providerResponses,
+        urlStoreResponse: okJsonResponse({}),
+        drsResponses: [
+          okJsonResponse({ jobId: 'j1' }),
+          okJsonResponse({ jobId: 'j2' }),
+        ],
+      });
+      stubFetchSequence(responses);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+    });
+
+    it('should ignore URLs with empty or missing hostname', async () => {
+      const sources = 'https:///path;://nohost;plain-text;https://youtube.com/v1';
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData([sources]);
         return okJsonResponse({});
@@ -1195,6 +1232,33 @@ describe('Offsite Brand Presence Handler', () => {
       );
       const body = JSON.parse(drsCalls[0].args[1].body);
       expect(body.parameters.metadata.brand).to.equal(BASE_URL);
+    });
+
+    it('should use empty string for brand when both getCompanyName and baseURL are falsy', async () => {
+      site.getConfig.returns(null);
+      site.getBaseURL.returns('');
+
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData(['https://youtube.com/v1']);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({
+        providerResponses,
+        urlStoreResponse: okJsonResponse({}),
+        drsResponses: [
+          okJsonResponse({ jobId: 'j1' }),
+          okJsonResponse({ jobId: 'j2' }),
+        ],
+      });
+      stubFetchSequence(responses);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const drsCalls = mockFetch.getCalls().filter(
+        (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
+      );
+      const body = JSON.parse(drsCalls[0].args[1].body);
+      expect(body.parameters.metadata.brand).to.equal('');
     });
 
     it('should use empty string for imsOrgId when getImsOrgId returns null', async () => {

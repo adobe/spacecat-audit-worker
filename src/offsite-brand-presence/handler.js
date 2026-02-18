@@ -391,7 +391,7 @@ async function triggerDrsScraping(urlsByDomain, imsOrgId, brand, env, log) {
 
       if (response.ok) {
         const result = await response.json();
-        log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result.jobId || 'unknown'}`);
+        log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result.jobId}`);
         return {
           domain, datasetId, status: 'success', response: result,
         };
