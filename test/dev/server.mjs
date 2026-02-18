@@ -23,7 +23,9 @@ const { version } = require('../../package.json');
 global.__rootdir = resolve(fileURLToPath(import.meta.url), '..', '..', '..');
 
 async function run(args) {
-  process.env.HLX_DEV_SERVER_HOST = 'localhost:3000';
+  const devPort = process.env.AUDIT_WORKER_PORT || process.env.WEBSERVER_PORT || '4545';
+  process.env.WEBSERVER_PORT = devPort;
+  process.env.HLX_DEV_SERVER_HOST = `localhost:${devPort}`;
   process.env.HLX_DEV_SERVER_SCHEME = 'http';
 
   let devServer;
@@ -39,6 +41,7 @@ async function run(args) {
     devServer = new DevelopmentServer(main);
   }
   await devServer
+    .withPort(Number(devPort))
     .withHeader('x-forwarded-host', '')
     .init();
   await devServer.start();
