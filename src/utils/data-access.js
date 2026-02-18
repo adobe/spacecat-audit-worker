@@ -351,6 +351,8 @@ export async function syncSuggestions({
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
+  const opportunityType = opportunity.getType?.();
+
   // Update existing suggestions - O(N) with Map lookup
   await Promise.all(
     existingSuggestions
@@ -361,7 +363,16 @@ export async function syncSuggestions({
       .map((existing) => {
         const existingKey = buildKey(existing.getData());
         const newDataItem = newDataByKey.get(existingKey);
-        existing.setData(mergeDataFunction(existing.getData(), newDataItem));
+        const mergedData = mergeDataFunction(existing.getData(), newDataItem);
+
+        try {
+          SuggestionDataAccess.validateData(mergedData, opportunityType);
+        } catch (error) {
+          log.warn(`Skipping update for suggestion ${existing.getId?.()}: ${error.message}`);
+          return Promise.resolve();
+        }
+
+        existing.setData(mergedData);
 
         // Use the merge status function to determine if status should change
         const newStatus = mergeStatusFunction(existing, newDataItem, context);
@@ -387,6 +398,15 @@ export async function syncSuggestions({
         status: requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
           : SuggestionDataAccess.STATUSES.NEW,
       };
+    })
+    .filter((suggestion) => {
+      try {
+        SuggestionDataAccess.validateData(suggestion.data, opportunityType);
+        return true;
+      } catch (error) {
+        log.warn(`Skipping invalid new suggestion: ${error.message}`);
+        return false;
+      }
     });
 
   // Add new suggestions if any
