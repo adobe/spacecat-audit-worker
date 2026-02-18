@@ -92,7 +92,6 @@ function buildBaseSearch({
   return [
     'search',
     'index=dx_aem_engineering',
-    'sourcetype=cdn',
     `earliest=-${minutes}m@m`,
     'latest=@m',
     `${envField}="${environmentId}"`,
