@@ -1641,6 +1641,114 @@ describe('data-access', () => {
       expect(prefetchedSuggestions[0].setData).to.have.been.calledOnceWith(newData[0]);
       expect(prefetchedSuggestions[0].save).to.have.been.calledOnce;
     });
+
+    describe('suggestion data validation', () => {
+      let validateDataStub;
+
+      beforeEach(() => {
+        validateDataStub = sandbox.stub(SuggestionDataAccess, 'validateData');
+      });
+
+      it('should log warning for invalid new suggestions but still add them', async () => {
+        const newData = [{ key: '1' }, { key: '2' }];
+
+        mockOpportunity.getSuggestions.resolves([]);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+        mockOpportunity.getType = sandbox.stub().returns('broken-backlinks');
+
+        validateDataStub
+          .onFirstCall().throws(new Error('Invalid data for opportunity type broken-backlinks: "url_from" is required'))
+          .onSecondCall().returns(undefined);
+
+        await syncSuggestions({
+          context,
+          opportunity: mockOpportunity,
+          newData,
+          buildKey,
+          mapNewSuggestion,
+        });
+
+        expect(mockLogger.warn).to.have.been.calledWith(
+          sinon.match('Validation warning for new suggestion'),
+        );
+        const addedSuggestions = mockOpportunity.addSuggestions.getCall(0).args[0];
+        expect(addedSuggestions).to.have.length(2);
+      });
+
+      it('should log warning for existing suggestion with invalid merged data but still update', async () => {
+        const existingSuggestions = [{
+          id: '1',
+          getData: sinon.stub().returns({ key: '1', title: 'old' }),
+          getId: sinon.stub().returns('suggestion-1'),
+          setData: sinon.stub(),
+          save: sinon.stub().resolves(),
+          getStatus: sinon.stub().returns('NEW'),
+          setStatus: sinon.stub(),
+          setUpdatedBy: sinon.stub().returnsThis(),
+        }];
+        const newData = [{ key: '1', title: 'updated' }];
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.getType = sandbox.stub().returns('broken-backlinks');
+
+        validateDataStub.throws(new Error('Invalid data for opportunity type broken-backlinks: "url_from" is required'));
+
+        await syncSuggestions({
+          context,
+          opportunity: mockOpportunity,
+          newData,
+          buildKey,
+          mapNewSuggestion,
+        });
+
+        expect(mockLogger.warn).to.have.been.calledWith(
+          sinon.match('Validation warning for suggestion suggestion-1'),
+        );
+        expect(existingSuggestions[0].setData).to.have.been.called;
+        expect(existingSuggestions[0].save).to.have.been.called;
+      });
+
+      it('should not log warnings when opportunity type has no schema', async () => {
+        const newData = [{ key: '1' }];
+
+        mockOpportunity.getSuggestions.resolves([]);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        validateDataStub.returns(undefined);
+
+        await syncSuggestions({
+          context,
+          opportunity: mockOpportunity,
+          newData,
+          buildKey,
+          mapNewSuggestion,
+        });
+
+        expect(mockLogger.warn).to.not.have.been.called;
+        expect(mockOpportunity.addSuggestions).to.have.been.calledOnce;
+      });
+
+      it('should log warnings for all invalid suggestions but still add them', async () => {
+        const newData = [{ key: '1' }, { key: '2' }];
+
+        mockOpportunity.getSuggestions.resolves([]);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+        mockOpportunity.getType = sandbox.stub().returns('broken-backlinks');
+
+        validateDataStub.throws(new Error('Invalid data'));
+
+        await syncSuggestions({
+          context,
+          opportunity: mockOpportunity,
+          newData,
+          buildKey,
+          mapNewSuggestion,
+        });
+
+        expect(mockLogger.warn).to.have.been.calledTwice;
+        expect(mockOpportunity.addSuggestions).to.have.been.calledOnce;
+      });
+    });
   });
 
   describe('getImsOrgId', () => {
