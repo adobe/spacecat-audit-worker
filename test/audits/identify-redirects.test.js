@@ -138,9 +138,10 @@ describe('identify-redirects handler', () => {
       slackContext: { channelId: 'C1', threadTs: '123.456' },
     }, context);
 
-    expect(postMessageSafe).to.have.been.calledOnce;
-    expect(postMessageSafe.firstCall.args[2]).to.include('Failed to query Splunk');
-    expect(postMessageSafe.firstCall.args[2]).to.include('splunk down');
+    expect(postMessageSafe).to.have.been.calledTwice;
+    expect(postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');
+    expect(postMessageSafe.secondCall.args[2]).to.include('Failed to query Splunk');
+    expect(postMessageSafe.secondCall.args[2]).to.include('splunk down');
   });
 
   it('includes slack target in splunk-failure messages when provided', async () => {
@@ -157,8 +158,12 @@ describe('identify-redirects handler', () => {
       slackContext: { channelId: 'C1', threadTs: '123.456', target: 'WORKSPACE_EXTERNAL' },
     }, context);
 
-    expect(postMessageSafe).to.have.been.calledOnce;
+    expect(postMessageSafe).to.have.been.calledTwice;
     expect(postMessageSafe.firstCall.args[3]).to.deep.include({
+      threadTs: '123.456',
+      target: 'WORKSPACE_EXTERNAL',
+    });
+    expect(postMessageSafe.secondCall.args[3]).to.deep.include({
       threadTs: '123.456',
       target: 'WORKSPACE_EXTERNAL',
     });
@@ -179,12 +184,17 @@ describe('identify-redirects handler', () => {
     }, context);
 
     expect(oneshotSearch.callCount).to.equal(4);
-    expect(postMessageSafe).to.have.been.calledOnce;
-    const text = postMessageSafe.firstCall.args[2];
+    expect(postMessageSafe).to.have.been.calledTwice;
+    expect(postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');
+    const text = postMessageSafe.secondCall.args[2];
     expect(text).to.include('*Winner*: none');
     expect(text).to.include('*Results*');
     expect(text).to.include('failed: nope');
     expect(postMessageSafe.firstCall.args[3]).to.deep.include({
+      threadTs: '123.456',
+      target: 'WORKSPACE_INTERNAL',
+    });
+    expect(postMessageSafe.secondCall.args[3]).to.deep.include({
       threadTs: '123.456',
       target: 'WORKSPACE_INTERNAL',
     });
@@ -206,9 +216,10 @@ describe('identify-redirects handler', () => {
       slackContext: { channelId: 'C1', threadTs: '123.456' },
     }, context);
 
-    expect(loaded.postMessageSafe).to.have.been.calledOnce;
-    expect(loaded.postMessageSafe.firstCall.args[2]).to.include('No redirect patterns detected');
-    expect(loaded.postMessageSafe.firstCall.args[2]).to.include('last 5m');
+    expect(loaded.postMessageSafe).to.have.been.calledTwice;
+    expect(loaded.postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');
+    expect(loaded.postMessageSafe.secondCall.args[2]).to.include('No redirect patterns detected');
+    expect(loaded.postMessageSafe.secondCall.args[2]).to.include('last 5m');
   });
 
   it('includes top paths for the winner when examples are available', async () => {
@@ -231,7 +242,9 @@ describe('identify-redirects handler', () => {
       slackContext: { channelId: 'C1', threadTs: '123.456' },
     }, context);
 
-    const text = loaded.postMessageSafe.firstCall.args[2];
+    expect(loaded.postMessageSafe).to.have.been.calledTwice;
+    expect(loaded.postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');
+    const text = loaded.postMessageSafe.secondCall.args[2];
     expect(text).to.include('*Winner*:');
     expect(text).to.include('*Top paths for winner');
     expect(text).to.include('/etc/acs-commons/redirect-maps/map');
@@ -268,7 +281,9 @@ describe('identify-redirects handler', () => {
     expect(firstQuery).to.include('prog="p1"');
     expect(firstQuery).to.include('| stats count by path');
 
-    const text = loaded.postMessageSafe.firstCall.args[2];
+    expect(loaded.postMessageSafe).to.have.been.calledTwice;
+    expect(loaded.postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');
+    const text = loaded.postMessageSafe.secondCall.args[2];
     expect(text).to.include('*Winner*:');
     expect(text).to.not.include('*Top paths for winner');
   });
@@ -294,7 +309,9 @@ describe('identify-redirects handler', () => {
       slackContext: { channelId: 'C1', threadTs: '123.456' },
     }, context);
 
-    const text = loaded.postMessageSafe.firstCall.args[2];
+    expect(loaded.postMessageSafe).to.have.been.calledTwice;
+    expect(loaded.postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');
+    const text = loaded.postMessageSafe.secondCall.args[2];
     expect(text).to.include('*Winner*: `redirectmapTxt`');
   });
 });

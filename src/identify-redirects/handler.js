@@ -178,6 +178,16 @@ export default async function identifyRedirects(message, context) {
 
   const client = SplunkAPIClient.createFrom(context);
 
+  await postMessageSafe(
+    context,
+    channelId,
+    `:hourglass: Started Splunk searches for *${baseURL}* (last ${minutes}m)…`,
+    {
+      threadTs,
+      ...(slackTarget && { target: slackTarget }),
+    },
+  );
+
   const queryParams = {
     minutes,
     envField,
