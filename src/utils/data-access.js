@@ -368,8 +368,7 @@ export async function syncSuggestions({
         try {
           SuggestionDataAccess.validateData(mergedData, opportunityType);
         } catch (error) {
-          log.warn(`Skipping update for suggestion ${existing.getId?.()}: ${error.message}`);
-          return Promise.resolve();
+          log.warn(`Validation warning for suggestion ${existing.getId?.()}: ${error.message}`);
         }
 
         existing.setData(mergedData);
@@ -399,14 +398,13 @@ export async function syncSuggestions({
           : SuggestionDataAccess.STATUSES.NEW,
       };
     })
-    .filter((suggestion) => {
+    .map((suggestion) => {
       try {
         SuggestionDataAccess.validateData(suggestion.data, opportunityType);
-        return true;
       } catch (error) {
-        log.warn(`Skipping invalid new suggestion: ${error.message}`);
-        return false;
+        log.warn(`Validation warning for new suggestion: ${error.message}`);
       }
+      return suggestion;
     });
 
   // Add new suggestions if any

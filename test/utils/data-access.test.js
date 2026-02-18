@@ -1649,11 +1649,11 @@ describe('data-access', () => {
         validateDataStub = sandbox.stub(SuggestionDataAccess, 'validateData');
       });
 
-      it('should skip invalid new suggestions and log a warning', async () => {
+      it('should log warning for invalid new suggestions but still add them', async () => {
         const newData = [{ key: '1' }, { key: '2' }];
 
         mockOpportunity.getSuggestions.resolves([]);
-        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: [newData[1]] });
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
         mockOpportunity.getType = sandbox.stub().returns('broken-backlinks');
 
         validateDataStub
@@ -1669,14 +1669,13 @@ describe('data-access', () => {
         });
 
         expect(mockLogger.warn).to.have.been.calledWith(
-          sinon.match('Skipping invalid new suggestion'),
+          sinon.match('Validation warning for new suggestion'),
         );
         const addedSuggestions = mockOpportunity.addSuggestions.getCall(0).args[0];
-        expect(addedSuggestions).to.have.length(1);
-        expect(addedSuggestions[0].data).to.deep.equal({ key: '2' });
+        expect(addedSuggestions).to.have.length(2);
       });
 
-      it('should skip update for existing suggestion with invalid merged data', async () => {
+      it('should log warning for existing suggestion with invalid merged data but still update', async () => {
         const existingSuggestions = [{
           id: '1',
           getData: sinon.stub().returns({ key: '1', title: 'old' }),
@@ -1703,13 +1702,13 @@ describe('data-access', () => {
         });
 
         expect(mockLogger.warn).to.have.been.calledWith(
-          sinon.match('Skipping update for suggestion suggestion-1'),
+          sinon.match('Validation warning for suggestion suggestion-1'),
         );
-        expect(existingSuggestions[0].setData).to.not.have.been.called;
-        expect(existingSuggestions[0].save).to.not.have.been.called;
+        expect(existingSuggestions[0].setData).to.have.been.called;
+        expect(existingSuggestions[0].save).to.have.been.called;
       });
 
-      it('should skip validation gracefully when opportunity type has no schema', async () => {
+      it('should not log warnings when opportunity type has no schema', async () => {
         const newData = [{ key: '1' }];
 
         mockOpportunity.getSuggestions.resolves([]);
@@ -1729,10 +1728,11 @@ describe('data-access', () => {
         expect(mockOpportunity.addSuggestions).to.have.been.calledOnce;
       });
 
-      it('should not add any suggestions when all fail validation', async () => {
+      it('should log warnings for all invalid suggestions but still add them', async () => {
         const newData = [{ key: '1' }, { key: '2' }];
 
         mockOpportunity.getSuggestions.resolves([]);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
         mockOpportunity.getType = sandbox.stub().returns('broken-backlinks');
 
         validateDataStub.throws(new Error('Invalid data'));
@@ -1745,7 +1745,8 @@ describe('data-access', () => {
           mapNewSuggestion,
         });
 
-        expect(mockOpportunity.addSuggestions).to.not.have.been.called;
+        expect(mockLogger.warn).to.have.been.calledTwice;
+        expect(mockOpportunity.addSuggestions).to.have.been.calledOnce;
       });
     });
   });
