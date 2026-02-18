@@ -122,16 +122,22 @@ function buildQueries(params) {
 }
 
 function scorePattern({ totalCount, confidence }) {
-  return totalCount * confidence;
+  // Keep the displayed score as a float, but use an integer key for stable sorting/ties.
+  const confidenceWeight = Math.round(confidence * 100);
+  return {
+    score: totalCount * confidence,
+    scoreKey: totalCount * confidenceWeight,
+  };
 }
 
 function pickWinner(patternResults) {
   const successful = patternResults.filter((r) => !r.error);
   if (successful.length === 0) return null;
 
-  // Sort by score desc, then by totalCount desc, then by confidence desc
+  // Sort by score desc, then by totalCount desc, then by confidence desc.
+  // Use scoreKey (integer) for stable comparisons.
   successful.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
+    if (b.scoreKey !== a.scoreKey) return b.scoreKey - a.scoreKey;
     if (b.totalCount !== a.totalCount) return b.totalCount - a.totalCount;
     return b.confidence - a.confidence;
   });
@@ -281,6 +287,7 @@ export default async function identifyRedirects(message, context) {
         rows: [],
         totalCount: 0,
         score: 0,
+        scoreKey: 0,
         examples: [],
         error: item.reason?.message || String(item.reason),
       };
@@ -296,7 +303,7 @@ export default async function identifyRedirects(message, context) {
       .slice(0, 8);
     const examples = examplesList.length > 0 ? examplesList : null;
 
-    const score = scorePattern({ totalCount, confidence: q.confidence });
+    const { score, scoreKey } = scorePattern({ totalCount, confidence: q.confidence });
     return {
       id: q.id,
       confidence: q.confidence,
@@ -304,6 +311,7 @@ export default async function identifyRedirects(message, context) {
       rows,
       totalCount,
       score,
+      scoreKey,
       examples,
       error: null,
     };
