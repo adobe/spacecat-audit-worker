@@ -276,8 +276,8 @@ describe('identify-redirects handler', () => {
     loaded.oneshotSearch
       .onCall(0).resolves({
         results: [
-          { url: '/etc/acs-commons/redirect-maps/map', count: '3' },
-          { url: '/etc/acs-commons/redirect-maps/other', count: 'foo' },
+          { url: '/etc/acs-commons/redirect-maps/map' },
+          { url: '/etc/acs-commons/redirect-maps/other' },
         ],
       })
       .onCall(1).resolves({ results: [] })
@@ -298,7 +298,7 @@ describe('identify-redirects handler', () => {
     expect(text).to.include('*Top paths for winner');
     expect(text).to.include('/etc/acs-commons/redirect-maps/map');
     expect(text).to.include('*Response preview');
-    expect(text).to.include('{"url":"/etc/acs-commons/redirect-maps/map","count":"3"}');
+    expect(text).to.include('{"url":"/etc/acs-commons/redirect-maps/map"}');
   });
 
   it('omits the examples block when winner has no string paths and supports splunkFields overrides', async () => {
@@ -306,8 +306,8 @@ describe('identify-redirects handler', () => {
     loaded.oneshotSearch
       .onCall(0).resolves({
         results: [
-          { path: undefined, count: '5' },
-          { count: '2' },
+          { path: undefined },
+          { other: 'x' },
         ],
       })
       .onCall(1).resolves({ results: [] })
@@ -330,7 +330,6 @@ describe('identify-redirects handler', () => {
     const firstQuery = loaded.oneshotSearch.firstCall.args[0];
     expect(firstQuery).to.include('env="e1"');
     expect(firstQuery).to.include('prog="p1"');
-    expect(firstQuery).to.include('| stats count by path');
     expect(firstQuery).to.include('"/conf/"');
 
     expect(loaded.postMessageSafe).to.have.been.calledTwice;
@@ -345,12 +344,12 @@ describe('identify-redirects handler', () => {
     loaded.oneshotSearch
       .onCall(0).resolves({ results: [] })
       .onCall(1).resolves({
-        // 90 * 0.95 = 85.5
-        results: [{ url: '/etc/acs-commons/redirect-maps/a', count: '90' }],
+        // 18 * 0.95 = 17.1
+        results: Array.from({ length: 18 }, () => ({ url: '/etc/acs-commons/redirect-maps/a' })),
       })
       .onCall(2).resolves({
-        // 95 * 0.90 = 85.5 (exact tie in JS float math)
-        results: [{ url: '/content/dam/something.redirectmap.txt', count: '95' }],
+        // 19 * 0.90 = 17.1 (exact tie in JS float math)
+        results: Array.from({ length: 19 }, () => ({ url: '/content/dam/something.redirectmap.txt' })),
       })
       .onCall(3).resolves({ results: [] });
 

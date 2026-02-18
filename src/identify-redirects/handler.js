@@ -75,11 +75,6 @@ async function oneshotSearchCompat(client, searchString) {
   return response.json();
 }
 
-function asNumber(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
 function buildBaseSearch({
   minutes,
   envField,
@@ -99,42 +94,29 @@ function buildBaseSearch({
   ].join(' ');
 }
 
-function buildStatsTail(pathField) {
-  return `| stats count by ${pathField} | sort -count | head 20`;
-}
-
 function buildQueries(params) {
-  const {
-    pathField,
-  } = params;
-
-  const statsTail = buildStatsTail(pathField);
-
   return [
     {
       id: 'acsredirectmanager',
       confidence: CONFIDENCE.acsredirectmanager,
       // IMPORTANT: naive /conf/ matching causes false positives. We require redirect context.
-      search: `${buildBaseSearch(params)} "/conf/" `
-        + '(redirect OR "acs-commons") '
-        + 'NOT "/settings/wcm/templates/" '
-        + `${statsTail}`,
+      search: `${buildBaseSearch(params)} "/conf/" (redirect OR "acs-commons") NOT "/settings/wcm/templates/"`,
     },
     {
       id: 'acsredirectmapmanager',
       confidence: CONFIDENCE.acsredirectmapmanager,
-      search: `${buildBaseSearch(params)} "/etc/acs-commons/redirect-maps" ${statsTail}`,
+      search: `${buildBaseSearch(params)} "/etc/acs-commons/redirect-maps"`,
     },
     {
       id: 'redirectmapTxt',
       confidence: CONFIDENCE.redirectmapTxt,
-      search: `${buildBaseSearch(params)} "redirectmap.txt" ${statsTail}`,
+      search: `${buildBaseSearch(params)} "redirectmap.txt"`,
     },
     {
       id: 'damredirectmgr',
       confidence: CONFIDENCE.damredirectmgr,
       // IMPORTANT: DAM is noisy unless constrained to redirect context.
-      search: `${buildBaseSearch(params)} "/content/dam/" redirect ${statsTail}`,
+      search: `${buildBaseSearch(params)} "/content/dam/" redirect`,
     },
   ];
 }
@@ -306,7 +288,7 @@ export default async function identifyRedirects(message, context) {
 
     const response = item.value || {};
     const splunkResults = Array.isArray(response.results) ? response.results : [];
-    const totalCount = splunkResults.reduce((sum, r) => sum + asNumber(r.count), 0);
+    const totalCount = splunkResults.length;
     const rows = splunkResults.slice(0, 3);
     const examplesList = splunkResults
       .map((r) => r[pathField])
