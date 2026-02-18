@@ -157,6 +157,36 @@ function pickWinner(patternResults) {
   return successful[0];
 }
 
+function formatQueriesForSlack(queries) {
+  // Queries are built in-process and expected to be non-empty.
+  const lines = queries.map((q) => `${q.id}: ${q.search.slice(0, 500)}`).join('\n');
+  return `\n\n*Queries run*\n\`\`\`\n${lines}\n\`\`\``;
+}
+
+function formatResponsesPreviewForSlack(results, {
+  maxRowsPerPattern = 3,
+  totalLimit = 2500,
+} = {}) {
+  let acc = '';
+
+  for (const r of results) {
+    const header = `# ${r.id}\n`;
+    const body = hasText(r.error)
+      ? `error: ${String(r.error)}\n`
+      : `${r.rows.slice(0, maxRowsPerPattern).map((row) => JSON.stringify(row)).join('\n') || '(no rows)'}\n`;
+
+    const block = `${header}${body}\n`;
+    if (acc.length + block.length > totalLimit) {
+      break;
+    }
+    acc += block;
+  }
+
+  return hasText(acc)
+    ? `\n\n*Response preview (first ${maxRowsPerPattern} rows per query)*\n\`\`\`\n${acc.trimEnd()}\n\`\`\``
+    : '';
+}
+
 function formatSlackMessage({
   baseURL,
   programId,
@@ -164,17 +194,20 @@ function formatSlackMessage({
   minutes,
   winner,
   results,
+  queries,
 }) {
   const header = `*Redirect pattern detection* for *${baseURL}*\n`
     + `AEM CS: programId=\`${programId}\`, environmentId=\`${environmentId}\`, window=\`last ${minutes}m\`\n`;
 
   const lines = results.map((r) => {
-    const status = r.error ? `failed: ${r.error}` : `count=${r.totalCount}, score=${r.score.toFixed(2)}`;
+    const status = r.error
+      ? `failed: ${r.error}`
+      : `rows=${r.rowsCount}, count=${r.totalCount}, score=${r.score.toFixed(2)}`;
     return `- \`${r.id}\` (conf=${r.confidence}): ${status}`;
   }).join('\n');
 
   if (!winner) {
-    return `${header}\n*Results*\n${lines}\n\n*Winner*: none`;
+    return `${header}\n*Results*\n${lines}\n\n*Winner*: none${formatQueriesForSlack(queries)}${formatResponsesPreviewForSlack(results)}`;
   }
 
   const examples = (winner.examples || []).slice(0, 8).join('\n');
@@ -182,7 +215,7 @@ function formatSlackMessage({
     ? `\n\n*Top paths for winner (\`${winner.id}\`)*\n\`\`\`\n${examples}\n\`\`\``
     : '';
 
-  return `${header}\n*Winner*: \`${winner.id}\`\n\n*Results*\n${lines}${examplesBlock}`;
+  return `${header}\n*Winner*: \`${winner.id}\`\n\n*Results*\n${lines}${examplesBlock}${formatQueriesForSlack(queries)}${formatResponsesPreviewForSlack(results)}`;
 }
 
 export default async function identifyRedirects(message, context) {
@@ -262,6 +295,8 @@ export default async function identifyRedirects(message, context) {
       return {
         id: q.id,
         confidence: q.confidence,
+        rowsCount: 0,
+        rows: [],
         totalCount: 0,
         score: 0,
         examples: [],
@@ -272,6 +307,7 @@ export default async function identifyRedirects(message, context) {
     const response = item.value || {};
     const splunkResults = Array.isArray(response.results) ? response.results : [];
     const totalCount = splunkResults.reduce((sum, r) => sum + asNumber(r.count), 0);
+    const rows = splunkResults.slice(0, 3);
     const examplesList = splunkResults
       .map((r) => r[pathField])
       .filter((v) => typeof v === 'string' && v.length > 0)
@@ -282,6 +318,8 @@ export default async function identifyRedirects(message, context) {
     return {
       id: q.id,
       confidence: q.confidence,
+      rowsCount: splunkResults.length,
+      rows,
       totalCount,
       score,
       examples,
@@ -296,6 +334,7 @@ export default async function identifyRedirects(message, context) {
     ? `*Redirect pattern detection* for *${baseURL}*\n`
       + `AEM CS: programId=\`${programId}\`, environmentId=\`${environmentId}\`, window=\`last ${minutes}m\`\n\n`
       + `No redirect patterns detected in the last ${minutes} minutes.`
+      + `${formatQueriesForSlack(queries)}${formatResponsesPreviewForSlack(results)}`
     : formatSlackMessage({
       baseURL,
       programId,
@@ -303,6 +342,7 @@ export default async function identifyRedirects(message, context) {
       minutes,
       winner,
       results,
+      queries,
     });
 
   await postMessageSafe(context, channelId, finalText, {

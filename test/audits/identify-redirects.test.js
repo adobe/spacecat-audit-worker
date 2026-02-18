@@ -220,6 +220,55 @@ describe('identify-redirects handler', () => {
     expect(loaded.postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');
     expect(loaded.postMessageSafe.secondCall.args[2]).to.include('No redirect patterns detected');
     expect(loaded.postMessageSafe.secondCall.args[2]).to.include('last 5m');
+    expect(loaded.postMessageSafe.secondCall.args[2]).to.include('*Queries run*');
+    expect(loaded.postMessageSafe.secondCall.args[2]).to.include('*Response preview');
+    expect(loaded.postMessageSafe.secondCall.args[2]).to.include('acsredirectmapmanager:');
+  });
+
+  it('truncates response preview when it would exceed the slack limit', async () => {
+    const loaded = await loadHandler();
+    const longUrl = `/${'x'.repeat(2000)}`;
+
+    loaded.oneshotSearch
+      .onCall(0).resolves({ results: [{ url: longUrl, count: '1' }] })
+      .onCall(1).resolves({ results: [{ url: longUrl, count: '1' }] })
+      .onCall(2).resolves({ results: [] })
+      .onCall(3).resolves({ results: [] });
+
+    await loaded.identifyRedirects({
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      slackContext: { channelId: 'C1', threadTs: '123.456' },
+    }, context);
+
+    expect(loaded.postMessageSafe).to.have.been.calledTwice;
+    const text = loaded.postMessageSafe.secondCall.args[2];
+    expect(text).to.include('*Response preview');
+    expect(text).to.include('# acsredirectmanager');
+    expect(text).to.not.include('# acsredirectmapmanager');
+  });
+
+  it('omits response preview when the first pattern block exceeds the limit', async () => {
+    const loaded = await loadHandler();
+    const longUrl = `/${'x'.repeat(3000)}`;
+
+    loaded.oneshotSearch
+      .onCall(0).resolves({ results: [{ url: longUrl, count: '1' }] })
+      .onCall(1).resolves({ results: [] })
+      .onCall(2).resolves({ results: [] })
+      .onCall(3).resolves({ results: [] });
+
+    await loaded.identifyRedirects({
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      slackContext: { channelId: 'C1', threadTs: '123.456' },
+    }, context);
+
+    expect(loaded.postMessageSafe).to.have.been.calledTwice;
+    const text = loaded.postMessageSafe.secondCall.args[2];
+    expect(text).to.not.include('*Response preview');
   });
 
   it('includes top paths for the winner when examples are available', async () => {
@@ -248,6 +297,8 @@ describe('identify-redirects handler', () => {
     expect(text).to.include('*Winner*:');
     expect(text).to.include('*Top paths for winner');
     expect(text).to.include('/etc/acs-commons/redirect-maps/map');
+    expect(text).to.include('*Response preview');
+    expect(text).to.include('{"url":"/etc/acs-commons/redirect-maps/map","count":"3"}');
   });
 
   it('omits the examples block when winner has no string paths and supports splunkFields overrides', async () => {
@@ -508,6 +559,25 @@ describe('identify-redirects handler', () => {
     expect(postMessageSafe).to.have.been.calledTwice;
     expect(postMessageSafe.secondCall.args[2]).to.include('Status: 400');
     expect(postMessageSafe.secondCall.args[2]).to.include('bad_request');
+  });
+
+  it('includes query strings in the slack message when there is no winner', async () => {
+    const loaded = await loadHandler({
+      oneshotImpl: async () => {
+        throw 'nope';
+      },
+    });
+
+    await loaded.identifyRedirects({
+      baseURL: 'https://example.com',
+      programId: 'p1',
+      environmentId: 'e1',
+      slackContext: { channelId: 'C1', threadTs: '123.456' },
+    }, context);
+
+    const text = loaded.postMessageSafe.secondCall.args[2];
+    expect(text).to.include('*Queries run*');
+    expect(text).to.include('acsredirectmapmanager:');
   });
 });
 
