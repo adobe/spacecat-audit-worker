@@ -280,6 +280,7 @@ describe('identify-redirects handler', () => {
     expect(firstQuery).to.include('env="e1"');
     expect(firstQuery).to.include('prog="p1"');
     expect(firstQuery).to.include('| stats count by path');
+    expect(firstQuery).to.include('"/conf/"');
 
     expect(loaded.postMessageSafe).to.have.been.calledTwice;
     expect(loaded.postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');

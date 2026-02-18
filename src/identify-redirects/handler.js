@@ -115,26 +115,26 @@ function buildQueries(params) {
       id: 'acsredirectmanager',
       confidence: CONFIDENCE.acsredirectmanager,
       // IMPORTANT: naive /conf/ matching causes false positives. We require redirect context.
-      search: `${buildBaseSearch(params)} ${pathField}="/conf/*" `
-        + `(${pathField}="*redirect*" OR ${pathField}="*acs-commons*redirect*") `
-        + `NOT ${pathField}="*/settings/wcm/templates/*" `
+      search: `${buildBaseSearch(params)} "/conf/" `
+        + '(redirect OR "acs-commons") '
+        + 'NOT "/settings/wcm/templates/" '
         + `${statsTail}`,
     },
     {
       id: 'acsredirectmapmanager',
       confidence: CONFIDENCE.acsredirectmapmanager,
-      search: `${buildBaseSearch(params)} ${pathField}="/etc/acs-commons/redirect-maps/*" ${statsTail}`,
+      search: `${buildBaseSearch(params)} "/etc/acs-commons/redirect-maps" ${statsTail}`,
     },
     {
       id: 'redirectmapTxt',
       confidence: CONFIDENCE.redirectmapTxt,
-      search: `${buildBaseSearch(params)} ${pathField}="*.redirectmap.txt" ${statsTail}`,
+      search: `${buildBaseSearch(params)} "redirectmap.txt" ${statsTail}`,
     },
     {
       id: 'damredirectmgr',
       confidence: CONFIDENCE.damredirectmgr,
       // IMPORTANT: DAM is noisy unless constrained to redirect context.
-      search: `${buildBaseSearch(params)} ${pathField}="/content/dam/*" ${pathField}="*redirect*" ${statsTail}`,
+      search: `${buildBaseSearch(params)} "/content/dam/" redirect ${statsTail}`,
     },
   ];
 }
