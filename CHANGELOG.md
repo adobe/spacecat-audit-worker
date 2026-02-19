@@ -1,3 +1,10 @@
+# [1.322.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.321.1...v1.322.0) (2026-02-19)
+
+
+### Features
+
+* auto-exclude non-product URLs in commerce enrichments ([#2009](https://github.com/adobe/spacecat-audit-worker/issues/2009)) ([a39848b](https://github.com/adobe/spacecat-audit-worker/commit/a39848bc94292a931bbefd5a211a326a555b4098))
+
 ## [1.321.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.321.0...v1.321.1) (2026-02-19)
 
 
