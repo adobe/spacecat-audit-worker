@@ -166,14 +166,14 @@ async function sendOpportunityBatch(
   }));
   log.debug(`[readability-suggest async] Wrote ${readabilityIssues.length} issues to S3: ${s3Key}`);
 
-  // Send single SQS message with s3BatchPath
+  // Send single SQS message with S3 key path
   const mystiqueMessage = {
     type: READABILITY_GUIDANCE_TYPE,
     siteId,
     auditId: jobId,
     mode: 'opportunity',
     data: {
-      s3BatchPath: s3Key,
+      s3ResultsPath: s3Key,
     },
   };
 
