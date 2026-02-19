@@ -11,6 +11,7 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
@@ -53,7 +54,7 @@ export default async function handler(message, context) {
     return notFound('Suggestion not found');
   }
 
-  suggestion.setData({
+  const updatedData = {
     ...suggestion.getData(),
     errors: (remediations || []).map((remediation) => (
       {
@@ -62,7 +63,9 @@ export default async function handler(message, context) {
         errorTitle: remediation.error_title,
         fix: remediation.corrected_markup,
       })),
-  });
+  };
+  warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
+  suggestion.setData(updatedData);
   await suggestion.save();
   return ok();
 }

@@ -14,6 +14,7 @@ import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { getObjectFromKey } from '../utils/s3-utils.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES;
 
@@ -191,11 +192,13 @@ export default async function handler(message, context) {
       return;
     }
 
-    suggestion.setData({
+    const updatedData = {
       ...suggestion.getData(),
       patchContent: reportData.diff,
       isCodeChangeAvailable: true,
-    });
+    };
+    warnOnInvalidSuggestionData(updatedData, AUDIT_TYPE, log);
+    suggestion.setData(updatedData);
 
     suggestion.save();
   }));

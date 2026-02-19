@@ -11,6 +11,7 @@
  */
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { warnOnInvalidSuggestionData } from '../../utils/data-access.js';
 
 /**
  * Enriches suggestion data with fileds required for auto-optimize.
@@ -181,6 +182,7 @@ export default async function handler(message, context) {
           // Enrich with auto-optimize data only after validating improvedText
           const enrichedData = enrichSuggestionDataForAutoOptimize(updatedData);
 
+          warnOnInvalidSuggestionData(enrichedData, readabilityOpportunity.getType(), log);
           await matchingSuggestion.setData(enrichedData);
           await matchingSuggestion.save();
 

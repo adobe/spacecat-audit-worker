@@ -14,6 +14,7 @@ import { randomUUID } from 'crypto';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
 import { createPaidLogger } from '../paid/paid-log.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const GUIDANCE_TYPE = 'guidance:traffic-analysis';
 const TRAFFIC_OPP_TYPE = 'paid-traffic';
@@ -129,10 +130,13 @@ export default async function handler(message, context) {
       ? SuggestionModel.STATUSES.PENDING_VALIDATION
       : SuggestionModel.STATUSES.NEW;
 
-    await Promise.all(suggestions.map((s) => Suggestion.create({
-      ...s,
-      status,
-    })));
+    await Promise.all(suggestions.map((s) => {
+      warnOnInvalidSuggestionData(s.data, opportunity.getType(), log);
+      return Suggestion.create({
+        ...s,
+        status,
+      });
+    }));
   }
 
   // Only after successful opportunity and suggestions creation, ignore previous ones

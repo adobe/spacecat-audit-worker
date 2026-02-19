@@ -28,6 +28,7 @@ import {
   getDisappearedSuggestions,
   reconcileDisappearedSuggestions,
   publishDeployedFixEntities,
+  warnOnInvalidSuggestionData,
   AUTHOR_ONLY_OPPORTUNITY_TYPES,
 } from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
@@ -1669,7 +1670,7 @@ describe('data-access', () => {
         });
 
         expect(mockLogger.warn).to.have.been.calledWith(
-          sinon.match('Validation warning for new suggestion'),
+          sinon.match('Suggestion data validation warning [broken-backlinks]'),
         );
         const addedSuggestions = mockOpportunity.addSuggestions.getCall(0).args[0];
         expect(addedSuggestions).to.have.length(2);
@@ -1702,7 +1703,7 @@ describe('data-access', () => {
         });
 
         expect(mockLogger.warn).to.have.been.calledWith(
-          sinon.match('Validation warning for suggestion suggestion-1'),
+          sinon.match('Suggestion data validation warning [broken-backlinks]'),
         );
         expect(existingSuggestions[0].setData).to.have.been.called;
         expect(existingSuggestions[0].save).to.have.been.called;
@@ -2540,6 +2541,46 @@ describe('data-access', () => {
       // Verify getSuggestions is only called ONCE, not twice
       // (once in wrapper, passed to syncSuggestions to avoid double query)
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+    });
+  });
+
+  describe('warnOnInvalidSuggestionData', () => {
+    let validateDataStub;
+    let mockLog;
+
+    beforeEach(() => {
+      validateDataStub = sinon.stub(SuggestionDataAccess, 'validateData');
+      mockLog = {
+        warn: sinon.stub(),
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('should not log when validation passes', () => {
+      validateDataStub.returns(undefined);
+
+      warnOnInvalidSuggestionData({ url: 'https://example.com' }, 'broken-backlinks', mockLog);
+
+      expect(mockLog.warn).to.not.have.been.called;
+    });
+
+    it('should log warning when validation fails', () => {
+      validateDataStub.throws(new Error('"url_from" is required'));
+
+      warnOnInvalidSuggestionData({ title: 'test' }, 'broken-backlinks', mockLog);
+
+      expect(mockLog.warn).to.have.been.calledWith(
+        sinon.match('Suggestion data validation warning [broken-backlinks]'),
+      );
+    });
+
+    it('should not throw when validation fails', () => {
+      validateDataStub.throws(new Error('validation error'));
+
+      expect(() => warnOnInvalidSuggestionData({}, 'cwv', mockLog)).to.not.throw();
     });
   });
 });

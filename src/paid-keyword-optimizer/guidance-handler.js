@@ -16,6 +16,7 @@ import {
   isLowSeverityGuidanceBody,
 } from './guidance-opportunity-mapper.js';
 import { createPaidLogger } from '../paid/paid-log.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const GUIDANCE_TYPE = 'ad-intent-mismatch';
 
@@ -70,6 +71,7 @@ export default async function handler(message, context) {
     opportunity.getId(),
     message,
   );
+  warnOnInvalidSuggestionData(suggestionData.data, opportunity.getType(), log);
   await Suggestion.create(suggestionData);
   paidLog.createdSuggestion(opportunity.getId(), siteId, url, auditId);
 

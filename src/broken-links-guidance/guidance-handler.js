@@ -13,6 +13,7 @@
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isValidUrl } from '@adobe/spacecat-shared-utils';
 import { filterBrokenSuggestedUrls } from '../utils/url-utils.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
@@ -103,11 +104,13 @@ export default async function handler(message, context) {
       aiRationale = '';
     }
 
-    suggestion.setData({
+    const updatedData = {
       ...suggestion.getData(),
       urlsSuggested: filteredSuggestedUrls,
       aiRationale,
-    });
+    };
+    warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
+    suggestion.setData(updatedData);
 
     return suggestion.save();
   }));

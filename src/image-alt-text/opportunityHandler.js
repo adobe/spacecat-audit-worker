@@ -18,6 +18,7 @@ import {
   CPC, PENALTY_PER_IMAGE, RUM_INTERVAL, ALT_TEXT_GUIDANCE_TYPE, ALT_TEXT_OBSERVATION,
   MYSTIQUE_BATCH_SIZE,
 } from './constants.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
@@ -53,6 +54,8 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
 
   // Add new suggestions to oppty
   if (isNonEmptyArray(suggestionsToAdd)) {
+    const opportunityType = opportunity.getType?.();
+    suggestionsToAdd.forEach((s) => warnOnInvalidSuggestionData(s.data, opportunityType, log));
     const updateResult = await opportunity.addSuggestions(suggestionsToAdd);
 
     if (isNonEmptyArray(updateResult.errorItems)) {
@@ -251,6 +254,8 @@ export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, lo
     return;
   }
 
+  const opportunityType = opportunity.getType?.();
+  newSuggestionDTOs.forEach((s) => warnOnInvalidSuggestionData(s.data, opportunityType, log));
   const updateResult = await opportunity.addSuggestions(newSuggestionDTOs);
 
   if (isNonEmptyArray(updateResult.errorItems)) {

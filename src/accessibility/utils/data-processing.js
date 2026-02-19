@@ -20,6 +20,7 @@ import {
 import { isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
 import { extractMainDomainName } from '../../support/utils.js';
+import { warnOnInvalidSuggestionData } from '../../utils/data-access.js';
 import {
   createReportOpportunitySuggestionInstance,
   createInDepthReportOpportunity,
@@ -652,6 +653,7 @@ export async function createOrUpdateDeviceSpecificSuggestion(
       // Update only the suggestionValue field to avoid ElectroDB timestamp conflicts
       const newData = { ...currentData, suggestionValue: suggestions[0].data.suggestionValue };
 
+      warnOnInvalidSuggestionData(newData, opportunity.getType(), log);
       existingSuggestion.setData(newData);
       await existingSuggestion.save();
 

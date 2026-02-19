@@ -11,6 +11,7 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
@@ -75,11 +76,13 @@ export default async function handler(message, context) {
       );
     }
 
-    suggestion.setData({
+    const updatedData = {
       ...suggestion.getData(),
       aiSuggestion: aiSuggestion || '',
       aiRationale: aiRationale || '',
-    });
+    };
+    warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
+    suggestion.setData(updatedData);
 
     return suggestion.save();
   }));

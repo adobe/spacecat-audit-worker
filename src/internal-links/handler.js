@@ -39,6 +39,7 @@ import {
 import { createAuditLogger } from '../common/context-logger.js';
 import BrightDataClient from '../support/bright-data-client.js';
 import { sleep } from '../support/utils.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
@@ -573,11 +574,13 @@ export const opportunityAndSuggestionsStep = async (context) => {
         return;
       }
 
-      suggestion.setData({
+      const updatedData = {
         ...suggestion.getData(),
         urlsSuggested,
         aiRationale: `The suggested URL is chosen based on top search results for closely matching keywords from the broken URL. Keywords used: "${keywords}".`,
-      });
+      };
+      warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
+      suggestion.setData(updatedData);
 
       await suggestion.save();
       resolvedByBrightData.add(brokenLink.suggestionId);

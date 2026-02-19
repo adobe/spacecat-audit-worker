@@ -32,6 +32,22 @@ export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
 ];
 
 /**
+ * Validates suggestion data against the Joi schema for the given opportunity type.
+ * Logs a warning if validation fails but does not block the operation.
+ *
+ * @param {Object} data - Suggestion data to validate.
+ * @param {string} opportunityType - The opportunity type from OPPORTUNITY_TYPES enum.
+ * @param {Object} log - Logger object.
+ */
+export function warnOnInvalidSuggestionData(data, opportunityType, log) {
+  try {
+    SuggestionDataAccess.validateData(data, opportunityType);
+  } catch (error) {
+    log.warn(`Suggestion data validation warning [${opportunityType}]: ${error.message}`);
+  }
+}
+
+/**
  * Safely stringify an object for logging, truncating large arrays to prevent
  * exceeding JavaScript's maximum string length.
  *
@@ -364,13 +380,7 @@ export async function syncSuggestions({
         const existingKey = buildKey(existing.getData());
         const newDataItem = newDataByKey.get(existingKey);
         const mergedData = mergeDataFunction(existing.getData(), newDataItem);
-
-        try {
-          SuggestionDataAccess.validateData(mergedData, opportunityType);
-        } catch (error) {
-          log.warn(`Validation warning for suggestion ${existing.getId?.()}: ${error.message}`);
-        }
-
+        warnOnInvalidSuggestionData(mergedData, opportunityType, log);
         existing.setData(mergedData);
 
         // Use the merge status function to determine if status should change
@@ -399,11 +409,7 @@ export async function syncSuggestions({
       };
     })
     .map((suggestion) => {
-      try {
-        SuggestionDataAccess.validateData(suggestion.data, opportunityType);
-      } catch (error) {
-        log.warn(`Validation warning for new suggestion: ${error.message}`);
-      }
+      warnOnInvalidSuggestionData(suggestion.data, opportunityType, log);
       return suggestion;
     });
 

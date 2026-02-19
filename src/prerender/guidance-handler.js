@@ -12,6 +12,7 @@
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { isPaidLLMOCustomer } from './utils/utils.js';
+import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
 
 const LOG_PREFIX = 'Prerender -';
 
@@ -192,6 +193,7 @@ export default async function handler(message, context) {
         valuable: isValuable,
       };
 
+      warnOnInvalidSuggestionData(updatedData, opportunity.getType(), log);
       existing.setData(updatedData);
       suggestionsToSave.push(existing);
     });
