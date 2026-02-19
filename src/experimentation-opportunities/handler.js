@@ -26,9 +26,9 @@ const IMPORT_ORGANIC_KEYWORDS = 'organic-keywords';
 
 const DAYS = 7;
 
-const HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE = 'high-organic-low-ctr';
-const RAGECLICK_OPPTY_TYPE = 'rageclick';
-const HIGH_INORGANIC_HIGH_BOUNCE_RATE_OPPTY_TYPE = 'high-inorganic-high-bounce-rate';
+export const HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE = 'high-organic-low-ctr';
+export const RAGECLICK_OPPTY_TYPE = 'rageclick';
+export const HIGH_INORGANIC_HIGH_BOUNCE_RATE_OPPTY_TYPE = 'high-inorganic-high-bounce-rate';
 
 const OPPTY_QUERIES = [
   RAGECLICK_OPPTY_TYPE,
