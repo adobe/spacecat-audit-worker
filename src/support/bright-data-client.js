@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { hasText, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { hasText, tracingFetch as fetch, prependSchema } from '@adobe/spacecat-shared-utils';
 
 /**
  * Locale allowlist: ISO 639-1 language codes + ISO 3166-1 country codes + common regional codes.
@@ -104,6 +104,25 @@ export function extractLocaleFromUrl(url) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Builds a locale-scoped search URL from a base URL and a broken link URL.
+ * If the base URL already has a subpath (e.g. https://example.com/uk), it is returned as-is.
+ * Otherwise, the locale is extracted from the broken link URL and appended if valid
+ * (e.g. https://example.com + /dk/broken-page → https://example.com/dk).
+ *
+ * @param {string} baseUrl - The site base URL (may already include a subpath)
+ * @param {string} brokenLinkUrl - The broken link URL to extract locale from
+ * @returns {string} - The locale-scoped search URL
+ */
+export function buildLocaleSearchUrl(baseUrl, brokenLinkUrl) {
+  const searchUrl = prependSchema(baseUrl);
+  const parsedBaseUrl = new URL(searchUrl);
+  const hasBaseSubpath = parsedBaseUrl.pathname && parsedBaseUrl.pathname !== '/';
+  if (hasBaseSubpath) return searchUrl;
+  const locale = extractLocaleFromUrl(brokenLinkUrl);
+  return locale ? `${searchUrl}/${locale}` : searchUrl;
 }
 
 /**

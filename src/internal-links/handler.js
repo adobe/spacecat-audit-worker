@@ -13,7 +13,7 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
   from '@adobe/spacecat-shared-data-access';
-import { isNonEmptyArray, prependSchema } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { isUnscrapeable, filterBrokenSuggestedUrls } from '../utils/url-utils.js';
@@ -37,7 +37,7 @@ import {
   cleanupBatchState,
 } from './batch-state.js';
 import { createAuditLogger } from '../common/context-logger.js';
-import BrightDataClient, { isValidLocale, extractLocaleFromUrl, localesMatch } from '../support/bright-data-client.js';
+import BrightDataClient, { buildLocaleSearchUrl, extractLocaleFromUrl, localesMatch } from '../support/bright-data-client.js';
 import { sleep } from '../support/utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -537,24 +537,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
     const brightDataClient = BrightDataClient.createFrom(context);
 
     const processBrokenLink = async (brokenLink) => {
-      // Start with base search URL (may already have subpath like /uk)
-      let searchUrl = prependSchema(finalUrl || site.getBaseURL());
-
-      // Parse base URL to check if it already has a subpath
-      const parsedBaseUrl = new URL(searchUrl);
-      const hasBaseSubpath = parsedBaseUrl.pathname && parsedBaseUrl.pathname !== '/';
-
-      // Only try to add locale if base URL doesn't already have a subpath
-      if (!hasBaseSubpath) {
-        // Extract locale from broken link
-        const localeSegment = extractPathPrefix(brokenLink.urlTo);
-        const localeCode = localeSegment.replace(/^\//, ''); // Remove leading slash
-
-        // Validate and add if valid
-        if (localeCode && isValidLocale(localeCode)) {
-          searchUrl = `${searchUrl}/${localeCode}`;
-        }
-      }
+      const searchUrl = buildLocaleSearchUrl(finalUrl || site.getBaseURL(), brokenLink.urlTo);
 
       const {
         results, keywords,

@@ -28,7 +28,7 @@ import {
   isUnscrapeable,
   urlsMatch,
 } from '../utils/url-utils.js';
-import BrightDataClient, { isValidLocale, extractLocaleFromUrl, localesMatch } from '../support/bright-data-client.js';
+import BrightDataClient, { buildLocaleSearchUrl, extractLocaleFromUrl, localesMatch } from '../support/bright-data-client.js';
 import { sleep } from '../support/utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -384,24 +384,7 @@ export const generateSuggestionData = async (context) => {
     const brightDataClient = BrightDataClient.createFrom(context);
 
     const processBrokenLink = async (brokenLink) => {
-      // Start with base search URL (may already have subpath like /uk)
-      let searchUrl = prependSchema(finalUrl || site.getBaseURL());
-
-      // Parse base URL to check if it already has a subpath
-      const parsedBaseUrl = new URL(searchUrl);
-      const hasBaseSubpath = parsedBaseUrl.pathname && parsedBaseUrl.pathname !== '/';
-
-      // Only try to add locale if base URL doesn't already have a subpath
-      if (!hasBaseSubpath) {
-        // Extract locale from broken link
-        const localeSegment = extractPathPrefix(brokenLink.urlTo);
-        const localeCode = localeSegment.replace(/^\//, ''); // Remove leading slash
-
-        // Validate and add if valid
-        if (localeCode && isValidLocale(localeCode)) {
-          searchUrl = `${searchUrl}/${localeCode}`;
-        }
-      }
+      const searchUrl = buildLocaleSearchUrl(finalUrl || site.getBaseURL(), brokenLink.urlTo);
 
       const {
         results, keywords,

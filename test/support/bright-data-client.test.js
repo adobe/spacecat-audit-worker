@@ -25,6 +25,7 @@ describe('BrightDataClient', () => {
   let BrightDataClient;
   let isValidLocale;
   let extractLocaleFromUrl;
+  let buildLocaleSearchUrl;
   let localesMatch;
   let client;
   let logMock;
@@ -49,7 +50,9 @@ describe('BrightDataClient', () => {
       },
     });
     BrightDataClient = BrightDataModule.default;
-    ({ isValidLocale, extractLocaleFromUrl, localesMatch } = BrightDataModule);
+    ({
+      isValidLocale, extractLocaleFromUrl, buildLocaleSearchUrl, localesMatch,
+    } = BrightDataModule);
 
     // Use the mocked BrightDataClient for client instance
     client = new BrightDataClient('test-api-key', 'test-zone', logMock);
@@ -501,6 +504,43 @@ describe('BrightDataClient', () => {
     it('handles URLs without scheme', () => {
       expect(extractLocaleFromUrl('example.com/dk/page')).to.equal('dk');
       expect(extractLocaleFromUrl('example.com/blog/page')).to.be.null;
+    });
+  });
+
+  describe('buildLocaleSearchUrl', () => {
+    it('appends locale from broken link when base URL has no subpath', () => {
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/dk/broken-page'))
+        .to.equal('https://example.com/dk');
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/fr/page'))
+        .to.equal('https://example.com/fr');
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/ko-kr/page'))
+        .to.equal('https://example.com/ko-kr');
+    });
+
+    it('returns base URL unchanged when base already has a subpath', () => {
+      expect(buildLocaleSearchUrl('https://example.com/uk', 'https://example.com/uk/broken'))
+        .to.equal('https://example.com/uk');
+      expect(buildLocaleSearchUrl('https://example.com/uk', 'https://example.com/fr/broken'))
+        .to.equal('https://example.com/uk');
+    });
+
+    it('returns base URL unchanged when broken link has no valid locale', () => {
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/blog/page'))
+        .to.equal('https://example.com');
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/products/item'))
+        .to.equal('https://example.com');
+    });
+
+    it('returns base URL unchanged when broken link is root', () => {
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com'))
+        .to.equal('https://example.com');
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/'))
+        .to.equal('https://example.com');
+    });
+
+    it('prepends schema to base URL without schema', () => {
+      expect(buildLocaleSearchUrl('example.com', 'https://example.com/dk/page'))
+        .to.equal('https://example.com/dk');
     });
   });
 
