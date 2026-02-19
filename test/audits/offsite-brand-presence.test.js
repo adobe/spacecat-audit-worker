@@ -92,7 +92,6 @@ describe('Offsite Brand Presence Handler', () => {
         }),
       },
       AuditUrl: {
-        findBySiteIdAndUrl: sandbox.stub().resolves(null),
         create: sandbox.stub().resolves({}),
       },
     };
@@ -860,10 +859,6 @@ describe('Offsite Brand Presence Handler', () => {
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      expect(dataAccess.AuditUrl.findBySiteIdAndUrl).to.have.been.calledWith(
-        SITE_ID,
-        'https://youtu.be/test',
-      );
       expect(dataAccess.AuditUrl.create).to.have.been.calledOnce;
       const createArg = dataAccess.AuditUrl.create.firstCall.args[0];
       expect(createArg.siteId).to.equal(SITE_ID);
@@ -872,8 +867,8 @@ describe('Offsite Brand Presence Handler', () => {
       expect(createArg.audits).to.deep.equal(['youtube-analysis']);
     });
 
-    it('should skip existing URLs in URL store', async () => {
-      dataAccess.AuditUrl.findBySiteIdAndUrl.resolves({ url: 'existing' });
+    it('should treat duplicate create conflicts as failures', async () => {
+      dataAccess.AuditUrl.create.rejects(new Error('Conditional check failed'));
 
       const providerResponses = setupWithYoutubeUrl();
       const responses = buildHappyResponses({
@@ -887,13 +882,12 @@ describe('Offsite Brand Presence Handler', () => {
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      expect(dataAccess.AuditUrl.create).to.not.have.been.called;
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/0 created, 1 skipped/),
+        sinon.match(/0 created, 1 failed/),
       );
     });
 
-    it('should handle URL store create failure gracefully', async () => {
+    it('should handle URL store create lookup-style failure gracefully', async () => {
       dataAccess.AuditUrl.create.rejects(new Error('DynamoDB error'));
 
       const providerResponses = setupWithYoutubeUrl();
@@ -913,12 +907,12 @@ describe('Offsite Brand Presence Handler', () => {
         sinon.match(/Failed to add URL to store/),
       );
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/0 created, 0 skipped, 1 failed/),
+        sinon.match(/0 created, 1 failed/),
       );
     });
 
-    it('should handle URL store findBySiteIdAndUrl failure gracefully', async () => {
-      dataAccess.AuditUrl.findBySiteIdAndUrl.rejects(new Error('Lookup error'));
+    it('should handle URL store create failure gracefully', async () => {
+      dataAccess.AuditUrl.create.rejects(new Error('Lookup error'));
 
       const providerResponses = setupWithYoutubeUrl();
       const responses = buildHappyResponses({

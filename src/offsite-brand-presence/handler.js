@@ -47,7 +47,6 @@ const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})-.*\.json$/;
 
 const URL_STORE_STATUS = Object.freeze({
   CREATED: 'created',
-  SKIPPED: 'skipped',
   FAILED: 'failed',
 });
 
@@ -134,9 +133,9 @@ async function fetchBrandPresenceData(siteId, fileName, env, log) {
   let offset = 0;
   let hasMore = true;
 
+  log.info(`${LOG_PREFIX} Fetching brand presence data from: ${baseUrl}`);
   while (hasMore) {
     const url = `${baseUrl}&limit=${FETCH_PAGE_SIZE}&offset=${offset}`;
-    log.info(`${LOG_PREFIX} Fetching brand presence data from: ${url}`);
 
     // eslint-disable-next-line no-await-in-loop
     const response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
@@ -388,9 +387,6 @@ async function addUrlsToUrlStore(siteId, urlsByDomain, dataAccess, log) {
   const results = await Promise.all(
     urlEntries.map(async (entry) => {
       try {
-        const existing = await AuditUrl.findBySiteIdAndUrl(siteId, entry.url);
-        if (existing) return URL_STORE_STATUS.SKIPPED;
-
         await AuditUrl.create({
           siteId,
           url: entry.url,
@@ -408,19 +404,16 @@ async function addUrlsToUrlStore(siteId, urlsByDomain, dataAccess, log) {
   );
 
   let createdCount = 0;
-  let skippedCount = 0;
   let failCount = 0;
   for (const status of results) {
     if (status === URL_STORE_STATUS.CREATED) {
       createdCount += 1;
-    } else if (status === URL_STORE_STATUS.SKIPPED) {
-      skippedCount += 1;
     } else {
       failCount += 1;
     }
   }
 
-  log.info(`${LOG_PREFIX} URL store complete: ${createdCount} created, ${skippedCount} skipped, ${failCount} failed`);
+  log.info(`${LOG_PREFIX} URL store complete: ${createdCount} created, ${failCount} failed`);
 }
 
 /**
@@ -487,10 +480,6 @@ async function triggerDrsScraping(urlsByDomain, imsOrgId, brand, env, log) {
   // Submit all jobs in parallel
   const settled = await Promise.allSettled(
     jobs.map(async ({ domain, datasetId, payload }) => {
-      log.info(
-        `${LOG_PREFIX} Triggering DRS job: domain=${domain}, dataset=${datasetId}, urls=${payload.parameters.urls.length}`,
-      );
-
       const response = await fetch(`${drsApiUrl}/jobs`, {
         method: 'POST',
         headers: {
