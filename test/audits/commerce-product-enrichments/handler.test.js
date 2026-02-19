@@ -16,6 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 
+import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import {
   importTopPages,
   submitForScraping,
@@ -51,6 +52,7 @@ describe('Commerce Product Enrichments Handler', () => {
   let fetchStub;
 
   beforeEach(() => {
+    sinon.stub(Config, 'toDynamoItem').returns({});
     fetchStub = sinon.stub(global, 'fetch');
 
     log = {
@@ -64,8 +66,12 @@ describe('Commerce Product Enrichments Handler', () => {
       getId: sinon.stub().returns('site-1'),
       getConfig: sinon.stub().returns({
         getIncludedURLs: sinon.stub().resolves([]),
+        getExcludedURLs: sinon.stub().returns([]),
+        updateExcludedURLs: sinon.stub(),
         getHandlers: sinon.stub().returns({}),
       }),
+      setConfig: sinon.stub(),
+      save: sinon.stub().resolves(),
     };
 
     dataAccess = {
@@ -167,6 +173,7 @@ describe('Commerce Product Enrichments Handler', () => {
         'https://example.com/page-1',
         'https://example.com/page-2',
       ]),
+      getExcludedURLs: sinon.stub().returns([]),
     });
 
     const context = {
@@ -197,6 +204,64 @@ describe('Commerce Product Enrichments Handler', () => {
     });
   });
 
+  it('submitForScraping filters out excluded URLs from top pages', async () => {
+    dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+      { getUrl: () => 'https://example.com/page-1' },
+      { getUrl: () => 'https://example.com/page-2' },
+      { getUrl: () => 'https://example.com/page-3' },
+    ]);
+
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([]),
+      getExcludedURLs: sinon.stub().returns(['https://example.com/page-2']),
+    });
+
+    const result = await submitForScraping({ site, dataAccess, log });
+
+    expect(result.urls).to.deep.equal([
+      { url: 'https://example.com/page-1' },
+      { url: 'https://example.com/page-3' },
+    ]);
+  });
+
+  it('submitForScraping does not exclude manually included URLs', async () => {
+    dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+      { getUrl: () => 'https://example.com/page-1' },
+    ]);
+
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves(['https://example.com/included-page']),
+      getExcludedURLs: sinon.stub().returns([
+        'https://example.com/page-1',
+        'https://example.com/included-page',
+      ]),
+    });
+
+    const result = await submitForScraping({ site, dataAccess, log });
+
+    // page-1 is excluded (came from top pages), but included-page passes through
+    expect(result.urls).to.deep.equal([
+      { url: 'https://example.com/included-page' },
+    ]);
+  });
+
+  it('submitForScraping handles undefined getExcludedURLs gracefully', async () => {
+    dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+      { getUrl: () => 'https://example.com/page-1' },
+    ]);
+
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([]),
+      // no getExcludedURLs method
+    });
+
+    const result = await submitForScraping({ site, dataAccess, log });
+
+    expect(result.urls).to.deep.equal([
+      { url: 'https://example.com/page-1' },
+    ]);
+  });
+
   it('submitForScraping ignores limit from context.data', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
@@ -207,6 +272,7 @@ describe('Commerce Product Enrichments Handler', () => {
 
     site.getConfig.returns({
       getIncludedURLs: sinon.stub().resolves([]),
+      getExcludedURLs: sinon.stub().returns([]),
     });
 
     const context = {
@@ -233,6 +299,7 @@ describe('Commerce Product Enrichments Handler', () => {
 
     site.getConfig.returns({
       getIncludedURLs: sinon.stub().resolves([]),
+      getExcludedURLs: sinon.stub().returns([]),
     });
 
     const context = {
@@ -258,6 +325,7 @@ describe('Commerce Product Enrichments Handler', () => {
 
     site.getConfig.returns({
       getIncludedURLs: sinon.stub().resolves([]),
+      getExcludedURLs: sinon.stub().returns([]),
     });
 
     const context = {
@@ -283,6 +351,7 @@ describe('Commerce Product Enrichments Handler', () => {
 
     site.getConfig.returns({
       getIncludedURLs: sinon.stub().resolves([]),
+      getExcludedURLs: sinon.stub().returns([]),
     });
 
     const context = {
@@ -307,6 +376,7 @@ describe('Commerce Product Enrichments Handler', () => {
 
     site.getConfig.returns({
       getIncludedURLs: sinon.stub().resolves([]),
+      getExcludedURLs: sinon.stub().returns([]),
     });
 
     const context = {
@@ -333,6 +403,7 @@ describe('Commerce Product Enrichments Handler', () => {
 
     site.getConfig.returns({
       getIncludedURLs: sinon.stub().resolves([]),
+      getExcludedURLs: sinon.stub().returns([]),
     });
 
     const context = {
@@ -753,6 +824,8 @@ describe('Commerce Product Enrichments Handler', () => {
     });
 
     site.getConfig.returns({
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
       getHandlers: sinon.stub().returns({
         'commerce-product-enrichments': {
           instanceType: 'ACCS',
@@ -865,6 +938,8 @@ describe('Commerce Product Enrichments Handler', () => {
     });
 
     site.getConfig.returns({
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
       getHandlers: sinon.stub().returns({
         'commerce-product-enrichments': {
           instanceType: 'ACCS',
@@ -1020,6 +1095,8 @@ describe('Commerce Product Enrichments Handler', () => {
     });
 
     site.getConfig.returns({
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
       getHandlers: sinon.stub().returns({
         'commerce-product-enrichments': {
           instanceType: 'ACCS',
@@ -1348,6 +1425,8 @@ describe('Commerce Product Enrichments Handler', () => {
     });
 
     site.getConfig.returns({
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
       getHandlers: sinon.stub().returns({
         'commerce-product-enrichments': {
           instanceType: 'ACCS',
@@ -1445,6 +1524,319 @@ describe('Commerce Product Enrichments Handler', () => {
 
     // Verify audit result shows 2 product pages
     expect(result.auditResult.productPages).to.equal(2);
+  });
+
+  it('runAuditAndProcessResults persists non-product URLs as excluded', async () => {
+    const mockConfig = {
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    };
+    site.getConfig.returns(mockConfig);
+
+    const s3Client = { send: sinon.stub() };
+
+    // Product page
+    s3Client.send.onCall(0).resolves({
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sinon.stub().resolves(JSON.stringify({
+          scrapeResult: {
+            structuredData: { jsonld: { Product: [{ sku: 'SKU-1' }] } },
+          },
+        })),
+      },
+    });
+
+    // Non-product page
+    s3Client.send.onCall(1).resolves({
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sinon.stub().resolves(JSON.stringify({
+          scrapeResult: {},
+        })),
+      },
+    });
+
+    // Another non-product page
+    s3Client.send.onCall(2).resolves({
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sinon.stub().resolves(JSON.stringify({
+          scrapeResult: {},
+        })),
+      },
+    });
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/product-1', 'scrapes/site-1/product-1/scrape.json'],
+      ['https://example.com/about', 'scrapes/site-1/about/scrape.json'],
+      ['https://example.com/blog', 'scrapes/site-1/blog/scrape.json'],
+    ]);
+
+    await runAuditAndProcessResults({
+      site,
+      audit: { getId: () => 'audit-excl-1' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      scrapeResultPaths,
+    });
+
+    expect(mockConfig.updateExcludedURLs).to.have.been.calledOnce;
+    const [auditType, urls] = mockConfig.updateExcludedURLs.firstCall.args;
+    expect(auditType).to.equal('commerce-product-enrichments');
+    expect(urls).to.have.members([
+      'https://example.com/about',
+      'https://example.com/blog',
+    ]);
+    expect(site.setConfig).to.have.been.calledOnce;
+    expect(site.save).to.have.been.calledOnce;
+  });
+
+  it('runAuditAndProcessResults does not exclude failed pages', async () => {
+    const mockConfig = {
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    };
+    site.getConfig.returns(mockConfig);
+
+    const s3Client = { send: sinon.stub() };
+
+    // Non-product page (success)
+    s3Client.send.onCall(0).resolves({
+      ContentType: 'application/json',
+      Body: {
+        transformToString: sinon.stub().resolves(JSON.stringify({
+          scrapeResult: {},
+        })),
+      },
+    });
+
+    // Failed page (S3 error)
+    s3Client.send.onCall(1).rejects(new Error('S3 read error'));
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/category', 'scrapes/site-1/category/scrape.json'],
+      ['https://example.com/broken', 'scrapes/site-1/broken/scrape.json'],
+    ]);
+
+    await runAuditAndProcessResults({
+      site,
+      audit: { getId: () => 'audit-excl-2' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      scrapeResultPaths,
+    });
+
+    // Only the successful non-product page should be excluded, not the failed one
+    const [, urls] = mockConfig.updateExcludedURLs.firstCall.args;
+    expect(urls).to.deep.equal(['https://example.com/category']);
+    expect(urls).to.not.include('https://example.com/broken');
+  });
+
+  it('runAuditAndProcessResults merges with existing excluded URLs', async () => {
+    const mockConfig = {
+      getExcludedURLs: sinon.stub().returns([
+        'https://example.com/old-excluded-1',
+        'https://example.com/old-excluded-2',
+      ]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    };
+    site.getConfig.returns(mockConfig);
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {},
+          })),
+        },
+      }),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/new-non-product', 'scrapes/site-1/new/scrape.json'],
+    ]);
+
+    await runAuditAndProcessResults({
+      site,
+      audit: { getId: () => 'audit-excl-3' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      scrapeResultPaths,
+    });
+
+    const [, urls] = mockConfig.updateExcludedURLs.firstCall.args;
+    expect(urls).to.have.lengthOf(3);
+    expect(urls).to.include('https://example.com/old-excluded-1');
+    expect(urls).to.include('https://example.com/old-excluded-2');
+    expect(urls).to.include('https://example.com/new-non-product');
+  });
+
+  it('runAuditAndProcessResults deduplicates excluded URLs', async () => {
+    const mockConfig = {
+      getExcludedURLs: sinon.stub().returns([
+        'https://example.com/already-excluded',
+      ]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    };
+    site.getConfig.returns(mockConfig);
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {},
+          })),
+        },
+      }),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/already-excluded', 'scrapes/site-1/already/scrape.json'],
+    ]);
+
+    await runAuditAndProcessResults({
+      site,
+      audit: { getId: () => 'audit-excl-4' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      scrapeResultPaths,
+    });
+
+    const [, urls] = mockConfig.updateExcludedURLs.firstCall.args;
+    expect(urls).to.have.lengthOf(1);
+    expect(urls).to.deep.equal(['https://example.com/already-excluded']);
+  });
+
+  it('runAuditAndProcessResults handles getExcludedURLs returning undefined', async () => {
+    const mockConfig = {
+      getExcludedURLs: sinon.stub().returns(undefined),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    };
+    site.getConfig.returns(mockConfig);
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {},
+          })),
+        },
+      }),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page', 'scrapes/site-1/page/scrape.json'],
+    ]);
+
+    await runAuditAndProcessResults({
+      site,
+      audit: { getId: () => 'audit-excl-undef' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      scrapeResultPaths,
+    });
+
+    const [, urls] = mockConfig.updateExcludedURLs.firstCall.args;
+    expect(urls).to.deep.equal(['https://example.com/page']);
+  });
+
+  it('runAuditAndProcessResults handles config save failure gracefully', async () => {
+    const mockConfig = {
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    };
+    site.getConfig.returns(mockConfig);
+    site.save.rejects(new Error('DynamoDB write failed'));
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {},
+          })),
+        },
+      }),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/page', 'scrapes/site-1/page/scrape.json'],
+    ]);
+
+    const result = await runAuditAndProcessResults({
+      site,
+      audit: { getId: () => 'audit-excl-5' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      scrapeResultPaths,
+    });
+
+    // Audit should still complete despite save failure
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(log.error).to.have.been.calledWith(
+      sinon.match(/Failed to persist excludedURLs/),
+    );
+  });
+
+  it('runAuditAndProcessResults skips persistence when all pages are products', async () => {
+    const mockConfig = {
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    };
+    site.getConfig.returns(mockConfig);
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            scrapeResult: {
+              structuredData: { jsonld: { Product: [{ sku: 'SKU-1' }] } },
+            },
+          })),
+        },
+      }),
+    };
+
+    const scrapeResultPaths = new Map([
+      ['https://example.com/product', 'scrapes/site-1/product/scrape.json'],
+    ]);
+
+    await runAuditAndProcessResults({
+      site,
+      audit: { getId: () => 'audit-excl-6' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      scrapeResultPaths,
+    });
+
+    // updateExcludedURLs should not be called when there are no non-product pages
+    expect(mockConfig.updateExcludedURLs).to.not.have.been.called;
   });
 
 });
