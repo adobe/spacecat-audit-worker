@@ -14,6 +14,21 @@ import { isoCalendarWeek, tracingFetch as fetch } from '@adobe/spacecat-shared-u
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getImsOrgId } from '../utils/data-access.js';
+import {
+  DRS_TOP_URLS_LIMIT,
+  FETCH_CONCURRENCY,
+  FETCH_PAGE_SIZE,
+  FETCH_TIMEOUT_MS,
+  INCLUDE_COLUMNS,
+  REDDIT_COMMENTS_DAYS_BACK,
+} from './constants.js';
+
+export {
+  DRS_TOP_URLS_LIMIT,
+  FETCH_PAGE_SIZE,
+  INCLUDE_COLUMNS,
+  REDDIT_COMMENTS_DAYS_BACK,
+};
 
 const LOG_PREFIX = '[OffsiteBrandPresence]';
 
@@ -30,6 +45,16 @@ export const PROVIDERS = Object.freeze([
 const PROVIDERS_SET = new Set(PROVIDERS);
 const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})-.*\.json$/;
 
+const URL_STORE_STATUS = Object.freeze({
+  CREATED: 'created',
+  SKIPPED: 'skipped',
+  FAILED: 'failed',
+});
+
+const DOMAIN_ALIASES = Object.freeze({
+  'youtu.be': 'youtube.com',
+});
+
 const OFFSITE_DOMAINS = Object.freeze({
   'youtube.com': {
     auditType: 'youtube-analysis',
@@ -39,10 +64,11 @@ const OFFSITE_DOMAINS = Object.freeze({
     auditType: 'reddit-analysis',
     datasetIds: ['reddit_posts', 'reddit_comments'],
   },
-  'wikipedia.com': {
-    auditType: 'wikipedia-analysis',
-    datasetIds: ['wikipedia_placeholder'], // TODO: Update this to the actual dataset ID
-  },
+  // TODO uncomment this when we have a Wikipedia dataset ID
+  // 'wikipedia.org': {
+  //   auditType: 'wikipedia-analysis',
+  //   datasetIds: ['wikipedia_placeholder'],
+  // },
 });
 
 /**
@@ -53,19 +79,6 @@ function getPreviousWeek() {
   const now = new Date();
   now.setUTCDate(now.getUTCDate() - 7);
   return isoCalendarWeek(now);
-}
-
-/**
- * Builds the standard headers for Spacecat API requests.
- *
- * @param {string} apiKey - The Spacecat API key
- * @returns {object} Headers object
- */
-function buildSpacecatHeaders(apiKey) {
-  return {
-    'Content-Type': 'application/json',
-    'x-api-key': apiKey,
-  };
 }
 
 /**
@@ -84,7 +97,8 @@ async function fetchQueryIndex(siteId, env, log) {
   log.info(`${LOG_PREFIX} Fetching query-index from: ${url}`);
 
   try {
-    const response = await fetch(url, { headers: buildSpacecatHeaders(apiKey) });
+    const headers = { 'x-api-key': apiKey };
+    const response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
 
     if (!response.ok) {
       log.warn(`${LOG_PREFIX} Failed to fetch query-index: ${response.status}`);
@@ -100,6 +114,8 @@ async function fetchQueryIndex(siteId, env, log) {
 
 /**
  * Fetches brand presence JSON data for a specific file via the Spacecat API.
+ * Uses pagination (limit/offset) to handle large files that would otherwise
+ * exceed the API's response size limit (HTTP 413).
  *
  * @param {string} siteId - The site ID
  * @param {string} fileName - The brand presence file path relative to the llmo data directory
@@ -111,18 +127,47 @@ async function fetchQueryIndex(siteId, env, log) {
 async function fetchBrandPresenceData(siteId, fileName, env, log) {
   const apiBase = env.SPACECAT_API_URI;
   const apiKey = env.SPACECAT_API_KEY;
-  const url = `${apiBase}/sites/${siteId}/llmo/data/${fileName}`;
+  const headers = { 'x-api-key': apiKey };
+  const baseUrl = `${apiBase}/sites/${siteId}/llmo/data/${fileName}?sheet=all&include=${INCLUDE_COLUMNS}`;
 
-  log.info(`${LOG_PREFIX} Fetching brand presence data from: ${url}`);
+  const allRows = [];
+  let offset = 0;
+  let hasMore = true;
 
-  const response = await fetch(url, { headers: buildSpacecatHeaders(apiKey) });
+  while (hasMore) {
+    const url = `${baseUrl}&limit=${FETCH_PAGE_SIZE}&offset=${offset}`;
+    log.info(`${LOG_PREFIX} Fetching brand presence data from: ${url}`);
 
-  if (!response.ok) {
-    log.warn(`${LOG_PREFIX} Failed to fetch data for ${fileName}: ${response.status}`);
-    return null;
+    // eslint-disable-next-line no-await-in-loop
+    const response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
+
+    if (!response.ok) {
+      // eslint-disable-next-line no-await-in-loop
+      const errorBody = await response.text().catch(() => '(unable to read body)');
+      log.warn(`${LOG_PREFIX} Failed to fetch data for ${fileName}: ${response.status}`, {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        responseBody: errorBody,
+      });
+      if (allRows.length === 0) {
+        return null;
+      }
+      break;
+    }
+
+    // eslint-disable-next-line no-await-in-loop
+    const data = await response.json();
+    const rows = data?.data || [];
+    allRows.push(...rows);
+
+    if (rows.length < FETCH_PAGE_SIZE) {
+      hasMore = false;
+    } else {
+      offset += FETCH_PAGE_SIZE;
+    }
   }
-
-  return response.json();
+  return { data: allRows };
 }
 
 /**
@@ -132,9 +177,10 @@ async function fetchBrandPresenceData(siteId, fileName, env, log) {
  *
  * @param {object} entry - A single query-index entry
  * @param {number} targetWeek - The target week number to match
+ * @param {number} targetYear - The target year to match
  * @returns {string|null} The matched file path, or null
  */
-function matchBrandPresenceEntry(entry, targetWeek) {
+function matchBrandPresenceEntry(entry, targetWeek, targetYear) {
   if (!entry?.path) return null;
 
   const bpIdx = entry.path.indexOf('brand-presence/');
@@ -144,10 +190,12 @@ function matchBrandPresenceEntry(entry, targetWeek) {
   const match = filePath.match(BRAND_PRESENCE_REGEX);
   if (!match) return null;
 
-  const [, providerId, weekStr] = match;
+  const [, providerId, weekStr, yearStr] = match;
   const fileWeek = Number.parseInt(weekStr, 10);
+  const fileYear = Number.parseInt(yearStr, 10);
+  const yearMatches = fileYear === targetYear;
 
-  if (fileWeek === targetWeek && PROVIDERS_SET.has(providerId)) {
+  if (fileWeek === targetWeek && yearMatches && PROVIDERS_SET.has(providerId)) {
     return filePath;
   }
   return null;
@@ -156,17 +204,19 @@ function matchBrandPresenceEntry(entry, targetWeek) {
 /**
  * Filters brand presence file paths from the query-index response.
  * Only returns files matching the pattern brandpresence-{provider}-w{week}-{year}-*.json
- * where the provider is in PROVIDERS and the week matches the target week.
+ * where the provider is in PROVIDERS and both week and year match the targets.
  *
  * @param {object} queryIndex - The parsed query-index response
  * @param {number} targetWeek - The target week number to match
+ * @param {number} targetYear - The target year to match
  * @returns {string[]} Matched file paths relative to the llmo data directory
  */
-export function filterBrandPresenceFiles(queryIndex, targetWeek) {
+export function filterBrandPresenceFiles(queryIndex, targetWeek, targetYear) {
   const entries = queryIndex?.data || [];
   const matched = [];
+
   for (const entry of entries) {
-    const filePath = matchBrandPresenceEntry(entry, targetWeek);
+    const filePath = matchBrandPresenceEntry(entry, targetWeek, targetYear);
     if (filePath) {
       matched.push(filePath);
     }
@@ -175,62 +225,102 @@ export function filterBrandPresenceFiles(queryIndex, targetWeek) {
 }
 
 /**
- * Checks if a hostname matches one of the offsite domains.
+ * Normalizes a YouTube URL to keep only essential identifiers.
+ * URL store canonicalizes URLs before storing, so we use the short form to match.
+ * - /watch?v=VIDEO_ID → converts to short form https://youtu.be/VIDEO_ID
+ * - /shorts/SHORT_ID → strips all query params
  *
- * @param {string} hostname - The hostname to check
- * @param {string} domain - The target domain to match against
- * @returns {boolean} True if the hostname matches the domain
+ * @param {URL} parsed - Parsed URL object
+ * @returns {string} Normalized URL
  */
-function matchesDomain(hostname, domain) {
-  return hostname === domain || hostname.endsWith(`.${domain}`);
+function normalizeYoutubeUrl(parsed) {
+  const { pathname } = parsed;
+
+  if (pathname.startsWith('/watch')) {
+    const videoId = parsed.searchParams.get('v');
+    if (videoId) {
+      return `https://youtu.be/${videoId}`;
+    }
+  }
+
+  if (pathname.startsWith('/shorts/')) {
+    return `${parsed.origin}${pathname}`;
+  }
+
+  // For other YouTube URLs (channels, playlists, etc.), strip query params
+  return `${parsed.origin}${pathname}`;
 }
 
 /**
- * Extracts the hostname from a URL string using lightweight string parsing.
- * Avoids the overhead of `new URL()` for high-volume classification.
+ * Normalizes a parsed URL based on its domain to remove unnecessary query parameters
+ * and ensure consistent formatting.
  *
- * @param {string} url - The URL to parse
- * @returns {string|null} The lowercase hostname, or null if unparseable
+ * @param {URL} parsed - Parsed URL object
+ * @param {string} domain - The matched domain (youtube.com, reddit.com, wikipedia.org)
+ * @returns {string} The normalized URL
  */
-function extractHostname(url) {
-  const protoEnd = url.indexOf('://');
-  if (protoEnd === -1) return null;
+function normalizeUrl(parsed, domain) {
+  let url;
+  switch (domain) {
+    case 'youtube.com':
+      url = normalizeYoutubeUrl(parsed);
+      break;
+    default:
+      url = `${parsed.origin}${parsed.pathname}`;
+      break;
+  }
 
-  const afterProto = url.substring(protoEnd + 3);
-  // Hostname ends at the first '/', '?', '#', or ':' (port), or end of string
-  const endIdx = afterProto.search(/[/:?#]/);
-  const hostname = endIdx === -1 ? afterProto : afterProto.substring(0, endIdx);
+  // Remove trailing slash (unless it's just the domain)
+  if (url.endsWith('/') && parsed.pathname !== '/') {
+    url = url.slice(0, -1);
+  }
 
-  return hostname.length > 0 ? hostname.toLowerCase() : null;
+  return url;
 }
 
 /**
  * Classifies a single URL into its matching offsite domain, if any.
+ * Normalizes the URL to remove unnecessary query parameters.
  *
  * @param {string} url - The URL to classify
- * @returns {{ domain: string, url: string } | null} The matched domain and URL, or null
+ * @returns {{ domain: string, url: string } | null} The matched domain and normalized URL, or null
  */
 function classifyUrl(url) {
-  const hostname = extractHostname(url);
-  if (!hostname) return null;
+  let parsed;
+  try {
+    parsed = new URL(url);
+    // Ensure https protocol
+    parsed.protocol = 'https:';
+  } catch {
+    return null;
+  }
 
+  const { hostname } = parsed;
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
-    if (matchesDomain(hostname, domain)) {
-      return { domain, url };
+    if (hostname === domain || hostname.endsWith(`.${domain}`)) {
+      const normalizedUrl = normalizeUrl(parsed, domain);
+      return { domain, url: normalizedUrl };
     }
   }
+
+  const aliasedDomain = DOMAIN_ALIASES[hostname];
+  if (aliasedDomain) {
+    const normalizedUrl = normalizeUrl(parsed, aliasedDomain);
+    return { domain: aliasedDomain, url: normalizedUrl };
+  }
+
   return null;
 }
 
 /**
  * Classifies all URLs from a semicolon-separated sources string
- * and adds matching ones to the urlsByDomain map.
+ * and increments the occurrence count for matching ones in the urlsByDomain map.
  *
- * @param {string} sources - Semicolon-separated URL string
- * @param {object} urlsByDomain - Map of domain to Set of URLs (mutated in place)
+ * @param {string} sources - Semicolon or newline separated URL string
+ * @param {object} urlsByDomain - Map of domain to Map<url, count> (mutated in place)
  */
 function classifySources(sources, urlsByDomain) {
-  for (const raw of sources.split(';')) {
+  for (const raw of sources.split(/[;\n]/)) {
     const url = raw.trim();
     if (!url) {
       // eslint-disable-next-line no-continue
@@ -238,28 +328,33 @@ function classifySources(sources, urlsByDomain) {
     }
     const match = classifyUrl(url);
     if (match) {
-      urlsByDomain[match.domain].add(match.url);
+      const domainMap = urlsByDomain[match.domain];
+      domainMap.set(match.url, (domainMap.get(match.url) || 0) + 1);
     }
   }
 }
 
 /**
- * Extracts URLs matching offsite domains (youtube.com, reddit.com, wikipedia.com)
+ * Extracts URLs matching offsite domains (youtube.com, reddit.com, wikipedia.org)
  * from the "all" sheet of brand presence data. Sources are semicolon-separated URL lists.
+ * Each URL's occurrence count is tracked across all rows.
  *
  * @param {object} data - Brand presence JSON data (expects an "all" key)
  * @param {object} log - Logger instance
- * @returns {object} Map of domain to Set of matching URLs
+ * @returns {object} Map of domain to Map<url, count>
  */
 function extractOffsiteUrls(data, log) {
   const urlsByDomain = {};
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
-    urlsByDomain[domain] = new Set();
+    urlsByDomain[domain] = new Map();
   }
 
-  const rows = data?.all?.data || [];
+  const rows = data.data;
   for (const row of rows) {
-    classifySources(row.Sources || '', urlsByDomain);
+    const sources = row.Sources?.trim();
+    if (sources && row.Region === 'US' && row.Mentions === 'true' && row.Citations === 'true') {
+      classifySources(sources, urlsByDomain);
+    }
   }
 
   for (const [domain, urls] of Object.entries(urlsByDomain)) {
@@ -270,46 +365,62 @@ function extractOffsiteUrls(data, log) {
 }
 
 /**
- * Adds offsite URLs to the URL store via the Spacecat API.
+ * Adds offsite URLs to the URL store via dataAccess.
  * Each URL is tagged with the appropriate audit type based on its domain.
  *
  * @param {string} siteId - The site ID
- * @param {object} urlsByDomain - Map of domain to Set of URLs
- * @param {object} env - Environment variables
+ * @param {object} urlsByDomain - Map of domain to Map<url, count>
+ * @param {object} dataAccess - Data access layer from context
  * @param {object} log - Logger instance
  */
-async function addUrlsToUrlStore(siteId, urlsByDomain, env, log) {
+async function addUrlsToUrlStore(siteId, urlsByDomain, dataAccess, log) {
+  const { AuditUrl } = dataAccess;
   const urlEntries = [];
-  for (const [domain, urls] of Object.entries(urlsByDomain)) {
+  for (const [domain, urlCounts] of Object.entries(urlsByDomain)) {
     const { auditType } = OFFSITE_DOMAINS[domain];
-    for (const url of urls) {
-      urlEntries.push({
-        url,
-        byCustomer: false,
-        audits: [auditType],
-      });
+    for (const url of urlCounts.keys()) {
+      urlEntries.push({ url, audits: [auditType] });
     }
   }
 
-  const endpoint = `${env.SPACECAT_API_URI}/sites/${siteId}/url-store`;
-  log.info(`${LOG_PREFIX} Adding ${urlEntries.length} URLs to URL store at ${endpoint}`);
+  log.info(`${LOG_PREFIX} Adding ${urlEntries.length} URLs to URL store`);
 
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: buildSpacecatHeaders(env.SPACECAT_API_KEY),
-      body: JSON.stringify(urlEntries),
-    });
+  const results = await Promise.all(
+    urlEntries.map(async (entry) => {
+      try {
+        const existing = await AuditUrl.findBySiteIdAndUrl(siteId, entry.url);
+        if (existing) return URL_STORE_STATUS.SKIPPED;
 
-    if (response.ok) {
-      log.info(`${LOG_PREFIX} Successfully added ${urlEntries.length} URLs to URL store`);
+        await AuditUrl.create({
+          siteId,
+          url: entry.url,
+          byCustomer: false,
+          audits: entry.audits,
+          createdBy: 'system',
+          updatedBy: 'system',
+        });
+        return URL_STORE_STATUS.CREATED;
+      } catch (error) {
+        log.warn(`${LOG_PREFIX} Failed to add URL to store: ${entry.url} - ${error.message}`);
+        return URL_STORE_STATUS.FAILED;
+      }
+    }),
+  );
+
+  let createdCount = 0;
+  let skippedCount = 0;
+  let failCount = 0;
+  for (const status of results) {
+    if (status === URL_STORE_STATUS.CREATED) {
+      createdCount += 1;
+    } else if (status === URL_STORE_STATUS.SKIPPED) {
+      skippedCount += 1;
     } else {
-      const text = await response.text();
-      log.error(`${LOG_PREFIX} Failed to add URLs to URL store: ${response.status} - ${text}`);
+      failCount += 1;
     }
-  } catch (error) {
-    log.error(`${LOG_PREFIX} Error adding URLs to URL store: ${error.message}`);
   }
+
+  log.info(`${LOG_PREFIX} URL store complete: ${createdCount} created, ${skippedCount} skipped, ${failCount} failed`);
 }
 
 /**
@@ -355,8 +466,8 @@ async function triggerDrsScraping(urlsByDomain, imsOrgId, brand, env, log) {
         },
       };
 
-      if (domain === 'reddit.com') {
-        parameters.days_back = 30;
+      if (datasetId === 'reddit_comments') {
+        parameters.days_back = REDDIT_COMMENTS_DAYS_BACK;
       }
 
       jobs.push({
@@ -391,7 +502,7 @@ async function triggerDrsScraping(urlsByDomain, imsOrgId, brand, env, log) {
 
       if (response.ok) {
         const result = await response.json();
-        log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result.jobId}`);
+        log.info(`${LOG_PREFIX} DRS job created for ${domain}/${datasetId}: jobId=${result.job_id}`);
         return {
           domain, datasetId, status: 'success', response: result,
         };
@@ -418,37 +529,46 @@ async function triggerDrsScraping(urlsByDomain, imsOrgId, brand, env, log) {
 }
 
 /**
- * Fetches all matched brand presence files in parallel and aggregates
+ * Fetches matched brand presence files in batches and aggregates
  * the offsite URLs found across all files into a single map.
+ * Tracks occurrence counts across all providers/files.
+ * Limits concurrency to avoid overwhelming the API with parallel requests.
  *
  * @param {string} siteId - The site ID
  * @param {string[]} matchedFiles - File paths to fetch
  * @param {object} env - Environment variables
  * @param {object} log - Logger instance
- * @returns {Promise<object>} Map of domain to Set of URLs
+ * @returns {Promise<object>} Map of domain to Map<url, count>
  */
 async function fetchAndAggregateUrls(siteId, matchedFiles, env, log) {
   const aggregatedUrls = {};
   for (const domain of Object.keys(OFFSITE_DOMAINS)) {
-    aggregatedUrls[domain] = new Set();
+    aggregatedUrls[domain] = new Map();
   }
 
-  const fetchResults = await Promise.allSettled(
-    matchedFiles.map((filePath) => fetchBrandPresenceData(siteId, filePath, env, log)),
-  );
+  for (let i = 0; i < matchedFiles.length; i += FETCH_CONCURRENCY) {
+    const batch = matchedFiles.slice(i, i + FETCH_CONCURRENCY);
+    // eslint-disable-next-line no-await-in-loop
+    const fetchResults = await Promise.allSettled(
+      batch.map((filePath) => fetchBrandPresenceData(siteId, filePath, env, log)),
+    );
 
-  for (const entry of fetchResults) {
-    if (entry.status === 'rejected') {
-      log.error(`${LOG_PREFIX} Error fetching brand presence file: ${entry.reason.message}`);
-    }
-    if (entry.status !== 'fulfilled' || !entry.value) {
-      // eslint-disable-next-line no-continue
-      continue;
-    }
-    const urlsByDomain = extractOffsiteUrls(entry.value, log);
-    for (const [domain, urls] of Object.entries(urlsByDomain)) {
-      for (const url of urls) {
-        aggregatedUrls[domain].add(url);
+    for (let j = 0; j < fetchResults.length; j += 1) {
+      const entry = fetchResults[j];
+      const filePath = batch[j];
+      if (entry.status === 'rejected') {
+        log.error(`${LOG_PREFIX} Error fetching brand presence file ${filePath}: ${entry.reason.message}`);
+      }
+      if (entry.status !== 'fulfilled' || !entry.value) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      const urlsByDomain = extractOffsiteUrls(entry.value, log);
+      for (const [domain, urlCounts] of Object.entries(urlsByDomain)) {
+        const target = aggregatedUrls[domain];
+        for (const [url, count] of urlCounts) {
+          target.set(url, (target.get(url) || 0) + count);
+        }
       }
     }
   }
@@ -457,12 +577,39 @@ async function fetchAndAggregateUrls(siteId, matchedFiles, env, log) {
 }
 
 /**
+ * Selects the top N most frequently occurring URLs per domain
+ * and returns them grouped by domain as Sets (suitable for DRS scraping).
+ *
+ * @param {object} aggregatedUrls - Map of domain to Map<url, count>
+ * @param {number} limitPerDomain - Maximum number of URLs per domain
+ * @param {object} log - Logger instance
+ * @returns {object} Map of domain to Set of top URLs
+ */
+function getTopUrlsByDomain(aggregatedUrls, limitPerDomain, log) {
+  const topByDomain = {};
+
+  for (const [domain, urlCounts] of Object.entries(aggregatedUrls)) {
+    const sorted = [...urlCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limitPerDomain)
+      .map(([url]) => url);
+
+    topByDomain[domain] = sorted;
+    log.info(
+      `${LOG_PREFIX} Selected top ${topByDomain[domain].length} ${domain} URLs (limit ${limitPerDomain})`,
+    );
+  }
+
+  return topByDomain;
+}
+
+/**
  * Main runner for the offsite-brand-presence audit.
  *
  * Workflow:
  * 1. Fetches query-index.json from the Spacecat API
  * 2. Fetches brand presence data for each provider from the Spacecat API
- * 3. Extracts URLs matching youtube.com, reddit.com, and wikipedia.com
+ * 3. Extracts URLs matching youtube.com, reddit.com, and wikipedia.org
  * 4. Adds these URLs to the URL store with the appropriate audit type
  * 5. Triggers DRS scraping jobs for the collected URLs
  *
@@ -475,6 +622,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
   const { dataAccess, env, log } = context;
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
+  const imsOrgId = await getImsOrgId(site, dataAccess, log);
 
   log.info(`${LOG_PREFIX} Starting audit for site: ${siteId} (${baseURL})`);
 
@@ -502,7 +650,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
   log.info(`${LOG_PREFIX} Processing week w${weekIndex} of year ${year}`);
 
   // Filter brand presence files from query-index for the previous week
-  const matchedFiles = filterBrandPresenceFiles(queryIndex, week);
+  const matchedFiles = filterBrandPresenceFiles(queryIndex, week, year);
   log.info(`${LOG_PREFIX} Found ${matchedFiles.length} brand presence files for week w${weekIndex}`);
 
   // Fetch all matched files in parallel and extract offsite URLs
@@ -528,14 +676,13 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
     };
   }
 
-  // Resolve metadata needed by DRS before launching parallel work
-  const imsOrgId = await getImsOrgId(site, dataAccess, log);
-  const brand = site.getConfig()?.getCompanyName?.() || baseURL;
+  // Select top URLs by frequency for DRS scraping
+  const topUrlsByDomain = getTopUrlsByDomain(aggregatedUrls, DRS_TOP_URLS_LIMIT, log);
 
-  // Add URLs to URL store and trigger DRS scraping in parallel
+  // Add all URLs to URL store, but only send top URLs to DRS
   const [, drsResults] = await Promise.all([
-    addUrlsToUrlStore(siteId, aggregatedUrls, env, log),
-    triggerDrsScraping(aggregatedUrls, imsOrgId, brand, env, log),
+    addUrlsToUrlStore(siteId, aggregatedUrls, dataAccess, log),
+    triggerDrsScraping(topUrlsByDomain, imsOrgId, baseURL, env, log),
   ]);
 
   log.info(`${LOG_PREFIX} Audit complete for site ${siteId}: ${totalUrls} URLs processed, ${drsResults.length} DRS jobs triggered`);
