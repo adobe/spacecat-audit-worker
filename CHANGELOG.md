@@ -1,3 +1,17 @@
+# [1.322.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.321.1...v1.322.0) (2026-02-19)
+
+
+### Features
+
+* auto-exclude non-product URLs in commerce enrichments ([#2009](https://github.com/adobe/spacecat-audit-worker/issues/2009)) ([a39848b](https://github.com/adobe/spacecat-audit-worker/commit/a39848bc94292a931bbefd5a211a326a555b4098))
+
+## [1.321.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.321.0...v1.321.1) (2026-02-19)
+
+
+### Bug Fixes
+
+* limit the number of high organic low ctr opportunities to top 3 ([#1863](https://github.com/adobe/spacecat-audit-worker/issues/1863)) ([7e5ac8c](https://github.com/adobe/spacecat-audit-worker/commit/7e5ac8c4f9f7ba579da9b186c5881a31d8f14c1e))
+
 # [1.321.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.320.0...v1.321.0) (2026-02-17)
 
 
