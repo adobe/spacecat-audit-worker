@@ -748,6 +748,42 @@ describe('Backlinks Tests', function () {
       expect(setDataCall.aiRationale).to.include('broken page');
     });
 
+    it('should add locale to search URL when broken link has locale prefix', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+
+      mockBrightDataClient.googleSearchWithFallback.resolves({
+        results: [{ link: 'https://example.com/dk/suggested-page', title: 'Suggested Page' }],
+        query: 'site:example.com/dk broken page',
+        keywords: 'broken page',
+      });
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const mockSuggestion = {
+        getId: () => 'test-suggestion-locale',
+        getData: () => ({
+          url_from: 'https://from.com/page',
+          url_to: 'https://example.com/dk/broken-page',
+        }),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([mockSuggestion]);
+      context.dataAccess.Suggestion.findById = sinon.stub().resolves(mockSuggestion);
+
+      await mockedGenerateSuggestionData(context);
+
+      // Verify search URL includes locale
+      const searchUrlArg = mockBrightDataClient.googleSearchWithFallback.getCall(0).args[0];
+      expect(searchUrlArg).to.include('/dk');
+    });
+
     it('should use site base URL when finalUrl is not set', async () => {
       context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
       context.env.BRIGHT_DATA_ZONE = 'test-zone';

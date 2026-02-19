@@ -1773,6 +1773,42 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       expect(setDataCall.aiRationale).to.include('broken page');
     });
 
+    it('should add locale to search URL when broken link has locale prefix', async () => {
+      context.env.BRIGHT_DATA_API_KEY = 'test-api-key';
+      context.env.BRIGHT_DATA_ZONE = 'test-zone';
+
+      mockBrightDataClient.googleSearchWithFallback.resolves({
+        results: [{ link: 'https://example.com/dk/suggested-page', title: 'Suggested Page' }],
+        query: 'site:example.com/dk broken page',
+        keywords: 'broken page',
+      });
+
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+      });
+
+      const mockSuggestion = {
+        getId: () => 'test-suggestion-locale',
+        getData: () => ({
+          urlFrom: 'https://example.com/dk/from',
+          urlTo: 'https://example.com/dk/broken-page',
+        }),
+        setData: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([mockSuggestion]);
+      context.dataAccess.Suggestion.findById = sinon.stub().resolves(mockSuggestion);
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+      await mockedHandler.opportunityAndSuggestionsStep(context);
+
+      // Verify search URL includes locale
+      const searchUrlArg = mockBrightDataClient.googleSearchWithFallback.getCall(0).args[0];
+      expect(searchUrlArg).to.include('/dk');
+    });
+
     it('should skip Bright Data when no API key configured', async () => {
       delete context.env.BRIGHT_DATA_API_KEY;
       delete context.env.BRIGHT_DATA_ZONE;
