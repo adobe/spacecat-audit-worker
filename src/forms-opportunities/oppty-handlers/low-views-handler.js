@@ -121,7 +121,6 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] form details available for data  ${JSON.stringify(highPageViewsLowFormViewsOptty.getData(), null, 2)}`);
         // eslint-disable-next-line max-len
         const sendToMystiqueForGuidance = isNonEmptyObject(formDetails) && !shouldIgnoreFormByDetails(formDetails);
-        sendToMystiqueForGuidance && log.debug('Form details available for opportunity, not sending it to mystique');
         formsList = sendToMystiqueForGuidance ? [] : [formEntry];
 
         highPageViewsLowFormViewsOptty.setAuditId(auditData.auditId);
