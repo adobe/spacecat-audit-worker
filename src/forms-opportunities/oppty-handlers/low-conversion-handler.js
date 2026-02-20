@@ -179,10 +179,12 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
         formsList = [formEntry];
       } else {
-        const { formDetails } = highFormViewsLowConversionsOppty.getData();
-        log.info(`[Form Opportunity] [Site Id: ${auditData.siteId}] Form details available for data  ${JSON.stringify(highFormViewsLowConversionsOppty.getData(), null, 2)}`);
+        const data = highFormViewsLowConversionsOppty.getData();
+        const { formDetails } = data;
+        log.info(`[Form Opportunity] [Site Id: ${auditData.siteId}] Form details available for data  ${JSON.stringify(data, null, 2)}`);
         // eslint-disable-next-line max-len
         const sendToMystiqueForGuidance = isNonEmptyObject(formDetails) && !shouldIgnoreFormByDetails(formDetails);
+        sendToMystiqueForGuidance && log.debug('Form details available for opportunity, not sending it to mystique');
         formsList = sendToMystiqueForGuidance ? [] : [formEntry];
 
         highFormViewsLowConversionsOppty.setAuditId(auditData.auditId);
