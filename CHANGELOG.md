@@ -1,3 +1,10 @@
+## [1.322.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.0...v1.322.1) (2026-02-19)
+
+
+### Bug Fixes
+
+* bright data suggestions rejected if locale does not match ([#2004](https://github.com/adobe/spacecat-audit-worker/issues/2004)) ([5486a34](https://github.com/adobe/spacecat-audit-worker/commit/5486a341ac02151fe4f6af41903cb3104f47a030))
+
 # [1.322.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.321.1...v1.322.0) (2026-02-19)
 
 
