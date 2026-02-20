@@ -5529,6 +5529,7 @@ describe('data-processing utility functions', () => {
       mockOpportunity = {
         getSuggestions: sandbox.stub().resolves([mockExistingSuggestion]),
         addSuggestions: sandbox.stub().resolves({ id: 'new-sugg' }),
+        getType: () => 'accessibility',
       };
     });
 

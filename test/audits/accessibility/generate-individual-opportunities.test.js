@@ -3282,6 +3282,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     const mockOpportunity = {
       getId: () => 'oppty-123',
       getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([
         {
           getId: () => 'sugg-789',
@@ -3768,6 +3769,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
   it('should handle missing suggestionId in some remediations', async () => {
     const mockOpportunity = {
       getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([
         {
           getId: () => 'sugg-789',
@@ -3857,6 +3859,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
   it('should handle all suggestions not found', async () => {
     const mockOpportunity = {
       getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([
         {
           getId: () => 'sugg-different',
@@ -3923,6 +3926,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
   it('should handle suggestion save failures', async () => {
     const mockOpportunity = {
       getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([
         {
           getId: () => 'sugg-789',
