@@ -37,6 +37,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
   const dummyOpportunity = {
     getId: sandbox.stub().returns('existing-oppty-id'),
+    getType: () => 'experimentation-high-organic-low-ctr',
     getSuggestions: sandbox.stub().resolves([]),
     getData: sandbox.stub().returns({
       page: 'https://abc.com/abc-adoption/account',

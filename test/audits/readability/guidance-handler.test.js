@@ -52,6 +52,7 @@ describe('Readability Opportunities Guidance Handler', () => {
 
     mockOpportunity = {
       getAuditId: sinon.stub().returns('audit-123'),
+      getType: () => 'readability',
       getSuggestions: sinon.stub().resolves([mockSuggestion]),
     };
 

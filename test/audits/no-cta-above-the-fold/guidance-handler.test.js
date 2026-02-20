@@ -105,6 +105,7 @@ describe("No CTA above the fold guidance handler", () => {
 
     Opportunity.create.resolves({
       getId: () => "oppty-123",
+      getType: () => "no-cta-above-the-fold",
     });
 
     const result = await handler(
@@ -141,6 +142,7 @@ describe("No CTA above the fold guidance handler", () => {
     Audit.findById.resolves(audit);
     Opportunity.create.resolves({
       getId: () => "oppty-123",
+      getType: () => "no-cta-above-the-fold",
     });
     context.site = { requiresValidation: true };
 
