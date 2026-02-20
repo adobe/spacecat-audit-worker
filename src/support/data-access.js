@@ -16,7 +16,7 @@ import dataAccessV3 from '@adobe/spacecat-shared-data-access';
 /* c8 ignore start */
 export default function dataAccess(fn) {
   return async (request, context) => {
-    const { env } = context;
+    const { env = {} } = context;
     if (env.DATA_SERVICE_PROVIDER === 'postgres') {
       if (!env.POSTGREST_URL) {
         throw new Error(
