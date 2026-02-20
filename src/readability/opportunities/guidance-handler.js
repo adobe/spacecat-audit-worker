@@ -11,7 +11,9 @@
  */
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { syncSuggestions } from '../../utils/data-access.js';
 
 /**
  * Enriches suggestion data with fields required for auto-optimize.
@@ -20,7 +22,7 @@ function enrichSuggestionDataForAutoOptimize(data) {
   return {
     ...data,
     url: data.pageUrl,
-    scrapedAt: new Date(data.scrapedAt).toISOString(),
+    scrapedAt: data.scrapedAt ? new Date(data.scrapedAt).toISOString() : undefined,
     transformRules: {
       value: data.improvedText,
       op: 'replace',
@@ -61,25 +63,29 @@ async function deleteResponseFile(s3Client, bucketName, s3ResultsPath, log) {
 }
 
 /**
- * Maps a single Mystique batch result item to the internal suggestion format.
- * Batch results use camelCase field names.
+ * Maps a single Mystique batch result item to the internal suggestion data format.
+ * Batch result `data` dict uses snake_case field names from Mystique.
+ * Returns null for failed items or items with empty improved text.
  */
-function mapBatchResultToSuggestion(item, index) {
+function mapBatchResultToSuggestionData(item) {
   if (item.status !== 'success' || !item.data) {
     return null;
   }
   const { data } = item;
+  if (!data.improved_paragraph || data.improved_paragraph.trim() === '') {
+    return null;
+  }
   return {
-    id: `readability-opportunity-${data.pageUrl || 'unknown'}-${index}`,
-    pageUrl: data.pageUrl,
-    originalText: data.originalParagraph,
-    improvedText: data.improvedParagraph,
+    pageUrl: data.page_url,
     selector: item.selector,
-    originalFleschScore: data.currentFleschScore,
-    improvedFleschScore: data.improvedFleschScore,
-    seoRecommendation: data.seoRecommendation,
-    aiRationale: data.aiRationale,
-    type: 'READABILITY_IMPROVEMENT',
+    originalText: data.original_paragraph,
+    improvedText: data.improved_paragraph,
+    originalFleschScore: data.current_flesch_score,
+    improvedFleschScore: data.improved_flesch_score,
+    readabilityImprovement: data.improved_flesch_score - data.current_flesch_score,
+    seoRecommendation: data.seo_recommendation,
+    aiRationale: data.ai_rationale,
+    suggestionStatus: 'completed',
   };
 }
 
@@ -146,9 +152,9 @@ export default async function handler(message, context) {
   // Delete the S3 response file after reading
   await deleteResponseFile(s3Client, bucketName, s3ResultsPath, log);
 
-  // Map batch results to suggestions, filtering out failed items
+  // Map batch results to suggestion data, filtering out failed items and empty improvements
   const mappedSuggestions = batchResults
-    .map((item, index) => mapBatchResultToSuggestion(item, index))
+    .map((item) => mapBatchResultToSuggestionData(item))
     .filter(Boolean);
 
   const failedCount = batchResults.filter((item) => item.status === 'failed').length;
@@ -163,66 +169,41 @@ export default async function handler(message, context) {
 
   log.info(`[readability-opportunity guidance]: Processing ${mappedSuggestions.length} suggestions from batch results`);
 
-  // Update existing suggestions with AI improvements
-  const existingSuggestions = await readabilityOpportunity.getSuggestions();
+  const buildKey = (suggestionData) => `${suggestionData.pageUrl}|${suggestionData.selector}`;
 
-  const updateOperations = mappedSuggestions.map((mystiquesuggestion) => {
-    // Match by selector first, fall back to text preview
-    const matchingSuggestion = existingSuggestions.find(
-      (existing) => {
-        const existingData = existing.getData();
-        if (mystiquesuggestion.selector && existingData?.selector === mystiquesuggestion.selector) {
-          return true;
-        }
-        const mystiqueTextTruncated = mystiquesuggestion.originalText?.substring(0, 500);
-        return existingData?.textPreview === mystiqueTextTruncated;
-      },
-    );
-
-    if (matchingSuggestion) {
-      return async () => {
-        try {
-          if (!mystiquesuggestion.improvedText || mystiquesuggestion.improvedText.trim() === '') {
-            await matchingSuggestion.remove();
-            log.warn(`[readability-opportunity guidance]: Removed suggestion ${matchingSuggestion.getId()} because Mystique 'improvedText' is empty`);
-            return true;
-          }
-
-          const currentData = matchingSuggestion.getData();
-          const updatedData = {
-            ...currentData,
-            improvedText: mystiquesuggestion.improvedText,
-            improvedFleschScore: mystiquesuggestion.improvedFleschScore,
-            readabilityImprovement: mystiquesuggestion.improvedFleschScore
-              - mystiquesuggestion.originalFleschScore,
-            aiSuggestion: mystiquesuggestion.seoRecommendation,
-            aiRationale: mystiquesuggestion.aiRationale,
-            suggestionStatus: 'completed',
-            mystiqueProcessingCompleted: new Date().toISOString(),
-          };
-
-          const enrichedData = enrichSuggestionDataForAutoOptimize(updatedData);
-
-          await matchingSuggestion.setData(enrichedData);
-          await matchingSuggestion.save();
-
-          log.info(`[readability-opportunity guidance]: Updated suggestion ${matchingSuggestion.getId()} with AI improvements`);
-          return true;
-        } catch (error) {
-          log.error(`[readability-opportunity guidance]: Error updating suggestion ${matchingSuggestion.getId()}: ${error.message}`);
-          return false;
-        }
+  await syncSuggestions({
+    context,
+    opportunity: readabilityOpportunity,
+    newData: mappedSuggestions,
+    buildKey,
+    mapNewSuggestion: (suggestionData) => {
+      const enrichedData = enrichSuggestionDataForAutoOptimize({
+        ...suggestionData,
+        mystiqueProcessingCompleted: new Date().toISOString(),
+      });
+      return {
+        opportunityId: readabilityOpportunity.getId(),
+        type: SuggestionModel.TYPES.CONTENT_UPDATE,
+        rank: 10,
+        data: enrichedData,
       };
-    }
+    },
+    mergeDataFunction: (existingData, newData) => {
+      const merged = {
+        ...existingData,
+        improvedText: newData.improvedText,
+        improvedFleschScore: newData.improvedFleschScore,
+        readabilityImprovement: newData.readabilityImprovement,
+        aiSuggestion: newData.seoRecommendation,
+        aiRationale: newData.aiRationale,
+        suggestionStatus: 'completed',
+        mystiqueProcessingCompleted: new Date().toISOString(),
+      };
+      return enrichSuggestionDataForAutoOptimize(merged);
+    },
+  });
 
-    log.warn(`[readability-opportunity guidance]: No matching suggestion found for text: ${mystiquesuggestion.originalText?.substring(0, 100)}...`);
-    return null;
-  }).filter(Boolean);
-
-  const updateResults = await Promise.all(updateOperations.map((op) => op()));
-  const updatedCount = updateResults.filter(Boolean).length;
-
-  log.info(`[readability-opportunity guidance]: Successfully updated ${updatedCount} readability suggestions with AI improvements for siteId: ${siteId}`);
+  log.info(`[readability-opportunity guidance]: Successfully processed readability suggestions with AI improvements for siteId: ${siteId}`);
 
   return ok();
 }
