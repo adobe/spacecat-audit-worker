@@ -242,11 +242,7 @@ function normalizeYoutubeUrl(parsed) {
     }
   }
 
-  if (pathname.startsWith('/shorts/')) {
-    return `${parsed.origin}${pathname}`;
-  }
-
-  // For other YouTube URLs (channels, playlists, etc.), strip query params
+  // For other YouTube URLs (shorts, channels, playlists, etc.), strip query params
   return `${parsed.origin}${pathname}`;
 }
 
@@ -334,11 +330,12 @@ function classifySources(sources, urlsByDomain) {
 }
 
 /**
- * Extracts URLs matching offsite domains (youtube.com, reddit.com, wikipedia.org)
- * from the "all" sheet of brand presence data. Sources are semicolon-separated URL lists.
+ * Extracts URLs matching offsite domains from brand presence data.
+ * Filters out URLs that are not in the US region or do not mention the brand.
+ * Sources are semicolon/newline-separated URL lists.
  * Each URL's occurrence count is tracked across all rows.
  *
- * @param {object} data - Brand presence JSON data (expects an "all" key)
+ * @param {object} data - Brand presence JSON data (expects a "data" array of rows)
  * @param {object} log - Logger instance
  * @returns {object} Map of domain to Map<url, count>
  */
@@ -351,7 +348,7 @@ function extractOffsiteUrls(data, log) {
   const rows = data.data;
   for (const row of rows) {
     const sources = row.Sources?.trim();
-    if (sources && row.Region === 'US' && row.Mentions === 'true' && row.Citations === 'true') {
+    if (sources && row.Region === 'US' && row.Mentions === 'true') {
       classifySources(sources, urlsByDomain);
     }
   }
@@ -368,16 +365,16 @@ function extractOffsiteUrls(data, log) {
  * Each URL is tagged with the appropriate audit type based on its domain.
  *
  * @param {string} siteId - The site ID
- * @param {object} urlsByDomain - Map of domain to Map<url, count>
+ * @param {object} urlsByDomain - Map of domain to array of URL strings
  * @param {object} dataAccess - Data access layer from context
  * @param {object} log - Logger instance
  */
 async function addUrlsToUrlStore(siteId, urlsByDomain, dataAccess, log) {
   const { AuditUrl } = dataAccess;
   const urlEntries = [];
-  for (const [domain, urlCounts] of Object.entries(urlsByDomain)) {
+  for (const [domain, urls] of Object.entries(urlsByDomain)) {
     const { auditType } = OFFSITE_DOMAINS[domain];
-    for (const url of urlCounts.keys()) {
+    for (const url of urls) {
       urlEntries.push({ url, audits: [auditType] });
     }
   }
@@ -418,10 +415,10 @@ async function addUrlsToUrlStore(siteId, urlsByDomain, dataAccess, log) {
 
 /**
  * Triggers DRS (Data Retrieval Service) scraping jobs for the collected URLs.
- * For YouTube and Reddit, two jobs are created per domain (one per dataset_id).
- * For Wikipedia, a single job is created.
+ * For each domain, one job is created per dataset_id defined in OFFSITE_DOMAINS
+ * (e.g. YouTube gets youtube_videos + youtube_comments).
  *
- * @param {object} urlsByDomain - Map of domain to Set of URLs
+ * @param {object} urlsByDomain - Map of domain to array of URL strings
  * @param {string} imsOrgId - The IMS org ID for metadata
  * @param {string} brand - The brand name for metadata
  * @param {object} env - Environment variables
@@ -567,12 +564,12 @@ async function fetchAndAggregateUrls(siteId, matchedFiles, env, log) {
 
 /**
  * Selects the top N most frequently occurring URLs per domain
- * and returns them grouped by domain as Sets (suitable for DRS scraping).
+ * and returns them grouped by domain as arrays.
  *
  * @param {object} aggregatedUrls - Map of domain to Map<url, count>
  * @param {number} limitPerDomain - Maximum number of URLs per domain
  * @param {object} log - Logger instance
- * @returns {object} Map of domain to Set of top URLs
+ * @returns {object} Map of domain to array of top URL strings
  */
 function getTopUrlsByDomain(aggregatedUrls, limitPerDomain, log) {
   const topByDomain = {};
@@ -598,9 +595,9 @@ function getTopUrlsByDomain(aggregatedUrls, limitPerDomain, log) {
  * Workflow:
  * 1. Fetches query-index.json from the Spacecat API
  * 2. Fetches brand presence data for each provider from the Spacecat API
- * 3. Extracts URLs matching youtube.com, reddit.com, and wikipedia.org
- * 4. Adds these URLs to the URL store with the appropriate audit type
- * 5. Triggers DRS scraping jobs for the collected URLs
+ * 3. Extracts URLs matching offsite domains (e.g. youtube.com, reddit.com)
+ * 4. Selects the top N most frequent URLs per domain
+ * 5. Adds the top URLs to the URL store and triggers DRS scraping jobs
  *
  * @param {string} finalUrl - The resolved audit URL
  * @param {object} context - The execution context
@@ -668,9 +665,9 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site) {
   // Select top URLs by frequency for DRS scraping
   const topUrlsByDomain = getTopUrlsByDomain(aggregatedUrls, DRS_TOP_URLS_LIMIT, log);
 
-  // Add all URLs to URL store, but only send top URLs to DRS
+  // Send top URLs to both URL store and DRS for scraping
   const [, drsResults] = await Promise.all([
-    addUrlsToUrlStore(siteId, aggregatedUrls, dataAccess, log),
+    addUrlsToUrlStore(siteId, topUrlsByDomain, dataAccess, log),
     triggerDrsScraping(topUrlsByDomain, imsOrgId, baseURL, env, log),
   ]);
 

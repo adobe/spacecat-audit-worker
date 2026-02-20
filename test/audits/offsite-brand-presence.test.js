@@ -961,9 +961,10 @@ describe('Offsite Brand Presence Handler', () => {
   });
 
   describe('Top URLs Per Domain', () => {
-    it('should limit DRS to top-N URLs but send all to URL store', async () => {
+    it('should limit both DRS and URL store to top-N URLs per domain', async () => {
       const urls = [];
-      for (let i = 0; i < 25; i += 1) {
+      const urlCount = DRS_TOP_URLS_LIMIT + 10;
+      for (let i = 0; i < urlCount; i += 1) {
         urls.push(`https://youtube.com/shorts/vid${i}`);
       }
       const sources = urls.join(';');
@@ -982,7 +983,7 @@ describe('Offsite Brand Presence Handler', () => {
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      expect(result.auditResult.urlCounts['youtube.com']).to.equal(25);
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(urlCount);
 
       const drsCalls = mockFetch.getCalls().filter(
         (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
@@ -993,7 +994,7 @@ describe('Offsite Brand Presence Handler', () => {
       });
       const body = JSON.parse(videosCall.args[1].body);
       expect(body.parameters.urls).to.have.lengthOf(DRS_TOP_URLS_LIMIT);
-      expect(dataAccess.AuditUrl.create.callCount).to.equal(25);
+      expect(dataAccess.AuditUrl.create.callCount).to.equal(DRS_TOP_URLS_LIMIT);
     });
 
     it('should select most frequent URLs for DRS when counts differ', async () => {
