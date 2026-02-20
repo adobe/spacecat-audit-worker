@@ -66,6 +66,8 @@ Output message body format sent to `AUDIT_RESULTS_QUEUE` is:
 
 ## How to Run Locally
 
+**Prerequisite:** Connection to Adobe Corp VPN is required for accessing KLAM and Vault.
+
 ### 1. Using `nodemon` and AWS Credentials
 
 Everyone working on Spacecat should have access to the development environments via [KLAM](https://klam.corp.adobe.com/). 
