@@ -276,8 +276,8 @@ describe('identify-redirects handler', () => {
     loaded.oneshotSearch
       .onCall(0).resolves({
         results: [
-          { url: '/etc/acs-commons/redirect-maps/map' },
-          { url: '/etc/acs-commons/redirect-maps/other' },
+          { matched_path: '/etc/acs-commons/redirect-maps/map', url: '/etc/acs-commons/redirect-maps/map' },
+          { matched_path: '/etc/acs-commons/redirect-maps/other', url: '/etc/acs-commons/redirect-maps/other' },
         ],
       })
       .onCall(1).resolves({ results: [] })
@@ -295,10 +295,10 @@ describe('identify-redirects handler', () => {
     expect(loaded.postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');
     const text = loaded.postMessageSafe.secondCall.args[2];
     expect(text).to.include('*Winner*:');
-    expect(text).to.include('*Top paths for winner');
+    expect(text).to.include('*Top matched strings for winner');
     expect(text).to.include('/etc/acs-commons/redirect-maps/map');
     expect(text).to.include('*Response preview');
-    expect(text).to.include('{"url":"/etc/acs-commons/redirect-maps/map"}');
+    expect(text).to.include('"matched_path":"/etc/acs-commons/redirect-maps/map"');
   });
 
   it('omits the examples block when winner has no string paths and supports splunkFields overrides', async () => {
@@ -336,7 +336,7 @@ describe('identify-redirects handler', () => {
     expect(loaded.postMessageSafe.firstCall.args[2]).to.include(':hourglass: Started Splunk searches');
     const text = loaded.postMessageSafe.secondCall.args[2];
     expect(text).to.include('*Winner*:');
-    expect(text).to.not.include('*Top paths for winner');
+    expect(text).to.not.include('*Top matched strings for winner');
   });
 
   it('breaks ties by totalCount when scores are equal', async () => {

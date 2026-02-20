@@ -31,6 +31,10 @@ const CONFIDENCE = {
   damredirectmgr: 0.85,
 };
 
+const MATCH_FIELD = 'matched_path';
+const DEFAULT_HEAD_LIMIT = 200;
+const RX_ANY_TAIL = '[^\\\\s\\\\\\"?]*';
+
 async function oneshotSearchCompat(client, searchString) {
   if (typeof client?.oneshotSearch === 'function') {
     return client.oneshotSearch(searchString);
@@ -94,29 +98,58 @@ function buildBaseSearch({
   ].join(' ');
 }
 
+function withMatchExtraction(search, {
+  matchRegex,
+  headLimit = DEFAULT_HEAD_LIMIT,
+  pathField = 'url',
+  includeRaw = true,
+} = {}) {
+  const fields = [MATCH_FIELD];
+  if (typeof pathField === 'string' && pathField.length > 0) {
+    fields.push(pathField);
+  }
+  if (includeRaw) fields.push('_raw');
+  const tableFields = Array.from(new Set(fields)).join(' ');
+
+  return `${search} | rex field=_raw "(?<${MATCH_FIELD}>${matchRegex})" | where isnotnull(${MATCH_FIELD}) | table ${tableFields} | head ${headLimit}`;
+}
+
 function buildQueries(params) {
+  const { pathField } = params;
   return [
     {
       id: 'acsredirectmanager',
       confidence: CONFIDENCE.acsredirectmanager,
       // IMPORTANT: naive /conf/ matching causes false positives. We require redirect context.
-      search: `${buildBaseSearch(params)} "/conf/" (redirect OR "acs-commons") NOT "/settings/wcm/templates/"`,
+      search: withMatchExtraction(
+        `${buildBaseSearch(params)} "/conf/" (redirect OR "acs-commons") NOT "/settings/wcm/templates/"`,
+        { matchRegex: `/conf/${RX_ANY_TAIL}`, pathField },
+      ),
     },
     {
       id: 'acsredirectmapmanager',
       confidence: CONFIDENCE.acsredirectmapmanager,
-      search: `${buildBaseSearch(params)} "/etc/acs-commons/redirect-maps"`,
+      search: withMatchExtraction(
+        `${buildBaseSearch(params)} "/etc/acs-commons/redirect-maps"`,
+        { matchRegex: `/etc/acs-commons/redirect-maps${RX_ANY_TAIL}`, pathField },
+      ),
     },
     {
       id: 'redirectmapTxt',
       confidence: CONFIDENCE.redirectmapTxt,
-      search: `${buildBaseSearch(params)} "redirectmap.txt"`,
+      search: withMatchExtraction(
+        `${buildBaseSearch(params)} "redirectmap.txt"`,
+        { matchRegex: `redirectmap\\\\.txt${RX_ANY_TAIL}`, pathField },
+      ),
     },
     {
       id: 'damredirectmgr',
       confidence: CONFIDENCE.damredirectmgr,
       // IMPORTANT: DAM is noisy unless constrained to redirect context.
-      search: `${buildBaseSearch(params)} "/content/dam/" redirect`,
+      search: withMatchExtraction(
+        `${buildBaseSearch(params)} "/content/dam/" redirect`,
+        { matchRegex: `/content/dam/${RX_ANY_TAIL}`, pathField },
+      ),
     },
   ];
 }
@@ -128,6 +161,17 @@ function scorePattern({ totalCount, confidence }) {
     score: totalCount * confidence,
     scoreKey: totalCount * confidenceWeight,
   };
+}
+
+function computeTopMatches(values, limit = 10) {
+  const counts = new Map();
+  for (const v of values) {
+    counts.set(v, (counts.get(v) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .sort((a, b) => (b[1] - a[1]) || String(a[0]).localeCompare(String(b[0])))
+    .slice(0, limit)
+    .map(([value, count]) => ({ value, count }));
 }
 
 function pickWinner(patternResults) {
@@ -200,7 +244,7 @@ function formatSlackMessage({
 
   const examples = (winner.examples || []).slice(0, 8).join('\n');
   const examplesBlock = hasText(examples)
-    ? `\n\n*Top paths for winner (\`${winner.id}\`)*\n\`\`\`\n${examples}\n\`\`\``
+    ? `\n\n*Top matched strings for winner (\`${winner.id}\`)*\n\`\`\`\n${examples}\n\`\`\``
     : '';
 
   return `${header}\n*Winner*: \`${winner.id}\`\n\n*Results*\n${lines}${examplesBlock}${formatQueriesForSlack(queries)}${formatResponsesPreviewForSlack(results)}`;
@@ -288,6 +332,7 @@ export default async function identifyRedirects(message, context) {
         totalCount: 0,
         score: 0,
         scoreKey: 0,
+        topMatches: [],
         examples: [],
         error: item.reason?.message || String(item.reason),
       };
@@ -297,12 +342,15 @@ export default async function identifyRedirects(message, context) {
     const splunkResults = Array.isArray(response.results) ? response.results : [];
     const totalCount = splunkResults.length;
     const rows = splunkResults.slice(0, 3);
-    const examplesList = splunkResults
-      .map((r) => r[pathField])
+    const matches = splunkResults
+      .map((r) => r[MATCH_FIELD])
+      .filter((v) => typeof v === 'string' && v.length > 0);
+    const examplesList = (matches.length > 0 ? matches : splunkResults.map((r) => r[pathField]))
       .filter((v) => typeof v === 'string' && v.length > 0)
       .slice(0, 8);
     const examples = examplesList.length > 0 ? examplesList : null;
 
+    const topMatches = computeTopMatches(matches, 10);
     const { score, scoreKey } = scorePattern({ totalCount, confidence: q.confidence });
     return {
       id: q.id,
@@ -312,6 +360,7 @@ export default async function identifyRedirects(message, context) {
       totalCount,
       score,
       scoreKey,
+      topMatches,
       examples,
       error: null,
     };
