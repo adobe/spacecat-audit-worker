@@ -37,19 +37,19 @@ describe('summarization utils', () => {
 
       expect(result).to.be.an('array');
       expect(result).to.have.length(2); // page summary + key points
-      
-      // Verify default values are used for page summary
-      expect(result[0].transformRules.selector).to.equal('body');
-      expect(result[0].transformRules.action).to.equal('appendChild');
+
+      // When no h1: page summary is placed at top of page (insertBefore body's first child)
+      expect(result[0].transformRules.selector).to.equal('body > :first-child');
+      expect(result[0].transformRules.action).to.equal('insertBefore');
       expect(result[0].summarizationText).to.equal('Test summary');
       expect(result[0].fullPage).to.be.true;
       expect(result[0].keyPoints).to.be.false;
       expect(result[0].url).to.equal('https://example.com/page1');
       expect(result[0].title).to.equal('Test Page');
       
-      // Verify key points suggestion
-      expect(result[1].transformRules.selector).to.equal('body');
-      expect(result[1].transformRules.action).to.equal('appendChild');
+      // Key points use same top-of-page placement when no h1
+      expect(result[1].transformRules.selector).to.equal('body > :first-child');
+      expect(result[1].transformRules.action).to.equal('insertBefore');
       expect(result[1].summarizationText).to.equal('  * Key point 1\n  * Key point 2');
       expect(result[1].fullPage).to.be.true;
       expect(result[1].keyPoints).to.be.true;
@@ -160,15 +160,15 @@ describe('summarization utils', () => {
       const result = getJsonSummarySuggestion(suggestions);
 
       expect(result).to.have.length(4); // page1 summary + page1 keypoints + page2 summary + page2 keypoints
-      
-      // First page summary uses defaults
-      expect(result[0].transformRules.selector).to.equal('body');
-      expect(result[0].transformRules.action).to.equal('appendChild');
+
+      // First page summary uses top-of-page when no heading_selector
+      expect(result[0].transformRules.selector).to.equal('body > :first-child');
+      expect(result[0].transformRules.action).to.equal('insertBefore');
       expect(result[0].keyPoints).to.be.false;
-      
-      // First page key points uses defaults
-      expect(result[1].transformRules.selector).to.equal('body');
-      expect(result[1].transformRules.action).to.equal('appendChild');
+
+      // First page key points use same top-of-page placement
+      expect(result[1].transformRules.selector).to.equal('body > :first-child');
+      expect(result[1].transformRules.action).to.equal('insertBefore');
       expect(result[1].keyPoints).to.be.true;
       expect(result[1].summarizationText).to.equal('  * Point 1');
       
