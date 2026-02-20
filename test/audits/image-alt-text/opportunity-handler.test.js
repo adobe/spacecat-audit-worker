@@ -143,6 +143,7 @@ describe('addAltTextSuggestions', () => {
   it('should add new suggestions successfully', async () => {
     const mockOpportunity = {
       getSiteId: () => 'site-id',
+      getType: () => 'image-alt-text',
       addSuggestions: sinon.stub().resolves({
         errorItems: [],
         createdItems: [1, 2],
@@ -213,6 +214,7 @@ describe('addAltTextSuggestions', () => {
   it('should handle errors when adding suggestions partially fails', async () => {
     const mockOpportunity = {
       getSiteId: () => 'site-id',
+      getType: () => 'image-alt-text',
       addSuggestions: sinon.stub().resolves({
         errorItems: [
           {
@@ -253,6 +255,7 @@ describe('addAltTextSuggestions', () => {
   it('should throw error when all suggestions fail to create', async () => {
     const mockOpportunity = {
       getSiteId: () => 'site-id',
+      getType: () => 'image-alt-text',
       addSuggestions: sinon.stub().resolves({
         errorItems: [
           {
@@ -488,6 +491,7 @@ describe('syncAltTextSuggestions', () => {
   it('should sync suggestions by removing non-ignored ones and adding new ones', async () => {
     const mockOpportunity = {
       getSiteId: () => 'test-site-id',
+      getType: () => 'image-alt-text',
       getSuggestions: sinon.stub().resolves([
         {
           getStatus: () => 'NEW',
@@ -520,6 +524,7 @@ describe('syncAltTextSuggestions', () => {
   it('should handle error items in addSuggestions result', async () => {
     const mockOpportunity = {
       getSiteId: () => 'test-site-id',
+      getType: () => 'image-alt-text',
       getSuggestions: sinon.stub().resolves([]),
       addSuggestions: sinon.stub().resolves({
         createdItems: [1],
@@ -544,6 +549,7 @@ describe('syncAltTextSuggestions', () => {
   it('should throw error when no suggestions are created and there are errors', async () => {
     const mockOpportunity = {
       getSiteId: () => 'test-site-id',
+      getType: () => 'image-alt-text',
       getSuggestions: sinon.stub().resolves([]),
       addSuggestions: sinon.stub().resolves({
         createdItems: [],
