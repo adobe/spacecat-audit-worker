@@ -19,7 +19,9 @@ import {
   calculateProjectedConversionValue,
   filterForms,
   generateOpptyData,
-  sendMessageToFormsQualityAgent, sendMessageToMystiqueForGuidance,
+  sendMessageToFormsQualityAgent,
+  sendMessageToMystiqueForGuidance,
+  shouldIgnoreFormByDetails,
 } from '../utils.js';
 import { DATA_SOURCES } from '../../common/constants.js';
 
@@ -114,28 +116,31 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
       };
 
       log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] forms opportunity created high page views low form nav ${JSON.stringify(opportunityData, null, 2)}`);
-      let formsList = [];
+
+      const formEntry = {
+        form: opportunityData.data.form,
+        formSource: opportunityData.data.formsource,
+      };
+      let formsList;
 
       if (!highPageViewsLowFormNavOppty) {
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormNavOppty = await Opportunity.create(opportunityData);
         log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] Forms Opportunity high page views low form nav created`);
-        // eslint-disable-next-line max-len
-        formsList = [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
+        formsList = [formEntry];
       } else if (highPageViewsLowFormNavOppty.getOrigin() === ORIGINS.ESS_OPS) {
         log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] Forms Opportunity high page views low form nav exists and is from ESS_OPS`);
         opportunityData.status = 'IGNORED';
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormNavOppty = await Opportunity.create(opportunityData);
-        // eslint-disable-next-line max-len
-        formsList = [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
+        formsList = [formEntry];
       } else {
-        const data = highPageViewsLowFormNavOppty.getData();
-        const { formDetails } = data;
-        log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] form details available for data  ${JSON.stringify(data, null, 2)}`);
-        formsList = (formDetails !== undefined && isNonEmptyObject(formDetails))
-          ? (log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] Form details available for opportunity, not sending it to mystique`), [])
-          : [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
+        const { formDetails } = highPageViewsLowFormNavOppty.getData();
+        log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] form details available for data  ${JSON.stringify(highPageViewsLowFormNavOppty.getData(), null, 2)}`);
+        const sendToMystiqueForGuidance = isNonEmptyObject(formDetails)
+          && !shouldIgnoreFormByDetails(formDetails);
+        sendToMystiqueForGuidance && log.debug('Form details available for opportunity, not sending it to mystique');
+        formsList = sendToMystiqueForGuidance ? [] : [formEntry];
 
         highPageViewsLowFormNavOppty.setAuditId(auditData.auditId);
         highPageViewsLowFormNavOppty.setData({
@@ -145,7 +150,6 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         if (!isNonEmptyObject(highPageViewsLowFormNavOppty.guidance)) {
           highPageViewsLowFormNavOppty.setGuidance(opportunityData.guidance);
         }
-
         highPageViewsLowFormNavOppty.setUpdatedBy('system');
         // eslint-disable-next-line no-await-in-loop
         await highPageViewsLowFormNavOppty.save();
