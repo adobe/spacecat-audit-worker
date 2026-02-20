@@ -19,7 +19,9 @@ import {
   calculateProjectedConversionValue,
   filterForms,
   generateOpptyData,
-  sendMessageToFormsQualityAgent, sendMessageToMystiqueForGuidance,
+  sendMessageToFormsQualityAgent,
+  sendMessageToMystiqueForGuidance,
+  shouldIgnoreFormByDetails,
 } from '../utils.js';
 import { DATA_SOURCES } from '../../common/constants.js';
 
@@ -98,30 +100,29 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
       };
 
       log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] forms opportunity created high page views low form views ${JSON.stringify(opportunityData, null, 2)}`);
-      let formsList = [];
+
+      const formEntry = {
+        form: opportunityData.data.form,
+        formSource: opportunityData.data.formsource,
+      };
+      let formsList;
 
       if (!highPageViewsLowFormViewsOptty) {
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormViewsOptty = await Opportunity.create(opportunityData);
-        formsList = [{
-          form: opportunityData.data.form,
-          formSource: opportunityData.data.formsource,
-        }];
+        formsList = [formEntry];
       } else if (highPageViewsLowFormViewsOptty.getOrigin() === ORIGINS.ESS_OPS) {
         opportunityData.status = 'IGNORED';
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormViewsOptty = await Opportunity.create(opportunityData);
-        formsList = [{
-          form: opportunityData.data.form,
-          formSource: opportunityData.data.formsource,
-        }];
+        formsList = [formEntry];
       } else {
-        const data = highPageViewsLowFormViewsOptty.getData();
-        const { formDetails } = data;
-        log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] form details available for data  ${JSON.stringify(data, null, 2)}`);
-        formsList = (formDetails !== undefined && isNonEmptyObject(formDetails))
-          ? (log.debug('Form details available for opportunity, not sending it to mystique'), [])
-          : [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
+        const { formDetails } = highPageViewsLowFormViewsOptty.getData();
+        log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] form details available for data  ${JSON.stringify(highPageViewsLowFormViewsOptty.getData(), null, 2)}`);
+        // eslint-disable-next-line max-len
+        const sendToMystiqueForGuidance = isNonEmptyObject(formDetails) && !shouldIgnoreFormByDetails(formDetails);
+        sendToMystiqueForGuidance && log.debug('Form details available for opportunity, not sending it to mystique');
+        formsList = sendToMystiqueForGuidance ? [] : [formEntry];
 
         highPageViewsLowFormViewsOptty.setAuditId(auditData.auditId);
         highPageViewsLowFormViewsOptty.setData({
@@ -131,7 +132,6 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         if (!isNonEmptyObject(highPageViewsLowFormViewsOptty.guidance)) {
           highPageViewsLowFormViewsOptty.setGuidance(opportunityData.guidance);
         }
-
         highPageViewsLowFormViewsOptty.setUpdatedBy('system');
         // eslint-disable-next-line no-await-in-loop
         await highPageViewsLowFormViewsOptty.save();
