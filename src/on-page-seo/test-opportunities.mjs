@@ -27,6 +27,118 @@ import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { validateUrls } from '../utils/seo-validators.js';
 
+/**
+ * Fetch sitemap and extract lastmod dates for URLs.
+ * Tries the sitemap URL from robots.txt first, then common defaults.
+ */
+async function fetchSitemapLastmod(urls) {
+  if (urls.length === 0) return {};
+
+  // Extract domain from first URL
+  const firstUrl = new URL(urls[0]);
+  const baseUrl = `${firstUrl.protocol}//${firstUrl.hostname}`;
+
+  // Try to find sitemap URL from robots.txt
+  let sitemapUrls = [];
+  try {
+    const robotsResp = await fetch(`${baseUrl}/robots.txt`);
+    if (robotsResp.ok) {
+      const robotsTxt = await robotsResp.text();
+      const sitemapMatches = robotsTxt.match(/^Sitemap:\s*(.+)$/gmi);
+      if (sitemapMatches) {
+        sitemapUrls = sitemapMatches.map(m => m.replace(/^Sitemap:\s*/i, '').trim());
+      }
+    }
+  } catch (e) {
+    // Ignore robots.txt fetch errors
+  }
+
+  // Fallback to common sitemap locations
+  if (sitemapUrls.length === 0) {
+    sitemapUrls = [`${baseUrl}/sitemap.xml`, `${baseUrl}/sitemap_index.xml`];
+  }
+
+  const lastmodMap = {};
+  // Build a lookup that maps normalized sitemap URLs back to original input URLs
+  // Try both exact match and without .html extension
+  const urlLookup = new Map(); // sitemapNormalized -> inputNormalized
+  for (const u of urls) {
+    const norm = u.toLowerCase().replace(/\/$/, '');
+    urlLookup.set(norm, norm);
+    // Also map the version without .html so sitemap entries without .html can match
+    if (norm.endsWith('.html')) {
+      urlLookup.set(norm.replace(/\.html$/, ''), norm);
+    }
+  }
+
+  const sitemapUrlSet = new Set(); // track all URLs found in sitemap (normalized)
+
+  for (const sitemapUrl of sitemapUrls) {
+    try {
+      await parseSitemap(sitemapUrl, lastmodMap, urlLookup, sitemapUrlSet);
+    } catch (e) {
+      // Ignore individual sitemap fetch errors
+    }
+  }
+
+  // Also build an in_sitemap map: true if found in sitemap (exact or without .html)
+  const inSitemapMap = {};
+  for (const u of urls) {
+    const norm = u.toLowerCase().replace(/\/$/, '');
+    const withoutHtml = norm.endsWith('.html') ? norm.replace(/\.html$/, '') : null;
+    const exactMatch = sitemapUrlSet.has(norm);
+    const noHtmlMatch = withoutHtml ? sitemapUrlSet.has(withoutHtml) : false;
+    if (exactMatch) {
+      inSitemapMap[norm] = 'YES';
+    } else if (noHtmlMatch) {
+      inSitemapMap[norm] = 'URL_MISMATCH';
+    } else {
+      inSitemapMap[norm] = 'NO';
+    }
+  }
+
+  return { lastmodMap, inSitemapMap };
+}
+
+/**
+ * Parse a sitemap (or sitemap index) and populate lastmodMap
+ */
+async function parseSitemap(sitemapUrl, lastmodMap, urlLookup, sitemapUrlSet) {
+  const resp = await fetch(sitemapUrl);
+  if (!resp.ok) return;
+
+  const xml = await resp.text();
+
+  // Check if this is a sitemap index
+  if (xml.includes('<sitemapindex')) {
+    const sitemapLocs = [...xml.matchAll(/<sitemap>\s*<loc>([^<]+)<\/loc>/g)].map(m => m[1].trim());
+    for (const childUrl of sitemapLocs) {
+      try {
+        await parseSitemap(childUrl, lastmodMap, urlLookup, sitemapUrlSet);
+      } catch (e) {
+        // Ignore child sitemap errors
+      }
+    }
+    return;
+  }
+
+  // Parse regular sitemap - extract url/lastmod pairs
+  const urlBlocks = xml.split('<url>').slice(1);
+  for (const block of urlBlocks) {
+    const locMatch = block.match(/<loc>([^<]+)<\/loc>/);
+    const lastmodMatch = block.match(/<lastmod>([^<]+)<\/lastmod>/);
+    if (locMatch) {
+      const loc = locMatch[1].trim().toLowerCase().replace(/\/$/, '');
+      sitemapUrlSet.add(loc); // Track all sitemap URLs
+      // Look up if this sitemap URL matches any input URL (exact or without .html)
+      const inputUrl = urlLookup.get(loc);
+      if (inputUrl) {
+        lastmodMap[inputUrl] = lastmodMatch ? lastmodMatch[1].trim() : '';
+      }
+    }
+  }
+}
+
 // Simple console logger
 const log = {
   info: (msg) => console.log(`ℹ️  ${msg}`),
@@ -83,7 +195,7 @@ function writeCsvFile(filePath, records, columns) {
     header: true,
     columns,
   });
-  fs.writeFileSync(filePath, csv, 'utf-8');
+  fs.writeFileSync(filePath, '\ufeff' + csv, 'utf-8');
   log.info(`Saved: ${filePath} (${records.length} rows)`);
 }
 
@@ -317,7 +429,7 @@ async function runTechnicalChecks(urls) {
 /**
  * Generate output files
  */
-function generateOutputs(inputFile, selectedOpportunities, technicalResults, allRecords) {
+function generateOutputs(inputFile, selectedOpportunities, technicalResults, allRecords, lastmodMap = {}, inSitemapMap = {}) {
   const inputBaseName = path.basename(inputFile, path.extname(inputFile));
   
   // Create output directory in the same folder as this script
@@ -339,19 +451,26 @@ function generateOutputs(inputFile, selectedOpportunities, technicalResults, all
     const opportunitiesWithTechnicalChecks = selectedOpportunities.map(opp => {
       const technicalResult = technicalResults.find(t => t.url === opp.url);
       
+      const normalizedUrl = opp.url.toLowerCase().replace(/\/$/, '');
+      const lastmod = lastmodMap[normalizedUrl] || '';
+
       if (technicalResult) {
         return {
           ...opp,
           technical_check_passed: technicalResult.indexable ? 'YES' : 'NO',
           technical_issue_details: technicalResult.indexable ? '' : technicalResult.blockerDetails,
+          in_sitemap: inSitemapMap[normalizedUrl] || 'NO',
+          sitemap_lastmod: lastmod,
         };
       }
-      
+
       // If no technical check was run for this URL, mark as not checked
       return {
         ...opp,
         technical_check_passed: 'NOT_CHECKED',
         technical_issue_details: '',
+        in_sitemap: inSitemapMap[normalizedUrl] || 'NO',
+        sitemap_lastmod: lastmod,
       };
     });
     
@@ -399,6 +518,9 @@ function generateOutputs(inputFile, selectedOpportunities, technicalResults, all
       const isSelected = selectedOpportunities.some(opp => opp.url === r.url);
       const selectedOpp = selectedOpportunities.find(opp => opp.url === r.url);
       
+      const normalizedUrl = r.url.toLowerCase().replace(/\/$/, '');
+      const lastmod = lastmodMap[normalizedUrl] || '';
+
       return {
         url: r.url,
         serp_position: serpPosition,
@@ -409,6 +531,8 @@ function generateOutputs(inputFile, selectedOpportunities, technicalResults, all
         opportunity_rank_selected: selectedOpp?.selected_rank || '',
         technical_check_passed: r.indexable ? 'YES' : 'NO',
         technical_issue_details: r.indexable ? '' : r.blockerDetails, // Only show details if failed
+        in_sitemap: inSitemapMap[normalizedUrl] || 'NO',
+        sitemap_lastmod: lastmod,
         // Include original CSV data (using mergedData to preserve all columns)
         ...Object.fromEntries(
           Object.entries(mergedData).filter(([key]) => !['blockersString', 'blockerDetails', 'serp_position', 'serpPosition', 'ranking', 'url'].includes(key))
@@ -503,7 +627,18 @@ Examples:
     return;
   }
   
-  // Step 2: Run technical checks
+  // Step 2: Fetch sitemap lastmod dates
+  log.info(`\n📅 Fetching sitemap lastmod dates...`);
+  const allUrls = allRecords.map(r => r.url);
+  const { lastmodMap, inSitemapMap } = await fetchSitemapLastmod(allUrls);
+  const foundCount = Object.keys(lastmodMap).length;
+  const mismatchCount = Object.values(inSitemapMap).filter(v => v === 'URL_MISMATCH').length;
+  log.info(`   Found lastmod for ${foundCount}/${allUrls.length} URLs`);
+  if (mismatchCount > 0) {
+    log.warn(`   ⚠️  ${mismatchCount} URLs found in sitemap without .html extension (URL mismatch)`);
+  }
+
+  // Step 3: Run technical checks
   let technicalResults = [];
   
   if (checkMode === 'all') {
@@ -514,8 +649,8 @@ Examples:
     technicalResults = await runTechnicalChecks(selectedOpportunities);
   }
   
-  // Step 3: Generate outputs
-  generateOutputs(inputFile, selectedOpportunities, technicalResults, allRecords);
+  // Step 4: Generate outputs
+  generateOutputs(inputFile, selectedOpportunities, technicalResults, allRecords, lastmodMap, inSitemapMap);
   
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('🎉 Done!\n');
