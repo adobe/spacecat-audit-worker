@@ -3519,6 +3519,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
 
     const mockOpportunity = {
       getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([
         {
           getId: () => 'sugg-789',
@@ -3672,6 +3673,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
   it('should handle multiple remediations with unique suggestionIds', async () => {
     const mockOpportunity = {
       getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
       getSuggestions: sandbox.stub().resolves([
         {
           getId: () => 'sugg-789',

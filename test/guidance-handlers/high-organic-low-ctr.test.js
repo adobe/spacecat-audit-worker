@@ -290,6 +290,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     const systemOpportunity = {
       getId: sandbox.stub().returns('system-oppty-id'),
+      getType: () => 'experimentation-high-organic-low-ctr',
       getSuggestions: sandbox.stub().resolves([systemSuggestion]),
       getData: sandbox.stub().returns({
         page: 'https://abc.com/abc-adoption/account',
@@ -330,6 +331,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     const legacyOpportunity = {
       getId: sandbox.stub().returns('legacy-oppty-id'),
+      getType: () => 'experimentation-high-organic-low-ctr',
       getSuggestions: sandbox.stub().resolves([legacySuggestion]),
       getData: sandbox.stub().returns({
         page: 'https://abc.com/abc-adoption/account',

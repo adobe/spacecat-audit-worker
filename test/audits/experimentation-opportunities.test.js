@@ -742,7 +742,7 @@ describe('Experimentation Opportunities Tests', () => {
         }),
       };
 
-      const createdOpportunity = { getId: () => 'oppty-1' };
+      const createdOpportunity = { getId: () => 'oppty-1', getType: () => 'experimentation-high-organic-low-ctr' };
 
       context.dataAccess = {
         Audit: { findById: sinon.stub().resolves(auditMock) },
@@ -837,7 +837,7 @@ describe('Experimentation Opportunities Tests', () => {
         }),
       };
 
-      const createdOpportunity = { getId: () => 'oppty-3' };
+      const createdOpportunity = { getId: () => 'oppty-3', getType: () => 'experimentation-high-organic-low-ctr' };
 
       context.site.requiresValidation = true;
       context.dataAccess = {
