@@ -16,6 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 
+import esmock from 'esmock';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import {
   importTopPages,
@@ -64,6 +65,7 @@ describe('Commerce Product Enrichments Handler', () => {
 
     site = {
       getId: sinon.stub().returns('site-1'),
+      getBaseURL: sinon.stub().returns('https://example.com'),
       getConfig: sinon.stub().returns({
         getIncludedURLs: sinon.stub().resolves([]),
         getExcludedURLs: sinon.stub().returns([]),
@@ -97,7 +99,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
-      auditContext: { limit: 20 },
+      auditContext: { limit: 20, strategy: 'top-pages' },
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
@@ -117,7 +119,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
-      auditContext: { limit: 25 },
+      auditContext: { limit: 25, strategy: 'top-pages' },
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
@@ -136,7 +138,7 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
-      auditContext: { limit: 25 },
+      auditContext: { limit: 25, strategy: 'top-pages' },
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
@@ -155,7 +157,26 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
-      auditContext: { limit: 20 },
+      auditContext: { limit: 20, strategy: 'top-pages' },
+      auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+      fullAuditRef: 'scrapes/site-1/',
+    });
+  });
+
+  it('importTopPages passes strategy through auditContext', async () => {
+    const context = {
+      site,
+      finalUrl: 'https://example.com',
+      log,
+      data: { strategy: 'sitemap', limit: 25 },
+    };
+
+    const result = await importTopPages(context);
+
+    expect(result).to.deep.equal({
+      type: 'top-pages',
+      siteId: 'site-1',
+      auditContext: { limit: 25, strategy: 'sitemap' },
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
@@ -1838,5 +1859,262 @@ describe('Commerce Product Enrichments Handler', () => {
     // updateExcludedURLs should not be called when there are no non-product pages
     expect(mockConfig.updateExcludedURLs).to.not.have.been.called;
   });
+});
 
+describe('Commerce Product Enrichments Handler - Sitemap Strategy', () => {
+  let log;
+  let site;
+  let dataAccess;
+  let getSitemapUrlsStub;
+  let mockedSubmitForScraping;
+
+  beforeEach(async () => {
+    getSitemapUrlsStub = sinon.stub();
+
+    const mockedHandler = await esmock(
+      '../../../src/commerce-product-enrichments/handler.js',
+      {
+        '../../../src/sitemap/common.js': {
+          getSitemapUrls: getSitemapUrlsStub,
+        },
+      },
+    );
+    mockedSubmitForScraping = mockedHandler.submitForScraping;
+
+    log = {
+      info: sinon.spy(),
+      warn: sinon.spy(),
+      error: sinon.spy(),
+      debug: sinon.spy(),
+    };
+
+    site = {
+      getId: sinon.stub().returns('site-1'),
+      getBaseURL: sinon.stub().returns('https://example.com'),
+      getConfig: sinon.stub().returns({
+        getIncludedURLs: sinon.stub().resolves([]),
+        getExcludedURLs: sinon.stub().returns([]),
+        updateExcludedURLs: sinon.stub(),
+        getHandlers: sinon.stub().returns({}),
+      }),
+      setConfig: sinon.stub(),
+      save: sinon.stub().resolves(),
+    };
+
+    dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+      },
+    };
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('calls getSitemapUrls and submits discovered URLs', async () => {
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': [
+            'https://example.com/product-1',
+            'https://example.com/product-2',
+            'https://example.com/product-3',
+          ],
+        },
+      },
+    });
+
+    const context = {
+      site,
+      dataAccess,
+      log,
+      auditContext: { strategy: 'sitemap', limit: 25 },
+    };
+
+    const result = await mockedSubmitForScraping(context);
+
+    expect(getSitemapUrlsStub).to.have.been.calledOnceWith('https://example.com', log);
+    expect(result.urls).to.deep.equal([
+      { url: 'https://example.com/product-1' },
+      { url: 'https://example.com/product-2' },
+      { url: 'https://example.com/product-3' },
+    ]);
+    expect(result.siteId).to.equal('site-1');
+  });
+
+  it('applies default limit of 25', async () => {
+    const manyUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page-${i + 1}`);
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': manyUrls,
+        },
+      },
+    });
+
+    const context = {
+      site,
+      dataAccess,
+      log,
+      auditContext: { strategy: 'sitemap' },
+    };
+
+    const result = await mockedSubmitForScraping(context);
+
+    expect(result.urls).to.have.lengthOf(25);
+    expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
+    expect(result.urls[24]).to.deep.equal({ url: 'https://example.com/page-25' });
+  });
+
+  it('respects custom limit', async () => {
+    const manyUrls = Array.from({ length: 50 }, (_, i) => `https://example.com/page-${i + 1}`);
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': manyUrls,
+        },
+      },
+    });
+
+    const context = {
+      site,
+      dataAccess,
+      log,
+      auditContext: { strategy: 'sitemap', limit: 10 },
+    };
+
+    const result = await mockedSubmitForScraping(context);
+
+    expect(result.urls).to.have.lengthOf(10);
+    expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
+    expect(result.urls[9]).to.deep.equal({ url: 'https://example.com/page-10' });
+  });
+
+  it('throws on discovery failure', async () => {
+    getSitemapUrlsStub.resolves({
+      success: false,
+      reasons: [{ value: 'https://example.com/robots.txt', error: 'NO_SITEMAP_IN_ROBOTS' }],
+    });
+
+    const context = {
+      site,
+      dataAccess,
+      log,
+      auditContext: { strategy: 'sitemap', limit: 25 },
+    };
+
+    await expect(mockedSubmitForScraping(context)).to.be.rejectedWith('Sitemap discovery failed');
+  });
+
+  it('throws when sitemap succeeds but extractedPaths is missing', async () => {
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {},
+    });
+
+    const context = {
+      site,
+      dataAccess,
+      log,
+      auditContext: { strategy: 'sitemap', limit: 25 },
+    };
+
+    await expect(mockedSubmitForScraping(context)).to.be.rejectedWith('Sitemap discovery failed');
+  });
+
+  it('respects excluded and included URLs', async () => {
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': [
+            'https://example.com/page-1',
+            'https://example.com/page-2',
+            'https://example.com/page-3',
+          ],
+        },
+      },
+    });
+
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves(['https://example.com/included-page']),
+      getExcludedURLs: sinon.stub().returns(['https://example.com/page-2']),
+    });
+
+    const context = {
+      site,
+      dataAccess,
+      log,
+      auditContext: { strategy: 'sitemap', limit: 25 },
+    };
+
+    const result = await mockedSubmitForScraping(context);
+
+    expect(result.urls).to.deep.equal([
+      { url: 'https://example.com/page-1' },
+      { url: 'https://example.com/page-3' },
+      { url: 'https://example.com/included-page' },
+    ]);
+  });
+
+  it('flattens URLs from multiple sitemaps', async () => {
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap-1.xml': [
+            'https://example.com/page-a',
+            'https://example.com/page-b',
+          ],
+          'https://example.com/sitemap-2.xml': [
+            'https://example.com/page-c',
+          ],
+        },
+      },
+    });
+
+    const context = {
+      site,
+      dataAccess,
+      log,
+      auditContext: { strategy: 'sitemap', limit: 25 },
+    };
+
+    const result = await mockedSubmitForScraping(context);
+
+    expect(result.urls).to.have.lengthOf(3);
+    expect(result.urls.map((u) => u.url)).to.include.members([
+      'https://example.com/page-a',
+      'https://example.com/page-b',
+      'https://example.com/page-c',
+    ]);
+  });
+
+  it('defaults to top-pages behavior when no strategy specified', async () => {
+    dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([
+      { getUrl: () => 'https://example.com/page-1' },
+    ]);
+
+    const context = {
+      site,
+      dataAccess,
+      log,
+    };
+
+    const result = await mockedSubmitForScraping(context);
+
+    expect(getSitemapUrlsStub).to.not.have.been.called;
+    expect(dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledOnce;
+    expect(result.urls).to.deep.equal([{ url: 'https://example.com/page-1' }]);
+  });
 });
