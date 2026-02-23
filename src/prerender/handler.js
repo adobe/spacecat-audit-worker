@@ -47,11 +47,7 @@ const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
  * @returns {boolean} True if this is a domain-wide suggestion.
  */
 function isDomainWideSuggestionData(data) {
-  if (!data) return false;
-  if (data.isDomainWide === true) return true;
-  if (data.key === DOMAIN_WIDE_SUGGESTION_KEY) return true;
-  if (typeof data.pathPattern === 'string' && data.pathPattern.trim() === '/*') return true;
-  return false;
+  return !!data?.isDomainWide;
 }
 
 /**
@@ -70,15 +66,8 @@ function shouldPreserveDomainWideSuggestion(suggestion) {
     Suggestion.STATUSES.PENDING_VALIDATION,
     Suggestion.STATUSES.SKIPPED,
   ];
-  if (ACTIVE_STATUSES.includes(status)) {
-    return true;
-  }
 
-  if (data?.tokowakaDeployed || data?.edgeDeployed) {
-    return true;
-  }
-
-  return false;
+  return ACTIVE_STATUSES.includes(status) || !!data?.edgeDeployed;
 }
 
 /**
@@ -102,7 +91,7 @@ async function findPreservableDomainWideSuggestion(opportunity, log) {
   if (preservable) {
     const status = preservable.getStatus();
     const data = preservable.getData();
-    log.info(`${LOG_PREFIX} Found existing domain-wide suggestion to preserve: status=${status}, tokowakaDeployed=${data?.tokowakaDeployed}, edgeDeployed=${data?.edgeDeployed}`);
+    log.info(`${LOG_PREFIX} Found existing domain-wide suggestion to preserve: status=${status}, edgeDeployed=${data?.edgeDeployed}`);
   }
 
   return preservable || null;

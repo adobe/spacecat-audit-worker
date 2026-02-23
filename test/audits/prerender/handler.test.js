@@ -1931,15 +1931,14 @@ describe('Prerender Audit', () => {
         }
       });
 
-      it('should preserve existing domain-wide suggestion when it has tokowakaDeployed flag', async () => {
-        // Test that domain-wide suggestions with tokowakaDeployed are preserved
+      it('should preserve existing domain-wide suggestion when it has edgeDeployed flag', async () => {
         const existingDomainWideSuggestion = {
           getId: () => 'existing-domain-wide-id',
           getStatus: () => 'NEW',
           getData: () => ({
             isDomainWide: true,
             pathPattern: '/*',
-            tokowakaDeployed: 1769607504287,
+            edgeDeployed: 1769607504287,
             allowedRegexPatterns: ['/existing-pattern/'],
           }),
         };
@@ -2177,7 +2176,7 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion.key).to.equal('domain-wide-aggregate|prerender');
       });
 
-      it('should detect domain-wide suggestion by pathPattern only', async () => {
+      it('should not detect domain-wide suggestion by pathPattern alone (requires isDomainWide flag)', async () => {
         const existingDomainWideSuggestion = {
           getId: () => 'existing-domain-wide-id',
           getStatus: () => 'NEW',
@@ -2225,7 +2224,7 @@ describe('Prerender Audit', () => {
         expect(syncSuggestionsStub).to.have.been.calledOnce;
         const syncArgs = syncSuggestionsStub.firstCall.args[0];
         const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
-        expect(domainWideSuggestion).to.be.undefined;
+        expect(domainWideSuggestion).to.exist;
       });
 
       it('should create new domain-wide suggestion when no existing suggestions', async () => {
@@ -2323,8 +2322,7 @@ describe('Prerender Audit', () => {
         expect(domainWideSuggestion).to.exist;
       });
 
-      it('should detect domain-wide suggestion by key field', async () => {
-        // This test covers line 48: if (data.key === DOMAIN_WIDE_SUGGESTION_KEY) return true
+      it('should not detect domain-wide suggestion by key field alone (requires isDomainWide flag)', async () => {
         const existingDomainWideSuggestion = {
           getId: () => 'existing-domain-wide-id',
           getStatus: () => 'NEW',
@@ -2372,9 +2370,9 @@ describe('Prerender Audit', () => {
 
         expect(syncSuggestionsStub).to.have.been.calledOnce;
         const syncArgs = syncSuggestionsStub.firstCall.args[0];
-        // Should NOT create new domain-wide since existing one was detected by key
+        // Without isDomainWide flag, a new domain-wide suggestion is created
         const domainWideSuggestion = syncArgs.newData.find((s) => s.key);
-        expect(domainWideSuggestion).to.be.undefined;
+        expect(domainWideSuggestion).to.exist;
       });
 
       it('should create new domain-wide suggestion when only non-domain-wide suggestions exist', async () => {
