@@ -417,10 +417,12 @@ export async function codeImportStep(context) {
   const {
     log, site,
   } = context;
-
-  log.info(`[A11yAudit] [Site Id: ${site.getId()}] starting code import step`);
+  const siteId = site.getId();
+  log.info(`[A11yAudit] [Site Id: ${siteId}] starting code import step`);
 
   return {
+    auditResult: { status: 'code-import', finalUrl: siteId },
+    fullAuditRef: siteId,
     type: 'code',
     siteId: site.getId(),
     allowCache: false,
