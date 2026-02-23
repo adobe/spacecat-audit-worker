@@ -1,3 +1,10 @@
+## [1.322.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.1...v1.322.2) (2026-02-23)
+
+
+### Bug Fixes
+
+* adding order form in ignored form lists for form opportunities ([#2021](https://github.com/adobe/spacecat-audit-worker/issues/2021)) ([a51df4f](https://github.com/adobe/spacecat-audit-worker/commit/a51df4f9638b77d52db8062a9efd015177a4b15c))
+
 ## [1.322.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.0...v1.322.1) (2026-02-19)
 
 
