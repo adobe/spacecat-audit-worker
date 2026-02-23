@@ -1157,6 +1157,36 @@ describe('Offsite Brand Presence Handler', () => {
       expect(postsBody.parameters).to.not.have.property('days_back');
     });
 
+    it('should include mode and siteBaseUrl parameters for wikipedia dataset', async () => {
+      const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
+        if (i === 0) return stubProviderData(['https://en.wikipedia.org/wiki/Adobe']);
+        return okJsonResponse({});
+      });
+      const responses = buildHappyResponses({
+        providerResponses,
+        drsResponses: [
+          okJsonResponse({ jobId: 'wiki-job' }),
+        ],
+      });
+      stubFetchSequence(responses);
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      const drsCalls = mockFetch.getCalls().filter(
+        (call) => call.args[0].includes(`${env.DRS_API_URL}/jobs`),
+      );
+
+      const wikipediaCall = drsCalls.find((c) => {
+        const body = JSON.parse(c.args[1].body);
+        return body.parameters.dataset_id === 'wikipedia';
+      });
+      expect(wikipediaCall).to.exist;
+
+      const body = JSON.parse(wikipediaCall.args[1].body);
+      expect(body.parameters.mode).to.equal('wikipedia');
+      expect(body.parameters.metadata.siteBaseUrl).to.equal(BASE_URL);
+    });
+
     it('should NOT include days_back parameter for non-reddit domains', async () => {
       const providerResponses = new Array(PROVIDERS.length).fill(null).map((_, i) => {
         if (i === 0) return stubProviderData(['https://youtube.com/shorts/v1']);

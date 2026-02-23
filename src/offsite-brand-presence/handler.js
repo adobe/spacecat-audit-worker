@@ -63,11 +63,10 @@ const OFFSITE_DOMAINS = Object.freeze({
     auditType: 'reddit-analysis',
     datasetIds: ['reddit_posts', 'reddit_comments'],
   },
-  // TODO uncomment this when we have a Wikipedia dataset ID
-  // 'wikipedia.org': {
-  //   auditType: 'wikipedia-analysis',
-  //   datasetIds: ['wikipedia_placeholder'],
-  // },
+  'wikipedia.org': {
+    auditType: 'wikipedia-analysis',
+    datasetIds: ['wikipedia'],
+  },
 });
 
 /**
@@ -421,12 +420,12 @@ async function addUrlsToUrlStore(siteId, urlsByDomain, dataAccess, log) {
  *
  * @param {object} urlsByDomain - Map of domain to array of URL strings
  * @param {string} imsOrgId - The IMS org ID for metadata
- * @param {string} brand - The brand name for metadata
+ * @param {string} baseURL - The base URL of the site
  * @param {object} env - Environment variables
  * @param {object} log - Logger instance
  * @returns {Promise<Array>} Results of DRS job creation
  */
-async function triggerDrsScraping(urlsByDomain, imsOrgId, brand, env, log) {
+async function triggerDrsScraping(urlsByDomain, imsOrgId, baseURL, env, log) {
   const { DRS_API_URL: drsApiUrl, DRS_API_KEY: drsApiKey } = env;
 
   if (!drsApiUrl || !drsApiKey) {
@@ -452,13 +451,18 @@ async function triggerDrsScraping(urlsByDomain, imsOrgId, brand, env, log) {
         urls: urlList,
         metadata: {
           imsOrgId: imsOrgId || '',
-          brand: brand || '',
+          brand: baseURL || '',
           site: domain,
         },
       };
 
       if (datasetId === 'reddit_comments') {
         parameters.days_back = REDDIT_COMMENTS_DAYS_BACK;
+      }
+
+      if (datasetId === 'wikipedia') {
+        parameters.mode = datasetId;
+        parameters.metadata.siteBaseUrl = baseURL;
       }
 
       jobs.push({
