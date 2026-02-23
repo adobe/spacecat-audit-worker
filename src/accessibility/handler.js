@@ -429,6 +429,7 @@ export async function codeImportStep(context) {
 
 export default new AuditBuilder()
   .withUrlResolver((site) => site.resolveFinalURL())
+  .addStep('codeImport', codeImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep(
     'processImport',
     processImportStep,
@@ -439,6 +440,5 @@ export default new AuditBuilder()
     scrapeAccessibilityData,
     AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
   )
-  .addStep('codeImport', codeImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('processAccessibilityOpportunities', processAccessibilityOpportunities)
   .build();
