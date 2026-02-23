@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-export const DRS_TOP_URLS_LIMIT = 20;
+export const DRS_TOP_URLS_LIMIT = 100;
 export const FETCH_PAGE_SIZE = 80000;
 export const FETCH_CONCURRENCY = 3;
 export const FETCH_TIMEOUT_MS = 60000;
