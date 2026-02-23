@@ -605,6 +605,34 @@ describe('Summarization Handler - Athena/Ahrefs fallback', () => {
     );
   });
 
+  it('should throw when all URLs are dynamic in submitForScraping', async () => {
+    mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
+      'https://adobe.com/search',
+      'https://adobe.com/cart',
+      'https://adobe.com/login',
+    ]);
+
+    const handler = await esmock('../../../src/summarization/handler.js', {
+      '../../../src/utils/agentic-urls.js': {
+        getTopAgenticUrlsFromAthena: mockGetTopAgenticUrlsFromAthena,
+      },
+    });
+
+    const context = {
+      log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+      site: { getBaseURL: () => 'https://adobe.com', getId: () => 'site-123' },
+      audit: { getAuditResult: () => ({ success: true }) },
+      dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub() } },
+    };
+
+    await expect(handler.submitForScraping(context)).to.be.rejectedWith(
+      'No top pages to submit for scraping (all excluded as dynamic)',
+    );
+    expect(context.log.warn).to.have.been.calledWith(
+      '[SUMMARIZATION] No static pages left after filtering dynamic content',
+    );
+  });
+
   it('should use Athena URLs in sendToMystique when available', async () => {
     mockGetTopAgenticUrlsFromAthena = sandbox.stub().resolves([
       'https://adobe.com/athena-page1',

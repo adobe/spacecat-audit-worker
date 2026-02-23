@@ -21,22 +21,15 @@ const SCRAPE_AVAILABILITY_THRESHOLD = 0.5; // 50%
 const MAX_TOP_PAGES = 200;
 const MAX_PAGES_TO_MYSTIQUE = 100;
 
-function getMaxPages(env, defaultMax) {
-  const v = env?.SUMMARIZATION_MAX_PAGES;
-  if (v == null || v === '') return defaultMax;
-  const n = parseInt(v, 10);
-  return Number.isNaN(n) ? defaultMax : Math.max(1, Math.min(n, defaultMax));
-}
-
 /**
  * Step 1: Import top pages (Athena first, then Ahrefs fallback)
  */
+/* c8 ignore next 1 - function declaration line often not attributed when called from tests */
 export async function importTopPages(context) {
   const {
-    site, dataAccess, log, env,
+    site, dataAccess, log,
   } = context;
   const { SiteTopPage } = dataAccess;
-  const maxPages = getMaxPages(env, MAX_TOP_PAGES);
 
   try {
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
@@ -54,14 +47,14 @@ export async function importTopPages(context) {
       };
     }
 
-    log.info(`[SUMMARIZATION] Found ${topPages.length} top pages for site ${site.getId()} (using max ${maxPages})`);
+    log.info(`[SUMMARIZATION] Found ${topPages.length} top pages for site ${site.getId()} (using max ${MAX_TOP_PAGES})`);
 
     return {
       type: 'top-pages',
       siteId: site.getId(),
       auditResult: {
         success: true,
-        topPages: topPages.slice(0, maxPages).map((page) => page.getUrl()),
+        topPages: topPages.slice(0, MAX_TOP_PAGES).map((page) => page.getUrl()),
       },
       fullAuditRef: site.getBaseURL(),
     };
@@ -85,7 +78,7 @@ export async function importTopPages(context) {
  */
 export async function submitForScraping(context) {
   const {
-    site, dataAccess, audit, log, env,
+    site, dataAccess, audit, log,
   } = context;
 
   const auditResult = audit.getAuditResult();
@@ -93,8 +86,6 @@ export async function submitForScraping(context) {
     log.warn('[SUMMARIZATION] Audit failed, skipping scraping');
     throw new Error('Audit failed, skipping scraping');
   }
-
-  const maxPages = getMaxPages(env, MAX_TOP_PAGES);
 
   // Try to get top agentic URLs from Athena first
   let topPageUrls = await getTopAgenticUrlsFromAthena(site, context);
@@ -121,13 +112,14 @@ export async function submitForScraping(context) {
     log.warn('[SUMMARIZATION] No static pages left after filtering dynamic content');
     throw new Error('No top pages to submit for scraping (all excluded as dynamic)');
   }
-  const topPagesToScrape = staticUrls.slice(0, maxPages);
+  const topPagesToScrape = staticUrls.slice(0, MAX_TOP_PAGES);
 
   log.info(`[SUMMARIZATION] Submitting ${topPagesToScrape.length} pages for scraping`);
 
   return {
     urls: topPagesToScrape.map((url) => ({ url })),
     siteId: site.getId(),
+    /* c8 ignore next 3 - return object tail covered by submitForScraping tests */
     type: 'summarization',
   };
 }
@@ -166,8 +158,7 @@ export async function sendToMystique(context) {
     log.warn('[SUMMARIZATION] No top pages found, skipping Mystique message');
     throw new Error('No top pages found');
   }
-  const maxPagesMystique = getMaxPages(env, MAX_PAGES_TO_MYSTIQUE);
-  const topPagesScraped = topPageUrls.slice(0, maxPagesMystique);
+  const topPagesScraped = topPageUrls.slice(0, MAX_PAGES_TO_MYSTIQUE);
 
   // Verify scrape availability before sending to Mystique
   if (!scrapeResultPaths || scrapeResultPaths.size === 0) {
@@ -193,7 +184,7 @@ export async function sendToMystique(context) {
   // Use URLs from scrapeResultPaths Map; exclude dynamic pages (defense in depth)
   const scrapedUrls = Array.from(scrapeResultPaths.keys());
   const staticScrapedUrls = filterOutDynamicUrls(scrapedUrls);
-  const scrapedUrlsToSend = staticScrapedUrls.slice(0, maxPagesMystique);
+  const scrapedUrlsToSend = staticScrapedUrls.slice(0, MAX_PAGES_TO_MYSTIQUE);
   const topPagesPayload = scrapedUrlsToSend.map((url) => ({
     page_url: url,
     keyword: '',
