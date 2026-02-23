@@ -14,8 +14,9 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { LOG_PREFIX, AUDIT_TYPE } from './constants.js';
+import { LOG_PREFIX, AUDIT_TYPE, DEFAULT_SITEMAP_LIMIT } from './constants.js';
 import { getCommerceConfig } from '../utils/saas.js';
+import { getSitemapUrls } from '../sitemap/common.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -49,8 +50,9 @@ export async function importTopPages(context) {
   }
 
   const limit = parsedData.limit ? Number(parsedData.limit) : DEFAULT_LIMIT;
+  const strategy = parsedData.strategy || 'top-pages';
 
-  log.info(`${LOG_PREFIX} Step 1: importTopPages for site: ${site.getId()}, url: ${finalUrl}, limit: ${limit}`);
+  log.info(`${LOG_PREFIX} Step 1: importTopPages for site: ${site.getId()}, url: ${finalUrl}, limit: ${limit}, strategy: ${strategy}`);
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
   const result = {
@@ -58,8 +60,8 @@ export async function importTopPages(context) {
     siteId: site.getId(),
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
-    // Always include limit in auditContext so it's preserved between steps
-    auditContext: { limit },
+    // Always include limit and strategy in auditContext so they're preserved between steps
+    auditContext: { limit, strategy },
   };
 
   log.debug(`${LOG_PREFIX} Step 1: result:`, result);
@@ -81,23 +83,45 @@ export async function submitForScraping(context) {
     auditContext,
   } = context;
 
-  log.debug(`${LOG_PREFIX} Step 2: input:`, { siteId: site.getId(), auditContext });
+  const strategy = auditContext?.strategy || 'top-pages';
+
+  log.debug(`${LOG_PREFIX} Step 2: input:`, { siteId: site.getId(), auditContext, strategy });
 
   const limit = auditContext?.limit || DEFAULT_LIMIT;
 
-  log.info(`${LOG_PREFIX} Step 2: submitForScraping for site: ${site.getId()}, limit: ${limit}`);
+  log.info(`${LOG_PREFIX} Step 2: submitForScraping for site: ${site.getId()}, limit: ${limit}, strategy: ${strategy}`);
 
-  const { SiteTopPage } = dataAccess;
-  const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  const topPages = allTopPages.slice(0, limit);
-  const topPagesUrls = topPages.map((page) => page.getUrl());
+  let sourceUrls;
+
+  if (strategy === 'sitemap') {
+    const sitemapLimit = auditContext?.limit || DEFAULT_SITEMAP_LIMIT;
+    const baseURL = site.getBaseURL();
+    log.info(`${LOG_PREFIX} Step 2: Discovering URLs from sitemaps for ${baseURL}`);
+
+    const sitemapResult = await getSitemapUrls(baseURL, log);
+
+    if (!sitemapResult.success || !sitemapResult.details?.extractedPaths) {
+      log.error(`${LOG_PREFIX} Step 2: Sitemap discovery failed for ${baseURL}`, sitemapResult.reasons);
+      throw new Error(`Sitemap discovery failed: ${sitemapResult.reasons?.map((r) => r.error || r.value).join(', ')}`);
+    }
+
+    const allSitemapUrls = Object.values(sitemapResult.details.extractedPaths).flat();
+    sourceUrls = allSitemapUrls.slice(0, sitemapLimit);
+
+    log.info(`${LOG_PREFIX} Step 2: Found ${allSitemapUrls.length} URLs from sitemaps, using ${sourceUrls.length} (limit: ${sitemapLimit})`);
+  } else {
+    const { SiteTopPage } = dataAccess;
+    const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+    const topPages = allTopPages.slice(0, limit);
+    sourceUrls = topPages.map((page) => page.getUrl());
+  }
 
   const auditType = 'commerce-product-enrichments';
   const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
   const excludedURLs = site?.getConfig()?.getExcludedURLs?.(auditType) || [];
 
-  const topPagesFiltered = topPagesUrls.filter((url) => !excludedURLs.includes(url));
-  const finalUrls = [...new Set([...topPagesFiltered, ...includedURLs])];
+  const filteredSourceUrls = sourceUrls.filter((url) => !excludedURLs.includes(url));
+  const finalUrls = [...new Set([...filteredSourceUrls, ...includedURLs])];
 
   if (finalUrls.length === 0) {
     log.error(`${LOG_PREFIX} Step 2: No URLs found for site ${site.getId()} - neither top pages nor included URLs`);
@@ -122,7 +146,7 @@ export async function submitForScraping(context) {
     return true;
   });
 
-  log.info(`${LOG_PREFIX} Step 2: submitting ${filteredUrls.length} URLs (topPages: ${topPages.length}/${allTopPages.length}, excludedURLs: ${excludedURLs.length}, includedURLs: ${includedURLs.length}, pdfsFiltered: ${finalUrls.length - filteredUrls.length})`);
+  log.info(`${LOG_PREFIX} Step 2: submitting ${filteredUrls.length} URLs (strategy: ${strategy}, sourceUrls: ${sourceUrls.length}, excludedURLs: ${excludedURLs.length}, includedURLs: ${includedURLs.length}, pdfsFiltered: ${finalUrls.length - filteredUrls.length})`);
 
   const result = {
     urls: filteredUrls.map((url) => ({ url })),
