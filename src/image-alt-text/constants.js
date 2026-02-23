@@ -18,4 +18,11 @@ export const RUM_INTERVAL = 30; // days
 export const ALT_TEXT_GUIDANCE_TYPE = 'guidance:missing-alt-text';
 export const ALT_TEXT_OBSERVATION = 'Missing alt text on images';
 
+// Preflight audit constants
+export const PREFLIGHT_ALT_TEXT_GUIDANCE_TYPE = 'guidance:preflight-alt-text';
+export const PREFLIGHT_ALT_TEXT_OBSERVATION = 'Missing or low-quality alt text on images';
+
+// Shared constants for alt text analysis
+export const MAX_ALT_TEXT_LENGTH = 125;
+
 export const MYSTIQUE_BATCH_SIZE = 10;
