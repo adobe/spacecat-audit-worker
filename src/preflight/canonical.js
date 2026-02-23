@@ -10,8 +10,12 @@
  * governing permissions and limitations under the License.
  */
 // TODO: Re-enable when preflight canonical is updated for new multi-step architecture
-// import { validateCanonicalFormat, validateCanonicalTag } from '../canonical/handler.js';
+
+// for the duration of development
+/* eslint-disable */
+
 import { saveIntermediateResults } from './utils.js';
+import { normalizeUrlExport as normalizeUrl, validateCanonicalFormat, validateCanonicalTag } from '../canonical/handler.js';
 
 export const PREFLIGHT_CANONICAL = 'canonical';
 
@@ -25,6 +29,8 @@ export default async function canonical(context, auditContext) {
     audits,
     auditsResult,
     timeExecutionBreakdown,
+    scrapedObjects,
+    previewBaseURL,
   } = auditContext;
 
   const canonicalStartTime = Date.now();
@@ -39,18 +45,23 @@ export default async function canonical(context, auditContext) {
     });
   });
 
-  // TODO: Preflight canonical check needs to be updated to work with the
-  // new multi-step canonical audit. For now, returning empty results as
-  // validateCanonicalTag was removed
-  // const canonicalResults = previewUrls.map((url) => ({ url, checks: [] }));
+  const scrapedObjectsNormalized = scrapedObjects.map((scrapedObject) => ({
+    normalizedUrl: normalizeUrl(scrapedObject.data.finalUrl),
+    scrapedObject,
+  }));
 
-  /* TEMPORARILY DISABLED - validateCanonicalTag function was removed
   const canonicalResults = await Promise.all(
     previewUrls.map(async (url) => {
+      const scrapedObjectNormalized = scrapedObjectsNormalized.find((object) => object.normalizedUrl === normalizeUrl(url));
+      if (!scrapedObjectNormalized) {
+        return { url, checks: [] };
+      }
+
       const {
         canonicalUrl,
         checks: tagChecks,
-      } = await validateCanonicalTag(url, log, authHeader, true);
+      } = await validateCanonicalTag(scrapedObjectNormalized.scrapedObject.data, context, scrapedObjectNormalized.normalizedUrl);
+
       const allChecks = [...tagChecks];
       if (canonicalUrl) {
         const siteId = site.getId();
@@ -66,7 +77,7 @@ export default async function canonical(context, auditContext) {
       return { url, checks: allChecks.filter((c) => !c.success) };
     }),
   );
-  */
+
   const canonicalEndTime = Date.now();
   const canonicalEndTimestamp = new Date().toISOString();
   const canonicalElapsed = ((canonicalEndTime - canonicalStartTime) / 1000).toFixed(2);
@@ -79,9 +90,6 @@ export default async function canonical(context, auditContext) {
     endTime: canonicalEndTimestamp,
   });
 
-  // TODO: Re-enable when preflight canonical check is restored
-  // Currently canonicalResults always returns empty checks, so this processing is disabled
-  /*
   canonicalResults.forEach(({ url, checks: canonicalChecks }) => {
     const audit = audits.get(url).audits.find((a) => a.name === PREFLIGHT_CANONICAL);
     canonicalChecks.forEach((check) => audit.opportunities.push({
@@ -91,7 +99,6 @@ export default async function canonical(context, auditContext) {
       seoRecommendation: check.explanation,
     }));
   });
-  */
 
   await saveIntermediateResults(context, auditsResult, 'canonical audit');
 }

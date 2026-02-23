@@ -735,7 +735,38 @@ describe('Preflight Audit', () => {
       sandbox.restore();
     });
 
-    it('completes successfully on the happy path for the suggest step', async () => {
+    describe('suggest step (stubbed canonical fetch)', () => {
+      beforeEach(async () => {
+        // Stub tracingFetch so canonical audit's fetch succeeds (avoids canonical-url-fetch-error).
+        // esmock only applies to the module loaded; canonical/handler.js imports tracingFetch directly,
+        // so load canonical/handler with the stub, inject into preflight/canonical, then into preflight/handler.
+        const spacecatSharedUtils = await import('@adobe/spacecat-shared-utils');
+        const tracingFetchStub = sinon.stub().callsFake(() => Promise.resolve({ ok: true, status: 200 }));
+        const canonicalHandlerModule = await esmock('../../src/canonical/handler.js', {
+          '@adobe/spacecat-shared-utils': {
+            ...spacecatSharedUtils,
+            tracingFetch: tracingFetchStub,
+          },
+        });
+        const preflightCanonicalModule = await esmock('../../src/preflight/canonical.js', {
+          '../../src/canonical/handler.js': canonicalHandlerModule,
+        });
+        const { preflightAudit: mockedPreflightAudit } = await esmock('../../src/preflight/handler.js', {
+          '../../src/preflight/accessibility.js': {
+            default: sinon.stub().resolves(),
+          },
+          '../../src/preflight/canonical.js': {
+            default: preflightCanonicalModule.default,
+          },
+          '@adobe/spacecat-shared-ims-client': {
+            retrievePageAuthentication: retrievePageAuthenticationStub,
+          },
+        });
+        preflightAuditFunction = mockedPreflightAudit;
+      });
+
+      it('completes successfully on the happy path for the suggest step', async () => {
+        site.getBaseURL = () => 'https://main--example--page.aem.page'
       context.promiseToken = 'mock-promise-token';
       const head = '<head><a href="https://example.com/header-url"/></head>';
       const body = '<body><a href="https://example.com/broken"></a><a href="https://example.com/another-broken-url"></a><h1>Page 1 H1</h1><h1>Page 1 H1</h1></h1></body>';
@@ -754,16 +785,23 @@ describe('Preflight Audit', () => {
             ContentType: 'application/json',
             Body: {
               transformToString: sinon.stub().resolves(JSON.stringify({
+                finalUrl: 'https://main--example--page.aem.page/page1',
+                isPreview: true,
+                scrapedAt: Date.now(),
                 scrapeResult: {
                   rawBody: html.replaceAll('https://example.com', 'https://main--example--page.aem.page'),
+                  canonical: {
+                    exists: true,
+                    count: 1,
+                    href: 'https://main--example--page.aem.page/page2', // Not self-referencing (page is /page1) → triggers canonical-self-referenced opportunity
+                    inHead: true,
+                  },
                   tags: {
                     title: 'Page 1 Title',
                     description: 'Page 1 Description',
                     h1: ['Page 1 H1', 'Page 1 H1'],
                   },
                 },
-                finalUrl: 'https://main--example--page.aem.page/page1',
-                scrapedAt: Date.now(),
               })),
             },
           });
@@ -937,6 +975,7 @@ describe('Preflight Audit', () => {
       expect(finalJobEntity.setEndedAt).to.have.been.called;
       expect(finalJobEntity.save).to.have.been.called;
       expect(finalJobEntity.setResult).to.have.been.called;
+    });
     });
 
     it('handles empty aiSuggestion when urlsSuggested is empty', async () => {
@@ -1137,87 +1176,117 @@ describe('Preflight Audit', () => {
       expect(loremIpsumAudit.opportunities[0].check).to.equal('placeholder-text');
     });
 
-    // eslint-disable-next-line func-names
-    it('completes successfully on the happy path for the identify step', async function () {
-      this.timeout(10000); // Increase timeout to 10 seconds
-      const head = '<head><link rel="canonical" href="https://main--example--page.aem.page/page1"/></head>';
-      const body = `<body>${'a'.repeat(10)}lorem ipsum<a href="broken"></a><a href="http://test.com"></a></body>`;
-      const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
+    describe('identify step (stubbed canonical fetch)', () => {
+      beforeEach(async () => {
+        // Stub tracingFetch so canonical audit's fetch succeeds (same as suggest step).
+        const spacecatSharedUtils = await import('@adobe/spacecat-shared-utils');
+        const tracingFetchStub = sinon.stub().callsFake(() => Promise.resolve({ ok: true, status: 200 }));
+        const canonicalHandlerModule = await esmock('../../src/canonical/handler.js', {
+          '@adobe/spacecat-shared-utils': {
+            ...spacecatSharedUtils,
+            tracingFetch: tracingFetchStub,
+          },
+        });
+        const preflightCanonicalModule = await esmock('../../src/preflight/canonical.js', {
+          '../../src/canonical/handler.js': canonicalHandlerModule,
+        });
+        const { preflightAudit: mockedPreflightAudit } = await esmock('../../src/preflight/handler.js', {
+          '../../src/preflight/accessibility.js': { default: sinon.stub().resolves() },
+          '../../src/preflight/canonical.js': { default: preflightCanonicalModule.default },
+          '@adobe/spacecat-shared-ims-client': { retrievePageAuthentication: retrievePageAuthenticationStub },
+        });
+        preflightAuditFunction = mockedPreflightAudit;
+      });
 
-      // Mock the broken internal link to return 404
-      nock('https://main--example--page.aem.page')
-        .head('/broken')
-        .reply(404);
+      // eslint-disable-next-line func-names
+      it('completes successfully on the happy path for the identify step', async function () {
+        site.getBaseURL = () => 'https://main--example--page.aem.page';
+        this.timeout(10000); // Increase timeout to 10 seconds
+        const head = '<head><link rel="canonical" href="https://main--example--page.aem.page/page1"/></head>';
+        const body = `<body>${'a'.repeat(10)}lorem ipsum<a href="broken"></a><a href="http://test.com"></a></body>`;
+        const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
 
-      // Mock the external link to return 404
-      nock('http://test.com')
-        .head('/')
-        .reply(404);
+        // Mock the broken internal link to return 404
+        nock('https://main--example--page.aem.page')
+          .head('/broken')
+          .reply(404);
 
-      s3Client.send.callsFake((command) => {
-        if (command.input?.Prefix) {
-          return Promise.resolve({
-            Contents: [
-              { Key: 'scrapes/site-123/page1/scrape.json' },
-            ],
-            IsTruncated: false,
-          });
-        } else {
-          return Promise.resolve({
-            ContentType: 'application/json',
-            Body: {
-              transformToString: sinon.stub().resolves(JSON.stringify({
-                scrapeResult: {
-                  rawBody: html,
-                  tags: {
-                    title: 'Page 1 Title',
-                    description: 'Page 1 Description',
-                    h1: [],
+        // Mock the external link to return 404
+        nock('http://test.com')
+          .head('/')
+          .reply(404);
+
+        s3Client.send.callsFake((command) => {
+          if (command.input?.Prefix) {
+            return Promise.resolve({
+              Contents: [
+                { Key: 'scrapes/site-123/page1/scrape.json' },
+              ],
+              IsTruncated: false,
+            });
+          } else {
+            return Promise.resolve({
+              ContentType: 'application/json',
+              Body: {
+                transformToString: sinon.stub().resolves(JSON.stringify({
+                  finalUrl: 'https://main--example--page.aem.page/page1',
+                  scrapeResult: {
+                    rawBody: html,
+                    canonical: {
+                      exists: true,
+                      count: 1,
+                      href: 'https://main--example--page.aem.page/page2',
+                      inHead: true,
+                    },
+                    tags: {
+                      title: 'Page 1 Title',
+                      description: 'Page 1 Description',
+                      h1: [],
+                    },
                   },
-                },
-                finalUrl: 'https://main--example--page.aem.page/page1',
-              })),
-            },
-          });
-        }
+                })),
+              },
+            });
+          }
+        });
+
+        job.getMetadata = () => ({
+          payload: {
+            step: PREFLIGHT_STEP_IDENTIFY,
+            urls: ['https://main--example--page.aem.page/page1'],
+            enableAuthentication: false,
+          },
+        });
+
+        configuration.isHandlerEnabledForSite.returns(true);
+
+        await preflightAuditFunction(context);
+
+        // isHandlerEnabledForSite is now called through isAuditEnabledForSite
+        expect(configuration.isHandlerEnabledForSite).to.have.been.called;
+        expect(genvarClient.generateSuggestions).not.to.have.been.called;
+
+        // Verify that AsyncJob.findById was called for the final save
+        expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+
+        // Get the last call to AsyncJob.findById (which is the final save)
+        const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+        const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+        expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
+        expect(finalJobEntity.setResultType).to.have.been.called;
+        expect(finalJobEntity.setEndedAt).to.have.been.called;
+        expect(finalJobEntity.save).to.have.been.called;
+
+        // Verify that setResult was called with the expected data structure
+        expect(finalJobEntity.setResult).to.have.been.called;
+        const actualResult = finalJobEntity.setResult.getCall(0).args[0];
+        // Verify the structure matches the expected data (excluding profiling which is dynamic)
+        expect(actualResult).to.deep.equal(identifyData.map((expected) => ({
+          ...expected,
+          profiling: actualResult[0].profiling, // Use actual profiling data
+        })));
       });
-
-      job.getMetadata = () => ({
-        payload: {
-          step: PREFLIGHT_STEP_IDENTIFY,
-          urls: ['https://main--example--page.aem.page/page1'],
-          enableAuthentication: false,
-        },
-      });
-
-      configuration.isHandlerEnabledForSite.returns(true);
-
-      await preflightAuditFunction(context);
-
-      // isHandlerEnabledForSite is now called through isAuditEnabledForSite
-      expect(configuration.isHandlerEnabledForSite).to.have.been.called;
-      expect(genvarClient.generateSuggestions).not.to.have.been.called;
-
-      // Verify that AsyncJob.findById was called for the final save
-      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-
-      // Get the last call to AsyncJob.findById (which is the final save)
-      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
-      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
-
-      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
-      expect(finalJobEntity.setResultType).to.have.been.called;
-      expect(finalJobEntity.setEndedAt).to.have.been.called;
-      expect(finalJobEntity.save).to.have.been.called;
-
-      // Verify that setResult was called with the expected data structure
-      expect(finalJobEntity.setResult).to.have.been.called;
-      const actualResult = finalJobEntity.setResult.getCall(0).args[0];
-      // Verify the structure matches the expected data (excluding profiling which is dynamic)
-      expect(actualResult).to.deep.equal(identifyData.map((expected) => ({
-        ...expected,
-        profiling: actualResult[0].profiling, // Use actual profiling data
-      })));
     });
 
     // eslint-disable-next-line func-names
@@ -1287,6 +1356,7 @@ describe('Preflight Audit', () => {
     });
 
     it('completes successfully on the happy path for the identify step with readability check', async () => {
+      site.getBaseURL = () => 'https://main--example--page.aem.page'
       const head = '<head><title>Readability Test Page</title></head>';
       const body = '<body><p>The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience. Furthermore, the multifaceted infrastructure exemplifies sophisticated aesthetic considerations. Such complex arrangements require meticulous coordination.</p></body>';
       const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
@@ -1304,15 +1374,23 @@ describe('Preflight Audit', () => {
             ContentType: 'application/json',
             Body: {
               transformToString: sinon.stub().resolves(JSON.stringify({
+                finalUrl: 'https://main--example--page.aem.page/readability-test',
+                isPreview: true,
                 scrapeResult: {
                   rawBody: html,
+                  canonical: {
+                    exists: false,
+                    count: 1,
+                    href: '', 
+                    inHead: true,
+                  },
                   tags: {
                     title: 'Readability Test Page',
                     description: 'Test page for readability',
                     h1: [],
                   },
                 },
-                finalUrl: 'https://main--example--page.aem.page/readability-test',
+                
               })),
             },
           });

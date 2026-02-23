@@ -57,7 +57,14 @@
       {
         "name": "canonical",
         "type": "seo",
-        "opportunities": []
+        "opportunities": [
+          {
+            "check": "canonical-self-referenced",
+            "issue": "The canonical URL should point to itself to indicate that it is the preferred version of the content.",
+            "seoImpact": "Moderate",
+            "seoRecommendation": "The canonical URL should point to itself to indicate that it is the preferred version of the content."
+          }
+        ]
       },
       {
         "name": "metatags",
