@@ -1,3 +1,10 @@
+## [1.322.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.2...v1.322.3) (2026-02-23)
+
+
+### Bug Fixes
+
+* avoid generating guidances for excluded forms ([#2017](https://github.com/adobe/spacecat-audit-worker/issues/2017)) ([7c960af](https://github.com/adobe/spacecat-audit-worker/commit/7c960af6cc382df7b5f92ab2a133dd174cf00e47))
+
 ## [1.322.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.1...v1.322.2) (2026-02-23)
 
 
