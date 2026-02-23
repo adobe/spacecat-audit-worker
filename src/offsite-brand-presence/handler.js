@@ -348,6 +348,7 @@ function extractOffsiteUrls(data, log) {
   const rows = data.data;
   for (const row of rows) {
     const sources = row.Sources?.trim();
+    // row.Mentions is true if the brand or its products are mentioned in the Sources
     if (sources && row.Region === 'US' && row.Mentions === 'true') {
       classifySources(sources, urlsByDomain);
     }

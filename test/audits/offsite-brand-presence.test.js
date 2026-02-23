@@ -644,7 +644,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
     });
 
-    it('should only extract URLs with Region=US, Mentions=true, Citations=true', async () => {
+    it('should only extract URLs with Region=US and Mentions=true', async () => {
       const data = {
         data: [
           {
@@ -654,7 +654,7 @@ describe('Offsite Brand Presence Handler', () => {
             Sources: 'https://youtube.com/v2', Region: 'US', Mentions: 'false', Citations: 'true',
           },
           {
-            Sources: 'https://youtube.com/v3', Region: 'US', Mentions: 'true', Citations: 'false',
+            Sources: 'https://youtube.com/ok', Region: 'US', Mentions: 'true', Citations: 'false',
           },
           {
             Sources: 'https://reddit.com/r/ok', Region: 'US', Mentions: 'true', Citations: 'true',
@@ -676,7 +676,7 @@ describe('Offsite Brand Presence Handler', () => {
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
     });
 
