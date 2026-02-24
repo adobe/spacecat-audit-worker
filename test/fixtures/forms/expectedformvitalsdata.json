@@ -142,7 +142,8 @@
               }
             ]
           }
-        ]
+        ],
+        "formCTAWithinPage": [ "#teaser-related02 .cmp-teaser__action-link"]
       }
     ],
     "auditContext": {

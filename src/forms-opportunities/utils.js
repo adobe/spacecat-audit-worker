@@ -101,6 +101,7 @@ function convertToLowViewOpptyData(metricObject) {
     formview: { total: formViews, mobile: formViewsMobile, desktop: formViewsDesktop },
     pageview: { total: pageViews, mobile: pageViewsMobile, desktop: pageViewsDesktop },
     // trafficacquisition,
+    formCTAWithinPage,
   } = metricObject;
   return {
     trackedFormKPIName: 'Form View Rate',
@@ -142,6 +143,7 @@ function convertToLowViewOpptyData(metricObject) {
         },
       },
     ],
+    ...(formCTAWithinPage ? { formCTAWithinPage } : {}),
   };
 }
 

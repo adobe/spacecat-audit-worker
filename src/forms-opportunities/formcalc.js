@@ -33,7 +33,7 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
   formVitalsCollection.forEach((item) => {
     const {
       url, formview = {}, formengagement = {}, pageview = {}, formsubmit = {},
-      trafficacquisition = {}, formsource = '', iframeSrc,
+      trafficacquisition = {}, formsource = '', iframeSrc, formCTAWithinPage,
     } = item;
 
     const totals = {
@@ -62,6 +62,9 @@ function aggregateFormVitalsByDevice(formVitalsCollection) {
     totals.formsubmit = calculateSums(formsubmit, totals.formsubmit);
     totals.trafficacquisition = trafficacquisition;
     totals.formsource = formsource.startsWith('dialog') ? formsource.replace('dialog ', '') : formsource;
+    if (formCTAWithinPage) {
+      totals.formCTAWithinPage = formCTAWithinPage;
+    }
     if (iframeSrc) {
       totals.iframeSrc = iframeSrc;
     }
@@ -154,6 +157,7 @@ export function getHighPageViewsLowFormViewsMetrics(
 ) {
   const urls = [];
   const resultMap = aggregateFormVitalsByDevice(formVitalsCollection);
+
   resultMap.forEach((metrics, url) => {
     const { total: pageViews } = metrics.pageview;
     const { total: formViews } = metrics.formview;
