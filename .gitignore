@@ -7,7 +7,6 @@ tmp
 logs
 .DS_Store
 test-results.xml
-.env
 .idea/
 *.iml
 notes.loca.md
@@ -15,3 +14,19 @@ notes.loca.md
 .aws-sam/
 env.sh
 output.txt
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# Secrets
+*.pem
+*.key
+secrets/
+credentials/
+
+# Claude local settings
+.claude/settings.local.json
