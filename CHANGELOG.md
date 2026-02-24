@@ -1,3 +1,31 @@
+## [1.322.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.4...v1.322.5) (2026-02-24)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1768](https://github.com/adobe/spacecat-audit-worker/issues/1768)) ([76e8675](https://github.com/adobe/spacecat-audit-worker/commit/76e86754a7c2416e55c76a4c326b4aba679aeffd))
+
+## [1.322.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.3...v1.322.4) (2026-02-24)
+
+
+### Bug Fixes
+
+* [canonical] validate canonical URL accessibility for different domain or protocol ([#2014](https://github.com/adobe/spacecat-audit-worker/issues/2014)) ([20ae30a](https://github.com/adobe/spacecat-audit-worker/commit/20ae30a9a85fca7f948baf928882e18f7eb585e0))
+
+## [1.322.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.2...v1.322.3) (2026-02-23)
+
+
+### Bug Fixes
+
+* avoid generating guidances for excluded forms ([#2017](https://github.com/adobe/spacecat-audit-worker/issues/2017)) ([7c960af](https://github.com/adobe/spacecat-audit-worker/commit/7c960af6cc382df7b5f92ab2a133dd174cf00e47))
+
+## [1.322.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.1...v1.322.2) (2026-02-23)
+
+
+### Bug Fixes
+
+* adding order form in ignored form lists for form opportunities ([#2021](https://github.com/adobe/spacecat-audit-worker/issues/2021)) ([a51df4f](https://github.com/adobe/spacecat-audit-worker/commit/a51df4f9638b77d52db8062a9efd015177a4b15c))
+
 ## [1.322.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.0...v1.322.1) (2026-02-19)
 
 
