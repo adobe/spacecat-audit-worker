@@ -220,6 +220,7 @@ async function compareHtmlContent(url, context) {
     return {
       url,
       ...analysis,
+      isPrerenderEnabled: metadata?.isPrerenderEnabled ?? false,
       hasScrapeMetadata, // Track if scrape.json exists on S3
       scrapeForbidden, // Track if original scrape was forbidden (403)
       /* c8 ignore next */
@@ -231,6 +232,7 @@ async function compareHtmlContent(url, context) {
       url,
       error: true,
       needsPrerender: false,
+      isPrerenderEnabled: metadata?.isPrerenderEnabled ?? false,
       hasScrapeMetadata,
       scrapeForbidden,
       scrapeError: metadata?.error,
@@ -742,6 +744,7 @@ export async function processOpportunityAndSuggestions(
   auditData,
   context,
   isPaid,
+  prerenderStatusMap = new Map(),
 ) {
   const { log } = context;
 
@@ -840,7 +843,11 @@ export async function processOpportunityAndSuggestions(
   });
 
   // Verify NEW suggestions and mark as FIXED if prerendering is already enabled
-  const fixedCount = await verifyAndMarkFixedSuggestions(opportunity, context);
+  const fixedCount = await verifyAndMarkFixedSuggestions(
+    opportunity,
+    context,
+    prerenderStatusMap,
+  );
 
   log.info(`
     ${LOG_PREFIX} prerender_suggestions_sync_metrics:
@@ -1017,9 +1024,14 @@ export async function processContentAndGenerateOpportunities(context) {
 
     log.info(`Prerender - Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}. scrapeForbidden=${scrapeForbidden}, totalUrlsChecked=${comparisonResults.length}, urlsWithScrapeJson=${urlsWithScrapeJson.length}, urlsWithForbiddenScrape=${urlsWithForbiddenScrape.length}, isPaidLLMOCustomer=${isPaid}`);
 
+    // Build prerender status map from scrape metadata for suggestion verification
+    const prerenderStatusMap = new Map(
+      comparisonResults.map((result) => [result.url, result.isPrerenderEnabled ?? false]),
+    );
+
     // Remove internal tracking fields from results before storing
     // eslint-disable-next-line
-    const cleanResults = comparisonResults.map(({ hasScrapeMetadata, scrapeForbidden, ...result }) => result);
+    const cleanResults = comparisonResults.map(({ hasScrapeMetadata, scrapeForbidden, isPrerenderEnabled, ...result }) => result);
 
     const auditResult = {
       totalUrlsChecked: comparisonResults.length,
@@ -1033,7 +1045,7 @@ export async function processContentAndGenerateOpportunities(context) {
 
     let opportunityForGuidance = null;
 
-    /* c8 ignore next 13 - Opportunity processing branch, covered by integration tests */
+    /* c8 ignore next 14 - Opportunity processing branch, covered by integration tests */
     if (urlsNeedingPrerender.length > 0) {
       opportunityForGuidance = await processOpportunityAndSuggestions(
         site.getBaseURL(),
@@ -1045,6 +1057,7 @@ export async function processContentAndGenerateOpportunities(context) {
         },
         context,
         isPaid,
+        prerenderStatusMap,
       );
       /* c8 ignore next 12 */
     } else if (scrapeForbidden) {
