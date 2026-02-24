@@ -10,13 +10,30 @@
  * governing permissions and limitations under the License.
  */
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendAltTextOpportunityToMystique, chunkArray } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { MYSTIQUE_BATCH_SIZE } from './constants.js';
+import { isAuditEnabledForSite } from '../common/audit-utils.js';
+import { getScrapeJsonPath } from '../headings/utils.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
+
+/**
+ * Determines the page limit for alt-text audit based on summit-plg configuration
+ * @param {Object} site - Site object
+ * @param {Object} context - Lambda context with log and dataAccess
+ * @returns {Promise<number>} - Page limit (20 for summit-plg enabled, 100 otherwise)
+ */
+async function getTopPagesLimit(site, context) {
+  const { log } = context;
+  const isSummitPlgEnabled = await isAuditEnabledForSite('summit-plg', site, context);
+  const pageLimit = isSummitPlgEnabled ? 20 : 100;
+  log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit} (summit-plg enabled: ${isSummitPlgEnabled})`);
+  return pageLimit;
+}
 
 export async function processImportStep(context) {
   const { site, finalUrl } = context;
@@ -31,6 +48,92 @@ export async function processImportStep(context) {
   };
 }
 
+/**
+ * Checks for existing scrapes and submits missing URLs to scrape client
+ * @param {Object} context - Lambda context
+ * @returns {Promise<Object>} - Scraping payload with missing URLs
+ */
+export async function processScraping(context) {
+  const {
+    log, site, dataAccess, s3Client, env,
+  } = context;
+  const { SiteTopPage } = dataAccess;
+  const siteId = site.getId();
+
+  log.debug(`[${AUDIT_TYPE}]: Processing scraping step for site ${siteId}`);
+
+  // Get page limit based on summit-plg configuration
+  const pageLimit = await getTopPagesLimit(site, context);
+
+  // Get top pages from ahrefs
+  const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+
+  if (allTopPages.length === 0) {
+    throw new Error(`No top pages found for site ${siteId}`);
+  }
+
+  // Limit to top N pages
+  const topPages = allTopPages.slice(0, pageLimit);
+  log.debug(`[${AUDIT_TYPE}]: Checking scrapes for ${topPages.length} top pages (limit: ${pageLimit})`);
+
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+
+  // Check S3 for existing scrapes in parallel
+  const scrapeCheckResults = await Promise.allSettled(
+    topPages.map(async (page) => {
+      const url = page.getUrl();
+      try {
+        const s3Key = getScrapeJsonPath(url, siteId);
+
+        await s3Client.send(new HeadObjectCommand({
+          Bucket: bucketName,
+          Key: s3Key,
+        }));
+
+        // If HeadObjectCommand succeeds, scrape exists
+        return { url, exists: true };
+      } catch (error) {
+        // If NotFound or NoSuchKey, scrape doesn't exist
+        // For any other error, assume scrape is missing (fail-safe)
+        if (error.name === 'NotFound' || error.name === 'NoSuchKey') {
+          log.debug(`[${AUDIT_TYPE}]: Scrape not found for ${url}`);
+        } else {
+          log.warn(`[${AUDIT_TYPE}]: Error checking scrape for ${url}: ${error.message}, assuming missing`);
+        }
+        return { url, exists: false };
+      }
+    }),
+  );
+
+  // Collect URLs that need scraping
+  const urlsToScrape = scrapeCheckResults
+    .filter((result) => result.status === 'fulfilled' && !result.value.exists)
+    .map((result) => ({ url: result.value.url }));
+
+  log.info(`[${AUDIT_TYPE}]: Found ${urlsToScrape.length} URLs needing scraping out of ${topPages.length} top pages`);
+
+  // If no URLs need scraping, send the first URL anyway to ensure next step can proceed
+  if (urlsToScrape.length === 0) {
+    log.debug(`[${AUDIT_TYPE}]: All scrapes exist, sending first URL to ensure scrape client step completes`);
+    return {
+      urls: [{ url: topPages[0].getUrl() }],
+      siteId,
+      type: 'default',
+      allowCache: true,
+      maxScrapeAge: 0,
+    };
+  }
+
+  // Return payload for SCRAPE_CLIENT
+  return {
+    urls: urlsToScrape,
+    siteId,
+    type: 'default',
+    allowCache: false,
+    maxScrapeAge: 0,
+  };
+}
+
 export async function processAltTextWithMystique(context) {
   const {
     log, site, audit, dataAccess,
@@ -42,10 +145,16 @@ export async function processAltTextWithMystique(context) {
     const { Opportunity, Suggestion } = dataAccess;
     const siteId = site.getId();
 
+    // Get page limit based on summit-plg configuration
+    const pageLimit = await getTopPagesLimit(site, context);
+
     // Get top pages and included URLs
     const { SiteTopPage } = dataAccess;
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    const topPages = allTopPages.slice(0, pageLimit);
     const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
+
+    log.debug(`[${AUDIT_TYPE}]: Using ${topPages.length} top pages out of ${allTopPages.length} (limit: ${pageLimit})`);
 
     // Get ALL page URLs to send to Mystique
     const pageUrls = [...new Set([...topPages.map((page) => page.getUrl()), ...includedURLs])];
@@ -193,5 +302,6 @@ export async function processAltTextWithMystique(context) {
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('processScraping', processScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('processAltTextWithMystique', processAltTextWithMystique)
   .build();
