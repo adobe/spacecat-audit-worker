@@ -92,6 +92,7 @@ export async function submitForScraping(context) {
   log.info(`${LOG_PREFIX} Step 2: submitForScraping for site: ${site.getId()}, limit: ${limit}, strategy: ${strategy}`);
 
   let sourceUrls;
+  let totalSitemapUrls;
 
   if (strategy === 'sitemap') {
     const sitemapLimit = auditContext?.limit || DEFAULT_SITEMAP_LIMIT;
@@ -106,9 +107,10 @@ export async function submitForScraping(context) {
     }
 
     const allSitemapUrls = Object.values(sitemapResult.details.extractedPaths).flat();
+    totalSitemapUrls = allSitemapUrls.length;
     sourceUrls = allSitemapUrls.slice(0, sitemapLimit);
 
-    log.info(`${LOG_PREFIX} Step 2: Found ${allSitemapUrls.length} URLs from sitemaps, using ${sourceUrls.length} (limit: ${sitemapLimit})`);
+    log.info(`${LOG_PREFIX} Step 2: Found ${totalSitemapUrls} URLs from sitemaps, using ${sourceUrls.length} (limit: ${sitemapLimit})`);
   } else {
     const { SiteTopPage } = dataAccess;
     const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
@@ -155,6 +157,7 @@ export async function submitForScraping(context) {
     processingType: 'default',
     auditContext: {
       scrapeJobId: site.getId(), // Pass scrapeJobId to Step 3 for retrieving results
+      ...(totalSitemapUrls !== undefined && { totalSitemapUrls }),
     },
     options: {
       waitTimeoutForMetaTags: 5000,
