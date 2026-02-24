@@ -1,3 +1,10 @@
+## [1.322.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.3...v1.322.4) (2026-02-24)
+
+
+### Bug Fixes
+
+* [canonical] validate canonical URL accessibility for different domain or protocol ([#2014](https://github.com/adobe/spacecat-audit-worker/issues/2014)) ([20ae30a](https://github.com/adobe/spacecat-audit-worker/commit/20ae30a9a85fca7f948baf928882e18f7eb585e0))
+
 ## [1.322.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.2...v1.322.3) (2026-02-23)
 
 
