@@ -20,6 +20,7 @@ import { getCountryCodeFromLang, parseCustomUrls } from '../utils/url-utils.js';
 import {
   getObjectFromKey,
 } from '../utils/s3-utils.js';
+// import { validateUrls } from '../utils/seo-validators.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const IMPORT_ORGANIC_KEYWORDS = 'organic-keywords';

@@ -75,7 +75,7 @@ async function isValidSuggestedUrl(url) {
  * Helper function to try HEAD request first, then GET on 404
  * This handles cases where servers return 404 for HEAD but 200 for GET
  */
-async function fetchWithHeadFallback(url, options = {}) {
+export async function fetchWithHeadFallback(url, options = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
