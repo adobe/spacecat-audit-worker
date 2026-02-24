@@ -33,23 +33,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
     sandbox.restore();
   });
 
-  describe('a11yOpportunityFilter behavior', () => {
-    it('should verify the filter logic for Forms Accessibility tag', () => {
-      const opportunityWithTag = {
-        getTags: () => ['Forms Accessibility', 'Other Tag'],
-      };
-      const opportunityWithoutTag = {
-        getTags: () => ['Other Tag', 'Another Tag'],
-      };
-
-      // Test the filter logic that would be used in a11yOpportunityFilter
-      const filterLogic = (opportunity) => opportunity.getTags().includes('Forms Accessibility');
-
-      expect(filterLogic(opportunityWithTag)).to.be.true;
-      expect(filterLogic(opportunityWithoutTag)).to.be.false;
-    });
-
-    it('should test the complete flow with opportunities that need to be updated to IGNORED', async () => {
+  describe('findOrCreateFormAccessibilityOpportunity behavior', () => {
+    it('should reuse existing active opportunity with NEW status', async () => {
       const message = {
         auditId: 'test-audit-id',
         siteId: 'test-site-id',
@@ -72,10 +57,12 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       };
 
-      // Mock existing opportunities that have Forms Accessibility tag
       const existingOpportunity = {
-        getTags: () => ['Forms Accessibility'],
-        setStatus: sandbox.stub(),
+        getId: () => 'existing-opportunity-id',
+        getType: () => 'form-accessibility',
+        getStatus: () => 'NEW',
+        setAuditId: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
         save: sandbox.stub().resolves(),
       };
 
@@ -84,17 +71,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         .withOverrides({
           dataAccess: {
             Opportunity: {
-              // Return existing opportunities when queried for NEW status
-              allBySiteIdAndStatus: sandbox.stub().callsFake(async (siteId, status) => {
-                if (status === 'NEW') {
-                  return [existingOpportunity];
-                }
-                return [];
-              }),
+              allBySiteId: sandbox.stub().resolves([existingOpportunity]),
               create: sandbox.stub().resolves({
                 getId: () => 'new-opportunity-id',
               }),
-              findById: sandbox.stub().resolves(null), // No existing opportunity with this ID
+              findById: sandbox.stub().resolves(null),
             },
             Site: {
               findById: sandbox.stub().resolves({
@@ -118,10 +99,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         })
         .build();
 
-      // Stub isAuditEnabledForSite to return false (auto-fix disabled)
       const isAuditEnabledForSiteStub = sandbox.stub().resolves(false);
 
-      // Mock the handler with stubbed isAuditEnabledForSite
       const mystiqueDetectedFormAccessibilityHandlerMocked = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/common/audit-utils.js': {
           isAuditEnabledForSite: isAuditEnabledForSiteStub,
@@ -130,14 +109,86 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
-      // Verify that allBySiteIdAndStatus was called to find opportunities to update
-      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith('test-site-id', 'NEW');
-
-      // Verify that the existing opportunity was updated to IGNORED status
-      expect(existingOpportunity.setStatus).to.have.been.calledWith('IGNORED');
+      expect(context.dataAccess.Opportunity.allBySiteId).to.have.been.calledWith('test-site-id');
+      expect(existingOpportunity.setAuditId).to.have.been.calledWith('test-audit-id');
+      expect(existingOpportunity.setUpdatedBy).to.have.been.calledWith('system');
       expect(existingOpportunity.save).to.have.been.calledOnce;
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    });
 
-      // Verify that a new opportunity was created
+    it('should create new opportunity when no active opportunity exists', async () => {
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          a11y: [{
+            form: 'https://example.com/form1',
+            formSource: '#form1',
+            a11yIssues: [{
+              type: 'image-alt',
+              description: 'Images must have alternative text',
+              wcagRule: 'wcag111',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { target_selector: 'img' },
+              ],
+              failureSummary: 'Add alt text to image',
+            }],
+          }],
+        },
+      };
+
+      const ignoredOpportunity = {
+        getId: () => 'ignored-opportunity-id',
+        getType: () => 'form-accessibility',
+        getStatus: () => 'IGNORED',
+      };
+
+      const context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          dataAccess: {
+            Opportunity: {
+              allBySiteId: sandbox.stub().resolves([ignoredOpportunity]),
+              create: sandbox.stub().resolves({
+                getId: () => 'new-opportunity-id',
+              }),
+              findById: sandbox.stub().resolves(null),
+            },
+            Site: {
+              findById: sandbox.stub().resolves({
+                getId: sinon.stub().returns('test-site-id'),
+                getDeliveryType: sinon.stub().returns('aem'),
+                getBaseURL: sinon.stub().returns('https://example.com'),
+              }),
+            },
+          },
+          sqs: {
+            sendMessage: sandbox.stub().resolves(),
+          },
+          env: {
+            QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+          },
+          log: {
+            info: sinon.stub(),
+            error: sinon.stub(),
+            debug: sinon.stub(),
+          },
+        })
+        .build();
+
+      const isAuditEnabledForSiteStub = sandbox.stub().resolves(false);
+
+      const mystiqueDetectedFormAccessibilityHandlerMocked = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: isAuditEnabledForSiteStub,
+        },
+      });
+
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
+
+      expect(context.dataAccess.Opportunity.allBySiteId).to.have.been.calledWith('test-site-id');
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
     });
   });
@@ -177,7 +228,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           },
           dataAccess: {
             Opportunity: {
-              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+              allBySiteId: sandbox.stub().resolves([]),
               create: sandbox.stub().resolves({
                 getId: () => 'test-opportunity-id',
                 getData: () => ({
@@ -688,7 +739,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       );
     });
 
-    it('should continue processing even when updateStatusToIgnored returns failure', async () => {
+    it('should reuse existing active opportunity instead of creating new one', async () => {
       const latestAudit = {
         siteId,
         auditId: 'test-audit-id',
@@ -696,7 +747,6 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         getAuditId: () => 'test-audit-id',
       };
 
-      // Mock aggregateAccessibilityData to return success with actual violations
       const aggregateAccessibilityDataStub = sandbox.stub();
       aggregateAccessibilityDataStub.resolves({
         success: true,
@@ -735,44 +785,36 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       });
 
-      // Mock updateStatusToIgnored to return a failure result (not reject)
-      const updateStatusToIgnoredStub = sandbox.stub().resolves({
-        success: false,
-        updatedCount: 0,
-        error: 'Failed to update some opportunities',
-      });
-
-      // Mock the created opportunity
-      const createdOpportunity = {
-        getId: () => 'opportunity-123',
+      const existingOpportunity = {
+        getId: () => 'existing-opportunity-id',
+        getType: () => 'form-accessibility',
+        getStatus: () => 'NEW',
+        setAuditId: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
       };
-      context.dataAccess.Opportunity.create.resolves(createdOpportunity);
+      context.dataAccess.Opportunity.allBySiteId.resolves([existingOpportunity]);
 
-      // Mock the module to override the imported function
       const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
           sendRunImportMessage: sendRunImportMessageStub,
         },
-        '../../../src/accessibility/utils/scrape-utils.js': {
-          updateStatusToIgnored: updateStatusToIgnoredStub,
-        },
         '../../../src/accessibility/utils/generate-individual-opportunities.js': {
-          aggregateAccessibilityIssues: sandbox.stub().returns({ data: [] }),
+          aggregateA11yIssuesByOppType: sandbox.stub().returns({ data: [] }),
           createIndividualOpportunitySuggestions: sandbox.stub().resolves(),
         },
       });
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      // Verify updateStatusToIgnored was called
-      expect(updateStatusToIgnoredStub).to.have.been.calledOnce;
+      expect(context.dataAccess.Opportunity.allBySiteId).to.have.been.calledWith(siteId);
+      expect(existingOpportunity.setAuditId).to.have.been.calledWith('test-audit-id');
+      expect(existingOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+      expect(existingOpportunity.save).to.have.been.calledOnce;
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
 
-      // Verify that the opportunity was still created despite updateStatusToIgnored failure
-      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
-
-      // Verify that both SQS messages were still sent
       expect(sendRunImportMessageStub).to.have.been.calledOnce;
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       expect(context.sqs.sendMessage).to.have.been.calledWith(
@@ -784,12 +826,6 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         }),
       );
 
-      // Verify success was logged (not error)
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(/a11y opportunity created.*and sent to mystique/),
-      );
-
-      // Verify no error was logged since the function continues normally
       expect(context.log.error).to.not.have.been.called;
     });
 
@@ -1824,7 +1860,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           },
           dataAccess: {
             Opportunity: {
-              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+              allBySiteId: sandbox.stub().resolves([]),
               findById: sandbox.stub().resolves({
                 getId: () => opportunityId,
                 getType: () => 'form-accessibility',
@@ -1873,7 +1909,6 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         })
         .build();
 
-      // Mock the handler with stubbed isAuditEnabledForSite (default: auto-fix disabled)
       mystiqueDetectedFormAccessibilityHandlerMocked = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/common/audit-utils.js': {
           isAuditEnabledForSite: isAuditEnabledForSiteStub,
@@ -2014,16 +2049,14 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       };
 
-      // Mock Opportunity.create to return null (opportunity creation failed)
       context.dataAccess.Opportunity.create.resolves(null);
 
       const result = await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
       expect(result.status).to.equal(200);
-      expect(context.log.info).to.have.been.calledWith(
-        `[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not detected, skipping guidance`,
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to process a11y opportunity from mystique/),
       );
-      // Verify that no suggestions were created
       expect(createIndividualOpportunitySuggestionsStub).to.not.have.been.called;
     });
 
@@ -2105,7 +2138,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           },
           dataAccess: {
             Opportunity: {
-              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+              allBySiteId: sandbox.stub().resolves([]),
               findById: sandbox.stub().resolves({
                 getId: () => opportunityId,
                 getType: () => 'form-accessibility',
@@ -2363,7 +2396,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(suggestionsData.data.length).to.equal(2); // Two htmlWithIssues = two suggestions
     });
 
-    it('should create a new opportunity when no existing opportunity is found', async () => {
+    it('should create a new opportunity when no existing active opportunity is found', async () => {
       const message = {
         auditId,
         siteId,
@@ -2387,17 +2420,15 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       };
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
+      expect(context.dataAccess.Opportunity.allBySiteId).to.have.been.calledWith(siteId);
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
       const createArgs = context.dataAccess.Opportunity.create.getCall(0).args[0];
       expect(createArgs.siteId).to.equal(siteId);
       expect(createArgs.auditId).to.equal('test-audit-id');
       expect(createArgs.type).to.equal(FORM_OPPORTUNITY_TYPES.FORM_A11Y);
-
-      // Verify updateStatusToIgnored was called by checking the dataAccess calls
-      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith(siteId, 'NEW');
     });
 
-    it('should not call updateStatusToIgnored when updating existing opportunity', async () => {
+    it('should skip allBySiteId when opportunityId is provided in message', async () => {
       const message = {
         auditId,
         siteId,
@@ -2423,8 +2454,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
-      // Verify updateStatusToIgnored was NOT called when updating existing opportunity
-      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.not.have.been.called;
+      expect(context.dataAccess.Opportunity.allBySiteId).to.not.have.been.called;
       expect(context.dataAccess.Opportunity.findById).to.have.been.calledWith(opportunityId);
     });
 
