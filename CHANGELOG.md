@@ -1,3 +1,10 @@
+## [1.322.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.6...v1.322.7) (2026-02-24)
+
+
+### Bug Fixes
+
+* update existing opportunity instead of marking as ignored ([#2030](https://github.com/adobe/spacecat-audit-worker/issues/2030)) ([d95f2f3](https://github.com/adobe/spacecat-audit-worker/commit/d95f2f39ea01dfbcf5fc5593d88e0ba475fa33b7))
+
 ## [1.322.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.5...v1.322.6) (2026-02-24)
 
 
