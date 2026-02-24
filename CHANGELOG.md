@@ -1,3 +1,10 @@
+## [1.322.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.5...v1.322.6) (2026-02-24)
+
+
+### Bug Fixes
+
+* zero-pad week number in llm-error-pages filenames ([#2024](https://github.com/adobe/spacecat-audit-worker/issues/2024)) ([5662f23](https://github.com/adobe/spacecat-audit-worker/commit/5662f237e7c6a4499a0656872ddad7f4f25a5b46))
+
 ## [1.322.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.4...v1.322.5) (2026-02-24)
 
 
