@@ -2049,13 +2049,25 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       };
 
-      context.dataAccess.Opportunity.create.resolves(null);
+      const findOrCreateStub = sandbox.stub().resolves({ opportunity: null, isNew: true });
+      const handlerWithNullOpportunity = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: isAuditEnabledForSiteStub,
+        },
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+          findOrCreateAccessibilityOpportunity: findOrCreateStub,
+        },
+        '../../../src/accessibility/utils/data-processing.js': {
+          sendCodeFixMessagesToMystique: sendCodeFixMessagesToMystiqueStub,
+        },
+      });
 
-      const result = await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
+      const result = await handlerWithNullOpportunity.default(message, context);
 
       expect(result.status).to.equal(200);
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Failed to process a11y opportunity from mystique/),
+      expect(context.log.info).to.have.been.calledWith(
+        `[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not detected, skipping guidance`,
       );
       expect(createIndividualOpportunitySuggestionsStub).to.not.have.been.called;
     });
