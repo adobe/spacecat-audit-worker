@@ -1,3 +1,10 @@
+# [1.323.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.7...v1.323.0) (2026-02-24)
+
+
+### Features
+
+* Sitemap audit provides tuning for bot protection ([#2029](https://github.com/adobe/spacecat-audit-worker/issues/2029)) ([c782040](https://github.com/adobe/spacecat-audit-worker/commit/c78204060df0135b94d4ce5b6bb8a796011948cc))
+
 ## [1.322.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.6...v1.322.7) (2026-02-24)
 
 
