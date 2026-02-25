@@ -31,7 +31,11 @@ import {
   checkSitemap,
   checkRobotsForSitemap,
   fetchContent,
+  fetchWithHeadFallback,
   getBaseUrlPagesFromSitemaps,
+  SITEMAP_XML_BATCH_SIZE,
+  PAGE_URL_BATCH_SIZE,
+  PAGE_URL_BATCH_DELAY_MS,
 } from '../../src/sitemap/common.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
@@ -247,6 +251,15 @@ describe('Sitemap Audit', () => {
     });
   });
 
+  describe('fetchWithHeadFallback', () => {
+    it('should use PAGE_URL_TIMEOUT_MS when options.timeout is omitted', async () => {
+      nock(url).head('/test').reply(200);
+
+      const response = await fetchWithHeadFallback(`${url}/test`, {});
+      expect(response.status).to.equal(200);
+    });
+  });
+
   describe('fetchContent', () => {
     it('should return payload and type when response is successful', async () => {
       const mockResponse = {
@@ -451,6 +464,38 @@ describe('Sitemap Audit', () => {
         [`${url}/sitemap.xml`]: [`${url}/foo`, `${url}/bar`],
       });
     });
+
+    it('should add delay between batches when processing multiple sitemaps', async () => {
+      // Create sitemap index with SITEMAP_XML_BATCH_SIZE + 1 child sitemaps to trigger batch delay
+      const sitemapIndexUrls = Array.from(
+        { length: SITEMAP_XML_BATCH_SIZE + 1 },
+        (_, i) => `${url}/sitemap_${i}.xml`,
+      );
+      const sitemapIndexContent = '<?xml version="1.0" encoding="UTF-8"?>\n'
+        + '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + sitemapIndexUrls.map((u) => `<sitemap><loc>${u}</loc></sitemap>`).join('\n')
+        + '\n</sitemapindex>';
+
+      nock(url).get('/sitemap_index.xml').reply(200, sitemapIndexContent);
+
+      sitemapIndexUrls.forEach((sitemapUrl, i) => {
+        const path = new URL(sitemapUrl).pathname;
+        const childSitemap = '<?xml version="1.0" encoding="UTF-8"?>\n'
+          + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+          + `<url><loc>${url}/page-${i}</loc></url>\n`
+          + '</urlset>';
+        nock(url).get(path).reply(200, childSitemap);
+      });
+
+      const result = await getBaseUrlPagesFromSitemaps(url, [
+        `${url}/sitemap_index.xml`,
+      ]);
+
+      expect(Object.keys(result)).to.have.lengthOf(SITEMAP_XML_BATCH_SIZE + 1);
+      sitemapIndexUrls.forEach((sitemapUrl, i) => {
+        expect(result[sitemapUrl]).to.deep.equal([`${url}/page-${i}`]);
+      });
+    });
   });
 
   describe('findSitemap', () => {
@@ -611,7 +656,6 @@ describe('Sitemap Audit', () => {
 
     it('should handle missing details properties with fallback defaults', async () => {
       // Test the exact fallback logic directly by simulating the specific scenario
-      // This is what the code does on lines 41-42:
       // const extractedPaths = siteMapUrlsResult.details?.extractedPaths || {};
       // const filteredSitemapUrls = siteMapUrlsResult.details?.filteredSitemapUrls || [];
 
@@ -1594,6 +1638,27 @@ describe('filterValidUrls with redirect handling', () => {
       expect(error).to.have.property('url');
       expect(error).to.have.property('error', 'NETWORK_ERROR');
     });
+  });
+
+  it('should add delay between batches when processing PAGE_URL_BATCH_SIZE + 1 URLs', async function () {
+    // Timeout must accommodate 751 requests + PAGE_URL_BATCH_DELAY_MS (runs once between batches) + buffer
+    this.timeout(15000 + PAGE_URL_BATCH_DELAY_MS);
+    // Create PAGE_URL_BATCH_SIZE + 1 URLs to trigger the batch delay
+    const urls = Array.from(
+      { length: PAGE_URL_BATCH_SIZE + 1 },
+      (_, i) => `https://example.com/url${i + 1}`,
+    );
+
+    urls.forEach((url, i) => {
+      nock('https://example.com')
+        .head(`/url${i + 1}`)
+        .reply(200);
+    });
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.have.lengthOf(PAGE_URL_BATCH_SIZE + 1);
+    expect(result.notOk).to.be.empty;
   });
 
   it('should not flag redirects to login pages as issues', async () => {
