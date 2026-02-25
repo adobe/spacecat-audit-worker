@@ -28,7 +28,7 @@ import {
   isUnscrapeable,
   urlsMatch,
 } from '../utils/url-utils.js';
-import BrightDataClient from '../support/bright-data-client.js';
+import BrightDataClient, { buildLocaleSearchUrl, extractLocaleFromUrl, localesMatch } from '../support/bright-data-client.js';
 import { sleep } from '../support/utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -375,7 +375,7 @@ export const generateSuggestionData = async (context) => {
   // Bright Data: resolve suggestions first, then fallback to Mystique
   const useBrightData = Boolean(env.BRIGHT_DATA_API_KEY && env.BRIGHT_DATA_ZONE);
   const validateBrightDataUrls = getEnvBool(env, BRIGHT_DATA_VALIDATE_URLS, false);
-  const brightDataMaxResults = getEnvInt(env, BRIGHT_DATA_MAX_RESULTS, 1);
+  const brightDataMaxResults = getEnvInt(env, BRIGHT_DATA_MAX_RESULTS, 10);
   const brightDataRequestDelayMs = getEnvInt(env, BRIGHT_DATA_REQUEST_DELAY_MS, 500);
 
   const resolvedByBrightData = new Set();
@@ -384,10 +384,12 @@ export const generateSuggestionData = async (context) => {
     const brightDataClient = BrightDataClient.createFrom(context);
 
     const processBrokenLink = async (brokenLink) => {
+      const searchUrl = buildLocaleSearchUrl(finalUrl || site.getBaseURL(), brokenLink.urlTo);
+
       const {
         results, keywords,
       } = await brightDataClient.googleSearchWithFallback(
-        prependSchema(finalUrl || site.getBaseURL()),
+        searchUrl,
         brokenLink.urlTo,
         brightDataMaxResults,
         {
@@ -400,7 +402,14 @@ export const generateSuggestionData = async (context) => {
         return;
       }
 
-      const best = results[0];
+      // Post-filter: pick the first result whose locale matches the broken link
+      const brokenLinkLocale = extractLocaleFromUrl(brokenLink.urlTo);
+      const best = results.find((r) => {
+        if (!r?.link) return false;
+        const suggestedLocale = extractLocaleFromUrl(r.link);
+        return localesMatch(brokenLinkLocale, suggestedLocale);
+      }) || results[0]; // fall back to first result if no locale match
+
       if (!best?.link) {
         return;
       }

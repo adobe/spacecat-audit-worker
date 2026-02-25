@@ -2545,6 +2545,126 @@ describe('Canonical URL Tests', () => {
         });
       });
 
+      it('should check canonical URL accessibility when canonical has different domain', async function () {
+        this.timeout(5000);
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            canonical: {
+              exists: true,
+              count: 1,
+              href: 'https://otherdomain.com/page1',
+              inHead: true,
+            },
+            rawBody: createValidRawBody(),
+          },
+        };
+        nock('https://otherdomain.com').get('/page1').reply(200, '<html><body>OK</body></html>');
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          scrapeResultPaths: new Map([['key1', 'scrapes/job-id/page1/scrape.json']]),
+          audit: { getId: () => 'test-audit-id' },
+          dataAccess: {
+            Opportunity: {
+              allBySiteId: sinon.stub().resolves([]),
+              allBySiteIdAndStatus: sinon.stub().resolves([]),
+              create: sinon.stub().resolves({
+                getId: () => 'test-oppty-id',
+                getSuggestions: sinon.stub().resolves([]),
+                addSuggestions: sinon.stub().resolves({ createdItems: [] }),
+              }),
+              addSuggestions: sinon.stub().resolves({ createdItems: [] }),
+            },
+            Suggestion: {
+              allByOpportunityId: sinon.stub().resolves([]),
+              createMany: sinon.stub().resolves([]),
+              removeMany: sinon.stub().resolves([]),
+            },
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': { getObjectFromKey: mockGetObjectFromKey },
+            '../../src/common/opportunity-utils.js': { checkGoogleConnection: sinon.stub().resolves(false) },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result.auditResult).to.be.an('array');
+        const types = result.auditResult.map((r) => r.type);
+        expect(types).to.include('canonical-url-same-domain');
+        expect(nock.isDone()).to.be.true;
+      });
+
+      it('should check canonical URL accessibility when canonical has different protocol', async function () {
+        this.timeout(5000);
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            canonical: {
+              exists: true,
+              count: 1,
+              href: 'http://example.com/page1',
+              inHead: true,
+            },
+            rawBody: createValidRawBody(),
+          },
+        };
+        nock('http://example.com').get('/page1').reply(200, '<html><body>OK</body></html>');
+
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          scrapeResultPaths: new Map([['key1', 'scrapes/job-id/page1/scrape.json']]),
+          audit: { getId: () => 'test-audit-id' },
+          dataAccess: {
+            Opportunity: {
+              allBySiteId: sinon.stub().resolves([]),
+              allBySiteIdAndStatus: sinon.stub().resolves([]),
+              create: sinon.stub().resolves({
+                getId: () => 'test-oppty-id',
+                getSuggestions: sinon.stub().resolves([]),
+                addSuggestions: sinon.stub().resolves({ createdItems: [] }),
+              }),
+              addSuggestions: sinon.stub().resolves({ createdItems: [] }),
+            },
+            Suggestion: {
+              allByOpportunityId: sinon.stub().resolves([]),
+              createMany: sinon.stub().resolves([]),
+              removeMany: sinon.stub().resolves([]),
+            },
+          },
+        };
+
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': { getObjectFromKey: mockGetObjectFromKey },
+            '../../src/common/opportunity-utils.js': { checkGoogleConnection: sinon.stub().resolves(false) },
+          },
+        );
+
+        const result = await processScrapedContentMocked(testContext);
+
+        expect(result.auditResult).to.be.an('array');
+        const types = result.auditResult.map((r) => r.type);
+        expect(types).to.include('canonical-url-same-protocol');
+        expect(nock.isDone()).to.be.true;
+      });
+
       it('should handle error when processing scraped content fails', async () => {
         const mockGetObjectFromKey = sinon.stub().rejects(new Error('S3 fetch failed'));
 

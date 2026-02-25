@@ -17,14 +17,16 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-// Direct import for tests that don't need mocked fetch (for proper coverage tracking)
-import BrightDataClientDirect from '../../src/support/bright-data-client.js';
 
 use(sinonChai);
 use(chaiAsPromised);
 
 describe('BrightDataClient', () => {
   let BrightDataClient;
+  let isValidLocale;
+  let extractLocaleFromUrl;
+  let buildLocaleSearchUrl;
+  let localesMatch;
   let client;
   let logMock;
   let fetchStub;
@@ -40,15 +42,20 @@ describe('BrightDataClient', () => {
     fetchStub = sinon.stub();
 
     // Mock the module with esmock to intercept tracingFetch
-    BrightDataClient = await esmock('../../src/support/bright-data-client.js', {
+    const BrightDataModule = await esmock('../../src/support/bright-data-client.js', {
       '@adobe/spacecat-shared-utils': {
         hasText: (str) => typeof str === 'string' && str.trim().length > 0,
         tracingFetch: fetchStub,
+        prependSchema: (url) => (url?.startsWith('http') ? url : `https://${url}`),
       },
     });
+    BrightDataClient = BrightDataModule.default;
+    ({
+      isValidLocale, extractLocaleFromUrl, buildLocaleSearchUrl, localesMatch,
+    } = BrightDataModule);
 
-    // Use direct import for client instance (proper coverage)
-    client = new BrightDataClientDirect('test-api-key', 'test-zone', logMock);
+    // Use the mocked BrightDataClient for client instance
+    client = new BrightDataClient('test-api-key', 'test-zone', logMock);
   });
 
   afterEach(() => {
@@ -64,8 +71,8 @@ describe('BrightDataClient', () => {
         },
         log: logMock,
       };
-      const newClient = BrightDataClientDirect.createFrom(context);
-      expect(newClient).to.be.instanceOf(BrightDataClientDirect);
+      const newClient = BrightDataClient.createFrom(context);
+      expect(newClient).to.be.instanceOf(BrightDataClient);
     });
 
     it('throws error when API key is missing', () => {
@@ -73,7 +80,7 @@ describe('BrightDataClient', () => {
         env: { BRIGHT_DATA_ZONE: 'zone-abc' },
         log: logMock,
       };
-      expect(() => BrightDataClientDirect.createFrom(context))
+      expect(() => BrightDataClient.createFrom(context))
         .to.throw('BRIGHT_DATA_API_KEY is not configured');
     });
 
@@ -82,7 +89,7 @@ describe('BrightDataClient', () => {
         env: { BRIGHT_DATA_API_KEY: 'api-key-123' },
         log: logMock,
       };
-      expect(() => BrightDataClientDirect.createFrom(context))
+      expect(() => BrightDataClient.createFrom(context))
         .to.throw('BRIGHT_DATA_ZONE is not configured');
     });
   });
@@ -94,6 +101,13 @@ describe('BrightDataClient', () => {
       expect(client.extractLocale('https://example.com/fr_ca/')).to.equal('fr_ca');
     });
 
+    it('extracts xx-yy dash-separated locale from path (preserves dash)', () => {
+      expect(client.extractLocale('https://example.com/ko-kr/products')).to.equal('ko-kr');
+      expect(client.extractLocale('https://example.com/pt-br/about')).to.equal('pt-br');
+      expect(client.extractLocale('https://example.com/en-us/page')).to.equal('en-us');
+      expect(client.extractLocale('https://example.com/zh-tw/')).to.equal('zh-tw');
+    });
+
     it('extracts 2-letter locale from path when in whitelist', () => {
       expect(client.extractLocale('https://example.com/it/products')).to.equal('it');
       expect(client.extractLocale('https://example.com/de/about')).to.equal('de');
@@ -101,9 +115,23 @@ describe('BrightDataClient', () => {
       expect(client.extractLocale('https://example.com/ja/docs')).to.equal('ja');
     });
 
-    it('returns null for 2-letter codes not in whitelist', () => {
-      expect(client.extractLocale('https://example.com/ab/products')).to.be.null;
-      expect(client.extractLocale('https://example.com/xy/about')).to.be.null;
+    it('extracts country codes from LOCALE_ALLOWLIST (dk, uk, at, etc.)', () => {
+      expect(client.extractLocale('https://example.com/dk/products')).to.equal('dk');
+      expect(client.extractLocale('https://example.com/uk/about')).to.equal('uk');
+      expect(client.extractLocale('https://example.com/at/page')).to.equal('at');
+      expect(client.extractLocale('https://example.com/ch/docs')).to.equal('ch');
+    });
+
+    it('extracts regional codes (apac, emea, eu, etc.)', () => {
+      expect(client.extractLocale('https://example.com/eu/products')).to.equal('eu');
+      expect(client.extractLocale('https://example.com/apac/about')).to.equal('apac');
+      expect(client.extractLocale('https://example.com/emea/page')).to.equal('emea');
+    });
+
+    it('returns null for codes not in any locale list', () => {
+      expect(client.extractLocale('https://example.com/xy/products')).to.be.null;
+      expect(client.extractLocale('https://example.com/zz/about')).to.be.null;
+      expect(client.extractLocale('https://example.com/blog/article')).to.be.null;
     });
 
     it('returns null for xx_yy when language not in whitelist', () => {
@@ -125,6 +153,18 @@ describe('BrightDataClient', () => {
     it('extracts locale from base URL with locale path', () => {
       expect(client.extractLocaleFromBaseUrl('https://www.bulk.com/it')).to.equal('it');
       expect(client.extractLocaleFromBaseUrl('https://www.bulk.com/en_us/')).to.equal('en_us');
+    });
+
+    it('extracts dash-separated locale from base URL (preserves dash)', () => {
+      expect(client.extractLocaleFromBaseUrl('https://www.bulk.com/ko-kr')).to.equal('ko-kr');
+      expect(client.extractLocaleFromBaseUrl('https://www.bulk.com/pt-br/')).to.equal('pt-br');
+    });
+
+    it('extracts country and regional codes from base URL', () => {
+      expect(client.extractLocaleFromBaseUrl('https://www.bulk.com/dk')).to.equal('dk');
+      expect(client.extractLocaleFromBaseUrl('https://www.bulk.com/uk')).to.equal('uk');
+      expect(client.extractLocaleFromBaseUrl('https://www.bulk.com/eu/')).to.equal('eu');
+      expect(client.extractLocaleFromBaseUrl('https://www.bulk.com/apac')).to.equal('apac');
     });
 
     it('returns null for base URL without locale', () => {
@@ -351,6 +391,190 @@ describe('BrightDataClient', () => {
     });
   });
 
+  describe('isValidLocale', () => {
+    it('returns true for valid ISO 639-1 language codes', () => {
+      expect(isValidLocale('en')).to.be.true;
+      expect(isValidLocale('de')).to.be.true;
+      expect(isValidLocale('fr')).to.be.true;
+      expect(isValidLocale('da')).to.be.true;
+      expect(isValidLocale('ja')).to.be.true;
+    });
+
+    it('returns true for valid ISO 3166-1 country codes', () => {
+      expect(isValidLocale('dk')).to.be.true;
+      expect(isValidLocale('at')).to.be.true;
+      expect(isValidLocale('ch')).to.be.true;
+      expect(isValidLocale('us')).to.be.true;
+      expect(isValidLocale('gb')).to.be.true;
+    });
+
+    it('returns true for common regional codes', () => {
+      expect(isValidLocale('eu')).to.be.true;
+      expect(isValidLocale('apac')).to.be.true;
+      expect(isValidLocale('emea')).to.be.true;
+    });
+
+    it('is case-insensitive', () => {
+      expect(isValidLocale('DK')).to.be.true;
+      expect(isValidLocale('Fr')).to.be.true;
+      expect(isValidLocale('EU')).to.be.true;
+    });
+
+    it('returns false for invalid or non-locale segments', () => {
+      expect(isValidLocale('blog')).to.be.false;
+      expect(isValidLocale('products')).to.be.false;
+      expect(isValidLocale('api')).to.be.false;
+      expect(isValidLocale('xyz')).to.be.false;
+      expect(isValidLocale('123')).to.be.false;
+    });
+
+    it('returns false for null, undefined, empty string, and non-strings', () => {
+      expect(isValidLocale(null)).to.be.false;
+      expect(isValidLocale(undefined)).to.be.false;
+      expect(isValidLocale('')).to.be.false;
+      expect(isValidLocale(123)).to.be.false;
+      expect(isValidLocale({})).to.be.false;
+    });
+
+    it('returns true for composite locales with dash', () => {
+      expect(isValidLocale('ko-kr')).to.be.true;
+      expect(isValidLocale('en-us')).to.be.true;
+      expect(isValidLocale('pt-br')).to.be.true;
+      expect(isValidLocale('zh-tw')).to.be.true;
+    });
+
+    it('returns true for composite locales with underscore', () => {
+      expect(isValidLocale('ko_kr')).to.be.true;
+      expect(isValidLocale('en_us')).to.be.true;
+      expect(isValidLocale('pt_br')).to.be.true;
+    });
+
+    it('is case-insensitive for composite locales', () => {
+      expect(isValidLocale('KO-KR')).to.be.true;
+      expect(isValidLocale('En-Us')).to.be.true;
+      expect(isValidLocale('PT_BR')).to.be.true;
+    });
+
+    it('returns false for composite locales with invalid parts', () => {
+      expect(isValidLocale('xx-yy')).to.be.false;
+      expect(isValidLocale('en-xyz')).to.be.false;
+      expect(isValidLocale('foo-bar')).to.be.false;
+    });
+  });
+
+  describe('extractLocaleFromUrl', () => {
+    it('extracts simple locale from URL path', () => {
+      expect(extractLocaleFromUrl('https://example.com/dk/page')).to.equal('dk');
+      expect(extractLocaleFromUrl('https://example.com/en/blog')).to.equal('en');
+      expect(extractLocaleFromUrl('https://example.com/fr/')).to.equal('fr');
+    });
+
+    it('extracts composite locale from URL path', () => {
+      expect(extractLocaleFromUrl('https://example.com/ko-kr/blog')).to.equal('ko-kr');
+      expect(extractLocaleFromUrl('https://example.com/en_us/products')).to.equal('en_us');
+      expect(extractLocaleFromUrl('https://example.com/pt-br/page')).to.equal('pt-br');
+    });
+
+    it('returns null when first segment is not a locale', () => {
+      expect(extractLocaleFromUrl('https://example.com/blog/page')).to.be.null;
+      expect(extractLocaleFromUrl('https://example.com/products/item')).to.be.null;
+      expect(extractLocaleFromUrl('https://example.com/api/v2')).to.be.null;
+    });
+
+    it('returns null for root URLs', () => {
+      expect(extractLocaleFromUrl('https://example.com')).to.be.null;
+      expect(extractLocaleFromUrl('https://example.com/')).to.be.null;
+    });
+
+    it('returns null for invalid inputs', () => {
+      expect(extractLocaleFromUrl(null)).to.be.null;
+      expect(extractLocaleFromUrl(undefined)).to.be.null;
+      expect(extractLocaleFromUrl('')).to.be.null;
+      expect(extractLocaleFromUrl(123)).to.be.null;
+    });
+
+    it('returns null for URLs with empty path segments', () => {
+      expect(extractLocaleFromUrl('https://example.com//')).to.be.null;
+    });
+
+    it('returns null for malformed URLs that throw in URL constructor', () => {
+      expect(extractLocaleFromUrl('http://[')).to.be.null;
+    });
+
+    it('handles URLs without scheme', () => {
+      expect(extractLocaleFromUrl('example.com/dk/page')).to.equal('dk');
+      expect(extractLocaleFromUrl('example.com/blog/page')).to.be.null;
+    });
+  });
+
+  describe('buildLocaleSearchUrl', () => {
+    it('appends locale from broken link when base URL has no subpath', () => {
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/dk/broken-page'))
+        .to.equal('https://example.com/dk');
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/fr/page'))
+        .to.equal('https://example.com/fr');
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/ko-kr/page'))
+        .to.equal('https://example.com/ko-kr');
+    });
+
+    it('returns base URL unchanged when base already has a subpath', () => {
+      expect(buildLocaleSearchUrl('https://example.com/uk', 'https://example.com/uk/broken'))
+        .to.equal('https://example.com/uk');
+      expect(buildLocaleSearchUrl('https://example.com/uk', 'https://example.com/fr/broken'))
+        .to.equal('https://example.com/uk');
+    });
+
+    it('returns base URL unchanged when broken link has no valid locale', () => {
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/blog/page'))
+        .to.equal('https://example.com');
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/products/item'))
+        .to.equal('https://example.com');
+    });
+
+    it('returns base URL unchanged when broken link is root', () => {
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com'))
+        .to.equal('https://example.com');
+      expect(buildLocaleSearchUrl('https://example.com', 'https://example.com/'))
+        .to.equal('https://example.com');
+    });
+
+    it('prepends schema to base URL without schema', () => {
+      expect(buildLocaleSearchUrl('example.com', 'https://example.com/dk/page'))
+        .to.equal('https://example.com/dk');
+    });
+  });
+
+  describe('localesMatch', () => {
+    it('returns true when both locales are the same', () => {
+      expect(localesMatch('en', 'en')).to.be.true;
+      expect(localesMatch('ko-kr', 'ko-kr')).to.be.true;
+      expect(localesMatch('dk', 'dk')).to.be.true;
+    });
+
+    it('returns true when both locales are null/undefined (no locale)', () => {
+      expect(localesMatch(null, null)).to.be.true;
+      expect(localesMatch(undefined, undefined)).to.be.true;
+      expect(localesMatch(null, undefined)).to.be.true;
+    });
+
+    it('returns false when one has locale and the other does not', () => {
+      expect(localesMatch('en', null)).to.be.false;
+      expect(localesMatch(null, 'en')).to.be.false;
+      expect(localesMatch('ko-kr', undefined)).to.be.false;
+    });
+
+    it('returns false when locales differ', () => {
+      expect(localesMatch('en', 'fr')).to.be.false;
+      expect(localesMatch('ko-kr', 'en')).to.be.false;
+      expect(localesMatch('dk', 'de')).to.be.false;
+    });
+
+    it('is case-insensitive', () => {
+      expect(localesMatch('EN', 'en')).to.be.true;
+      expect(localesMatch('Ko-KR', 'ko-kr')).to.be.true;
+    });
+  });
+
   describe('resolveGoogleLocaleParams', () => {
     it('returns null hl/gl when no locale', () => {
       expect(client.resolveGoogleLocaleParams(null)).to.deep.equal({ hl: null, gl: null });
@@ -361,6 +585,12 @@ describe('BrightDataClient', () => {
       expect(client.resolveGoogleLocaleParams('en_us')).to.deep.equal({ hl: 'en', gl: 'US' });
       expect(client.resolveGoogleLocaleParams('de_ch')).to.deep.equal({ hl: 'de', gl: 'CH' });
       expect(client.resolveGoogleLocaleParams('fr_ca')).to.deep.equal({ hl: 'fr', gl: 'CA' });
+    });
+
+    it('maps xx-yy dash-separated locale to hl/gl', () => {
+      expect(client.resolveGoogleLocaleParams('ko-kr')).to.deep.equal({ hl: 'ko', gl: 'KR' });
+      expect(client.resolveGoogleLocaleParams('pt-br')).to.deep.equal({ hl: 'pt', gl: 'BR' });
+      expect(client.resolveGoogleLocaleParams('en-us')).to.deep.equal({ hl: 'en', gl: 'US' });
     });
 
     it('maps 2-letter locale to hl and default gl', () => {
@@ -506,7 +736,15 @@ describe('BrightDataClient', () => {
       expect(result.usedLocale).to.be.true;
     });
 
-    it('tries fallback queries when first attempt returns no results', async () => {
+    it('tries fallback queries when first attempt returns no results (with feature flag enabled)', async () => {
+      // Enable locale fallback feature flag
+      const clientWithFallback = new BrightDataClient(
+        'test-api-key',
+        'test-zone',
+        logMock,
+        { BRIGHT_DATA_LOCALE_FALLBACK_ENABLED: 'true' },
+      );
+
       let callCount = 0;
       fetchStub.callsFake(async () => {
         callCount += 1;
@@ -519,7 +757,7 @@ describe('BrightDataClient', () => {
         };
       });
 
-      const result = await mockedClient.googleSearchWithFallback(
+      const result = await clientWithFallback.googleSearchWithFallback(
         'https://example.com',
         'https://example.com/it/products/item',
         1,
@@ -527,6 +765,28 @@ describe('BrightDataClient', () => {
 
       expect(callCount).to.be.greaterThan(1);
       expect(result.results).to.have.lengthOf(1);
+    });
+
+    it('does NOT fall back to non-locale search by default (locale isolation)', async () => {
+      // Default behavior: no fallback (BRIGHT_DATA_LOCALE_FALLBACK_ENABLED=false/undefined)
+      let callCount = 0;
+      fetchStub.callsFake(async () => {
+        callCount += 1;
+        // Always return empty results to test fallback is NOT attempted
+        return { ok: true, json: async () => ({ organic: [] }) };
+      });
+
+      const result = await client.googleSearchWithFallback(
+        'https://example.com',
+        'https://example.com/it/products/item', // Has locale
+        1,
+      );
+
+      // Should only make calls for locale-scoped search + keyword fallbacks (not non-locale scope)
+      // With locale 'it', it should try: site:example.com/it with various keyword combinations
+      // But should NOT try site:example.com (non-locale)
+      expect(callCount).to.be.lessThan(10); // Reasonable upper bound for keyword variations
+      expect(result.results).to.have.lengthOf(0); // All attempts returned empty
     });
 
     it('returns empty results when all fallbacks fail', async () => {

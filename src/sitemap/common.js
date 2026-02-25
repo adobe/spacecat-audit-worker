@@ -20,10 +20,17 @@ import {
   getUrlWithoutPath,
 } from '../support/utils.js';
 
-// Performance tuning constants - Optimized for 20K-30K URLs in 15min Lambda
-export const BATCH_SIZE = 50; // Aggressive batching for high volume
-export const BATCH_DELAY_MS = 50; // Minimal delay to prevent server overload
-export const REQUEST_TIMEOUT_MS = 2000; // 2 second timeout for speed
+// Performance tuning constants:
+// GET timeout for robots.txt and each sitemap.xml file
+export const SITEMAP_GET_TIMEOUT_MS = 15000; // 15 seconds
+// Batching when fetching sitemap.xml files
+export const SITEMAP_XML_BATCH_SIZE = 10; // number to fetch in parallel
+export const SITEMAP_XML_BATCH_DELAY_MS = 500; // half of a second delay between batches
+// Timeout for HEAD (and GET fallback) when validating page URLs
+export const PAGE_URL_TIMEOUT_MS = 10000; // 10 seconds
+// Batching when fetching/validating page URLs
+export const PAGE_URL_BATCH_SIZE = 750; // must stay under 1000
+export const PAGE_URL_BATCH_DELAY_MS = 0; // none
 
 export const ERROR_CODES = Object.freeze({
   INVALID_URL: 'INVALID URL',
@@ -57,13 +64,15 @@ function delay(ms) {
 /**
  * Validates if a suggested URL returns a 200 status code
  * @param {string} url - The URL to validate
+ * @param {number} [timeoutMs=PAGE_URL_TIMEOUT_MS] - Timeout in ms for HEAD/GET
  * @returns {Promise<boolean>} - True if URL returns 200, false otherwise
  */
-async function isValidSuggestedUrl(url) {
+async function isValidSuggestedUrl(url, timeoutMs = PAGE_URL_TIMEOUT_MS) {
   try {
     // eslint-disable-next-line no-use-before-define
     const response = await fetchWithHeadFallback(url, {
       redirect: 'follow',
+      timeout: timeoutMs,
     });
     return response.status === 200;
   } catch {
@@ -73,83 +82,64 @@ async function isValidSuggestedUrl(url) {
 
 /**
  * Helper function to try HEAD request first, then GET on 404
- * This handles cases where servers return 404 for HEAD but 200 for GET
+ * This handles cases where servers return 404 for HEAD but 200 for GET.
+ * Uses `options.timeout` for both HEAD and GET fallback (default PAGE_URL_TIMEOUT_MS).
  */
-async function fetchWithHeadFallback(url, options = {}) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+export async function fetchWithHeadFallback(url, options = {}) {
+  const timeout = options.timeout ?? PAGE_URL_TIMEOUT_MS;
+  const fetchOptions = { ...options, timeout };
 
-  try {
-    // Try HEAD request first
-    const headResponse = await fetch(url, {
-      ...options,
-      method: 'HEAD',
-      signal: controller.signal,
-    });
+  // note: this could throw an exception for network errors
+  const headResponse = await fetch(url, {
+    ...fetchOptions,
+    method: 'HEAD',
+  });
 
-    clearTimeout(timeoutId);
-
-    // If HEAD returns 404, try GET as fallback
-    if (headResponse.status === 404) {
-      const getTimeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-      try {
-        const getResponse = await fetch(url, {
-          ...options,
-          method: 'GET',
-          signal: controller.signal,
-        });
-
-        clearTimeout(getTimeoutId);
-        return getResponse;
-      } catch {
-        clearTimeout(getTimeoutId);
-        // If GET also fails, return the original HEAD response
-        return headResponse;
-      }
+  // If HEAD returns 404, try GET as fallback
+  if (headResponse.status === 404) {
+    try {
+      return await fetch(url, {
+        ...fetchOptions,
+        method: 'GET',
+      });
+    } catch {
+      // If GET also fails, return the original HEAD response (which is a 404)
+      return headResponse;
     }
-
-    return headResponse;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    throw error;
   }
+
+  return headResponse;
 }
 
 /**
- * Fetches content with timeout control
+ * Fetches content with timeout control.
+ * Used only for robots.txt and sitemap.xml GET requests (SITEMAP_GET_TIMEOUT_MS).
  */
 export async function fetchContent(targetUrl) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  // note: this could throw an exception for network errors
+  const response = await fetch(targetUrl, {
+    method: 'GET',
+    timeout: SITEMAP_GET_TIMEOUT_MS,
+  });
 
-  try {
-    const response = await fetch(targetUrl, {
-      method: 'GET',
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      // caught locally
-      throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
-    }
-
-    return {
-      payload: await response.text(),
-      type: response.headers.get('content-type'),
-    };
-  } catch (error) {
-    clearTimeout(timeoutId);
-    throw error;
+  if (!response.ok) {
+    throw new Error(`Fetch error for ${targetUrl} Status: ${response.status}`);
   }
+
+  return {
+    payload: await response.text(),
+    type: response.headers.get('content-type'),
+  };
 }
 
 /**
- * Simplified URL validation with better performance and rate limiting
+ * Simplified URL validation with better performance and rate limiting.
+ * @param {string[]} urls - URLs to validate (page URLs or sitemap URLs)
+ * @param {Object} [log] - Logger
+ * @param {number} [timeoutMs=PAGE_URL_TIMEOUT_MS] -
+ *         Timeout for HEAD/GET (use SITEMAP_GET_TIMEOUT_MS for sitemap URL validation)
  */
-export async function filterValidUrls(urls, log) {
+export async function filterValidUrls(urls, log, timeoutMs = PAGE_URL_TIMEOUT_MS) {
   if (!urls.length) {
     return {
       ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
@@ -164,6 +154,7 @@ export async function filterValidUrls(urls, log) {
     try {
       const response = await fetchWithHeadFallback(url, {
         redirect: 'manual',
+        timeout: timeoutMs,
       });
 
       // Handle successful responses
@@ -193,6 +184,7 @@ export async function filterValidUrls(urls, log) {
           try {
             const redirectResponse = await fetchWithHeadFallback(finalUrl, {
               redirect: 'follow',
+              timeout: timeoutMs,
             });
 
             // Check if the suggested URL actually returns 200
@@ -230,7 +222,7 @@ export async function filterValidUrls(urls, log) {
         const homepageUrl = `${originalUrl.protocol}//${originalUrl.hostname}`;
 
         // Validate the homepage suggestion
-        const isHomepageValid = await isValidSuggestedUrl(homepageUrl);
+        const isHomepageValid = await isValidSuggestedUrl(homepageUrl, timeoutMs);
 
         return {
           type: 'notOk',
@@ -253,9 +245,9 @@ export async function filterValidUrls(urls, log) {
     }
   };
 
-  // Process URLs in batches with rate limiting
-  for (let i = 0; i < urls.length; i += BATCH_SIZE) {
-    const batch = urls.slice(i, i + BATCH_SIZE);
+  // Process URLs in batches with rate limiting (page URL batch size and delay)
+  for (let i = 0; i < urls.length; i += PAGE_URL_BATCH_SIZE) {
+    const batch = urls.slice(i, i + PAGE_URL_BATCH_SIZE);
     const batchPromises = batch.map(checkUrl);
 
     // eslint-disable-next-line no-await-in-loop
@@ -286,9 +278,9 @@ export async function filterValidUrls(urls, log) {
     }
 
     // Add delay between batches to avoid overwhelming servers
-    if (i + BATCH_SIZE < urls.length) {
+    if (i + PAGE_URL_BATCH_SIZE < urls.length) {
       // eslint-disable-next-line no-await-in-loop
-      await delay(BATCH_DELAY_MS);
+      await delay(PAGE_URL_BATCH_DELAY_MS);
     }
   }
 
@@ -330,9 +322,11 @@ export function isSitemapContentValid(sitemapContent) {
 /**
  * Checks sitemap validity and existence
  */
-export async function checkSitemap(sitemapUrl) {
+export async function checkSitemap(sitemapUrl, log) {
   try {
+    log?.debug(`Sitemap: Fetching sitemap URL: ${sitemapUrl}`);
     const sitemapContent = await fetchContent(sitemapUrl);
+    log?.info(`Sitemap: Successfully fetched sitemap URL: ${sitemapUrl} with content type: ${sitemapContent.type}`);
     const isValidFormat = isSitemapContentValid(sitemapContent);
     const isSitemapIndex = isValidFormat && sitemapContent.payload.includes('</sitemapindex>');
     const isText = isValidFormat && sitemapContent.type === 'text/plain';
@@ -350,6 +344,8 @@ export async function checkSitemap(sitemapUrl) {
       details: { sitemapContent, isText, isSitemapIndex },
     };
   } catch (error) {
+    /* c8 ignore next */
+    log?.error(`Sitemap: Error fetching sitemap URL ${sitemapUrl}: ${error.message}`);
     const isNotFound = error.message.includes('404');
     return {
       existsAndIsValid: false,
@@ -361,7 +357,7 @@ export async function checkSitemap(sitemapUrl) {
 /**
  * Retrieves base URL pages from sitemaps with improved error handling
  */
-export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls) {
+export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls, log) {
   // Strip subpath to get domain-only URL for sitemap.xml matching
   const baseUrl = getUrlWithoutPath(inputUrl);
   const baseUrlVariant = toggleWWW(baseUrl);
@@ -369,16 +365,22 @@ export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls) {
   let sitemapsToProcess = [...initialUrls];
   const processedSitemaps = new Set();
 
+  /* c8 ignore next */
+  log?.info(`Sitemap: Starting to process ${sitemapsToProcess.length} initial sitemap URLs for ${inputUrl}`);
   while (sitemapsToProcess.length > 0) {
     const sitemapsFromIndexes = [];
 
-    const processingPromises = sitemapsToProcess.map(async (sitemapUrl) => {
+    const processOne = async (sitemapUrl) => {
       if (processedSitemaps.has(sitemapUrl)) {
         return;
       }
       processedSitemaps.add(sitemapUrl);
+      /* c8 ignore next */
+      log?.debug(`Sitemap: Processing sitemap URL: ${sitemapUrl} for ${inputUrl}`);
 
-      const sitemapData = await checkSitemap(sitemapUrl);
+      const sitemapData = await checkSitemap(sitemapUrl, log);
+      /* c8 ignore next */
+      log?.debug(`Sitemap: .. Sitemap URL ${sitemapUrl} ... exists and is valid: ${sitemapData.existsAndIsValid} ... with reason ${sitemapData.reasons} for ${inputUrl}`);
 
       if (sitemapData.existsAndIsValid) {
         if (sitemapData.details?.isSitemapIndex) {
@@ -400,10 +402,18 @@ export async function getBaseUrlPagesFromSitemaps(inputUrl, initialUrls) {
           }
         }
       }
-    });
+    };
 
-    // eslint-disable-next-line no-await-in-loop
-    await Promise.all(processingPromises);
+    // Process sitemap.xml files in batches with delay between batches
+    for (let i = 0; i < sitemapsToProcess.length; i += SITEMAP_XML_BATCH_SIZE) {
+      const chunk = sitemapsToProcess.slice(i, i + SITEMAP_XML_BATCH_SIZE);
+      // eslint-disable-next-line no-await-in-loop
+      await Promise.all(chunk.map(processOne));
+      if (i + SITEMAP_XML_BATCH_SIZE < sitemapsToProcess.length) {
+        // eslint-disable-next-line no-await-in-loop
+        await delay(SITEMAP_XML_BATCH_DELAY_MS);
+      }
+    }
 
     sitemapsToProcess = sitemapsFromIndexes;
   }
@@ -431,6 +441,7 @@ export async function getSitemapUrls(inputUrl, log) {
     const robotsResult = await checkRobotsForSitemap(protocol, domain);
     if (robotsResult?.paths?.length) {
       sitemapUrls.ok = robotsResult.paths;
+      log?.info(`Sitemap: Found ${robotsResult.paths.length} sitemap URL(s) in robots.txt for ${inputUrl}`);
     }
   } catch (error) {
     /* c8 ignore next */
@@ -444,11 +455,12 @@ export async function getSitemapUrls(inputUrl, log) {
 
   // If no sitemaps found in robots.txt, try common locations
   if (!sitemapUrls.ok.length) {
+    log?.debug(`Sitemap: No sitemap URLs found in robots.txt for ${inputUrl}, trying common locations.`);
     const commonSitemapUrls = [
       `${protocol}://${domain}/sitemap.xml`,
       `${protocol}://${domain}/sitemap_index.xml`,
     ];
-    sitemapUrls = await filterValidUrls(commonSitemapUrls);
+    sitemapUrls = await filterValidUrls(commonSitemapUrls, log, SITEMAP_GET_TIMEOUT_MS);
 
     if (!sitemapUrls.ok?.length) {
       return {
@@ -464,7 +476,9 @@ export async function getSitemapUrls(inputUrl, log) {
 
   // Extract and validate page URLs from our validated sitemap URLs:
   //   getBaseUrlPagesFromSitemaps filters sitemaps by domain, then filters page URLs by full path
-  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, sitemapUrls.ok);
+  const extractedPaths = await getBaseUrlPagesFromSitemaps(inputUrl, sitemapUrls.ok, log);
+  log?.info(`Sitemap: Extracted ${Object.keys(extractedPaths).length} sitemap URLs for ${inputUrl}`);
+  log?.info(`Sitemap: Extracted ${Object.values(extractedPaths).reduce((sum, pages) => sum + pages.length, 0)} page URLs from sitemaps for ${inputUrl}`);
 
   return {
     success: true,
