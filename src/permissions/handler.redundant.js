@@ -150,9 +150,11 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
   const flattenedPermissions = permissionsReport.adminChecks
     .filter((ac) => isNonEmptyArray(ac.details))
     // eslint-disable-next-line max-len
-    .flatMap(({ principal, details }) => details.map((d) => ({
-      principal, path: d.path, permissions: d.privileges, ...d,
-    })));
+    .flatMap(({ principal, details }) => details
+      .filter((d) => d.path && d.path.startsWith('/content')) // Only consider auto-fixable content
+      .map((d) => ({
+        principal, path: d.path, permissions: d.privileges, ...d,
+      })));
 
   if (flattenedPermissions.length === 0) {
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no redundant permissions issues found, skipping opportunity / suggestions generation`);
