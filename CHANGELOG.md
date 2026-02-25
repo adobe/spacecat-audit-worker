@@ -1,3 +1,45 @@
+# [1.328.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.327.0...v1.328.0) (2026-02-25)
+
+
+### Features
+
+* add v2/v3 data access runtime switch ([#2019](https://github.com/adobe/spacecat-audit-worker/issues/2019)) ([075a2f7](https://github.com/adobe/spacecat-audit-worker/commit/075a2f790bf73a56134e7e51e23161b901531b91))
+
+# [1.327.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.326.1...v1.327.0) (2026-02-25)
+
+
+### Features
+
+* added scraping before sending urls to mystique + summit logic differentiation ([#2031](https://github.com/adobe/spacecat-audit-worker/issues/2031)) ([b45e785](https://github.com/adobe/spacecat-audit-worker/commit/b45e7858f78c8366d6a5b4a309b7caa4e630a94e))
+
+## [1.326.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.326.0...v1.326.1) (2026-02-25)
+
+
+### Bug Fixes
+
+* LLMO-3163 ancor byocdn-other s3 scan to audit date rather than c… ([#2035](https://github.com/adobe/spacecat-audit-worker/issues/2035)) ([6bd12fa](https://github.com/adobe/spacecat-audit-worker/commit/6bd12fa46a86d9bafaf878cdd2cf26a4a602f10f))
+
+# [1.326.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.325.0...v1.326.0) (2026-02-25)
+
+
+### Features
+
+* rank candidate pages by per-page consent-banner bounce gap ([#2016](https://github.com/adobe/spacecat-audit-worker/issues/2016)) ([6a27d7f](https://github.com/adobe/spacecat-audit-worker/commit/6a27d7fd7404f53d6e0944357e5de5dcbe306b6c))
+
+# [1.325.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.324.1...v1.325.0) (2026-02-25)
+
+
+### Features
+
+* LLMO-3163: byocdn-other scans and triggers audits for any day in… ([#2020](https://github.com/adobe/spacecat-audit-worker/issues/2020)) ([2c83095](https://github.com/adobe/spacecat-audit-worker/commit/2c83095a82372da77b4781854c854d7fe6d0aa57))
+
+## [1.324.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.324.0...v1.324.1) (2026-02-25)
+
+
+### Bug Fixes
+
+* Filter out non-actionable redundant permissions ([#1967](https://github.com/adobe/spacecat-audit-worker/issues/1967)) ([34fbc78](https://github.com/adobe/spacecat-audit-worker/commit/34fbc7840f16b7ec065f8619d46185010a887966))
+
 # [1.324.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.323.0...v1.324.0) (2026-02-25)
 
 
