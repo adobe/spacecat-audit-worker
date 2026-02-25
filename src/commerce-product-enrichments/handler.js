@@ -69,6 +69,72 @@ export async function importTopPages(context) {
 }
 
 /**
+ * Builds the scrape payload from a list of source URLs, applying exclusion/inclusion
+ * filters, PDF filtering, and deduplication.
+ *
+ * @param {object} params
+ * @param {string[]} params.sourceUrls - Raw source URLs (from top-pages or sitemap)
+ * @param {object} params.site - The site object
+ * @param {object} params.log - Logger
+ * @param {object} [params.extraAuditContext] - Additional fields merged into auditContext
+ * @returns {object} - Scrape payload ready for the scrape client
+ */
+async function buildScrapePayload({
+  sourceUrls, site, log, extraAuditContext = {},
+}) {
+  const auditType = 'commerce-product-enrichments';
+  const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
+  const excludedURLs = site?.getConfig()?.getExcludedURLs?.(auditType) || [];
+
+  const filteredSourceUrls = sourceUrls.filter((url) => !excludedURLs.includes(url));
+  const finalUrls = [...new Set([...filteredSourceUrls, ...includedURLs])];
+
+  if (finalUrls.length === 0) {
+    log.error(`${LOG_PREFIX} Step 2: No URLs found for site ${site.getId()} - neither top pages nor included URLs`);
+    throw new Error('No URLs found for site neither top pages nor included URLs');
+  }
+
+  // Filter out PDF files
+  const isPdfUrl = (url) => {
+    try {
+      const pathname = new URL(url).pathname.toLowerCase();
+      return pathname.endsWith('.pdf');
+    } catch {
+      return false;
+    }
+  };
+
+  const filteredUrls = finalUrls.filter((url) => {
+    if (isPdfUrl(url)) {
+      log.debug(`${LOG_PREFIX} Step 2: Skipping PDF: ${url}`);
+      return false;
+    }
+    return true;
+  });
+
+  log.info(`${LOG_PREFIX} Step 2: submitting ${filteredUrls.length} URLs (sourceUrls: ${sourceUrls.length}, excludedURLs: ${excludedURLs.length}, includedURLs: ${includedURLs.length}, pdfsFiltered: ${finalUrls.length - filteredUrls.length})`);
+
+  const result = {
+    urls: filteredUrls.map((url) => ({ url })),
+    siteId: site.getId(),
+    jobId: site.getId(),
+    processingType: 'default',
+    auditContext: {
+      scrapeJobId: site.getId(),
+      ...extraAuditContext,
+    },
+    options: {
+      waitTimeoutForMetaTags: 5000,
+    },
+    allowCache: false,
+    maxScrapeAge: 0,
+  };
+
+  log.debug(`${LOG_PREFIX} Step 2: output:`, result);
+  return result;
+}
+
+/**
  * Step 2: Submit for Scraping
  * Retrieves top pages from the database and prepares them for scraping.
  *
@@ -118,56 +184,13 @@ export async function submitForScraping(context) {
     sourceUrls = topPages.map((page) => page.getUrl());
   }
 
-  const auditType = 'commerce-product-enrichments';
-  const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
-  const excludedURLs = site?.getConfig()?.getExcludedURLs?.(auditType) || [];
+  const extraAuditContext = totalSitemapUrls !== undefined
+    ? { totalSitemapUrls }
+    : {};
 
-  const filteredSourceUrls = sourceUrls.filter((url) => !excludedURLs.includes(url));
-  const finalUrls = [...new Set([...filteredSourceUrls, ...includedURLs])];
-
-  if (finalUrls.length === 0) {
-    log.error(`${LOG_PREFIX} Step 2: No URLs found for site ${site.getId()} - neither top pages nor included URLs`);
-    throw new Error('No URLs found for site neither top pages nor included URLs');
-  }
-
-  // Filter out PDF files
-  const isPdfUrl = (url) => {
-    try {
-      const pathname = new URL(url).pathname.toLowerCase();
-      return pathname.endsWith('.pdf');
-    } catch {
-      return false;
-    }
-  };
-
-  const filteredUrls = finalUrls.filter((url) => {
-    if (isPdfUrl(url)) {
-      log.debug(`${LOG_PREFIX} Step 2: Skipping PDF: ${url}`);
-      return false;
-    }
-    return true;
+  return buildScrapePayload({
+    sourceUrls, site, log, extraAuditContext,
   });
-
-  log.info(`${LOG_PREFIX} Step 2: submitting ${filteredUrls.length} URLs (strategy: ${strategy}, sourceUrls: ${sourceUrls.length}, excludedURLs: ${excludedURLs.length}, includedURLs: ${includedURLs.length}, pdfsFiltered: ${finalUrls.length - filteredUrls.length})`);
-
-  const result = {
-    urls: filteredUrls.map((url) => ({ url })),
-    siteId: site.getId(),
-    jobId: site.getId(), // Use siteId as jobId so scraper stores results in correct path
-    processingType: 'default',
-    auditContext: {
-      scrapeJobId: site.getId(), // Pass scrapeJobId to Step 3 for retrieving results
-      ...(totalSitemapUrls !== undefined && { totalSitemapUrls }),
-    },
-    options: {
-      waitTimeoutForMetaTags: 5000,
-    },
-    allowCache: false,
-    maxScrapeAge: 0,
-  };
-
-  log.debug(`${LOG_PREFIX} Step 2: output:`, result);
-  return result;
 }
 
 async function sendEnrichment(productPages, commerceConfig, site, env, log) {
