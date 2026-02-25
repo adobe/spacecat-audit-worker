@@ -22,11 +22,10 @@ import { calculateBounceGapLoss as calculateGenericBounceGapLoss } from './bounc
 import {
   getTop3PagesWithTrafficLostTemplate,
   getBounceGapMetricsTemplate,
+  getTopPagesWithBounceGapTemplate,
 } from './queries.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-
-const CUT_OFF_BOUNCE_RATE = 0.3;
 
 const AUDIT_CONSTANTS = {
   GUIDANCE_TYPE: 'guidance:paid-cookie-consent',
@@ -161,6 +160,45 @@ async function executeBounceGapMetricsQuery(
   }));
 }
 
+function transformBounceGapResultItem(item, baseURL) {
+  return {
+    path: item.path,
+    url: item.path ? new URL(item.path, baseURL).toString() : undefined,
+    pvShow: parseInt(item.pv_show || 0, 10),
+    bounceRateShow: parseFloat(item.bounce_rate_show || 0),
+    pvHidden: parseInt(item.pv_hidden || 0, 10),
+    bounceRateHidden: parseFloat(item.bounce_rate_hidden || 0),
+    bounceRateDelta: parseFloat(item.bounce_rate_delta || 0),
+    bounceGapPageviews: parseFloat(item.bounce_gap_pageviews || 0),
+  };
+}
+
+async function executeTopPagesWithBounceGapQuery(
+  athenaClient,
+  siteId,
+  temporalCondition,
+  limit,
+  config,
+  log,
+  baseURL,
+) {
+  const tableName = `${config.rumMetricsDatabase}.${config.rumMetricsCompactTable}`;
+
+  const query = getTopPagesWithBounceGapTemplate({
+    siteId,
+    tableName,
+    temporalCondition,
+    limit,
+  });
+
+  const description = `top pages by consent bounce gap for siteId: ${siteId}`;
+
+  log.debug('[DEBUG] Bounce Gap Pages Query:', query);
+
+  const result = await athenaClient.query(query, config.rumMetricsDatabase, description);
+  return result.map((item) => transformBounceGapResultItem(item, baseURL));
+}
+
 /**
  * Calculates projected traffic lost using bounce gap attribution.
  * Formula: sum of (PV_show × max(0, BR_show - BR_hidden)) per trf_type
@@ -237,22 +275,6 @@ export function calculateSitewideBounceDelta(bounceGapData) {
   const sitewideHiddenBR = totalPVHidden > 0 ? totalBouncesHidden / totalPVHidden : 0;
 
   return Math.max(0, sitewideShowBR - sitewideHiddenBR);
-}
-
-function buildMystiqueMessage(site, auditId, url, top3PageUrls) {
-  return {
-    type: AUDIT_CONSTANTS.GUIDANCE_TYPE,
-    observation: AUDIT_CONSTANTS.OBSERVATION,
-    siteId: site.getId(),
-    url,
-    auditId,
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
-    data: {
-      url,
-      top3PageUrls,
-    },
-  };
 }
 
 export async function paidAuditRunner(auditUrl, context, site) {
@@ -378,40 +400,6 @@ export async function paidAuditRunner(auditUrl, context, site) {
   }
 }
 
-export async function paidConsentBannerCheck(auditUrl, auditData, context, site) {
-  const {
-    log, sqs, env,
-  } = context;
-
-  const { top3Pages, id } = auditData;
-
-  // take first page which has highest projectedTrafficLost
-  const selected = top3Pages?.length > 0 ? top3Pages[0] : null;
-  const selectedPageUrl = selected?.url;
-  if (!selectedPageUrl) {
-    log.warn(
-      `[paid-audit] [Site: ${auditUrl}] No pages with consent='show' found for consent banner audit; skipping`,
-    );
-    return;
-  }
-
-  // Extract all top3 page URLs for Mystique
-  const top3PageUrls = top3Pages.map((page) => page.url);
-  const mystiqueMessage = buildMystiqueMessage(site, id, selectedPageUrl, top3PageUrls);
-
-  const projected = selected?.trafficLoss;
-  log.info(
-    `[paid-audit] [Site: ${auditUrl}] Sending consent-seen page ${selectedPageUrl} `
-    + `(projectedTrafficLoss: ${projected}, bounceRate: ${selected?.bounceRate}) to mystique: ${JSON.stringify(mystiqueMessage)}`,
-  );
-  if (selected?.bounceRate >= CUT_OFF_BOUNCE_RATE) {
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-    log.info(`[paid-audit] [Site: ${auditUrl}] Completed mystique evaluation step`);
-  } else {
-    log.info(`[paid-audit] [Site: ${auditUrl}] Skipping mystique evaluation step for page ${selectedPageUrl} with bounce rate ${selected?.bounceRate} (< ${CUT_OFF_BOUNCE_RATE})`);
-  }
-}
-
 function createImportStep(weekIndex) {
   return async function triggerTrafficAnalysisImportStep(context) {
     const { site, finalUrl, log } = context;
@@ -483,7 +471,7 @@ export async function importAhrefPaidStep(context) {
 
 export async function runPaidConsentAnalysisStep(context) {
   const {
-    site, finalUrl, log, auditContext, audit, env,
+    site, finalUrl, log, auditContext, audit, env, sqs,
   } = context;
 
   log.info(`[paid-audit] [Site: ${finalUrl}] Step 5: Running consent banner analysis`);
@@ -499,36 +487,59 @@ export async function runPaidConsentAnalysisStep(context) {
   const athenaClient = AWSAthenaClient.fromContext(context, `${config.athenaTemp}/paid-audit-cookie-consent/${siteId}-${Date.now()}`);
 
   try {
-    // Only query top3Pages - this is all we need to send to Mystique
-    const top3Pages = await executeTop3TrafficLostPagesQuery(
+    // Query top 20 pages by consent-banner bounce gap
+    const candidateLimit = parseInt(env.PAID_CANDIDATE_PAGE_LIMIT ?? '20', 10);
+    const candidatePages = await executeTopPagesWithBounceGapQuery(
       athenaClient,
-      ['path'],
-      'Top 3 Pages with Traffic Lost',
       siteId,
       temporalCondition,
-      0,
-      3,
+      candidateLimit,
       config,
       log,
       baseURL,
     );
 
-    if (!top3Pages || top3Pages.length === 0) {
-      log.warn(`[paid-audit] [Site: ${finalUrl}] No top3Pages data available; skipping Mystique step`);
-      return {};
+    if (!candidatePages || candidatePages.length === 0) {
+      log.warn(`[paid-audit] [Site: ${finalUrl}] No pages with consent bounce gap; skipping Mystique step`);
+      return { auditResult: { candidatePages: [] }, fullAuditRef: finalUrl };
     }
 
-    // Get the placeholder audit ID from step 1
     const auditId = audit?.getId() || auditContext?.auditId;
 
-    // Send top3Pages to Mystique (guidance handler will query full data)
-    const auditData = { top3Pages, id: auditId };
-    await paidConsentBannerCheck(finalUrl, auditData, context, site);
+    log.info(
+      `[paid-audit] [Site: ${finalUrl}] Sending ${candidatePages.length} candidate pages `
+      + `to Mystique (top: ${candidatePages[0].url}, gap: ${candidatePages[0].bounceGapPageviews})`,
+    );
+
+    // Send all candidate pages to Mystique for business-relevance filtering + consent analysis
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, {
+      type: AUDIT_CONSTANTS.GUIDANCE_TYPE,
+      observation: AUDIT_CONSTANTS.OBSERVATION,
+      siteId,
+      url: candidatePages[0].url,
+      auditId,
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {
+        url: finalUrl,
+        candidatePages: candidatePages.map((p) => ({
+          url: p.url,
+          pvShow: p.pvShow,
+          bounceRateShow: p.bounceRateShow,
+          bounceRateDelta: p.bounceRateDelta,
+          bounceGapPageviews: p.bounceGapPageviews,
+        })),
+      },
+    });
+
+    return {
+      auditResult: { candidatePages },
+      fullAuditRef: finalUrl,
+    };
   } catch (error) {
     log.error(`[paid-audit] [Site: ${finalUrl}] Step 5 failed: ${error.message}`);
+    throw error;
   }
-
-  return {};
 }
 
 export default new AuditBuilder()
