@@ -49,9 +49,8 @@ export async function syncOpportunitiesAndSuggestions(context) {
 
   // Sync suggestions
   const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
-  const maxOrganicForUrls = Math.max(
-    ...auditResult.cwv.filter((entry) => entry.type === 'url').map((entry) => entry.pageviews),
-  );
+  const urlPageviews = auditResult.cwv.filter((entry) => entry.type === 'url').map((entry) => entry.pageviews);
+  const maxOrganicForUrls = urlPageviews.length > 0 ? Math.max(...urlPageviews) : 0;
 
   await syncSuggestions({
     opportunity,

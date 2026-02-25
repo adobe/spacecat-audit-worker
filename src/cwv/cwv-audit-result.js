@@ -18,6 +18,40 @@ const DAILY_THRESHOLD = 1000; // pageviews
 const INTERVAL = 7; // days
 // The number of top pages with issues that will be included in the report
 const TOP_PAGES_COUNT = 15;
+const HEAD_REQUEST_TIMEOUT_MS = 10000;
+
+/**
+ * Performs a HEAD request to the URL and returns true if the response is 4xx
+ * or if the request fails (timeout/network). Used to skip such URLs from CWV opportunities.
+ * @param {string} url - The URL to check
+ * @param {Object} log - Logger instance
+ * @returns {Promise<boolean>} True if URL should be skipped (4xx or request failed)
+ */
+export async function isUrl4xxOrFailed(url, log) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), HEAD_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method: 'HEAD',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Spacecat-Audit/1.0)',
+      },
+    });
+    clearTimeout(timeoutId);
+    const { status } = response;
+    if (status >= 400 && status < 500) {
+      log.debug(`[audit-worker-cwv] Skipping URL (4xx): ${url} status=${status}`);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    log.debug(`[audit-worker-cwv] Skipping URL (HEAD failed): ${url} error=${err.message}`);
+    return true;
+  }
+}
 
 /**
  * Checks if a CWV data entry URL matches a site baseURL.
@@ -87,9 +121,26 @@ export async function buildCWVAuditResult(context) {
     + `Pages above threshold: ${stats.thresholdCount}`,
   );
 
+  // Exclude URL entries that return 4xx or HEAD failed from becoming opportunities
+  const urlEntries = filteredCwvData.filter((entry) => entry.type === 'url');
+  const skipFlags = await Promise.all(
+    urlEntries.map((entry) => isUrl4xxOrFailed(entry.url, log)),
+  );
+  const urlsToSkip = new Set(
+    urlEntries.filter((_, i) => skipFlags[i]).map((e) => e.url),
+  );
+  const after4xxFilter = filteredCwvData.filter(
+    (entry) => entry.type !== 'url' || !urlsToSkip.has(entry.url),
+  );
+  if (urlsToSkip.size > 0) {
+    log.info(
+      `[audit-worker-cwv] siteId: ${siteId} | Excluded ${urlsToSkip.size} URL(s) (4xx or HEAD failed): ${[...urlsToSkip].join(', ')}`,
+    );
+  }
+
   return {
     auditResult: {
-      cwv: filteredCwvData,
+      cwv: after4xxFilter,
       auditContext: {
         interval: INTERVAL,
       },
