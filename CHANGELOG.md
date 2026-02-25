@@ -1,3 +1,10 @@
+# [1.328.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.327.0...v1.328.0) (2026-02-25)
+
+
+### Features
+
+* add v2/v3 data access runtime switch ([#2019](https://github.com/adobe/spacecat-audit-worker/issues/2019)) ([075a2f7](https://github.com/adobe/spacecat-audit-worker/commit/075a2f790bf73a56134e7e51e23161b901531b91))
+
 # [1.327.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.326.1...v1.327.0) (2026-02-25)
 
 
