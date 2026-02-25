@@ -16,7 +16,8 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { MockContextBuilder } from '../../shared.js';
-import { cdnLogsAnalysisRunner } from '../../../src/cdn-analysis/handler.js';
+import { cdnLogsAnalysisRunner, findRecentUploads } from '../../../src/cdn-analysis/handler.js';
+import { computeWeekOffset } from '../../../src/utils/date-utils.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -127,6 +128,11 @@ describe('CDN Analysis Handler', () => {
               getImsOrgId: () => 'test-ims-org-id',
             }),
           },
+          Configuration: {
+            findLatest: sandbox.stub().resolves({
+              getQueues: () => ({ audits: 'test-audit-queue' }),
+            }),
+          },
         },
         env: {
           AWS_ENV: 'dev',
@@ -145,6 +151,10 @@ describe('CDN Analysis Handler', () => {
       expect(result.auditResult).to.include.keys('database', 'providers', 'completedAt');
       expect(result.auditResult.database).to.equal('cdn_logs_example_com');
       expect(result.auditResult.providers).to.be.an('array');
+
+      const deleteWasCalled = context.s3Client.send.getCalls()
+        .some((call) => call.args[0].constructor.name === 'DeleteObjectsCommand');
+      expect(deleteWasCalled).to.be.false;
     });
 
     it('returns error when no CDN bucket found', async () => {
@@ -192,32 +202,159 @@ describe('CDN Analysis Handler', () => {
       expect(result22.auditResult.providers).to.be.an('array').with.length(0);
     });
 
-    it('handles byocdn-other daily processing', async () => {
-      const auditContext23 = {
-        year: 2025,
-        month: 6,
-        day: 15,
-        hour: 23,
+    it('dispatcher-scheduled byocdn-other run scans and triggers sub-audits', async () => {
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 23,
       };
-      const auditContext22 = {
-        year: 2025,
-        month: 6,
-        day: 15,
-        hour: 22,
+
+      const orgId = 'test-ims-org-id';
+      const recentDate = new Date();
+
+      context.s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          const { Prefix = '' } = command.input || {};
+          if (Prefix.includes('aggregated')) {
+            return Promise.resolve({ Contents: [] });
+          }
+          if (Prefix.includes('/raw/byocdn-other/')) {
+            return Promise.resolve({
+              Contents: [
+                { Key: `${orgId}/raw/byocdn-other/2025/06/14/file1.log`, LastModified: recentDate },
+                { Key: `${orgId}/raw/byocdn-other/2025/06/15/file2.log`, LastModified: recentDate },
+              ],
+            });
+          }
+          return Promise.resolve({
+            Contents: [{ Key: `${orgId}/raw/byocdn-other/2025/06/15/file1.log` }],
+            CommonPrefixes: [{ Prefix: `${orgId}/raw/byocdn-other/` }],
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult).to.have.property('scanAndTriggerOnly', true);
+      expect(result.auditResult.providers).to.be.an('array').with.length(0);
+
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        'test-audit-queue',
+        sinon.match({
+          type: 'cdn-logs-analysis',
+          auditContext: sinon.match({
+            processFullDay: true,
+            forceReprocess: true,
+            isSubAudit: true,
+          }),
+        }),
+      );
+
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        'test-audit-queue',
+        sinon.match({ type: 'cdn-logs-report' }),
+        null,
+        900,
+      );
+    });
+
+    it('byocdn-other sub-audit processes logs normally without scanning', async () => {
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 23,
+        processFullDay: true,
+        forceReprocess: true,
+        isSubAudit: true,
       };
 
       context.s3Client.send.callsFake(createS3MockForCdnType('other'));
 
-      // Hour 23 should process
-      const result23 = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext23);
-      expect(result23.auditResult.providers).to.be.an('array').with.length.greaterThan(0);
-      expect(result23.auditResult.providers[0]).to.have.property('cdnType', 'other');
-      expect(result23.auditResult.providers[0].rawDataPath)
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult).to.not.have.property('scanAndTriggerOnly');
+      expect(result.auditResult.providers).to.be.an('array').with.length.greaterThan(0);
+      expect(result.auditResult.providers[0]).to.have.property('cdnType', 'other');
+      expect(result.auditResult.providers[0].rawDataPath)
         .to.include('/raw/byocdn-other/2025/06/15/');
 
-      // Hour 22 should skip
-      const result22 = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext22);
-      expect(result22.auditResult.providers).to.be.an('array').with.length(0);
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('dispatcher-scheduled byocdn-other run with no recent files returns early', async () => {
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 23,
+      };
+
+      context.s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          const { Prefix = '' } = command.input || {};
+          if (Prefix.includes('/raw/byocdn-other/')) {
+            return Promise.resolve({ Contents: [] });
+          }
+          return Promise.resolve({
+            Contents: [],
+            CommonPrefixes: [{ Prefix: 'test-ims-org-id/raw/byocdn-other/' }],
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult).to.have.property('scanAndTriggerOnly', true);
+      expect(result.auditResult.providers).to.be.an('array').with.length(0);
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/No recent byocdn-other files found/),
+      );
+    });
+
+    it('scanning error is non-fatal for byocdn-other dispatcher run', async () => {
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 23,
+      };
+
+      context.s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          const { Prefix = '' } = command.input || {};
+          if (Prefix.includes('/raw/byocdn-other/')) {
+            return Promise.reject(new Error('S3 access denied'));
+          }
+          return Promise.resolve({
+            Contents: [],
+            CommonPrefixes: [{ Prefix: 'test-ims-org-id/raw/byocdn-other/' }],
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult).to.have.property('scanAndTriggerOnly', true);
+      expect(result.auditResult.providers).to.be.an('array').with.length(0);
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to scan\/trigger byocdn-other sub-audits/),
+      );
+    });
+
+    it('dispatcher-scheduled byocdn-other run at non-23 hour skips scanning', async () => {
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 10,
+      };
+
+      context.s3Client.send.callsFake(createS3MockForCdnType('other'));
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult).to.not.have.property('scanAndTriggerOnly');
+      expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
     it('validates and processes auditContext correctly', async () => {
@@ -351,6 +488,105 @@ describe('CDN Analysis Handler', () => {
       );
     });
 
+    it('should force reprocessing when forceReprocess is true even if aggregated data exists', async () => {
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 23,
+        processFullDay: true,
+        forceReprocess: true,
+        isSubAudit: true,
+      };
+
+      const orgId = 'test-ims-org-id';
+      const deleteCallBuckets = [];
+
+      context.s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'DeleteObjectsCommand') {
+          deleteCallBuckets.push(command.input.Bucket);
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          const { Prefix = '' } = command.input || {};
+          if (Prefix.includes('aggregated')) {
+            return Promise.resolve({ Contents: [{ Key: `${Prefix}data.parquet` }] });
+          }
+          return Promise.resolve({
+            Contents: [{ Key: `${orgId}/raw/byocdn-other/2025/06/15/file1.log` }],
+            CommonPrefixes: [{ Prefix: `${orgId}/raw/byocdn-other/` }],
+          });
+        }
+        if (command.constructor.name === 'GetObjectCommand') {
+          const mockStream = {
+            async* [Symbol.asyncIterator]() {
+              yield Buffer.from('{"url": "/test", "timestamp": "2025-06-15T10:00:00Z", "status": 200}\n');
+            },
+          };
+          return Promise.resolve({ Body: mockStream });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult).to.not.have.property('skipped');
+      expect(result.auditResult.providers).to.be.an('array').with.length.greaterThan(0);
+      expect(result.auditResult.providers[0]).to.have.property('cdnType', 'other');
+
+      expect(deleteCallBuckets).to.have.length(2);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Cleared.*object\(s\) from.*aggregated\//),
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Cleared.*object\(s\) from.*aggregated-referral\//),
+      );
+      expect(result.auditResult.providers[0].rawDataPath)
+        .to.include('/raw/byocdn-other/2025/06/15/');
+    });
+
+    it('deduplicates cdn-logs-report triggers by week', async () => {
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 23,
+      };
+
+      const orgId = 'test-ims-org-id';
+      const recentDate = new Date();
+
+      context.s3Client.send.callsFake((command) => {
+        if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          const { Prefix = '' } = command.input || {};
+          if (Prefix.includes('/raw/byocdn-other/')) {
+            return Promise.resolve({
+              Contents: [
+                { Key: `${orgId}/raw/byocdn-other/2025/06/09/a.log`, LastModified: recentDate },
+                { Key: `${orgId}/raw/byocdn-other/2025/06/10/b.log`, LastModified: recentDate },
+                { Key: `${orgId}/raw/byocdn-other/2025/06/11/c.log`, LastModified: recentDate },
+              ],
+            });
+          }
+          return Promise.resolve({
+            Contents: [],
+            CommonPrefixes: [{ Prefix: `${orgId}/raw/byocdn-other/` }],
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      const analysisCalls = context.sqs.sendMessage.getCalls()
+        .filter((c) => c.args[1]?.type === 'cdn-logs-analysis');
+      const reportCalls = context.sqs.sendMessage.getCalls()
+        .filter((c) => c.args[1]?.type === 'cdn-logs-report');
+
+      expect(analysisCalls).to.have.length(3);
+      expect(reportCalls.length).to.be.lessThanOrEqual(analysisCalls.length);
+    });
+
     it('should skip provider when no raw data exists', async () => {
       const auditContext = {
         year: 2025, month: 6, day: 15, hour: 10,
@@ -381,6 +617,120 @@ describe('CDN Analysis Handler', () => {
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/no raw logs found/),
       );
+    });
+  });
+
+  describe('findRecentUploads', () => {
+    let sandbox;
+    let mockS3Client;
+    let mockLog;
+
+    beforeEach(() => {
+      sandbox = sinon.createSandbox();
+      mockLog = { info: sandbox.spy(), error: sandbox.spy() };
+      mockS3Client = { send: sandbox.stub() };
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('returns days with files modified in the last 24 hours', async () => {
+      const now = new Date();
+      const recentDate = new Date(now.getTime() - 3600 * 1000);
+      const oldDate = new Date(now.getTime() - 48 * 3600 * 1000);
+
+      mockS3Client.send.resolves({
+        Contents: [
+          { Key: 'org1/raw/byocdn-other/2025/06/14/a.log', LastModified: recentDate },
+          { Key: 'org1/raw/byocdn-other/2025/06/13/old.log', LastModified: oldDate },
+          { Key: 'org1/raw/byocdn-other/2025/06/15/b.log', LastModified: recentDate },
+        ],
+      });
+
+      const result = await findRecentUploads(mockS3Client, 'test-bucket', 'org1', mockLog);
+
+      expect(result.size).to.equal(2);
+      expect(result.has('2025/06/14')).to.be.true;
+      expect(result.has('2025/06/15')).to.be.true;
+      expect(result.has('2025/06/13')).to.be.false;
+    });
+
+    it('handles pagination via ContinuationToken', async () => {
+      const recentDate = new Date();
+
+      mockS3Client.send.onFirstCall().resolves({
+        Contents: [
+          { Key: 'org1/raw/byocdn-other/2025/06/14/a.log', LastModified: recentDate },
+        ],
+        NextContinuationToken: 'page2',
+      });
+      mockS3Client.send.onSecondCall().resolves({
+        Contents: [
+          { Key: 'org1/raw/byocdn-other/2025/06/15/b.log', LastModified: recentDate },
+        ],
+      });
+
+      const result = await findRecentUploads(mockS3Client, 'test-bucket', 'org1', mockLog);
+
+      expect(result.size).to.equal(2);
+      expect(mockS3Client.send).to.have.been.calledTwice;
+    });
+
+    it('returns empty set when no files exist', async () => {
+      mockS3Client.send.resolves({ Contents: [] });
+
+      const result = await findRecentUploads(mockS3Client, 'test-bucket', 'org1', mockLog);
+
+      expect(result.size).to.equal(0);
+    });
+
+    it('handles response with undefined Contents', async () => {
+      mockS3Client.send.resolves({});
+
+      const result = await findRecentUploads(mockS3Client, 'test-bucket', 'org1', mockLog);
+
+      expect(result.size).to.equal(0);
+    });
+
+    it('uses correct prefix when pathId is provided', async () => {
+      mockS3Client.send.resolves({ Contents: [] });
+
+      await findRecentUploads(mockS3Client, 'test-bucket', 'my-org', mockLog);
+
+      const { input } = mockS3Client.send.firstCall.args[0];
+      expect(input.Prefix).to.equal('my-org/raw/byocdn-other/');
+    });
+
+    it('uses correct prefix when pathId is absent', async () => {
+      mockS3Client.send.resolves({ Contents: [] });
+
+      await findRecentUploads(mockS3Client, 'test-bucket', null, mockLog);
+
+      const { input } = mockS3Client.send.firstCall.args[0];
+      expect(input.Prefix).to.equal('raw/byocdn-other/');
+    });
+  });
+
+  describe('computeWeekOffset', () => {
+    it('returns 0 for a day in the current week', () => {
+      const today = new Date();
+      const offset = computeWeekOffset(
+        today.getUTCFullYear(),
+        today.getUTCMonth() + 1,
+        today.getUTCDate(),
+      );
+      expect(offset).to.equal(0);
+    });
+
+    it('returns -1 for a day in the previous week', () => {
+      const lastWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const offset = computeWeekOffset(
+        lastWeek.getUTCFullYear(),
+        lastWeek.getUTCMonth() + 1,
+        lastWeek.getUTCDate(),
+      );
+      expect(offset).to.equal(-1);
     });
   });
 });

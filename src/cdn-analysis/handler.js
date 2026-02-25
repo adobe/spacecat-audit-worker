@@ -11,6 +11,7 @@
  */
 /* eslint-disable object-curly-newline */
 import { getStaticContent, isInteger, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
@@ -21,11 +22,13 @@ import {
   discoverCdnProviders,
   mapServiceToCdnProvider,
   CDN_TYPES,
+  SERVICE_PROVIDER_TYPES,
   resolveConsolidatedBucketName,
   pathHasData,
   shouldRecreateTable,
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
+import { computeWeekOffset } from '../utils/date-utils.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -83,6 +86,127 @@ function getAggregatedTableNames(customerDomain) {
   };
 }
 
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Removes all S3 objects under a given prefix. Used to clear aggregated Parquet
+ * files before re-inserting during forceReprocess, since Athena external tables
+ * do not support SQL DELETE.
+ */
+async function clearS3Partition(s3Client, bucket, prefix, log) {
+  let continuationToken;
+  do {
+    // eslint-disable-next-line no-await-in-loop
+    const response = await s3Client.send(new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+    }));
+    /* c8 ignore next */
+    const keys = (response.Contents || []).map((obj) => ({ Key: obj.Key }));
+    if (keys.length > 0) {
+      // eslint-disable-next-line no-await-in-loop
+      await s3Client.send(new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: { Objects: keys, Quiet: true },
+      }));
+      log.info(`Cleared ${keys.length} object(s) from s3://${bucket}/${prefix}`);
+    }
+    continuationToken = response.NextContinuationToken;
+  } while (continuationToken);
+}
+
+/**
+ * Scans an S3 bucket for byocdn-other log files uploaded in the last 24 hours.
+ * Returns a Set of day strings (e.g. "2025/02/17") that have recent uploads.
+ *
+ * byocdn-other files can arrive at any time, so we include all days (including today)
+ * and rely on forceReprocess in sub-audits to re-aggregate if needed.
+ */
+export async function findRecentUploads(s3Client, bucketName, pathId, log) {
+  const prefix = pathId
+    ? `${pathId}/raw/${SERVICE_PROVIDER_TYPES.BYOCDN_OTHER}/`
+    : `raw/${SERVICE_PROVIDER_TYPES.BYOCDN_OTHER}/`;
+  const cutoff = new Date(Date.now() - ONE_DAY_MS);
+  const detectedDays = new Set();
+  let continuationToken;
+
+  do {
+    // eslint-disable-next-line no-await-in-loop
+    const response = await s3Client.send(new ListObjectsV2Command({
+      Bucket: bucketName,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+    }));
+
+    for (const obj of response.Contents || []) {
+      if (obj.LastModified >= cutoff) {
+        const match = obj.Key.match(/\/raw\/byocdn-other\/(\d{4})\/(\d{2})\/(\d{2})\//);
+        if (match) {
+          detectedDays.add(`${match[1]}/${match[2]}/${match[3]}`);
+        }
+      }
+    }
+
+    continuationToken = response.NextContinuationToken;
+  } while (continuationToken);
+
+  log.info(`Found ${detectedDays.size} byocdn-other day(s) with recent uploads`);
+  return detectedDays;
+}
+
+/**
+ * Triggers cdn-logs-analysis sub-audits for each detected day, and one
+ * cdn-logs-report per affected week (deduplicated by weekOffset).
+ *
+ * Sub-audits include isSubAudit: true to prevent recursive scanning,
+ * and forceReprocess: true because the same day may already have partial
+ * aggregated data from an earlier run.
+ *
+ * cdn-logs-report messages are delayed by 900s so analysis finishes first.
+ */
+async function triggerSubAudits(context, site, detectedDays) {
+  const { sqs, dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const auditQueue = configuration.getQueues().audits;
+  const siteId = site.getId();
+
+  const weekOffsets = new Set();
+
+  for (const dayKey of detectedDays) {
+    const [year, month, day] = dayKey.split('/').map(Number);
+
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(auditQueue, {
+      type: 'cdn-logs-analysis',
+      siteId,
+      auditContext: {
+        year,
+        month,
+        day,
+        hour: 23,
+        processFullDay: true,
+        forceReprocess: true,
+        isSubAudit: true,
+      },
+    });
+    log.info(`Triggered cdn-logs-analysis sub-audit for siteId=${siteId} day=${dayKey}`);
+
+    weekOffsets.add(computeWeekOffset(year, month, day));
+  }
+
+  for (const weekOffset of weekOffsets) {
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(auditQueue, {
+      type: 'cdn-logs-report',
+      siteId,
+      auditContext: { weekOffset },
+    }, null, 900);
+    log.info(`Triggered cdn-logs-report for siteId=${siteId} weekOffset=${weekOffset}`);
+  }
+}
+
 export async function processCdnLogs(auditUrl, context, site, auditContext) {
   const { log, s3Client, dataAccess } = context;
   const auditType = 'cdn-logs-analysis';
@@ -118,13 +242,45 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   );
   const consolidatedBucket = resolveConsolidatedBucketName(context);
   const siteId = site.getId();
+
+  // byocdn-other files arrive on unpredictable schedules, so the dispatcher-scheduled
+  // daily run (isSubAudit is absent, hour=23) doesn't process logs itself. Instead it
+  // scans S3 for all days with recent uploads and triggers a sub-audit per day. The
+  // sub-audits (isSubAudit: true) then do the actual Athena processing below.
+  // The hour=23 guard mirrors the existing daily-only check for CDN_TYPES.OTHER below,
+  // ensuring the S3 scan runs once per day and not on every hourly invocation.
+  const wasScheduledByJobsDispatcher = !auditContext?.isSubAudit;
+  const hasByocdnOther = serviceProviders.includes(SERVICE_PROVIDER_TYPES.BYOCDN_OTHER);
+
+  if (hasByocdnOther && wasScheduledByJobsDispatcher && hour === '23') {
+    try {
+      const recentUploads = await findRecentUploads(s3Client, bucketName, pathId, log);
+      if (recentUploads.size > 0) {
+        await triggerSubAudits(context, site, recentUploads);
+      } else {
+        log.info(`No recent byocdn-other files found for siteId=${siteId}, nothing to trigger`);
+      }
+    } catch (e) {
+      log.error(`Failed to scan/trigger byocdn-other sub-audits: ${e.message}`);
+    }
+    return {
+      auditResult: {
+        database,
+        providers: [],
+        completedAt: new Date().toISOString(),
+        scanAndTriggerOnly: true,
+      },
+      fullAuditRef: auditUrl,
+    };
+  }
+
   const results = [];
 
   // Check if aggregated data already exists for this hour
   const hasAggregatedData = await pathHasData(s3Client, `s3://${consolidatedBucket}/aggregated/${siteId}/${year}/${month}/${day}/${hour}/`);
   const hasAggregatedReferralData = await pathHasData(s3Client, `s3://${consolidatedBucket}/aggregated-referral/${siteId}/${year}/${month}/${day}/${hour}/`);
 
-  if (hasAggregatedData && hasAggregatedReferralData) {
+  if (hasAggregatedData && hasAggregatedReferralData && !auditContext?.forceReprocess) {
     log.info(`${auditType} aggregated data already exists for siteId=${siteId} at path=s3://${consolidatedBucket}/aggregated/${siteId}/${year}/${month}/${day}/${hour}/ Skipping processing.`);
     return {
       auditResult: {
@@ -262,6 +418,13 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
           serviceProvider,
         }),
       ]);
+
+      if (auditContext?.forceReprocess) {
+        // eslint-disable-next-line no-await-in-loop
+        await clearS3Partition(s3Client, consolidatedBucket, `aggregated/${siteId}/${year}/${month}/${day}/`, log);
+        // eslint-disable-next-line no-await-in-loop
+        await clearS3Partition(s3Client, consolidatedBucket, `aggregated-referral/${siteId}/${year}/${month}/${day}/`, log);
+      }
 
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlInsert, database, `[Athena Query] Insert aggregated data for ${serviceProvider} into ${database}.${aggregatedTable}`);
