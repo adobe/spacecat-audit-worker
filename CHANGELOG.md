@@ -1,3 +1,10 @@
+# [1.329.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.328.1...v1.329.0) (2026-02-25)
+
+
+### Features
+
+* trigger ahref-paid import with allow cache ([#2013](https://github.com/adobe/spacecat-audit-worker/issues/2013)) ([2d2cd2f](https://github.com/adobe/spacecat-audit-worker/commit/2d2cd2ffb34cf492a7dae2e56b38b2c73ca35152))
+
 ## [1.328.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.328.0...v1.328.1) (2026-02-25)
 
 
