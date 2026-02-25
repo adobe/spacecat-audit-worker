@@ -21,6 +21,7 @@ import {
   paidAuditRunner,
   calculateBounceGapLoss,
   calculateSitewideBounceDelta,
+  importAhrefPaidStep,
   importWeekStep0,
   importWeekStep1,
   importWeekStep2,
@@ -741,6 +742,56 @@ describe('importWeekStep0 (first import step)', () => {
 
     await expect(importWeekStep0(stepContext))
       .to.be.rejectedWith(/site config is null/);
+  });
+});
+
+describe('importAhrefPaidStep', () => {
+  let sandbox;
+  let logStub;
+  let site;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    logStub = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    site = getSite(sandbox);
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should return correct structure for import worker', async () => {
+    const stepContext = {
+      site,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    const result = await importAhrefPaidStep(stepContext);
+
+    expect(result).to.have.property('auditResult');
+    expect(result.auditResult).to.have.property('status', 'processing');
+    expect(result).to.have.property('fullAuditRef', auditUrl);
+    expect(result).to.have.property('type', 'ahref-paid-pages');
+    expect(result).to.have.property('siteId', 'test-site-id');
+    expect(result).to.have.property('allowCache', true);
+  });
+
+  it('should log info message when triggering import', async () => {
+    const stepContext = {
+      site,
+      log: logStub,
+      finalUrl: auditUrl,
+    };
+
+    await importAhrefPaidStep(stepContext);
+
+    expect(logStub.info).to.have.been.calledWithMatch(/Triggering ahref-paid-pages import/);
   });
 });
 

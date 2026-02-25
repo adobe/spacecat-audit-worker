@@ -33,6 +33,7 @@ const AUDIT_CONSTANTS = {
 };
 
 const IMPORT_TYPE_TRAFFIC_ANALYSIS = 'traffic-analysis';
+const IMPORT_TYPE_AHREF_PAID_PAGES = 'ahref-paid-pages';
 
 function isImportEnabled(importType, imports) {
   return imports?.find((importConfig) => importConfig.type === importType)?.enabled;
@@ -440,11 +441,33 @@ function createImportStep(weekIndex) {
   };
 }
 
-// Create the 4 import steps
+// Create the 4 traffic-analysis import steps
 export const importWeekStep0 = createImportStep(0);
 export const importWeekStep1 = createImportStep(1);
 export const importWeekStep2 = createImportStep(2);
 export const importWeekStep3 = createImportStep(3);
+
+/**
+ * Import step for ahref-paid-pages to get CPC data for accurate cost calculations.
+ * Triggers the import with allowCache: true.
+ */
+export async function importAhrefPaidStep(context) {
+  const { site, finalUrl, log } = context;
+  const siteId = site.getId();
+
+  log.info(`[paid-audit] [Site: ${finalUrl}] Triggering ${IMPORT_TYPE_AHREF_PAID_PAGES} import`);
+
+  return {
+    auditResult: {
+      status: 'processing',
+      message: `Importing ${IMPORT_TYPE_AHREF_PAID_PAGES} data`,
+    },
+    fullAuditRef: finalUrl,
+    type: IMPORT_TYPE_AHREF_PAID_PAGES,
+    siteId,
+    allowCache: true,
+  };
+}
 
 export async function runPaidConsentAnalysisStep(context) {
   const {
@@ -521,6 +544,7 @@ export async function runPaidConsentAnalysisStep(context) {
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
+  .addStep('import-ahref-paid', importAhrefPaidStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('import-week-0', importWeekStep0, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('import-week-1', importWeekStep1, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('import-week-2', importWeekStep2, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
