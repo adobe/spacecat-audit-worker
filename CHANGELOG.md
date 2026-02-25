@@ -1,3 +1,10 @@
+# [1.330.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.329.0...v1.330.0) (2026-02-25)
+
+
+### Features
+
+* **cdn-analysis:** include .md pages in aggregated filters ([#1986](https://github.com/adobe/spacecat-audit-worker/issues/1986)) ([3bf1592](https://github.com/adobe/spacecat-audit-worker/commit/3bf1592204e33de49145ae32a7c9af91f469847f))
+
 # [1.329.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.328.1...v1.329.0) (2026-02-25)
 
 
