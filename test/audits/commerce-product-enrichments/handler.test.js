@@ -16,6 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 
+import esmock from 'esmock';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import {
   importTopPages,
@@ -1838,5 +1839,273 @@ describe('Commerce Product Enrichments Handler', () => {
 
     // updateExcludedURLs should not be called when there are no non-product pages
     expect(mockConfig.updateExcludedURLs).to.not.have.been.called;
+  });
+});
+
+describe('Commerce Product Enrichments Handler - Yearly (Sitemap)', () => {
+  let log;
+  let site;
+  let getSitemapUrlsStub;
+  let discoverSitemapUrlsAndSubmitForScraping;
+
+  beforeEach(async () => {
+    getSitemapUrlsStub = sinon.stub();
+
+    const mockedHandler = await esmock(
+      '../../../src/commerce-product-enrichments/handler.js',
+      {
+        '../../../src/sitemap/common.js': {
+          getSitemapUrls: getSitemapUrlsStub,
+        },
+      },
+    );
+    discoverSitemapUrlsAndSubmitForScraping = mockedHandler.discoverSitemapUrlsAndSubmitForScraping;
+
+    log = {
+      info: sinon.spy(),
+      warn: sinon.spy(),
+      error: sinon.spy(),
+      debug: sinon.spy(),
+    };
+
+    site = {
+      getId: sinon.stub().returns('site-1'),
+      getBaseURL: sinon.stub().returns('https://example.com'),
+      getConfig: sinon.stub().returns({
+        getIncludedURLs: sinon.stub().resolves([]),
+        getExcludedURLs: sinon.stub().returns([]),
+      }),
+    };
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('discovers sitemap URLs and builds scrape payload', async () => {
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': [
+            'https://example.com/product-1',
+            'https://example.com/product-2',
+            'https://example.com/product-3',
+          ],
+        },
+      },
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: {},
+    });
+
+    expect(getSitemapUrlsStub).to.have.been.calledOnceWith(
+      'https://example.com',
+      log,
+    );
+    expect(result.urls).to.deep.equal([
+      { url: 'https://example.com/product-1' },
+      { url: 'https://example.com/product-2' },
+      { url: 'https://example.com/product-3' },
+    ]);
+    expect(result.siteId).to.equal('site-1');
+    expect(result.auditContext.totalSitemapUrls).to.equal(3);
+  });
+
+  it('applies default sitemap limit of 25', async () => {
+    const manyUrls = Array.from(
+      { length: 50 },
+      (_, i) => `https://example.com/page-${i + 1}`,
+    );
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': manyUrls,
+        },
+      },
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: {},
+    });
+
+    expect(result.urls).to.have.lengthOf(25);
+    expect(result.urls[0]).to.deep.equal({
+      url: 'https://example.com/page-1',
+    });
+    expect(result.urls[24]).to.deep.equal({
+      url: 'https://example.com/page-25',
+    });
+    expect(result.auditContext.totalSitemapUrls).to.equal(50);
+  });
+
+  it('respects custom limit from data', async () => {
+    const manyUrls = Array.from(
+      { length: 50 },
+      (_, i) => `https://example.com/page-${i + 1}`,
+    );
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': manyUrls,
+        },
+      },
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: { limit: 10 },
+    });
+
+    expect(result.urls).to.have.lengthOf(10);
+    expect(result.urls[0]).to.deep.equal({
+      url: 'https://example.com/page-1',
+    });
+    expect(result.urls[9]).to.deep.equal({
+      url: 'https://example.com/page-10',
+    });
+  });
+
+  it('parses limit from JSON string data', async () => {
+    const manyUrls = Array.from(
+      { length: 50 },
+      (_, i) => `https://example.com/page-${i + 1}`,
+    );
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': manyUrls,
+        },
+      },
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: '{"limit":5}',
+    });
+
+    expect(result.urls).to.have.lengthOf(5);
+  });
+
+  it('throws on sitemap discovery failure', async () => {
+    getSitemapUrlsStub.resolves({
+      success: false,
+      reasons: [
+        {
+          value: 'https://example.com/robots.txt',
+          error: 'NO_SITEMAP_IN_ROBOTS',
+        },
+      ],
+    });
+
+    await expect(
+      discoverSitemapUrlsAndSubmitForScraping({ site, log, data: {} }),
+    ).to.be.rejectedWith('Sitemap discovery failed');
+  });
+
+  it('throws when extractedPaths is missing', async () => {
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {},
+    });
+
+    await expect(
+      discoverSitemapUrlsAndSubmitForScraping({ site, log, data: {} }),
+    ).to.be.rejectedWith('Sitemap discovery failed');
+  });
+
+  it('respects excluded and included URLs', async () => {
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': [
+            'https://example.com/page-1',
+            'https://example.com/page-2',
+            'https://example.com/page-3',
+          ],
+        },
+      },
+    });
+
+    site.getConfig.returns({
+      getIncludedURLs: sinon.stub().resolves([
+        'https://example.com/included-page',
+      ]),
+      getExcludedURLs: sinon.stub().returns([
+        'https://example.com/page-2',
+      ]),
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: {},
+    });
+
+    expect(result.urls).to.deep.equal([
+      { url: 'https://example.com/page-1' },
+      { url: 'https://example.com/page-3' },
+      { url: 'https://example.com/included-page' },
+    ]);
+  });
+
+  it('flattens URLs from multiple sitemaps', async () => {
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap-1.xml': [
+            'https://example.com/page-a',
+            'https://example.com/page-b',
+          ],
+          'https://example.com/sitemap-2.xml': [
+            'https://example.com/page-c',
+          ],
+        },
+      },
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: {},
+    });
+
+    expect(result.urls).to.have.lengthOf(3);
+    expect(result.urls.map((u) => u.url)).to.include.members([
+      'https://example.com/page-a',
+      'https://example.com/page-b',
+      'https://example.com/page-c',
+    ]);
+  });
+
+  it('handles invalid JSON in data gracefully', async () => {
+    getSitemapUrlsStub.resolves({
+      success: true,
+      reasons: [{ value: 'Urls are extracted from sitemap.' }],
+      details: {
+        extractedPaths: {
+          'https://example.com/sitemap.xml': [
+            'https://example.com/page-1',
+          ],
+        },
+      },
+    });
+
+    const result = await discoverSitemapUrlsAndSubmitForScraping({
+      site, log, data: 'invalid-json{',
+    });
+
+    // Falls back to default limit (25), but only 1 URL available
+    expect(result.urls).to.have.lengthOf(1);
+    expect(log.warn).to.have.been.calledWith(
+      sinon.match(/Could not parse data as JSON/),
+    );
   });
 });

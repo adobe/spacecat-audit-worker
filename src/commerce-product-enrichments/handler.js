@@ -14,8 +14,9 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { LOG_PREFIX, AUDIT_TYPE } from './constants.js';
+import { LOG_PREFIX, AUDIT_TYPE, DEFAULT_SITEMAP_LIMIT } from './constants.js';
 import { getCommerceConfig } from '../utils/saas.js';
+import { getSitemapUrls } from '../sitemap/common.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -381,9 +382,68 @@ export async function runAuditAndProcessResults(context) {
   return result;
 }
 
-export default new AuditBuilder()
+/**
+ * Step 1 (yearly): Discover Sitemap URLs and Submit for Scraping
+ * Discovers URLs from the site's sitemaps and builds a scrape payload.
+ *
+ * @param {object} context - The audit context
+ * @returns {object} - Scrape payload with discovered sitemap URLs
+ */
+export async function discoverSitemapUrlsAndSubmitForScraping(context) {
+  const { site, log, data } = context;
+
+  let parsedData = {};
+  if (typeof data === 'string' && data.length > 0) {
+    try {
+      parsedData = JSON.parse(data);
+    } catch (e) {
+      log.warn(`${LOG_PREFIX} Step 1 (yearly): Could not parse data as JSON: ${e.message}`);
+    }
+  } else if (data && typeof data === 'object') {
+    parsedData = data;
+  }
+
+  const limit = parsedData.limit
+    ? Number(parsedData.limit)
+    : DEFAULT_SITEMAP_LIMIT;
+  const baseURL = site.getBaseURL();
+
+  log.info(`${LOG_PREFIX} Step 1 (yearly): Discovering sitemap URLs for ${baseURL}, limit: ${limit}`);
+
+  const sitemapResult = await getSitemapUrls(baseURL, log);
+
+  if (!sitemapResult.success || !sitemapResult.details?.extractedPaths) {
+    log.error(`${LOG_PREFIX} Step 1 (yearly): Sitemap discovery failed for ${baseURL}`, sitemapResult.reasons);
+    throw new Error(`Sitemap discovery failed: ${sitemapResult.reasons?.map((r) => r.error || r.value).join(', ')}`);
+  }
+
+  const allSitemapUrls = Object.values(
+    sitemapResult.details.extractedPaths,
+  ).flat();
+  const totalSitemapUrls = allSitemapUrls.length;
+  const sourceUrls = allSitemapUrls.slice(0, limit);
+
+  log.info(`${LOG_PREFIX} Step 1 (yearly): Found ${totalSitemapUrls} URLs from sitemaps, using ${sourceUrls.length} (limit: ${limit})`);
+
+  return buildScrapePayload({
+    sourceUrls,
+    site,
+    log,
+    extraAuditContext: { totalSitemapUrls },
+  });
+}
+
+export const commerceProductEnrichments = new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('run-audit-and-process-results', runAuditAndProcessResults)
   .build();
+
+export const commerceProductEnrichmentsYearly = new AuditBuilder()
+  .withUrlResolver((site) => site.getBaseURL())
+  .addStep('discover-sitemap-urls', discoverSitemapUrlsAndSubmitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+  .addStep('run-audit-and-process-results', runAuditAndProcessResults)
+  .build();
+
+export default commerceProductEnrichments;
