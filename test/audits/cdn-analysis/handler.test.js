@@ -344,6 +344,19 @@ describe('CDN Analysis Handler', () => {
       );
     });
 
+    it('dispatcher-scheduled byocdn-other run at non-23 hour skips scanning', async () => {
+      const auditContext = {
+        year: 2025, month: 6, day: 15, hour: 10,
+      };
+
+      context.s3Client.send.callsFake(createS3MockForCdnType('other'));
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.auditResult).to.not.have.property('scanAndTriggerOnly');
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
     it('validates and processes auditContext correctly', async () => {
       const validAuditContext = {
         year: 2025,

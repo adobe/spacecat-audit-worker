@@ -244,13 +244,15 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   const siteId = site.getId();
 
   // byocdn-other files arrive on unpredictable schedules, so the dispatcher-scheduled
-  // run (isSubAudit is absent) doesn't process logs itself. Instead it scans S3 for
-  // all days with recent uploads and triggers a sub-audit per day. The sub-audits
-  // (isSubAudit: true) then do the actual Athena processing below.
+  // daily run (isSubAudit is absent, hour=23) doesn't process logs itself. Instead it
+  // scans S3 for all days with recent uploads and triggers a sub-audit per day. The
+  // sub-audits (isSubAudit: true) then do the actual Athena processing below.
+  // The hour=23 guard mirrors the existing daily-only check for CDN_TYPES.OTHER below,
+  // ensuring the S3 scan runs once per day and not on every hourly invocation.
   const wasScheduledByJobsDispatcher = !auditContext?.isSubAudit;
   const hasByocdnOther = serviceProviders.includes(SERVICE_PROVIDER_TYPES.BYOCDN_OTHER);
 
-  if (hasByocdnOther && wasScheduledByJobsDispatcher) {
+  if (hasByocdnOther && wasScheduledByJobsDispatcher && hour === '23') {
     try {
       const recentUploads = await findRecentUploads(s3Client, bucketName, pathId, log);
       if (recentUploads.size > 0) {
