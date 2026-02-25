@@ -250,6 +250,30 @@ describe('Readability Opportunities Guidance Handler', () => {
       expect(syncSuggestionsStub).to.not.have.been.called;
     });
 
+    it('should handle non-array batch results gracefully', async () => {
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify({ not: 'an array' })),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.error).to.have.been.calledWithMatch('Expected batch results to be an array');
+      expect(syncSuggestionsStub).to.not.have.been.called;
+    });
+
     it('should handle S3 fetch error gracefully', async () => {
       mockS3Client.send.rejects(new Error('S3 read error'));
 
@@ -289,7 +313,7 @@ describe('Readability Opportunities Guidance Handler', () => {
       const result = await handler.default(message, mockContext);
       expect(result).to.deep.equal({ ok: true });
       expect(logStub.warn).to.have.been.calledWithMatch('Failed to delete S3 response file');
-      // Should still call syncSuggestions even if delete fails
+      // syncSuggestions is called before delete, so it succeeds regardless
       expect(syncSuggestionsStub).to.have.been.calledOnce;
     });
   });

@@ -43,7 +43,7 @@ async function fetchBatchResults(s3Client, bucketName, s3ResultsPath, log) {
   }));
   const body = await response.Body.transformToString();
   const results = JSON.parse(body);
-  log.info(`[readability-opportunity guidance]: Fetched ${results.length} results from S3: ${s3ResultsPath}`);
+  log.info(`[readability-opportunity guidance]: Fetched batch results from S3: ${s3ResultsPath} (type: ${Array.isArray(results) ? 'array' : typeof results}, count: ${Array.isArray(results) ? results.length : 'N/A'})`);
   return results;
 }
 
@@ -149,8 +149,10 @@ export default async function handler(message, context) {
     return ok();
   }
 
-  // Delete the S3 response file after reading
-  await deleteResponseFile(s3Client, bucketName, s3ResultsPath, log);
+  if (!Array.isArray(batchResults)) {
+    log.error(`[readability-opportunity guidance]: Expected batch results to be an array but got ${typeof batchResults}`);
+    return ok();
+  }
 
   // Map batch results to suggestion data, filtering out failed items and empty improvements
   const mappedSuggestions = batchResults
@@ -202,6 +204,9 @@ export default async function handler(message, context) {
       return enrichSuggestionDataForAutoOptimize(merged);
     },
   });
+
+  // Delete the S3 response file only after syncSuggestions succeeds
+  await deleteResponseFile(s3Client, bucketName, s3ResultsPath, log);
 
   log.info(`[readability-opportunity guidance]: Successfully processed readability suggestions with AI improvements for siteId: ${siteId}`);
 
