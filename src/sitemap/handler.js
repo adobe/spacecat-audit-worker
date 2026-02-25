@@ -61,7 +61,7 @@ export async function findSitemap(inputUrl, log) {
         const existingPages = await filterValidUrls(urlsToCheck, log);
 
         /* c8 ignore start */
-        log?.info(`.. Stats for ${sitemapUrl} - OK: ${existingPages.ok.length}, Not OK: ${existingPages.notOk.length}, Network Errors: ${existingPages.networkErrors.length}, Other Errors: ${existingPages.otherStatusCodes.length}`);
+        log?.info(`.. Sitemap: stats for ${sitemapUrl} - OK: ${existingPages.ok.length}, Not OK: ${existingPages.notOk.length}, Network Errors: ${existingPages.networkErrors.length}, Other Errors: ${existingPages.otherStatusCodes.length}`);
         if (existingPages.otherStatusCodes.length > 0) {
           const statusCodeCounts = existingPages.otherStatusCodes.reduce((acc, item) => {
             acc[item.statusCode] = (acc[item.statusCode] || 0) + 1;
@@ -202,9 +202,9 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     log.error('Sitemap audit failed, skipping opportunity and suggestions creation');
     /* c8 ignore start */
     const wouldCreate = auditData.suggestions ?? [];
-    log.info(`  Sitemap audit: ${wouldCreate.length} suggestion(s) would have been created for ${auditUrl}`);
+    log.info(`.. Sitemap audit: ${wouldCreate.length} suggestion(s) would have been created for ${auditUrl}`);
     wouldCreate.forEach((s, i) => {
-      log.info(`    Sitemap audit suggestion ${i + 1}/${wouldCreate.length}: type=${s.type ?? 'unknown'}, ${s.type === 'error' ? `error=${s.error}` : `sitemapUrl=${s.sitemapUrl}, pageUrl=${s.pageUrl}, statusCode=${s.statusCode}`}`);
+      log.info(`.... Sitemap audit suggestion ${i + 1}/${wouldCreate.length}: type=${s.type ?? 'unknown'}, ${s.type === 'error' ? `error=${s.error}` : `sitemapUrl=${s.sitemapUrl}, pageUrl=${s.pageUrl}, statusCode=${s.statusCode}`}`);
     });
     /* c8 ignore end */
     return { ...auditData };

@@ -17,6 +17,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import {
   getS3Config,
   generateReportingPeriods,
+  generatePeriodIdentifier,
   processErrorPagesResults,
   buildLlmErrorPagesQuery,
   getAllLlmProviders,
@@ -139,7 +140,7 @@ export async function runAuditAndSendToMystique(context) {
 
     const week = generateReportingPeriods().weeks[0];
     const { startDate, endDate } = week;
-    const periodIdentifier = `w${week.weekNumber}-${week.year}`;
+    const periodIdentifier = generatePeriodIdentifier(startDate, endDate);
     log.info(`[LLM-ERROR-PAGES] Running weekly audit for ${periodIdentifier}`);
 
     // Get site configuration
