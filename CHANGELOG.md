@@ -1,3 +1,10 @@
+## [1.326.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.326.0...v1.326.1) (2026-02-25)
+
+
+### Bug Fixes
+
+* LLMO-3163 ancor byocdn-other s3 scan to audit date rather than c… ([#2035](https://github.com/adobe/spacecat-audit-worker/issues/2035)) ([6bd12fa](https://github.com/adobe/spacecat-audit-worker/commit/6bd12fa46a86d9bafaf878cdd2cf26a4a602f10f))
+
 # [1.326.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.325.0...v1.326.0) (2026-02-25)
 
 
