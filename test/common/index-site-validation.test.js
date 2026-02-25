@@ -40,6 +40,7 @@ describe('Index siteId handling and validation flag', () => {
           }),
         },
       },
+      env: {},
       log: {
         debug: sandbox.spy(),
         info: sandbox.spy(),

@@ -39,6 +39,7 @@ describe('Index Tests', () => {
     };
     context = {
       dataAccess: {},
+      env: {},
       log: console,
       runtime: {
         region: 'us-east-1',
