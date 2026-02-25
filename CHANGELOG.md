@@ -1,3 +1,10 @@
+# [1.324.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.323.0...v1.324.0) (2026-02-25)
+
+
+### Features
+
+* migrate secrets from AWS SM to Vault ([#2033](https://github.com/adobe/spacecat-audit-worker/issues/2033)) ([6072d11](https://github.com/adobe/spacecat-audit-worker/commit/6072d11407f0d0d0ac215b5e76a50f2bcab6f181))
+
 # [1.323.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.322.7...v1.323.0) (2026-02-24)
 
 
