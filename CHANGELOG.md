@@ -1,3 +1,10 @@
+# [1.325.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.324.1...v1.325.0) (2026-02-25)
+
+
+### Features
+
+* LLMO-3163: byocdn-other scans and triggers audits for any day in… ([#2020](https://github.com/adobe/spacecat-audit-worker/issues/2020)) ([2c83095](https://github.com/adobe/spacecat-audit-worker/commit/2c83095a82372da77b4781854c854d7fe6d0aa57))
+
 ## [1.324.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.324.0...v1.324.1) (2026-02-25)
 
 
