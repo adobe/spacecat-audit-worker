@@ -117,17 +117,20 @@ async function clearS3Partition(s3Client, bucket, prefix, log) {
 }
 
 /**
- * Scans an S3 bucket for byocdn-other log files uploaded in the last 24 hours.
- * Returns a Set of day strings (e.g. "2025/02/17") that have recent uploads.
+ * Scans an S3 bucket for byocdn-other log files uploaded in the 24 hours preceding
+ * auditDate. Returns a Set of day strings (e.g. "2025/02/17") that have recent uploads.
+ *
+ * Using auditDate (derived from auditContext) rather than Date.now() ensures the window
+ * is anchored to the audit's scheduled time, so replays or delayed runs stay correct.
  *
  * byocdn-other files can arrive at any time, so we include all days (including today)
  * and rely on forceReprocess in sub-audits to re-aggregate if needed.
  */
-export async function findRecentUploads(s3Client, bucketName, pathId, log) {
+export async function findRecentUploads(s3Client, bucketName, pathId, auditDate, log) {
   const prefix = pathId
     ? `${pathId}/raw/${SERVICE_PROVIDER_TYPES.BYOCDN_OTHER}/`
     : `raw/${SERVICE_PROVIDER_TYPES.BYOCDN_OTHER}/`;
-  const cutoff = new Date(Date.now() - ONE_DAY_MS);
+  const cutoff = new Date(auditDate.getTime() - ONE_DAY_MS);
   const detectedDays = new Set();
   let continuationToken;
 
@@ -253,8 +256,9 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   const hasByocdnOther = serviceProviders.includes(SERVICE_PROVIDER_TYPES.BYOCDN_OTHER);
 
   if (hasByocdnOther && wasScheduledByJobsDispatcher && hour === '23') {
+    const auditDate = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 23, 0, 0));
     try {
-      const recentUploads = await findRecentUploads(s3Client, bucketName, pathId, log);
+      const recentUploads = await findRecentUploads(s3Client, bucketName, pathId, auditDate, log);
       if (recentUploads.size > 0) {
         await triggerSubAudits(context, site, recentUploads);
       } else {
