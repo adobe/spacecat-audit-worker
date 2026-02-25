@@ -151,6 +151,10 @@ describe('CDN Analysis Handler', () => {
       expect(result.auditResult).to.include.keys('database', 'providers', 'completedAt');
       expect(result.auditResult.database).to.equal('cdn_logs_example_com');
       expect(result.auditResult.providers).to.be.an('array');
+
+      const deleteWasCalled = context.s3Client.send.getCalls()
+        .some((call) => call.args[0].constructor.name === 'DeleteObjectsCommand');
+      expect(deleteWasCalled).to.be.false;
     });
 
     it('returns error when no CDN bucket found', async () => {
@@ -480,9 +484,14 @@ describe('CDN Analysis Handler', () => {
       };
 
       const orgId = 'test-ims-org-id';
+      const deleteCallBuckets = [];
 
       context.s3Client.send.callsFake((command) => {
         if (command.constructor.name === 'HeadBucketCommand') {
+          return Promise.resolve({});
+        }
+        if (command.constructor.name === 'DeleteObjectsCommand') {
+          deleteCallBuckets.push(command.input.Bucket);
           return Promise.resolve({});
         }
         if (command.constructor.name === 'ListObjectsV2Command') {
@@ -511,6 +520,14 @@ describe('CDN Analysis Handler', () => {
       expect(result.auditResult).to.not.have.property('skipped');
       expect(result.auditResult.providers).to.be.an('array').with.length.greaterThan(0);
       expect(result.auditResult.providers[0]).to.have.property('cdnType', 'other');
+
+      expect(deleteCallBuckets).to.have.length(2);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Cleared.*object\(s\) from.*aggregated\//),
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Cleared.*object\(s\) from.*aggregated-referral\//),
+      );
       expect(result.auditResult.providers[0].rawDataPath)
         .to.include('/raw/byocdn-other/2025/06/15/');
     });

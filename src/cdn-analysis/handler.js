@@ -11,7 +11,7 @@
  */
 /* eslint-disable object-curly-newline */
 import { getStaticContent, isInteger, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
-import { ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
@@ -87,6 +87,34 @@ function getAggregatedTableNames(customerDomain) {
 }
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Removes all S3 objects under a given prefix. Used to clear aggregated Parquet
+ * files before re-inserting during forceReprocess, since Athena external tables
+ * do not support SQL DELETE.
+ */
+async function clearS3Partition(s3Client, bucket, prefix, log) {
+  let continuationToken;
+  do {
+    // eslint-disable-next-line no-await-in-loop
+    const response = await s3Client.send(new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+    }));
+    /* c8 ignore next */
+    const keys = (response.Contents || []).map((obj) => ({ Key: obj.Key }));
+    if (keys.length > 0) {
+      // eslint-disable-next-line no-await-in-loop
+      await s3Client.send(new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: { Objects: keys, Quiet: true },
+      }));
+      log.info(`Cleared ${keys.length} object(s) from s3://${bucket}/${prefix}`);
+    }
+    continuationToken = response.NextContinuationToken;
+  } while (continuationToken);
+}
 
 /**
  * Scans an S3 bucket for byocdn-other log files uploaded in the last 24 hours.
@@ -388,6 +416,13 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
           serviceProvider,
         }),
       ]);
+
+      if (auditContext?.forceReprocess) {
+        // eslint-disable-next-line no-await-in-loop
+        await clearS3Partition(s3Client, consolidatedBucket, `aggregated/${siteId}/${year}/${month}/${day}/`, log);
+        // eslint-disable-next-line no-await-in-loop
+        await clearS3Partition(s3Client, consolidatedBucket, `aggregated-referral/${siteId}/${year}/${month}/${day}/`, log);
+      }
 
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlInsert, database, `[Athena Query] Insert aggregated data for ${serviceProvider} into ${database}.${aggregatedTable}`);
