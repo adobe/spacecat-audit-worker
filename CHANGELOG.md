@@ -1,3 +1,10 @@
+# [1.326.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.325.0...v1.326.0) (2026-02-25)
+
+
+### Features
+
+* rank candidate pages by per-page consent-banner bounce gap ([#2016](https://github.com/adobe/spacecat-audit-worker/issues/2016)) ([6a27d7f](https://github.com/adobe/spacecat-audit-worker/commit/6a27d7fd7404f53d6e0944357e5de5dcbe306b6c))
+
 # [1.325.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.324.1...v1.325.0) (2026-02-25)
 
 
