@@ -1,3 +1,10 @@
+## [1.324.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.324.0...v1.324.1) (2026-02-25)
+
+
+### Bug Fixes
+
+* Filter out non-actionable redundant permissions ([#1967](https://github.com/adobe/spacecat-audit-worker/issues/1967)) ([34fbc78](https://github.com/adobe/spacecat-audit-worker/commit/34fbc7840f16b7ec065f8619d46185010a887966))
+
 # [1.324.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.323.0...v1.324.0) (2026-02-25)
 
 
