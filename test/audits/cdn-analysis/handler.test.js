@@ -636,9 +636,9 @@ describe('CDN Analysis Handler', () => {
     });
 
     it('returns days with files modified in the last 24 hours', async () => {
-      const now = new Date();
-      const recentDate = new Date(now.getTime() - 3600 * 1000);
-      const oldDate = new Date(now.getTime() - 48 * 3600 * 1000);
+      const auditDate = new Date();
+      const recentDate = new Date(auditDate.getTime() - 3600 * 1000);
+      const oldDate = new Date(auditDate.getTime() - 48 * 3600 * 1000);
 
       mockS3Client.send.resolves({
         Contents: [
@@ -648,7 +648,7 @@ describe('CDN Analysis Handler', () => {
         ],
       });
 
-      const result = await findRecentUploads(mockS3Client, 'test-bucket', 'org1', mockLog);
+      const result = await findRecentUploads(mockS3Client, 'test-bucket', 'org1', auditDate, mockLog);
 
       expect(result.size).to.equal(2);
       expect(result.has('2025/06/14')).to.be.true;
@@ -657,7 +657,8 @@ describe('CDN Analysis Handler', () => {
     });
 
     it('handles pagination via ContinuationToken', async () => {
-      const recentDate = new Date();
+      const auditDate = new Date();
+      const recentDate = new Date(auditDate.getTime() - 3600 * 1000);
 
       mockS3Client.send.onFirstCall().resolves({
         Contents: [
@@ -671,7 +672,7 @@ describe('CDN Analysis Handler', () => {
         ],
       });
 
-      const result = await findRecentUploads(mockS3Client, 'test-bucket', 'org1', mockLog);
+      const result = await findRecentUploads(mockS3Client, 'test-bucket', 'org1', auditDate, mockLog);
 
       expect(result.size).to.equal(2);
       expect(mockS3Client.send).to.have.been.calledTwice;
@@ -680,7 +681,7 @@ describe('CDN Analysis Handler', () => {
     it('returns empty set when no files exist', async () => {
       mockS3Client.send.resolves({ Contents: [] });
 
-      const result = await findRecentUploads(mockS3Client, 'test-bucket', 'org1', mockLog);
+      const result = await findRecentUploads(mockS3Client, 'test-bucket', 'org1', new Date(), mockLog);
 
       expect(result.size).to.equal(0);
     });
@@ -688,7 +689,7 @@ describe('CDN Analysis Handler', () => {
     it('handles response with undefined Contents', async () => {
       mockS3Client.send.resolves({});
 
-      const result = await findRecentUploads(mockS3Client, 'test-bucket', 'org1', mockLog);
+      const result = await findRecentUploads(mockS3Client, 'test-bucket', 'org1', new Date(), mockLog);
 
       expect(result.size).to.equal(0);
     });
@@ -696,7 +697,7 @@ describe('CDN Analysis Handler', () => {
     it('uses correct prefix when pathId is provided', async () => {
       mockS3Client.send.resolves({ Contents: [] });
 
-      await findRecentUploads(mockS3Client, 'test-bucket', 'my-org', mockLog);
+      await findRecentUploads(mockS3Client, 'test-bucket', 'my-org', new Date(), mockLog);
 
       const { input } = mockS3Client.send.firstCall.args[0];
       expect(input.Prefix).to.equal('my-org/raw/byocdn-other/');
@@ -705,7 +706,7 @@ describe('CDN Analysis Handler', () => {
     it('uses correct prefix when pathId is absent', async () => {
       mockS3Client.send.resolves({ Contents: [] });
 
-      await findRecentUploads(mockS3Client, 'test-bucket', null, mockLog);
+      await findRecentUploads(mockS3Client, 'test-bucket', null, new Date(), mockLog);
 
       const { input } = mockS3Client.send.firstCall.args[0];
       expect(input.Prefix).to.equal('raw/byocdn-other/');
