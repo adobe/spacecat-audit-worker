@@ -62,7 +62,7 @@ export default async function handler(message, context) {
 
   const entity = mapToKeywordOptimizerOpportunity(siteId, audit, message);
   const opportunity = await Opportunity.create(entity);
-  paidLog.createdOpportunity(siteId, url, auditId);
+  paidLog.createdOpportunity(siteId, url, opportunity.getId());
 
   // Create suggestion for the new opportunity
   const suggestionData = mapToKeywordOptimizerSuggestion(

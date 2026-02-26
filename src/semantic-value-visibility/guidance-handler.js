@@ -41,6 +41,7 @@ export default async function handler(message, context) {
 
   const suggestions = data?.suggestions || [];
   const url = data?.url || message.url;
+  const guidance = data?.guidance || {};
 
   // Validate suggestions structure
   // Note: semanticHtml contains untrusted LLM-generated content from Mystique.
@@ -89,6 +90,7 @@ export default async function handler(message, context) {
     context,
     createOpportunityData,
     OPPORTUNITY_TYPE,
+    { guidance },
   );
 
   if (!opportunity) {

@@ -13,21 +13,20 @@
 import { DATA_SOURCES } from '../common/constants.js';
 
 export function createOpportunityData(props = {}) {
+  const { guidance = {} } = props;
+
   return {
     runbook: '',
     origin: 'AUTOMATION',
     title: 'Improve image semantic visibility for LLMs',
     description: 'Marketing images on this site contain text that is not represented in HTML. Adding semantic HTML makes this content visible to search engines and AI models.',
     guidance: {
-      steps: [
-        'Review the detected marketing images and their extracted text.',
-        'Verify the generated semantic HTML accurately represents the image content.',
-        'Approve or edit the suggestions before deployment.',
-      ],
+      insight: guidance.insight,
+      rationale: guidance.rationale,
+      recommendation: guidance.recommendation,
     },
     tags: ['LLMO', 'SEO', 'Images'],
     data: {
-      ...props,
       dataSources: [DATA_SOURCES.SITE],
     },
   };

@@ -1,3 +1,52 @@
+## [1.330.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.330.1...v1.330.2) (2026-02-26)
+
+
+### Bug Fixes
+
+* Content summarization: page summaries should always be on … ([#2018](https://github.com/adobe/spacecat-audit-worker/issues/2018)) ([6981539](https://github.com/adobe/spacecat-audit-worker/commit/698153909b189b7438613e042d91ab7ae6e3e5a0))
+
+## [1.330.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.330.0...v1.330.1) (2026-02-26)
+
+
+### Bug Fixes
+
+* **semantic-value-visibility:** use incoming guidance from Mystique  ([#2036](https://github.com/adobe/spacecat-audit-worker/issues/2036)) ([b50b5ff](https://github.com/adobe/spacecat-audit-worker/commit/b50b5ff700ee6081b1bfb3e60e46b6386c4ddb59))
+
+# [1.330.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.329.0...v1.330.0) (2026-02-25)
+
+
+### Features
+
+* **cdn-analysis:** include .md pages in aggregated filters ([#1986](https://github.com/adobe/spacecat-audit-worker/issues/1986)) ([3bf1592](https://github.com/adobe/spacecat-audit-worker/commit/3bf1592204e33de49145ae32a7c9af91f469847f))
+
+# [1.329.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.328.1...v1.329.0) (2026-02-25)
+
+
+### Features
+
+* trigger ahref-paid import with allow cache ([#2013](https://github.com/adobe/spacecat-audit-worker/issues/2013)) ([2d2cd2f](https://github.com/adobe/spacecat-audit-worker/commit/2d2cd2ffb34cf492a7dae2e56b38b2c73ca35152))
+
+## [1.328.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.328.0...v1.328.1) (2026-02-25)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1990](https://github.com/adobe/spacecat-audit-worker/issues/1990)) ([933ce4d](https://github.com/adobe/spacecat-audit-worker/commit/933ce4d48573e19acdb8b8102d1a36e5cc1b7b2d))
+
+# [1.328.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.327.0...v1.328.0) (2026-02-25)
+
+
+### Features
+
+* add v2/v3 data access runtime switch ([#2019](https://github.com/adobe/spacecat-audit-worker/issues/2019)) ([075a2f7](https://github.com/adobe/spacecat-audit-worker/commit/075a2f790bf73a56134e7e51e23161b901531b91))
+
+# [1.327.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.326.1...v1.327.0) (2026-02-25)
+
+
+### Features
+
+* added scraping before sending urls to mystique + summit logic differentiation ([#2031](https://github.com/adobe/spacecat-audit-worker/issues/2031)) ([b45e785](https://github.com/adobe/spacecat-audit-worker/commit/b45e7858f78c8366d6a5b4a309b7caa4e630a94e))
+
 ## [1.326.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.326.0...v1.326.1) (2026-02-25)
 
 

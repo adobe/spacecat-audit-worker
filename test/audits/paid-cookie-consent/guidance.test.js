@@ -38,8 +38,10 @@ describe('Paid Cookie Consent Guidance Handler', () => {
   let Suggestion;
   let Opportunity;
   let Site;
+  let Configuration;
   let opportunityInstance;
   let s3ClientMock;
+  let sqsStub;
   let mockScrapeClient;
   let mockAthenaClient;
 
@@ -79,10 +81,20 @@ describe('Paid Cookie Consent Guidance Handler', () => {
     Site = {
       findById: sandbox.stub(),
     };
+    Configuration = {
+      findLatest: sandbox.stub().resolves({
+        getQueues: () => ({ imports: 'test-imports-queue-url' }),
+      }),
+    };
 
     // Mock S3 client
     s3ClientMock = {
       send: sandbox.stub(),
+    };
+
+    // Mock SQS client
+    sqsStub = {
+      sendMessage: sandbox.stub().resolves(),
     };
 
     // Mock Athena client that returns data for bounce gap and top3 pages queries
@@ -118,7 +130,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
 
     context = {
       log: logStub,
-      dataAccess: { Site, Opportunity, Suggestion },
+      dataAccess: { Site, Opportunity, Suggestion, Configuration },
       env: {
         SPACECAT_API_URI: 'https://example-space-cat-api',
         S3_MYSTIQUE_BUCKET_NAME: 'test-mystique-bucket',
@@ -126,6 +138,7 @@ describe('Paid Cookie Consent Guidance Handler', () => {
         S3_IMPORTER_BUCKET_NAME: 'test-importer-bucket',
       },
       s3Client: s3ClientMock,
+      sqs: sqsStub,
     };
 
     // Mock Site.findById to return a site with baseURL
