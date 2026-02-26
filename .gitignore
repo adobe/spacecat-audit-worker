@@ -14,6 +14,7 @@ notes.loca.md
 .aws-sam/
 env.sh
 output.txt
+.worktrees/
 
 # Environment files
 .env
