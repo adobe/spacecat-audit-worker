@@ -18,7 +18,7 @@ import chaiAsPromised from 'chai-as-promised';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import {
   importDataStep,
-  importDecisionDataStep,
+  importDecisionWeekStep,
   analyzeAndReportStep,
   prepareTrafficAnalysisRequest,
   sendRequestToMystique,
@@ -347,15 +347,13 @@ describe('Paid Traffic Analysis Handler', () => {
         .to.be.rejectedWith(/site config is null/);
     });
 
-    it('should collect and deduplicate weeks for import', async () => {
+    it('should send only trend-only weeks as fire-and-forget', async () => {
       const context = createImportContext();
 
       const result = await importDataStep(context);
 
-      // Should have sent at least some SQS import messages (all-but-last)
-      expect(mockSqs.sendMessage.callCount).to.be.greaterThan(0);
-
-      // Each message should have correct structure
+      // Should have sent trend-only weeks (no decision weeks in fire-and-forget)
+      // All 4 decision weeks are chained across steps 1–4
       mockSqs.sendMessage.getCalls().forEach((call) => {
         const [queueUrl, message] = call.args;
         expect(queueUrl).to.equal('test-import-queue');
@@ -363,7 +361,7 @@ describe('Paid Traffic Analysis Handler', () => {
         expect(message.auditContext).to.have.all.keys('week', 'year');
       });
 
-      // Return value should be the last week for chaining
+      // Return value should chain the oldest decision week
       expect(result).to.include({
         fullAuditRef: auditUrl,
         type: 'traffic-analysis',
@@ -371,8 +369,9 @@ describe('Paid Traffic Analysis Handler', () => {
         allowCache: true,
       });
       expect(result.auditResult).to.have.property('status', 'pending');
-      expect(result.auditContext).to.have.all.keys('week', 'year', 'decisionWeeks');
+      expect(result.auditContext).to.include.all.keys('week', 'year', 'decisionWeeks', 'decisionWeekIndex');
       expect(result.auditContext.decisionWeeks).to.be.an('array').with.lengthOf(4);
+      expect(result.auditContext.decisionWeekIndex).to.equal(1);
     });
 
     it('should return correct structure for import worker chaining', async () => {
@@ -386,18 +385,18 @@ describe('Paid Traffic Analysis Handler', () => {
       expect(result.auditResult.message).to.match(/Importing decision data for week/);
     });
 
-    it('should chain the most recent decision week', async () => {
+    it('should chain the oldest decision week', async () => {
       const context = createImportContext();
 
       const result = await importDataStep(context);
 
-      // The chained week should be the most recent decision week (week 2 of 2025)
-      expect(result.auditContext.week).to.equal(2);
-      expect(result.auditContext.year).to.equal(2025);
+      // The chained week should be the oldest decision week (week 51 of 2024)
+      expect(result.auditContext.week).to.equal(51);
+      expect(result.auditContext.year).to.equal(2024);
     });
   });
 
-  describe('importDecisionDataStep', () => {
+  describe('importDecisionWeekStep', () => {
     const decisionWeeks = [
       { week: 51, year: 2024 },
       { week: 52, year: 2024 },
@@ -405,19 +404,22 @@ describe('Paid Traffic Analysis Handler', () => {
       { week: 2, year: 2025 },
     ];
 
-    it('should return correct structure for import worker chaining', async () => {
-      const site = createSite(sandbox);
-      const context = {
-        site,
+    function createDecisionWeekContext(weekIndex) {
+      return {
+        site: createSite(sandbox),
         finalUrl: auditUrl,
-        auditContext: { decisionWeeks },
+        auditContext: { decisionWeeks, decisionWeekIndex: weekIndex },
         log: {
           info: sandbox.spy(), debug: sandbox.spy(),
           warn: sandbox.spy(), error: sandbox.spy(),
         },
       };
+    }
 
-      const result = await importDecisionDataStep(context);
+    it('should return correct structure for import worker chaining', async () => {
+      const context = createDecisionWeekContext(1);
+
+      const result = await importDecisionWeekStep(context);
 
       expect(result).to.have.all.keys(
         'auditResult', 'fullAuditRef', 'type', 'siteId', 'allowCache', 'auditContext',
@@ -429,30 +431,40 @@ describe('Paid Traffic Analysis Handler', () => {
       expect(result.auditResult.message).to.match(/Importing decision data for week/);
     });
 
-    it('should chain the oldest decision week from auditContext', async () => {
-      const site = createSite(sandbox);
-      const context = {
-        site,
-        finalUrl: auditUrl,
-        auditContext: { decisionWeeks },
-        log: {
-          info: sandbox.spy(), debug: sandbox.spy(),
-          warn: sandbox.spy(), error: sandbox.spy(),
-        },
-      };
+    it('should chain decision week at index 1 (second week)', async () => {
+      const context = createDecisionWeekContext(1);
 
-      const result = await importDecisionDataStep(context);
+      const result = await importDecisionWeekStep(context);
 
-      // The chained week should be the oldest decision week from auditContext
-      expect(result.auditContext.week).to.equal(51);
+      expect(result.auditContext.week).to.equal(52);
       expect(result.auditContext.year).to.equal(2024);
+      expect(result.auditContext.decisionWeekIndex).to.equal(2);
       expect(result.auditContext.decisionWeeks).to.deep.equal(decisionWeeks);
     });
 
+    it('should chain decision week at index 2 (third week)', async () => {
+      const context = createDecisionWeekContext(2);
+
+      const result = await importDecisionWeekStep(context);
+
+      expect(result.auditContext.week).to.equal(1);
+      expect(result.auditContext.year).to.equal(2025);
+      expect(result.auditContext.decisionWeekIndex).to.equal(3);
+    });
+
+    it('should chain decision week at index 3 (fourth/newest week)', async () => {
+      const context = createDecisionWeekContext(3);
+
+      const result = await importDecisionWeekStep(context);
+
+      expect(result.auditContext.week).to.equal(2);
+      expect(result.auditContext.year).to.equal(2025);
+      expect(result.auditContext.decisionWeekIndex).to.equal(4);
+    });
+
     it('should fall back to getLastNumberOfWeeks when auditContext has no decisionWeeks', async () => {
-      const site = createSite(sandbox);
       const context = {
-        site,
+        site: createSite(sandbox),
         finalUrl: auditUrl,
         auditContext: {},
         log: {
@@ -461,10 +473,10 @@ describe('Paid Traffic Analysis Handler', () => {
         },
       };
 
-      const result = await importDecisionDataStep(context);
+      const result = await importDecisionWeekStep(context);
 
-      // Should still work, using fallback
-      expect(result.auditContext.week).to.equal(51);
+      // Should still work using fallback (index defaults to 1, second decision week)
+      expect(result.auditContext.week).to.equal(52);
       expect(result.auditContext.year).to.equal(2024);
     });
   });
