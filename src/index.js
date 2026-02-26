@@ -78,7 +78,7 @@ import unifiedReadabilityGuidance from './readability/shared/unified-guidance-ha
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
-import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
+import paidTrafficAnalysis from './paid-traffic-analysis/handler.js';
 import pageTypeDetection from './page-type/handler.js';
 import pageTypeGuidance from './page-type/guidance-handler.js';
 import hreflang from './hreflang/handler.js';
@@ -105,7 +105,6 @@ import healthCheck from './health-check/handler.js';
 import wikipediaAnalysis from './wikipedia-analysis/handler.js';
 import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
 import frescopaDataGeneration from './frescopa-data-generation/handler.js';
-import ptrSelector from './ptr-selector/handler.js';
 import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
 
@@ -122,8 +121,7 @@ const HANDLERS = {
   'redirect-chains': redirectChains,
   paid,
   'no-cta-above-the-fold': noCTAAboveTheFold,
-  'paid-traffic-analysis-weekly': paidTrafficAnalysisWeekly,
-  'paid-traffic-analysis-monthly': paidTrafficAnalysisMonthly,
+  'paid-traffic-analysis': paidTrafficAnalysis,
   'page-type-detection': pageTypeDetection,
   canonical,
   'broken-backlinks': backlinks,
@@ -207,7 +205,6 @@ const HANDLERS = {
   'wikipedia-analysis': wikipediaAnalysis,
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
   'frescopa-data-generation': frescopaDataGeneration,
-  'ptr-selector': ptrSelector,
   'semantic-value-visibility': semanticValueVisibility,
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
   dummy: (message) => ok(message),
