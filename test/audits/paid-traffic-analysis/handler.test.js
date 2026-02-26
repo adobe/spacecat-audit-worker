@@ -18,6 +18,7 @@ import chaiAsPromised from 'chai-as-promised';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import {
   importDataStep,
+  importDecisionDataStep,
   analyzeAndReportStep,
   prepareTrafficAnalysisRequest,
   sendRequestToMystique,
@@ -381,7 +382,60 @@ describe('Paid Traffic Analysis Handler', () => {
       expect(result).to.have.all.keys(
         'auditResult', 'fullAuditRef', 'type', 'siteId', 'allowCache', 'auditContext',
       );
-      expect(result.auditResult.message).to.match(/Importing traffic-analysis data for week/);
+      expect(result.auditResult.message).to.match(/Importing decision data for week/);
+    });
+
+    it('should chain the most recent decision week', async () => {
+      const context = createImportContext();
+
+      const result = await importDataStep(context);
+
+      // The chained week should be the most recent decision week (week 2 of 2025)
+      expect(result.auditContext.week).to.equal(2);
+      expect(result.auditContext.year).to.equal(2025);
+    });
+  });
+
+  describe('importDecisionDataStep', () => {
+    it('should return correct structure for import worker chaining', async () => {
+      const site = createSite(sandbox);
+      const context = {
+        site,
+        finalUrl: auditUrl,
+        log: {
+          info: sandbox.spy(), debug: sandbox.spy(),
+          warn: sandbox.spy(), error: sandbox.spy(),
+        },
+      };
+
+      const result = await importDecisionDataStep(context);
+
+      expect(result).to.have.all.keys(
+        'auditResult', 'fullAuditRef', 'type', 'siteId', 'allowCache', 'auditContext',
+      );
+      expect(result.type).to.equal('traffic-analysis');
+      expect(result.siteId).to.equal(siteId);
+      expect(result.allowCache).to.equal(true);
+      expect(result.auditResult.status).to.equal('pending');
+      expect(result.auditResult.message).to.match(/Importing decision data for week/);
+    });
+
+    it('should chain the oldest decision week', async () => {
+      const site = createSite(sandbox);
+      const context = {
+        site,
+        finalUrl: auditUrl,
+        log: {
+          info: sandbox.spy(), debug: sandbox.spy(),
+          warn: sandbox.spy(), error: sandbox.spy(),
+        },
+      };
+
+      const result = await importDecisionDataStep(context);
+
+      // The chained week should be the oldest decision week (week 51 of 2024)
+      expect(result.auditContext.week).to.equal(51);
+      expect(result.auditContext.year).to.equal(2024);
     });
   });
 

@@ -89,9 +89,7 @@ export function getWeeksForMonth(targetMonth, targetYear) {
   });
 }
 
-function collectWeeksToImport() {
-  const decisionWeeks = getLastNumberOfWeeks(4);
-
+function collectTrendOnlyWeeks(decisionWeekKeys) {
   const monthlyWeeks = [];
   for (let i = 1; i <= 4; i += 1) {
     const now = new Date();
@@ -102,9 +100,8 @@ function collectWeeksToImport() {
     monthlyWeeks.push(...weeksInMonth);
   }
 
-  const allWeeks = [...decisionWeeks, ...monthlyWeeks];
-  const seen = new Set();
-  return allWeeks.filter(({ week, year }) => {
+  const seen = new Set(decisionWeekKeys);
+  return monthlyWeeks.filter(({ week, year }) => {
     const key = `${week}-${year}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -191,8 +188,9 @@ export async function sendRequestToMystique(auditUrl, auditData, context, site) 
 }
 
 // Step 1: import-data
-// Enables traffic-analysis import if needed, collects all weeks for decision + monthly trends,
-// sends all-but-last as parallel SQS imports, returns last for IMPORT_WORKER chain.
+// Enables traffic-analysis import if needed. Sends trend-only weeks (for monthly reports)
+// and the 3 oldest decision weeks as fire-and-forget SQS imports. Chains the most recent
+// decision week through IMPORT_WORKER to guarantee it is imported before the next step.
 export async function importDataStep(context) {
   const {
     site, finalUrl, log, sqs, dataAccess,
@@ -210,19 +208,20 @@ export async function importDataStep(context) {
     await enableImport(site, IMPORT_TYPE_TRAFFIC_ANALYSIS, log);
   }
 
-  // Collect all weeks needed: decision weeks (last 4) + last 4 months' weeks, deduplicated
-  const allWeeks = collectWeeksToImport();
+  const decisionWeeks = getLastNumberOfWeeks(4);
+  const decisionWeekKeys = decisionWeeks.map(({ week, year }) => `${week}-${year}`);
+  const trendOnlyWeeks = collectTrendOnlyWeeks(decisionWeekKeys);
 
-  log.info(`[paid-traffic-analysis] [siteId: ${siteId}] Collected ${allWeeks.length} unique weeks for import: [${allWeeks.map((w) => `${w.week}/${w.year}`).join(', ')}]`);
+  // Fire-and-forget: all trend-only weeks + the 3 oldest decision weeks
+  const fireAndForgetWeeks = [...trendOnlyWeeks, ...decisionWeeks.slice(0, -1)];
+  const chainedWeek = decisionWeeks[decisionWeeks.length - 1]; // most recent decision week
 
-  // Send all-but-last as parallel fire-and-forget SQS imports
-  const weeksToImport = allWeeks.slice(0, -1);
-  const lastWeek = allWeeks[allWeeks.length - 1];
+  log.info(`[paid-traffic-analysis] [siteId: ${siteId}] Fire-and-forget: ${fireAndForgetWeeks.length} weeks, chaining decision week ${chainedWeek.week}/${chainedWeek.year}`);
 
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
 
-  for (const weekInfo of weeksToImport) {
+  for (const weekInfo of fireAndForgetWeeks) {
     const message = {
       type: IMPORT_TYPE_TRAFFIC_ANALYSIS,
       siteId,
@@ -238,26 +237,54 @@ export async function importDataStep(context) {
     await sqs.sendMessage(configuration.getQueues().imports, message);
   }
 
-  log.info(`[paid-traffic-analysis] [siteId: ${siteId}] Sent ${weeksToImport.length} parallel imports, reserving week ${lastWeek.week}/${lastWeek.year} for main audit flow`);
-
-  // Return last week for chaining through IMPORT_WORKER
+  // Chain the most recent decision week through IMPORT_WORKER
   return {
     auditResult: {
       status: 'pending',
-      message: `Importing traffic-analysis data for week ${lastWeek.week}/${lastWeek.year}`,
+      message: `Importing decision data for week ${chainedWeek.week}/${chainedWeek.year}`,
     },
     fullAuditRef: finalUrl,
     type: IMPORT_TYPE_TRAFFIC_ANALYSIS,
     siteId,
     allowCache,
     auditContext: {
-      week: lastWeek.week,
-      year: lastWeek.year,
+      week: chainedWeek.week,
+      year: chainedWeek.year,
     },
   };
 }
 
-// Step 2: analyze-and-report
+// Step 2: import-decision-data
+// Chains the oldest decision week through IMPORT_WORKER, ensuring at least 2 of 4
+// decision weeks are guaranteed imported. The remaining 2 were fire-and-forget in step 1
+// but had a full import-worker cycle of head start, making them very likely complete.
+export async function importDecisionDataStep(context) {
+  const { site, finalUrl, log } = context;
+  const siteId = site.getId();
+  const allowCache = true;
+
+  const decisionWeeks = getLastNumberOfWeeks(4);
+  const chainedWeek = decisionWeeks[0]; // oldest decision week
+
+  log.info(`[paid-traffic-analysis] Chaining oldest decision week ${chainedWeek.week}/${chainedWeek.year} for siteId: ${siteId}`);
+
+  return {
+    auditResult: {
+      status: 'pending',
+      message: `Importing decision data for week ${chainedWeek.week}/${chainedWeek.year}`,
+    },
+    fullAuditRef: finalUrl,
+    type: IMPORT_TYPE_TRAFFIC_ANALYSIS,
+    siteId,
+    allowCache,
+    auditContext: {
+      week: chainedWeek.week,
+      year: chainedWeek.year,
+    },
+  };
+}
+
+// Step 3: analyze-and-report
 // Queries Athena for total paid pageviews, determines decision, generates reports.
 export async function analyzeAndReportStep(context) {
   const {
@@ -377,6 +404,7 @@ export async function analyzeAndReportStep(context) {
 const paidTrafficAnalysis = new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .addStep('import-data', importDataStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('import-decision-data', importDecisionDataStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('analyze-and-report', analyzeAndReportStep)
   .build();
 
