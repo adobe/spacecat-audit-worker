@@ -108,6 +108,7 @@ import frescopaDataGeneration from './frescopa-data-generation/handler.js';
 import ptrSelector from './ptr-selector/handler.js';
 import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
+import drsPromptGeneration from './drs-prompt-generation/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -210,8 +211,33 @@ const HANDLERS = {
   'ptr-selector': ptrSelector,
   'semantic-value-visibility': semanticValueVisibility,
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
+  'drs:prompt_generation_base_url': drsPromptGeneration,
   dummy: (message) => ok(message),
 };
+
+/**
+ * Normalizes a DRS SNS notification into the audit worker message format.
+ * DRS messages have event_type/provider_id instead of type/siteId.
+ * With raw_message_delivery enabled on the SNS subscription, the SQS body
+ * is the raw DRS notification JSON.
+ *
+ * @param {object} message - Raw DRS notification message
+ * @returns {object} Normalized message with type and siteId
+ */
+function normalizeDrsMessage(message) {
+  const { event_type: eventType, provider_id: providerId, metadata = {} } = message;
+  return {
+    type: `drs:${providerId}`,
+    siteId: metadata.site_id,
+    auditContext: {
+      drsEventType: eventType,
+      drsJobId: message.job_id,
+      resultLocation: message.result_location,
+      providerId,
+      source: metadata.source,
+    },
+  };
+}
 
 function getElapsedSeconds(startTime) {
   const endTime = process.hrtime(startTime);
@@ -227,6 +253,14 @@ function getElapsedSeconds(startTime) {
  */
 async function run(message, context) {
   const { log } = context;
+
+  // Normalize DRS SNS notifications (have event_type instead of type)
+  // These arrive via SNS → SQS subscription with raw_message_delivery enabled
+  if (!message.type && message.event_type && message.provider_id) {
+    // eslint-disable-next-line no-param-reassign
+    message = normalizeDrsMessage(message);
+  }
+
   const {
     type, siteId, jobId,
   } = message;
