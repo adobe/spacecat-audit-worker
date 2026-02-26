@@ -88,8 +88,64 @@ export function extractFormAccessibilityData(a11yData, log) {
 }
 
 /**
- * Creates individual suggestions for form accessibility issues from Mystique data
- * Each htmlWithIssues creates one suggestion
+ * Normalizes a single htmlWithIssues item to the canonical shape expected by the pipeline.
+ * Mystique sends camelCase (updateFrom, targetSelector); we store snake_case.
+ *
+ * @param {string|Object} item - Raw item from Mystique or string HTML
+ * @returns {{ update_from: string, target_selector: string }}
+ */
+function normalizeHtmlWithIssuesItem(item) {
+  if (item == null) {
+    return { update_from: '', target_selector: '' };
+  }
+  if (typeof item === 'string') {
+    return { update_from: item, target_selector: '' };
+  }
+  const updateFrom = item.updateFrom ?? item.update_from ?? '';
+  const targetSelector = item.targetSelector ?? item.target_selector ?? '';
+  return {
+    update_from: typeof updateFrom === 'string' ? updateFrom : String(updateFrom ?? ''),
+    target_selector:
+      typeof targetSelector === 'string' ? targetSelector : String(targetSelector ?? ''),
+  };
+}
+
+/**
+ * Normalizes form a11y issue from Mystique: required fields present,
+ * htmlWithIssues in canonical shape (update_from, target_selector).
+ *
+ * @param {Object} issue - Raw issue from Mystique (may use camelCase)
+ * @returns {Object|null} Normalized issue or null if invalid
+ */
+function normalizeFormA11yIssue(issue) {
+  if (!issue || typeof issue !== 'object') {
+    return null;
+  }
+  const type = issue.type ?? issue.Type ?? '';
+  const htmlWithIssues = Array.isArray(issue.htmlWithIssues) ? issue.htmlWithIssues : [];
+  if (htmlWithIssues.length === 0) {
+    return null;
+  }
+  const normalizedHtml = htmlWithIssues.map(normalizeHtmlWithIssuesItem);
+  if (normalizedHtml.length === 0) {
+    return null;
+  }
+  return {
+    type: String(type),
+    description: String(issue.description ?? issue.Description ?? ''),
+    wcagRule: String(issue.wcagRule ?? issue.wcag_rule ?? ''),
+    wcagLevel: String(issue.wcagLevel ?? issue.wcag_level ?? ''),
+    severity: (issue.severity ?? issue.Severity) === 'critical' ? 'critical' : 'serious',
+    failureSummary: String(issue.failureSummary ?? issue.failure_summary ?? ''),
+    htmlWithIssues: normalizedHtml,
+    aiGenerated: Boolean(issue.aiGenerated ?? issue.ai_generated ?? true),
+  };
+}
+
+/**
+ * Creates individual suggestions for form accessibility issues from Mystique data.
+ * Each htmlWithIssues creates one suggestion. Incoming data is normalized to the canonical
+ * format (update_from, target_selector) for codefix-handler and mystique-data-processing.
  *
  * @param {Array} a11yData - Array of form accessibility data from Mystique
  * @param {Object} opportunity - The existing form opportunity to attach suggestions to
@@ -105,9 +161,63 @@ export async function createFormAccessibilitySuggestionsFromMystique(
 
   try {
     log.info('[FormMystiqueSuggestions] Creating individual suggestions from Mystique data');
+    log.info(`[FormMystiqueSuggestions] a11yData: ${JSON.stringify(a11yData, null, 2)}`);
 
-    // Extract form accessibility data from Mystique a11y data
-    const formAccessibilityData = extractFormAccessibilityData(a11yData, log);
+    if (!Array.isArray(a11yData)) {
+      log.warn('[FormMystiqueSuggestions] a11yData is not an array, skipping');
+      return;
+    }
+
+    const formAccessibilityData = [];
+
+    a11yData
+      .filter((formData) => formData && Array.isArray(formData.a11yIssues)
+        && formData.a11yIssues.length > 0)
+      .forEach((formData) => {
+        const {
+          form, Form, formSource: source, a11yIssues,
+        } = formData;
+        const pageUrl = form ?? Form ?? '';
+
+        a11yIssues.forEach((rawIssue) => {
+          const issue = normalizeFormA11yIssue(rawIssue);
+          if (!issue) {
+            return;
+          }
+          let understandingUrl = '';
+          try {
+            const { understandingUrl: docUrl } = getSuccessCriteriaDetails(issue.wcagRule);
+            understandingUrl = docUrl;
+          } catch (error) {
+            log.error(`[FormMystiqueSuggestions] Error getting success criteria details: ${error.message}`);
+            return;
+          }
+          // Create one suggestion for each htmlWithIssues item (canonical shape)
+          issue.htmlWithIssues.forEach((normalizedHtmlItem) => {
+            const formattedIssue = {
+              type: issue.type,
+              description: issue.description,
+              wcagRule: issue.wcagRule,
+              wcagLevel: issue.wcagLevel,
+              understandingUrl,
+              severity: issue.severity,
+              occurrences: 1,
+              htmlWithIssues: [normalizedHtmlItem],
+              failureSummary: issue.failureSummary,
+            };
+
+            const urlObject = {
+              type: 'url',
+              url: pageUrl,
+              ...(source && { source }),
+              issues: [formattedIssue],
+            };
+            urlObject.aiGenerated = issue.aiGenerated;
+
+            formAccessibilityData.push(urlObject);
+          });
+        });
+      });
 
     // Early return if no actionable issues found
     if (formAccessibilityData.length === 0) {

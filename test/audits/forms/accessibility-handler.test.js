@@ -2606,9 +2606,10 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         failureSummary: 'Ensure that all form inputs have associated <label> elements.',
       });
       expect(firstSuggestion.issues[0].htmlWithIssues).to.have.lengthOf(1);
+      // Normalized to canonical shape (snake_case) for pipeline compatibility
       expect(firstSuggestion.issues[0].htmlWithIssues[0]).to.deep.equal({
-        updateFrom: '<input type="text" id="username">',
-        targetSelector: '#username',
+        update_from: '<input type="text" id="username">',
+        target_selector: '#username',
       });
 
       // Check second suggestion
@@ -2622,8 +2623,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(secondSuggestion.issues).to.have.lengthOf(1);
       expect(secondSuggestion.issues[0].htmlWithIssues).to.have.lengthOf(1);
       expect(secondSuggestion.issues[0].htmlWithIssues[0]).to.deep.equal({
-        updateFrom: '<input type="email" id="email">',
-        targetSelector: '#email',
+        update_from: '<input type="email" id="email">',
+        target_selector: '#email',
       });
 
       // Verify logging
