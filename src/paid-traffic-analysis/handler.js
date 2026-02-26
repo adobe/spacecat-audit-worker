@@ -208,11 +208,15 @@ export async function importDataStep(context) {
     await enableImport(site, IMPORT_TYPE_TRAFFIC_ANALYSIS, log);
   }
 
+  // Compute decision weeks once — passed via auditContext to subsequent steps
+  // to avoid week-boundary drift if the audit spans a week transition.
   const decisionWeeks = getLastNumberOfWeeks(4);
   const decisionWeekKeys = decisionWeeks.map(({ week, year }) => `${week}-${year}`);
   const trendOnlyWeeks = collectTrendOnlyWeeks(decisionWeekKeys);
 
-  // Fire-and-forget: all trend-only weeks + the 3 oldest decision weeks
+  // Fire-and-forget: all trend-only weeks + the 3 oldest decision weeks.
+  // The 2 middle decision weeks are not guaranteed imported by step 3, but they
+  // had a full import-worker cycle of head start, making them very likely complete.
   const fireAndForgetWeeks = [...trendOnlyWeeks, ...decisionWeeks.slice(0, -1)];
   const chainedWeek = decisionWeeks[decisionWeeks.length - 1]; // most recent decision week
 
@@ -250,6 +254,7 @@ export async function importDataStep(context) {
     auditContext: {
       week: chainedWeek.week,
       year: chainedWeek.year,
+      decisionWeeks,
     },
   };
 }
@@ -258,12 +263,15 @@ export async function importDataStep(context) {
 // Chains the oldest decision week through IMPORT_WORKER, ensuring at least 2 of 4
 // decision weeks are guaranteed imported. The remaining 2 were fire-and-forget in step 1
 // but had a full import-worker cycle of head start, making them very likely complete.
+// Uses decisionWeeks from step 1's auditContext to avoid week-boundary drift.
 export async function importDecisionDataStep(context) {
-  const { site, finalUrl, log } = context;
+  const {
+    site, finalUrl, log, auditContext,
+  } = context;
   const siteId = site.getId();
   const allowCache = true;
 
-  const decisionWeeks = getLastNumberOfWeeks(4);
+  const decisionWeeks = auditContext?.decisionWeeks || getLastNumberOfWeeks(4);
   const chainedWeek = decisionWeeks[0]; // oldest decision week
 
   log.info(`[paid-traffic-analysis] Chaining oldest decision week ${chainedWeek.week}/${chainedWeek.year} for siteId: ${siteId}`);
@@ -280,15 +288,18 @@ export async function importDecisionDataStep(context) {
     auditContext: {
       week: chainedWeek.week,
       year: chainedWeek.year,
+      decisionWeeks,
     },
   };
 }
 
 // Step 3: analyze-and-report
 // Queries Athena for total paid pageviews, determines decision, generates reports.
+// Uses decisionWeeks from step 1's auditContext to build the temporal condition,
+// ensuring the Athena query covers the exact same weeks that were imported.
 export async function analyzeAndReportStep(context) {
   const {
-    site, log, dataAccess, env,
+    site, log, dataAccess, env, auditContext,
   } = context;
   const siteId = site.getId();
   const finalUrl = site.getBaseURL();
@@ -296,9 +307,15 @@ export async function analyzeAndReportStep(context) {
   log.info(`[paid-traffic-analysis] Starting analyze-and-report step for siteId: ${siteId}`);
 
   // Decision phase: query Athena for total paid pageviews (last 4 weeks)
+  // Use decision weeks from step 1 to avoid week-boundary drift
+  const decisionWeeks = auditContext?.decisionWeeks || getLastNumberOfWeeks(4);
+  const latestDecisionWeek = decisionWeeks[decisionWeeks.length - 1];
   const config = getConfig(env);
-  const { week, year } = getWeekInfo();
-  const temporalCondition = getTemporalCondition({ week, year, numSeries: 4 });
+  const temporalCondition = getTemporalCondition({
+    week: latestDecisionWeek.week,
+    year: latestDecisionWeek.year,
+    numSeries: 4,
+  });
   const tableName = `${config.rumMetricsDatabase}.${config.rumMetricsCompactTable}`;
 
   const athenaClient = AWSAthenaClient.fromContext(
@@ -314,11 +331,17 @@ export async function analyzeAndReportStep(context) {
 
   log.debug(`[paid-traffic-analysis] [siteId: ${siteId}] Executing total pageviews query`);
 
-  const result = await athenaClient.query(
-    query,
-    config.rumMetricsDatabase,
-    `paid-traffic-analysis total pageviews for siteId: ${siteId}`,
-  );
+  let result;
+  try {
+    result = await athenaClient.query(
+      query,
+      config.rumMetricsDatabase,
+      `paid-traffic-analysis total pageviews for siteId: ${siteId}`,
+    );
+  } catch (e) {
+    log.error(`[paid-traffic-analysis] [siteId: ${siteId}] Athena query failed: ${e.message}`);
+    throw e;
+  }
 
   const totalPageViewSum = parseInt(result?.[0]?.total_pageview_sum || 0, 10);
   const reportDecision = determineReportDecision(totalPageViewSum);

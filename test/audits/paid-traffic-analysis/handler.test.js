@@ -371,7 +371,8 @@ describe('Paid Traffic Analysis Handler', () => {
         allowCache: true,
       });
       expect(result.auditResult).to.have.property('status', 'pending');
-      expect(result.auditContext).to.have.all.keys('week', 'year');
+      expect(result.auditContext).to.have.all.keys('week', 'year', 'decisionWeeks');
+      expect(result.auditContext.decisionWeeks).to.be.an('array').with.lengthOf(4);
     });
 
     it('should return correct structure for import worker chaining', async () => {
@@ -397,11 +398,19 @@ describe('Paid Traffic Analysis Handler', () => {
   });
 
   describe('importDecisionDataStep', () => {
+    const decisionWeeks = [
+      { week: 51, year: 2024 },
+      { week: 52, year: 2024 },
+      { week: 1, year: 2025 },
+      { week: 2, year: 2025 },
+    ];
+
     it('should return correct structure for import worker chaining', async () => {
       const site = createSite(sandbox);
       const context = {
         site,
         finalUrl: auditUrl,
+        auditContext: { decisionWeeks },
         log: {
           info: sandbox.spy(), debug: sandbox.spy(),
           warn: sandbox.spy(), error: sandbox.spy(),
@@ -420,11 +429,12 @@ describe('Paid Traffic Analysis Handler', () => {
       expect(result.auditResult.message).to.match(/Importing decision data for week/);
     });
 
-    it('should chain the oldest decision week', async () => {
+    it('should chain the oldest decision week from auditContext', async () => {
       const site = createSite(sandbox);
       const context = {
         site,
         finalUrl: auditUrl,
+        auditContext: { decisionWeeks },
         log: {
           info: sandbox.spy(), debug: sandbox.spy(),
           warn: sandbox.spy(), error: sandbox.spy(),
@@ -433,7 +443,27 @@ describe('Paid Traffic Analysis Handler', () => {
 
       const result = await importDecisionDataStep(context);
 
-      // The chained week should be the oldest decision week (week 51 of 2024)
+      // The chained week should be the oldest decision week from auditContext
+      expect(result.auditContext.week).to.equal(51);
+      expect(result.auditContext.year).to.equal(2024);
+      expect(result.auditContext.decisionWeeks).to.deep.equal(decisionWeeks);
+    });
+
+    it('should fall back to getLastNumberOfWeeks when auditContext has no decisionWeeks', async () => {
+      const site = createSite(sandbox);
+      const context = {
+        site,
+        finalUrl: auditUrl,
+        auditContext: {},
+        log: {
+          info: sandbox.spy(), debug: sandbox.spy(),
+          warn: sandbox.spy(), error: sandbox.spy(),
+        },
+      };
+
+      const result = await importDecisionDataStep(context);
+
+      // Should still work, using fallback
       expect(result.auditContext.week).to.equal(51);
       expect(result.auditContext.year).to.equal(2024);
     });
@@ -774,7 +804,7 @@ describe('Paid Traffic Analysis Handler', () => {
           .to.be.rejectedWith('S3_IMPORTER_BUCKET_NAME must be provided');
       });
 
-      it('should throw when Athena query fails', async () => {
+      it('should log contextual error and re-throw when Athena query fails', async () => {
         mockAthenaQueryStub.rejects(new Error('Athena connection failed'));
 
         const ctx = createAnalyzeContext([]); // queryResult doesn't matter since we reject
@@ -783,6 +813,21 @@ describe('Paid Traffic Analysis Handler', () => {
 
         await expect(analyzeAndReportStep(ctx))
           .to.be.rejectedWith('Athena connection failed');
+
+        expect(ctx.log.error).to.have.been.calledWith(
+          sinon.match(`[siteId: ${siteId}] Athena query failed`),
+        );
+      });
+
+      it('should fall back to getLastNumberOfWeeks when auditContext has no decisionWeeks', async () => {
+        const ctx = createAnalyzeContext([{ total_pageview_sum: '20000' }], {
+          auditContext: {},
+        });
+
+        const result = await analyzeAndReportStep(ctx);
+
+        expect(result.auditResult.totalPageViewSum).to.equal(20000);
+        expect(result.auditResult.reportDecision).to.equal('not enough data');
       });
 
       it('should use default values for missing database and table env vars', async () => {
