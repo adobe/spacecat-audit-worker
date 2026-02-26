@@ -123,13 +123,8 @@ function normalizeFormA11yIssue(issue) {
   }
   const type = issue.type ?? issue.Type ?? '';
   const htmlWithIssues = Array.isArray(issue.htmlWithIssues) ? issue.htmlWithIssues : [];
-  if (htmlWithIssues.length === 0) {
-    return null;
-  }
+  if (htmlWithIssues.length === 0) return null;
   const normalizedHtml = htmlWithIssues.map(normalizeHtmlWithIssuesItem);
-  if (normalizedHtml.length === 0) {
-    return null;
-  }
   return {
     type: String(type),
     description: String(issue.description ?? issue.Description ?? ''),
