@@ -13,7 +13,7 @@
 import { DATA_SOURCES } from '../common/constants.js';
 
 export function createOpportunityData(props = {}) {
-  const { guidance } = props;
+  const { guidance = {} } = props;
 
   return {
     runbook: '',

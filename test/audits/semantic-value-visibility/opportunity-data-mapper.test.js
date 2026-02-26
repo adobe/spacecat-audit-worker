@@ -56,5 +56,41 @@ describe('Semantic Value Visibility Opportunity Data Mapper', () => {
 
       expect(result.runbook).to.equal('');
     });
+
+    it('should handle missing guidance gracefully', () => {
+      const result = createOpportunityData({});
+
+      expect(result.guidance).to.be.an('object');
+      expect(result.guidance.insight).to.be.undefined;
+      expect(result.guidance.rationale).to.be.undefined;
+      expect(result.guidance.recommendation).to.be.undefined;
+    });
+
+    it('should handle empty guidance object', () => {
+      const result = createOpportunityData({ guidance: {} });
+
+      expect(result.guidance).to.be.an('object');
+      expect(result.guidance.insight).to.be.undefined;
+      expect(result.guidance.rationale).to.be.undefined;
+      expect(result.guidance.recommendation).to.be.undefined;
+    });
+
+    it('should handle partial guidance (only insight)', () => {
+      const result = createOpportunityData({
+        guidance: { insight: 'Some insight' },
+      });
+
+      expect(result.guidance.insight).to.equal('Some insight');
+      expect(result.guidance.rationale).to.be.undefined;
+      expect(result.guidance.recommendation).to.be.undefined;
+    });
+
+    it('should handle no arguments', () => {
+      const result = createOpportunityData();
+
+      expect(result.origin).to.equal('AUTOMATION');
+      expect(result.guidance).to.be.an('object');
+      expect(result.guidance.insight).to.be.undefined;
+    });
   });
 });
