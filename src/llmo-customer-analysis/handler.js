@@ -29,6 +29,7 @@ import { ContentAIClient } from '../utils/content-ai.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
+const LLMO_CUSTOMER_ANALYSIS_AUDIT = 'llmo-customer-analysis';
 
 const GEO_FREE_SPLIT_COUNT = 23;
 const GEO_FREE_SPLITS = Array.from(
@@ -303,6 +304,30 @@ async function getBaseUrlBySiteId(siteId, context) {
   } /* c8 ignore stop */
 }
 
+async function isDuplicateOnboardingRun(siteId, onboardingRunId, context) {
+  if (!onboardingRunId) {
+    return false;
+  }
+
+  const { log, dataAccess } = context;
+  if (!dataAccess?.LatestAudit?.findBySiteIdAndAuditType) {
+    return false;
+  }
+
+  const latestAudit = await dataAccess.LatestAudit.findBySiteIdAndAuditType(
+    siteId,
+    LLMO_CUSTOMER_ANALYSIS_AUDIT,
+  );
+
+  const previousOnboardingRunId = latestAudit?.getAuditResult?.()?.onboardingRunId;
+  if (previousOnboardingRunId && previousOnboardingRunId === onboardingRunId) {
+    log.info(`Duplicate onboarding run detected for site ${siteId}. Skipping ${LLMO_CUSTOMER_ANALYSIS_AUDIT}.`);
+    return true;
+  }
+
+  return false;
+}
+
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
   const {
     env, log, s3Client,
@@ -310,6 +335,22 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   const siteId = site.getSiteId();
   const domain = finalUrl;
+  const { configVersion, previousConfigVersion, onboardingRunId } = auditContext;
+
+  if (await isDuplicateOnboardingRun(siteId, onboardingRunId, context)) {
+    return {
+      auditResult: {
+        status: 'completed',
+        configChangesDetected: false,
+        message: 'Duplicate onboarding run skipped',
+        triggeredSteps: [],
+        previousConfigVersion,
+        configVersion,
+        onboardingRunId,
+      },
+      fullAuditRef: finalUrl,
+    };
+  }
 
   // Ensure relevant audits and imports are enabled
   try {
@@ -372,7 +413,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   const triggeredSteps = [];
   const hasOptelData = await checkOptelData(domain, context);
-  const { configVersion, previousConfigVersion } = auditContext;
   const isFirstTimeOnboarding = !previousConfigVersion;
 
   if (isFirstTimeOnboarding) {
@@ -404,6 +444,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
         triggeredSteps,
         previousConfigVersion,
         configVersion,
+        ...(onboardingRunId ? { onboardingRunId } : {}),
       },
       fullAuditRef: finalUrl,
     };
@@ -507,6 +548,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
         triggeredSteps,
         previousConfigVersion,
         configVersion,
+        ...(onboardingRunId ? { onboardingRunId } : {}),
       },
       fullAuditRef: finalUrl,
     };
@@ -520,6 +562,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       configChangesDetected: false,
       previousConfigVersion,
       configVersion,
+      ...(onboardingRunId ? { onboardingRunId } : {}),
     },
     fullAuditRef: finalUrl,
   };
