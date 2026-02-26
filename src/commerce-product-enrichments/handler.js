@@ -74,11 +74,10 @@ export async function importTopPages(context) {
  * @param {string[]} params.sourceUrls - Raw source URLs (from top-pages or sitemap)
  * @param {object} params.site - The site object
  * @param {object} params.log - Logger
- * @param {object} [params.extraAuditContext] - Additional fields merged into auditContext
  * @returns {object} - Scrape payload ready for the scrape client
  */
 async function buildScrapePayload({
-  sourceUrls, site, log, extraAuditContext = {},
+  sourceUrls, site, log,
 }) {
   const auditType = 'commerce-product-enrichments';
   const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
@@ -119,7 +118,6 @@ async function buildScrapePayload({
     processingType: 'default',
     auditContext: {
       scrapeJobId: site.getId(),
-      ...extraAuditContext,
     },
     options: {
       waitTimeoutForMetaTags: 5000,
@@ -420,17 +418,11 @@ export async function discoverSitemapUrlsAndSubmitForScraping(context) {
   const allSitemapUrls = Object.values(
     sitemapResult.details.extractedPaths,
   ).flat();
-  const totalSitemapUrls = allSitemapUrls.length;
   const sourceUrls = allSitemapUrls.slice(0, limit);
 
-  log.info(`${LOG_PREFIX} Step 1 (yearly): Found ${totalSitemapUrls} URLs from sitemaps, using ${sourceUrls.length} (limit: ${limit})`);
+  log.info(`${LOG_PREFIX} Step 1 (yearly): Found ${allSitemapUrls.length} URLs from sitemaps, using ${sourceUrls.length} (limit: ${limit})`);
 
-  return buildScrapePayload({
-    sourceUrls,
-    site,
-    log,
-    extraAuditContext: { totalSitemapUrls },
-  });
+  return buildScrapePayload({ sourceUrls, site, log });
 }
 
 export const commerceProductEnrichments = new AuditBuilder()

@@ -1911,7 +1911,6 @@ describe('Commerce Product Enrichments Handler - Yearly (Sitemap)', () => {
       { url: 'https://example.com/product-3' },
     ]);
     expect(result.siteId).to.equal('site-1');
-    expect(result.auditContext.totalSitemapUrls).to.equal(3);
   });
 
   it('applies default sitemap limit of 25', async () => {
@@ -1940,7 +1939,6 @@ describe('Commerce Product Enrichments Handler - Yearly (Sitemap)', () => {
     expect(result.urls[24]).to.deep.equal({
       url: 'https://example.com/page-25',
     });
-    expect(result.auditContext.totalSitemapUrls).to.equal(50);
   });
 
   it('respects custom limit from data', async () => {
