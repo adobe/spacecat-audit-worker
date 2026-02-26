@@ -104,9 +104,8 @@ function normalizeHtmlWithIssuesItem(item) {
   const updateFrom = item.updateFrom ?? item.update_from ?? '';
   const targetSelector = item.targetSelector ?? item.target_selector ?? '';
   return {
-    update_from: typeof updateFrom === 'string' ? updateFrom : String(updateFrom ?? ''),
-    target_selector:
-      typeof targetSelector === 'string' ? targetSelector : String(targetSelector ?? ''),
+    update_from: String(updateFrom),
+    target_selector: String(targetSelector),
   };
 }
 
