@@ -1,3 +1,10 @@
+# [1.331.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.330.3...v1.331.0) (2026-02-26)
+
+
+### Features
+
+* consolidate PTA into single paid-traffic-analysis audit ([#2040](https://github.com/adobe/spacecat-audit-worker/issues/2040)) ([979ae2f](https://github.com/adobe/spacecat-audit-worker/commit/979ae2fd0768dee5ba312fb32000c59c31b9852b))
+
 ## [1.330.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.330.2...v1.330.3) (2026-02-26)
 
 
