@@ -247,72 +247,6 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(log.info).to.have.been.calledWith(sinon.match(/AI categorization flow.*triggering geo-brand-presence refresh/));
     });
 
-    it('should skip duplicate onboarding runs based on onboardingRunId', async () => {
-      const auditContext = {
-        configVersion: 'v1',
-        onboardingRunId: 'run-123',
-      };
-
-      dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({
-        getAuditResult: () => ({ onboardingRunId: 'run-123' }),
-      });
-
-      const result = await mockHandler.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
-        site,
-        auditContext,
-      );
-
-      expect(dataAccess.LatestAudit.findBySiteIdAndAuditType).to.have.been.calledWith(
-        'site-123',
-        'llmo-customer-analysis',
-      );
-      expect(sqs.sendMessage).to.not.have.been.called;
-      expect(mockLlmoConfig.readConfig).to.not.have.been.called;
-      expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.message).to.equal('Duplicate onboarding run skipped');
-      expect(result.auditResult.onboardingRunId).to.equal('run-123');
-      expect(result.auditResult.triggeredSteps).to.deep.equal([]);
-    });
-
-    it('should execute first-time side effects for a non-duplicate onboardingRunId', async () => {
-      const auditContext = {
-        configVersion: 'v1',
-        onboardingRunId: 'run-456',
-      };
-
-      dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({
-        getAuditResult: () => ({ onboardingRunId: 'run-older' }),
-      });
-
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      const result = await mockHandler.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
-        site,
-        auditContext,
-      );
-
-      expect(dataAccess.LatestAudit.findBySiteIdAndAuditType).to.have.been.calledWith(
-        'site-123',
-        'llmo-customer-analysis',
-      );
-      expect(sqs.sendMessage).to.have.callCount(4);
-      expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.onboardingRunId).to.equal('run-456');
-      expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
-    });
-
     it('should trigger referral traffic imports on first-time onboarding with OpTel data', async () => {
       const auditContext = {
         configVersion: 'v1',
@@ -1725,3 +1659,4 @@ describe('LLMO Customer Analysis Handler', () => {
     });
   });
 });
+

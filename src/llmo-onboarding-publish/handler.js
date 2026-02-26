@@ -10,62 +10,53 @@
  * governing permissions and limitations under the License.
  */
 
-import { badRequest, ok } from '@adobe/spacecat-shared-http-utils';
 import { publishToAdminHlx } from '../utils/report-uploader.js';
 
-const LLMO_CUSTOMER_ANALYSIS_AUDIT = 'llmo-customer-analysis';
 const LLMO_ONBOARDING_PUBLISH_FILENAME = 'query-index';
 
 function getLlmoDataFolder(site) {
   return site?.getConfig?.()?.getLlmoDataFolder?.() || null;
 }
 
+/**
+ * LLMO Onboarding Publish Handler
+ *
+ * Publishes the query-index file to admin.hlx.page for sites with LLMO configuration.
+ *
+ * This handler intentionally skips publish (and does not queue downstream analysis) when:
+ * - Site is not found: Nothing to publish, and no site data exists for analysis
+ * - Missing LLMO config: Site hasn't been onboarded to LLMO, so nothing to publish or analyze
+ *
+ * This is correct behavior because a "publish" step has no meaningful work to do for
+ * non-existent or non-configured sites, and queueing downstream analysis would be wasteful.
+ */
 export default async function handler(message, context) {
-  const { log, dataAccess, sqs } = context;
-  const { siteId, auditContext = {} } = message;
-  const { dataFolder, onboardingRunId, triggerSource = 'llmo-onboard' } = auditContext;
+  const { log, dataAccess } = context;
+  const { siteId } = message;
 
-  if (!siteId || !dataFolder) {
-    log.error('[LLMO Onboarding Publish] Missing required fields', { siteId, dataFolder });
-    return badRequest('Missing required fields: siteId and auditContext.dataFolder');
+  if (!siteId) {
+    log.error('[LLMO Onboarding Publish] Missing required field: siteId');
+    return;
   }
 
-  const { Site, Configuration } = dataAccess;
-  const site = await Site.findById(siteId);
+  // Prefer context.site (already fetched by src/index.js middleware for all handlers)
+  // Fall back to DB lookup only if not present (e.g., edge cases or direct invocation)
+  const site = context.site ?? await dataAccess.Site.findById(siteId);
 
   if (!site) {
+    // Intentional: skip publish AND don't queue downstream - nothing to do for non-existent site
     log.warn(`[LLMO Onboarding Publish] Site not found. Skipping publish for site ${siteId}`);
-    return ok({ skipped: true, reason: 'site-not-found' });
+    return;
   }
 
   const currentDataFolder = getLlmoDataFolder(site);
   if (!currentDataFolder) {
+    // Intentional: skip publish AND don't queue downstream - site not onboarded to LLMO
     log.warn(`[LLMO Onboarding Publish] Site ${siteId} has no LLMO data folder. Skipping.`);
-    return ok({ skipped: true, reason: 'missing-llmo-config' });
-  }
-  if (currentDataFolder !== dataFolder) {
-    log.warn(
-      `[LLMO Onboarding Publish] Stale message for site ${siteId}.`,
-      { messageDataFolder: dataFolder, currentDataFolder },
-    );
-    return ok({ skipped: true, reason: 'stale-message' });
+    return;
   }
 
   // publishToAdminHlx already swallows/logs Helix errors by design.
-  await publishToAdminHlx(LLMO_ONBOARDING_PUBLISH_FILENAME, dataFolder, log);
-
-  const configuration = await Configuration.findLatest();
-  const followUpAuditContext = {
-    triggerSource,
-    dataFolder,
-    ...(onboardingRunId ? { onboardingRunId } : {}),
-  };
-  await sqs.sendMessage(configuration.getQueues().audits, {
-    type: LLMO_CUSTOMER_ANALYSIS_AUDIT,
-    siteId,
-    auditContext: followUpAuditContext,
-  });
-
-  log.info(`[LLMO Onboarding Publish] Triggered ${LLMO_CUSTOMER_ANALYSIS_AUDIT} for site ${siteId}`);
-  return ok({ queued: true });
+  await publishToAdminHlx(LLMO_ONBOARDING_PUBLISH_FILENAME, currentDataFolder, log);
+  log.info(`[LLMO Onboarding Publish] Publish attempt finished for site ${siteId}`);
 }

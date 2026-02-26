@@ -23,27 +23,18 @@ describe('LLMO Onboarding Publish Handler', () => {
   let sandbox;
   let context;
   let site;
-  let configuration;
   let publishToAdminHlxStub;
-  let okStub;
-  let badRequestStub;
   let handler;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
 
-    okStub = sandbox.stub().callsFake((body = {}) => ({ status: 200, body }));
-    badRequestStub = sandbox.stub().callsFake((message) => ({ status: 400, body: { message } }));
     publishToAdminHlxStub = sandbox.stub().resolves();
 
     site = {
       getConfig: sandbox.stub().returns({
         getLlmoDataFolder: sandbox.stub().returns('dev/example-com'),
       }),
-    };
-
-    configuration = {
-      getQueues: sandbox.stub().returns({ audits: 'audit-queue' }),
     };
 
     context = {
@@ -57,9 +48,6 @@ describe('LLMO Onboarding Publish Handler', () => {
         Site: {
           findById: sandbox.stub().resolves(site),
         },
-        Configuration: {
-          findLatest: sandbox.stub().resolves(configuration),
-        },
       },
       sqs: {
         sendMessage: sandbox.stub().resolves(),
@@ -67,10 +55,6 @@ describe('LLMO Onboarding Publish Handler', () => {
     };
 
     const module = await esmock('../../src/llmo-onboarding-publish/handler.js', {
-      '@adobe/spacecat-shared-http-utils': {
-        ok: okStub,
-        badRequest: badRequestStub,
-      },
       '../../src/utils/report-uploader.js': {
         publishToAdminHlx: publishToAdminHlxStub,
       },
@@ -83,7 +67,7 @@ describe('LLMO Onboarding Publish Handler', () => {
     sandbox.restore();
   });
 
-  it('attempts publish and queues llmo-customer-analysis for valid messages', async () => {
+  it('attempts publish for valid messages', async () => {
     const message = {
       siteId: 'site-123',
       auditContext: {
@@ -100,22 +84,43 @@ describe('LLMO Onboarding Publish Handler', () => {
       'dev/example-com',
       context.log,
     );
-    expect(context.sqs.sendMessage).to.have.been.calledOnceWithExactly(
-      'audit-queue',
-      {
-        type: 'llmo-customer-analysis',
-        siteId: 'site-123',
-        auditContext: {
-          triggerSource: 'llmo-onboard',
-          dataFolder: 'dev/example-com',
-          onboardingRunId: 'run-123',
-        },
-      },
-    );
-    expect(response).to.deep.equal({ status: 200, body: { queued: true } });
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+    expect(response).to.be.undefined;
   });
 
-  it('still queues llmo-customer-analysis when publish helper swallows errors', async () => {
+  it('uses persisted llmo data folder even when message dataFolder differs', async () => {
+    const message = {
+      siteId: 'site-123',
+      auditContext: {
+        dataFolder: 'dev/other-folder',
+      },
+    };
+
+    const response = await handler(message, context);
+
+    expect(publishToAdminHlxStub).to.have.been.calledOnceWithExactly(
+      'query-index',
+      'dev/example-com',
+      context.log,
+    );
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+    expect(response).to.be.undefined;
+  });
+
+  it('works without auditContext dataFolder in the message', async () => {
+    const message = { siteId: 'site-123', auditContext: {} };
+    const response = await handler(message, context);
+
+    expect(publishToAdminHlxStub).to.have.been.calledOnceWithExactly(
+      'query-index',
+      'dev/example-com',
+      context.log,
+    );
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+    expect(response).to.be.undefined;
+  });
+
+  it('still returns success when publish helper swallows errors', async () => {
     publishToAdminHlxStub.callsFake(async () => {
       context.log.error('Failed to publish via admin.hlx.page');
     });
@@ -131,26 +136,11 @@ describe('LLMO Onboarding Publish Handler', () => {
     const response = await handler(message, context);
 
     expect(context.log.error).to.have.been.called;
-    expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    expect(response).to.deep.equal({ status: 200, body: { queued: true } });
-  });
-
-  it('skips publish and downstream trigger for stale messages', async () => {
-    const message = {
-      siteId: 'site-123',
-      auditContext: {
-        dataFolder: 'dev/other-folder',
-      },
-    };
-
-    const response = await handler(message, context);
-
-    expect(publishToAdminHlxStub).to.not.have.been.called;
     expect(context.sqs.sendMessage).to.not.have.been.called;
-    expect(response).to.deep.equal({ status: 200, body: { skipped: true, reason: 'stale-message' } });
+    expect(response).to.be.undefined;
   });
 
-  it('skips publish and downstream trigger when site is not found', async () => {
+  it('skips publish when site is not found', async () => {
     context.dataAccess.Site.findById.resolves(null);
 
     const message = {
@@ -164,17 +154,56 @@ describe('LLMO Onboarding Publish Handler', () => {
 
     expect(publishToAdminHlxStub).to.not.have.been.called;
     expect(context.sqs.sendMessage).to.not.have.been.called;
-    expect(response).to.deep.equal({ status: 200, body: { skipped: true, reason: 'site-not-found' } });
+    expect(response).to.be.undefined;
   });
 
-  it('returns badRequest when required fields are missing', async () => {
+  it('skips publish when site has no llmo data folder', async () => {
+    site.getConfig.returns({
+      getLlmoDataFolder: sandbox.stub().returns(null),
+    });
+
+    const message = {
+      siteId: 'site-123',
+      auditContext: {
+        dataFolder: 'dev/example-com',
+      },
+    };
+
+    const response = await handler(message, context);
+
+    expect(publishToAdminHlxStub).to.not.have.been.called;
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+    expect(response).to.be.undefined;
+  });
+
+  it('returns early when siteId is missing', async () => {
     const response = await handler({ auditContext: {} }, context);
 
     expect(publishToAdminHlxStub).to.not.have.been.called;
     expect(context.sqs.sendMessage).to.not.have.been.called;
-    expect(response).to.deep.equal({
-      status: 400,
-      body: { message: 'Missing required fields: siteId and auditContext.dataFolder' },
-    });
+    expect(context.log.error).to.have.been.calledWith('[LLMO Onboarding Publish] Missing required field: siteId');
+    expect(response).to.be.undefined;
+  });
+
+  it('uses context.site when available and skips DB lookup', async () => {
+    context.site = site;
+
+    const message = { siteId: 'site-123' };
+    const response = await handler(message, context);
+
+    expect(context.dataAccess.Site.findById).to.not.have.been.called;
+    expect(publishToAdminHlxStub).to.have.been.calledOnce;
+    expect(response).to.be.undefined;
+  });
+
+  it('falls back to Site.findById when context.site is not set', async () => {
+    delete context.site;
+
+    const message = { siteId: 'site-123' };
+    const response = await handler(message, context);
+
+    expect(context.dataAccess.Site.findById).to.have.been.calledOnceWith('site-123');
+    expect(publishToAdminHlxStub).to.have.been.calledOnce;
+    expect(response).to.be.undefined;
   });
 });
