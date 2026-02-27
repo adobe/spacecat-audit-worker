@@ -10,7 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { createHash } from 'crypto';
+import {
+  ok, notFound, badRequest, noContent,
+} from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { syncSuggestions } from '../../utils/data-access.js';
@@ -132,13 +135,13 @@ export default async function handler(message, context) {
   const { s3ResultsPath } = data || {};
   if (!s3ResultsPath) {
     log.warn('[readability-opportunity guidance]: No s3ResultsPath in message data, nothing to process');
-    return ok();
+    return badRequest('Missing s3ResultsPath in message data');
   }
 
   const bucketName = context.env.S3_MYSTIQUE_BUCKET_NAME;
   if (!bucketName) {
     log.error('[readability-opportunity guidance]: Missing S3_MYSTIQUE_BUCKET_NAME');
-    return ok();
+    return noContent();
   }
 
   let batchResults;
@@ -171,7 +174,10 @@ export default async function handler(message, context) {
 
   log.info(`[readability-opportunity guidance]: Processing ${mappedSuggestions.length} suggestions from batch results`);
 
-  const buildKey = (suggestionData) => `${suggestionData.pageUrl}|${suggestionData.selector}`;
+  const buildKey = (suggestionData) => {
+    const textHash = createHash('sha256').update(suggestionData.originalText || '').digest('hex').slice(0, 12);
+    return `${suggestionData.pageUrl}|${textHash}`;
+  };
 
   await syncSuggestions({
     context,

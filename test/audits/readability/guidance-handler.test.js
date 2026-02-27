@@ -55,6 +55,8 @@ describe('Readability Opportunities Guidance Handler', () => {
       '@adobe/spacecat-shared-http-utils': {
         ok: sinon.stub().returns({ ok: true }),
         notFound: sinon.stub().returns({ notFound: true }),
+        badRequest: sinon.stub().returns({ badRequest: true }),
+        noContent: sinon.stub().returns({ noContent: true }),
       },
       '@adobe/spacecat-shared-data-access': {
         Suggestion: { TYPES: { CONTENT_UPDATE: 'CONTENT_UPDATE' } },
@@ -209,7 +211,7 @@ describe('Readability Opportunities Guidance Handler', () => {
       expect(mappedData.suggestionStatus).to.equal('completed');
     });
 
-    it('should handle missing s3ResultsPath gracefully', async () => {
+    it('should return badRequest when s3ResultsPath is missing', async () => {
       const message = {
         auditId: 'audit-123',
         siteId: 'site-1',
@@ -217,12 +219,12 @@ describe('Readability Opportunities Guidance Handler', () => {
       };
 
       const result = await handler.default(message, mockContext);
-      expect(result).to.deep.equal({ ok: true });
+      expect(result).to.deep.equal({ badRequest: true });
       expect(logStub.warn).to.have.been.calledWithMatch('No s3ResultsPath in message data');
       expect(syncSuggestionsStub).to.not.have.been.called;
     });
 
-    it('should handle null data gracefully', async () => {
+    it('should return badRequest when data is null', async () => {
       const message = {
         auditId: 'audit-123',
         siteId: 'site-1',
@@ -230,12 +232,12 @@ describe('Readability Opportunities Guidance Handler', () => {
       };
 
       const result = await handler.default(message, mockContext);
-      expect(result).to.deep.equal({ ok: true });
+      expect(result).to.deep.equal({ badRequest: true });
       expect(logStub.warn).to.have.been.calledWithMatch('No s3ResultsPath in message data');
       expect(syncSuggestionsStub).to.not.have.been.called;
     });
 
-    it('should handle missing S3_MYSTIQUE_BUCKET_NAME', async () => {
+    it('should return noContent when S3_MYSTIQUE_BUCKET_NAME is missing', async () => {
       mockContext.env.S3_MYSTIQUE_BUCKET_NAME = null;
 
       const message = {
@@ -245,7 +247,7 @@ describe('Readability Opportunities Guidance Handler', () => {
       };
 
       const result = await handler.default(message, mockContext);
-      expect(result).to.deep.equal({ ok: true });
+      expect(result).to.deep.equal({ noContent: true });
       expect(logStub.error).to.have.been.calledWithMatch('Missing S3_MYSTIQUE_BUCKET_NAME');
       expect(syncSuggestionsStub).to.not.have.been.called;
     });
@@ -447,7 +449,7 @@ describe('Readability Opportunities Guidance Handler', () => {
   });
 
   describe('buildKey function', () => {
-    it('should use pageUrl and selector as key', async () => {
+    it('should use pageUrl and hash of originalText as key', async () => {
       const message = {
         auditId: 'audit-123',
         siteId: 'site-1',
@@ -461,9 +463,42 @@ describe('Readability Opportunities Guidance Handler', () => {
 
       const key = buildKey({
         pageUrl: 'https://example.com/page1',
-        selector: '#content p:nth-child(1)',
+        originalText: 'Original complex text with many words.',
       });
-      expect(key).to.equal('https://example.com/page1|#content p:nth-child(1)');
+      expect(key).to.match(/^https:\/\/example\.com\/page1\|[a-f0-9]{12}$/);
+    });
+
+    it('should produce different keys for different originalText on the same page', async () => {
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      await handler.default(message, mockContext);
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const { buildKey } = syncArgs;
+
+      const key1 = buildKey({ pageUrl: 'https://example.com/page1', originalText: 'First paragraph.' });
+      const key2 = buildKey({ pageUrl: 'https://example.com/page1', originalText: 'Second paragraph.' });
+      expect(key1).to.not.equal(key2);
+    });
+
+    it('should handle null originalText gracefully', async () => {
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      await handler.default(message, mockContext);
+
+      const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+      const { buildKey } = syncArgs;
+
+      const key = buildKey({ pageUrl: 'https://example.com/page1', originalText: null });
+      expect(key).to.match(/^https:\/\/example\.com\/page1\|[a-f0-9]{12}$/);
     });
   });
 
