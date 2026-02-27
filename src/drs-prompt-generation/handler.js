@@ -12,6 +12,7 @@
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { writeDrsPromptsToS3 } from './drs-parquet-writer.js';
+import writeDrsPromptsToLlmoConfig from './drs-config-writer.js';
 
 /**
  * Downloads DRS result from presigned URL and writes JSON + parquet to SpaceCat S3.
@@ -52,6 +53,15 @@ async function convertDrsResult(resultLocation, jobId, siteId, context) {
       s3Client,
       log,
     });
+
+    // Write prompts to LLMO config as aiTopics (non-fatal)
+    try {
+      await writeDrsPromptsToLlmoConfig({
+        drsPrompts, siteId, s3Client, s3Bucket: bucket, log,
+      });
+    } catch /* c8 ignore next */ (configError) {
+      log.error(`Failed to write DRS prompts to LLMO config for site ${siteId}: ${configError.message}`);
+    }
 
     log.info(`DRS conversion complete for job ${jobId}: JSON=${jsonKey}, parquet=${parquetKey}`);
     return { drsJsonKey: jsonKey, drsParquetKey: parquetKey };
