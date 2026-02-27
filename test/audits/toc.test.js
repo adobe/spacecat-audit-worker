@@ -1944,6 +1944,72 @@ describe('TOC (Table of Contents) Audit', () => {
         sinon.match(/has no issues or failed, skipping suggestions generation/)
       );
     });
+
+    it('covers lines 458-459: slimTocAuditResult early return when auditResult.toc is falsy', () => {
+      const auditResult = { fullAuditRef: 'https://example.com', toc: undefined };
+      const result = slimTocAuditResult(auditResult);
+      expect(result).to.deep.equal(auditResult);
+      expect(result.toc).to.equal(undefined);
+    });
+
+    it('covers lines 451-452: slimTocAuditResult returns as-is when auditResult is null or non-object', () => {
+      expect(slimTocAuditResult(null)).to.equal(null);
+      expect(slimTocAuditResult(undefined)).to.equal(undefined);
+      const str = 'not an object';
+      expect(slimTocAuditResult(str)).to.equal(str);
+    });
+
+    it('covers lines 453-455: slimTocAuditResult early return when auditResult.toc is empty object', () => {
+      const auditResult = { fullAuditRef: 'https://example.com', toc: {} };
+      const result = slimTocAuditResult(auditResult);
+      expect(result).to.deep.equal(auditResult);
+      expect(result.toc).to.deep.equal({});
+    });
+
+    it('covers line 463: slimTocAuditResult pass-through when checkResult has no urls array', () => {
+      const auditResult = {
+        toc: {
+          toc: { success: false },
+          otherKey: { urls: null },
+        },
+      };
+      const result = slimTocAuditResult(auditResult);
+      expect(result.toc.toc).to.deep.equal({ success: false });
+      expect(result.toc.otherKey).to.deep.equal({ urls: null });
+    });
+
+    it('covers line 488: tocPersister skips debug log when log or log.debug is not available', async () => {
+      const auditCreateStub = sinon.stub().resolves({ getId: () => 'audit-123' });
+      const auditData = {
+        siteId: 'site-1',
+        auditResult: { toc: { toc: { urls: [{ url: 'https://example.com' }] } } },
+        fullAuditRef: 'https://example.com',
+      };
+      const contextNoLog = { dataAccess: { Audit: { create: auditCreateStub } } };
+      const { tocPersister } = await import('../../src/toc/handler.js');
+      await tocPersister(auditData, contextNoLog);
+      expect(auditCreateStub).to.have.been.calledOnce;
+
+      auditCreateStub.resetHistory();
+      const contextLogNoDebug = { log: {}, dataAccess: { Audit: { create: auditCreateStub } } };
+      await tocPersister(auditData, contextLogNoDebug);
+      expect(auditCreateStub).to.have.been.calledOnce;
+
+      auditCreateStub.resetHistory();
+      const logSpy = { debug: sinon.spy() };
+      const auditDataNoUrls = {
+        siteId: 'site-1',
+        auditResult: { toc: { toc: {} } },
+        fullAuditRef: 'https://example.com',
+      };
+      await tocPersister(auditDataNoUrls, {
+        log: logSpy,
+        dataAccess: { Audit: { create: auditCreateStub } },
+      });
+      expect(auditCreateStub).to.have.been.calledOnce;
+      expect(logSpy.debug.called).to.be.true;
+      expect(logSpy.debug.firstCall.args[0]).to.match(/from 0 URLs/);
+    });
   });
 
   describe('Branch Coverage Tests', () => {
