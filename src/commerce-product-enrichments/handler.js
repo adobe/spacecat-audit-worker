@@ -79,7 +79,7 @@ export async function importTopPages(context) {
 async function buildScrapePayload({
   sourceUrls, site, log,
 }) {
-  const auditType = 'commerce-product-enrichments';
+  const auditType = AUDIT_TYPE;
   const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
   const excludedURLs = site?.getConfig()?.getExcludedURLs?.(auditType) || [];
 
