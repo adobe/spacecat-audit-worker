@@ -1,3 +1,10 @@
+## [1.331.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.331.0...v1.331.1) (2026-02-27)
+
+
+### Bug Fixes
+
+* updating toc persitant logic ([#2042](https://github.com/adobe/spacecat-audit-worker/issues/2042)) ([029800f](https://github.com/adobe/spacecat-audit-worker/commit/029800f4686dbfdbe9c8670c9a82adcc77962717))
+
 # [1.331.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.330.3...v1.331.0) (2026-02-26)
 
 
