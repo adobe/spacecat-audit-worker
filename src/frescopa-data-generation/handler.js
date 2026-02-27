@@ -27,7 +27,7 @@ const FILE_CONFIGS = [
   {
     type: 'brand-presence',
     destinationFolder: 'brand-presence',
-    filePrefix: 'brandpresence-all',
+    filePrefix: 'brandpresence-chatgpt',
   },
   {
     type: 'referral-traffic',
