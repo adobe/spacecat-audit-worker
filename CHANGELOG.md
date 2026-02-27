@@ -1,3 +1,10 @@
+# [1.335.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.334.0...v1.335.0) (2026-02-27)
+
+
+### Features
+
+* identify redirects via splunk ([#2011](https://github.com/adobe/spacecat-audit-worker/issues/2011)) ([d943e72](https://github.com/adobe/spacecat-audit-worker/commit/d943e72bfecdf4c5c2edc5c3000d7a8365f73a1d))
+
 # [1.334.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.333.1...v1.334.0) (2026-02-27)
 
 
