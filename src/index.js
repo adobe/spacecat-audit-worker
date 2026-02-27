@@ -84,6 +84,7 @@ import pageTypeGuidance from './page-type/guidance-handler.js';
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
+import llmoOnboardingPublish from './llmo-onboarding-publish/handler.js';
 import headings from './headings/handler.js';
 import toc from './toc/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
@@ -184,6 +185,7 @@ const HANDLERS = {
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
   'llmo-customer-analysis': llmoCustomerAnalysis,
+  'trigger:llmo-onboarding-publish': llmoOnboardingPublish,
   summarization,
   'guidance:summarization': summarizationGuidance,
   hreflang,
