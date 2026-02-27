@@ -22,7 +22,6 @@ use(sinonChai);
 describe('LLMO Onboarding Publish Handler', () => {
   let sandbox;
   let context;
-  let site;
   let publishToAdminHlxStub;
   let handler;
 
@@ -30,27 +29,12 @@ describe('LLMO Onboarding Publish Handler', () => {
     sandbox = sinon.createSandbox();
 
     publishToAdminHlxStub = sandbox.stub().resolves();
-
-    site = {
-      getConfig: sandbox.stub().returns({
-        getLlmoDataFolder: sandbox.stub().returns('dev/example-com'),
-      }),
-    };
-
     context = {
       log: {
         info: sandbox.stub(),
         warn: sandbox.stub(),
         error: sandbox.stub(),
         debug: sandbox.stub(),
-      },
-      dataAccess: {
-        Site: {
-          findById: sandbox.stub().resolves(site),
-        },
-      },
-      sqs: {
-        sendMessage: sandbox.stub().resolves(),
       },
     };
 
@@ -73,7 +57,6 @@ describe('LLMO Onboarding Publish Handler', () => {
       auditContext: {
         dataFolder: 'dev/example-com',
         onboardingRunId: 'run-123',
-        triggerSource: 'llmo-onboard',
       },
     };
 
@@ -84,11 +67,10 @@ describe('LLMO Onboarding Publish Handler', () => {
       'dev/example-com',
       context.log,
     );
-    expect(context.sqs.sendMessage).to.not.have.been.called;
     expect(response).to.be.undefined;
   });
 
-  it('uses persisted llmo data folder even when message dataFolder differs', async () => {
+  it('publishes with message dataFolder value', async () => {
     const message = {
       siteId: 'site-123',
       auditContext: {
@@ -100,23 +82,9 @@ describe('LLMO Onboarding Publish Handler', () => {
 
     expect(publishToAdminHlxStub).to.have.been.calledOnceWithExactly(
       'query-index',
-      'dev/example-com',
+      'dev/other-folder',
       context.log,
     );
-    expect(context.sqs.sendMessage).to.not.have.been.called;
-    expect(response).to.be.undefined;
-  });
-
-  it('works without auditContext dataFolder in the message', async () => {
-    const message = { siteId: 'site-123', auditContext: {} };
-    const response = await handler(message, context);
-
-    expect(publishToAdminHlxStub).to.have.been.calledOnceWithExactly(
-      'query-index',
-      'dev/example-com',
-      context.log,
-    );
-    expect(context.sqs.sendMessage).to.not.have.been.called;
     expect(response).to.be.undefined;
   });
 
@@ -136,43 +104,6 @@ describe('LLMO Onboarding Publish Handler', () => {
     const response = await handler(message, context);
 
     expect(context.log.error).to.have.been.called;
-    expect(context.sqs.sendMessage).to.not.have.been.called;
-    expect(response).to.be.undefined;
-  });
-
-  it('skips publish when site is not found', async () => {
-    context.dataAccess.Site.findById.resolves(null);
-
-    const message = {
-      siteId: 'site-123',
-      auditContext: {
-        dataFolder: 'dev/example-com',
-      },
-    };
-
-    const response = await handler(message, context);
-
-    expect(publishToAdminHlxStub).to.not.have.been.called;
-    expect(context.sqs.sendMessage).to.not.have.been.called;
-    expect(response).to.be.undefined;
-  });
-
-  it('skips publish when site has no llmo data folder', async () => {
-    site.getConfig.returns({
-      getLlmoDataFolder: sandbox.stub().returns(null),
-    });
-
-    const message = {
-      siteId: 'site-123',
-      auditContext: {
-        dataFolder: 'dev/example-com',
-      },
-    };
-
-    const response = await handler(message, context);
-
-    expect(publishToAdminHlxStub).to.not.have.been.called;
-    expect(context.sqs.sendMessage).to.not.have.been.called;
     expect(response).to.be.undefined;
   });
 
@@ -180,30 +111,26 @@ describe('LLMO Onboarding Publish Handler', () => {
     const response = await handler({ auditContext: {} }, context);
 
     expect(publishToAdminHlxStub).to.not.have.been.called;
-    expect(context.sqs.sendMessage).to.not.have.been.called;
     expect(context.log.error).to.have.been.calledWith('[LLMO Onboarding Publish] Missing required field: siteId');
     expect(response).to.be.undefined;
   });
 
-  it('uses context.site when available and skips DB lookup', async () => {
-    context.site = site;
+  it('returns early when dataFolder is missing', async () => {
+    context.site = {
+      getConfig: sandbox.stub().returns({
+        getLlmoDataFolder: sandbox.stub().returns('dev/site-config-folder'),
+      }),
+    };
 
-    const message = { siteId: 'site-123' };
-    const response = await handler(message, context);
+    const response = await handler({ siteId: 'site-123', auditContext: {} }, context);
 
-    expect(context.dataAccess.Site.findById).to.not.have.been.called;
-    expect(publishToAdminHlxStub).to.have.been.calledOnce;
-    expect(response).to.be.undefined;
-  });
-
-  it('falls back to Site.findById when context.site is not set', async () => {
-    delete context.site;
-
-    const message = { siteId: 'site-123' };
-    const response = await handler(message, context);
-
-    expect(context.dataAccess.Site.findById).to.have.been.calledOnceWith('site-123');
-    expect(publishToAdminHlxStub).to.have.been.calledOnce;
+    expect(publishToAdminHlxStub).to.not.have.been.called;
+    expect(context.log.error).to.have.been.calledWith(
+      '[LLMO Onboarding Publish] Missing required field: auditContext.dataFolder',
+      sinon.match({
+        siteId: 'site-123',
+      }),
+    );
     expect(response).to.be.undefined;
   });
 });
