@@ -422,7 +422,18 @@ export async function discoverSitemapUrlsAndSubmitForScraping(context) {
 
   log.info(`${LOG_PREFIX} Step 1 (yearly): Found ${allSitemapUrls.length} URLs from sitemaps, using ${sourceUrls.length} (limit: ${limit})`);
 
-  return buildScrapePayload({ sourceUrls, site, log });
+  const scrapePayload = await buildScrapePayload({ sourceUrls, site, log });
+  const s3BucketPath = `scrapes/${site.getId()}/`;
+
+  return {
+    ...scrapePayload,
+    auditResult: {
+      status: 'preparing',
+      finalUrl: baseURL,
+      totalSitemapUrls: allSitemapUrls.length,
+    },
+    fullAuditRef: s3BucketPath,
+  };
 }
 
 export const commerceProductEnrichments = new AuditBuilder()
