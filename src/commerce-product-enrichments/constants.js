@@ -16,6 +16,3 @@ export const AUDIT_TYPE_YEARLY = 'commerce-product-enrichments-yearly';
 
 // Log prefix for consistent logging
 export const LOG_PREFIX = '[COMMERCE-PRODUCT-ENRICHMENTS]';
-
-// Default limit for sitemap strategy
-export const DEFAULT_SITEMAP_LIMIT = 25;

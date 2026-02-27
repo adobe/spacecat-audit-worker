@@ -14,13 +14,12 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
-import { LOG_PREFIX, AUDIT_TYPE, DEFAULT_SITEMAP_LIMIT } from './constants.js';
+import { LOG_PREFIX, AUDIT_TYPE } from './constants.js';
 import { getCommerceConfig } from '../utils/saas.js';
 import { getSitemapUrls } from '../sitemap/common.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
-const DEFAULT_LIMIT = 20;
 const MAX_EXCLUDED_URLS = 500;
 
 /**
@@ -49,9 +48,9 @@ export async function importTopPages(context) {
     parsedData = data;
   }
 
-  const limit = parsedData.limit ? Number(parsedData.limit) : DEFAULT_LIMIT;
+  const limit = parsedData.limit ? Number(parsedData.limit) : undefined;
 
-  log.info(`${LOG_PREFIX} Step 1: importTopPages for site: ${site.getId()}, url: ${finalUrl}, limit: ${limit}`);
+  log.info(`${LOG_PREFIX} Step 1: importTopPages for site: ${site.getId()}, url: ${finalUrl}${limit ? `, limit: ${limit}` : ''}`);
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
   const result = {
@@ -59,7 +58,7 @@ export async function importTopPages(context) {
     siteId: site.getId(),
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
-    auditContext: { limit },
+    ...(limit && { auditContext: { limit } }),
   };
 
   log.debug(`${LOG_PREFIX} Step 1: result:`, result);
@@ -147,13 +146,13 @@ export async function submitForScraping(context) {
 
   log.debug(`${LOG_PREFIX} Step 2: input:`, { siteId: site.getId(), auditContext });
 
-  const limit = auditContext?.limit || DEFAULT_LIMIT;
+  const limit = auditContext?.limit ? Number(auditContext.limit) : undefined;
 
-  log.info(`${LOG_PREFIX} Step 2: submitForScraping for site: ${site.getId()}, limit: ${limit}`);
+  log.info(`${LOG_PREFIX} Step 2: submitForScraping for site: ${site.getId()}${limit ? `, limit: ${limit}` : ''}`);
 
   const { SiteTopPage } = dataAccess;
   const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  const topPages = allTopPages.slice(0, limit);
+  const topPages = limit ? allTopPages.slice(0, limit) : allTopPages;
   const sourceUrls = topPages.map((page) => page.getUrl());
 
   return buildScrapePayload({ sourceUrls, site, log });
@@ -401,12 +400,10 @@ export async function discoverSitemapUrlsAndSubmitForScraping(context) {
     parsedData = data;
   }
 
-  const limit = parsedData.limit
-    ? Number(parsedData.limit)
-    : DEFAULT_SITEMAP_LIMIT;
+  const limit = parsedData.limit ? Number(parsedData.limit) : undefined;
   const baseURL = site.getBaseURL();
 
-  log.info(`${LOG_PREFIX} Step 1 (yearly): Discovering sitemap URLs for ${baseURL}, limit: ${limit}`);
+  log.info(`${LOG_PREFIX} Step 1 (yearly): Discovering sitemap URLs for ${baseURL}${limit ? `, limit: ${limit}` : ''}`);
 
   const sitemapResult = await getSitemapUrls(baseURL, log);
 
@@ -418,9 +415,9 @@ export async function discoverSitemapUrlsAndSubmitForScraping(context) {
   const allSitemapUrls = Object.values(
     sitemapResult.details.extractedPaths,
   ).flat();
-  const sourceUrls = allSitemapUrls.slice(0, limit);
+  const sourceUrls = limit ? allSitemapUrls.slice(0, limit) : allSitemapUrls;
 
-  log.info(`${LOG_PREFIX} Step 1 (yearly): Found ${allSitemapUrls.length} URLs from sitemaps, using ${sourceUrls.length} (limit: ${limit})`);
+  log.info(`${LOG_PREFIX} Step 1 (yearly): Found ${allSitemapUrls.length} URLs from sitemaps, using ${sourceUrls.length}${limit ? ` (limit: ${limit})` : ''}`);
 
   const scrapePayload = await buildScrapePayload({ sourceUrls, site, log });
   const s3BucketPath = `scrapes/${site.getId()}/`;

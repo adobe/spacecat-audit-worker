@@ -87,7 +87,7 @@ describe('Commerce Product Enrichments Handler', () => {
     sinon.restore();
   });
 
-  it('importTopPages returns top-pages metadata with default limit when not provided', async () => {
+  it('importTopPages returns top-pages metadata without auditContext when no limit provided', async () => {
     const context = {
       site,
       finalUrl: 'https://example.com',
@@ -99,11 +99,10 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
-      auditContext: { limit: 20 },
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
-    expect(result).to.not.have.property('limit');
+    expect(result).to.not.have.property('auditContext');
   });
 
   it('importTopPages includes limit in auditContext when provided as object', async () => {
@@ -157,10 +156,10 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'site-1',
-      auditContext: { limit: 20 },
       auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
       fullAuditRef: 'scrapes/site-1/',
     });
+    expect(result).to.not.have.property('auditContext');
   });
 
   it('submitForScraping combines top pages and included URLs, filters PDFs', async () => {
@@ -264,7 +263,7 @@ describe('Commerce Product Enrichments Handler', () => {
     ]);
   });
 
-  it('submitForScraping ignores limit from context.data', async () => {
+  it('submitForScraping uses all top pages when no auditContext limit', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -286,12 +285,12 @@ describe('Commerce Product Enrichments Handler', () => {
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(20);
+    expect(result.urls).to.have.lengthOf(50);
     expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
-    expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
+    expect(result.urls[49]).to.deep.equal({ url: 'https://example.com/page-50' });
   });
 
-  it('submitForScraping uses default limit when limit not provided', async () => {
+  it('submitForScraping returns all top pages when no limit provided', async () => {
     // Create an array of 50 top pages
     const manyTopPages = Array.from({ length: 50 }, (_, i) => ({
       getUrl: () => `https://example.com/page-${i + 1}`,
@@ -312,9 +311,9 @@ describe('Commerce Product Enrichments Handler', () => {
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(20);
+    expect(result.urls).to.have.lengthOf(50);
     expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
-    expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
+    expect(result.urls[49]).to.deep.equal({ url: 'https://example.com/page-50' });
   });
 
   it('submitForScraping ignores limit from context.data when provided as JSON string', async () => {
@@ -339,9 +338,9 @@ describe('Commerce Product Enrichments Handler', () => {
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(20);
+    expect(result.urls).to.have.lengthOf(50);
     expect(result.urls[0]).to.deep.equal({ url: 'https://example.com/page-1' });
-    expect(result.urls[19]).to.deep.equal({ url: 'https://example.com/page-20' });
+    expect(result.urls[49]).to.deep.equal({ url: 'https://example.com/page-50' });
   });
 
   it('submitForScraping ignores invalid JSON in context.data', async () => {
@@ -365,7 +364,7 @@ describe('Commerce Product Enrichments Handler', () => {
 
     const result = await submitForScraping(context);
 
-    expect(result.urls).to.have.lengthOf(20);
+    expect(result.urls).to.have.lengthOf(50);
   });
 
   it('submitForScraping respects limit from auditContext (step chaining)', async () => {
@@ -1913,7 +1912,7 @@ describe('Commerce Product Enrichments Handler - Yearly (Sitemap)', () => {
     expect(result.siteId).to.equal('site-1');
   });
 
-  it('applies default sitemap limit of 25', async () => {
+  it('uses all sitemap URLs when no limit specified', async () => {
     const manyUrls = Array.from(
       { length: 50 },
       (_, i) => `https://example.com/page-${i + 1}`,
@@ -1932,12 +1931,12 @@ describe('Commerce Product Enrichments Handler - Yearly (Sitemap)', () => {
       site, log, data: {},
     });
 
-    expect(result.urls).to.have.lengthOf(25);
+    expect(result.urls).to.have.lengthOf(50);
     expect(result.urls[0]).to.deep.equal({
       url: 'https://example.com/page-1',
     });
-    expect(result.urls[24]).to.deep.equal({
-      url: 'https://example.com/page-25',
+    expect(result.urls[49]).to.deep.equal({
+      url: 'https://example.com/page-50',
     });
   });
 
@@ -2100,7 +2099,7 @@ describe('Commerce Product Enrichments Handler - Yearly (Sitemap)', () => {
       site, log, data: 'invalid-json{',
     });
 
-    // Falls back to default limit (25), but only 1 URL available
+    // No limit applied, all URLs returned
     expect(result.urls).to.have.lengthOf(1);
     expect(log.warn).to.have.been.calledWith(
       sinon.match(/Could not parse data as JSON/),
