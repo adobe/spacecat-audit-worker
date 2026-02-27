@@ -1,3 +1,10 @@
+# [1.333.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.332.3...v1.333.0) (2026-02-27)
+
+
+### Features
+
+* handle DRS prompt generation completion (LLMO-1819) ([#2041](https://github.com/adobe/spacecat-audit-worker/issues/2041)) ([c987729](https://github.com/adobe/spacecat-audit-worker/commit/c987729b8dfd0532cbaab3e9f0754b750b8e0d0c))
+
 ## [1.332.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.332.2...v1.332.3) (2026-02-27)
 
 
