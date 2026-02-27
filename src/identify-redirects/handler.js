@@ -16,7 +16,7 @@ import SplunkAPIClient from '@adobe/spacecat-shared-splunk-client';
 
 import { postMessageSafe } from '../utils/slack-utils.js';
 
-const DEFAULT_MINUTES = 60;
+const DEFAULT_MINUTES = 1444; // 24 hours
 
 const DEFAULT_SPLUNK_FIELDS = {
   envField: 'aem_envId',
@@ -114,6 +114,7 @@ function withMatchExtraction(search, {
   return `${search} | rex field=_raw "(?<${MATCH_FIELD}>${matchRegex})" | where isnotnull(${MATCH_FIELD}) | table ${tableFields} | head ${headLimit}`;
 }
 
+// build out the splunk queries to look for logs related to redirects
 function buildQueries(params) {
   const { pathField } = params;
   return [
@@ -121,16 +122,18 @@ function buildQueries(params) {
       id: 'acsredirectmanager',
       confidence: CONFIDENCE.acsredirectmanager,
       // IMPORTANT: naive /conf/ matching causes false positives. We require redirect context.
+      // key_field: 'referer',
       search: withMatchExtraction(
-        `${buildBaseSearch(params)} "/conf/" (redirect OR "acs-commons") NOT "/settings/wcm/templates/"`,
+        `${buildBaseSearch(params)} "/conf/" (redirect OR "acs-commons") NOT "/settings/wcm/templates/" 200`,
         { matchRegex: `/conf/${RX_ANY_TAIL}`, pathField },
       ),
     },
     {
       id: 'acsredirectmapmanager',
       confidence: CONFIDENCE.acsredirectmapmanager,
+      key_field: 'path',
       search: withMatchExtraction(
-        `${buildBaseSearch(params)} "/etc/acs-commons/redirect-maps"`,
+        `${buildBaseSearch(params)} "/etc/acs-commons/redirect-maps" 200`,
         { matchRegex: `/etc/acs-commons/redirect-maps${RX_ANY_TAIL}`, pathField },
       ),
     },
@@ -305,6 +308,7 @@ export default async function identifyRedirects(message, context) {
     programId,
   };
 
+  // [ acsredirectmanager, acsredirectmapmanager, redirectmapTxt, damredirectmgr ]
   const queries = buildQueries(queryParams);
 
   let settled;
