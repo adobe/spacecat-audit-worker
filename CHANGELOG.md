@@ -1,3 +1,87 @@
+# [1.334.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.333.1...v1.334.0) (2026-02-27)
+
+
+### Features
+
+* write DRS prompts to LLMO config as aiTopics (LLMO-1819) ([#2051](https://github.com/adobe/spacecat-audit-worker/issues/2051)) ([4918437](https://github.com/adobe/spacecat-audit-worker/commit/49184372acdf14f2eb94a7b0689dd8eafb059d96)), closes [#2041](https://github.com/adobe/spacecat-audit-worker/issues/2041) [#2041](https://github.com/adobe/spacecat-audit-worker/issues/2041)
+
+## [1.333.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.333.0...v1.333.1) (2026-02-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.98.0 ([#2046](https://github.com/adobe/spacecat-audit-worker/issues/2046)) ([a1a8131](https://github.com/adobe/spacecat-audit-worker/commit/a1a8131636fc3fca5b634916f69ba612f73ee552))
+
+# [1.333.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.332.3...v1.333.0) (2026-02-27)
+
+
+### Features
+
+* handle DRS prompt generation completion (LLMO-1819) ([#2041](https://github.com/adobe/spacecat-audit-worker/issues/2041)) ([c987729](https://github.com/adobe/spacecat-audit-worker/commit/c987729b8dfd0532cbaab3e9f0754b750b8e0d0c))
+
+## [1.332.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.332.2...v1.332.3) (2026-02-27)
+
+
+### Bug Fixes
+
+* **llmo-onboarding-publish:** require data folder in audit context ([#2047](https://github.com/adobe/spacecat-audit-worker/issues/2047)) ([811dc21](https://github.com/adobe/spacecat-audit-worker/commit/811dc21e742544176ed73713139c7ca2c6dcf4c0))
+
+## [1.332.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.332.1...v1.332.2) (2026-02-27)
+
+
+### Bug Fixes
+
+* frescopa data generation add new file types ([#2043](https://github.com/adobe/spacecat-audit-worker/issues/2043)) ([377737b](https://github.com/adobe/spacecat-audit-worker/commit/377737b614c5eadad13e4f68878f4bfd6313dd51))
+
+## [1.332.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.332.0...v1.332.1) (2026-02-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.97.0 ([#2044](https://github.com/adobe/spacecat-audit-worker/issues/2044)) ([a5e161c](https://github.com/adobe/spacecat-audit-worker/commit/a5e161c0ef4de3098d3d73f51ded32aff627e50c))
+
+# [1.332.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.331.1...v1.332.0) (2026-02-27)
+
+
+### Features
+
+* add new handler for async query index publishing ([#2037](https://github.com/adobe/spacecat-audit-worker/issues/2037)) ([ff607c3](https://github.com/adobe/spacecat-audit-worker/commit/ff607c3264e2b6a779a9f1b85b6995736f427bef))
+
+## [1.331.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.331.0...v1.331.1) (2026-02-27)
+
+
+### Bug Fixes
+
+* updating toc persitant logic ([#2042](https://github.com/adobe/spacecat-audit-worker/issues/2042)) ([029800f](https://github.com/adobe/spacecat-audit-worker/commit/029800f4686dbfdbe9c8670c9a82adcc77962717))
+
+# [1.331.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.330.3...v1.331.0) (2026-02-26)
+
+
+### Features
+
+* consolidate PTA into single paid-traffic-analysis audit ([#2040](https://github.com/adobe/spacecat-audit-worker/issues/2040)) ([979ae2f](https://github.com/adobe/spacecat-audit-worker/commit/979ae2fd0768dee5ba312fb32000c59c31b9852b))
+
+## [1.330.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.330.2...v1.330.3) (2026-02-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.4.0 ([#2039](https://github.com/adobe/spacecat-audit-worker/issues/2039)) ([06103a6](https://github.com/adobe/spacecat-audit-worker/commit/06103a64572e3b345501baf2f7cb85944e4d2cf7))
+
+## [1.330.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.330.1...v1.330.2) (2026-02-26)
+
+
+### Bug Fixes
+
+* Content summarization: page summaries should always be on … ([#2018](https://github.com/adobe/spacecat-audit-worker/issues/2018)) ([6981539](https://github.com/adobe/spacecat-audit-worker/commit/698153909b189b7438613e042d91ab7ae6e3e5a0))
+
+## [1.330.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.330.0...v1.330.1) (2026-02-26)
+
+
+### Bug Fixes
+
+* **semantic-value-visibility:** use incoming guidance from Mystique  ([#2036](https://github.com/adobe/spacecat-audit-worker/issues/2036)) ([b50b5ff](https://github.com/adobe/spacecat-audit-worker/commit/b50b5ff700ee6081b1bfb3e60e46b6386c4ddb59))
+
 # [1.330.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.329.0...v1.330.0) (2026-02-25)
 
 

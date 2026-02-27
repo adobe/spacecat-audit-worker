@@ -78,12 +78,13 @@ import unifiedReadabilityGuidance from './readability/shared/unified-guidance-ha
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
-import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
+import paidTrafficAnalysis from './paid-traffic-analysis/handler.js';
 import pageTypeDetection from './page-type/handler.js';
 import pageTypeGuidance from './page-type/guidance-handler.js';
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
+import llmoOnboardingPublish from './llmo-onboarding-publish/handler.js';
 import headings from './headings/handler.js';
 import toc from './toc/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
@@ -105,9 +106,9 @@ import healthCheck from './health-check/handler.js';
 import wikipediaAnalysis from './wikipedia-analysis/handler.js';
 import wikipediaAnalysisGuidance from './wikipedia-analysis/guidance-handler.js';
 import frescopaDataGeneration from './frescopa-data-generation/handler.js';
-import ptrSelector from './ptr-selector/handler.js';
 import semanticValueVisibility from './semantic-value-visibility/handler.js';
 import semanticValueVisibilityGuidance from './semantic-value-visibility/guidance-handler.js';
+import drsPromptGeneration from './drs-prompt-generation/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -122,8 +123,7 @@ const HANDLERS = {
   'redirect-chains': redirectChains,
   paid,
   'no-cta-above-the-fold': noCTAAboveTheFold,
-  'paid-traffic-analysis-weekly': paidTrafficAnalysisWeekly,
-  'paid-traffic-analysis-monthly': paidTrafficAnalysisMonthly,
+  'paid-traffic-analysis': paidTrafficAnalysis,
   'page-type-detection': pageTypeDetection,
   canonical,
   'broken-backlinks': backlinks,
@@ -186,6 +186,7 @@ const HANDLERS = {
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
   'llmo-customer-analysis': llmoCustomerAnalysis,
+  'trigger:llmo-onboarding-publish': llmoOnboardingPublish,
   summarization,
   'guidance:summarization': summarizationGuidance,
   hreflang,
@@ -207,11 +208,35 @@ const HANDLERS = {
   'wikipedia-analysis': wikipediaAnalysis,
   'guidance:wikipedia-analysis': wikipediaAnalysisGuidance,
   'frescopa-data-generation': frescopaDataGeneration,
-  'ptr-selector': ptrSelector,
   'semantic-value-visibility': semanticValueVisibility,
   'guidance:semantic-value-visibility': semanticValueVisibilityGuidance,
+  'drs:prompt_generation_base_url': drsPromptGeneration,
   dummy: (message) => ok(message),
 };
+
+/**
+ * Normalizes a DRS SNS notification into the audit worker message format.
+ * DRS messages have event_type/provider_id instead of type/siteId.
+ * With raw_message_delivery enabled on the SNS subscription, the SQS body
+ * is the raw DRS notification JSON.
+ *
+ * @param {object} message - Raw DRS notification message
+ * @returns {object} Normalized message with type and siteId
+ */
+function normalizeDrsMessage(message) {
+  const { event_type: eventType, provider_id: providerId, metadata = {} } = message;
+  return {
+    type: `drs:${providerId}`,
+    siteId: metadata.site_id,
+    auditContext: {
+      drsEventType: eventType,
+      drsJobId: message.job_id,
+      resultLocation: message.result_location,
+      providerId,
+      source: metadata.source,
+    },
+  };
+}
 
 function getElapsedSeconds(startTime) {
   const endTime = process.hrtime(startTime);
@@ -227,6 +252,14 @@ function getElapsedSeconds(startTime) {
  */
 async function run(message, context) {
   const { log } = context;
+
+  // Normalize DRS SNS notifications (have event_type instead of type)
+  // These arrive via SNS → SQS subscription with raw_message_delivery enabled
+  if (!message.type && message.event_type && message.provider_id) {
+    // eslint-disable-next-line no-param-reassign
+    message = normalizeDrsMessage(message);
+  }
+
   const {
     type, siteId, jobId,
   } = message;

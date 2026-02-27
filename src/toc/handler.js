@@ -446,9 +446,55 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   return { ...auditData };
 }
 
+export function slimTocAuditResult(auditResult) {
+  if (!auditResult || typeof auditResult !== 'object') {
+    return auditResult;
+  }
+  const isEmptyToc = auditResult.toc && Object.keys(auditResult.toc).length === 0;
+  if (auditResult.error || auditResult.check || isEmptyToc) {
+    return { ...auditResult };
+  }
+  if (!auditResult.toc) {
+    return { ...auditResult };
+  }
+  const slimToc = {};
+  for (const [checkKey, checkResult] of Object.entries(auditResult.toc)) {
+    if (!checkResult || !Array.isArray(checkResult.urls)) {
+      slimToc[checkKey] = checkResult;
+    } else {
+      slimToc[checkKey] = {
+        ...checkResult,
+        urls: checkResult.urls.map((urlObj) => {
+          const { transformRules: _, ...rest } = urlObj;
+          return rest;
+        }),
+      };
+    }
+  }
+  return {
+    ...auditResult,
+    toc: slimToc,
+  };
+}
+
+export async function tocPersister(auditData, context) {
+  const { dataAccess, log } = context;
+  const { Audit: AuditCreate } = dataAccess;
+  const slimmedAuditData = {
+    ...auditData,
+    auditResult: slimTocAuditResult(auditData.auditResult),
+  };
+  if (log && typeof log.debug === 'function') {
+    const urlCount = slimmedAuditData.auditResult?.toc?.toc?.urls?.length ?? 0;
+    log.debug(`[TOC Persister] Persisting slimmed audit (transformRules stripped from ${urlCount} URLs)`);
+  }
+  return AuditCreate.create(slimmedAuditData);
+}
+
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(tocAuditRunner)
+  .withPersister(tocPersister)
   .withPostProcessors([
     generateSuggestions,
     opportunityAndSuggestions,
