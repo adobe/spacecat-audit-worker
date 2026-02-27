@@ -1,3 +1,10 @@
+# [1.334.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.333.1...v1.334.0) (2026-02-27)
+
+
+### Features
+
+* write DRS prompts to LLMO config as aiTopics (LLMO-1819) ([#2051](https://github.com/adobe/spacecat-audit-worker/issues/2051)) ([4918437](https://github.com/adobe/spacecat-audit-worker/commit/49184372acdf14f2eb94a7b0689dd8eafb059d96)), closes [#2041](https://github.com/adobe/spacecat-audit-worker/issues/2041) [#2041](https://github.com/adobe/spacecat-audit-worker/issues/2041)
+
 ## [1.333.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.333.0...v1.333.1) (2026-02-27)
 
 
