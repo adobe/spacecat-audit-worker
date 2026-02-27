@@ -1,3 +1,10 @@
+## [1.332.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.332.2...v1.332.3) (2026-02-27)
+
+
+### Bug Fixes
+
+* **llmo-onboarding-publish:** require data folder in audit context ([#2047](https://github.com/adobe/spacecat-audit-worker/issues/2047)) ([811dc21](https://github.com/adobe/spacecat-audit-worker/commit/811dc21e742544176ed73713139c7ca2c6dcf4c0))
+
 ## [1.332.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.332.1...v1.332.2) (2026-02-27)
 
 
