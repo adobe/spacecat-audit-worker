@@ -19,7 +19,7 @@ import esmock from 'esmock';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 
-import { generateSuggestions } from '../../src/toc/handler.js';
+import { generateSuggestions, slimTocAuditResult } from '../../src/toc/handler.js';
 
 chaiUse(sinonChai);
 
@@ -698,6 +698,105 @@ describe('TOC (Table of Contents) Audit', () => {
 
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).not.to.have.been.called;
+    });
+  });
+
+  describe('TOC custom persister (slimmed audit vs full post-processor data)', () => {
+    it('slimTocAuditResult strips transformRules from urls for persistence', () => {
+      const auditResult = {
+        toc: {
+          toc: {
+            success: false,
+            urls: [
+              {
+                url: 'https://example.com/page',
+                explanation: 'TOC missing',
+                transformRules: { action: 'insertAfter', selector: 'h1', value: [] },
+              },
+            ],
+          },
+        },
+      };
+      const slimmed = slimTocAuditResult(auditResult);
+      expect(slimmed.toc.toc.urls).to.have.lengthOf(1);
+      expect(slimmed.toc.toc.urls[0]).to.not.have.property('transformRules');
+      expect(slimmed.toc.toc.urls[0].url).to.equal('https://example.com/page');
+      expect(auditResult.toc.toc.urls[0]).to.have.property('transformRules');
+    });
+
+    it('tocPersister persists slimmed data and logs; post-processors receive full data', async () => {
+      const url = 'https://example.com/page';
+      const auditCreateStub = sinon.stub().resolves({ getId: () => 'audit-123' });
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'toc-opportunity-id',
+        getSiteId: () => 'site-1',
+      });
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
+      const fullAuditResult = {
+        toc: {
+          toc: {
+            success: false,
+            urls: [
+              {
+                url,
+                explanation: 'TOC missing',
+                suggestion: 'Add TOC',
+                transformRules: { action: 'insertAfter', selector: 'h1', value: [{ text: 'Title', level: 1 }] },
+              },
+            ],
+          },
+        },
+      };
+      const auditData = {
+        siteId: 'site-1',
+        isLive: true,
+        auditedAt: new Date().toISOString(),
+        auditType: 'toc',
+        auditResult: fullAuditResult,
+        fullAuditRef: url,
+      };
+      const testContext = {
+        log: logSpy,
+        dataAccess: { Audit: { create: auditCreateStub } },
+      };
+
+      const { tocPersister } = await import('../../src/toc/handler.js');
+      await tocPersister(auditData, testContext);
+
+      expect(auditCreateStub).to.have.been.calledOnce;
+      const persistedAuditData = auditCreateStub.firstCall.args[0];
+      expect(persistedAuditData.auditResult.toc.toc.urls[0]).to.not.have.property('transformRules');
+      expect(logSpy.debug.called).to.be.true;
+      const persisterLog = logSpy.debug.getCalls().find((c) => c.args[0] && c.args[0].includes('[TOC Persister]'));
+      expect(persisterLog).to.exist;
+      expect(persisterLog.args[0]).to.include('slimmed');
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': { convertToOpportunity: convertToOpportunityStub },
+        '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+      });
+      const auditUrl = 'https://example.com';
+      const suggestionsAuditData = {
+        suggestions: {
+          headings: [],
+          toc: [
+            {
+              type: 'CODE_CHANGE',
+              checkType: 'toc',
+              url,
+              explanation: 'TOC missing',
+              recommendedAction: 'Add TOC',
+              transformRules: { action: 'insertAfter', selector: 'h1', value: [{ text: 'Title', level: 1 }] },
+            },
+          ],
+        },
+      };
+      await mockedHandler.opportunityAndSuggestions(auditUrl, suggestionsAuditData, context);
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      const syncArgs = syncSuggestionsStub.firstCall.args[0];
+      expect(syncArgs.newData[0]).to.have.property('transformRules');
+      expect(syncArgs.newData[0].transformRules).to.include({ action: 'insertAfter' });
     });
   });
 
