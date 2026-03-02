@@ -66,6 +66,7 @@ export default async function writeDrsPromptsToLlmoConfig({
   }
 
   const now = new Date().toISOString();
+  const categoryRegions = new Map();
 
   for (const { category: catName, topic: topicName, prompts } of Object.values(grouped)) {
     // Find or create category
@@ -79,6 +80,14 @@ export default async function writeDrsPromptsToLlmoConfig({
         updatedAt: now,
       };
       categoryNameToId[catName.toLowerCase()] = categoryId;
+    }
+
+    // Track regions for this category
+    for (const p of prompts) {
+      if (p.region) {
+        if (!categoryRegions.has(categoryId)) categoryRegions.set(categoryId, new Set());
+        categoryRegions.get(categoryId).add(p.region.toLowerCase());
+      }
     }
 
     // Merge prompts: group by prompt text, collect unique regions
@@ -113,6 +122,12 @@ export default async function writeDrsPromptsToLlmoConfig({
         prompts: aiPrompts,
       };
     }
+  }
+
+  // Set region on each category from collected prompt regions
+  for (const [catId, regions] of categoryRegions) {
+    const arr = [...regions];
+    config.categories[catId].region = arr.length === 1 ? arr[0] : arr;
   }
 
   const { version } = await configClient.writeConfig(siteId, config, s3Client, { s3Bucket });
