@@ -45,6 +45,7 @@ describe("No Engageable Content opportunity mapper", () => {
       const result = mapToOpportunity(siteId, pageUrl, audit, guidance);
 
       expect(result.id).to.be.a("string");
+      expect(result.type).to.equal("no-cta-above-the-fold");
       expect(result.data.pageViews).to.equal(1500);
       expect(result.data.bounceRate).to.equal(0.6);
       expect(result.data.projectedTrafficLost).to.equal(900);
