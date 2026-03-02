@@ -1,3 +1,10 @@
+# [1.337.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.336.2...v1.337.0) (2026-03-02)
+
+
+### Features
+
+* use dedicated no-cta-above-the-fold opportunity type ([#2058](https://github.com/adobe/spacecat-audit-worker/issues/2058)) ([dd07289](https://github.com/adobe/spacecat-audit-worker/commit/dd072893d5f274a12dd60902408dfaa9f24bb0e0))
+
 ## [1.336.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.336.1...v1.336.2) (2026-03-02)
 
 
