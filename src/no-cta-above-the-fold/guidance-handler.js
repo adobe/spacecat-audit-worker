@@ -81,6 +81,7 @@ export default async function handler(message, context) {
   paidLog.creatingOpportunity(siteId, url, auditId);
 
   const opportunity = await Opportunity.create(entity);
+  paidLog.createdOpportunity(siteId, url, opportunity.getId());
 
   const suggestionData = await mapToSuggestion(
     context,

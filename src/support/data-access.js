@@ -10,9 +10,22 @@
  * governing permissions and limitations under the License.
  */
 
-// Audit type identifiers
-export const AUDIT_TYPE = 'commerce-product-enrichments';
-export const AUDIT_TYPE_YEARLY = 'commerce-product-enrichments-yearly';
+import dataAccessV2 from '@adobe/spacecat-shared-data-access-v2';
+import dataAccessV3 from '@adobe/spacecat-shared-data-access';
 
-// Log prefix for consistent logging
-export const LOG_PREFIX = '[COMMERCE-PRODUCT-ENRICHMENTS]';
+/* c8 ignore start */
+export default function dataAccess(fn) {
+  return async (request, context) => {
+    const { env = {} } = context;
+    if (env.DATA_SERVICE_PROVIDER === 'postgres') {
+      if (!env.POSTGREST_URL) {
+        throw new Error(
+          'DATA_SERVICE_PROVIDER is set to "postgres" but POSTGREST_URL is not configured',
+        );
+      }
+      return dataAccessV3(fn)(request, context);
+    }
+    return dataAccessV2(fn)(request, context);
+  };
+}
+/* c8 ignore stop */

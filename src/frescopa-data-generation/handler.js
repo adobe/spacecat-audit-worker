@@ -25,9 +25,19 @@ const FILE_CONFIGS = [
     filePrefix: 'agentictraffic',
   },
   {
+    type: 'agentic-traffic',
+    destinationFolder: 'agentic-traffic',
+    filePrefix: 'agentictraffic-errors-404',
+  },
+  {
+    type: 'agentic-traffic',
+    destinationFolder: 'agentic-traffic',
+    filePrefix: 'agentictraffic-errors-5xx',
+  },
+  {
     type: 'brand-presence',
     destinationFolder: 'brand-presence',
-    filePrefix: 'brandpresence-all',
+    filePrefix: 'brandpresence-chatgpt',
   },
   {
     type: 'referral-traffic',
@@ -38,7 +48,7 @@ const FILE_CONFIGS = [
 
 /**
  * Regex pattern to extract week identifier from filename.
- * Matches patterns like: agentictraffic-w02-2026.json or brandpresence-all-w03-2026.json
+ * Matches patterns like: agentictraffic-w02-2026.json or brandpresence-chatgpt-w03-2026.json
  * Also matches .xlsx files for SharePoint operations
  */
 const WEEK_PATTERN = /-(w\d{2}-\d{4})\.(json|xlsx)$/;

@@ -14,9 +14,9 @@
 
 import { expect } from 'chai';
 import { describe } from 'mocha';
-import { getTotalPageViewsTemplate } from '../../../src/ptr-selector/queries.js';
+import { getTotalPageViewsTemplate } from '../../../src/paid-traffic-analysis/queries.js';
 
-describe('PTR Selector Queries', () => {
+describe('Paid Traffic Analysis Queries', () => {
   const defaultParams = {
     siteId: 'test-site',
     tableName: 'rum_metrics.compact_metrics',
