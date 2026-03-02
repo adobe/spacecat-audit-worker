@@ -3515,6 +3515,39 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
     });
 
+    it('should normalize htmlWithIssues to snake_case when Mystique sends camelCase', () => {
+      const a11yData = [
+        {
+          form: 'https://example.com/form1',
+          formSource: 'aem',
+          a11yIssues: [
+            {
+              type: 'label',
+              description: 'Form elements must have labels',
+              wcagRule: 'wcag412',
+              wcagLevel: 'A',
+              severity: 'critical',
+              htmlWithIssues: [
+                { updateFrom: '<input type="text">', targetSelector: 'input[type="text"]' },
+              ],
+              failureSummary: 'Fix any of the following...',
+            },
+          ],
+        },
+      ];
+
+      const result = extractFormAccessibilityData(a11yData, context.log);
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].issues[0].htmlWithIssues).to.have.lengthOf(1);
+      const htmlItem = result[0].issues[0].htmlWithIssues[0];
+      expect(htmlItem).to.have.keys('update_from', 'target_selector');
+      expect(htmlItem.update_from).to.equal('<input type="text">');
+      expect(htmlItem.target_selector).to.equal('input[type="text"]');
+      expect(htmlItem).to.not.have.property('updateFrom');
+      expect(htmlItem).to.not.have.property('targetSelector');
+    });
+
     it('should handle null a11yData', () => {
       const result = extractFormAccessibilityData(null, context.log);
       expect(result).to.be.an('array');

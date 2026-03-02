@@ -24,6 +24,29 @@ import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERI
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 
 /**
+ * Normalizes a single htmlWithIssues item to the canonical shape expected by the pipeline.
+ * Input may be camelCase (from Mystique) or snake_case (already normalized). Output is always
+ * snake_case. All stored and in-pipeline data uses snake_case only (update_from, target_selector).
+ *
+ * @param {string|Object} item - Raw item from Mystique or string HTML
+ * @returns {{ update_from: string, target_selector: string }}
+ */
+function normalizeHtmlWithIssuesItem(item) {
+  if (item == null) {
+    return { update_from: '', target_selector: '' };
+  }
+  if (typeof item === 'string') {
+    return { update_from: item, target_selector: '' };
+  }
+  const updateFrom = item.updateFrom ?? item.update_from ?? '';
+  const targetSelector = item.targetSelector ?? item.target_selector ?? '';
+  return {
+    update_from: String(updateFrom),
+    target_selector: String(targetSelector),
+  };
+}
+
+/**
  * Extracts form accessibility data from Mystique a11y data
  * This function processes the raw a11y data and creates structured data for suggestions
  *
@@ -53,9 +76,10 @@ export function extractFormAccessibilityData(a11yData, log) {
           log.error(`[FormMystiqueSuggestions] Error getting success criteria details: ${error.message}`);
           return;
         }
-        // Create one suggestion for each htmlWithIssues
+        // Create one suggestion for each htmlWithIssues (normalized to snake_case)
         if (htmlWithIssues && htmlWithIssues.length > 0) {
           htmlWithIssues.forEach((htmlIssue) => {
+            const normalizedItem = normalizeHtmlWithIssuesItem(htmlIssue);
             const formattedIssue = {
               type,
               description: issue.description,
@@ -64,7 +88,7 @@ export function extractFormAccessibilityData(a11yData, log) {
               understandingUrl,
               severity,
               occurrences: 1,
-              htmlWithIssues: [htmlIssue],
+              htmlWithIssues: [normalizedItem],
               failureSummary: issue.failureSummary,
             };
 
@@ -85,28 +109,6 @@ export function extractFormAccessibilityData(a11yData, log) {
     });
 
   return formAccessibilityData;
-}
-
-/**
- * Normalizes a single htmlWithIssues item to the canonical shape expected by the pipeline.
- * Mystique sends camelCase (updateFrom, targetSelector); we store snake_case.
- *
- * @param {string|Object} item - Raw item from Mystique or string HTML
- * @returns {{ update_from: string, target_selector: string }}
- */
-function normalizeHtmlWithIssuesItem(item) {
-  if (item == null) {
-    return { update_from: '', target_selector: '' };
-  }
-  if (typeof item === 'string') {
-    return { update_from: item, target_selector: '' };
-  }
-  const updateFrom = item.updateFrom ?? item.update_from ?? '';
-  const targetSelector = item.targetSelector ?? item.target_selector ?? '';
-  return {
-    update_from: String(updateFrom),
-    target_selector: String(targetSelector),
-  };
 }
 
 /**
