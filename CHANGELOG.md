@@ -1,3 +1,10 @@
+## [1.336.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.336.1...v1.336.2) (2026-03-02)
+
+
+### Bug Fixes
+
+* add region field to DRS-created categories (LLMO-1819) ([#2057](https://github.com/adobe/spacecat-audit-worker/issues/2057)) ([4bf1d81](https://github.com/adobe/spacecat-audit-worker/commit/4bf1d8104c35f846bc8338b394fa28c393635d8f))
+
 ## [1.336.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.336.0...v1.336.1) (2026-03-02)
 
 
