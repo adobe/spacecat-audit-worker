@@ -11,11 +11,12 @@
  */
 
 import {
-  getLastNumberOfWeeks, isNonEmptyObject, llmoConfig,
+  getLastNumberOfWeeks, llmoConfig,
 } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
-import { ImsClient } from '@adobe/spacecat-shared-ims-client';
+// eslint-disable-next-line import/no-unresolved -- pending spacecat-shared#1398
+import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { isAuditEnabledForSite } from '../common/audit-utils.js';
@@ -228,79 +229,21 @@ export async function triggerGeoBrandPresenceRefresh(context, site, configVersio
   log.info(`Successfully triggered ${auditType} audit`);
 }
 
-async function triggerAllSteps(context, site, log, triggeredSteps, auditContext = {}) {
-  log.info('Triggering all relevant audits (no config version provided or first-time setup)');
-
-  await triggerGeoBrandPresence(context, site, auditContext);
-  triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
-}
-
-async function triggerMystiqueCategorization(context, siteId, domain) {
-  const {
-    env, log, s3Client,
-  } = context;
-
-  const s3Bucket = env.S3_IMPORTER_BUCKET_NAME;
-  const mystiqueApiBaseUrl = env.MYSTIQUE_API_BASE_URL;
-  const categorizationEndpoint = `${mystiqueApiBaseUrl}/v1/categorization/site`;
-
-  const {
-    config,
-    exists,
-  } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket });
-
-  if (exists && isNonEmptyObject(config.categories)) {
-    log.info('Config categories already exist; skipping Mystique categorization');
+async function triggerBrandPresenceViaDrs(context, site, log, triggeredSteps) {
+  const drsClient = DrsClient.createFrom(context);
+  if (!drsClient.isConfigured()) {
+    log.warn('DRS client not configured, skipping brand presence trigger via DRS');
     return;
   }
 
-  log.info(`Triggering Mystique categorization for siteId: ${siteId}, domain: ${domain}`);
-  const imsContext = {
-    log,
-    env: {
-      IMS_HOST: env.IMS_HOST,
-      IMS_CLIENT_ID: env.IMS_CLIENT_ID,
-      IMS_CLIENT_CODE: env.IMS_CLIENT_CODE,
-      IMS_CLIENT_SECRET: env.IMS_CLIENT_SECRET,
-    },
-  };
-  const imsClient = ImsClient.createFrom(imsContext);
-  const { access_token: accessToken } = await imsClient.getServiceAccessToken();
-
+  const siteId = site.getSiteId();
   try {
-    const response = await fetch(categorizationEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        authorization: accessToken,
-      },
-      body: JSON.stringify({
-        url: domain,
-      }),
-      timeout: 60000,
-    });
-
-    const data = await response.json();
-    const { categories } = data.categories;
-    config.categories = categories;
-    await llmoConfig.writeConfig(siteId, config, s3Client, { s3Bucket });
+    await drsClient.triggerBrandDetection(siteId);
+    triggeredSteps.push('drs-brand-detection');
+    log.info(`Triggered DRS brand detection for site ${siteId}`);
   } catch (error) {
-    log.error(`Failed to trigger Mystique categorization: ${error.message}`);
+    log.error(`Failed to trigger DRS brand detection for site ${siteId}: ${error.message}`);
   }
-}
-
-async function getBaseUrlBySiteId(siteId, context) {
-  const { dataAccess, log } = context;
-  const { Site } = dataAccess;
-
-  try {
-    const site = await Site.findById(siteId);
-    /* c8 ignore next */
-    return site?.getBaseURL() || '';
-  } catch /* c8 ignore start */ {
-    log.info(`Unable to fetch base URL for siteId: ${siteId}`);
-    return '';
-  } /* c8 ignore stop */
 }
 
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
@@ -376,7 +319,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const isFirstTimeOnboarding = !previousConfigVersion;
 
   if (isFirstTimeOnboarding) {
-    await triggerMystiqueCategorization(context, siteId, domain);
     await sendOnboardingNotification(context, site, 'first_onboarding');
   }
 
@@ -391,10 +333,10 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     log.info('Domain has no OpTel data available; skipping referral traffic import');
   }
 
-  // If no config version provided, trigger all steps
+  // If no config version provided, trigger brand presence via DRS
   if (!configVersion) {
-    log.info('No config version provided; triggering all relevant audits');
-    await triggerAllSteps(context, site, log, triggeredSteps, auditContext);
+    log.info('No config version provided; triggering brand presence via DRS');
+    await triggerBrandPresenceViaDrs(context, site, log, triggeredSteps);
 
     return {
       auditResult: {
@@ -470,31 +412,13 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     triggeredSteps.push('cdn-logs-report');
   }
 
-  const brandPresenceCadence = auditContext?.brandPresenceCadence || 'weekly';
   const hasBrandPresenceChanges = changes.topics || changes.categories || changes.entities;
   const needsBrandPresenceRefresh = previousConfigVersion
     && (changes.brands || changes.competitors);
 
-  const baseUrl = await getBaseUrlBySiteId(siteId, context);
-  const isAdobe = baseUrl.startsWith('https://adobe.com');
-
-  if (hasBrandPresenceChanges && !isAdobe) {
-    const isAICategorizationOnly = changes.metadata?.isAICategorizationOnly || false;
-
-    if (isAICategorizationOnly) {
-      log.info('LLMO config changes detected from AI categorization flow; triggering geo-brand-presence refresh');
-      await triggerGeoBrandPresenceRefresh(context, site, configVersion);
-      triggeredSteps.push('geo-brand-presence-refresh');
-    } else {
-      log.info('LLMO config changes detected in topics, categories, or entities; triggering geo-brand-presence audit');
-      await triggerGeoBrandPresence(context, site, auditContext);
-      triggeredSteps.push(brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
-    }
-  }
-  if (needsBrandPresenceRefresh && !isAdobe) {
-    log.info('LLMO config changes detected in brand or competitor aliases; triggering geo-brand-presence-refresh');
-    await triggerGeoBrandPresenceRefresh(context, site, configVersion);
-    triggeredSteps.push('geo-brand-presence-refresh');
+  if (hasBrandPresenceChanges || needsBrandPresenceRefresh) {
+    log.info('LLMO config changes detected affecting brand presence; triggering DRS brand detection');
+    await triggerBrandPresenceViaDrs(context, site, log, triggeredSteps);
   }
 
   if (triggeredSteps.length > 0) {
