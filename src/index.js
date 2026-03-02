@@ -93,7 +93,7 @@ import vulnerabilitiesCodeFix from './vulnerabilities-code-fix/handler.js';
 import prerender from './prerender/handler.js';
 import prerenderGuidance from './prerender/guidance-handler.js';
 import productMetatags from './product-metatags/handler.js';
-import commerceProductEnrichments from './commerce-product-enrichments/handler.js';
+import { commerceProductEnrichments, commerceProductEnrichmentsYearly } from './commerce-product-enrichments/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
@@ -198,6 +198,7 @@ const HANDLERS = {
   'guidance:prerender': prerenderGuidance,
   'product-metatags': productMetatags,
   'commerce-product-enrichments': commerceProductEnrichments,
+  'commerce-product-enrichments-yearly': commerceProductEnrichmentsYearly,
   'security-vulnerabilities': vulnerabilities,
   'codefix:security-vulnerabilities': vulnerabilitiesCodeFix,
   'codefix:form-accessibility': accessibilityCodeFixHandler,
