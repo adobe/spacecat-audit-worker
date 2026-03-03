@@ -25,8 +25,9 @@ import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 
 /**
  * Normalizes a single htmlWithIssues item to the canonical shape expected by the pipeline.
- * Input may be camelCase (from Mystique) or snake_case (already normalized). Output is always
- * snake_case. All stored and in-pipeline data uses snake_case only (update_from, target_selector).
+ * The parent issue object uses camelCase (aiGenerated, wcagRule, etc.); only htmlWithIssues
+ * entries use snake_case (update_from, target_selector) because codefix-handler and
+ * mystique-data-processing expect that shape for these items.
  *
  * @param {string|Object} item - Raw item from Mystique or string HTML
  * @returns {{ update_from: string, target_selector: string }}
@@ -76,7 +77,8 @@ export function extractFormAccessibilityData(a11yData, log) {
           log.error(`[FormMystiqueSuggestions] Error getting success criteria details: ${error.message}`);
           return;
         }
-        // Create one suggestion for each htmlWithIssues (normalized to snake_case)
+        // Create one suggestion for each htmlWithIssues. Items use snake_case (update_from,
+        // target_selector) for the pipeline; the rest of the issue stays camelCase.
         if (htmlWithIssues && htmlWithIssues.length > 0) {
           htmlWithIssues.forEach((htmlIssue) => {
             const normalizedItem = normalizeHtmlWithIssuesItem(htmlIssue);
@@ -112,8 +114,9 @@ export function extractFormAccessibilityData(a11yData, log) {
 }
 
 /**
- * Normalizes form a11y issue from Mystique: required fields present,
- * htmlWithIssues in canonical shape (update_from, target_selector).
+ * Normalizes form a11y issue from Mystique: required fields present.
+ * Issue fields stay camelCase; only htmlWithIssues items use snake_case (update_from,
+ * target_selector) for the codefix/mystique-data-processing pipeline.
  *
  * @param {Object} issue - Raw issue from Mystique (may use camelCase)
  * @returns {Object|null} Normalized issue or null if invalid
