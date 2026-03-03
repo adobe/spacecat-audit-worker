@@ -1,3 +1,10 @@
+## [1.338.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.338.0...v1.338.1) (2026-03-03)
+
+
+### Bug Fixes
+
+* LLMO-3181 Content summarization: dynamic content by nature should no… ([#2022](https://github.com/adobe/spacecat-audit-worker/issues/2022)) ([5a48019](https://github.com/adobe/spacecat-audit-worker/commit/5a48019894e0cafed7ca50d3aa81627b8c1b8f32))
+
 # [1.338.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.337.5...v1.338.0) (2026-03-03)
 
 
