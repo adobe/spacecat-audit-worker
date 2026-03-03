@@ -13,24 +13,31 @@
 import { DATA_SOURCES } from '../common/constants.js';
 
 /**
- * Creates opportunity data for Reddit analysis
+ * Creates opportunity data for Reddit analysis.
+ * When a BO JSON opportunity object is provided (from Mystique), uses its values.
+ * Otherwise falls back to defaults.
  * @param {Object} props - The props object from convertToOpportunity
- * @param {Array} props.guidance - The guidance array
+ * @param {Object} [props.opportunityData] - The opportunity object from the BO JSON
  * @returns {Object} Opportunity data
  */
-export function createOpportunityData({ guidance }) {
+export function createOpportunityData({ opportunityData } = {}) {
   return {
-    runbook: '',
+    runbook: opportunityData?.runbook || '',
     origin: 'AUTOMATION',
     type: 'reddit-analysis',
-    title: 'Reddit presence: Improve brand sentiment and visibility',
-    description: 'Enhance your company\'s Reddit presence to improve brand sentiment and visibility. '
+    title: opportunityData?.title || 'Reddit presence: Improve brand sentiment and visibility',
+    description: opportunityData?.description
+      || 'Enhance your company\'s Reddit presence to improve brand sentiment and visibility. '
       + 'A well-managed Reddit presence can influence how your brand is perceived in community discussions.',
-    status: 'NEW',
-    guidance,
-    tags: ['isElmo', 'reddit', 'earned'],
+    status: opportunityData?.status || 'NEW',
+    tags: [...new Set([...(opportunityData?.tags || []), 'isElmo', 'Reddit', 'earned'])],
     data: {
-      dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.PAGE],
+      ...(opportunityData?.data || {}),
+      dataSources: [...new Set([
+        ...(opportunityData?.data?.dataSources || []),
+        DATA_SOURCES.SITE,
+        DATA_SOURCES.PAGE,
+      ])],
     },
   };
 }

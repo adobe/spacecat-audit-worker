@@ -49,12 +49,13 @@ export default async function handler(message, context) {
 
   log.info(`[Reddit] Received Reddit analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
 
-  let analysisData = data?.analysis;
+  let analysisData;
+  const { companyName, presignedUrl } = data || {};
 
-  if (data?.presignedUrl) {
+  if (presignedUrl) {
     try {
-      log.info(`[Reddit] Fetching analysis data from presigned URL: ${data.presignedUrl}`);
-      const response = await fetch(data.presignedUrl);
+      log.info(`[Reddit] Fetching analysis data from presigned URL: ${presignedUrl}`);
+      const response = await fetch(presignedUrl);
 
       if (!response.ok) {
         log.error(`[Reddit] Failed to fetch analysis data: ${response.status} ${response.statusText}`);
@@ -66,6 +67,8 @@ export default async function handler(message, context) {
       log.error(`[Reddit] Error fetching from presigned URL: ${error.message}`);
       return badRequest(`Error fetching analysis data: ${error.message}`);
     }
+  } else if (data?.analysis) {
+    analysisData = data.analysis;
   }
 
   if (!analysisData) {
@@ -90,23 +93,15 @@ export default async function handler(message, context) {
   }
 
   try {
-    const { suggestions = [], company, industryAnalysis } = analysisData;
+    const suggestions = analysisData.suggestions || [];
+    const opportunityData = analysisData.opportunity || {};
 
     if (suggestions.length === 0) {
       log.info('[Reddit] No suggestions found in analysis');
       return noContent();
     }
 
-    log.info(`[Reddit] Processing ${suggestions.length} suggestions for ${company}`);
-
-    const guidance = {
-      insight: `Reddit analysis identified ${suggestions.length} improvement opportunities for ${company}`,
-      rationale: industryAnalysis
-        ? `Based on comparison with ${industryAnalysis.industry} competitors`
-        : 'Based on Reddit community and sentiment best practices',
-      recommendation: 'Review and implement the suggested improvements to enhance Reddit presence',
-      type: 'CONTENT_UPDATE',
-    };
+    log.info(`[Reddit] Processing ${suggestions.length} suggestions for ${companyName}`);
 
     const opportunity = await convertToOpportunity(
       baseUrl,
@@ -118,7 +113,7 @@ export default async function handler(message, context) {
       context,
       createOpportunityData,
       AUDIT_TYPE,
-      { guidance },
+      { opportunityData },
     );
 
     await syncSuggestions({
@@ -140,7 +135,7 @@ export default async function handler(message, context) {
     });
     await opportunity.save();
 
-    log.info(`[Reddit] Successfully processed Reddit analysis for site: ${siteId}, company: ${company}, ${suggestions.length} suggestions`);
+    log.info(`[Reddit] Successfully processed Reddit analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`);
     return ok();
   } catch (error) {
     log.error(`[Reddit] Error processing Reddit analysis: ${error.message}`, error);

@@ -17,58 +17,69 @@ import { createOpportunityData } from '../../../src/reddit-analysis/opportunity-
 
 describe('Reddit Analysis Opportunity Data Mapper', () => {
   describe('createOpportunityData', () => {
-    it('should create opportunity data with correct structure', () => {
-      const guidance = {
-        insight: 'Test insight',
-        rationale: 'Test rationale',
-        recommendation: 'Test recommendation',
-        type: 'CONTENT_UPDATE',
-      };
+    it('should create opportunity data with defaults when no opportunityData provided', () => {
+      const result = createOpportunityData({});
 
-      const result = createOpportunityData({ guidance });
-
-      expect(result.guidance).to.deep.equal(guidance);
       expect(result.origin).to.equal('AUTOMATION');
       expect(result.type).to.equal('reddit-analysis');
       expect(result.status).to.equal('NEW');
+      expect(result.runbook).to.equal('');
+      expect(result.title).to.equal('Reddit presence: Improve brand sentiment and visibility');
     });
 
-    it('should include correct title and description', () => {
-      const result = createOpportunityData({ guidance: {} });
+    it('should use values from opportunityData when provided', () => {
+      const opportunityData = {
+        title: '[ʙᴇᴛᴀ] Reddit Sentiment Analysis - Cited',
+        description: 'Custom description',
+        runbook: 'https://adobe.sharepoint.com/sites/reddit-analysis',
+        status: 'IN_PROGRESS',
+        tags: ['Reddit', 'Social Media'],
+        data: { dataSources: ['Site'] },
+      };
+
+      const result = createOpportunityData({ opportunityData });
+
+      expect(result.title).to.equal(opportunityData.title);
+      expect(result.description).to.equal(opportunityData.description);
+      expect(result.runbook).to.equal(opportunityData.runbook);
+      expect(result.status).to.equal(opportunityData.status);
+      expect(result.tags).to.deep.equal(['Reddit', 'Social Media', 'isElmo', 'earned']);
+      expect(result.data.dataSources).to.deep.equal(['Site', 'Page']);
+      expect(result.origin).to.equal('AUTOMATION');
+      expect(result.type).to.equal('reddit-analysis');
+    });
+
+    it('should include correct default title and description', () => {
+      const result = createOpportunityData({});
 
       expect(result.title).to.equal('Reddit presence: Improve brand sentiment and visibility');
       expect(result.description).to.include('Reddit');
       expect(result.description).to.include('brand sentiment');
     });
 
-    it('should include correct tags', () => {
-      const result = createOpportunityData({ guidance: {} });
+    it('should include correct default tags', () => {
+      const result = createOpportunityData({});
 
       expect(result.tags).to.be.an('array');
       expect(result.tags).to.include('isElmo');
-      expect(result.tags).to.include('reddit');
+      expect(result.tags).to.include('Reddit');
       expect(result.tags).to.include('earned');
     });
 
-    it('should include empty runbook', () => {
-      const result = createOpportunityData({ guidance: {} });
-
-      expect(result.runbook).to.equal('');
-    });
-
-    it('should include data sources', () => {
-      const result = createOpportunityData({ guidance: {} });
+    it('should include default data sources', () => {
+      const result = createOpportunityData({});
 
       expect(result.data).to.be.an('object');
       expect(result.data.dataSources).to.be.an('array');
       expect(result.data.dataSources).to.have.lengthOf(2);
     });
 
-    it('should handle guidance object', () => {
-      const guidance = { insight: 'Insight', rationale: 'Rationale', recommendation: 'Rec', type: 'CONTENT_UPDATE' };
-      const result = createOpportunityData({ guidance });
+    it('should handle empty call gracefully', () => {
+      const result = createOpportunityData();
 
-      expect(result.guidance).to.deep.equal(guidance);
+      expect(result.origin).to.equal('AUTOMATION');
+      expect(result.type).to.equal('reddit-analysis');
+      expect(result.status).to.equal('NEW');
     });
   });
 });

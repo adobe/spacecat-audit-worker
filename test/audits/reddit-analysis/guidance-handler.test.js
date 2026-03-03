@@ -97,8 +97,8 @@ describe('Reddit Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
             suggestions: [
               {
                 id: 'sug_1',
@@ -113,9 +113,6 @@ describe('Reddit Analysis Guidance Handler', () => {
                 description: 'Respond to negative feedback',
               },
             ],
-            industryAnalysis: {
-              industry: 'Technology',
-            },
           },
         },
       };
@@ -130,37 +127,21 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully processed Reddit analysis/));
     });
 
-    it('should create guidance with industry analysis', async () => {
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          analysis: {
-            company: 'Example Corp',
-            suggestions: [
-              { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' },
-            ],
-            industryAnalysis: {
-              industry: 'Finance',
-            },
-          },
-        },
+    it('should pass opportunityData from BO JSON to convertToOpportunity', async () => {
+      const opportunityData = {
+        title: '[ʙᴇᴛᴀ] Reddit Sentiment Analysis - Cited',
+        description: 'Custom description from Mystique',
+        runbook: 'https://adobe.sharepoint.com/sites/reddit-analysis',
+        origin: 'ESS_OPS',
+        tags: ['Reddit', 'Social Media', 'earned', 'isElmo'],
       };
-
-      await handler.default(message, context);
-
-      const convertCall = convertToOpportunityStub.firstCall;
-      const guidanceArg = convertCall.args[5].guidance;
-      expect(guidanceArg.rationale).to.include('Finance competitors');
-    });
-
-    it('should create guidance without industry analysis', async () => {
       const message = {
         siteId,
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
+            opportunity: opportunityData,
             suggestions: [
               { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' },
             ],
@@ -171,8 +152,8 @@ describe('Reddit Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       const convertCall = convertToOpportunityStub.firstCall;
-      const guidanceArg = convertCall.args[5].guidance;
-      expect(guidanceArg.rationale).to.include('Reddit community and sentiment best practices');
+      const propsArg = convertCall.args[5];
+      expect(propsArg.opportunityData).to.deep.equal(opportunityData);
     });
 
     it('should return noContent when no suggestions found', async () => {
@@ -180,8 +161,8 @@ describe('Reddit Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
             suggestions: [],
           },
         },
@@ -214,8 +195,8 @@ describe('Reddit Analysis Guidance Handler', () => {
         siteId: 'non-existent-site',
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
             suggestions: [{ id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' }],
           },
         },
@@ -229,37 +210,50 @@ describe('Reddit Analysis Guidance Handler', () => {
   });
 
   describe('Handler with presigned URL', () => {
-    it('should fetch analysis from presigned URL', async () => {
-      const analysisData = {
-        company: 'Example Corp',
+    it('should fetch BO JSON from presigned URL and pass opportunityData', async () => {
+      const opportunityData = {
+        id: 'opp-1',
+        title: '[ʙᴇᴛᴀ] Reddit Sentiment Analysis - Cited',
+        description: 'Analysis description',
+        runbook: 'https://adobe.sharepoint.com/sites/reddit-analysis',
+        origin: 'ESS_OPS',
+        tags: ['Reddit', 'Social Media'],
+      };
+      const boJson = {
+        opportunity: opportunityData,
         suggestions: [
           {
             id: 'critical_1',
             priority: 'CRITICAL',
-            title: 'Critical improvement',
-            description: 'This is critical',
+            type: 'CONTENT_UPDATE',
+            rank: 1,
+            data: { title: 'Critical improvement' },
           },
         ],
       };
 
       fetchStub.resolves({
         ok: true,
-        json: sandbox.stub().resolves(analysisData),
+        json: sandbox.stub().resolves(boJson),
       });
 
       const message = {
         siteId,
         auditId,
         data: {
-          presignedUrl: 'https://s3.amazonaws.com/bucket/reddit-analysis.json',
+          companyName: 'Example Corp',
+          presignedUrl: 'https://s3.amazonaws.com/bucket/bo.json',
         },
       };
 
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(200);
-      expect(fetchStub).to.have.been.calledWith('https://s3.amazonaws.com/bucket/reddit-analysis.json');
+      expect(fetchStub).to.have.been.calledWith('https://s3.amazonaws.com/bucket/bo.json');
       expect(convertToOpportunityStub).to.have.been.calledOnce;
+
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg.opportunityData).to.deep.equal(opportunityData);
     });
 
     it('should return badRequest when presigned URL fetch fails with non-ok response', async () => {
@@ -273,7 +267,8 @@ describe('Reddit Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
-          presignedUrl: 'https://s3.amazonaws.com/bucket/reddit-analysis.json',
+          companyName: 'Example Corp',
+          presignedUrl: 'https://s3.amazonaws.com/bucket/bo.json',
         },
       };
 
@@ -290,7 +285,8 @@ describe('Reddit Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
-          presignedUrl: 'https://s3.amazonaws.com/bucket/reddit-analysis.json',
+          companyName: 'Example Corp',
+          presignedUrl: 'https://s3.amazonaws.com/bucket/bo.json',
         },
       };
 
@@ -307,8 +303,8 @@ describe('Reddit Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
             suggestions: [
               { id: 'sug_a', priority: 'CRITICAL', title: 'A', description: 'A' },
               { id: 'sug_b', priority: 'HIGH', title: 'B', description: 'B' },
@@ -337,8 +333,8 @@ describe('Reddit Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
             suggestions: [
               { id: 'my_suggestion_id', priority: 'HIGH', title: 'My Title', description: 'Desc' },
             ],
@@ -364,8 +360,8 @@ describe('Reddit Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
             suggestions: [
               { id: 's1', priority: 'HIGH', title: 'Test', description: 'Test' },
             ],
@@ -389,8 +385,8 @@ describe('Reddit Analysis Guidance Handler', () => {
         siteId,
         auditId: 'non-existent-audit',
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
             suggestions: [
               { id: 's1', priority: 'HIGH', title: 'Test', description: 'Test' },
             ],
@@ -405,8 +401,7 @@ describe('Reddit Analysis Guidance Handler', () => {
     });
 
     it('should store full analysis in opportunity data', async () => {
-      const analysisData = {
-        company: 'Example Corp',
+      const boJson = {
         suggestions: [
           { id: 's1', priority: 'HIGH', title: 'Test', description: 'Test' },
         ],
@@ -417,7 +412,8 @@ describe('Reddit Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
-          analysis: analysisData,
+          companyName: 'Example Corp',
+          analysis: boJson,
         },
       };
 
@@ -426,7 +422,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(mockOpportunity.setData).to.have.been.calledWith(
         sinon.match({
           existingData: true,
-          fullAnalysis: analysisData,
+          fullAnalysis: sinon.match({ suggestions: boJson.suggestions }),
         }),
       );
     });
@@ -438,8 +434,8 @@ describe('Reddit Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
+          companyName: 'Test',
           analysis: {
-            company: 'Test',
             suggestions: [],
           },
         },
