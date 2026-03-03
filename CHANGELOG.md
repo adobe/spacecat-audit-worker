@@ -1,3 +1,17 @@
+## [1.337.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.337.2...v1.337.3) (2026-03-03)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2063](https://github.com/adobe/spacecat-audit-worker/issues/2063)) ([3149c06](https://github.com/adobe/spacecat-audit-worker/commit/3149c0612a7632ac7dd71b75c350f381d4ad4732))
+
+## [1.337.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.337.1...v1.337.2) (2026-03-03)
+
+
+### Bug Fixes
+
+* excluding privacy/cookie headings from toc ([#2064](https://github.com/adobe/spacecat-audit-worker/issues/2064)) ([2d12ea4](https://github.com/adobe/spacecat-audit-worker/commit/2d12ea4a25ff099539a25b004803d884909e5f5b))
+
 ## [1.337.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.337.0...v1.337.1) (2026-03-03)
 
 
