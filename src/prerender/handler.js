@@ -1089,6 +1089,8 @@ export async function processContentAndGenerateOpportunities(context) {
       lastAuditSuccess: true,
     };
 
+    log.info(`Prerender - Scraping metrics for baseUrl=${site.getBaseURL()}, siteId=${siteId}. urlsSubmittedForScraping=${urlsSubmittedForScraping}, urlsScrapedSuccessfully=${successfulComparisons.length}, scrapingErrorRate=${scrapingErrorRate}%`);
+
     let opportunityForGuidance = null;
 
     /* c8 ignore next 13 - Opportunity processing branch, covered by integration tests */
@@ -1187,22 +1189,21 @@ export async function processContentAndGenerateOpportunities(context) {
     };
     /* c8 ignore next 1 */
   } finally {
-    // Always update Audit (success or failure) so UI health check shows accurate status.
-    // In data-access v3, LatestAudit is derived from Audit; we update the Audit record directly.
+    // Always update LatestAudit (success or failure) so UI health check shows accurate status.
     /* c8 ignore next 1 - edge case: auditResultForLatest null when catch throws before setting */
     if (auditResultForLatest != null) {
       try {
-        await dataAccess.Audit.updateByKeys(
-          { auditId: audit.getId() },
+        await dataAccess.LatestAudit.updateByKeys(
+          { latestAuditId: audit.getId() },
           {
             auditResult: auditResultForLatest,
             isError: isAuditError,
           },
         );
 
-        log.info(`Prerender - Updated Audit with ${isAuditError ? 'error' : 'detailed'} results. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+        log.info(`Prerender - Updated LatestAudit with ${isAuditError ? 'error' : 'detailed'} results. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
       } catch (latestAuditError) {
-        log.error(`Prerender - Failed to update Audit: ${latestAuditError.message}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`, latestAuditError);
+        log.error(`Prerender - Failed to update LatestAudit: ${latestAuditError.message}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`, latestAuditError);
       }
     }
   }

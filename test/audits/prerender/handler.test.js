@@ -250,7 +250,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub() },
           env: {
@@ -287,7 +287,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub() },
           env: {
@@ -336,7 +336,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub() },
         };
@@ -368,7 +368,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub() },
         };
@@ -406,7 +406,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub() },
         };
@@ -571,7 +571,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
         };
@@ -603,7 +603,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -644,7 +644,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().rejects(new Error('Database error')) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
           scrapeResultPaths: new Map(),
@@ -688,7 +688,7 @@ describe('Prerender Audit', () => {
               allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
             },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -740,7 +740,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -777,7 +777,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -1034,7 +1034,7 @@ describe('Prerender Audit', () => {
             Opportunity: {
               allBySiteIdAndStatus: allBySiteIdAndStatusStub,
             },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
             ScrapeUrl: {
               allByScrapeJobId: sandbox.stub().resolves([
                 { getUrl: () => 'https://example.com/test' },
@@ -1111,7 +1111,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             Opportunity: { allBySiteIdAndStatus: allBySiteIdAndStatusStub },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
             ScrapeUrl: { allByScrapeJobId: sandbox.stub().rejects(new Error('DB connection failed')) },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
@@ -1150,7 +1150,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             Opportunity: { allBySiteIdAndStatus: allBySiteIdAndStatusStub },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
           s3Client: { send: sandbox.stub().resolves({ Body: { transformToString: () => Promise.resolve('') } }) },
@@ -1185,7 +1185,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             Opportunity: { allBySiteIdAndStatus: allBySiteIdAndStatusStub },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
           s3Client: { send: sandbox.stub().resolves({ Body: { transformToString: () => Promise.resolve('') } }) },
@@ -1220,7 +1220,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             Opportunity: { allBySiteIdAndStatus: allBySiteIdAndStatusStub },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
             ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves([]) },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
@@ -1237,7 +1237,7 @@ describe('Prerender Audit', () => {
         expect(result.auditResult.scrapingErrorRate).to.equal(0);
       });
 
-      it('should skip Audit.updateByKeys when catch throws before setting auditResultForLatest (branch coverage)', async () => {
+      it('should skip LatestAudit.updateByKeys when catch throws before setting auditResultForLatest (branch coverage)', async () => {
         const syncSuggestionsStub = sandbox.stub().rejects(new Error('Sync failed'));
         const auditUpdateByKeysStub = sandbox.stub().resolves();
         const logErrorStub = sandbox.stub().throws(new Error('log.error threw'));
@@ -1262,7 +1262,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([{ getId: () => 'x', getType: () => 'prerender' }]) },
-            Audit: { updateByKeys: auditUpdateByKeysStub },
+            LatestAudit: { updateByKeys: auditUpdateByKeysStub },
             ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/test' }]) },
           },
           log: {
@@ -1319,7 +1319,7 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             Opportunity: { allBySiteIdAndStatus: allBySiteIdAndStatusStub },
-            Audit: { updateByKeys: auditUpdateByKeysStub },
+            LatestAudit: { updateByKeys: auditUpdateByKeysStub },
             ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/test' }]) },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
@@ -1377,7 +1377,7 @@ describe('Prerender Audit', () => {
             Opportunity: {
               allBySiteIdAndStatus: allBySiteIdAndStatusStub,
             },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -1433,7 +1433,7 @@ describe('Prerender Audit', () => {
             Opportunity: {
               allBySiteIdAndStatus: allBySiteIdAndStatusStub,
             },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -1484,7 +1484,7 @@ describe('Prerender Audit', () => {
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
             },
-            Audit: { updateByKeys: auditUpdateByKeysStub },
+            LatestAudit: { updateByKeys: auditUpdateByKeysStub },
           },
           log: {
             info: sandbox.stub(),
@@ -1507,19 +1507,19 @@ describe('Prerender Audit', () => {
         // Should complete successfully
         expect(result.status).to.equal('complete');
 
-        // Should call Audit.updateByKeys with correct data
+        // Should call LatestAudit.updateByKeys with correct data
         expect(auditUpdateByKeysStub).to.have.been.calledOnce;
         const [keysArg, updatesArg] = auditUpdateByKeysStub.firstCall.args;
-        expect(keysArg).to.have.property('auditId', 'audit-id');
+        expect(keysArg).to.have.property('latestAuditId', 'audit-id');
         expect(updatesArg).to.have.property('auditResult');
         expect(updatesArg).to.have.property('isError', false);
 
         // Should log success message
         const infoLogs = context.log.info.args.map(call => call[0]);
-        expect(infoLogs.some(msg => msg.includes('Updated Audit with detailed results'))).to.be.true;
+        expect(infoLogs.some(msg => msg.includes('Updated LatestAudit with detailed results'))).to.be.true;
       });
 
-      it('should handle errors when updating Audit', async () => {
+      it('should handle errors when updating LatestAudit', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js');
 
         const context = {
@@ -1538,7 +1538,7 @@ describe('Prerender Audit', () => {
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
             },
-            Audit: {
+            LatestAudit: {
               updateByKeys: sandbox.stub().rejects(new Error('Database error')),
             },
           },
@@ -1560,12 +1560,12 @@ describe('Prerender Audit', () => {
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
-        // Should complete successfully despite Audit update error
+        // Should complete successfully despite LatestAudit update error
         expect(result.status).to.equal('complete');
 
-        // Should log error about Audit update failure
+        // Should log error about LatestAudit update failure
         expect(context.log.error).to.have.been.calledWith(
-          sinon.match(/Failed to update Audit/)
+          sinon.match(/Failed to update LatestAudit/)
         );
       });
     });
@@ -3123,7 +3123,7 @@ describe('Prerender Audit', () => {
             ]),
           },
           Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]) },
-          Audit: { updateByKeys: sinon.stub().resolves() },
+          LatestAudit: { updateByKeys: sinon.stub().resolves() },
         },
         log: { info, warn: sinon.stub(), debug: sinon.stub(), error: sinon.stub() },
         s3Client: { send: sinon.stub().resolves({}) },
@@ -3495,7 +3495,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -3553,7 +3553,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           auditContext: { scrapeJobId: 'test-job-id' },
         };
@@ -3594,7 +3594,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -3651,7 +3651,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -3739,7 +3739,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -3795,7 +3795,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -3831,7 +3831,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub() },
         };
@@ -3856,7 +3856,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub() },
         };
@@ -4095,7 +4095,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -4145,7 +4145,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -4201,7 +4201,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -4498,7 +4498,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -4553,7 +4553,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -4608,7 +4608,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -4665,7 +4665,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -4721,7 +4721,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -4772,7 +4772,7 @@ describe('Prerender Audit', () => {
           dataAccess: {
             SiteTopPage: mockSiteTopPage,
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: {
             info: sandbox.stub(),
@@ -4820,7 +4820,7 @@ describe('Prerender Audit', () => {
               { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
             ]) },
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]) },
-            Audit: { updateByKeys: sandbox.stub().resolves() },
+            LatestAudit: { updateByKeys: sandbox.stub().resolves() },
           },
           log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
           s3Client: { send: sandbox.stub().resolves({}) },
