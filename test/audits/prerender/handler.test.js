@@ -1239,7 +1239,11 @@ describe('Prerender Audit', () => {
 
       it('should upload status.json when catch throws (branch coverage)', async () => {
         const syncSuggestionsStub = sandbox.stub().rejects(new Error('Sync failed'));
-        const s3SendStub = sandbox.stub().resolves({});
+        const s3SendStub = sandbox.stub().callsFake((cmd) => (
+          cmd.input?.Key?.includes('status.json')
+            ? Promise.resolve({})
+            : Promise.resolve({ Body: { transformToString: () => Promise.resolve('') } })
+        ));
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/data-access.js': {
@@ -1273,10 +1277,9 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.error).to.equal('Audit failed');
-        expect(s3SendStub).to.have.been.calledOnce;
-        const putCall = s3SendStub.firstCall.args[0];
-        expect(putCall.input.Key).to.equal('prerender/scrapes/test-site-id/status.json');
-        const statusBody = JSON.parse(putCall.input.Body);
+        const putCall = s3SendStub.getCalls().find((c) => c.args[0]?.input?.Key === 'prerender/scrapes/test-site-id/status.json');
+        expect(putCall).to.exist;
+        const statusBody = JSON.parse(putCall.args[0].input.Body);
         expect(statusBody.lastAuditSuccess).to.be.false;
         expect(statusBody.scrapeForbidden).to.be.false;
       });
@@ -1288,7 +1291,11 @@ describe('Prerender Audit', () => {
         };
         const allBySiteIdAndStatusStub = sandbox.stub().resolves([mockOpportunity]);
         const syncSuggestionsStub = sandbox.stub().rejects(new Error('Sync failed'));
-        const s3SendStub = sandbox.stub().resolves({});
+        const s3SendStub = sandbox.stub().callsFake((cmd) => (
+          cmd.input?.Key?.includes('status.json')
+            ? Promise.resolve({})
+            : Promise.resolve({ Body: { transformToString: () => Promise.resolve('') } })
+        ));
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/data-access.js': {
@@ -1327,8 +1334,9 @@ describe('Prerender Audit', () => {
         expect(context.log.error).to.have.been.called;
         expect(syncSuggestionsStub).to.have.been.calledOnce;
 
-        expect(s3SendStub).to.have.been.calledOnce;
-        const statusBody = JSON.parse(s3SendStub.firstCall.args[0].input.Body);
+        const putCall = s3SendStub.getCalls().find((c) => c.args[0]?.input?.Key === 'prerender/scrapes/test-site-id/status.json');
+        expect(putCall).to.exist;
+        const statusBody = JSON.parse(putCall.args[0].input.Body);
         expect(statusBody.lastAuditSuccess).to.be.false;
         expect(statusBody.scrapeForbidden).to.be.false;
       });
