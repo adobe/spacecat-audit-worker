@@ -25,6 +25,8 @@ import {
   buildUserAgentFilter,
   buildSiteFilters,
 } from '../utils/cdn-utils.js';
+import { EXCLUDED_URL_SUFFIXES } from '../utils/agentic-urls.js';
+import { buildExcludedUrlSuffixesFilter } from '../cdn-logs-report/utils/query-builder.js';
 import { joinBaseAndPath } from '../utils/url-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -94,6 +96,7 @@ export async function extractUrls(context) {
       dateFilter: getDateFilter(),
       userAgentFilter: buildUserAgentFilter(),
       siteFilters: buildSiteFilters(filters, site),
+      excludedUrlSuffixesFilter: buildExcludedUrlSuffixesFilter(EXCLUDED_URL_SUFFIXES),
     };
 
     const query = await getStaticContent(variables, './src/page-citability/sql/top-urls.sql');
