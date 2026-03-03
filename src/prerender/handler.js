@@ -1099,6 +1099,7 @@ export async function processContentAndGenerateOpportunities(context) {
         site.getBaseURL(),
         {
           siteId,
+          id: audit.getId(),
           auditId: audit.getId(),
           auditResult,
           scrapeJobId,
@@ -1113,6 +1114,7 @@ export async function processContentAndGenerateOpportunities(context) {
       // This allows the UI to display proper messaging without suggestions
       await createScrapeForbiddenOpportunity(site.getBaseURL(), {
         siteId,
+        id: audit.getId(),
         auditId: audit.getId(),
         auditResult,
         scrapeJobId,
