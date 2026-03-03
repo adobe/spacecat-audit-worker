@@ -1,3 +1,10 @@
+# [1.339.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.338.1...v1.339.0) (2026-03-03)
+
+
+### Features
+
+* Skip pages with status codes 4xx from the scraper ([#2068](https://github.com/adobe/spacecat-audit-worker/issues/2068)) ([78e84d4](https://github.com/adobe/spacecat-audit-worker/commit/78e84d4f874f38baba623a5072a40002eed59ec9))
+
 ## [1.338.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.338.0...v1.338.1) (2026-03-03)
 
 
