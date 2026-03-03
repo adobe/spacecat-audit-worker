@@ -1237,10 +1237,9 @@ describe('Prerender Audit', () => {
         expect(result.auditResult.scrapingErrorRate).to.equal(0);
       });
 
-      it('should skip LatestAudit.updateByKeys when catch throws before setting auditResultForLatest (branch coverage)', async () => {
+      it('should upload status.json when catch throws (branch coverage)', async () => {
         const syncSuggestionsStub = sandbox.stub().rejects(new Error('Sync failed'));
-        const auditUpdateByKeysStub = sandbox.stub().resolves();
-        const logErrorStub = sandbox.stub().throws(new Error('log.error threw'));
+        const s3SendStub = sandbox.stub().resolves({});
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/data-access.js': {
@@ -1262,42 +1261,34 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([{ getId: () => 'x', getType: () => 'prerender' }]) },
-            LatestAudit: { updateByKeys: auditUpdateByKeysStub },
             ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/test' }]) },
           },
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: logErrorStub,
-          },
-          s3Client: {
-            send: sandbox.stub().resolves({ Body: { transformToString: () => Promise.resolve('') } }),
-          },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+          s3Client: { send: s3SendStub },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
           scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
         };
 
-        let thrownError;
-        try {
-          await mockHandler.processContentAndGenerateOpportunities(context);
-        } catch (e) {
-          thrownError = e;
-        }
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
-        expect(thrownError?.message).to.equal('log.error threw');
-        expect(auditUpdateByKeysStub).to.not.have.been.called;
+        expect(result.error).to.equal('Audit failed');
+        expect(s3SendStub).to.have.been.calledOnce;
+        const putCall = s3SendStub.firstCall.args[0];
+        expect(putCall.input.Key).to.equal('prerender/scrapes/test-site-id/status.json');
+        const statusBody = JSON.parse(putCall.input.Body);
+        expect(statusBody.lastAuditSuccess).to.be.false;
+        expect(statusBody.scrapeForbidden).to.be.false;
       });
 
-      it('should return buildErrorAuditResult with lastAuditSuccess false when syncSuggestions throws', async () => {
+      it('should return error result and upload status.json when syncSuggestions throws', async () => {
         const mockOpportunity = {
           getId: () => 'existing-opportunity-id',
           getType: () => 'prerender',
         };
         const allBySiteIdAndStatusStub = sandbox.stub().resolves([mockOpportunity]);
         const syncSuggestionsStub = sandbox.stub().rejects(new Error('Sync failed'));
-        const auditUpdateByKeysStub = sandbox.stub().resolves();
+        const s3SendStub = sandbox.stub().resolves({});
 
         const mockHandler = await esmock('../../../src/prerender/handler.js', {
           '../../../src/utils/data-access.js': {
@@ -1319,15 +1310,10 @@ describe('Prerender Audit', () => {
           },
           dataAccess: {
             Opportunity: { allBySiteIdAndStatus: allBySiteIdAndStatusStub },
-            LatestAudit: { updateByKeys: auditUpdateByKeysStub },
             ScrapeUrl: { allByScrapeJobId: sandbox.stub().resolves([{ getUrl: () => 'https://example.com/test' }]) },
           },
           log: { info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
-          s3Client: {
-            send: sandbox.stub().resolves({
-              Body: { transformToString: () => Promise.resolve('') },
-            }),
-          },
+          s3Client: { send: s3SendStub },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
           scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
@@ -1341,10 +1327,10 @@ describe('Prerender Audit', () => {
         expect(context.log.error).to.have.been.called;
         expect(syncSuggestionsStub).to.have.been.calledOnce;
 
-        expect(auditUpdateByKeysStub).to.have.been.calledOnce;
-        const auditResultArg = auditUpdateByKeysStub.firstCall.args[1].auditResult;
-        expect(auditResultArg.lastAuditSuccess).to.be.false;
-        expect(auditResultArg.isError).to.be.true;
+        expect(s3SendStub).to.have.been.calledOnce;
+        const statusBody = JSON.parse(s3SendStub.firstCall.args[0].input.Body);
+        expect(statusBody.lastAuditSuccess).to.be.false;
+        expect(statusBody.scrapeForbidden).to.be.false;
       });
 
       it('should not call syncSuggestions when existing opportunity is not prerender type', async () => {
@@ -1464,9 +1450,13 @@ describe('Prerender Audit', () => {
         expect(infoLogs.some(msg => msg.includes('No opportunity found'))).to.be.true;
       });
 
-      it('should successfully update Audit with detailed results', async () => {
+      it('should successfully upload status.json with detailed results', async () => {
         const mockHandler = await esmock('../../../src/prerender/handler.js');
-        const auditUpdateByKeysStub = sandbox.stub().resolves();
+        const s3SendStub = sandbox.stub().callsFake((cmd) => (
+          cmd.constructor?.name === 'PutObjectCommand'
+            ? Promise.resolve({})
+            : Promise.resolve({ Body: { transformToString: () => Promise.resolve('') } })
+        ));
 
         const context = {
           site: {
@@ -1484,7 +1474,6 @@ describe('Prerender Audit', () => {
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
             },
-            LatestAudit: { updateByKeys: auditUpdateByKeysStub },
           },
           log: {
             info: sandbox.stub(),
@@ -1492,11 +1481,7 @@ describe('Prerender Audit', () => {
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
-          s3Client: {
-            send: sandbox.stub().resolves({
-              Body: { transformToString: () => Promise.resolve('') },
-            }),
-          },
+          s3Client: { send: s3SendStub },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
           auditContext: { scrapeJobId: 'test-job-id' },
           scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
@@ -1507,66 +1492,19 @@ describe('Prerender Audit', () => {
         // Should complete successfully
         expect(result.status).to.equal('complete');
 
-        // Should call LatestAudit.updateByKeys with correct data
-        expect(auditUpdateByKeysStub).to.have.been.calledOnce;
-        const [keysArg, updatesArg] = auditUpdateByKeysStub.firstCall.args;
-        expect(keysArg).to.have.property('latestAuditId', 'audit-id');
-        expect(updatesArg).to.have.property('auditResult');
-        expect(updatesArg).to.have.property('isError', false);
+        // Should upload status.json to S3 with correct data
+        const putCall = s3SendStub.getCalls().find((c) => c.args[0]?.constructor?.name === 'PutObjectCommand');
+        expect(putCall).to.exist;
+        const cmd = putCall.args[0];
+        expect(cmd.input.Key).to.equal('prerender/scrapes/test-site-id/status.json');
+        const statusBody = JSON.parse(cmd.input.Body);
+        expect(statusBody.lastAuditSuccess).to.be.true;
+        expect(statusBody.scrapingErrorRate).to.be.a('number');
+        expect(statusBody.scrapeForbidden).to.be.false;
 
         // Should log success message
-        const infoLogs = context.log.info.args.map(call => call[0]);
-        expect(infoLogs.some(msg => msg.includes('Updated LatestAudit with detailed results'))).to.be.true;
-      });
-
-      it('should handle errors when updating LatestAudit', async () => {
-        const mockHandler = await esmock('../../../src/prerender/handler.js');
-
-        const context = {
-          site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://example.com',
-            getIsLive: () => true,
-          },
-          audit: {
-            getId: () => 'audit-id',
-            getFullAuditRef: () => 'https://example.com',
-            getAuditedAt: () => '2024-01-01T00:00:00Z',
-            getInvocationId: () => 'invocation-123',
-          },
-          dataAccess: {
-            Opportunity: {
-              allBySiteIdAndStatus: sandbox.stub().resolves([]),
-            },
-            LatestAudit: {
-              updateByKeys: sandbox.stub().rejects(new Error('Database error')),
-            },
-          },
-          log: {
-            info: sandbox.stub(),
-            debug: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-          },
-          s3Client: {
-            send: sandbox.stub().resolves({
-              Body: { transformToString: () => Promise.resolve('') },
-            }),
-          },
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-          auditContext: { scrapeJobId: 'test-job-id' },
-          scrapeResultPaths: new Map([['https://example.com/test', '/tmp/test']]),
-        };
-
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
-
-        // Should complete successfully despite LatestAudit update error
-        expect(result.status).to.equal('complete');
-
-        // Should log error about LatestAudit update failure
-        expect(context.log.error).to.have.been.calledWith(
-          sinon.match(/Failed to update LatestAudit/)
-        );
+        const infoLogs = context.log.info.args.map((call) => call[0]);
+        expect(infoLogs.some((msg) => msg.includes('Successfully uploaded status summary to S3'))).to.be.true;
       });
     });
 

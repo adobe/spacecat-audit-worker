@@ -34,6 +34,7 @@ import { getTopAgenticUrlsFromAthena } from '../utils/agentic-urls.js';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const LOG_PREFIX = 'Prerender -';
+const AUDIT_ERROR_MESSAGE = 'Audit failed';
 
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
 const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
@@ -889,6 +890,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       urlsScrapedSuccessfully: auditResult.urlsScrapedSuccessfully ?? null,
       scrapingErrorRate: auditResult.scrapingErrorRate ?? null,
       scrapeForbidden: auditResult.scrapeForbidden || false,
+      lastAuditSuccess: auditResult.lastAuditSuccess !== false,
       pages: auditResult.results?.map((result) => {
         const pageStatus = {
           url: result.url,
@@ -946,22 +948,6 @@ async function getUrlsSubmittedForScrapingCount(scrapeJobId, urlsToCheckLength, 
   }
 }
 
-const AUDIT_ERROR_MESSAGE = 'Audit failed';
-
-/**
- * Builds audit result for error case (used when step 3 fails).
- * Persisted so UI can show audit status; uses generic message to avoid exposing internal details.
- * @returns {Object} - Audit result shape for LatestAudit
- */
-function buildErrorAuditResult() {
-  return {
-    error: AUDIT_ERROR_MESSAGE,
-    lastAuditSuccess: false,
-    results: [],
-    isError: true,
-  };
-}
-
 /**
  * Step 3: Process scraped content and compare server-side vs client-side HTML
  * OR skip if ai-only mode
@@ -987,9 +973,6 @@ export async function processContentAndGenerateOpportunities(context) {
   const isPaid = await isPaidLLMOCustomer(context);
 
   log.info(`Prerender - Generate opportunities for baseUrl=${site.getBaseURL()}, siteId=${siteId}, isPaidLLMOCustomer=${isPaid}`);
-
-  let auditResultForLatest = null;
-  let isAuditError = false;
 
   try {
     let urlsToCheck = [];
@@ -1169,8 +1152,6 @@ export async function processContentAndGenerateOpportunities(context) {
     // Upload status summary to S3 (post-processing)
     await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
 
-    auditResultForLatest = auditResult;
-
     return {
       status: 'complete',
       auditResult,
@@ -1178,8 +1159,22 @@ export async function processContentAndGenerateOpportunities(context) {
   } catch (error) {
     log.error(`Prerender - Audit failed for baseUrl=${site.getBaseURL()}, siteId=${siteId}: ${error.message}`, error);
 
-    isAuditError = true;
-    auditResultForLatest = buildErrorAuditResult();
+    const errorAuditResult = {
+      error: AUDIT_ERROR_MESSAGE,
+      lastAuditSuccess: false,
+      results: [],
+    };
+
+    // Upload status.json on error so UI can show audit status via S3 fallback
+    const { auditContext } = context;
+    await uploadStatusSummaryToS3(site.getBaseURL(), {
+      siteId,
+      auditId: audit.getId(),
+      auditedAt: new Date().toISOString(),
+      auditType: AUDIT_TYPE,
+      auditResult: errorAuditResult,
+      scrapeJobId: auditContext?.scrapeJobId,
+    }, context);
 
     return {
       error: AUDIT_ERROR_MESSAGE,
@@ -1187,25 +1182,6 @@ export async function processContentAndGenerateOpportunities(context) {
       urlsNeedingPrerender: 0,
       results: [],
     };
-    /* c8 ignore next 1 */
-  } finally {
-    // Always update LatestAudit (success or failure) so UI health check shows accurate status.
-    /* c8 ignore next 1 - edge case: auditResultForLatest null when catch throws before setting */
-    if (auditResultForLatest != null) {
-      try {
-        await dataAccess.LatestAudit.updateByKeys(
-          { latestAuditId: audit.getId() },
-          {
-            auditResult: auditResultForLatest,
-            isError: isAuditError,
-          },
-        );
-
-        log.info(`Prerender - Updated LatestAudit with ${isAuditError ? 'error' : 'detailed'} results. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
-      } catch (latestAuditError) {
-        log.error(`Prerender - Failed to update LatestAudit: ${latestAuditError.message}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`, latestAuditError);
-      }
-    }
   }
 }
 
