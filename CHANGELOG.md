@@ -1,3 +1,10 @@
+# [1.338.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.337.5...v1.338.0) (2026-03-03)
+
+
+### Features
+
+* exclude different urls extension for page citability ([#2067](https://github.com/adobe/spacecat-audit-worker/issues/2067)) ([62ad178](https://github.com/adobe/spacecat-audit-worker/commit/62ad17807b396b68879d82b72e8b3a31ae6368fc))
+
 ## [1.337.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.337.4...v1.337.5) (2026-03-03)
 
 
