@@ -119,11 +119,9 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
   }
 
   // Skip 4xx pages when statusCode is present (new scrapes); old scrapes have no statusCode
-  if (object.statusCode !== undefined && object.statusCode !== null) {
-    if (object.statusCode === 404 || (object.statusCode >= 400 && object.statusCode < 500)) {
-      log.info(`[metatags] Skipping page with HTTP ${object.statusCode} for ${url}`);
-      return null;
-    }
+  if (object.statusCode != null && object.statusCode >= 400 && object.statusCode < 500) {
+    log.info(`[metatags] Skipping page with HTTP ${object.statusCode} for ${url}`);
+    return null;
   }
 
   // Check for error pages by content
