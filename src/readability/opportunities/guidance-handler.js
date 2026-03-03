@@ -12,7 +12,7 @@
 
 import { createHash } from 'crypto';
 import {
-  ok, notFound, badRequest, noContent,
+  ok, notFound, badRequest, noContent, internalServerError,
 } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
@@ -134,14 +134,14 @@ export default async function handler(message, context) {
   // New batch flow: read results from S3
   const { s3ResultsPath } = data || {};
   if (!s3ResultsPath) {
-    log.warn('[readability-opportunity guidance]: No s3ResultsPath in message data, nothing to process');
+    log.warn('[readability-opportunity guidance]: No s3ResultsPath in message data');
     return badRequest('Missing s3ResultsPath in message data');
   }
 
   const bucketName = context.env.S3_MYSTIQUE_BUCKET_NAME;
   if (!bucketName) {
     log.error('[readability-opportunity guidance]: Missing S3_MYSTIQUE_BUCKET_NAME');
-    return noContent();
+    return internalServerError('Missing S3_MYSTIQUE_BUCKET_NAME');
   }
 
   let batchResults;
@@ -149,12 +149,12 @@ export default async function handler(message, context) {
     batchResults = await fetchBatchResults(s3Client, bucketName, s3ResultsPath, log);
   } catch (error) {
     log.error(`[readability-opportunity guidance]: Failed to fetch batch results from S3: ${error.message}`);
-    return ok();
+    return notFound('Failed to fetch batch results from S3');
   }
 
   if (!Array.isArray(batchResults)) {
     log.error(`[readability-opportunity guidance]: Expected batch results to be an array but got ${typeof batchResults}`);
-    return ok();
+    return badRequest('Invalid batch results format');
   }
 
   // Map batch results to suggestion data, filtering out failed items and empty improvements
@@ -169,7 +169,7 @@ export default async function handler(message, context) {
 
   if (mappedSuggestions.length === 0) {
     log.info('[readability-opportunity guidance]: No valid suggestions to process');
-    return ok();
+    return noContent();
   }
 
   log.info(`[readability-opportunity guidance]: Processing ${mappedSuggestions.length} suggestions from batch results`);

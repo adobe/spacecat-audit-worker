@@ -57,6 +57,7 @@ describe('Readability Opportunities Guidance Handler', () => {
         notFound: sinon.stub().returns({ notFound: true }),
         badRequest: sinon.stub().returns({ badRequest: true }),
         noContent: sinon.stub().returns({ noContent: true }),
+        internalServerError: sinon.stub().returns({ internalServerError: true }),
       },
       '@adobe/spacecat-shared-data-access': {
         Suggestion: { TYPES: { CONTENT_UPDATE: 'CONTENT_UPDATE' } },
@@ -237,7 +238,7 @@ describe('Readability Opportunities Guidance Handler', () => {
       expect(syncSuggestionsStub).to.not.have.been.called;
     });
 
-    it('should return noContent when S3_MYSTIQUE_BUCKET_NAME is missing', async () => {
+    it('should return internalServerError when S3_MYSTIQUE_BUCKET_NAME is missing', async () => {
       mockContext.env.S3_MYSTIQUE_BUCKET_NAME = null;
 
       const message = {
@@ -247,12 +248,12 @@ describe('Readability Opportunities Guidance Handler', () => {
       };
 
       const result = await handler.default(message, mockContext);
-      expect(result).to.deep.equal({ noContent: true });
+      expect(result).to.deep.equal({ internalServerError: true });
       expect(logStub.error).to.have.been.calledWithMatch('Missing S3_MYSTIQUE_BUCKET_NAME');
       expect(syncSuggestionsStub).to.not.have.been.called;
     });
 
-    it('should handle non-array batch results gracefully', async () => {
+    it('should return badRequest for non-array batch results', async () => {
       mockS3Client.send.callsFake((command) => {
         if (command.input?.Key) {
           return Promise.resolve({
@@ -271,12 +272,12 @@ describe('Readability Opportunities Guidance Handler', () => {
       };
 
       const result = await handler.default(message, mockContext);
-      expect(result).to.deep.equal({ ok: true });
+      expect(result).to.deep.equal({ badRequest: true });
       expect(logStub.error).to.have.been.calledWithMatch('Expected batch results to be an array');
       expect(syncSuggestionsStub).to.not.have.been.called;
     });
 
-    it('should handle S3 fetch error gracefully', async () => {
+    it('should return notFound when S3 fetch fails', async () => {
       mockS3Client.send.rejects(new Error('S3 read error'));
 
       const message = {
@@ -286,7 +287,7 @@ describe('Readability Opportunities Guidance Handler', () => {
       };
 
       const result = await handler.default(message, mockContext);
-      expect(result).to.deep.equal({ ok: true });
+      expect(result).to.deep.equal({ notFound: true });
       expect(logStub.error).to.have.been.calledWithMatch('Failed to fetch batch results from S3');
       expect(syncSuggestionsStub).to.not.have.been.called;
     });
@@ -402,7 +403,7 @@ describe('Readability Opportunities Guidance Handler', () => {
       };
 
       const result = await handler.default(message, mockContext);
-      expect(result).to.deep.equal({ ok: true });
+      expect(result).to.deep.equal({ noContent: true });
       expect(logStub.info).to.have.been.calledWithMatch('No valid suggestions to process');
       expect(syncSuggestionsStub).to.not.have.been.called;
     });
@@ -442,7 +443,7 @@ describe('Readability Opportunities Guidance Handler', () => {
       };
 
       const result = await handler.default(message, mockContext);
-      expect(result).to.deep.equal({ ok: true });
+      expect(result).to.deep.equal({ noContent: true });
       expect(logStub.info).to.have.been.calledWithMatch('No valid suggestions to process');
       expect(syncSuggestionsStub).to.not.have.been.called;
     });
