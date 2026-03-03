@@ -276,7 +276,7 @@ describe('Readability Opportunities Handler Tests', () => {
           fleschReadingEase: 15.5,
           language: 'english',
           traffic: 1000,
-          rank: 25.5,
+          rank: 26,
           category: 'Critical',
           seoImpact: 'High',
         },
@@ -318,7 +318,7 @@ describe('Readability Opportunities Handler Tests', () => {
           fleschReadingEase: 15.5,
           language: 'english',
           traffic: 1000,
-          rank: 25.5,
+          rank: 26,
           category: 'Critical',
           seoImpact: 'High',
         },
@@ -394,7 +394,7 @@ describe('Readability Opportunities Handler Tests', () => {
           fleschReadingEase: 15.5,
           language: 'english',
           traffic: 1000,
-          rank: 25.5,
+          rank: 26,
           category: 'Critical',
           seoImpact: 'High',
         },
@@ -437,7 +437,7 @@ describe('Readability Opportunities Handler Tests', () => {
           fleschReadingEase: 15.5,
           language: 'english',
           traffic: 1000,
-          rank: 25.5,
+          rank: 26,
           category: 'Critical',
           seoImpact: 'High',
         },
@@ -465,13 +465,13 @@ describe('Readability Opportunities Handler Tests', () => {
       const { mapNewSuggestion } = syncCall.args[0];
 
       // Call the mapNewSuggestion callback to test coverage
-      const testData = { rank: 10.5, pageUrl: 'https://test.com' };
+      const testData = { rank: 11, pageUrl: 'https://test.com' };
       const result = mapNewSuggestion(testData);
 
       expect(result).to.deep.equal({
         opportunityId: 'test-opp-id',
         type: 'CONTENT_UPDATE',
-        rank: 10.5,
+        rank: 11,
         data: testData,
       });
     });
@@ -486,7 +486,7 @@ describe('Readability Opportunities Handler Tests', () => {
           fleschReadingEase: 15.5,
           language: 'english',
           traffic: 1000,
-          rank: 25.5,
+          rank: 26,
           category: 'Critical',
           seoImpact: 'High',
         },
@@ -498,7 +498,7 @@ describe('Readability Opportunities Handler Tests', () => {
           fleschReadingEase: 20.0,
           language: 'english',
           traffic: 500,
-          rank: 20.0,
+          rank: 20,
           category: 'Important',
           seoImpact: 'Moderate',
         },

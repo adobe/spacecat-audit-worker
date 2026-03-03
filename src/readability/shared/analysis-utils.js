@@ -115,7 +115,7 @@ async function analyzeTextReadability(
         fleschReadingEase: Math.round(readabilityScore * 100) / 100,
         language: detectedLanguage,
         traffic,
-        rank: Math.round(rank * 100) / 100,
+        rank: Math.round(rank),
         category: categorizeReadabilityIssue(readabilityScore, traffic),
         seoImpact: calculateSeoImpact(readabilityScore, traffic),
         seoRecommendation:
