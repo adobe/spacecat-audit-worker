@@ -946,20 +946,17 @@ async function getUrlsSubmittedForScrapingCount(scrapeJobId, urlsToCheckLength, 
   }
 }
 
+const AUDIT_ERROR_MESSAGE = 'Audit failed';
+
 /**
  * Builds audit result for error case (used when step 3 fails).
- * @param {string} errorMessage - Error message to include
+ * Persisted so UI can show audit status; uses generic message to avoid exposing internal details.
  * @returns {Object} - Audit result shape for LatestAudit
  */
-function buildErrorAuditResult(errorMessage) {
+function buildErrorAuditResult() {
   return {
-    error: errorMessage,
-    totalUrlsChecked: 0,
-    urlsNeedingPrerender: 0,
-    urlsScrapedSuccessfully: 0,
-    urlsSubmittedForScraping: 0,
-    urlsNotNeedingPrerender: 0,
-    scrapingErrorRate: 100,
+    error: AUDIT_ERROR_MESSAGE,
+    lastAuditSuccess: false,
     results: [],
     isError: true,
   };
@@ -1089,6 +1086,7 @@ export async function processContentAndGenerateOpportunities(context) {
       scrapingErrorRate,
       results: cleanResults,
       scrapeForbidden,
+      lastAuditSuccess: true,
     };
 
     let opportunityForGuidance = null;
@@ -1179,37 +1177,32 @@ export async function processContentAndGenerateOpportunities(context) {
     log.error(`Prerender - Audit failed for baseUrl=${site.getBaseURL()}, siteId=${siteId}: ${error.message}`, error);
 
     isAuditError = true;
-    auditResultForLatest = buildErrorAuditResult(error.message);
+    auditResultForLatest = buildErrorAuditResult();
 
     return {
-      error: error.message,
+      error: AUDIT_ERROR_MESSAGE,
       totalUrlsChecked: 0,
       urlsNeedingPrerender: 0,
       results: [],
     };
     /* c8 ignore next 1 */
   } finally {
-    // Always update LatestAudit (success or failure) so UI health check shows accurate status
+    // Always update Audit (success or failure) so UI health check shows accurate status.
+    // In data-access v3, LatestAudit is derived from Audit; we update the Audit record directly.
     /* c8 ignore next 1 - edge case: auditResultForLatest null when catch throws before setting */
     if (auditResultForLatest != null) {
       try {
-        const { LatestAudit } = dataAccess;
+        await dataAccess.Audit.updateByKeys(
+          { auditId: audit.getId() },
+          {
+            auditResult: auditResultForLatest,
+            isError: isAuditError,
+          },
+        );
 
-        await LatestAudit.create({
-          auditId: audit.getId(),
-          siteId,
-          auditType: AUDIT_TYPE,
-          auditResult: auditResultForLatest,
-          fullAuditRef: audit.getFullAuditRef(),
-          auditedAt: audit.getAuditedAt(),
-          isLive: site.getIsLive(),
-          isError: isAuditError,
-          invocationId: audit.getInvocationId(),
-        });
-
-        log.info(`Prerender - Updated LatestAudit with ${isAuditError ? 'error' : 'detailed'} results. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
+        log.info(`Prerender - Updated Audit with ${isAuditError ? 'error' : 'detailed'} results. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
       } catch (latestAuditError) {
-        log.error(`Prerender - Failed to update LatestAudit: ${latestAuditError.message}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`, latestAuditError);
+        log.error(`Prerender - Failed to update Audit: ${latestAuditError.message}. baseUrl=${site.getBaseURL()}, siteId=${siteId}`, latestAuditError);
       }
     }
   }
