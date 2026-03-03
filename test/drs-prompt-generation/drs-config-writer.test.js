@@ -76,11 +76,12 @@ describe('DRS Config Writer', () => {
 
     const writtenConfig = configClient.writeConfig.firstCall.args[1];
 
-    // One category 'brand' was created
+    // One category 'brand' was created with merged regions
     const catEntries = Object.entries(writtenConfig.categories);
     expect(catEntries).to.have.lengthOf(1);
     expect(catEntries[0][1].name).to.equal('brand');
     expect(catEntries[0][1].origin).to.equal('ai');
+    expect(catEntries[0][1].region).to.deep.include.members(['us', 'de']);
 
     // Two aiTopics created: 'general' and 'product'
     const topicEntries = Object.entries(writtenConfig.aiTopics);
@@ -285,6 +286,61 @@ describe('DRS Config Writer', () => {
     const writtenConfig = configClient.writeConfig.firstCall.args[1];
     const [, topic] = Object.entries(writtenConfig.aiTopics)[0];
     expect(topic.prompts[0].regions).to.deep.equal([]);
+
+    // Category should not have region set when no prompts have regions
+    const [, cat] = Object.entries(writtenConfig.categories)[0];
+    expect(cat.region).to.be.undefined;
+  });
+
+  it('sets single region string on category when all prompts share one region', async () => {
+    configClient.readConfig.resolves({
+      config: { categories: {}, aiTopics: {} },
+    });
+
+    const drsPrompts = [
+      {
+        prompt: 'Q1', region: 'us', category: 'brand', topic: 't1',
+      },
+      {
+        prompt: 'Q2', region: 'us', category: 'brand', topic: 't2',
+      },
+    ];
+
+    await writeDrsPromptsToLlmoConfig({
+      drsPrompts, siteId: 'site-1', s3Client, s3Bucket: 'bucket', log, configClient,
+    });
+
+    const writtenConfig = configClient.writeConfig.firstCall.args[1];
+    const [, cat] = Object.entries(writtenConfig.categories)[0];
+    expect(cat.region).to.equal('us');
+  });
+
+  it('sets region array on category when prompts have multiple regions', async () => {
+    configClient.readConfig.resolves({
+      config: { categories: {}, aiTopics: {} },
+    });
+
+    const drsPrompts = [
+      {
+        prompt: 'Q1', region: 'us', category: 'brand', topic: 't1',
+      },
+      {
+        prompt: 'Q2', region: 'uk', category: 'brand', topic: 't1',
+      },
+      {
+        prompt: 'Q3', region: 'de', category: 'brand', topic: 't2',
+      },
+    ];
+
+    await writeDrsPromptsToLlmoConfig({
+      drsPrompts, siteId: 'site-1', s3Client, s3Bucket: 'bucket', log, configClient,
+    });
+
+    const writtenConfig = configClient.writeConfig.firstCall.args[1];
+    const [, cat] = Object.entries(writtenConfig.categories)[0];
+    expect(cat.region).to.be.an('array');
+    expect(cat.region).to.have.lengthOf(3);
+    expect(cat.region.sort()).to.deep.equal(['de', 'uk', 'us']);
   });
 
   it('creates separate categories for different category names', async () => {
