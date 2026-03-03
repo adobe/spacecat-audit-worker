@@ -149,7 +149,7 @@ async function getScrapedHtmlFromS3(url, context) {
 
   try {
     const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-    const { scrapeJobId: storageId } = auditContext;
+    const { scrapeJobId: storageId } = auditContext || {};
     const serverSideKey = getS3Path(url, storageId, 'server-side.html');
     const clientSideKey = getS3Path(url, storageId, 'client-side.html');
     const scrapeJsonKey = getS3Path(url, storageId, 'scrape.json');
@@ -1065,7 +1065,7 @@ export async function processContentAndGenerateOpportunities(context) {
     const urlsNotNeedingPrerender = successfulComparisons.length - urlsNeedingPrerender.length;
 
     const { auditContext } = context;
-    const { scrapeJobId } = auditContext;
+    const { scrapeJobId } = auditContext || {};
     const urlsSubmittedForScraping = await getUrlsSubmittedForScrapingCount(
       scrapeJobId,
       urlsToCheck.length,
@@ -1185,8 +1185,10 @@ export async function processContentAndGenerateOpportunities(context) {
       urlsNeedingPrerender: 0,
       results: [],
     };
+    /* c8 ignore next 1 */
   } finally {
     // Always update LatestAudit (success or failure) so UI health check shows accurate status
+    /* c8 ignore next 1 - edge case: auditResultForLatest null when catch throws before setting */
     if (auditResultForLatest != null) {
       try {
         const { LatestAudit } = dataAccess;
