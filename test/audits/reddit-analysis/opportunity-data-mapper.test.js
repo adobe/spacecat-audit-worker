@@ -74,6 +74,37 @@ describe('Reddit Analysis Opportunity Data Mapper', () => {
       expect(result.data.dataSources).to.have.lengthOf(2);
     });
 
+    it('should merge dataSources when opportunityData.data exists without dataSources', () => {
+      const opportunityData = {
+        data: { customField: 'value' },
+      };
+
+      const result = createOpportunityData({ opportunityData });
+
+      expect(result.data.customField).to.equal('value');
+      expect(result.data.dataSources).to.deep.equal(['Site', 'Page']);
+    });
+
+    it('should deduplicate tags when opportunityData contains defaults', () => {
+      const opportunityData = {
+        tags: ['isElmo', 'Reddit', 'earned', 'custom'],
+      };
+
+      const result = createOpportunityData({ opportunityData });
+
+      expect(result.tags).to.deep.equal(['isElmo', 'Reddit', 'earned', 'custom']);
+    });
+
+    it('should deduplicate dataSources when opportunityData contains defaults', () => {
+      const opportunityData = {
+        data: { dataSources: ['Site', 'Page', 'GSC'] },
+      };
+
+      const result = createOpportunityData({ opportunityData });
+
+      expect(result.data.dataSources).to.deep.equal(['Site', 'Page', 'GSC']);
+    });
+
     it('should handle empty call gracefully', () => {
       const result = createOpportunityData();
 

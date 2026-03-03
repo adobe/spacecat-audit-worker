@@ -175,6 +175,24 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(context.log.info).to.have.been.calledWith('[Reddit] No suggestions found in analysis');
     });
 
+    it('should return noContent when suggestions property is missing from analysis', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { title: 'Some title' },
+          },
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(204);
+      expect(convertToOpportunityStub).to.not.have.been.called;
+    });
+
     it('should return badRequest when no analysis data provided', async () => {
       const message = {
         siteId,
@@ -376,6 +394,34 @@ describe('Reddit Analysis Guidance Handler', () => {
         sinon.match(/Error processing Reddit analysis/),
         sinon.match.any,
       );
+    });
+
+    it('should skip audit lookup when auditId is not provided', async () => {
+      const message = {
+        siteId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 's1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(context.dataAccess.Audit.findById).to.not.have.been.called;
+    });
+
+    it('should return badRequest when data is undefined', async () => {
+      const message = { siteId, auditId };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(400);
+      expect(context.log.error).to.have.been.calledWith('[Reddit] No analysis data provided in message');
     });
 
     it('should return notFound when audit not found', async () => {
