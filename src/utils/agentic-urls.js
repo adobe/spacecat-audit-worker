@@ -18,7 +18,7 @@ import { weeklyBreakdownQueries } from '../cdn-logs-report/utils/query-builder.j
 const DEFAULT_TOP_AGENTIC_URLS_LIMIT = 200;
 
 // URL suffixes to exclude from agentic URL results
-const EXCLUDED_URL_SUFFIXES = [
+export const EXCLUDED_URL_SUFFIXES = [
   '/sitemap.xml',
   '/sitemap_index.xml',
   '/sitemap-index.xml',
@@ -37,6 +37,7 @@ const EXCLUDED_URL_SUFFIXES = [
   '.rtf',
   '.swf',
   '.pdf',
+  '.jsp',
 ];
 
 /**

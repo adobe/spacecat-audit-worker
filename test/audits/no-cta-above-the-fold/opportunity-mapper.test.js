@@ -51,6 +51,7 @@ describe("No Engageable Content opportunity mapper", () => {
       expect(result.data.projectedTrafficLost).to.equal(900);
       expect(result.data.projectedTrafficValue).to.equal(900 * 0.8);
       expect(result.data.page).to.equal(pageUrl);
+      expect(result.data.dataSources).to.deep.equal(["RUM", "Page"]);
     });
 
     it("falls back to zeroed metrics when URL not found", () => {

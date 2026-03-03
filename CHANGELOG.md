@@ -1,3 +1,24 @@
+# [1.338.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.337.5...v1.338.0) (2026-03-03)
+
+
+### Features
+
+* exclude different urls extension for page citability ([#2067](https://github.com/adobe/spacecat-audit-worker/issues/2067)) ([62ad178](https://github.com/adobe/spacecat-audit-worker/commit/62ad17807b396b68879d82b72e8b3a31ae6368fc))
+
+## [1.337.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.337.4...v1.337.5) (2026-03-03)
+
+
+### Bug Fixes
+
+* add scraping error rate and submitted URL metrics  ([#2065](https://github.com/adobe/spacecat-audit-worker/issues/2065)) ([11d59f1](https://github.com/adobe/spacecat-audit-worker/commit/11d59f1163c87cf81d3266bf0b32e72761af716c))
+
+## [1.337.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.337.3...v1.337.4) (2026-03-03)
+
+
+### Bug Fixes
+
+* add RUM and Page data sources to no-cta-above-the-fold opportunity ([#2066](https://github.com/adobe/spacecat-audit-worker/issues/2066)) ([23b8469](https://github.com/adobe/spacecat-audit-worker/commit/23b8469ddc7577d4853a6c0b3ee0d6b49b585d0e)), closes [#2058](https://github.com/adobe/spacecat-audit-worker/issues/2058)
+
 ## [1.337.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.337.2...v1.337.3) (2026-03-03)
 
 
