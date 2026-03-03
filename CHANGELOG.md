@@ -1,3 +1,52 @@
+## [1.337.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.337.1...v1.337.2) (2026-03-03)
+
+
+### Bug Fixes
+
+* excluding privacy/cookie headings from toc ([#2064](https://github.com/adobe/spacecat-audit-worker/issues/2064)) ([2d12ea4](https://github.com/adobe/spacecat-audit-worker/commit/2d12ea4a25ff099539a25b004803d884909e5f5b))
+
+## [1.337.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.337.0...v1.337.1) (2026-03-03)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2062](https://github.com/adobe/spacecat-audit-worker/issues/2062)) ([dc76415](https://github.com/adobe/spacecat-audit-worker/commit/dc7641502b3156e92443fd2385cff0fdb178d113))
+
+# [1.337.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.336.2...v1.337.0) (2026-03-02)
+
+
+### Features
+
+* use dedicated no-cta-above-the-fold opportunity type ([#2058](https://github.com/adobe/spacecat-audit-worker/issues/2058)) ([dd07289](https://github.com/adobe/spacecat-audit-worker/commit/dd072893d5f274a12dd60902408dfaa9f24bb0e0))
+
+## [1.336.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.336.1...v1.336.2) (2026-03-02)
+
+
+### Bug Fixes
+
+* add region field to DRS-created categories (LLMO-1819) ([#2057](https://github.com/adobe/spacecat-audit-worker/issues/2057)) ([4bf1d81](https://github.com/adobe/spacecat-audit-worker/commit/4bf1d8104c35f846bc8338b394fa28c393635d8f))
+
+## [1.336.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.336.0...v1.336.1) (2026-03-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.5.0 ([#2059](https://github.com/adobe/spacecat-audit-worker/issues/2059)) ([006c365](https://github.com/adobe/spacecat-audit-worker/commit/006c36522c3b558c34cc246c1baf7f8fba60541f))
+
+# [1.336.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.335.2...v1.336.0) (2026-03-02)
+
+
+### Features
+
+* add commerce-product-enrichments-yearly audit type ([#2049](https://github.com/adobe/spacecat-audit-worker/issues/2049)) ([5c211ed](https://github.com/adobe/spacecat-audit-worker/commit/5c211ed99db7ef6d48e78c6f2c09ccc1d7f3c99d)), closes [adobe/spacecat-shared#1381](https://github.com/adobe/spacecat-shared/issues/1381) [adobe/spacecat-shared#1380](https://github.com/adobe/spacecat-shared/issues/1380) [adobe/spacecat-jobs-dispatcher#630](https://github.com/adobe/spacecat-jobs-dispatcher/issues/630) [adobe/spacecat-infrastructure#352](https://github.com/adobe/spacecat-infrastructure/issues/352)
+
+## [1.335.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.335.1...v1.335.2) (2026-03-02)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2056](https://github.com/adobe/spacecat-audit-worker/issues/2056)) ([363af40](https://github.com/adobe/spacecat-audit-worker/commit/363af40ead91d6bdd767e678a0deba22a75b6ebb))
+
 ## [1.335.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.335.0...v1.335.1) (2026-03-02)
 
 

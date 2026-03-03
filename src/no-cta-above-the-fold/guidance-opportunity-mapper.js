@@ -41,7 +41,7 @@ export function mapToOpportunity(siteId, url, audit, pageGuidance) {
     siteId,
     id: randomUUID(),
     auditId: audit.getAuditId(),
-    type: 'generic-opportunity',
+    type: 'no-cta-above-the-fold',
     origin: 'AUTOMATION',
     title: 'No engageable content above the fold on mobile',
     description: 'The page lacks clear call-to-action (CTA) buttons above the fold. Without a prominent CTA to catch paid visitors\' attention, they are much more likely to bounce.',
