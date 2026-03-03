@@ -134,6 +134,8 @@ async function sendOpportunityBatch(
   readabilityIssues,
   siteId,
   jobId,
+  auditUrl,
+  site,
   context,
 ) {
   const {
@@ -169,11 +171,14 @@ async function sendOpportunityBatch(
   // Send single SQS message with S3 key path
   const mystiqueMessage = {
     type: READABILITY_GUIDANCE_TYPE,
+    time: new Date().toISOString(),
+    deliveryType: site.getDeliveryType(),
     siteId,
     auditId: jobId,
+    url: auditUrl,
     mode: 'opportunity',
     data: {
-      s3ResultsPath: s3Key,
+      s3BatchPath: s3Key,
     },
   };
 
@@ -229,6 +234,8 @@ export async function sendReadabilityToMystique(
         readabilityIssues,
         siteId,
         jobId,
+        auditUrl,
+        site,
         context,
       );
     }

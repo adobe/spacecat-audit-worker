@@ -115,7 +115,8 @@ describe('async-mystique sendReadabilityToMystique', () => {
       expect(sentMessage.siteId).to.equal('site-123');
       expect(sentMessage.auditId).to.equal('audit-456');
       expect(sentMessage.mode).to.equal('opportunity');
-      expect(sentMessage.data.s3ResultsPath).to.equal('readability/batch-requests/site-123/audit-456.json');
+      expect(sentMessage.url).to.equal('https://example.com');
+      expect(sentMessage.data.s3BatchPath).to.equal('readability/batch-requests/site-123/audit-456.json');
 
       // Should NOT interact with AsyncJob
       expect(mockContext.dataAccess.AsyncJob.findById).to.not.have.been.called;
@@ -489,7 +490,9 @@ describe('async-mystique sendReadabilityToMystique', () => {
       expect(sentMessage.siteId).to.equal('site-abc');
       expect(sentMessage.auditId).to.equal('audit-xyz');
       expect(sentMessage.mode).to.equal('opportunity');
-      expect(sentMessage.data.s3ResultsPath).to.equal('readability/batch-requests/site-abc/audit-xyz.json');
+      expect(sentMessage.url).to.equal('https://example.com');
+      expect(sentMessage.deliveryType).to.equal('aem_edge');
+      expect(sentMessage.data.s3BatchPath).to.equal('readability/batch-requests/site-abc/audit-xyz.json');
     });
 
     it('should construct correct Mystique message for preflight mode', async () => {
