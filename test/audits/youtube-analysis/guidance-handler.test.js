@@ -97,31 +97,22 @@ describe('YouTube Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
             suggestions: [
               {
-                id: 'improve_thumbnails',
-                priority: 'HIGH',
-                title: 'Improve thumbnails',
-                description: 'Use consistent branding in thumbnails',
-                whyMatters: 'Thumbnails drive click-through',
-                expectedResult: 'Higher CTR',
-                dataSources: 'YouTube Analytics',
+                id: 'sug_1',
+                type: 'CONTENT_UPDATE',
+                rank: 1,
+                data: { suggestionValue: 'Improve thumbnails' },
               },
               {
-                id: 'upload_frequency',
-                priority: 'MEDIUM',
-                title: 'Increase upload frequency',
-                description: 'Post at least weekly',
-                whyMatters: 'Consistency builds audience',
-                expectedResult: 'More subscribers',
-                dataSources: 'Best practices',
+                id: 'sug_2',
+                type: 'CONTENT_UPDATE',
+                rank: 2,
+                data: { suggestionValue: 'Increase upload frequency' },
               },
             ],
-            industryAnalysis: {
-              industry: 'Technology',
-            },
           },
         },
       };
@@ -136,19 +127,24 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully processed YouTube analysis/));
     });
 
-    it('should create guidance with industry analysis', async () => {
+    it('should pass opportunityData from BO JSON to convertToOpportunity', async () => {
+      const opportunityData = {
+        title: '[ʙᴇᴛᴀ] Cited YouTube Sentiment Analysis',
+        description: 'Custom description from Mystique',
+        runbook: 'https://adobe.sharepoint.com/sites/youtube-sentiment-analysis',
+        origin: 'ESS_OPS',
+        tags: ['Video Content', 'social', 'Youtube', 'isElmo', 'Social Media'],
+      };
       const message = {
         siteId,
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
+            opportunity: opportunityData,
             suggestions: [
-              { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test', whyMatters: 'Test', expectedResult: 'Test', dataSources: 'Test' },
+              { id: 'test_1', type: 'CONTENT_UPDATE', rank: 1, data: { suggestionValue: 'Test' } },
             ],
-            industryAnalysis: {
-              industry: 'Finance',
-            },
           },
         },
       };
@@ -156,19 +152,22 @@ describe('YouTube Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       const convertCall = convertToOpportunityStub.firstCall;
-      const guidanceArg = convertCall.args[5].guidance;
-      expect(guidanceArg.rationale).to.include('Finance competitors');
+      expect(convertCall.args[0]).to.equal(baseURL);
+      expect(convertCall.args[1]).to.deep.include({ siteId, auditId });
+      expect(convertCall.args[4]).to.equal('youtube-analysis');
+      const propsArg = convertCall.args[5];
+      expect(propsArg.opportunityData).to.deep.equal(opportunityData);
     });
 
-    it('should create guidance without industry analysis', async () => {
+    it('should pass empty opportunityData when opportunity is missing from analysis', async () => {
       const message = {
         siteId,
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
             suggestions: [
-              { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test', whyMatters: 'Test', expectedResult: 'Test', dataSources: 'Test' },
+              { id: 'test_1', type: 'CONTENT_UPDATE', rank: 1, data: {} },
             ],
           },
         },
@@ -176,9 +175,8 @@ describe('YouTube Analysis Guidance Handler', () => {
 
       await handler.default(message, context);
 
-      const convertCall = convertToOpportunityStub.firstCall;
-      const guidanceArg = convertCall.args[5].guidance;
-      expect(guidanceArg.rationale).to.include('YouTube channel and content best practices');
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg.opportunityData).to.deep.equal({});
     });
 
     it('should return noContent when no suggestions found', async () => {
@@ -186,8 +184,8 @@ describe('YouTube Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
             suggestions: [],
           },
         },
@@ -198,6 +196,24 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(result.status).to.equal(204);
       expect(convertToOpportunityStub).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith('[YouTube] No suggestions found in analysis');
+    });
+
+    it('should return noContent when suggestions property is missing from analysis', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { title: 'Some title' },
+          },
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(204);
+      expect(convertToOpportunityStub).to.not.have.been.called;
     });
 
     it('should return badRequest when no analysis data provided', async () => {
@@ -220,9 +236,9 @@ describe('YouTube Analysis Guidance Handler', () => {
         siteId: 'non-existent-site',
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
-            suggestions: [{ id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test', whyMatters: 'Test', expectedResult: 'Test', dataSources: 'Test' }],
+            suggestions: [{ id: 'test_1', type: 'CONTENT_UPDATE', rank: 1, data: {} }],
           },
         },
       };
@@ -235,40 +251,87 @@ describe('YouTube Analysis Guidance Handler', () => {
   });
 
   describe('Handler with presigned URL', () => {
-    it('should fetch analysis from presigned URL', async () => {
-      const analysisData = {
-        company: 'Example Corp',
+    it('should fetch BO JSON from presigned URL and pass opportunityData', async () => {
+      const opportunityData = {
+        id: 'opp-1',
+        title: '[ʙᴇᴛᴀ] Cited YouTube Sentiment Analysis',
+        description: 'Analysis description',
+        runbook: 'https://adobe.sharepoint.com/sites/youtube-sentiment-analysis',
+        origin: 'ESS_OPS',
+        tags: ['Video Content', 'social', 'Youtube', 'isElmo', 'Social Media'],
+      };
+      const boJson = {
+        opportunity: opportunityData,
         suggestions: [
           {
             id: 'critical_1',
-            priority: 'CRITICAL',
-            title: 'Critical improvement',
-            description: 'This is critical',
-            whyMatters: 'Critical for engagement',
-            expectedResult: 'Improved channel',
-            dataSources: 'YouTube best practices',
+            type: 'CONTENT_UPDATE',
+            rank: 1,
+            data: { suggestionValue: 'Critical improvement' },
           },
         ],
       };
 
       fetchStub.resolves({
         ok: true,
-        json: sandbox.stub().resolves(analysisData),
+        json: sandbox.stub().resolves(boJson),
       });
 
       const message = {
         siteId,
         auditId,
         data: {
-          presignedUrl: 'https://s3.amazonaws.com/bucket/youtube-analysis.json',
+          companyName: 'Example Corp',
+          presignedUrl: 'https://s3.amazonaws.com/bucket/bo.json',
         },
       };
 
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(200);
-      expect(fetchStub).to.have.been.calledWith('https://s3.amazonaws.com/bucket/youtube-analysis.json');
+      expect(fetchStub).to.have.been.calledWith('https://s3.amazonaws.com/bucket/bo.json');
       expect(convertToOpportunityStub).to.have.been.calledOnce;
+
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg.opportunityData).to.deep.equal(opportunityData);
+    });
+
+    it('should override inline analysis when presigned URL is also provided', async () => {
+      const presignedBoJson = {
+        opportunity: { title: 'From presigned URL' },
+        suggestions: [
+          { id: 'from_url', type: 'CONTENT_UPDATE', rank: 1, data: { suggestionValue: 'URL suggestion' } },
+        ],
+      };
+
+      fetchStub.resolves({
+        ok: true,
+        json: sandbox.stub().resolves(presignedBoJson),
+      });
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          presignedUrl: 'https://s3.amazonaws.com/bucket/bo.json',
+          analysis: {
+            opportunity: { title: 'From inline' },
+            suggestions: [
+              { id: 'from_inline', type: 'SEO_UPDATE', rank: 5, data: { suggestionValue: 'Inline suggestion' } },
+            ],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      const syncCall = syncSuggestionsStub.firstCall;
+      const { newData } = syncCall.args[0];
+      expect(newData[0].id).to.equal('from_url');
+
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg.opportunityData.title).to.equal('From presigned URL');
     });
 
     it('should return badRequest when presigned URL fetch fails with non-ok response', async () => {
@@ -282,7 +345,8 @@ describe('YouTube Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
-          presignedUrl: 'https://s3.amazonaws.com/bucket/youtube-analysis.json',
+          companyName: 'Example Corp',
+          presignedUrl: 'https://s3.amazonaws.com/bucket/bo.json',
         },
       };
 
@@ -299,7 +363,8 @@ describe('YouTube Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
-          presignedUrl: 'https://s3.amazonaws.com/bucket/youtube-analysis.json',
+          companyName: 'Example Corp',
+          presignedUrl: 'https://s3.amazonaws.com/bucket/bo.json',
         },
       };
 
@@ -310,54 +375,20 @@ describe('YouTube Analysis Guidance Handler', () => {
     });
   });
 
-  describe('Priority ranking', () => {
-    it('should map priorities to correct ranks', async () => {
+  describe('Suggestion mapping', () => {
+    it('should pass suggestion type, rank, and data directly', async () => {
       const message = {
         siteId,
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
-            suggestions: [
-              { id: 'sug_a', priority: 'CRITICAL', title: 'A', description: 'A', whyMatters: 'A', expectedResult: 'A', dataSources: 'A' },
-              { id: 'sug_b', priority: 'HIGH', title: 'B', description: 'B', whyMatters: 'B', expectedResult: 'B', dataSources: 'B' },
-              { id: 'sug_c', priority: 'MEDIUM', title: 'C', description: 'C', whyMatters: 'C', expectedResult: 'C', dataSources: 'C' },
-              { id: 'sug_d', priority: 'LOW', title: 'D', description: 'D', whyMatters: 'D', expectedResult: 'D', dataSources: 'D' },
-              { id: 'sug_e', priority: 'UNKNOWN', title: 'E', description: 'E', whyMatters: 'E', expectedResult: 'E', dataSources: 'E' },
-            ],
-          },
-        },
-      };
-
-      await handler.default(message, context);
-
-      const syncCall = syncSuggestionsStub.firstCall;
-      const { newData, mapNewSuggestion } = syncCall.args[0];
-
-      expect(mapNewSuggestion(newData[0]).rank).to.equal(0); // CRITICAL
-      expect(mapNewSuggestion(newData[1]).rank).to.equal(1); // HIGH
-      expect(mapNewSuggestion(newData[2]).rank).to.equal(2); // MEDIUM
-      expect(mapNewSuggestion(newData[3]).rank).to.equal(3); // LOW
-      expect(mapNewSuggestion(newData[4]).rank).to.equal(4); // UNKNOWN (default)
-    });
-
-    it('should pass raw suggestions to syncSuggestions and map them correctly', async () => {
-      const message = {
-        siteId,
-        auditId,
-        data: {
-          analysis: {
-            company: 'Example Corp',
             suggestions: [
               {
-                id: 'test_suggestion',
-                priority: 'HIGH',
-                title: 'Test Title',
-                priorityNote: 'Important note',
-                description: 'Test Description',
-                whyMatters: 'This matters because...',
-                expectedResult: 'Expected outcome',
-                dataSources: 'Data source list',
+                id: 'sug_1',
+                type: 'CONTENT_UPDATE',
+                rank: 1,
+                data: { suggestionValue: '## Report content' },
               },
             ],
           },
@@ -369,19 +400,11 @@ describe('YouTube Analysis Guidance Handler', () => {
       const syncCall = syncSuggestionsStub.firstCall;
       const { newData, mapNewSuggestion } = syncCall.args[0];
 
-      expect(newData[0].id).to.equal('test_suggestion');
-      expect(newData[0].priority).to.equal('HIGH');
-      expect(newData[0].title).to.equal('Test Title');
-      expect(newData[0].priorityNote).to.equal('Important note');
-      expect(newData[0].description).to.equal('Test Description');
-      expect(newData[0].whyMatters).to.equal('This matters because...');
-      expect(newData[0].expectedResult).to.equal('Expected outcome');
-      expect(newData[0].dataSources).to.equal('Data source list');
-
       const mapped = mapNewSuggestion(newData[0]);
+      expect(mapped.opportunityId).to.equal('opp-123');
       expect(mapped.type).to.equal('CONTENT_UPDATE');
       expect(mapped.rank).to.equal(1);
-      expect(mapped.data).to.deep.equal(newData[0]);
+      expect(mapped.data.suggestionValue).to.equal('## Report content');
     });
 
     it('should use correct buildKey function', async () => {
@@ -389,10 +412,10 @@ describe('YouTube Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
             suggestions: [
-              { id: 'my_suggestion_id', priority: 'HIGH', title: 'My Title', description: 'Desc', whyMatters: 'Test', expectedResult: 'Test', dataSources: 'Test' },
+              { id: 'my_suggestion_id', type: 'CONTENT_UPDATE', rank: 1, data: {} },
             ],
           },
         },
@@ -416,10 +439,10 @@ describe('YouTube Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
             suggestions: [
-              { priority: 'HIGH', title: 'Test', description: 'Test', category: 'test' },
+              { id: 's1', type: 'CONTENT_UPDATE', rank: 1, data: {} },
             ],
           },
         },
@@ -434,6 +457,34 @@ describe('YouTube Analysis Guidance Handler', () => {
       );
     });
 
+    it('should skip audit lookup when auditId is not provided', async () => {
+      const message = {
+        siteId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 's1', type: 'CONTENT_UPDATE', rank: 1, data: {} },
+            ],
+          },
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(context.dataAccess.Audit.findById).to.not.have.been.called;
+    });
+
+    it('should return badRequest when data is undefined', async () => {
+      const message = { siteId, auditId };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(400);
+      expect(context.log.error).to.have.been.calledWith('[YouTube] No analysis data provided in message');
+    });
+
     it('should return notFound when audit not found', async () => {
       context.dataAccess.Audit.findById.resolves(null);
 
@@ -441,10 +492,10 @@ describe('YouTube Analysis Guidance Handler', () => {
         siteId,
         auditId: 'non-existent-audit',
         data: {
+          companyName: 'Example Corp',
           analysis: {
-            company: 'Example Corp',
             suggestions: [
-              { priority: 'HIGH', title: 'Test', description: 'Test', category: 'test' },
+              { id: 's1', type: 'CONTENT_UPDATE', rank: 1, data: {} },
             ],
           },
         },
@@ -457,10 +508,9 @@ describe('YouTube Analysis Guidance Handler', () => {
     });
 
     it('should store full analysis in opportunity data', async () => {
-      const analysisData = {
-        company: 'Example Corp',
+      const boJson = {
         suggestions: [
-          { priority: 'HIGH', title: 'Test', description: 'Test', category: 'test' },
+          { id: 's1', type: 'CONTENT_UPDATE', rank: 1, data: { suggestionValue: 'Test' } },
         ],
         extraData: 'should be preserved',
       };
@@ -469,7 +519,8 @@ describe('YouTube Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
-          analysis: analysisData,
+          companyName: 'Example Corp',
+          analysis: boJson,
         },
       };
 
@@ -478,7 +529,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(mockOpportunity.setData).to.have.been.calledWith(
         sinon.match({
           existingData: true,
-          fullAnalysis: analysisData,
+          fullAnalysis: sinon.match({ suggestions: boJson.suggestions }),
         }),
       );
     });
@@ -490,8 +541,8 @@ describe('YouTube Analysis Guidance Handler', () => {
         siteId,
         auditId,
         data: {
+          companyName: 'Test',
           analysis: {
-            company: 'Test',
             suggestions: [],
           },
         },

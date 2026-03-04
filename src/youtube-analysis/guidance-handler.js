@@ -22,21 +22,6 @@ import { convertToOpportunity } from '../common/opportunity.js';
 const AUDIT_TYPE = 'youtube-analysis';
 
 /**
- * Gets rank based on priority
- * @param {string} priority - The priority level
- * @returns {number} The rank
- */
-function getRankFromPriority(priority) {
-  const priorityRanks = {
-    CRITICAL: 0,
-    HIGH: 1,
-    MEDIUM: 2,
-    LOW: 3,
-  };
-  return priorityRanks[priority] ?? 4;
-}
-
-/**
  * Handles Mystique response for YouTube analysis
  * @param {Object} message - Message from Mystique with analysis results
  * @param {Object} context - Context object with data access and logger
@@ -50,11 +35,12 @@ export default async function handler(message, context) {
   log.info(`[YouTube] Received YouTube analysis guidance for siteId: ${siteId}, auditId: ${auditId}`);
 
   let analysisData = data?.analysis;
+  const { companyName, presignedUrl } = data || {};
 
-  if (data?.presignedUrl) {
+  if (presignedUrl) {
     try {
-      log.info(`[YouTube] Fetching analysis data from presigned URL: ${data.presignedUrl}`);
-      const response = await fetch(data.presignedUrl);
+      log.info(`[YouTube] Fetching analysis data from presigned URL: ${presignedUrl}`);
+      const response = await fetch(presignedUrl);
 
       if (!response.ok) {
         log.error(`[YouTube] Failed to fetch analysis data: ${response.status} ${response.statusText}`);
@@ -90,23 +76,15 @@ export default async function handler(message, context) {
   }
 
   try {
-    const { suggestions = [], company, industryAnalysis } = analysisData;
+    const suggestions = analysisData.suggestions || [];
+    const opportunityData = analysisData.opportunity || {};
 
     if (suggestions.length === 0) {
       log.info('[YouTube] No suggestions found in analysis');
       return noContent();
     }
 
-    log.info(`[YouTube] Processing ${suggestions.length} suggestions for ${company}`);
-
-    const guidance = {
-      insight: `YouTube analysis identified ${suggestions.length} improvement opportunities for ${company}`,
-      rationale: industryAnalysis
-        ? `Based on comparison with ${industryAnalysis.industry} competitors`
-        : 'Based on YouTube channel and content best practices',
-      recommendation: 'Review and implement the suggested improvements to enhance YouTube presence',
-      type: 'CONTENT_UPDATE',
-    };
+    log.info(`[YouTube] Processing ${suggestions.length} suggestions for ${companyName}`);
 
     const opportunity = await convertToOpportunity(
       baseUrl,
@@ -118,7 +96,7 @@ export default async function handler(message, context) {
       context,
       createOpportunityData,
       AUDIT_TYPE,
-      { guidance },
+      { opportunityData },
     );
 
     await syncSuggestions({
@@ -128,9 +106,9 @@ export default async function handler(message, context) {
       buildKey: (suggestion) => `youtube::${suggestion.id}`,
       mapNewSuggestion: (suggestion) => ({
         opportunityId: opportunity.getId(),
-        type: 'CONTENT_UPDATE',
-        rank: getRankFromPriority(suggestion.priority),
-        data: suggestion,
+        type: suggestion.type,
+        rank: suggestion.rank,
+        data: suggestion.data,
       }),
     });
 
@@ -140,7 +118,7 @@ export default async function handler(message, context) {
     });
     await opportunity.save();
 
-    log.info(`[YouTube] Successfully processed YouTube analysis for site: ${siteId}, company: ${company}, ${suggestions.length} suggestions`);
+    log.info(`[YouTube] Successfully processed YouTube analysis for site: ${siteId}, company: ${companyName}, ${suggestions.length} suggestions`);
     return ok();
   } catch (error) {
     log.error(`[YouTube] Error processing YouTube analysis: ${error.message}`, error);
