@@ -118,6 +118,12 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
     return null;
   }
 
+  // Skip 4xx pages when statusCode is present (new scrapes); old scrapes have no statusCode
+  if (object.statusCode != null && object.statusCode >= 400 && object.statusCode < 500) {
+    log.info(`[metatags] Skipping page with HTTP ${object.statusCode} for ${url}`);
+    return null;
+  }
+
   // Check for error pages by content
   const { tags } = object.scrapeResult;
   const title = normalizeTagValue(tags.title);
