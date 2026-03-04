@@ -32,7 +32,7 @@ async function getTopPagesLimit(site, context) {
   const isSummitPlgEnabled = await isAuditEnabledForSite('summit-plg', site, context);
   const pageLimit = isSummitPlgEnabled ? 20 : 100;
   log.debug(`[${AUDIT_TYPE}]: Page limit set to ${pageLimit} (summit-plg enabled: ${isSummitPlgEnabled})`);
-  return pageLimit;
+  return { pageLimit, isSummitPlg: isSummitPlgEnabled };
 }
 
 export async function processImportStep(context) {
@@ -63,7 +63,7 @@ export async function processScraping(context) {
   log.debug(`[${AUDIT_TYPE}]: Processing scraping step for site ${siteId}`);
 
   // Get page limit based on summit-plg configuration
-  const pageLimit = await getTopPagesLimit(site, context);
+  const { pageLimit } = await getTopPagesLimit(site, context);
 
   // Get top pages from ahrefs
   const allTopPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
@@ -146,7 +146,7 @@ export async function processAltTextWithMystique(context) {
     const siteId = site.getId();
 
     // Get page limit based on summit-plg configuration
-    const pageLimit = await getTopPagesLimit(site, context);
+    const { pageLimit, isSummitPlg } = await getTopPagesLimit(site, context);
 
     // Get top pages and included URLs
     const { SiteTopPage } = dataAccess;
@@ -282,6 +282,7 @@ export async function processAltTextWithMystique(context) {
       audit.getId(),
       context,
       imageUrlsWithAltText,
+      isSummitPlg,
     );
 
     log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);

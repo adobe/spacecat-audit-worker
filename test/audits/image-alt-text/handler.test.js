@@ -156,6 +156,7 @@ describe('Image Alt Text Handler', () => {
         'audit-id',
         context,
         [],
+        false,
       );
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Processing alt-text with Mystique for site site-id',
@@ -296,6 +297,7 @@ describe('Image Alt Text Handler', () => {
         'audit-id',
         context,
         [],
+        false,
       );
     });
 
@@ -315,6 +317,7 @@ describe('Image Alt Text Handler', () => {
         'audit-id',
         context,
         [],
+        false,
       );
     });
 
@@ -334,6 +337,7 @@ describe('Image Alt Text Handler', () => {
         'audit-id',
         context,
         [],
+        false,
       );
     });
 
@@ -355,6 +359,7 @@ describe('Image Alt Text Handler', () => {
         'audit-id',
         context,
         [],
+        false,
       );
     });
 
@@ -646,6 +651,7 @@ describe('Image Alt Text Handler', () => {
           'audit-id',
           context,
           ['https://example.com/image1.jpg', 'https://example.com/image3.jpg'],
+          false,
         );
       });
 
@@ -697,6 +703,7 @@ describe('Image Alt Text Handler', () => {
           'audit-id',
           context,
           ['https://example.com/image2.jpg'],
+          false,
         );
       });
 
@@ -1038,6 +1045,7 @@ describe('Image Alt Text Handler', () => {
       expect(sentUrls).to.have.lengthOf(20);
       expect(sentUrls[0]).to.equal('https://example.com/page1');
       expect(sentUrls[19]).to.equal('https://example.com/page20');
+      expect(callArgs[6]).to.equal(true);
 
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Page limit set to 20 (summit-plg enabled: true)',
@@ -1064,6 +1072,7 @@ describe('Image Alt Text Handler', () => {
       expect(sentUrls).to.have.lengthOf(100);
       expect(sentUrls[0]).to.equal('https://example.com/page1');
       expect(sentUrls[99]).to.equal('https://example.com/page100');
+      expect(callArgs[6]).to.equal(false);
 
       expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Page limit set to 100 (summit-plg enabled: false)',
@@ -1104,6 +1113,7 @@ describe('Image Alt Text Handler', () => {
       expect(sentUrls).to.include('https://example.com/page1');
       expect(sentUrls).to.include('https://example.com/page20');
       expect(sentUrls).to.not.include('https://example.com/page21');
+      expect(callArgs[6]).to.equal(true);
     });
 
     it('should handle when isAuditEnabledForSite throws error', async () => {
