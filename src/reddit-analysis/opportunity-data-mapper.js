@@ -30,7 +30,7 @@ export function createOpportunityData({ opportunityData } = {}) {
       || 'Enhance your company\'s Reddit presence to improve brand sentiment and visibility. '
       + 'A well-managed Reddit presence can influence how your brand is perceived in community discussions.',
     status: opportunityData?.status || 'NEW',
-    tags: [...new Set([...(opportunityData?.tags || []), 'isElmo', 'Reddit', 'earned'])],
+    tags: [...new Set([...(opportunityData?.tags || []), 'isElmo', 'Reddit', 'social'])],
     data: {
       ...(opportunityData?.data || {}),
       dataSources: [...new Set([

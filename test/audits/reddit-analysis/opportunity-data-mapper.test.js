@@ -43,7 +43,7 @@ describe('Reddit Analysis Opportunity Data Mapper', () => {
       expect(result.description).to.equal(opportunityData.description);
       expect(result.runbook).to.equal(opportunityData.runbook);
       expect(result.status).to.equal(opportunityData.status);
-      expect(result.tags).to.deep.equal(['Reddit', 'Social Media', 'isElmo', 'earned']);
+      expect(result.tags).to.deep.equal(['Reddit', 'Social Media', 'isElmo', 'social']);
       expect(result.data.dataSources).to.deep.equal(['Site', 'Page']);
       expect(result.origin).to.equal('AUTOMATION');
       expect(result.type).to.equal('reddit-analysis');
@@ -63,7 +63,7 @@ describe('Reddit Analysis Opportunity Data Mapper', () => {
       expect(result.tags).to.be.an('array');
       expect(result.tags).to.include('isElmo');
       expect(result.tags).to.include('Reddit');
-      expect(result.tags).to.include('earned');
+      expect(result.tags).to.include('social');
     });
 
     it('should include default data sources', () => {
@@ -87,12 +87,12 @@ describe('Reddit Analysis Opportunity Data Mapper', () => {
 
     it('should deduplicate tags when opportunityData contains defaults', () => {
       const opportunityData = {
-        tags: ['isElmo', 'Reddit', 'earned', 'custom'],
+        tags: ['isElmo', 'Reddit', 'social', 'custom'],
       };
 
       const result = createOpportunityData({ opportunityData });
 
-      expect(result.tags).to.deep.equal(['isElmo', 'Reddit', 'earned', 'custom']);
+      expect(result.tags).to.deep.equal(['isElmo', 'Reddit', 'social', 'custom']);
     });
 
     it('should deduplicate dataSources when opportunityData contains defaults', () => {
