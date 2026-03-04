@@ -125,7 +125,7 @@ describe('DRS Prompt Generation Handler', () => {
     expect(context.sqs.sendMessage).to.not.have.been.called;
   });
 
-  it('downloads from resultLocation and writes to S3 for non-onboarding source', async () => {
+  it('downloads and writes config for non-onboarding source without triggering audit', async () => {
     const message = {
       siteId: 'site-123',
       auditContext: {
@@ -139,18 +139,11 @@ describe('DRS Prompt Generation Handler', () => {
     const result = await drsPromptGenerationHandler(message, context);
 
     expect(result.status).to.equal(200);
-    // Downloads from presigned URL
     expect(fetchStub).to.have.been.calledOnceWith(PRESIGNED_URL);
-    // Writes to S3
-    expect(context.s3Client.send).to.have.been.called;
-    expect(context.log.info).to.have.been.calledWith(
-      sinon.match('DRS conversion complete for job job-3'),
-    );
-    // But SQS message is not sent
     expect(context.sqs.sendMessage).to.not.have.been.called;
   });
 
-  it('sends llmo-customer-analysis with drs keys on JOB_COMPLETED + onboarding', async () => {
+  it('triggers llmo-customer-analysis on JOB_COMPLETED + onboarding', async () => {
     const message = {
       siteId: 'site-456',
       auditContext: {
@@ -171,8 +164,8 @@ describe('DRS Prompt Generation Handler', () => {
     expect(sentMessage.siteId).to.equal('site-456');
     expect(sentMessage.auditContext.drsJobId).to.equal('job-4');
     expect(sentMessage.auditContext.resultLocation).to.equal(PRESIGNED_URL);
-    expect(sentMessage.auditContext.drsJsonKey).to.include('data.json');
-    expect(sentMessage.auditContext.drsParquetKey).to.include('data.parquet');
+    expect(sentMessage.auditContext).to.not.have.property('drsJsonKey');
+    expect(sentMessage.auditContext).to.not.have.property('drsParquetKey');
   });
 
   it('still triggers audit when presigned URL download fails (graceful degradation)', async () => {
@@ -192,13 +185,9 @@ describe('DRS Prompt Generation Handler', () => {
 
     expect(result.status).to.equal(200);
     expect(context.log.error).to.have.been.calledWith(
-      sinon.match('DRS conversion failed for job job-5'),
+      sinon.match('DRS result processing failed for job job-5'),
     );
-    // Still triggers audit without drs keys
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-    expect(sentMessage.auditContext).to.not.have.property('drsJsonKey');
-    expect(sentMessage.auditContext).to.not.have.property('drsParquetKey');
   });
 
   it('still triggers audit when presigned URL returns non-OK response', async () => {
@@ -250,9 +239,6 @@ describe('DRS Prompt Generation Handler', () => {
       'DRS job job-6 returned no prompts for site site-789',
     );
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
-    const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-    expect(sentMessage.auditContext).to.not.have.property('drsJsonKey');
-    expect(sentMessage.auditContext).to.not.have.property('drsParquetKey');
   });
 
   it('handles DRS result that is a flat array (no .prompts wrapper)', async () => {
@@ -274,9 +260,7 @@ describe('DRS Prompt Generation Handler', () => {
     const result = await drsPromptGenerationHandler(message, context);
 
     expect(result.status).to.equal(200);
-    expect(context.s3Client.send).to.have.been.called;
-    const sentMessage = context.sqs.sendMessage.firstCall.args[1];
-    expect(sentMessage.auditContext.drsJsonKey).to.include('data.json');
+    expect(context.sqs.sendMessage).to.have.been.calledOnce;
   });
 
   it('handles DRS result that is a non-array object without .prompts', async () => {
@@ -303,7 +287,7 @@ describe('DRS Prompt Generation Handler', () => {
     );
   });
 
-  it('sends SQS message with correct structure (no extra fields in auditContext)', async () => {
+  it('sends SQS message with correct structure', async () => {
     const message = {
       siteId: 'site-789',
       auditContext: {
@@ -322,8 +306,6 @@ describe('DRS Prompt Generation Handler', () => {
     expect(sentMessage).to.have.property('siteId', 'site-789');
     expect(sentMessage.auditContext).to.have.property('drsJobId', 'job-7');
     expect(sentMessage.auditContext).to.have.property('resultLocation', PRESIGNED_URL);
-    expect(sentMessage.auditContext).to.have.property('drsJsonKey');
-    expect(sentMessage.auditContext).to.have.property('drsParquetKey');
     expect(sentMessage.auditContext).to.not.have.property('source');
     expect(sentMessage.auditContext).to.not.have.property('drsEventType');
   });
@@ -342,7 +324,7 @@ describe('DRS Prompt Generation Handler', () => {
     expect(context.sqs.sendMessage).to.not.have.been.called;
   });
 
-  it('conversion runs for all sources on JOB_COMPLETED', async () => {
+  it('processes result for all sources on JOB_COMPLETED', async () => {
     const sources = ['onboarding', 'manual', 'api', undefined];
 
     for (const source of sources) {
@@ -374,7 +356,6 @@ describe('DRS Prompt Generation Handler', () => {
       await drsPromptGenerationHandler(message, context);
 
       expect(fetchStub, `fetch should be called for source=${source}`).to.have.been.calledOnceWith(PRESIGNED_URL);
-      expect(context.s3Client.send, `S3 write should happen for source=${source}`).to.have.been.called;
     }
   });
 });
