@@ -167,7 +167,9 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
       expect(result.data.cves[1].score_text).to.equal('8.0 High');
       expect(result.data.cves[2].score_text).to.equal('5.7 Medium');
       expect(result.data.cves[3].score_text).to.equal('0 Low');
-      expect(result.data.dependency_tree).to.be.undefined;
+      expect(result.data.dependency_tree).to.have.lengthOf(2);
+      expect(result.data.dependency_tree[0]).to.equal('[root]');
+      expect(result.data.dependency_tree[1]).to.equal('biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle@3.5.1');
     });
 
     it('should handle different severity levels and same scores', () => {
