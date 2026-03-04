@@ -350,7 +350,7 @@ describe('sendAltTextOpportunityToMystique', () => {
     const imageUrlsWithAltText = ['https://example.com/img1.jpg'];
 
     await sendAltTextOpportunityToMystique(
-      auditUrl, pageUrls, siteId, auditId, context, imageUrlsWithAltText,
+      auditUrl, pageUrls, siteId, auditId, context, imageUrlsWithAltText, true,
     );
 
     expect(sqsStub.sendMessage).to.have.been.calledOnce;
@@ -366,6 +366,7 @@ describe('sendAltTextOpportunityToMystique', () => {
         data: {
           pageUrls: ['https://example.com/page1', 'https://example.com/page2'],
           imageUrlsWithAltText: ['https://example.com/img1.jpg'],
+          isSummitPlg: true,
         },
       }),
     );
@@ -387,7 +388,7 @@ describe('sendAltTextOpportunityToMystique', () => {
     const imageUrlsWithAltText = ['https://example.com/img1.jpg'];
 
     await sendAltTextOpportunityToMystique(
-      auditUrl, pageUrls, siteId, auditId, context, imageUrlsWithAltText,
+      auditUrl, pageUrls, siteId, auditId, context, imageUrlsWithAltText, true,
     );
 
     // Should send 2 batches (10 + 5)
@@ -397,11 +398,13 @@ describe('sendAltTextOpportunityToMystique', () => {
     const firstCall = sqsStub.sendMessage.getCall(0);
     expect(firstCall.args[1].data.pageUrls).to.have.lengthOf(10);
     expect(firstCall.args[1].data.imageUrlsWithAltText).to.deep.equal(['https://example.com/img1.jpg']);
+    expect(firstCall.args[1].data.isSummitPlg).to.equal(true);
 
     // Second batch should have 5 URLs and full imageUrlsWithAltText
     const secondCall = sqsStub.sendMessage.getCall(1);
     expect(secondCall.args[1].data.pageUrls).to.have.lengthOf(5);
     expect(secondCall.args[1].data.imageUrlsWithAltText).to.deep.equal(['https://example.com/img1.jpg']);
+    expect(secondCall.args[1].data.isSummitPlg).to.equal(true);
 
     expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Sending 15 URLs to Mystique in 2 batch(es)',
@@ -420,7 +423,7 @@ describe('sendAltTextOpportunityToMystique', () => {
     const error = new Error('SQS send failed');
     sqsStub.sendMessage.rejects(error);
 
-    await expect(sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context, []))
+    await expect(sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context, [], false))
       .to.be.rejectedWith('SQS send failed');
 
     expect(logStub.error).to.have.been.calledWith(
@@ -437,7 +440,7 @@ describe('sendAltTextOpportunityToMystique', () => {
     const error = new Error('Site not found');
     dataAccessStub.Site.findById.rejects(error);
 
-    await expect(sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context, []))
+    await expect(sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context, [], false))
       .to.be.rejectedWith('Site not found');
 
     expect(logStub.error).to.have.been.calledWith(
@@ -460,6 +463,7 @@ describe('sendAltTextOpportunityToMystique', () => {
         data: {
           pageUrls: ['https://example.com/page1'],
           imageUrlsWithAltText: [],
+          isSummitPlg: false,
         },
       }),
     );

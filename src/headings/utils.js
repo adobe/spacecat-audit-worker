@@ -15,6 +15,83 @@
  */
 
 /**
+ * CSS selectors for containers that hold cookie/consent/privacy UI.
+ * Headings inside these are excluded from TOC extraction.
+ * Does not include generic [role="dialog"] / [aria-modal="true"] to avoid
+ * excluding legitimate content.
+ */
+export const TOC_EXCLUDED_CONTAINER_SELECTORS = [
+  '#onetrust-consent-sdk',
+  '#onetrust-pc-sdk',
+  '.ot-pc-sdk',
+  '[id^="onetrust-"]',
+  '#CybotCookiebotDialog',
+  '#CookiebotWidget',
+  '[id*="CybotCookiebot"]',
+  '#cookie-banner',
+  '#consent-modal',
+  '.privacy-preference',
+  '.cookie-consent',
+  '[id*="cookie"]',
+  '[id*="consent"]',
+  '[class*="cookie-banner"]',
+  '[class*="cookie-consent"]',
+  '[class*="privacy-preference"]',
+  '[class*="onetrust"]',
+];
+
+/**
+ * Heading text phrases that indicate cookie/consent/privacy UI (matched case-insensitive).
+ * Headings whose normalized text matches are excluded from TOC extraction.
+ */
+export const TOC_EXCLUDED_HEADING_PHRASES = [
+  'privacy preference center',
+  'cookie settings',
+  'manage preferences',
+  'privacy options',
+  'cookie consent',
+  'your privacy choices',
+  'manage cookies',
+  'privacy settings',
+  'cookie preferences',
+];
+
+/**
+ * Normalize heading text for phrase matching: trim, lowercase, collapse whitespace
+ * @param {string} text - Raw heading text
+ * @returns {string} Normalized text
+ */
+export function normalizeHeadingTextForMatch(text) {
+  if (typeof text !== 'string') return '';
+  return text.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Check if heading text matches any excluded consent phrase
+ * @param {string} text - Heading text
+ * @returns {boolean} True if text matches an excluded phrase
+ */
+export function isExcludedConsentHeadingText(text) {
+  const normalized = normalizeHeadingTextForMatch(text);
+  if (!normalized) return false;
+  return TOC_EXCLUDED_HEADING_PHRASES.some(
+    (phrase) => normalized.includes(phrase) || phrase.includes(normalized),
+  );
+}
+
+/**
+ * Check if a heading is inside an excluded container (cookie/consent/privacy UI)
+ * @param {Element} heading - The heading DOM element
+ * @param {CheerioAPI} $ - The Cheerio instance
+ * @returns {boolean} True if heading is inside an excluded container
+ */
+export function isHeadingInExcludedContainer(heading, $) {
+  if (!heading || !$) return false;
+  const $heading = $(heading);
+  return TOC_EXCLUDED_CONTAINER_SELECTORS.some((selector) => $heading.closest(selector).length > 0);
+}
+
+/**
  * Extract heading level from tag name
  * @param {string} tagName - The heading tag name (e.g., 'H1', 'H2')
  * @returns {number} The heading level (1-6)
@@ -192,20 +269,33 @@ export function getScrapeJsonPath(url, siteId) {
 }
 
 /**
- * Extract TOC data from document headings
+ * Extract TOC data from document headings.
+ * Excludes headings inside cookie/consent/privacy containers and headings whose
+ * text matches consent phrases. When <main> exists, only headings inside
+ * body > main are considered.
  * @param {CheerioAPI} $ - The Cheerio instance
  * @param {Function} getHeadingSelectorFn - Function to get heading selector
  * @returns {Array<Object>} Array of TOC items with text, level, and selector
  */
 export function extractTocData($, getHeadingSelectorFn) {
-  const headings = $('h1, h2').toArray();
+  const hasMain = $('body > main').length > 0;
+  const headings = hasMain
+    ? $('body > main h1, body > main h2').toArray()
+    : $('h1, h2').toArray();
 
-  return headings.map((h) => {
-    const text = $(h).text().trim();
-    const level = getHeadingLevel(h.name);
-    const selector = getHeadingSelectorFn(h);
-    return { text, level, selector };
-  });
+  return headings
+    .filter((h) => {
+      const text = $(h).text().trim();
+      if (isHeadingInExcludedContainer(h, $)) return false;
+      if (isExcludedConsentHeadingText(text)) return false;
+      return true;
+    })
+    .map((h) => {
+      const text = $(h).text().trim();
+      const level = getHeadingLevel(h.name);
+      const selector = getHeadingSelectorFn(h);
+      return { text, level, selector };
+    });
 }
 
 /**
