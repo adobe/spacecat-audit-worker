@@ -12,6 +12,55 @@
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import writeDrsPromptsToLlmoConfig from './drs-config-writer.js';
+import { postMessageSafe } from '../utils/slack-utils.js';
+
+const RUNBOOK_URL = 'https://github.com/adobe/spacecat-audit-worker/blob/main/docs/runbooks/resubmit-drs-prompt-generation.md';
+
+/**
+ * Sends a Slack alert to the LLMO onboarding channel when prompt generation fails.
+ */
+async function alertPromptGenerationFailure(context, siteId, drsJobId, reason) {
+  const channelId = process.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID;
+  if (!channelId) return;
+
+  await postMessageSafe(context, channelId, '', {
+    attachments: [{
+      color: '#CB3837',
+      blocks: [
+        {
+          type: 'header',
+          text: {
+            type: 'plain_text',
+            text: 'AI Prompt Generation Failed',
+            emoji: true,
+          },
+        },
+        {
+          type: 'section',
+          fields: [
+            { type: 'mrkdwn', text: `*Site ID:*\n\`${siteId}\`` },
+            { type: 'mrkdwn', text: `*DRS Job:*\n\`${drsJobId || 'N/A'}\`` },
+          ],
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*Reason:* ${reason}`,
+          },
+        },
+        {
+          type: 'context',
+          elements: [{
+            type: 'mrkdwn',
+            text: `<${RUNBOOK_URL}|Runbook: Resubmit DRS Prompt Generation>`,
+          }],
+        },
+        { type: 'divider' },
+      ],
+    }],
+  });
+}
 
 /**
  * Downloads DRS result and writes prompts to the LLMO config as aiTopics.
@@ -63,7 +112,7 @@ async function processDrsResult(resultLocation, jobId, siteId, context) {
  *
  * On JOB_COMPLETED: downloads DRS result, writes prompts to LLMO config as aiTopics.
  * On JOB_COMPLETED + source=onboarding: additionally triggers llmo-customer-analysis.
- * On JOB_FAILED: logs the failure (prompts can be generated manually later).
+ * On JOB_FAILED: logs the failure and sends a Slack alert.
  *
  * Processing is non-fatal — if the download or config write fails, the handler
  * still triggers the downstream audit.
@@ -88,6 +137,7 @@ export default async function drsPromptGenerationHandler(message, context) {
 
   if (drsEventType === 'JOB_FAILED') {
     log.error(`DRS prompt generation job ${drsJobId} failed for site ${siteId}. Prompts can be generated manually via DRS dashboard.`);
+    await alertPromptGenerationFailure(context, siteId, drsJobId, 'DRS job failed');
     return ok();
   }
 
@@ -99,7 +149,16 @@ export default async function drsPromptGenerationHandler(message, context) {
   log.info(`DRS prompt generation completed for site ${siteId}, job ${drsJobId}, result: ${resultLocation}`);
 
   // Download DRS result and write prompts to LLMO config (non-fatal)
-  await processDrsResult(resultLocation, drsJobId, siteId, context);
+  const success = await processDrsResult(resultLocation, drsJobId, siteId, context);
+
+  if (!success) {
+    await alertPromptGenerationFailure(
+      context,
+      siteId,
+      drsJobId,
+      'Failed to download or write prompts to LLMO config',
+    );
+  }
 
   if (source !== 'onboarding') {
     log.info(`DRS job ${drsJobId} was not triggered by onboarding (source: ${source}), skipping llmo-customer-analysis trigger`);

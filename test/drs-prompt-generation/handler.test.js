@@ -13,7 +13,7 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import drsPromptGenerationHandler from '../../src/drs-prompt-generation/handler.js';
+import esmock from 'esmock';
 import { MockContextBuilder } from '../shared.js';
 
 use(sinonChai);
@@ -23,6 +23,8 @@ describe('DRS Prompt Generation Handler', () => {
   let context;
   let mockConfiguration;
   let fetchStub;
+  let drsPromptGenerationHandler;
+  let mockPostMessageSafe;
 
   const AUDITS_QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue';
   const PRESIGNED_URL = 'https://drs-bucket.s3.amazonaws.com/results/job-1/data.json?X-Amz-Signature=abc';
@@ -41,7 +43,15 @@ describe('DRS Prompt Generation Handler', () => {
     sandbox = sinon.createSandbox();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    mockPostMessageSafe = sandbox.stub().resolves({ success: true });
+    process.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID = 'C-TEST-CHANNEL';
+
+    const handler = await esmock('../../src/drs-prompt-generation/handler.js', {
+      '../../src/utils/slack-utils.js': { postMessageSafe: mockPostMessageSafe },
+    });
+    drsPromptGenerationHandler = handler.default;
+
     mockConfiguration = {
       getQueues: sandbox.stub().returns({ audits: AUDITS_QUEUE_URL }),
     };
@@ -64,6 +74,7 @@ describe('DRS Prompt Generation Handler', () => {
 
   afterEach(() => {
     sandbox.restore();
+    delete process.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID;
   });
 
   it('returns ok and logs error when siteId is missing', async () => {
@@ -85,7 +96,7 @@ describe('DRS Prompt Generation Handler', () => {
     expect(context.sqs.sendMessage).to.not.have.been.called;
   });
 
-  it('returns ok and logs error on JOB_FAILED event', async () => {
+  it('returns ok, logs error, and sends Slack alert on JOB_FAILED event', async () => {
     const message = {
       siteId: 'site-123',
       auditContext: {
@@ -103,6 +114,11 @@ describe('DRS Prompt Generation Handler', () => {
       'DRS prompt generation job job-fail-1 failed for site site-123. Prompts can be generated manually via DRS dashboard.',
     );
     expect(context.sqs.sendMessage).to.not.have.been.called;
+    expect(mockPostMessageSafe).to.have.been.calledOnce;
+    const { attachments } = mockPostMessageSafe.firstCall.args[3];
+    expect(attachments[0].color).to.equal('#CB3837');
+    expect(JSON.stringify(attachments)).to.include('site-123');
+    expect(JSON.stringify(attachments)).to.include('Runbook');
   });
 
   it('returns ok and logs warn on unexpected event type', async () => {
@@ -168,7 +184,7 @@ describe('DRS Prompt Generation Handler', () => {
     expect(sentMessage.auditContext).to.not.have.property('drsParquetKey');
   });
 
-  it('still triggers audit when presigned URL download fails (graceful degradation)', async () => {
+  it('still triggers audit and sends Slack alert when presigned URL download fails', async () => {
     fetchStub.rejects(new Error('Network error'));
 
     const message = {
@@ -188,6 +204,7 @@ describe('DRS Prompt Generation Handler', () => {
       sinon.match('DRS result processing failed for job job-5'),
     );
     expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    expect(mockPostMessageSafe).to.have.been.calledOnce;
   });
 
   it('still triggers audit when presigned URL returns non-OK response', async () => {
@@ -329,6 +346,16 @@ describe('DRS Prompt Generation Handler', () => {
 
     for (const source of sources) {
       sandbox.restore();
+
+      const localPostMessageSafe = sandbox.stub().resolves({ success: true });
+      process.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID = 'C-TEST-CHANNEL';
+
+      // eslint-disable-next-line no-await-in-loop
+      const handler = await esmock('../../src/drs-prompt-generation/handler.js', {
+        '../../src/utils/slack-utils.js': { postMessageSafe: localPostMessageSafe },
+      });
+      const localHandler = handler.default;
+
       context = new MockContextBuilder()
         .withSandbox(sandbox)
         .build();
@@ -353,7 +380,7 @@ describe('DRS Prompt Generation Handler', () => {
       };
 
       // eslint-disable-next-line no-await-in-loop
-      await drsPromptGenerationHandler(message, context);
+      await localHandler(message, context);
 
       expect(fetchStub, `fetch should be called for source=${source}`).to.have.been.calledOnceWith(PRESIGNED_URL);
     }
