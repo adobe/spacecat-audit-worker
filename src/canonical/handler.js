@@ -502,7 +502,7 @@ export async function processScrapedContent(context) {
         }
 
         // Check if canonical is nonempty
-        if (!hasText(canonicalUrl)) {
+        if (!hasText(canonicalUrl) || !canonicalUrl.trim()) {
           canonicalTagChecks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
             success: false,
