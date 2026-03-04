@@ -196,7 +196,7 @@ describe('Frescopa Data Generation Handler', () => {
       expect(mockDocument.delete).to.have.callCount(6);
     });
 
-    it('should publish all 5 files for each report type', async () => {
+    it('should publish all files for each report type', async () => {
       const message = {
         auditContext: {
           weekIdentifier: 'w05-2025',

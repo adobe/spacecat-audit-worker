@@ -442,7 +442,7 @@ async function run(message, context) {
         }
 
         log.info(
-          `%s: Found 5 files for ${filePrefix}. Newest: ${newestWeek}, Creating: ${targetWeekIdentifier}`,
+          `%s: Found ${REQUIRED_FILE_COUNT} files for ${filePrefix}. Newest: ${newestWeek}, Creating: ${targetWeekIdentifier}`,
           AUDIT_NAME,
         );
 
