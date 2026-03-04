@@ -57,6 +57,11 @@ describe('Frescopa Data Generation Handler', () => {
       { path: '/frescopa.coffee/referral-traffic/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
       { path: '/frescopa.coffee/referral-traffic/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
       { path: '/frescopa.coffee/referral-traffic/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
+      { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
+      { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
+      { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
+      { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
+      { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
     ],
   };
 
@@ -132,7 +137,7 @@ describe('Frescopa Data Generation Handler', () => {
 
       expect(response.status).to.equal(200);
       expect(result).to.have.property('targetWeekIdentifier', 'w05-2025');
-      expect(result.results).to.have.lengthOf(5);
+      expect(result.results).to.have.lengthOf(6);
       expect(result.errors).to.have.lengthOf(0);
 
       // Verify each report type was processed
@@ -142,6 +147,11 @@ describe('Frescopa Data Generation Handler', () => {
       expect(reportTypes).to.include('agentictraffic-errors-5xx');
       expect(reportTypes).to.include('brandpresence-chatgpt');
       expect(reportTypes).to.include('referral-traffic');
+      const referralTrafficFolders = result.results
+        .filter((r) => r.filePrefix === 'referral-traffic')
+        .map((r) => r.folder);
+      expect(referralTrafficFolders).to.include('referral-traffic');
+      expect(referralTrafficFolders).to.include('referral-traffic-aa');
 
       // Verify operations were performed
       result.results.forEach((report) => {
@@ -160,8 +170,8 @@ describe('Frescopa Data Generation Handler', () => {
 
       await handlerModule.default.run(message, context);
 
-      // Verify copy was called for each report type (5 times total)
-      expect(mockDocument.copy).to.have.callCount(5);
+      // Verify copy was called for each report type (6 times total)
+      expect(mockDocument.copy).to.have.callCount(6);
 
       // Verify copy paths for agentic-traffic
       const copyCall = mockDocument.copy.getCall(0);
@@ -179,11 +189,11 @@ describe('Frescopa Data Generation Handler', () => {
 
       await handlerModule.default.run(message, context);
 
-      // Verify move was called 20 times (4 moves per report type × 5 types)
-      expect(mockDocument.move).to.have.callCount(20);
+      // Verify move was called 24 times (4 moves per report type × 6 types)
+      expect(mockDocument.move).to.have.callCount(24);
 
-      // Verify delete was called 5 times (once per report type, only on first iteration)
-      expect(mockDocument.delete).to.have.callCount(5);
+      // Verify delete was called 6 times (once per report type, only on first iteration)
+      expect(mockDocument.delete).to.have.callCount(6);
     });
 
     it('should publish all 5 files for each report type', async () => {
@@ -195,8 +205,8 @@ describe('Frescopa Data Generation Handler', () => {
 
       await handlerModule.default.run(message, context);
 
-      // 5 files × 5 report types = 25 publish calls
-      expect(publishToAdminHlxStub).to.have.callCount(25);
+      // 5 files × 6 report types = 30 publish calls
+      expect(publishToAdminHlxStub).to.have.callCount(30);
     });
 
     it('should calculate target week automatically when not provided', async () => {
@@ -242,6 +252,11 @@ describe('Frescopa Data Generation Handler', () => {
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w05-2025.json', lastModified: '2025-01-27' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
         ],
       };
 
@@ -282,6 +297,11 @@ describe('Frescopa Data Generation Handler', () => {
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
         ],
       };
 
@@ -300,7 +320,7 @@ describe('Frescopa Data Generation Handler', () => {
       const result = await response.json();
 
       expect(response.status).to.equal(200);
-      expect(result.results).to.have.lengthOf(2); // Only brand-presence and referral-traffic
+      expect(result.results).to.have.lengthOf(3); // brand-presence, referral-traffic, referral-traffic-aa
       expect(result.errors).to.have.lengthOf(3);
       expect(result.errors[0].filePrefix).to.equal('agentictraffic');
       expect(result.errors[0].error).to.include('Insufficient files');
@@ -327,7 +347,7 @@ describe('Frescopa Data Generation Handler', () => {
       const result = await response.json();
 
       expect(response.status).to.equal(200);
-      expect(result.results).to.have.lengthOf(4); // errors-404, errors-5xx, brand-presence, referral-traffic succeeded
+      expect(result.results).to.have.lengthOf(5); // errors-404, errors-5xx, brand-presence, referral-traffic, referral-traffic-aa succeeded
       expect(result.errors).to.have.lengthOf(1);
       expect(result.errors[0].filePrefix).to.equal('agentictraffic');
     });
@@ -542,6 +562,11 @@ describe('Frescopa Data Generation Handler', () => {
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w50-2024.json', lastModified: '2024-12-15' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w49-2024.json', lastModified: '2024-12-08' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w48-2024.json', lastModified: '2024-12-01' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w52-2024.json', lastModified: '2024-12-29' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w51-2024.json', lastModified: '2024-12-22' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w50-2024.json', lastModified: '2024-12-15' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w49-2024.json', lastModified: '2024-12-08' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w48-2024.json', lastModified: '2024-12-01' },
         ],
       };
 
@@ -563,7 +588,7 @@ describe('Frescopa Data Generation Handler', () => {
         // The sliding window should succeed: copy w52-2024 to create w01-2025
         expect(response.status).to.equal(200);
         expect(result.targetWeekIdentifier).to.equal('w01-2025'); // Current week from Jan 5, 2025
-        expect(result.results).to.have.lengthOf(5); // Should succeed for all 5 report types
+        expect(result.results).to.have.lengthOf(6); // Should succeed for all 6 report types
         expect(result.errors).to.have.lengthOf(0);
         
         // Verify operations were performed
@@ -604,6 +629,9 @@ describe('Frescopa Data Generation Handler', () => {
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w51-2023.json', lastModified: '2023-12-24' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w50-2023.json', lastModified: '2023-12-17' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w49-2023.json', lastModified: '2023-12-10' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w51-2023.json', lastModified: '2023-12-24' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w50-2023.json', lastModified: '2023-12-17' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w49-2023.json', lastModified: '2023-12-10' },
         ],
       };
 
@@ -656,6 +684,9 @@ describe('Frescopa Data Generation Handler', () => {
       expect(mockSharepointClient.getDocument).to.have.been.calledWith(
         sinon.match(/\/sites\/elmo-ui-data\/frescopa\.coffee\/referral-traffic\/referral-traffic-w\d{2}-\d{4}\.xlsx/),
       );
+      expect(mockSharepointClient.getDocument).to.have.been.calledWith(
+        sinon.match(/\/sites\/elmo-ui-data\/frescopa\.coffee\/referral-traffic-aa\/referral-traffic-w\d{2}-\d{4}\.xlsx/),
+      );
     });
   });
 
@@ -694,7 +725,7 @@ describe('Frescopa Data Generation Handler', () => {
 
       // Should handle gracefully and return success with errors for all types
       expect(response.status).to.equal(200);
-      expect(result.errors).to.have.lengthOf(5);
+      expect(result.errors).to.have.lengthOf(6);
       result.errors.forEach((error) => {
         expect(error.error).to.include('Insufficient files');
       });
@@ -718,7 +749,7 @@ describe('Frescopa Data Generation Handler', () => {
 
       // Should handle gracefully and return success with errors for all types
       expect(response.status).to.equal(200);
-      expect(result.errors).to.have.lengthOf(5);
+      expect(result.errors).to.have.lengthOf(6);
       result.errors.forEach((error) => {
         expect(error.error).to.include('Insufficient files');
       });
@@ -738,6 +769,11 @@ describe('Frescopa Data Generation Handler', () => {
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
         ],
       };
 
@@ -756,7 +792,7 @@ describe('Frescopa Data Generation Handler', () => {
       const result = await response.json();
 
       expect(response.status).to.equal(200);
-      expect(result.results).to.have.lengthOf(2); // Only brand-presence and referral-traffic
+      expect(result.results).to.have.lengthOf(3); // brand-presence, referral-traffic, referral-traffic-aa
       expect(result.errors).to.have.lengthOf(3);
       expect(result.errors[0].filePrefix).to.equal('agentictraffic');
       expect(context.log.warn).to.have.been.calledWith(
@@ -793,6 +829,11 @@ describe('Frescopa Data Generation Handler', () => {
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
           { path: '/frescopa.coffee/referral-traffic/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w04-2025.json', lastModified: '2025-01-20' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w03-2025.json', lastModified: '2025-01-13' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w02-2025.json', lastModified: '2025-01-06' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w01-2025.json', lastModified: '2024-12-30' },
+          { path: '/frescopa.coffee/referral-traffic-aa/referral-traffic-w52-2024.json', lastModified: '2024-12-23' },
         ],
       };
 
@@ -812,7 +853,7 @@ describe('Frescopa Data Generation Handler', () => {
 
       // Should still process successfully with correct ordering
       expect(response.status).to.equal(200);
-      expect(result.results).to.have.lengthOf(5);
+      expect(result.results).to.have.lengthOf(6);
     });
   });
 
@@ -842,7 +883,7 @@ describe('Frescopa Data Generation Handler', () => {
 
       // Should still succeed even though unpublish failed
       expect(response.status).to.equal(200);
-      expect(result.results).to.have.lengthOf(5);
+      expect(result.results).to.have.lengthOf(6);
       
       // Verify warning was logged
       expect(context.log.warn).to.have.been.calledWith(
@@ -874,7 +915,7 @@ describe('Frescopa Data Generation Handler', () => {
 
       // Should still succeed even though unpublish threw an error
       expect(response.status).to.equal(200);
-      expect(result.results).to.have.lengthOf(5);
+      expect(result.results).to.have.lengthOf(6);
       
       // Verify error was logged
       expect(context.log.error).to.have.been.calledWith(

@@ -44,6 +44,11 @@ const FILE_CONFIGS = [
     destinationFolder: 'referral-traffic',
     filePrefix: 'referral-traffic',
   },
+  {
+    type: 'referral-traffic',
+    destinationFolder: 'referral-traffic-aa',
+    filePrefix: 'referral-traffic',
+  },
 ];
 
 /**
@@ -157,19 +162,23 @@ function getTargetWeekIdentifier(date = new Date()) {
  * Gets the last N files for a given file prefix from the query index.
  * @param {Array<{ path: string, lastModified: string }>} files - Array of file entries
  * @param {string} filePrefix - The file prefix to match
+ * @param {string} destinationFolder - The folder to filter by (disambiguates same-prefix files)
  * @param {number} count - Number of most recent files to return
  * @param {object} log - Logger instance
  * @returns {Array<{ path: string, weekIdentifier: string }>} Array of most recent files
  */
-function getLastNFiles(files, filePrefix, count, log) {
+function getLastNFiles(files, filePrefix, destinationFolder, count, log) {
   // Append '-w' to filePrefix for more exact matching (e.g., 'agentictraffic-w')
   const matchPrefix = `${filePrefix}-w`;
+  const folderPath = `/${DATA_FOLDER}/${destinationFolder}/`;
 
-  // Filter files that match the prefix pattern
+  // Filter files that match the prefix and folder
   const matchingFiles = files
     .filter((file) => {
       const filename = file.path.split('/').pop();
-      return filename.startsWith(matchPrefix) && WEEK_PATTERN.test(filename);
+      return file.path.includes(folderPath)
+        && filename.startsWith(matchPrefix)
+        && WEEK_PATTERN.test(filename);
     })
     .map((file) => {
       const filename = file.path.split('/').pop();
@@ -407,6 +416,7 @@ async function run(message, context) {
         const last5Files = getLastNFiles(
           queryIndexFiles,
           filePrefix,
+          destinationFolder,
           REQUIRED_FILE_COUNT,
           log,
         );
