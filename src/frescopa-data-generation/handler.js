@@ -25,12 +25,12 @@ const FILE_CONFIGS = [
     filePrefix: 'agentictraffic',
   },
   {
-    type: 'agentic-traffic',
+    type: 'agentic-traffic-errors-404',
     destinationFolder: 'agentic-traffic',
     filePrefix: 'agentictraffic-errors-404',
   },
   {
-    type: 'agentic-traffic',
+    type: 'agentic-traffic-errors-5xx',
     destinationFolder: 'agentic-traffic',
     filePrefix: 'agentictraffic-errors-5xx',
   },
@@ -281,12 +281,12 @@ async function unpublishFromAdminHlx(filename, folder, log) {
  * @returns {Promise<Array<{ fileName: string, operation: string, status: string }>>} Results
  */
 async function performSlidingWindow(sharepointClient, files, targetWeekId, config, log) {
-  const { destinationFolder, filePrefix } = config;
+  const { type, destinationFolder, filePrefix } = config;
   const operations = [];
 
   try {
     log.info(
-      `%s: Starting sliding window for ${filePrefix}, target week: ${targetWeekId}`,
+      `%s: Starting sliding window for ${type}, target week: ${targetWeekId}`,
       AUDIT_NAME,
     );
 
@@ -353,11 +353,11 @@ async function performSlidingWindow(sharepointClient, files, targetWeekId, confi
       status: 'success',
     });
 
-    log.info(`%s: Sliding window completed for ${filePrefix}`, AUDIT_NAME);
+    log.info(`%s: Sliding window completed for ${type}`, AUDIT_NAME);
     return operations;
   } catch (error) {
     log.error(
-      `%s: Error during sliding window for ${filePrefix}: ${error.message}`,
+      `%s: Error during sliding window for ${type}: ${error.message}`,
       AUDIT_NAME,
       error,
     );
