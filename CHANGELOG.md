@@ -1,3 +1,17 @@
+## [1.339.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.339.1...v1.339.2) (2026-03-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v3.6.2 ([#2072](https://github.com/adobe/spacecat-audit-worker/issues/2072)) ([f2edf48](https://github.com/adobe/spacecat-audit-worker/commit/f2edf48d28396ac40b9a64ec4f8df14ff6500c3c))
+
+## [1.339.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.339.0...v1.339.1) (2026-03-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-vault-secrets to v1.1.0 ([#2071](https://github.com/adobe/spacecat-audit-worker/issues/2071)) ([43a3235](https://github.com/adobe/spacecat-audit-worker/commit/43a32355d68c9ed9873c6fcc60f1bb390a9066fe))
+
 # [1.339.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.338.1...v1.339.0) (2026-03-03)
 
 
