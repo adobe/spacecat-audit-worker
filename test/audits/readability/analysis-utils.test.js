@@ -809,6 +809,34 @@ describe('Readability Analysis Utils', () => {
       expect(result.length).to.equal(0);
     });
 
+    it('should skip elements with excessive whitespace (table/grid content)', async () => {
+      // Simulates text extracted from table layouts with lots of padding
+      const paddedText = 'Feature                                          Our sustainability impact                                                                                                                                                                Feature                                          ';
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <body>
+            <div>${paddedText}</div>
+          </body>
+        </html>
+      `;
+
+      mockFranc.returns('eng');
+      mockIsSupportedLanguage.returns(true);
+      mockGetLanguageName.returns('english');
+
+      const result = await analyzePageContent(
+        html,
+        'https://example.com/page',
+        1000,
+        mockLog,
+        '2025-01-01T00:00:00.000Z',
+      );
+
+      expect(result).to.be.an('array');
+      expect(result.length).to.equal(0);
+    });
+
     it('should log debug message with detected languages', async () => {
       const text = 'This is a test sentence with enough words for proper language detection and analysis.';
       const html = createHtmlWithParagraph(text);
