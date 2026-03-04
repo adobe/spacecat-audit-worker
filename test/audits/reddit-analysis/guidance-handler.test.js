@@ -133,7 +133,7 @@ describe('Reddit Analysis Guidance Handler', () => {
         description: 'Custom description from Mystique',
         runbook: 'https://adobe.sharepoint.com/sites/reddit-analysis',
         origin: 'ESS_OPS',
-        tags: ['Reddit', 'Social Media', 'earned', 'isElmo'],
+        tags: ['Reddit', 'Social Media', 'social', 'isElmo'],
       };
       const message = {
         siteId,
