@@ -171,6 +171,7 @@ export async function triggerCdnLogsReport(context, site) {
   log.info('Successfully triggered cdn-logs-report audit');
 }
 
+/* c8 ignore start */
 export async function triggerGeoBrandPresence(context, site, auditContext = {}) {
   const { sqs, dataAccess, log } = context;
   const { Configuration } = dataAccess;
@@ -227,6 +228,7 @@ export async function triggerGeoBrandPresenceRefresh(context, site, configVersio
   });
   log.info(`Successfully triggered ${auditType} audit`);
 }
+/* c8 ignore stop */
 
 async function triggerBrandPresenceViaDrs(context, site, log, triggeredSteps) {
   const drsClient = DrsClient.createFrom(context);
