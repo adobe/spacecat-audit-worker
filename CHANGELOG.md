@@ -1,3 +1,10 @@
+# [1.340.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.339.3...v1.340.0) (2026-03-04)
+
+
+### Features
+
+* add isSummitPlg flag to send to mystique for alt-text ([#2070](https://github.com/adobe/spacecat-audit-worker/issues/2070)) ([31d2022](https://github.com/adobe/spacecat-audit-worker/commit/31d2022bd6a1ac75096bb62ca12a47ef3b4964c8))
+
 ## [1.339.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.339.2...v1.339.3) (2026-03-04)
 
 
