@@ -450,7 +450,7 @@ describe('Readability Opportunities Guidance Handler', () => {
   });
 
   describe('buildKey function', () => {
-    it('should use pageUrl and hash of originalText as key', async () => {
+    it('should use pageUrl and selector as key', async () => {
       const message = {
         auditId: 'audit-123',
         siteId: 'site-1',
@@ -464,12 +464,12 @@ describe('Readability Opportunities Guidance Handler', () => {
 
       const key = buildKey({
         pageUrl: 'https://example.com/page1',
-        originalText: 'Original complex text with many words.',
+        selector: '#content p:nth-child(1)',
       });
-      expect(key).to.match(/^https:\/\/example\.com\/page1\|[a-f0-9]{12}$/);
+      expect(key).to.equal('https://example.com/page1-#content p:nth-child(1)');
     });
 
-    it('should produce different keys for different originalText on the same page', async () => {
+    it('should produce different keys for different selectors on the same page', async () => {
       const message = {
         auditId: 'audit-123',
         siteId: 'site-1',
@@ -481,25 +481,105 @@ describe('Readability Opportunities Guidance Handler', () => {
       const syncArgs = syncSuggestionsStub.getCall(0).args[0];
       const { buildKey } = syncArgs;
 
-      const key1 = buildKey({ pageUrl: 'https://example.com/page1', originalText: 'First paragraph.' });
-      const key2 = buildKey({ pageUrl: 'https://example.com/page1', originalText: 'Second paragraph.' });
+      const key1 = buildKey({ pageUrl: 'https://example.com/page1', selector: '#content p:nth-child(1)' });
+      const key2 = buildKey({ pageUrl: 'https://example.com/page1', selector: '#content p:nth-child(2)' });
       expect(key1).to.not.equal(key2);
     });
+  });
 
-    it('should handle null originalText gracefully', async () => {
+  describe('null selector filtering', () => {
+    it('should filter out suggestions with null selector', async () => {
+      const resultsWithNullSelector = [
+        {
+          status: 'success',
+          selector: null,
+          data: {
+            page_url: 'https://example.com/page1',
+            original_paragraph: 'Text without selector.',
+            current_flesch_score: 30,
+            improved_paragraph: 'Improved text.',
+            improved_flesch_score: 70,
+            seo_recommendation: 'Simplify',
+            ai_rationale: 'Shorter sentences',
+          },
+        },
+        {
+          status: 'success',
+          selector: '#content p:nth-child(1)',
+          data: {
+            page_url: 'https://example.com/page1',
+            original_paragraph: 'Original text.',
+            current_flesch_score: 25,
+            improved_paragraph: 'Simple text.',
+            improved_flesch_score: 75,
+            seo_recommendation: 'Simplify',
+            ai_rationale: 'Shorter sentences',
+          },
+        },
+      ];
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(resultsWithNullSelector)),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
       const message = {
         auditId: 'audit-123',
         siteId: 'site-1',
         data: { s3ResultsPath: 'results/path.json' },
       };
 
-      await handler.default(message, mockContext);
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ ok: true });
 
       const syncArgs = syncSuggestionsStub.getCall(0).args[0];
-      const { buildKey } = syncArgs;
+      expect(syncArgs.newData).to.have.length(1);
+      expect(syncArgs.newData[0].selector).to.equal('#content p:nth-child(1)');
+    });
 
-      const key = buildKey({ pageUrl: 'https://example.com/page1', originalText: null });
-      expect(key).to.match(/^https:\/\/example\.com\/page1\|[a-f0-9]{12}$/);
+    it('should return noContent when all suggestions have null selector', async () => {
+      const allNullSelectors = [
+        {
+          status: 'success',
+          selector: null,
+          data: {
+            page_url: 'https://example.com/page1',
+            original_paragraph: 'Text.',
+            current_flesch_score: 30,
+            improved_paragraph: 'Better text.',
+            improved_flesch_score: 70,
+            seo_recommendation: 'Simplify',
+            ai_rationale: 'Reason',
+          },
+        },
+      ];
+
+      mockS3Client.send.callsFake((command) => {
+        if (command.input?.Key) {
+          return Promise.resolve({
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify(allNullSelectors)),
+            },
+          });
+        }
+        return Promise.resolve();
+      });
+
+      const message = {
+        auditId: 'audit-123',
+        siteId: 'site-1',
+        data: { s3ResultsPath: 'results/path.json' },
+      };
+
+      const result = await handler.default(message, mockContext);
+      expect(result).to.deep.equal({ noContent: true });
+      expect(syncSuggestionsStub).to.not.have.been.called;
     });
   });
 

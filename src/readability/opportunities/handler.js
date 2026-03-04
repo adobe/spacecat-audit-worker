@@ -153,7 +153,10 @@ export async function processReadabilityOpportunities(context) {
       };
     }
 
-    const { readabilityIssues, urlsProcessed } = readabilityAnalysisResult;
+    const { readabilityIssues: allIssues, urlsProcessed } = readabilityAnalysisResult;
+
+    // Filter out issues without a selector — they cannot be uniquely identified
+    const readabilityIssues = allIssues.filter((issue) => Boolean(issue.selector));
 
     // Create opportunity and suggestions
     const opportunity = await convertToOpportunity(
@@ -185,7 +188,7 @@ export async function processReadabilityOpportunities(context) {
     });
 
     // Sync suggestions with existing ones (preserve ignored/fixed suggestions)
-    const buildKey = (data) => `${data.pageUrl}|${data.textPreview?.substring(0, 200)}`;
+    const buildKey = (data) => `${data.pageUrl}-${data.selector}`;
 
     await syncSuggestions({
       opportunity,

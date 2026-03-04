@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import { createHash } from 'crypto';
 import {
   ok, notFound, badRequest, noContent, internalServerError,
 } from '@adobe/spacecat-shared-http-utils';
@@ -157,10 +156,12 @@ export default async function handler(message, context) {
     return badRequest('Invalid batch results format');
   }
 
-  // Map batch results to suggestion data, filtering out failed items and empty improvements
+  // Map batch results to suggestion data, filtering out failed items,
+  // empty improvements, and null selectors
   const mappedSuggestions = batchResults
     .map((item) => mapBatchResultToSuggestionData(item))
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((s) => s.selector);
 
   const failedCount = batchResults.filter((item) => item.status === 'failed').length;
   if (failedCount > 0) {
@@ -174,10 +175,7 @@ export default async function handler(message, context) {
 
   log.info(`[readability-opportunity guidance]: Processing ${mappedSuggestions.length} suggestions from batch results`);
 
-  const buildKey = (suggestionData) => {
-    const textHash = createHash('sha256').update(suggestionData.originalText || '').digest('hex').slice(0, 12);
-    return `${suggestionData.pageUrl}|${textHash}`;
-  };
+  const buildKey = (suggestionData) => `${suggestionData.pageUrl}-${suggestionData.selector}`;
 
   await syncSuggestions({
     context,
