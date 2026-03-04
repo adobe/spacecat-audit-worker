@@ -44,6 +44,10 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
           url: 'https://github.com/FasterXML/jackson-databind/issues/2816',
         },
       ],
+      dependencyTree: [
+        '[root]',
+        'biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle@3.5.1',
+      ],
     };
   });
 
@@ -85,6 +89,10 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
               summary: 'Deeply nested json in jackson-databind',
               url: 'https://github.com/FasterXML/jackson-databind/issues/2816',
             },
+          ],
+          dependency_tree: [
+            '[root]',
+            'biz.netcentric.cq.tools.accesscontroltool/accesscontroltool-bundle@3.5.1',
           ],
         },
       });
@@ -159,6 +167,7 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
       expect(result.data.cves[1].score_text).to.equal('8.0 High');
       expect(result.data.cves[2].score_text).to.equal('5.7 Medium');
       expect(result.data.cves[3].score_text).to.equal('0 Low');
+      expect(result.data.dependency_tree).to.be.undefined;
     });
 
     it('should handle different severity levels and same scores', () => {
