@@ -18,9 +18,8 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import {
-  getLastSunday, compareConfigs, areCategoryNamesDifferent,
+  compareConfigs, areCategoryNamesDifferent,
 } from './utils.js';
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
@@ -170,65 +169,6 @@ export async function triggerCdnLogsReport(context, site) {
 
   log.info('Successfully triggered cdn-logs-report audit');
 }
-
-/* c8 ignore start */
-export async function triggerGeoBrandPresence(context, site, auditContext = {}) {
-  const { sqs, dataAccess, log } = context;
-  const { Configuration } = dataAccess;
-  const configuration = await Configuration.findLatest();
-  const siteId = site.getSiteId();
-
-  // Priority: auditContext > site config > default
-  const cadence = auditContext?.brandPresenceCadence
-    || site.getConfig()?.getBrandPresenceCadence?.()
-    || 'weekly';
-
-  const auditType = cadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence';
-
-  log.info(`Triggering ${auditType} audit for site: ${siteId} (cadence: ${cadence})`);
-
-  // Check if the selected audit type is enabled
-  const isAuditEnabled = await isAuditEnabledForSite(auditType, site, context);
-  if (!isAuditEnabled) {
-    log.warn(`${auditType} audit is not enabled for site ${siteId}, skipping geo-brand-presence trigger`);
-    return;
-  }
-
-  // Optional: Warn if the opposite audit type is also enabled
-  const oppositeAuditType = cadence === 'daily' ? 'geo-brand-presence' : 'geo-brand-presence-daily';
-  const isOppositeEnabled = await isAuditEnabledForSite(oppositeAuditType, site, context);
-  if (isOppositeEnabled) {
-    log.warn(`Both ${auditType} and ${oppositeAuditType} are enabled for site ${siteId}. Consider disabling ${oppositeAuditType} to avoid duplicate processing.`);
-  }
-
-  const geoBrandPresenceMessage = {
-    type: auditType,
-    siteId,
-    data: getLastSunday(),
-  };
-
-  await sqs.sendMessage(configuration.getQueues().audits, geoBrandPresenceMessage);
-
-  log.info(`Successfully triggered ${auditType} audit`);
-}
-
-export async function triggerGeoBrandPresenceRefresh(context, site, configVersion) {
-  const { sqs, dataAccess, log } = context;
-  const { Configuration } = dataAccess;
-  const configuration = await Configuration.findLatest();
-  const auditType = 'geo-brand-presence-trigger-refresh';
-  const siteId = site.getSiteId();
-
-  log.info('Triggering %s audit for site: %s', auditType, siteId);
-
-  await sqs.sendMessage(configuration.getQueues().audits, {
-    type: auditType,
-    siteId,
-    auditContext: { configVersion },
-  });
-  log.info(`Successfully triggered ${auditType} audit`);
-}
-/* c8 ignore stop */
 
 async function triggerBrandPresenceViaDrs(context, site, log, triggeredSteps) {
   const drsClient = DrsClient.createFrom(context);

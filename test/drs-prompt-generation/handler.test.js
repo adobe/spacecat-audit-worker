@@ -25,6 +25,7 @@ describe('DRS Prompt Generation Handler', () => {
   let fetchStub;
   let drsPromptGenerationHandler;
   let mockPostMessageSafe;
+  let mockWriteDrsPromptsToLlmoConfig;
 
   const AUDITS_QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue';
   const PRESIGNED_URL = 'https://drs-bucket.s3.amazonaws.com/results/job-1/data.json?X-Amz-Signature=abc';
@@ -45,10 +46,12 @@ describe('DRS Prompt Generation Handler', () => {
 
   beforeEach(async () => {
     mockPostMessageSafe = sandbox.stub().resolves({ success: true });
+    mockWriteDrsPromptsToLlmoConfig = sandbox.stub().resolves({ success: true, version: 'v1' });
     process.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID = 'C-TEST-CHANNEL';
 
     const handler = await esmock('../../src/drs-prompt-generation/handler.js', {
       '../../src/utils/slack-utils.js': { postMessageSafe: mockPostMessageSafe },
+      '../../src/drs-prompt-generation/drs-config-writer.js': { default: mockWriteDrsPromptsToLlmoConfig },
     });
     drsPromptGenerationHandler = handler.default;
 
@@ -121,6 +124,22 @@ describe('DRS Prompt Generation Handler', () => {
     expect(JSON.stringify(attachments)).to.include('Runbook');
   });
 
+  it('shows N/A in Slack alert when drsJobId is undefined', async () => {
+    const message = {
+      siteId: 'site-123',
+      auditContext: {
+        drsEventType: 'JOB_FAILED',
+        resultLocation: PRESIGNED_URL,
+        source: 'onboarding',
+      },
+    };
+
+    await drsPromptGenerationHandler(message, context);
+
+    expect(mockPostMessageSafe).to.have.been.calledOnce;
+    expect(JSON.stringify(mockPostMessageSafe.firstCall.args[3])).to.include('N/A');
+  });
+
   it('returns ok and logs warn on unexpected event type', async () => {
     const message = {
       siteId: 'site-123',
@@ -182,6 +201,25 @@ describe('DRS Prompt Generation Handler', () => {
     expect(sentMessage.auditContext.resultLocation).to.equal(PRESIGNED_URL);
     expect(sentMessage.auditContext).to.not.have.property('drsJsonKey');
     expect(sentMessage.auditContext).to.not.have.property('drsParquetKey');
+  });
+
+  it('skips Slack alert when channel env var is not set', async () => {
+    delete process.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID;
+
+    const message = {
+      siteId: 'site-123',
+      auditContext: {
+        drsEventType: 'JOB_FAILED',
+        drsJobId: 'job-no-channel',
+        resultLocation: PRESIGNED_URL,
+        source: 'onboarding',
+      },
+    };
+
+    const result = await drsPromptGenerationHandler(message, context);
+
+    expect(result.status).to.equal(200);
+    expect(mockPostMessageSafe).to.not.have.been.called;
   });
 
   it('still triggers audit and sends Slack alert when presigned URL download fails', async () => {
@@ -353,6 +391,7 @@ describe('DRS Prompt Generation Handler', () => {
       // eslint-disable-next-line no-await-in-loop
       const handler = await esmock('../../src/drs-prompt-generation/handler.js', {
         '../../src/utils/slack-utils.js': { postMessageSafe: localPostMessageSafe },
+        '../../src/drs-prompt-generation/drs-config-writer.js': { default: sandbox.stub().resolves() },
       });
       const localHandler = handler.default;
 
