@@ -15,7 +15,6 @@ import {
 } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
-// eslint-disable-next-line import/no-unresolved -- pending spacecat-shared#1398
 import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';

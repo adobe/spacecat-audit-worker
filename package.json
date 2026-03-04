@@ -86,6 +86,7 @@
     "@adobe/spacecat-shared-athena-client": "1.9.5",
     "@adobe/spacecat-shared-data-access": "3.5.0",
     "@adobe/spacecat-shared-data-access-v2": "npm:@adobe/spacecat-shared-data-access@2.109.0",
+    "@adobe/spacecat-shared-drs-client": "^1.0.0",
     "@adobe/spacecat-shared-google-client": "1.5.4",
     "@adobe/spacecat-shared-gpt-client": "1.6.18",
     "@adobe/spacecat-shared-html-analyzer": "1.2.6",
