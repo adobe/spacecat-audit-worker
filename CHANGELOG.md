@@ -1,3 +1,10 @@
+# [1.341.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.340.0...v1.341.0) (2026-03-04)
+
+
+### Features
+
+* add support for multiple referral traffic folders | LLMO-3437 ([#2073](https://github.com/adobe/spacecat-audit-worker/issues/2073)) ([a6751e9](https://github.com/adobe/spacecat-audit-worker/commit/a6751e99833ac9f3bb2ec1fdc966ea806d0cbba0))
+
 # [1.340.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.339.3...v1.340.0) (2026-03-04)
 
 
