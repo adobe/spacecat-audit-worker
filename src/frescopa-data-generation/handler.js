@@ -45,7 +45,7 @@ const FILE_CONFIGS = [
     filePrefix: 'referral-traffic',
   },
   {
-    type: 'referral-traffic',
+    type: 'referral-traffic-aa',
     destinationFolder: 'referral-traffic-aa',
     filePrefix: 'referral-traffic',
   },
@@ -407,10 +407,10 @@ async function run(message, context) {
 
     // Process each file configuration
     for (const config of FILE_CONFIGS) {
-      const { destinationFolder, filePrefix } = config;
+      const { type, destinationFolder, filePrefix } = config;
 
       try {
-        log.info(`%s: Processing report type: ${filePrefix}`, AUDIT_NAME);
+        log.info(`%s: Processing report type: ${type} (prefix: ${filePrefix})`, AUDIT_NAME);
 
         // Get the last 5 files for this type
         const last5Files = getLastNFiles(
@@ -423,10 +423,10 @@ async function run(message, context) {
 
         // Validate we have enough files
         if (last5Files.length < REQUIRED_FILE_COUNT) {
-          const errorMsg = `Insufficient files found for "${filePrefix}": `
+          const errorMsg = `Insufficient files found for "${type}": `
             + `found ${last5Files.length}, required ${REQUIRED_FILE_COUNT}`;
           log.error(`%s: ${errorMsg}`, AUDIT_NAME);
-          errors.push({ filePrefix, error: errorMsg });
+          errors.push({ type, filePrefix, error: errorMsg });
           // eslint-disable-next-line no-continue
           continue;
         }
@@ -435,14 +435,14 @@ async function run(message, context) {
         const newestWeek = last5Files[0].weekIdentifier;
         if (newestWeek === targetWeekIdentifier) {
           log.info(
-            `%s: Target week ${targetWeekIdentifier} already exists for ${filePrefix}. Re-running sliding window.`,
+            `%s: Target week ${targetWeekIdentifier} already exists for ${type}. Re-running sliding window.`,
             AUDIT_NAME,
           );
           // Continue with sliding window - it will replace existing files
         }
 
         log.info(
-          `%s: Found ${REQUIRED_FILE_COUNT} files for ${filePrefix}. Newest: ${newestWeek}, Creating: ${targetWeekIdentifier}`,
+          `%s: Found ${REQUIRED_FILE_COUNT} files for ${type}. Newest: ${newestWeek}, Creating: ${targetWeekIdentifier}`,
           AUDIT_NAME,
         );
 
@@ -465,7 +465,7 @@ async function run(message, context) {
           last5Files[3].weekIdentifier,
         ];
 
-        log.info(`%s: Publishing ${weeksToPublish.length} files for ${filePrefix}`, AUDIT_NAME);
+        log.info(`%s: Publishing ${weeksToPublish.length} files for ${type}`, AUDIT_NAME);
 
         for (const weekId of weeksToPublish) {
           const fileName = `${filePrefix}-${weekId}.xlsx`;
@@ -486,6 +486,7 @@ async function run(message, context) {
         }
 
         results.push({
+          type,
           filePrefix,
           folder: destinationFolder,
           targetWeek: targetWeekIdentifier,
@@ -495,11 +496,11 @@ async function run(message, context) {
         });
       } catch (fileError) {
         log.error(
-          `%s: Error processing ${filePrefix}: ${fileError.message}`,
+          `%s: Error processing ${type}: ${fileError.message}`,
           AUDIT_NAME,
           fileError,
         );
-        errors.push({ filePrefix, error: fileError.message });
+        errors.push({ type, filePrefix, error: fileError.message });
       }
     }
 
