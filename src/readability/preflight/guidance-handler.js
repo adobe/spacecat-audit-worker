@@ -316,7 +316,7 @@ export default async function handler(message, context) {
         freshAsyncJob.setResult(updatedResult);
 
         // Clean up the suggestions buffer from metadata now that they're in the result
-        const freshMetadata = freshAsyncJob.getMetadata() || {};
+        const freshMetadata = freshAsyncJob.getMetadata();
         if (freshMetadata.payload?.readabilityMetadata?.suggestions) {
           delete freshMetadata.payload.readabilityMetadata.suggestions;
           freshAsyncJob.setMetadata(freshMetadata);
