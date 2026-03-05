@@ -207,7 +207,6 @@ async function sendEnrichment(productPages, commerceConfig, site, env, log) {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token.access_token}`,
-      'x-api-key': env.IMS_CLIENT_ID,
     },
     body: JSON.stringify(enrichmentPayload),
   });

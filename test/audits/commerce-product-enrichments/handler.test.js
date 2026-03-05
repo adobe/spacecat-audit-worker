@@ -1613,7 +1613,6 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
 
     const { headers } = enrichmentCall.args[1];
     expect(headers).to.have.property('Authorization', 'Bearer test-ims-token');
-    expect(headers).to.have.property('x-api-key', 'test-client-id');
     expect(headers).to.have.property('Content-Type', 'application/json');
   });
 
