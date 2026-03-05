@@ -1,3 +1,10 @@
+## [1.343.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.343.0...v1.343.1) (2026-03-05)
+
+
+### Bug Fixes
+
+* skip opportunity creation when Mystique returns no suggestions ([#2077](https://github.com/adobe/spacecat-audit-worker/issues/2077)) ([fa25b6d](https://github.com/adobe/spacecat-audit-worker/commit/fa25b6dbf48cb182a49c8daf0ee873cb8f5e7ade))
+
 # [1.343.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.342.1...v1.343.0) (2026-03-05)
 
 
