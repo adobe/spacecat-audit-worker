@@ -1,3 +1,10 @@
+# [1.343.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.342.1...v1.343.0) (2026-03-05)
+
+
+### Features
+
+* batch processing for readability (oppty mode) ([#2003](https://github.com/adobe/spacecat-audit-worker/issues/2003)) ([cebf651](https://github.com/adobe/spacecat-audit-worker/commit/cebf651d956fe8a6ce959ec3ba4a1f4f75429261)), closes [#container-da1317a6d0](https://github.com/adobe/spacecat-audit-worker/issues/container-da1317a6d0)
+
 ## [1.342.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.342.0...v1.342.1) (2026-03-05)
 
 
