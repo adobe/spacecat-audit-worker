@@ -31,6 +31,9 @@ import { joinBaseAndPath } from '../utils/url-utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const LOG_PREFIX = '[PageCitability]';
+const PAGE_CITABILITY_SCRAPE_OPTIONS = {
+  hideConsentBanners: true,
+};
 
 export async function getS3Config(site, context) {
   const customerDomain = extractCustomerDomain(site);
@@ -54,6 +57,7 @@ const createEmptyResult = (baseURL, siteId) => ({
   fullAuditRef: baseURL,
   processingType: 'page-citability',
   urls: [{ url: baseURL }],
+  options: PAGE_CITABILITY_SCRAPE_OPTIONS,
   siteId,
 });
 
@@ -157,6 +161,7 @@ export async function extractUrls(context) {
     fullAuditRef: finalUrl,
     urls: urlsForScraping,
     processingType: 'page-citability',
+    options: PAGE_CITABILITY_SCRAPE_OPTIONS,
     siteId,
   };
 }
