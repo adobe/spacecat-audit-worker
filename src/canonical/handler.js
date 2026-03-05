@@ -416,18 +416,16 @@ export async function processScrapedContent(context) {
         return null;
       }
 
-      const { url } = scrapedObject;
-      if (!url) {
+      const { finalUrl } = scrapedObject;
+      if (!finalUrl) {
         log.warn(`[canonical] No URL found in S3 object: ${key}`);
         return null;
       }
 
-      const finalUrl = scrapedObject.finalUrl || url;
-
       if (!scrapedObject?.scrapeResult?.canonical) {
         log.warn(`[canonical] No canonical metadata in S3 object: ${key}`);
         return {
-          url,
+          url: finalUrl,
           checks: [{
             check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
             success: false,
@@ -439,11 +437,11 @@ export async function processScrapedContent(context) {
       // Filter out scraped pages that redirected to auth/login pages or PDFs
       // This prevents false positives when a legitimate page redirects to login
       if (isAuthUrl(finalUrl)) {
-        log.info(`[canonical] Skipping ${url} - redirected to auth page: ${finalUrl}`);
+        log.info(`[canonical] Skipping ${finalUrl} - auth page`);
         return null;
       }
       if (isPdfUrl(finalUrl)) {
-        log.info(`[canonical] Skipping ${url} - redirected to PDF: ${finalUrl}`);
+        log.info(`[canonical] Skipping ${finalUrl} - PDF`);
         return null;
       }
 
@@ -572,7 +570,7 @@ export async function processScrapedContent(context) {
         }
       }
 
-      return { url, checks };
+      return { url: finalUrl, checks };
     } catch (error) {
       log.error(`[canonical] Error processing scraped content from ${key}: ${error.message}`);
       return EMPTY_CANONICAL_RESULT;
