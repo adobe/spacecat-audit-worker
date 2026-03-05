@@ -1,3 +1,10 @@
+# [1.345.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.344.2...v1.345.0) (2026-03-05)
+
+
+### Features
+
+* **page-citability:** pass hideConsentBanners to scraper ([#2083](https://github.com/adobe/spacecat-audit-worker/issues/2083)) ([d5e76bf](https://github.com/adobe/spacecat-audit-worker/commit/d5e76bf421cd9b0c2198e5219df8c1ad9b762853))
+
 ## [1.344.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.344.1...v1.344.2) (2026-03-05)
 
 
