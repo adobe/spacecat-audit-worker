@@ -1,3 +1,24 @@
+## [1.344.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.344.0...v1.344.1) (2026-03-05)
+
+
+### Bug Fixes
+
+* skip domain-wide suggestion creation if already active or deployed ([#1914](https://github.com/adobe/spacecat-audit-worker/issues/1914)) ([ae12fbf](https://github.com/adobe/spacecat-audit-worker/commit/ae12fbf39d76a0b2263297e524dfa4f1e75cac1b))
+
+# [1.344.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.343.2...v1.344.0) (2026-03-05)
+
+
+### Features
+
+* replace Mystique brand presence triggers with DRS (LLMO-1819) ([#2061](https://github.com/adobe/spacecat-audit-worker/issues/2061)) ([211c000](https://github.com/adobe/spacecat-audit-worker/commit/211c00074e211ccb4170c85527a425c2088f4f16))
+
+## [1.343.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.343.1...v1.343.2) (2026-03-05)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2082](https://github.com/adobe/spacecat-audit-worker/issues/2082)) ([63b9035](https://github.com/adobe/spacecat-audit-worker/commit/63b90351af86a10a0e23989c09346e93cbfea927))
+
 ## [1.343.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.343.0...v1.343.1) (2026-03-05)
 
 

@@ -39,6 +39,64 @@ const AUDIT_ERROR_MESSAGE = 'Audit failed';
 // Domain-wide suggestion URL format (sync scrapedUrlsSet + prepareDomainWideAggregateSuggestion)
 const getDomainWideSuggestionUrl = (baseUrl) => `${baseUrl}/* (All Domain URLs)`;
 
+const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
+
+/**
+ * Checks if a suggestion's data represents a domain-wide suggestion.
+ * @param {Object} data - The suggestion data object.
+ * @returns {boolean} True if this is a domain-wide suggestion.
+ */
+function isDomainWideSuggestionData(data) {
+  return !!data?.isDomainWide;
+}
+
+/**
+ * Checks if a domain-wide suggestion should be preserved (not replaced).
+ * A suggestion should be preserved if it's in an active state or has been deployed.
+ * @param {Object} suggestion - The suggestion object.
+ * @returns {boolean} True if the suggestion should be preserved.
+ */
+function shouldPreserveDomainWideSuggestion(suggestion) {
+  const status = suggestion.getStatus();
+  const data = suggestion.getData();
+
+  const ACTIVE_STATUSES = [
+    Suggestion.STATUSES.NEW,
+    Suggestion.STATUSES.FIXED,
+    Suggestion.STATUSES.PENDING_VALIDATION,
+    Suggestion.STATUSES.SKIPPED,
+  ];
+
+  return ACTIVE_STATUSES.includes(status) || !!data?.edgeDeployed;
+}
+
+/**
+ * Finds an existing domain-wide suggestion that should be preserved.
+ * @param {Object} opportunity - The opportunity object.
+ * @param {Object} log - Logger instance.
+ * @returns {Promise<Object|null>} The existing suggestion to preserve, or null if none found.
+ */
+async function findPreservableDomainWideSuggestion(opportunity, log) {
+  const existingSuggestions = await opportunity.getSuggestions();
+  const domainWideSuggestions = existingSuggestions.filter(
+    (s) => isDomainWideSuggestionData(s.getData()),
+  );
+
+  if (domainWideSuggestions.length === 0) {
+    return null;
+  }
+
+  const preservable = domainWideSuggestions.find(shouldPreserveDomainWideSuggestion);
+
+  if (preservable) {
+    const status = preservable.getStatus();
+    const data = preservable.getData();
+    log.info(`${LOG_PREFIX} Found existing domain-wide suggestion to preserve: status=${status}, edgeDeployed=${data?.edgeDeployed}`);
+  }
+
+  return preservable || null;
+}
+
 async function getTopOrganicUrlsFromAhrefs(context, limit = TOP_ORGANIC_URLS_LIMIT) {
   const { dataAccess, log, site } = context;
   let topPagesUrls = [];
@@ -719,9 +777,6 @@ async function prepareDomainWideAggregateSuggestion(
     pathPattern: '/*',
   };
 
-  // Use a constant key to ensure only ONE domain-wide suggestion exists per opportunity
-  const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
-
   log.info(`Prerender - Prepared domain-wide aggregate suggestion for entire domain with allowedRegexPatterns: ${JSON.stringify(allowedRegexPatterns)}. Based on ${auditedUrlCount} audited URL(s).`);
 
   return {
@@ -778,12 +833,18 @@ export async function processOpportunityAndSuggestions(
     auditData, // Pass auditData as props so createOpportunityData receives it
   );
 
-  // Prepare domain-wide suggestion data first
-  const domainWideSuggestion = await prepareDomainWideAggregateSuggestion(
-    preRenderSuggestions,
-    auditUrl,
-    context,
-  );
+  const existingPreservable = await findPreservableDomainWideSuggestion(opportunity, log);
+
+  let domainWideSuggestion = null;
+  if (existingPreservable) {
+    log.info(`${LOG_PREFIX} Skipping domain-wide suggestion creation - existing one will be preserved. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
+  } else {
+    domainWideSuggestion = await prepareDomainWideAggregateSuggestion(
+      preRenderSuggestions,
+      auditUrl,
+      context,
+    );
+  }
 
   // Build key function that handles both individual and domain-wide suggestions
   /* c8 ignore next 7 */
@@ -815,7 +876,9 @@ export async function processOpportunityAndSuggestions(
     ),
   });
 
-  const allSuggestions = [...preRenderSuggestions, domainWideSuggestion];
+  const allSuggestions = domainWideSuggestion
+    ? [...preRenderSuggestions, domainWideSuggestion]
+    : [...preRenderSuggestions];
 
   await syncSuggestions({
     opportunity,
