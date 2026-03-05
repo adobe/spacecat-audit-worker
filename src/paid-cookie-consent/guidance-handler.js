@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
 import { getAuditData } from './audit-data-provider.js';
 import { createPaidLogger } from '../paid/paid-log.js';
